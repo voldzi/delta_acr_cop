@@ -38,6 +38,8 @@ export interface CopDashboardFilters {
   minConfidence: number;
 }
 
+export type CopLayer = "air-situation" | "uav" | "data-quality";
+
 export async function fetchCopDashboardData(apiBase: string, token = "dev-lab-token"): Promise<CopDashboardData> {
   const headers = { Authorization: `Bearer ${token}` };
   const [health, sources, tracks] = await Promise.all([
@@ -60,6 +62,16 @@ export function filterVisibleObjects(objects: CopObject[], filters: CopDashboard
     }
     return (object.confidence ?? 0) >= filters.minConfidence;
   });
+}
+
+export function filterObjectsByLayer(objects: CopObject[], layer: CopLayer): CopObject[] {
+  if (layer === "uav") {
+    return objects.filter((object) => object.objectType === "UAV");
+  }
+  if (layer === "data-quality") {
+    return objects.filter((object) => (object.confidence ?? 0) < 0.5);
+  }
+  return objects;
 }
 
 export function getDataQualityCount(objects: CopObject[]): number {

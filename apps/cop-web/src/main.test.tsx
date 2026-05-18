@@ -5,6 +5,18 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./main";
 
+vi.mock("./CopMap", async () => {
+  const React = await import("react");
+  return {
+    CopMap: ({ objects }: { objects: Array<{ objectId: string }> }) =>
+      React.createElement(
+        "div",
+        { "data-testid": "cop-map" },
+        objects.map((object) => React.createElement("span", { key: object.objectId }, object.objectId))
+      )
+  };
+});
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -68,7 +80,8 @@ describe("COP web dashboard", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText("AIR_SIM_AIRCRAFT-0001")).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText("AIR_SIM_AIRCRAFT-0001").length).toBeGreaterThan(0));
+    expect(screen.getByTestId("cop-map").textContent).toContain("AIR_SIM_UAV-0001");
     expect(screen.getByText("COP Air Situation Simulator")).toBeTruthy();
     expect(screen.getByText("SYNTHETIC")).toBeTruthy();
     expect(screen.getAllByText("UAV").some((node) => node.closest("button")?.textContent?.includes("1"))).toBe(true);

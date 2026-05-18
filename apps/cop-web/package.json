@@ -10,6 +10,7 @@
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",
     "lucide-react": "^0.562.0",
+    "maplibre-gl": "^5.24.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "vite": "^7.2.6"

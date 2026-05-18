@@ -13,24 +13,32 @@ import {
 } from "lucide-react";
 import {
   fetchCopDashboardData,
+  filterObjectsByLayer,
   filterVisibleObjects,
   getDataQualityCount,
   getUavCount,
+  type CopLayer,
   type CopObject,
   type HealthStatus,
   type SourceSystem
 } from "./cop-data";
+import { CopMap } from "./CopMap";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
-const labToken = import.meta.env.VITE_COP_LAB_TOKEN ?? "dev-lab-token";
+const labToken =
+  import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ??
+  import.meta.env.VITE_COP_AUTH_VALUE ??
+  import.meta.env.VITE_COP_LAB_TOKEN ??
+  "dev-lab-token";
 const refreshIntervalMs = Number.parseInt(import.meta.env.VITE_COP_REFRESH_MS ?? "5000", 10);
 
 export function App() {
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
   const [sources, setSources] = React.useState<SourceSystem[]>([]);
   const [objects, setObjects] = React.useState<CopObject[]>([]);
-  const [selectedLayer, setSelectedLayer] = React.useState("air-situation");
+  const [selectedLayer, setSelectedLayer] = React.useState<CopLayer>("air-situation");
+  const [selectedObjectId, setSelectedObjectId] = React.useState<string | null>(null);
   const [includeSynthetic, setIncludeSynthetic] = React.useState(true);
   const [minConfidence, setMinConfidence] = React.useState(0.2);
   const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
@@ -62,7 +70,15 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const visibleObjects = filterVisibleObjects(objects, { includeSynthetic, minConfidence });
+  const filteredObjects = filterVisibleObjects(objects, { includeSynthetic, minConfidence });
+  const visibleObjects = filterObjectsByLayer(filteredObjects, selectedLayer);
+  const selectedObject = visibleObjects.find((object) => object.objectId === selectedObjectId) ?? visibleObjects[0];
+
+  React.useEffect(() => {
+    if (selectedObjectId && !visibleObjects.some((object) => object.objectId === selectedObjectId)) {
+      setSelectedObjectId(null);
+    }
+  }, [selectedObjectId, visibleObjects]);
 
   async function askAi() {
     const response = await fetch(`${apiBase}/api/v1/ai/cop-assistant/query`, {
@@ -119,9 +135,9 @@ export function App() {
           {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
 
           <PanelTitle icon={<Layers size={17} />} title="Vrstvy" />
-          <LayerButton active={selectedLayer === "air-situation"} onClick={() => setSelectedLayer("air-situation")} label="Air situation" count={objects.length} />
-          <LayerButton active={selectedLayer === "uav"} onClick={() => setSelectedLayer("uav")} label="UAV" count={getUavCount(objects)} />
-          <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={getDataQualityCount(objects)} />
+          <LayerButton active={selectedLayer === "air-situation"} onClick={() => setSelectedLayer("air-situation")} label="Air situation" count={filteredObjects.length} />
+          <LayerButton active={selectedLayer === "uav"} onClick={() => setSelectedLayer("uav")} label="UAV" count={getUavCount(filteredObjects)} />
+          <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={getDataQualityCount(filteredObjects)} />
 
           <div className="control-block">
             <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry" />
@@ -152,31 +168,25 @@ export function App() {
         </aside>
 
         <section className="map-stage">
-          <div className="map-grid">
-            <div className="aor-box">
-              <span>AOI PRG-LAB</span>
-              <strong>{selectedLayer}</strong>
-            </div>
-            {visibleObjects.map((object, index) => (
-              <button className={`track-marker marker-${index % 6}`} key={object.objectId}>
-                <span>{object.objectType.slice(0, 3)}</span>
-                <small>{Math.round((object.confidence ?? 0) * 100)}%</small>
-              </button>
-            ))}
-          </div>
+          <CopMap
+            objects={visibleObjects}
+            selectedLayer={selectedLayer}
+            selectedObjectId={selectedObject?.objectId}
+            onSelectObject={(object) => setSelectedObjectId(object.objectId)}
+          />
           <div className="timeline">
             <Activity size={18} />
             <div className="timeline-rail">
-              <span style={{ width: `${Math.max(16, visibleObjects.length * 18)}%` }} />
+              <span style={{ width: `${Math.min(100, Math.max(16, visibleObjects.length * 2))}%` }} />
             </div>
-            <strong>Snapshot + delta ready</strong>
+            <strong>{visibleObjects.length} georeferencovaných tracků</strong>
           </div>
         </section>
 
         <aside className="panel right-panel">
           <PanelTitle icon={<Database size={17} />} title="Object detail" />
-          {visibleObjects[0] ? (
-            <ObjectDetail object={visibleObjects[0]} />
+          {selectedObject ? (
+            <ObjectDetail object={selectedObject} />
           ) : (
             <div className="empty-state">Zatím nejsou přijata žádná COP data. Pošli validní ingest event ze SIM fixture.</div>
           )}

@@ -6,6 +6,16 @@ const deployDomain = process.env.COP_DEPLOY_DOMAIN ?? "docker.home.cz";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          maplibre: ["maplibre-gl"]
+        }
+      }
+    }
+  },
   server: {
     host: "0.0.0.0",
     port: Number.parseInt(process.env.COP_WEB_PORT ?? "4311", 10),

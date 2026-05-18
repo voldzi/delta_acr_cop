@@ -24,6 +24,12 @@ services:
       dockerfile: Dockerfile.web
       args:
         VITE_COP_API_BASE_URL: "${COP_PUBLIC_API_BASE_URL:-http://localhost:${COP_API_PORT:-4310}}"
+        VITE_COP_PUBLIC_LAB_VALUE: "${COP_PUBLIC_LAB_VALUE:-dev-lab-token}"
+        VITE_COP_REFRESH_MS: "${COP_WEB_REFRESH_MS:-5000}"
+        VITE_COP_TILE_URL: "${COP_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}"
+        VITE_COP_TILE_ATTRIBUTION: "${COP_TILE_ATTRIBUTION:-&copy; OpenStreetMap contributors}"
+        VITE_COP_MAP_CENTER: "${COP_MAP_CENTER:-14.42,50.08}"
+        VITE_COP_MAP_ZOOM: "${COP_MAP_ZOOM:-8}"
     image: delta-acr-cop-web:local
     environment:
       COP_WEB_PORT: "4311"

@@ -3,6 +3,8 @@ node_modules
 dist
 coverage
 *.tsbuildinfo
+**/*.tsbuildinfo
+**/dist
 .DS_Store
 .env
 .env.*
