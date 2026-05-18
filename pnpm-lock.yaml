@@ -105,6 +105,9 @@ importers:
 
   apps/cop-web:
     dependencies:
+      '@cop/nato-symbol-renderer':
+        specifier: workspace:*
+        version: link:../../packages/nato-symbol-renderer
       '@vitejs/plugin-react':
         specifier: ^5.1.1
         version: 5.2.0(vite@7.3.3(@types/node@25.9.0)(tsx@4.22.2)(yaml@2.9.0))

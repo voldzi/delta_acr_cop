@@ -23,6 +23,7 @@ import {
   type SourceSystem
 } from "./cop-data";
 import { CopMap } from "./CopMap";
+import { getAffiliationPresentation, resolveCopObjectSymbol } from "./symbology";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
@@ -231,6 +232,9 @@ function LayerButton({ active, label, count, onClick }: { active: boolean; label
 }
 
 function ObjectDetail({ object }: { object: CopObject }) {
+  const symbol = resolveCopObjectSymbol(object);
+  const affiliation = getAffiliationPresentation(object.affiliation);
+
   return (
     <div className="object-detail">
       <div className="object-header">
@@ -244,11 +248,18 @@ function ObjectDetail({ object }: { object: CopObject }) {
         </div>
         <div>
           <dt>Affiliation</dt>
-          <dd>{object.affiliation}</dd>
+          <dd>
+            <span className={`affiliation-chip ${affiliation.disposition}`}>{affiliation.label}</span>
+            {object.affiliation}
+          </dd>
         </div>
         <div>
           <dt>Domain</dt>
           <dd>{object.domain}</dd>
+        </div>
+        <div>
+          <dt>NATO symbol</dt>
+          <dd>{symbol.symbolCode}</dd>
         </div>
         <div>
           <dt>Confidence</dt>

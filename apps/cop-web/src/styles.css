@@ -388,10 +388,22 @@ h1 {
 }
 
 .legend-item span {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(6, 16, 25, 0.86), 0 0 0 3px rgba(255, 255, 255, 0.2);
+  width: 15px;
+  height: 12px;
+  border: 2px solid currentColor;
+  background: transparent;
+  box-shadow: 0 0 0 2px rgba(6, 16, 25, 0.86);
+}
+
+.legend-symbol.hostile {
+  width: 13px;
+  height: 13px;
+  transform: rotate(45deg);
+}
+
+.legend-symbol.unknown,
+.legend-symbol.pending {
+  border-radius: 5px;
 }
 
 .map-notice {
@@ -505,6 +517,39 @@ dd {
   color: #e7eef5;
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.affiliation-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  margin-right: 7px;
+  padding: 0 7px;
+  color: #061019;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.affiliation-chip.friend {
+  background: #3b82f6;
+}
+
+.affiliation-chip.hostile {
+  background: #ef4444;
+}
+
+.affiliation-chip.neutral {
+  background: #22c55e;
+}
+
+.affiliation-chip.unknown {
+  background: #facc15;
+}
+
+.affiliation-chip.pending {
+  background: #a78bfa;
 }
 
 .empty-state {

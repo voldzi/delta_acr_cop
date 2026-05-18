@@ -6,11 +6,17 @@ import maplibregl, {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { CopLayer, CopObject } from "./cop-data";
+import {
+  getAffiliationPresentation,
+  getNatoIconKey,
+  getObjectTypeGlyph,
+  resolveCopObjectSymbol,
+  type AffiliationDisposition
+} from "./symbology";
 
 const trackSourceId = "cop-live-tracks";
-const trackHaloLayerId = "cop-live-track-halo";
-const trackPointLayerId = "cop-live-track-point";
-const trackSelectedLayerId = "cop-live-track-selected";
+const trackSelectedHaloLayerId = "cop-live-track-selected-halo";
+const trackSymbolLayerId = "cop-live-track-symbol";
 
 const tileUrl = import.meta.env.VITE_COP_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const tileAttribution = import.meta.env.VITE_COP_TILE_ATTRIBUTION ?? "&copy; OpenStreetMap contributors";
@@ -20,10 +26,15 @@ const defaultZoom = parseFiniteNumber(import.meta.env.VITE_COP_MAP_ZOOM, 8);
 export interface TrackFeatureProperties {
   objectId: string;
   objectType: string;
+  affiliation: string;
   confidence: number;
   status: string;
   synthetic: boolean;
   selected: boolean;
+  symbolCode: string;
+  symbolKey: string;
+  symbolColor: string;
+  symbolDisposition: AffiliationDisposition;
 }
 
 export interface TrackFeature {
@@ -97,73 +108,40 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
         type: "geojson",
         data: objectsToTrackFeatureCollection(objectsRef.current, objectsRef.current[0]?.objectId) as Parameters<GeoJSONSource["setData"]>[0]
       });
+      registerNatoSymbolImages(map);
 
       map.addLayer({
-        id: trackHaloLayerId,
-        type: "circle",
-        source: trackSourceId,
-        paint: {
-          "circle-color": [
-            "match",
-            ["get", "objectType"],
-            "AIRCRAFT",
-            "#83c7ff",
-            "UAV",
-            "#c8f08d",
-            "MISSILE_TRACK",
-            "#ffca6a",
-            "#e8eef5"
-          ],
-          "circle-opacity": 0.18,
-          "circle-radius": ["interpolate", ["linear"], ["get", "confidence"], 0, 10, 1, 26],
-          "circle-stroke-color": "rgba(255, 255, 255, 0.18)",
-          "circle-stroke-width": 1
-        }
-      });
-
-      map.addLayer({
-        id: trackPointLayerId,
-        type: "circle",
-        source: trackSourceId,
-        paint: {
-          "circle-color": [
-            "match",
-            ["get", "objectType"],
-            "AIRCRAFT",
-            "#83c7ff",
-            "UAV",
-            "#c8f08d",
-            "MISSILE_TRACK",
-            "#ffca6a",
-            "#e8eef5"
-          ],
-          "circle-opacity": 0.94,
-          "circle-radius": ["match", ["get", "objectType"], "MISSILE_TRACK", 6, "UAV", 7, 8],
-          "circle-stroke-color": "#061019",
-          "circle-stroke-width": ["case", ["boolean", ["get", "synthetic"], false], 2, 1]
-        }
-      });
-
-      map.addLayer({
-        id: trackSelectedLayerId,
+        id: trackSelectedHaloLayerId,
         type: "circle",
         source: trackSourceId,
         filter: ["==", ["get", "selected"], true],
         paint: {
-          "circle-color": "rgba(255, 255, 255, 0)",
-          "circle-radius": 15,
+          "circle-color": ["get", "symbolColor"],
+          "circle-opacity": 0.16,
+          "circle-radius": 24,
           "circle-stroke-color": "#ffffff",
-          "circle-stroke-opacity": 0.9,
-          "circle-stroke-width": 3
+          "circle-stroke-opacity": 0.86,
+          "circle-stroke-width": 2
         }
       });
 
-      map.on("click", trackPointLayerId, handleClick);
-      map.on("click", trackSelectedLayerId, handleClick);
-      map.on("mouseenter", trackPointLayerId, () => {
+      map.addLayer({
+        id: trackSymbolLayerId,
+        type: "symbol",
+        source: trackSourceId,
+        layout: {
+          "icon-image": ["get", "symbolKey"],
+          "icon-size": 0.74,
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true
+        }
+      });
+
+      map.on("click", trackSymbolLayerId, handleClick);
+      map.on("mouseenter", trackSymbolLayerId, () => {
         map.getCanvas().style.cursor = "pointer";
       });
-      map.on("mouseleave", trackPointLayerId, () => {
+      map.on("mouseleave", trackSymbolLayerId, () => {
         map.getCanvas().style.cursor = "";
       });
       setMapReady(true);
@@ -229,9 +207,10 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
         </button>
       </div>
       <div className="map-legend">
-        <LegendItem color="#83c7ff" label="Aircraft" />
-        <LegendItem color="#c8f08d" label="UAV" />
-        <LegendItem color="#ffca6a" label="Missile" />
+        <LegendItem disposition="friend" color="#3b82f6" label="Vlastní" />
+        <LegendItem disposition="hostile" color="#ef4444" label="Cizí" />
+        <LegendItem disposition="neutral" color="#22c55e" label="Neutrální" />
+        <LegendItem disposition="unknown" color="#facc15" label="Neznámé" />
       </div>
       {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}
       {mapError ? <div className="map-notice error">Mapový podklad: {mapError}</div> : null}
@@ -243,21 +222,30 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
 export function objectsToTrackFeatureCollection(objects: CopObject[], selectedObjectId?: string): TrackFeatureCollection {
   return {
     type: "FeatureCollection",
-    features: objects.filter(hasPosition).map((object) => ({
-      type: "Feature",
-      geometry: {
-        type: "Point",
-        coordinates: [object.position!.lon, object.position!.lat]
-      },
-      properties: {
-        objectId: object.objectId,
-        objectType: object.objectType,
-        confidence: object.confidence ?? 0,
-        status: object.status,
-        synthetic: Boolean(object.synthetic),
-        selected: object.objectId === selectedObjectId
-      }
-    }))
+    features: objects.filter(hasPosition).map((object) => {
+      const symbol = resolveCopObjectSymbol(object);
+      const affiliation = getAffiliationPresentation(object.affiliation);
+      return {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [object.position!.lon, object.position!.lat]
+        },
+        properties: {
+          objectId: object.objectId,
+          objectType: object.objectType,
+          affiliation: object.affiliation,
+          confidence: object.confidence ?? 0,
+          status: object.status,
+          synthetic: Boolean(object.synthetic),
+          selected: object.objectId === selectedObjectId,
+          symbolCode: symbol.symbolCode,
+          symbolKey: getNatoIconKey(object.objectType, object.affiliation),
+          symbolColor: affiliation.color,
+          symbolDisposition: affiliation.disposition
+        }
+      };
+    })
   };
 }
 
@@ -334,10 +322,100 @@ function parseFiniteNumber(value: string | undefined, fallback: number): number 
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function LegendItem({ color, label }: { color: string; label: string }) {
+function registerNatoSymbolImages(map: maplibregl.Map) {
+  const objectTypes = ["AIRCRAFT", "UAV", "MISSILE_TRACK", "GROUND_UNIT", "UNKNOWN"];
+  const affiliations = ["FRIEND", "HOSTILE", "NEUTRAL", "UNKNOWN", "PENDING"];
+
+  objectTypes.forEach((objectType) => {
+    affiliations.forEach((affiliation) => {
+      const key = getNatoIconKey(objectType, affiliation);
+      if (!map.hasImage(key)) {
+        map.addImage(key, createNatoSymbolImage(objectType, getAffiliationPresentation(affiliation)), {
+          pixelRatio: window.devicePixelRatio || 1
+        });
+      }
+    });
+  });
+}
+
+function createNatoSymbolImage(objectType: string, presentation: ReturnType<typeof getAffiliationPresentation>): ImageData {
+  const canvas = document.createElement("canvas");
+  const size = 96;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+
+  context.clearRect(0, 0, size, size);
+  context.lineWidth = 5;
+  context.strokeStyle = presentation.color;
+  context.fillStyle = "rgba(6, 16, 25, 0.88)";
+  drawAffiliationFrame(context, presentation.disposition, size);
+
+  context.fillStyle = presentation.color;
+  context.font = objectType === "MISSILE_TRACK" ? "700 17px Inter, Arial, sans-serif" : "800 19px Inter, Arial, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(getObjectTypeGlyph(objectType), size / 2, size / 2 + 1);
+
+  context.fillStyle = "rgba(6, 16, 25, 0.92)";
+  context.beginPath();
+  context.arc(size / 2, size - 14, 5, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = presentation.color;
+  context.beginPath();
+  context.arc(size / 2, size - 14, 3, 0, Math.PI * 2);
+  context.fill();
+
+  return context.getImageData(0, 0, size, size);
+}
+
+function drawAffiliationFrame(context: CanvasRenderingContext2D, disposition: AffiliationDisposition, size: number) {
+  if (disposition === "hostile") {
+    context.beginPath();
+    context.moveTo(size / 2, 9);
+    context.lineTo(size - 9, size / 2);
+    context.lineTo(size / 2, size - 9);
+    context.lineTo(9, size / 2);
+    context.closePath();
+    context.fill();
+    context.stroke();
+    return;
+  }
+
+  if (disposition === "unknown" || disposition === "pending") {
+    const left = 15;
+    const top = 18;
+    const width = size - 30;
+    const height = size - 36;
+    context.beginPath();
+    context.moveTo(left + 12, top);
+    context.lineTo(left + width - 12, top);
+    context.quadraticCurveTo(left + width, top, left + width, top + 12);
+    context.lineTo(left + width, top + height - 12);
+    context.quadraticCurveTo(left + width, top + height, left + width - 12, top + height);
+    context.lineTo(left + 12, top + height);
+    context.quadraticCurveTo(left, top + height, left, top + height - 12);
+    context.lineTo(left, top + 12);
+    context.quadraticCurveTo(left, top, left + 12, top);
+    context.fill();
+    context.stroke();
+    return;
+  }
+
+  const inset = disposition === "neutral" ? 16 : 14;
+  context.beginPath();
+  context.rect(inset, inset + 4, size - inset * 2, size - inset * 2 - 8);
+  context.fill();
+  context.stroke();
+}
+
+function LegendItem({ color, disposition, label }: { color: string; disposition: AffiliationDisposition; label: string }) {
   return (
     <div className="legend-item">
-      <span style={{ background: color }} />
+      <span className={`legend-symbol ${disposition}`} style={{ borderColor: color }} />
       {label}
     </div>
   );

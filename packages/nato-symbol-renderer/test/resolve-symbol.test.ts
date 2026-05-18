@@ -28,6 +28,20 @@ describe("resolveSymbol", () => {
     expect(result.fallback).toBe(false);
   });
 
+  it("resolves hostile air objects with explicit mapping", () => {
+    const aircraft = resolveSymbol("AIRCRAFT", "HOSTILE", "AIR", "ACTIVE");
+    const uav = resolveSymbol("UAV", "HOSTILE", "AIR", "ACTIVE");
+
+    expect(aircraft).toMatchObject({
+      symbolCode: "APP6-AIR-HOSTILE-AIRCRAFT-ACTIVE",
+      fallback: false
+    });
+    expect(uav).toMatchObject({
+      symbolCode: "APP6-AIR-HOSTILE-UAV-ACTIVE",
+      fallback: false
+    });
+  });
+
   it("uses local extension for unknown object", () => {
     const result = resolveSymbol("UNKNOWN", "UNKNOWN", "OTHER", "STALE");
 

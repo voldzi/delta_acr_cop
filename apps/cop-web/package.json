@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json && vite build",
+    "build": "tsc -p ../../packages/nato-symbol-renderer/tsconfig.json && tsc -p tsconfig.json && vite build",
     "dev": "vite --host 0.0.0.0 --port ${COP_WEB_PORT:-4311}",
     "preview": "vite preview --host 0.0.0.0 --port ${COP_WEB_PORT:-4311}"
   },
   "dependencies": {
+    "@cop/nato-symbol-renderer": "workspace:*",
     "@vitejs/plugin-react": "^5.1.1",
     "lucide-react": "^0.562.0",
     "maplibre-gl": "^5.24.0",
