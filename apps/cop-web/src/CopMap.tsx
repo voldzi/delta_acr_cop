@@ -17,6 +17,7 @@ import {
 const trackSourceId = "cop-live-tracks";
 const trackSelectedHaloLayerId = "cop-live-track-selected-halo";
 const trackSymbolLayerId = "cop-live-track-symbol";
+const trackLabelLayerId = "cop-live-track-label";
 
 const tileUrl = import.meta.env.VITE_COP_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const tileAttribution = import.meta.env.VITE_COP_TILE_ATTRIBUTION ?? "&copy; OpenStreetMap contributors";
@@ -33,6 +34,7 @@ export interface TrackFeatureProperties {
   selected: boolean;
   symbolCode: string;
   symbolKey: string;
+  label: string;
   symbolColor: string;
   symbolDisposition: AffiliationDisposition;
 }
@@ -141,11 +143,39 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
           }
         });
 
+        map.addLayer({
+          id: trackLabelLayerId,
+          type: "symbol",
+          source: trackSourceId,
+          layout: {
+            "text-field": ["get", "label"],
+            "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+            "text-size": 11,
+            "text-offset": [0, 1.45],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "text-color": ["get", "symbolColor"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.7,
+            "text-halo-blur": 0.4
+          }
+        });
+
         map.on("click", trackSymbolLayerId, handleClick);
+        map.on("click", trackLabelLayerId, handleClick);
         map.on("mouseenter", trackSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", trackLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseleave", trackSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", trackLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         setMapReady(true);
@@ -248,6 +278,7 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
           selected: object.objectId === selectedObjectId,
           symbolCode: symbol.symbolCode,
           symbolKey: getNatoIconKey(object.objectType, object.affiliation),
+          label: object.objectId,
           symbolColor: affiliation.color,
           symbolDisposition: affiliation.disposition
         }
@@ -273,6 +304,7 @@ export function parseMapCenter(value: string | undefined): [number, number] {
 function createRasterStyle(tiles: string, attribution: string): StyleSpecification {
   return {
     version: 8,
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
     sources: {
       "osm-raster": {
         type: "raster",

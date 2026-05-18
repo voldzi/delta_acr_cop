@@ -11,20 +11,33 @@ import type { CopObject } from "./cop-data";
 describe("COP web symbology", () => {
   it("maps own affiliation to blue NATO presentation", () => {
     const presentation = getAffiliationPresentation("FRIEND");
+    const assumedFriend = getAffiliationPresentation("ASSUMED_FRIEND");
 
     expect(presentation).toMatchObject({
       disposition: "friend",
       color: "#3b82f6",
       label: "Vlastní"
     });
+    expect(assumedFriend).toMatchObject({
+      disposition: "friend",
+      color: "#3b82f6",
+      label: "Vlastní"
+    });
     expect(getNatoIconKey("AIRCRAFT", "FRIEND")).toBe("nato-friend-aircraft");
     expect(getNatoSidc("AIRCRAFT", "FRIEND")).toBe("SFAP-----------");
+    expect(createNatoSymbolSvg("AIRCRAFT", "ASSUMED_FRIEND")).toContain("#3b82f6");
   });
 
   it("maps foreign hostile affiliation to red NATO presentation", () => {
     const presentation = getAffiliationPresentation("HOSTILE");
+    const suspect = getAffiliationPresentation("SUSPECT");
 
     expect(presentation).toMatchObject({
+      disposition: "hostile",
+      color: "#ef4444",
+      label: "Cizí"
+    });
+    expect(suspect).toMatchObject({
       disposition: "hostile",
       color: "#ef4444",
       label: "Cizí"

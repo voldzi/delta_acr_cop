@@ -38,7 +38,7 @@ export interface CopDashboardFilters {
   minConfidence: number;
 }
 
-export type CopLayer = "air-situation" | "uav" | "data-quality";
+export type CopLayer = "air-situation" | "uav" | "friendly" | "foreign" | "data-quality";
 
 export async function fetchCopDashboardData(apiBase: string, token = "dev-lab-token"): Promise<CopDashboardData> {
   const headers = { Authorization: `Bearer ${token}` };
@@ -67,6 +67,12 @@ export function filterVisibleObjects(objects: CopObject[], filters: CopDashboard
 export function filterObjectsByLayer(objects: CopObject[], layer: CopLayer): CopObject[] {
   if (layer === "uav") {
     return objects.filter((object) => object.objectType === "UAV");
+  }
+  if (layer === "friendly") {
+    return objects.filter((object) => object.affiliation === "FRIEND" || object.affiliation === "ASSUMED_FRIEND");
+  }
+  if (layer === "foreign") {
+    return objects.filter((object) => object.affiliation === "HOSTILE" || object.affiliation === "SUSPECT");
   }
   if (layer === "data-quality") {
     return objects.filter((object) => (object.confidence ?? 0) < 0.5);
