@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getAffiliationPresentation, getNatoIconKey, resolveCopObjectSymbol } from "./symbology";
+import {
+  createNatoSymbolSvg,
+  getAffiliationPresentation,
+  getNatoIconKey,
+  getNatoSidc,
+  resolveCopObjectSymbol
+} from "./symbology";
 import type { CopObject } from "./cop-data";
 
 describe("COP web symbology", () => {
@@ -12,6 +18,7 @@ describe("COP web symbology", () => {
       label: "Vlastní"
     });
     expect(getNatoIconKey("AIRCRAFT", "FRIEND")).toBe("nato-friend-aircraft");
+    expect(getNatoSidc("AIRCRAFT", "FRIEND")).toBe("SFAP-----------");
   });
 
   it("maps foreign hostile affiliation to red NATO presentation", () => {
@@ -23,6 +30,8 @@ describe("COP web symbology", () => {
       label: "Cizí"
     });
     expect(getNatoIconKey("UAV", "HOSTILE")).toBe("nato-hostile-uav");
+    expect(getNatoSidc("UAV", "HOSTILE")).toBe("SHAPMFQ--------");
+    expect(createNatoSymbolSvg("UAV", "HOSTILE")).toContain("#ef4444");
   });
 
   it("resolves a COP object through the NATO symbol resolver", () => {

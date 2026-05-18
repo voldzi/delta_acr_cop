@@ -84,6 +84,7 @@ describe("COP web dashboard", () => {
     expect(screen.getByTestId("cop-map").textContent).toContain("AIR_SIM_UAV-0001");
     expect(screen.getByText("COP Air Situation Simulator")).toBeTruthy();
     expect(screen.getByText("APP6-AIR-FRIEND-AIRCRAFT-ACTIVE")).toBeTruthy();
+    expect(screen.getByText("SFAP-----------")).toBeTruthy();
     expect(screen.getByText("SYNTHETIC")).toBeTruthy();
     expect(screen.getAllByText("UAV").some((node) => node.closest("button")?.textContent?.includes("1"))).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/cop/tracks?includeSynthetic=true"), {

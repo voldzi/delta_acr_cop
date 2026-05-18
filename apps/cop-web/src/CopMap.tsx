@@ -7,9 +7,9 @@ import maplibregl, {
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { CopLayer, CopObject } from "./cop-data";
 import {
+  createNatoSymbolSvg,
   getAffiliationPresentation,
   getNatoIconKey,
-  getObjectTypeGlyph,
   resolveCopObjectSymbol,
   type AffiliationDisposition
 } from "./symbology";
@@ -104,47 +104,54 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
     };
 
     map.on("load", () => {
-      map.addSource(trackSourceId, {
-        type: "geojson",
-        data: objectsToTrackFeatureCollection(objectsRef.current, objectsRef.current[0]?.objectId) as Parameters<GeoJSONSource["setData"]>[0]
-      });
-      registerNatoSymbolImages(map);
-
-      map.addLayer({
-        id: trackSelectedHaloLayerId,
-        type: "circle",
-        source: trackSourceId,
-        filter: ["==", ["get", "selected"], true],
-        paint: {
-          "circle-color": ["get", "symbolColor"],
-          "circle-opacity": 0.16,
-          "circle-radius": 24,
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-opacity": 0.86,
-          "circle-stroke-width": 2
+      void (async () => {
+        map.addSource(trackSourceId, {
+          type: "geojson",
+          data: objectsToTrackFeatureCollection(objectsRef.current, objectsRef.current[0]?.objectId) as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        await registerNatoSymbolImages(map);
+        if (mapRef.current !== map) {
+          return;
         }
-      });
 
-      map.addLayer({
-        id: trackSymbolLayerId,
-        type: "symbol",
-        source: trackSourceId,
-        layout: {
-          "icon-image": ["get", "symbolKey"],
-          "icon-size": 0.74,
-          "icon-allow-overlap": true,
-          "icon-ignore-placement": true
-        }
-      });
+        map.addLayer({
+          id: trackSelectedHaloLayerId,
+          type: "circle",
+          source: trackSourceId,
+          filter: ["==", ["get", "selected"], true],
+          paint: {
+            "circle-color": ["get", "symbolColor"],
+            "circle-opacity": 0.16,
+            "circle-radius": 24,
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-opacity": 0.86,
+            "circle-stroke-width": 2
+          }
+        });
 
-      map.on("click", trackSymbolLayerId, handleClick);
-      map.on("mouseenter", trackSymbolLayerId, () => {
-        map.getCanvas().style.cursor = "pointer";
+        map.addLayer({
+          id: trackSymbolLayerId,
+          type: "symbol",
+          source: trackSourceId,
+          layout: {
+            "icon-image": ["get", "symbolKey"],
+            "icon-size": 0.74,
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true
+          }
+        });
+
+        map.on("click", trackSymbolLayerId, handleClick);
+        map.on("mouseenter", trackSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseleave", trackSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        setMapReady(true);
+      })().catch((error: unknown) => {
+        setMapError(error instanceof Error ? error.message : "NATO symboly nejsou dostupné.");
       });
-      map.on("mouseleave", trackSymbolLayerId, () => {
-        map.getCanvas().style.cursor = "";
-      });
-      setMapReady(true);
     });
     map.on("error", (event) => {
       setMapError(event.error?.message ?? "Mapový podklad není dostupný.");
@@ -322,23 +329,25 @@ function parseFiniteNumber(value: string | undefined, fallback: number): number 
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function registerNatoSymbolImages(map: maplibregl.Map) {
-  const objectTypes = ["AIRCRAFT", "UAV", "MISSILE_TRACK", "GROUND_UNIT", "UNKNOWN"];
-  const affiliations = ["FRIEND", "HOSTILE", "NEUTRAL", "UNKNOWN", "PENDING"];
+async function registerNatoSymbolImages(map: maplibregl.Map) {
+  const objectTypes = ["AIRCRAFT", "UAV", "MISSILE_TRACK", "GROUND_UNIT", "RESCUE_ASSET", "INCIDENT", "REPORT", "UNKNOWN"];
+  const affiliations = ["FRIEND", "ASSUMED_FRIEND", "HOSTILE", "SUSPECT", "NEUTRAL", "UNKNOWN", "PENDING"];
 
-  objectTypes.forEach((objectType) => {
-    affiliations.forEach((affiliation) => {
-      const key = getNatoIconKey(objectType, affiliation);
-      if (!map.hasImage(key)) {
-        map.addImage(key, createNatoSymbolImage(objectType, getAffiliationPresentation(affiliation)), {
-          pixelRatio: window.devicePixelRatio || 1
-        });
-      }
-    });
-  });
+  await Promise.all(
+    objectTypes.flatMap((objectType) =>
+      affiliations.map(async (affiliation) => {
+        const key = getNatoIconKey(objectType, affiliation);
+        if (!map.hasImage(key)) {
+          map.addImage(key, await createNatoSymbolImage(objectType, affiliation), {
+            pixelRatio: window.devicePixelRatio || 1
+          });
+        }
+      })
+    )
+  );
 }
 
-function createNatoSymbolImage(objectType: string, presentation: ReturnType<typeof getAffiliationPresentation>): ImageData {
+async function createNatoSymbolImage(objectType: string, affiliation: string): Promise<ImageData> {
   const canvas = document.createElement("canvas");
   const size = 96;
   canvas.width = size;
@@ -349,67 +358,22 @@ function createNatoSymbolImage(objectType: string, presentation: ReturnType<type
   }
 
   context.clearRect(0, 0, size, size);
-  context.lineWidth = 5;
-  context.strokeStyle = presentation.color;
-  context.fillStyle = "rgba(6, 16, 25, 0.88)";
-  drawAffiliationFrame(context, presentation.disposition, size);
-
-  context.fillStyle = presentation.color;
-  context.font = objectType === "MISSILE_TRACK" ? "700 17px Inter, Arial, sans-serif" : "800 19px Inter, Arial, sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(getObjectTypeGlyph(objectType), size / 2, size / 2 + 1);
-
-  context.fillStyle = "rgba(6, 16, 25, 0.92)";
-  context.beginPath();
-  context.arc(size / 2, size - 14, 5, 0, Math.PI * 2);
-  context.fill();
-  context.fillStyle = presentation.color;
-  context.beginPath();
-  context.arc(size / 2, size - 14, 3, 0, Math.PI * 2);
-  context.fill();
+  const image = await loadSvgImage(createNatoSymbolSvg(objectType, affiliation));
+  const scale = Math.min(82 / image.width, 82 / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
 
   return context.getImageData(0, 0, size, size);
 }
 
-function drawAffiliationFrame(context: CanvasRenderingContext2D, disposition: AffiliationDisposition, size: number) {
-  if (disposition === "hostile") {
-    context.beginPath();
-    context.moveTo(size / 2, 9);
-    context.lineTo(size - 9, size / 2);
-    context.lineTo(size / 2, size - 9);
-    context.lineTo(9, size / 2);
-    context.closePath();
-    context.fill();
-    context.stroke();
-    return;
-  }
-
-  if (disposition === "unknown" || disposition === "pending") {
-    const left = 15;
-    const top = 18;
-    const width = size - 30;
-    const height = size - 36;
-    context.beginPath();
-    context.moveTo(left + 12, top);
-    context.lineTo(left + width - 12, top);
-    context.quadraticCurveTo(left + width, top, left + width, top + 12);
-    context.lineTo(left + width, top + height - 12);
-    context.quadraticCurveTo(left + width, top + height, left + width - 12, top + height);
-    context.lineTo(left + 12, top + height);
-    context.quadraticCurveTo(left, top + height, left, top + height - 12);
-    context.lineTo(left, top + 12);
-    context.quadraticCurveTo(left, top, left + 12, top);
-    context.fill();
-    context.stroke();
-    return;
-  }
-
-  const inset = disposition === "neutral" ? 16 : 14;
-  context.beginPath();
-  context.rect(inset, inset + 4, size - inset * 2, size - inset * 2 - 8);
-  context.fill();
-  context.stroke();
+function loadSvgImage(svg: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("NATO symbol SVG se nepodařilo načíst."));
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  });
 }
 
 function LegendItem({ color, disposition, label }: { color: string; disposition: AffiliationDisposition; label: string }) {

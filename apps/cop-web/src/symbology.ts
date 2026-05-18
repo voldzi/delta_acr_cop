@@ -1,4 +1,5 @@
 import { resolveSymbol, type SymbolResolution, type SymbolResolveRequest } from "@cop/nato-symbol-renderer";
+import ms, { type ColorMode } from "milsymbol";
 import type { CopObject } from "./cop-data";
 
 type Affiliation = SymbolResolveRequest["affiliation"];
@@ -37,6 +38,15 @@ const knownAffiliations = new Set<Affiliation>([
 
 const knownDomains = new Set<Domain>(["AIR", "LAND", "SEA", "RESCUE", "OTHER"]);
 const knownStatuses = new Set<ObjectStatus>(["ACTIVE", "INACTIVE", "LOST", "STALE", "CONFLICTED"]);
+
+export const natoSymbolColorMode: ColorMode = {
+  Civilian: "#38bdf8",
+  Friend: "#3b82f6",
+  Hostile: "#ef4444",
+  Neutral: "#22c55e",
+  Unknown: "#facc15",
+  Suspect: "#ef4444"
+};
 
 export function resolveCopObjectSymbol(object: CopObject): SymbolResolution {
   return resolveSymbol(
@@ -89,6 +99,35 @@ export function getObjectTypeGlyph(objectType: string): string {
   return objectType.slice(0, 3).toUpperCase();
 }
 
+export function getNatoSidc(objectType: string, affiliation: string): string {
+  return [
+    "S",
+    getSidcAffiliation(normalizeAffiliation(affiliation)),
+    getSidcDimension(normalizeObjectType(objectType)),
+    "P",
+    getSidcFunctionId(normalizeObjectType(objectType)),
+    "-----"
+  ].join("");
+}
+
+export function createNatoSymbolSvg(objectType: string, affiliation: string): string {
+  const symbol = new ms.Symbol(getNatoSidc(objectType, affiliation), {
+    standard: "APP6",
+    size: 64,
+    colorMode: natoSymbolColorMode,
+    frameColor: natoSymbolColorMode,
+    fill: true,
+    frame: true,
+    icon: true,
+    infoFields: false,
+    outlineColor: "#061019",
+    outlineWidth: 4,
+    strokeWidth: 5
+  });
+
+  return symbol.asSVG();
+}
+
 export function normalizeAffiliation(value: string | undefined): Affiliation {
   return knownAffiliations.has(value as Affiliation) ? (value as Affiliation) : "UNKNOWN";
 }
@@ -103,4 +142,46 @@ function normalizeDomain(value: string): Domain {
 
 function normalizeStatus(value: string): ObjectStatus {
   return knownStatuses.has(value as ObjectStatus) ? (value as ObjectStatus) : "STALE";
+}
+
+function getSidcAffiliation(affiliation: Affiliation): string {
+  if (affiliation === "FRIEND") {
+    return "F";
+  }
+  if (affiliation === "ASSUMED_FRIEND") {
+    return "A";
+  }
+  if (affiliation === "HOSTILE") {
+    return "H";
+  }
+  if (affiliation === "SUSPECT") {
+    return "S";
+  }
+  if (affiliation === "NEUTRAL") {
+    return "N";
+  }
+  if (affiliation === "PENDING") {
+    return "P";
+  }
+  return "U";
+}
+
+function getSidcDimension(objectType: ObjectType): string {
+  if (objectType === "GROUND_UNIT") {
+    return "G";
+  }
+  if (objectType === "UNKNOWN" || objectType === "INCIDENT" || objectType === "REPORT") {
+    return "Z";
+  }
+  return "A";
+}
+
+function getSidcFunctionId(objectType: ObjectType): string {
+  if (objectType === "UAV") {
+    return "MFQ---";
+  }
+  if (objectType === "MISSILE_TRACK") {
+    return "WM----";
+  }
+  return "------";
 }
