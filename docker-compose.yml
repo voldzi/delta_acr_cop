@@ -1,0 +1,34 @@
+services:
+  cop-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: delta-acr-cop-api:local
+    environment:
+      COP_API_PORT: "4310"
+      COP_ALLOW_LAB_TOKEN: "true"
+      COP_LAB_TOKEN: "dev-lab-token"
+      COP_EXTERNAL_AI_ENABLED: "false"
+      COP_AI_DEFAULT_PROVIDER: "mock"
+    ports:
+      - "${COP_API_PORT:-4310}:4310"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4310/health/live"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  cop-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_COP_API_BASE_URL: "${COP_PUBLIC_API_BASE_URL:-http://localhost:${COP_API_PORT:-4310}}"
+    image: delta-acr-cop-web:local
+    environment:
+      COP_WEB_PORT: "4311"
+    ports:
+      - "${COP_WEB_PORT:-4311}:4311"
+    depends_on:
+      cop-api:
+        condition: service_healthy

@@ -1,0 +1,12 @@
+.git
+node_modules
+dist
+coverage
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+apps/cop-web/dist
+apps/cop-api/dist
+apps/cop-edge-node/dist

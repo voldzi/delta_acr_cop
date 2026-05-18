@@ -1,0 +1,45 @@
+{
+  "name": "delta-acr-cop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "dev": "pnpm --parallel --filter @cop/cop-api --filter @cop/cop-web dev",
+    "dev:api": "pnpm --filter @cop/cop-api dev",
+    "dev:web": "pnpm --filter @cop/cop-web dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:contracts": "vitest run tests/contract packages/nato-symbol-renderer/test",
+    "lint": "tsc -b --pretty false",
+    "validate:openapi": "redocly lint docs/api/openapi-main-cop.yaml",
+    "validate:schemas": "tsx scripts/validate-schemas.ts",
+    "check": "pnpm validate:schemas && pnpm validate:openapi && pnpm lint && pnpm test"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^2.12.1",
+    "@types/node": "^25.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.6",
+    "vitest": "^4.0.15"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "@fastify/sensible": "^6.0.3",
+    "@fastify/websocket": "^11.2.0",
+    "@sinclair/typebox": "^0.34.41",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "fastify": "^5.6.2",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "yaml": "^2.8.2",
+    "zod": "^4.1.13"
+  }
+}

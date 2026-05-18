@@ -1,0 +1,788 @@
+openapi: 3.1.0
+info:
+  title: ACR COP Data Fabric Main COP API
+  version: 0.1.0
+  summary: Documentation-first OpenAPI skeleton for the main COP system.
+  license:
+    name: Internal baseline - license pending
+    identifier: LicenseRef-Internal-Baseline
+  description: >
+    API baseline for ingest, COP query, subscriptions, source registry,
+    symbology, audit, AI assistance, health and metrics. The API supports
+    situational awareness and data interoperability only; it does not define
+    targeting, weapon control or use-of-force workflows.
+servers:
+  - url: /
+    description: Relative server URL for local, test and deployed environments.
+security:
+  - bearerAuth: []
+tags:
+  - name: Ingest
+    description: Event and batch ingest endpoints for registered external sources.
+  - name: COP
+    description: Query and subscription endpoints for policy-filtered COP state.
+  - name: Streaming
+    description: Snapshot and delta stream endpoints.
+  - name: Symbology
+    description: NATO symbol resolution endpoints owned by the main COP system.
+  - name: Sources
+    description: Source Registry lifecycle endpoints.
+  - name: Audit
+    description: Audit and provenance query endpoints.
+  - name: AI
+    description: Guardrailed AI assistance endpoints.
+  - name: Health
+    description: Liveness, readiness and dependency health endpoints.
+  - name: Metrics
+    description: Operational metrics endpoints.
+paths:
+  /api/v1/ingest/events:
+    post:
+      tags: [Ingest]
+      summary: Accept one canonical event envelope.
+      operationId: ingestEvent
+      parameters:
+        - $ref: "#/components/parameters/SourceSystemIdHeader"
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+        - $ref: "#/components/parameters/ContractVersionHeader"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/canonical-event-envelope.schema.json"
+      responses:
+        "202":
+          description: Event accepted for asynchronous processing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/ingest/batches:
+    post:
+      tags: [Ingest]
+      summary: Accept a batch of canonical event envelopes.
+      operationId: ingestBatch
+      parameters:
+        - $ref: "#/components/parameters/SourceSystemIdHeader"
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+        - $ref: "#/components/parameters/ContractVersionHeader"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestBatchRequest"
+      responses:
+        "202":
+          description: Batch accepted for asynchronous processing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestBatchAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/cop/tracks:
+    get:
+      tags: [COP]
+      summary: Query policy-filtered COP tracks.
+      operationId: listCopTracks
+      parameters:
+        - name: bbox
+          in: query
+          required: false
+          schema:
+            type: string
+          description: minLon,minLat,maxLon,maxLat
+        - name: layers
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - name: objectTypes
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - name: minConfidence
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+        - name: updatedSince
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: includeSynthetic
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: COP tracks.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopTrackList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/cop/subscriptions:
+    post:
+      tags: [COP]
+      summary: Create a COP subscription for snapshot and delta distribution.
+      operationId: createCopSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/cop-subscription.schema.json"
+      responses:
+        "201":
+          description: Subscription created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopSubscriptionCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/stream/cop/{subscriptionId}:
+    get:
+      tags: [Streaming]
+      summary: Open COP stream for a subscription.
+      operationId: streamCopSubscription
+      description: >
+        Skeleton endpoint for WebSocket or SSE-compatible COP stream. Message
+        types are defined in docs/integration/04_STREAMING_CONTRACT.md.
+      parameters:
+        - name: subscriptionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Stream established.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/symbology/resolve:
+    post:
+      tags: [Symbology]
+      summary: Resolve a canonical object into NATO symbol metadata.
+      operationId: resolveSymbol
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/symbol-resolve-request.schema.json"
+      responses:
+        "200":
+          description: Symbol resolution.
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/symbol-resolve-response.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /api/v1/sources:
+    get:
+      tags: [Sources]
+      summary: List registered source systems.
+      operationId: listSources
+      responses:
+        "200":
+          description: Source systems.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "./schemas/source-system.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Sources]
+      summary: Register a source system.
+      operationId: createSource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/source-system.schema.json"
+      responses:
+        "201":
+          description: Source system registered.
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/source-system.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/sources/{sourceSystemId}:
+    get:
+      tags: [Sources]
+      summary: Get one source system.
+      operationId: getSource
+      parameters:
+        - $ref: "#/components/parameters/SourceSystemIdPath"
+      responses:
+        "200":
+          description: Source system.
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/source-system.schema.json"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Sources]
+      summary: Update source system metadata and permissions.
+      operationId: updateSource
+      parameters:
+        - $ref: "#/components/parameters/SourceSystemIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Source system updated.
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/source-system.schema.json"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/sources/{sourceSystemId}/revoke:
+    post:
+      tags: [Sources]
+      summary: Revoke a source system.
+      operationId: revokeSource
+      parameters:
+        - $ref: "#/components/parameters/SourceSystemIdPath"
+      responses:
+        "202":
+          description: Source revocation accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceLifecycleResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/audit/events:
+    get:
+      tags: [Audit]
+      summary: Query audit events.
+      operationId: listAuditEvents
+      parameters:
+        - name: correlationId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sourceSystemId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Audit events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventList"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/ai/cop-assistant/query:
+    post:
+      tags: [AI]
+      summary: Ask the AI COP assistant for allowed data assistance.
+      operationId: queryCopAssistant
+      description: AI assistance is limited to explanation, summarization, query help, data quality and documentation support.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/ai-cop-query.schema.json"
+      responses:
+        "200":
+          description: AI assistant response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness probe.
+      operationId: healthLive
+      security: []
+      responses:
+        "200":
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe.
+      operationId: healthReady
+      security: []
+      responses:
+        "200":
+          description: Service is ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /health/dependencies:
+    get:
+      tags: [Health]
+      summary: Dependency health.
+      operationId: healthDependencies
+      security: []
+      responses:
+        "200":
+          description: Dependency health status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DependencyHealth"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /metrics:
+    get:
+      tags: [Metrics]
+      summary: Prometheus metrics endpoint.
+      operationId: metrics
+      security: []
+      responses:
+        "200":
+          description: Prometheus exposition format.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    mtlsAuth:
+      type: mutualTLS
+  parameters:
+    SourceSystemIdHeader:
+      name: X-Source-System-Id
+      in: header
+      required: true
+      schema:
+        type: string
+    IdempotencyKeyHeader:
+      name: X-Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ContractVersionHeader:
+      name: X-Contract-Version
+      in: header
+      required: true
+      schema:
+        type: string
+        example: cop-ingest-v1
+    CorrelationIdHeader:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+    SourceSystemIdPath:
+      name: sourceSystemId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Bad request or schema validation error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Authentication failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Policy denied the operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Conflict, typically idempotency mismatch.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableEntity:
+      description: Business validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooManyRequests:
+      description: Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: Service unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    IngestAccepted:
+      type: object
+      required: [accepted, eventId, ingestId, receivedAt, status, correlationId]
+      properties:
+        accepted:
+          type: boolean
+        eventId:
+          type: string
+          format: uuid
+        ingestId:
+          type: string
+          format: uuid
+        receivedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [QUEUED, ACCEPTED]
+        correlationId:
+          type: string
+          format: uuid
+    IngestBatchRequest:
+      type: object
+      required: [batchId, contractVersion, sourceSystemId, events]
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        contractVersion:
+          type: string
+        sourceSystemId:
+          type: string
+        events:
+          type: array
+          minItems: 1
+          items:
+            $ref: "./schemas/canonical-event-envelope.schema.json"
+    IngestBatchAccepted:
+      type: object
+      required: [batchId, acceptedCount, rejectedCount, items]
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        acceptedCount:
+          type: integer
+          minimum: 0
+        rejectedCount:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items:
+            type: object
+            required: [eventId, status]
+            properties:
+              eventId:
+                type: string
+                format: uuid
+              status:
+                type: string
+                enum: [QUEUED, REJECTED]
+              errorCode:
+                type: string
+    CopTrackList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "./schemas/observed-object.schema.json"
+        nextCursor:
+          type:
+            - string
+            - "null"
+    CopSubscriptionCreated:
+      type: object
+      required: [subscriptionId, streamUrl, expiresAt]
+      properties:
+        subscriptionId:
+          type: string
+          format: uuid
+        streamUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    StreamMessage:
+      type: object
+      required: [type, subscriptionId, serverTimestamp]
+      properties:
+        type:
+          type: string
+          enum: [snapshot, delta, heartbeat, policy_update, backpressure, reconnect_required, error]
+        subscriptionId:
+          type: string
+          format: uuid
+        serverTimestamp:
+          type: string
+          format: date-time
+        sequence:
+          type: integer
+        changes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    SourceLifecycleResult:
+      type: object
+      required: [sourceSystemId, status, changedAt]
+      properties:
+        sourceSystemId:
+          type: string
+        status:
+          type: string
+          enum: [REGISTERED, ACTIVE, SUSPENDED, REVOKED]
+        changedAt:
+          type: string
+          format: date-time
+    AuditEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [auditId, eventType, timestamp]
+            properties:
+              auditId:
+                type: string
+                format: uuid
+              eventType:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+              actor:
+                type: string
+              correlationId:
+                type: string
+    AiCopResponse:
+      type: object
+      required: [requestId, status, policy, result, auditId]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [COMPLETED, REJECTED, NEEDS_HUMAN_REVIEW]
+        provider:
+          type: string
+          enum: [openai, codex, local, mock]
+        model:
+          type: string
+        policy:
+          type: object
+          required: [allowed, reason, redactionsApplied]
+          properties:
+            allowed:
+              type: boolean
+            reason:
+              type: string
+            redactionsApplied:
+              type: boolean
+        result:
+          type: object
+          additionalProperties: true
+        auditId:
+          type: string
+          format: uuid
+    HealthStatus:
+      type: object
+      required: [status, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unavailable]
+        timestamp:
+          type: string
+          format: date-time
+    DependencyHealth:
+      type: object
+      required: [status, dependencies]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unavailable]
+        dependencies:
+          type: array
+          items:
+            type: object
+            required: [name, status]
+            properties:
+              name:
+                type: string
+              status:
+                type: string
+                enum: [ok, degraded, unavailable]
+              detail:
+                type: string
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, correlationId]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  issue:
+                    type: string
+            correlationId:
+              type: string

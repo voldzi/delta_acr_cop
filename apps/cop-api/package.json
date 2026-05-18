@@ -1,0 +1,19 @@
+{
+  "name": "@cop/cop-api",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@cop/ai-gateway": "workspace:*",
+    "@cop/canonical-model": "workspace:*",
+    "@cop/ingest-contracts": "workspace:*",
+    "@cop/nato-symbol-renderer": "workspace:*",
+    "@cop/policy-engine": "workspace:*"
+  }
+}

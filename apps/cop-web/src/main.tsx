@@ -1,0 +1,252 @@
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { Activity, Bot, Database, Layers, RadioTower, ShieldCheck, SlidersHorizontal, Wifi } from "lucide-react";
+import "./styles.css";
+
+const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
+
+interface HealthStatus {
+  status: string;
+  timestamp: string;
+}
+
+interface SourceSystem {
+  sourceSystemId: string;
+  displayName: string;
+  sourceType: string;
+  status?: string;
+  synthetic: boolean;
+}
+
+interface CopObject {
+  objectId: string;
+  objectType: string;
+  affiliation: string;
+  domain: string;
+  status: string;
+  confidence?: number;
+  synthetic?: boolean;
+  lastUpdatedAt?: string;
+  position?: {
+    lat: number;
+    lon: number;
+    altitudeM?: number | null;
+  };
+}
+
+function App() {
+  const [health, setHealth] = React.useState<HealthStatus | null>(null);
+  const [sources, setSources] = React.useState<SourceSystem[]>([]);
+  const [objects, setObjects] = React.useState<CopObject[]>([]);
+  const [selectedLayer, setSelectedLayer] = React.useState("air-situation");
+  const [includeSynthetic, setIncludeSynthetic] = React.useState(true);
+  const [minConfidence, setMinConfidence] = React.useState(0.2);
+  const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad COP daty.");
+
+  React.useEffect(() => {
+    const load = async () => {
+      const headers = { Authorization: "Bearer dev-lab-token" };
+      const [healthResponse, sourcesResponse, tracksResponse] = await Promise.all([
+        fetch(`${apiBase}/health/ready`),
+        fetch(`${apiBase}/api/v1/sources`, { headers }),
+        fetch(`${apiBase}/api/v1/cop/tracks?includeSynthetic=true`, { headers })
+      ]);
+      setHealth(await healthResponse.json());
+      const sourcePayload = (await sourcesResponse.json()) as { items?: SourceSystem[] };
+      const tracksPayload = (await tracksResponse.json()) as { items?: CopObject[] };
+      setSources(sourcePayload.items ?? []);
+      setObjects(tracksPayload.items ?? []);
+    };
+    void load();
+  }, []);
+
+  const visibleObjects = objects.filter((object) => {
+    if (!includeSynthetic && object.synthetic) {
+      return false;
+    }
+    return (object.confidence ?? 0) >= minConfidence;
+  });
+
+  async function askAi() {
+    const response = await fetch(`${apiBase}/api/v1/ai/cop-assistant/query`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer dev-lab-token"
+      },
+      body: JSON.stringify({
+        requestId: crypto.randomUUID(),
+        purpose: "DATA_QUALITY_CHECK",
+        prompt: "Shrň kvalitu aktuálního COP pohledu a odliš syntetická data.",
+        context: {
+          objectIds: visibleObjects.map((object) => object.objectId)
+        },
+        providerPreference: "mock",
+        outputFormat: "MARKDOWN",
+        safetyScope: "COP_DATA_ASSISTANCE_ONLY"
+      })
+    });
+    const payload = await response.json();
+    setAiResult(payload.result?.summary ?? payload.policy?.reason ?? "AI odpověď není dostupná.");
+  }
+
+  return (
+    <main className="shell">
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-mark">COP</div>
+          <div>
+            <h1>ACR COP Data Fabric</h1>
+            <p>SITDATA-COP pilotní skeleton</p>
+          </div>
+        </div>
+        <div className="status-strip">
+          <StatusItem icon={<Wifi size={16} />} label="API" value={health?.status ?? "loading"} />
+          <StatusItem icon={<RadioTower size={16} />} label="Sources" value={String(sources.length)} />
+          <StatusItem icon={<Database size={16} />} label="Objects" value={String(visibleObjects.length)} />
+          <StatusItem icon={<Bot size={16} />} label="AI" value="mock" />
+        </div>
+      </header>
+
+      <section className="workspace">
+        <aside className="panel left-panel">
+          <PanelTitle icon={<Layers size={17} />} title="Vrstvy" />
+          <LayerButton active={selectedLayer === "air-situation"} onClick={() => setSelectedLayer("air-situation")} label="Air situation" count={objects.length} />
+          <LayerButton active={selectedLayer === "uav"} onClick={() => setSelectedLayer("uav")} label="UAV" count={objects.filter((o) => o.objectType === "UAV").length} />
+          <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={objects.filter((o) => (o.confidence ?? 0) < 0.5).length} />
+
+          <div className="control-block">
+            <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry" />
+            <label className="toggle-row">
+              <input type="checkbox" checked={includeSynthetic} onChange={(event) => setIncludeSynthetic(event.target.checked)} />
+              Zobrazit syntetická data
+            </label>
+            <label className="range-label">
+              Minimum confidence
+              <input type="range" min="0" max="1" step="0.05" value={minConfidence} onChange={(event) => setMinConfidence(Number(event.target.value))} />
+              <span>{Math.round(minConfidence * 100)} %</span>
+            </label>
+          </div>
+
+          <div className="source-list">
+            <PanelTitle icon={<ShieldCheck size={17} />} title="Source Registry" />
+            {sources.map((source) => (
+              <div className="source-row" key={source.sourceSystemId}>
+                <span className={`dot ${source.status === "ACTIVE" ? "ok" : "warn"}`} />
+                <div>
+                  <strong>{source.displayName}</strong>
+                  <small>{source.sourceSystemId}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+        </aside>
+
+        <section className="map-stage">
+          <div className="map-grid">
+            <div className="aor-box">
+              <span>AOI PRG-LAB</span>
+              <strong>{selectedLayer}</strong>
+            </div>
+            {visibleObjects.map((object, index) => (
+              <button className={`track-marker marker-${index % 6}`} key={object.objectId}>
+                <span>{object.objectType.slice(0, 3)}</span>
+                <small>{Math.round((object.confidence ?? 0) * 100)}%</small>
+              </button>
+            ))}
+          </div>
+          <div className="timeline">
+            <Activity size={18} />
+            <div className="timeline-rail">
+              <span style={{ width: `${Math.max(16, visibleObjects.length * 18)}%` }} />
+            </div>
+            <strong>Snapshot + delta ready</strong>
+          </div>
+        </section>
+
+        <aside className="panel right-panel">
+          <PanelTitle icon={<Database size={17} />} title="Object detail" />
+          {visibleObjects[0] ? (
+            <ObjectDetail object={visibleObjects[0]} />
+          ) : (
+            <div className="empty-state">Zatím nejsou přijata žádná COP data. Pošli validní ingest event ze SIM fixture.</div>
+          )}
+
+          <div className="ai-box">
+            <PanelTitle icon={<Bot size={17} />} title="AI assistant" />
+            <p>{aiResult}</p>
+            <button className="primary-button" onClick={askAi}>Zkontrolovat kvalitu dat</button>
+          </div>
+        </aside>
+      </section>
+    </main>
+  );
+}
+
+function StatusItem({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="status-item">
+      {icon}
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function PanelTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <div className="panel-title">
+      {icon}
+      <span>{title}</span>
+    </div>
+  );
+}
+
+function LayerButton({ active, label, count, onClick }: { active: boolean; label: string; count: number; onClick: () => void }) {
+  return (
+    <button className={`layer-button ${active ? "active" : ""}`} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{count}</strong>
+    </button>
+  );
+}
+
+function ObjectDetail({ object }: { object: CopObject }) {
+  return (
+    <div className="object-detail">
+      <div className="object-header">
+        <strong>{object.objectType}</strong>
+        <span>{object.status}</span>
+      </div>
+      <dl>
+        <div>
+          <dt>ID</dt>
+          <dd>{object.objectId}</dd>
+        </div>
+        <div>
+          <dt>Affiliation</dt>
+          <dd>{object.affiliation}</dd>
+        </div>
+        <div>
+          <dt>Domain</dt>
+          <dd>{object.domain}</dd>
+        </div>
+        <div>
+          <dt>Confidence</dt>
+          <dd>{Math.round((object.confidence ?? 0) * 100)} %</dd>
+        </div>
+        <div>
+          <dt>Position</dt>
+          <dd>{object.position ? `${object.position.lat.toFixed(3)}, ${object.position.lon.toFixed(3)}` : "n/a"}</dd>
+        </div>
+      </dl>
+      {object.synthetic ? <span className="synthetic-badge">SYNTHETIC</span> : null}
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);

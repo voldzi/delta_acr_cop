@@ -1,0 +1,22 @@
+FROM node:24-alpine AS base
+WORKDIR /app
+RUN corepack enable
+
+FROM base AS deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
+COPY apps/cop-web/package.json apps/cop-web/package.json
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY apps/cop-web apps/cop-web
+ARG VITE_COP_API_BASE_URL=http://localhost:4310
+ENV VITE_COP_API_BASE_URL=${VITE_COP_API_BASE_URL}
+RUN pnpm --filter @cop/cop-web build
+
+FROM node:24-alpine AS runtime
+WORKDIR /app
+RUN corepack enable
+COPY --from=build /app ./
+ENV COP_WEB_PORT=4311
+EXPOSE 4311
+CMD ["pnpm", "--filter", "@cop/cop-web", "preview"]

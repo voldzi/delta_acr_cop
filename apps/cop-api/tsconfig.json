@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../../packages/canonical-model" },
+    { "path": "../../packages/ingest-contracts" },
+    { "path": "../../packages/policy-engine" },
+    { "path": "../../packages/nato-symbol-renderer" },
+    { "path": "../../packages/ai-gateway" }
+  ]
+}

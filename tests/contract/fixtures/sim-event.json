@@ -1,0 +1,57 @@
+{
+  "eventId": "11111111-1111-4111-8111-111111111111",
+  "eventType": "track.updated",
+  "contractVersion": "cop-ingest-v1",
+  "source": {
+    "sourceSystemId": "sim-air-situation-001",
+    "sourceDeviceId": "air-sim-aircraft",
+    "adapterId": "simulation-adapter",
+    "adapterVersion": "1.0.0"
+  },
+  "correlationId": "22222222-2222-4222-8222-222222222222",
+  "producerTimestamp": "2026-05-18T12:00:00.000Z",
+  "sequence": {
+    "streamId": "air-sim-aircraft-main",
+    "number": 10042
+  },
+  "classification": {
+    "level": "UNCLASSIFIED",
+    "releasability": ["CZE", "NATO"],
+    "handlingCaveats": ["SYNTHETIC"]
+  },
+  "geo": {
+    "lat": 50.087,
+    "lon": 14.421,
+    "altitudeM": 3200,
+    "accuracyM": 50
+  },
+  "payload": {
+    "objectId": "SIM-AIR-001",
+    "objectType": "AIRCRAFT",
+    "affiliation": "FRIEND",
+    "domain": "AIR",
+    "status": "ACTIVE",
+    "speedMps": 180,
+    "headingDeg": 270,
+    "verticalRateMps": 0,
+    "attributes": {
+      "callsign": "SIM-ALFA"
+    }
+  },
+  "quality": {
+    "confidence": 0.95,
+    "sourceReliability": "A",
+    "informationCredibility": "1"
+  },
+  "simulation": {
+    "synthetic": true,
+    "scenarioId": "33333333-3333-4333-8333-333333333333",
+    "blockId": "air-sim-aircraft",
+    "seed": 123456
+  },
+  "signature": {
+    "signed": false,
+    "keyId": null,
+    "algorithm": null
+  }
+}

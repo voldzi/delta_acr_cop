@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/acr-cop/schemas/ai-cop-query.schema.json",
+  "title": "AI COP Query",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "purpose",
+    "prompt",
+    "providerPreference",
+    "outputFormat",
+    "safetyScope"
+  ],
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "purpose": {
+      "type": "string",
+      "enum": [
+        "COP_EXPLANATION",
+        "REPORT_DRAFT",
+        "FILTER_SUGGESTION",
+        "DATA_CONFLICT_ANALYSIS",
+        "DATA_QUALITY_CHECK",
+        "DEV_HELP",
+        "RUNBOOK_DRAFT"
+      ]
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "objectIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "layerIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeRange": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "to": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    },
+    "providerPreference": {
+      "type": "string",
+      "enum": [
+        "openai",
+        "codex",
+        "local",
+        "mock",
+        "auto"
+      ]
+    },
+    "outputFormat": {
+      "type": "string",
+      "enum": [
+        "TEXT",
+        "JSON",
+        "MARKDOWN"
+      ]
+    },
+    "safetyScope": {
+      "type": "string",
+      "const": "COP_DATA_ASSISTANCE_ONLY"
+    }
+  }
+}

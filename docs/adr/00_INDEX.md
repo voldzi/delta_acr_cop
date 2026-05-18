@@ -1,0 +1,11 @@
+# ADR Index
+
+- [0000 ADR Template](0000_ADR_TEMPLATE.md)
+- [0001 Documentation First Approach](0001_DOCUMENTATION_FIRST_APPROACH.md)
+- [0002 Separate COP and SIM Projects](0002_SEPARATE_COP_AND_SIM_PROJECTS.md)
+- [0003 Shared Integration Contract](0003_SHARED_INTEGRATION_CONTRACT.md)
+- [0004 Data First COP Architecture](0004_DATA_FIRST_COP_ARCHITECTURE.md)
+- [0005 Event Driven Architecture](0005_EVENT_DRIVEN_ARCHITECTURE.md)
+- [0006 NATO Renderer in Main COP](0006_NATO_RENDERER_IN_MAIN_COP.md)
+- [0007 AI Provider Abstraction](0007_AI_PROVIDER_ABSTRACTION.md)
+- [0008 DELTA Inspired UX Without Weapon Workflow](0008_DELTA_INSPIRED_UX_WITHOUT_WEAPON_WORKFLOW.md)

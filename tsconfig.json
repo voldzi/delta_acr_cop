@@ -1,0 +1,16 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/canonical-model" },
+    { "path": "packages/ingest-contracts" },
+    { "path": "packages/source-adapters" },
+    { "path": "packages/policy-engine" },
+    { "path": "packages/nato-symbol-renderer" },
+    { "path": "packages/ai-guardrails" },
+    { "path": "packages/ai-gateway" },
+    { "path": "packages/openapi" },
+    { "path": "apps/cop-api" },
+    { "path": "apps/cop-edge-node" },
+    { "path": "apps/cop-web" }
+  ]
+}

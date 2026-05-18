@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+*.tsbuildinfo
+apps/cop-web/.vite/
+apps/cop-web/dist/
+apps/cop-api/dist/
+apps/cop-edge-node/dist/
