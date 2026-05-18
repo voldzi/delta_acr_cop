@@ -1,78 +1,75 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, Bot, Database, Layers, RadioTower, ShieldCheck, SlidersHorizontal, Wifi } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Database,
+  Layers,
+  RefreshCw,
+  RadioTower,
+  ShieldCheck,
+  SlidersHorizontal,
+  Wifi
+} from "lucide-react";
+import {
+  fetchCopDashboardData,
+  filterVisibleObjects,
+  getDataQualityCount,
+  getUavCount,
+  type CopObject,
+  type HealthStatus,
+  type SourceSystem
+} from "./cop-data";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
+const labToken = import.meta.env.VITE_COP_LAB_TOKEN ?? "dev-lab-token";
+const refreshIntervalMs = Number.parseInt(import.meta.env.VITE_COP_REFRESH_MS ?? "5000", 10);
 
-interface HealthStatus {
-  status: string;
-  timestamp: string;
-}
-
-interface SourceSystem {
-  sourceSystemId: string;
-  displayName: string;
-  sourceType: string;
-  status?: string;
-  synthetic: boolean;
-}
-
-interface CopObject {
-  objectId: string;
-  objectType: string;
-  affiliation: string;
-  domain: string;
-  status: string;
-  confidence?: number;
-  synthetic?: boolean;
-  lastUpdatedAt?: string;
-  position?: {
-    lat: number;
-    lon: number;
-    altitudeM?: number | null;
-  };
-}
-
-function App() {
+export function App() {
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
   const [sources, setSources] = React.useState<SourceSystem[]>([]);
   const [objects, setObjects] = React.useState<CopObject[]>([]);
   const [selectedLayer, setSelectedLayer] = React.useState("air-situation");
   const [includeSynthetic, setIncludeSynthetic] = React.useState(true);
   const [minConfidence, setMinConfidence] = React.useState(0.2);
+  const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [isLoading, setIsLoading] = React.useState(false);
   const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad COP daty.");
 
-  React.useEffect(() => {
-    const load = async () => {
-      const headers = { Authorization: "Bearer dev-lab-token" };
-      const [healthResponse, sourcesResponse, tracksResponse] = await Promise.all([
-        fetch(`${apiBase}/health/ready`),
-        fetch(`${apiBase}/api/v1/sources`, { headers }),
-        fetch(`${apiBase}/api/v1/cop/tracks?includeSynthetic=true`, { headers })
-      ]);
-      setHealth(await healthResponse.json());
-      const sourcePayload = (await sourcesResponse.json()) as { items?: SourceSystem[] };
-      const tracksPayload = (await tracksResponse.json()) as { items?: CopObject[] };
-      setSources(sourcePayload.items ?? []);
-      setObjects(tracksPayload.items ?? []);
-    };
-    void load();
+  const load = React.useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await fetchCopDashboardData(apiBase, labToken);
+      setHealth(data.health);
+      setSources(data.sources);
+      setObjects(data.objects);
+      setLastLoadedAt(new Date().toLocaleTimeString("cs-CZ"));
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Nepodařilo se načíst COP data.");
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const visibleObjects = objects.filter((object) => {
-    if (!includeSynthetic && object.synthetic) {
-      return false;
-    }
-    return (object.confidence ?? 0) >= minConfidence;
-  });
+  React.useEffect(() => {
+    void load();
+    const timer = window.setInterval(() => {
+      void load();
+    }, refreshIntervalMs);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  const visibleObjects = filterVisibleObjects(objects, { includeSynthetic, minConfidence });
 
   async function askAi() {
     const response = await fetch(`${apiBase}/api/v1/ai/cop-assistant/query`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: "Bearer dev-lab-token"
+        Authorization: `Bearer ${labToken}`
       },
       body: JSON.stringify({
         requestId: crypto.randomUUID(),
@@ -110,10 +107,21 @@ function App() {
 
       <section className="workspace">
         <aside className="panel left-panel">
+          <div className="refresh-row">
+            <div>
+              <span>Poslední načtení</span>
+              <strong>{lastLoadedAt ?? "čekám na data"}</strong>
+            </div>
+            <button className="icon-button" onClick={() => void load()} disabled={isLoading} title="Obnovit COP data">
+              <RefreshCw size={16} className={isLoading ? "spin" : ""} />
+            </button>
+          </div>
+          {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
+
           <PanelTitle icon={<Layers size={17} />} title="Vrstvy" />
           <LayerButton active={selectedLayer === "air-situation"} onClick={() => setSelectedLayer("air-situation")} label="Air situation" count={objects.length} />
-          <LayerButton active={selectedLayer === "uav"} onClick={() => setSelectedLayer("uav")} label="UAV" count={objects.filter((o) => o.objectType === "UAV").length} />
-          <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={objects.filter((o) => (o.confidence ?? 0) < 0.5).length} />
+          <LayerButton active={selectedLayer === "uav"} onClick={() => setSelectedLayer("uav")} label="UAV" count={getUavCount(objects)} />
+          <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={getDataQualityCount(objects)} />
 
           <div className="control-block">
             <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry" />
@@ -139,6 +147,7 @@ function App() {
                 </div>
               </div>
             ))}
+            {sources.length === 0 ? <div className="empty-mini">Source Registry zatím nevrátil žádné zdroje.</div> : null}
           </div>
         </aside>
 
@@ -245,8 +254,11 @@ function ObjectDetail({ object }: { object: CopObject }) {
   );
 }
 
-createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+const rootElement = document.getElementById("root");
+if (rootElement) {
+  createRoot(rootElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+}

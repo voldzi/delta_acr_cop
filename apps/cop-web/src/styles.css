@@ -130,6 +130,66 @@ h1 {
   overflow: auto;
 }
 
+.refresh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(133, 151, 169, 0.18);
+}
+
+.refresh-row span {
+  display: block;
+  color: #92a1ae;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.refresh-row strong {
+  display: block;
+  margin-top: 3px;
+  color: #e8eef5;
+  font-size: 13px;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(140, 182, 216, 0.42);
+  background: rgba(22, 32, 43, 0.82);
+  color: #c8f08d;
+  cursor: pointer;
+}
+
+.icon-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-banner {
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid rgba(230, 188, 97, 0.5);
+  background: rgba(230, 188, 97, 0.12);
+  color: #f0dca7;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .panel-title {
   display: flex;
   align-items: center;
@@ -206,6 +266,13 @@ h1 {
 .source-row small {
   color: #8997a3;
   overflow-wrap: anywhere;
+}
+
+.empty-mini {
+  margin-top: 10px;
+  color: #8997a3;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .dot {
