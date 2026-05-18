@@ -122,7 +122,7 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
           paint: {
             "circle-color": ["get", "symbolColor"],
             "circle-opacity": 0.16,
-            "circle-radius": 24,
+            "circle-radius": 18,
             "circle-stroke-color": "#ffffff",
             "circle-stroke-opacity": 0.86,
             "circle-stroke-width": 2
@@ -135,7 +135,7 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
           source: trackSourceId,
           layout: {
             "icon-image": ["get", "symbolKey"],
-            "icon-size": 0.74,
+            "icon-size": 0.46,
             "icon-allow-overlap": true,
             "icon-ignore-placement": true
           }
@@ -333,17 +333,21 @@ async function registerNatoSymbolImages(map: maplibregl.Map) {
   const objectTypes = ["AIRCRAFT", "UAV", "MISSILE_TRACK", "GROUND_UNIT", "RESCUE_ASSET", "INCIDENT", "REPORT", "UNKNOWN"];
   const affiliations = ["FRIEND", "ASSUMED_FRIEND", "HOSTILE", "SUSPECT", "NEUTRAL", "UNKNOWN", "PENDING"];
 
+  const registrations = new Map<string, { objectType: string; affiliation: string }>();
+  objectTypes.forEach((objectType) => {
+    affiliations.forEach((affiliation) => {
+      registrations.set(getNatoIconKey(objectType, affiliation), { objectType, affiliation });
+    });
+  });
+
   await Promise.all(
-    objectTypes.flatMap((objectType) =>
-      affiliations.map(async (affiliation) => {
-        const key = getNatoIconKey(objectType, affiliation);
-        if (!map.hasImage(key)) {
-          map.addImage(key, await createNatoSymbolImage(objectType, affiliation), {
-            pixelRatio: window.devicePixelRatio || 1
-          });
-        }
-      })
-    )
+    Array.from(registrations.entries()).map(async ([key, registration]) => {
+      if (!map.hasImage(key)) {
+        map.addImage(key, await createNatoSymbolImage(registration.objectType, registration.affiliation), {
+          pixelRatio: window.devicePixelRatio || 1
+        });
+      }
+    })
   );
 }
 
