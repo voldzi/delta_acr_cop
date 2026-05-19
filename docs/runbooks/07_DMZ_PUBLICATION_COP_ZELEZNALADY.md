@@ -39,10 +39,11 @@ COP_API_PORT=4310
 COP_WEB_PORT=4311
 COP_PUBLIC_API_BASE_URL=
 COP_DEPLOY_DOMAIN=cop.zeleznalady.cz
+COP_WEB_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
 COP_WEB_REFRESH_MS=5000
 ```
 
-`COP_PUBLIC_API_BASE_URL=` musi zustat prazdne, aby frontend volal `/api/...` pres verejnou domenu. `COP_DEPLOY_DOMAIN` se predava do Vite preview serveru a povoluje verejny host v `preview.allowedHosts`.
+`COP_PUBLIC_API_BASE_URL=` musi zustat prazdne, aby frontend volal `/api/...` pres verejnou domenu. `COP_DEPLOY_DOMAIN` a `COP_WEB_ALLOWED_HOSTS` se predavaji do Vite preview serveru a povoluji verejny host i lokalni pilot `docker.home.cz`.
 
 Pro internetovy pilot zmen vychozi lab token. Hodnota `COP_PUBLIC_LAB_VALUE` je soucasti frontendu, proto to neni produkcni autentizace, pouze pilotni ochrana API endpointu:
 

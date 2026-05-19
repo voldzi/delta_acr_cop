@@ -36,6 +36,7 @@ services:
     environment:
       COP_WEB_PORT: "4311"
       COP_DEPLOY_DOMAIN: "${COP_DEPLOY_DOMAIN:-docker.home.cz}"
+      COP_WEB_ALLOWED_HOSTS: "${COP_WEB_ALLOWED_HOSTS:-}"
     ports:
       - "${COP_WEB_PORT:-4311}:4311"
     depends_on:
