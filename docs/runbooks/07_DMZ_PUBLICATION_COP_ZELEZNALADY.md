@@ -42,6 +42,8 @@ COP_DEPLOY_DOMAIN=cop.zeleznalady.cz
 COP_WEB_REFRESH_MS=5000
 ```
 
+`COP_PUBLIC_API_BASE_URL=` musi zustat prazdne, aby frontend volal `/api/...` pres verejnou domenu. `COP_DEPLOY_DOMAIN` se predava do Vite preview serveru a povoluje verejny host v `preview.allowedHosts`.
+
 Pro internetovy pilot zmen vychozi lab token. Hodnota `COP_PUBLIC_LAB_VALUE` je soucasti frontendu, proto to neni produkcni autentizace, pouze pilotni ochrana API endpointu:
 
 ```bash
@@ -149,6 +151,14 @@ curl -fsS http://cop.zeleznalady.cz/health/ready
 ```
 
 V teto fazi musi fungovat `http://cop.zeleznalady.cz` bez redirectu na HTTPS.
+
+Pokud `curl -I http://cop.zeleznalady.cz` vraci `301` na HTTPS uz v teto fazi, nginx stale pouziva jinou nebo starou konfiguraci. Najdi aktivni redirect:
+
+```bash
+sudo nginx -T | grep -nE 'server_name cop\.zeleznalady\.cz|return 301 https|ssl_certificate'
+```
+
+Pak uprav prislusny soubor v `/etc/nginx/sites-enabled/` nebo `/etc/nginx/sites-available/`, reloadni nginx a kontrolu zopakuj.
 
 ## 3. Let's Encrypt certifikat
 

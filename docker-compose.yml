@@ -33,6 +33,7 @@ services:
     image: delta-acr-cop-web:local
     environment:
       COP_WEB_PORT: "4311"
+      COP_DEPLOY_DOMAIN: "${COP_DEPLOY_DOMAIN:-docker.home.cz}"
     ports:
       - "${COP_WEB_PORT:-4311}:4311"
     depends_on:
