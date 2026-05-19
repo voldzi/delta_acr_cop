@@ -1420,6 +1420,23 @@ h1 {
   background: var(--yellow);
 }
 
+.object-detail-section {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(5, 9, 12, 0.32);
+}
+
+.object-detail-section h2 {
+  margin: 0;
+  color: #cbd5df;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 dl {
   display: grid;
   gap: 10px;
@@ -1441,6 +1458,156 @@ dd {
   margin: 0;
   color: #e7eef5;
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.detail-grid {
+  gap: 8px;
+}
+
+.detail-grid div {
+  grid-template-columns: minmax(86px, 0.65fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.detail-grid dt {
+  font-size: 9px;
+}
+
+.confidence-factor-list,
+.conflict-list,
+.object-history-list {
+  display: grid;
+  gap: 7px;
+}
+
+.confidence-factor,
+.conflict-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(142, 157, 170, 0.16);
+  background: rgba(18, 25, 31, 0.58);
+}
+
+.confidence-factor > span {
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  background: var(--muted);
+}
+
+.confidence-factor.ok > span {
+  background: var(--lime);
+}
+
+.confidence-factor.warn > span {
+  background: var(--yellow);
+}
+
+.confidence-factor strong,
+.conflict-row strong,
+.object-history-row strong {
+  display: block;
+  color: #edf3f8;
+  font-size: 12px;
+}
+
+.confidence-factor small,
+.conflict-row small,
+.object-history-row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.lineage-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: lineage;
+}
+
+.lineage-list li {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 8px 8px 32px;
+  border: 1px solid rgba(142, 157, 170, 0.16);
+  background: rgba(18, 25, 31, 0.58);
+  counter-increment: lineage;
+}
+
+.lineage-list li::before {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid rgba(140, 182, 216, 0.48);
+  color: var(--cyan);
+  content: counter(lineage);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.lineage-list span {
+  color: #cbd5df;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.lineage-list strong {
+  color: #f1f6fb;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.lineage-list small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.conflict-row svg {
+  margin-top: 1px;
+  color: var(--cyan);
+}
+
+.conflict-row.warn {
+  border-color: rgba(250, 204, 21, 0.42);
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.conflict-row.warn svg {
+  color: var(--yellow);
+}
+
+.object-history-row {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid rgba(142, 157, 170, 0.16);
+  background: rgba(18, 25, 31, 0.58);
+}
+
+.object-history-row span {
+  color: var(--cyan);
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 

@@ -67,8 +67,8 @@ Status: pilotně hotovo pro lokální profily, serverový profil čeká na produ
 Status: pilotně hotovo.
 
 - stav zdrojů, latence, poslední event a degradace,
-- vysvětlení confidence a provenance v detailu objektu,
-- konflikty zdrojů a jejich auditovatelné vysvětlení,
+- Object detail v2 vysvětluje confidence, provenance, lineage a informační konflikty,
+- další krok je audit log a serverová evidence konfliktů z fusion vrstvy,
 - metriky pro retenční velikost temporal store a stream latency.
 
 ## Evidence realizace
@@ -83,3 +83,4 @@ Status: pilotně hotovo.
 | 2026-05-19 | Replay controller v1 | Timeline umí přepnout mapu z live režimu do historického času a objektům nastavuje polohy z `/api/v1/cop/track-history`. |
 | 2026-05-19 | Responsive COP workspace v1 | Tablet a telefon režim drží mapu jako primární plochu, zkracuje horní lištu a ponechává nastavení dostupné přes operátorskou ikonu. |
 | 2026-05-19 | Workspace + view profiles v1 | Přidána modulová navigace Mapa/Data/Zdroje/Výstrahy/Replay/Nastavení a lokální profily pohledu per operátorský scope. |
+| 2026-05-19 | Object detail v2 + lineage | Detail objektu má sekce Identita/Poloha/Symbologie/Zdroj/Confidence/Data lineage/Konflikty/Source history a informační detekci datových konfliktů. |

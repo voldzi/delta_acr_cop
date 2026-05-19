@@ -54,8 +54,9 @@ import {
   type SourceSystem
 } from "./cop-data";
 import { CopMap } from "./CopMap";
+import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
-import { getAffiliationPresentation, getNatoSidc, resolveCopObjectSymbol } from "./symbology";
+import { getAffiliationPresentation } from "./symbology";
 import {
   normalizeRefreshSeconds,
   parseRefreshSeconds,
@@ -946,7 +947,12 @@ export function App() {
 
           <PanelTitle icon={<Database size={17} />} title="Object detail" />
           {selectedObject ? (
-            <ObjectDetail object={selectedObject} />
+            <ObjectDetail
+              historyPoints={replayTrackHistory[selectedObject.objectId] ?? []}
+              object={selectedObject}
+              replayActive={replayActive}
+              sourceHealth={sourceHealth}
+            />
           ) : (
             <div className="empty-state">Zatím nejsou přijata žádná COP data. Pošli validní ingest event ze SIM fixture.</div>
           )}
@@ -1616,11 +1622,21 @@ function EventStream({ events }: { events: Array<{ id: string; title: string; de
   );
 }
 
-function ObjectDetail({ object }: { object: CopObject }) {
-  const symbol = resolveCopObjectSymbol(object);
-  const affiliation = getAffiliationPresentation(object.affiliation);
-  const sidc = getNatoSidc(object.objectType, object.affiliation);
-  const provenance = getObjectProvenance(object);
+function ObjectDetail({
+  historyPoints,
+  object,
+  replayActive,
+  sourceHealth
+}: {
+  historyPoints: TrackHistory[string];
+  object: CopObject;
+  replayActive: boolean;
+  sourceHealth: SourceHealthItem[];
+}) {
+  const model = React.useMemo(
+    () => buildObjectDetailModel({ historyPoints, object, sourceHealth }),
+    [historyPoints, object, sourceHealth]
+  );
 
   return (
     <div className="object-detail">
@@ -1631,67 +1647,162 @@ function ObjectDetail({ object }: { object: CopObject }) {
         </div>
         <em>{object.status}</em>
       </div>
-      <dl>
-        <div>
-          <dt>Affiliation</dt>
-          <dd>
-            <span className={`affiliation-chip ${affiliation.disposition}`}>{affiliation.label}</span>
-            {object.affiliation}
-          </dd>
-        </div>
-        <div>
-          <dt>Domain</dt>
-          <dd>{object.domain}</dd>
-        </div>
-        <div>
-          <dt>NATO symbol</dt>
-          <dd>{symbol.symbolCode}</dd>
-        </div>
-        <div>
-          <dt>SIDC</dt>
-          <dd>{sidc}</dd>
-        </div>
-        <div>
-          <dt>Confidence</dt>
-          <dd>{Math.round((object.confidence ?? 0) * 100)} %</dd>
-        </div>
-        <div>
-          <dt>Position</dt>
-          <dd>{formatPosition(object)}</dd>
-        </div>
-        <div>
-          <dt>Movement</dt>
-          <dd>{formatMovement(object)}</dd>
-        </div>
-        <div>
-          <dt>Age</dt>
-          <dd>{formatAge(object.lastUpdatedAt)}</dd>
-        </div>
-        <div>
-          <dt>Source</dt>
-          <dd>{provenance?.sourceSystemId ?? "n/a"}</dd>
-        </div>
-        <div>
-          <dt>Adapter</dt>
-          <dd>{formatAdapter(provenance)}</dd>
-        </div>
-        <div>
-          <dt>Producer time</dt>
-          <dd>{formatShortDateTime(provenance?.producerTimestamp)}</dd>
-        </div>
-        <div>
-          <dt>Latency</dt>
-          <dd>{formatLatency(provenance?.latencyMs)}</dd>
-        </div>
-        <div>
-          <dt>Reliability</dt>
-          <dd>{formatReliability(provenance)}</dd>
-        </div>
-      </dl>
+
+      <ObjectDetailSection title="Identita">
+        <DetailGrid
+          rows={[
+            ["Affiliation", <><span className={`affiliation-chip ${model.affiliation.disposition}`}>{model.affiliation.label}</span>{object.affiliation}</>],
+            ["Domain", object.domain],
+            ["Status", replayActive ? `${object.status} / replay` : object.status],
+            ["Confidence", `${Math.round((object.confidence ?? 0) * 100)} %`]
+          ]}
+        />
+      </ObjectDetailSection>
+
+      <ObjectDetailSection title="Poloha">
+        <DetailGrid
+          rows={[
+            ["Position", formatPosition(object)],
+            ["Movement", formatMovement(object)],
+            ["Age", formatAge(object.lastUpdatedAt)],
+            ["History points", String(historyPoints.length)]
+          ]}
+        />
+      </ObjectDetailSection>
+
+      <ObjectDetailSection title="Symbologie">
+        <DetailGrid
+          rows={[
+            ["NATO symbol", model.symbolCode],
+            ["SIDC", model.sidc],
+            ["Resolution", `${object.objectType} / ${object.affiliation} / ${object.status}`]
+          ]}
+        />
+      </ObjectDetailSection>
+
+      <ObjectDetailSection title="Zdroj">
+        <DetailGrid
+          rows={[
+            ["Source", model.provenance?.sourceSystemId ?? "n/a"],
+            ["Adapter", formatAdapter(model.provenance)],
+            ["Producer time", formatShortDateTime(model.provenance?.producerTimestamp)],
+            ["Ingest time", formatShortDateTime(model.provenance?.ingestTimestamp)],
+            ["Latency", formatLatency(model.provenance?.latencyMs)],
+            ["Reliability", formatReliability(model.provenance)]
+          ]}
+        />
+      </ObjectDetailSection>
+
+      <ObjectDetailSection title="Confidence">
+        <ConfidenceFactorList factors={model.confidenceFactors} />
+      </ObjectDetailSection>
+
+      <ObjectDetailSection title="Data lineage">
+        <LineageList steps={model.lineage} />
+      </ObjectDetailSection>
+
+      <ObjectDetailSection title="Konflikty">
+        <ConflictList conflicts={model.conflicts} />
+      </ObjectDetailSection>
+
+      <ObjectDetailSection title="Source history">
+        <ObjectHistoryList history={model.history} />
+      </ObjectDetailSection>
+
       <div className="object-flags">
         {object.synthetic ? <span className="synthetic-badge">SIM</span> : null}
         {(object.confidence ?? 0) < 0.5 ? <span className="warning-badge">LOW CONFIDENCE</span> : null}
+        {model.conflicts.some((conflict) => conflict.severity === "warn") ? <span className="warning-badge">DATA CONFLICT</span> : null}
       </div>
+    </div>
+  );
+}
+
+function ObjectDetailSection({ children, title }: { children: React.ReactNode; title: string }) {
+  return (
+    <section className="object-detail-section">
+      <h2>{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function DetailGrid({ rows }: { rows: Array<[string, React.ReactNode]> }) {
+  return (
+    <dl className="detail-grid">
+      {rows.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function ConfidenceFactorList({ factors }: { factors: ConfidenceFactor[] }) {
+  return (
+    <div className="confidence-factor-list">
+      {factors.map((factor) => (
+        <div className={`confidence-factor ${factor.tone}`} key={factor.label}>
+          <span />
+          <div>
+            <strong>{factor.label}</strong>
+            <small>{factor.detail}</small>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LineageList({ steps }: { steps: LineageStep[] }) {
+  return (
+    <ol className="lineage-list">
+      {steps.map((step) => (
+        <li key={step.label}>
+          <span>{step.label}</span>
+          <strong>{step.status}</strong>
+          <small>{step.detail}</small>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ConflictList({ conflicts }: { conflicts: ObjectConflict[] }) {
+  return (
+    <div className="conflict-list">
+      {conflicts.map((conflict) => (
+        <div className={`conflict-row ${conflict.severity}`} key={conflict.title}>
+          <AlertTriangle size={14} />
+          <div>
+            <strong>{conflict.title}</strong>
+            <small>{conflict.detail}</small>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ObjectHistoryList({ history }: { history: ObjectHistoryEntry[] }) {
+  if (history.length === 0) {
+    return <div className="empty-mini">Temporal store zatím nemá body pro tento objekt.</div>;
+  }
+
+  return (
+    <div className="object-history-list">
+      {history.map((entry) => (
+        <div className="object-history-row" key={`${entry.timestamp}-${entry.eventId ?? entry.sourceSystemId ?? "point"}`}>
+          <strong>{formatShortDateTime(entry.timestamp)}</strong>
+          <span>{entry.sourceSystemId ?? "source n/a"}</span>
+          <small>
+            {entry.status ?? "status n/a"} · {entry.confidence === undefined ? "confidence n/a" : `${Math.round(entry.confidence * 100)} %`} ·{" "}
+            {entry.lat.toFixed(3)}, {entry.lon.toFixed(3)}
+          </small>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1802,10 +1913,6 @@ function buildEventStream(objects: CopObject[]) {
       tone: affiliation.disposition
     };
   });
-}
-
-function getObjectProvenance(object: CopObject): ObjectProvenance | undefined {
-  return object.attributes?.provenance;
 }
 
 function sourceHealthLabel(status: SourceHealthItem["health"]): string {
