@@ -27,6 +27,8 @@ Implementační pilot rozlišuje dvě datové vrstvy:
 
 ## Retence a persistence pilotu
 
-V pilotu je temporal historie vždy držena i v paměti API procesu s limitem bodů na stopu. API navíc podporuje volitelný PostgreSQL temporal store přes `COP_TRACK_HISTORY_STORE=postgres` a `COP_DATABASE_URL`. Doporučený provozní endpoint je HAProxy před Patroni clusterem, například `haproxy.home.cz`; aplikace se nepřipojuje přímo na Patroni nody ani na etcd.
+V pilotu je aktuální stav vždy držen v paměti API procesu pro rychlé čtení a temporal historie má in-memory fallback s limitem bodů na stopu. API navíc podporuje volitelný PostgreSQL store přes `COP_TRACK_HISTORY_STORE=postgres` a `COP_DATABASE_URL`. Doporučený provozní endpoint je HAProxy před Patroni clusterem, například `haproxy.home.cz`; aplikace se nepřipojuje přímo na Patroni nody ani na etcd.
 
-Query vrstva podporuje časové okno v sekundách, absolutní `from`/`to`, omezení `limit` a filtr `objectIds`. PostgreSQL store ukládá body do tabulky `cop_track_history` a používá `event_id` jako idempotentní klíč. Další produkční krok je doplnit retenci, stránkování nad velkými výsledky a obnovu aktuálního snapshotu po restartu.
+PostgreSQL store ukládá body historie do tabulky `cop_track_history` a používá `event_id` jako idempotentní klíč. Poslední známý stav každého objektu ukládá do `cop_current_tracks`; při startu API se z této tabulky obnoví `objects` a lifecycle logika následně vyhodnotí active/stale/expired stav podle času.
+
+Query vrstva historie podporuje časové okno v sekundách, absolutní `from`/`to`, omezení `limit` a filtr `objectIds`. Další produkční krok je doplnit retenci a stránkování nad velkými výsledky.

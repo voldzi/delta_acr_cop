@@ -2,7 +2,7 @@ import cors from "@fastify/cors";
 import sensible from "@fastify/sensible";
 import websocket from "@fastify/websocket";
 import { AiGateway } from "@cop/ai-gateway";
-import { createCopObjectFromEvent, type CanonicalEventEnvelope, type SourceSystem } from "@cop/canonical-model";
+import { createCopObjectFromEvent, type CanonicalEventEnvelope, type ObservedObject, type SourceSystem } from "@cop/canonical-model";
 import { ContractValidators, formatValidationErrors } from "@cop/ingest-contracts";
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
 import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
@@ -38,6 +38,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
+  let restoredCurrentTrackCount = 0;
 
   app.decorate("copState", state);
   void app.register(cors, { origin: true });
@@ -50,8 +51,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     try {
       await trackHistoryStore.init();
+      restoredCurrentTrackCount = await restoreCurrentState();
       trackHistoryStoreStatus = "ok";
-      trackHistoryStoreDetail = `${trackHistoryStore.name}: ready`;
+      trackHistoryStoreDetail = `${trackHistoryStore.name}: ready; restored ${restoredCurrentTrackCount} current tracks`;
     } catch (error) {
       trackHistoryStoreStatus = "degraded";
       trackHistoryStoreDetail = `${trackHistoryStore.name}: ${errorMessage(error)}`;
@@ -85,6 +87,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.get("/metrics", async (_request, reply) => {
     const currentObjects = selectCurrentTracks(state.objects.values(), now(), trackLifecycle);
     const trackHistoryPointCount = await countTrackHistoryPoints();
+    const persistedCurrentTrackCount = await countPersistedCurrentTracks();
     const lines = [
       "# HELP cop_sources_total Registered COP source systems.",
       "# TYPE cop_sources_total gauge",
@@ -95,6 +98,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       "# HELP cop_objects_total Current non-expired COP objects.",
       "# TYPE cop_objects_total gauge",
       `cop_objects_total ${currentObjects.length}`,
+      "# HELP cop_current_tracks_persisted_total Persisted current COP track snapshots.",
+      "# TYPE cop_current_tracks_persisted_total gauge",
+      `cop_current_tracks_persisted_total ${persistedCurrentTrackCount}`,
       "# HELP cop_track_history_points_total Retained temporal track history points.",
       "# TYPE cop_track_history_points_total gauge",
       `cop_track_history_points_total ${trackHistoryPointCount}`
@@ -113,6 +119,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return Array.from(state.trackHistory.values()).reduce((sum, points) => sum + points.length, 0);
   }
 
+  async function countPersistedCurrentTracks(): Promise<number> {
+    if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
+      try {
+        return await trackHistoryStore.countCurrent();
+      } catch (error) {
+        markTrackHistoryStoreDegraded(error);
+      }
+    }
+    return state.objects.size;
+  }
+
+  async function restoreCurrentState(): Promise<number> {
+    if (!trackHistoryStore) {
+      return 0;
+    }
+    const objects = await trackHistoryStore.loadCurrent();
+    for (const object of objects) {
+      state.objects.set(object.objectId, object);
+    }
+    return objects.length;
+  }
+
   function markTrackHistoryStoreDegraded(error: unknown): void {
     if (!trackHistoryStore) {
       return;
@@ -128,6 +156,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     try {
       await trackHistoryStore.append(point);
+    } catch (error) {
+      markTrackHistoryStoreDegraded(error);
+    }
+  }
+
+  async function persistCurrentTrack(object: ObservedObject, event: CanonicalEventEnvelope): Promise<void> {
+    if (!trackHistoryStore || trackHistoryStoreStatus !== "ok") {
+      return;
+    }
+    try {
+      await trackHistoryStore.upsertCurrent(object, event);
     } catch (error) {
       markTrackHistoryStoreDegraded(error);
     }
@@ -235,7 +274,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
 
-    return handleIngestEvent(state, validation.data, request.headers, reply, correlationId, persistTrackHistoryPoint);
+    return handleIngestEvent(state, validation.data, request.headers, reply, correlationId, persistCurrentTrack, persistTrackHistoryPoint);
   });
 
   app.post("/api/v1/ingest/batches", async (request, reply) => {
@@ -259,6 +298,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
 
       const result = acceptEvent(state, validation.data);
+      await persistCurrentTrack(result.object, result.accepted);
       await persistTrackHistoryPoint(result.historyPoint);
       items.push({ eventId: result.accepted.eventId, status: "QUEUED" });
     }
@@ -387,6 +427,7 @@ async function handleIngestEvent(
   headers: Record<string, string | string[] | undefined>,
   reply: FastifyReply,
   correlationId: string,
+  persistCurrentTrack: (object: ObservedObject, event: CanonicalEventEnvelope) => Promise<void>,
   persistTrackHistoryPoint: (point: TrackHistoryPoint | undefined) => Promise<void>
 ) {
   const headerSource = headerAsString(headers["x-source-system-id"]);
@@ -424,6 +465,7 @@ async function handleIngestEvent(
   }
 
   const result = acceptEvent(state, event);
+  await persistCurrentTrack(result.object, result.accepted);
   await persistTrackHistoryPoint(result.historyPoint);
   const accepted = result.accepted;
   const response = {
@@ -442,7 +484,7 @@ async function handleIngestEvent(
 function acceptEvent(
   state: CopState,
   event: CanonicalEventEnvelope
-): { accepted: CanonicalEventEnvelope; historyPoint: TrackHistoryPoint | undefined } {
+): { accepted: CanonicalEventEnvelope; historyPoint: TrackHistoryPoint | undefined; object: ObservedObject } {
   const accepted: CanonicalEventEnvelope = {
     ...event,
     ingestTimestamp: event.ingestTimestamp ?? new Date().toISOString()
@@ -451,7 +493,7 @@ function acceptEvent(
   const object = createCopObjectFromEvent(accepted);
   state.objects.set(object.objectId, object);
   const historyPoint = appendTrackHistory(state, accepted, object);
-  return { accepted, historyPoint };
+  return { accepted, historyPoint, object };
 }
 
 function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {

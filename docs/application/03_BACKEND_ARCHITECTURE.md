@@ -20,4 +20,4 @@ Backend nesmí generovat doporučení použití síly ani podporovat weapon work
 
 Pilot běží jako Fastify API s in-memory aktuálním stavem. Aktuální objektový stav je uložený v `objects`, eventy v `events` a časová historie stop v `trackHistory`. Endpoint `/api/v1/cop/tracks` vrací aktuální situační obraz po lifecycle filtraci, endpoint `/api/v1/cop/track-history` vrací retenované body historie pro analytické vrstvy mapy.
 
-Temporal history má volitelný PostgreSQL backend. V domácím prostředí se připojuje přes HAProxy před Patroni clusterem (`haproxy.home.cz`), ne přímo na Patroni nody. Produkční rozšíření musí doplnit retenci, stránkování, obnovu aktuálního snapshotu po restartu a realtime distribuci přes SSE nebo WebSocket.
+Temporal history a current snapshot mají volitelný PostgreSQL backend. V domácím prostředí se připojuje přes HAProxy před Patroni clusterem (`haproxy.home.cz`), ne přímo na Patroni nody. API při startu obnoví `objects` z `cop_current_tracks`; produkční rozšíření musí doplnit retenci, stránkování dlouhých tras a realtime distribuci přes SSE nebo WebSocket.

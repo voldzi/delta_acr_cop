@@ -1,4 +1,5 @@
 import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import type { CanonicalEventEnvelope, ObservedObject } from "@cop/canonical-model";
 import type { TrackHistoryQuery } from "./temporal-history.js";
 import type { TrackHistoryPoint } from "./types.js";
 
@@ -8,9 +9,12 @@ export interface TrackHistoryStore {
   readonly name: string;
   append(point: TrackHistoryPoint): Promise<void>;
   close(): Promise<void>;
+  countCurrent(): Promise<number>;
   count(): Promise<number>;
   init(): Promise<void>;
+  loadCurrent(): Promise<ObservedObject[]>;
   query(query: TrackHistoryQuery, now: Date): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>>;
+  upsertCurrent(object: ObservedObject, event: CanonicalEventEnvelope): Promise<void>;
 }
 
 export function createTrackHistoryStoreFromEnv(env: Record<string, string | undefined> = process.env): TrackHistoryStore | undefined {
@@ -45,7 +49,7 @@ export class PostgresTrackHistoryStore implements TrackHistoryStore {
   }
 
   async init(): Promise<void> {
-    await this.pool.query(createTrackHistoryTableSql);
+    await this.pool.query(createPersistenceTablesSql);
   }
 
   async append(point: TrackHistoryPoint): Promise<void> {
@@ -145,6 +149,65 @@ export class PostgresTrackHistoryStore implements TrackHistoryStore {
     return Number(result.rows[0]?.count ?? 0);
   }
 
+  async upsertCurrent(object: ObservedObject, event: CanonicalEventEnvelope): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO cop_current_tracks (
+        object_id,
+        object_type,
+        affiliation,
+        domain,
+        status,
+        object_json,
+        event_id,
+        source_system_id,
+        last_updated_at,
+        synthetic,
+        confidence
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::timestamptz, $10, $11)
+      ON CONFLICT (object_id) DO UPDATE SET
+        object_type = EXCLUDED.object_type,
+        affiliation = EXCLUDED.affiliation,
+        domain = EXCLUDED.domain,
+        status = EXCLUDED.status,
+        object_json = EXCLUDED.object_json,
+        event_id = EXCLUDED.event_id,
+        source_system_id = EXCLUDED.source_system_id,
+        last_updated_at = EXCLUDED.last_updated_at,
+        synthetic = EXCLUDED.synthetic,
+        confidence = EXCLUDED.confidence,
+        updated_at = now()
+      WHERE cop_current_tracks.last_updated_at <= EXCLUDED.last_updated_at`,
+      [
+        object.objectId,
+        object.objectType,
+        object.affiliation,
+        object.domain,
+        object.status,
+        JSON.stringify(object),
+        event.eventId,
+        event.source.sourceSystemId,
+        object.lastUpdatedAt ?? event.ingestTimestamp ?? event.producerTimestamp,
+        object.synthetic ?? false,
+        object.confidence ?? null
+      ]
+    );
+  }
+
+  async loadCurrent(): Promise<ObservedObject[]> {
+    const result = await this.pool.query<CurrentTrackRow>(
+      `SELECT object_json
+      FROM cop_current_tracks
+      ORDER BY last_updated_at DESC`
+    );
+    return result.rows.map((row) => observedObjectFromJson(row.object_json));
+  }
+
+  async countCurrent(): Promise<number> {
+    const result = await this.pool.query<{ count: string }>("SELECT count(*)::text AS count FROM cop_current_tracks");
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
   async close(): Promise<void> {
     await this.pool.end();
   }
@@ -166,7 +229,11 @@ interface TrackHistoryRow extends QueryResultRow {
   synthetic: boolean;
 }
 
-const createTrackHistoryTableSql = `
+interface CurrentTrackRow extends QueryResultRow {
+  object_json: ObservedObject | string;
+}
+
+const createPersistenceTablesSql = `
 CREATE TABLE IF NOT EXISTS cop_track_history (
   event_id uuid PRIMARY KEY,
   object_id text NOT NULL,
@@ -189,6 +256,27 @@ CREATE INDEX IF NOT EXISTS cop_track_history_object_observed_idx
 
 CREATE INDEX IF NOT EXISTS cop_track_history_observed_idx
   ON cop_track_history (observed_at DESC);
+
+CREATE TABLE IF NOT EXISTS cop_current_tracks (
+  object_id text PRIMARY KEY,
+  object_type text NOT NULL,
+  affiliation text NOT NULL,
+  domain text NOT NULL,
+  status text NOT NULL,
+  object_json jsonb NOT NULL,
+  event_id uuid NOT NULL,
+  source_system_id text NOT NULL,
+  last_updated_at timestamptz NOT NULL,
+  synthetic boolean NOT NULL,
+  confidence double precision,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS cop_current_tracks_last_updated_idx
+  ON cop_current_tracks (last_updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS cop_current_tracks_source_idx
+  ON cop_current_tracks (source_system_id);
 `;
 
 function addParam(params: unknown[], value: unknown): string {
@@ -231,6 +319,10 @@ function trackHistoryPointFromRow(row: TrackHistoryRow): TrackHistoryPoint {
     synthetic: row.synthetic,
     timestamp: isoString(row.observed_at)
   };
+}
+
+function observedObjectFromJson(value: ObservedObject | string): ObservedObject {
+  return typeof value === "string" ? JSON.parse(value) as ObservedObject : value;
 }
 
 function isoString(value: Date | string): string {

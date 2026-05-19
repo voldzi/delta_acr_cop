@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CanonicalEventEnvelope } from "@cop/canonical-model";
+import type { CanonicalEventEnvelope, ObservedObject } from "@cop/canonical-model";
 import { buildServer } from "./server.js";
 import type { TrackHistoryStore } from "./track-history-store.js";
 import type { TrackHistoryQuery } from "./temporal-history.js";
@@ -71,6 +71,7 @@ describe("COP state temporal history", () => {
     expect(response.statusCode).toBe(200);
     expect(store.initCalled).toBe(true);
     expect(store.appended).toHaveLength(1);
+    expect(store.current.get("AIR_SIM_UAV-0001")?.position?.lat).toBe(50.03);
     expect(store.queryCalls).toBe(1);
     expect(response.json()).toMatchObject({
       items: [
@@ -89,13 +90,65 @@ describe("COP state temporal history", () => {
 
     await app.close();
   });
+
+  it("restores current tracks from the configured persistent store on startup", async () => {
+    const store = new FakeTrackHistoryStore([
+      {
+        affiliation: "HOSTILE",
+        confidence: 0.9,
+        domain: "AIR",
+        lastUpdatedAt: "2026-05-19T08:02:00Z",
+        objectId: "AIR_SIM_UAV-RESTORED",
+        objectType: "UAV",
+        position: { lat: 50.05, lon: 14.05 },
+        status: "ACTIVE",
+        synthetic: true
+      }
+    ]);
+    const app = buildServer({
+      now: () => new Date("2026-05-19T08:02:10Z"),
+      trackHistoryStore: store
+    });
+
+    const response = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/tracks"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(store.loadCurrentCalls).toBe(1);
+    expect(response.json()).toMatchObject({
+      items: [
+        {
+          objectId: "AIR_SIM_UAV-RESTORED",
+          position: {
+            lat: 50.05,
+            lon: 14.05
+          }
+        }
+      ]
+    });
+
+    await app.close();
+  });
 });
 
 class FakeTrackHistoryStore implements TrackHistoryStore {
   readonly name = "fake";
   appended: TrackHistoryPoint[] = [];
+  current = new Map<string, ObservedObject>();
   initCalled = false;
+  loadCurrentCalls = 0;
   queryCalls = 0;
+
+  constructor(currentObjects: ObservedObject[] = []) {
+    for (const object of currentObjects) {
+      this.current.set(object.objectId, object);
+    }
+  }
 
   async init(): Promise<void> {
     this.initCalled = true;
@@ -103,6 +156,15 @@ class FakeTrackHistoryStore implements TrackHistoryStore {
 
   async append(point: TrackHistoryPoint): Promise<void> {
     this.appended.push(point);
+  }
+
+  async upsertCurrent(object: ObservedObject, _event: CanonicalEventEnvelope): Promise<void> {
+    this.current.set(object.objectId, object);
+  }
+
+  async loadCurrent(): Promise<ObservedObject[]> {
+    this.loadCurrentCalls += 1;
+    return Array.from(this.current.values());
   }
 
   async query(_query: TrackHistoryQuery, _now: Date): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>> {
@@ -117,6 +179,10 @@ class FakeTrackHistoryStore implements TrackHistoryStore {
 
   async count(): Promise<number> {
     return this.appended.length;
+  }
+
+  async countCurrent(): Promise<number> {
+    return this.current.size;
   }
 
   async close(): Promise<void> {}
