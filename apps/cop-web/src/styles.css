@@ -452,6 +452,7 @@ h1 {
 
 .control-block,
 .source-list,
+.source-health-box,
 .ai-box,
 .readiness-box,
 .personal-awareness-box {
@@ -652,6 +653,115 @@ h1 {
   align-items: center;
   padding: 9px 0;
   border-bottom: 1px solid rgba(142, 157, 170, 0.1);
+}
+
+.source-health-list {
+  display: grid;
+  gap: 8px;
+}
+
+.source-health-row {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(142, 157, 170, 0.2);
+  background: rgba(5, 9, 12, 0.44);
+}
+
+.source-health-row > div:first-child {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.source-health-row strong,
+.source-health-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-health-row strong {
+  color: #edf3f8;
+  font-size: 12px;
+}
+
+.source-health-row small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.source-health-row dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.source-health-row dl div {
+  display: grid;
+  gap: 3px;
+}
+
+.source-health-row dt {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.source-health-row dd {
+  margin: 0;
+  color: #f1f6fb;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.health-chip {
+  grid-row: span 2;
+  align-self: center;
+  min-width: 58px;
+  padding: 3px 6px;
+  border: 1px solid rgba(142, 157, 170, 0.3);
+  color: #dfe8f0;
+  font-size: 9px;
+  font-weight: 900;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.health-chip.online {
+  border-color: rgba(34, 197, 94, 0.58);
+  color: var(--lime);
+}
+
+.health-chip.quiet,
+.health-chip.waiting {
+  border-color: rgba(250, 204, 21, 0.5);
+  color: var(--yellow);
+}
+
+.health-chip.stale,
+.health-chip.disabled {
+  border-color: rgba(239, 68, 68, 0.56);
+  color: #fca5a5;
+}
+
+.source-health-warnings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.source-health-warnings span {
+  padding: 3px 6px;
+  border: 1px solid rgba(250, 204, 21, 0.34);
+  color: #f8df8d;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .source-row strong {

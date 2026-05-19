@@ -134,6 +134,55 @@ describe("COP state temporal history", () => {
 
     await app.close();
   });
+
+  it("reports source health and object provenance for accepted events", async () => {
+    const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
+
+    await ingestTrack(app, "00000000-0000-4000-8000-000000000007", "2026-05-19T08:02:00Z", 50.04, 14.04);
+
+    const healthResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/sources/health"
+    });
+    expect(healthResponse.statusCode).toBe(200);
+    expect(healthResponse.json()).toMatchObject({
+      items: [
+        {
+          acceptedEvents: 1,
+          currentTracks: 1,
+          health: "ONLINE",
+          sourceSystemId: "sim-air-situation-001",
+          totalTracks: 1
+        }
+      ]
+    });
+
+    const tracksResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/tracks"
+    });
+    expect(tracksResponse.statusCode).toBe(200);
+    expect(tracksResponse.json()).toMatchObject({
+      items: [
+        {
+          attributes: {
+            provenance: {
+              adapterId: "sim-adapter",
+              eventId: "00000000-0000-4000-8000-000000000007",
+              sourceSystemId: "sim-air-situation-001"
+            }
+          },
+          objectId: "AIR_SIM_UAV-0001"
+        }
+      ]
+    });
+  });
 });
 
 class FakeTrackHistoryStore implements TrackHistoryStore {

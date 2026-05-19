@@ -49,6 +49,8 @@ import {
   type CopLayer,
   type CopObject,
   type HealthStatus,
+  type ObjectProvenance,
+  type SourceHealthItem,
   type SourceSystem
 } from "./cop-data";
 import { CopMap } from "./CopMap";
@@ -108,6 +110,7 @@ export function App() {
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
   const [sources, setSources] = React.useState<SourceSystem[]>([]);
+  const [sourceHealth, setSourceHealth] = React.useState<SourceHealthItem[]>([]);
   const [objects, setObjects] = React.useState<CopObject[]>([]);
   const [selectedLayer, setSelectedLayer] = React.useState<CopLayer>(() => readInitialLayer(initialPreferences.selectedLayer));
   const [selectedObjectId, setSelectedObjectId] = React.useState<string | null>(null);
@@ -190,6 +193,7 @@ export function App() {
       const observedAt = new Date();
       setHealth(data.health);
       setSources(data.sources);
+      setSourceHealth(data.sourceHealth);
       setObjects(data.objects);
       setTrackHistory((current) =>
         data.trackHistory
@@ -596,6 +600,8 @@ export function App() {
             ))}
             {sources.length === 0 ? <div className="empty-mini">Source Registry zatím nevrátil žádné zdroje.</div> : null}
           </div>
+
+          <SourceHealthCenter items={sourceHealth} />
         </aside>
 
         <section className="center-column">
@@ -854,6 +860,51 @@ function MetricTile({ label, value, tone }: { label: string; value: string | num
     <div className={`metric-tile ${tone}`}>
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function SourceHealthCenter({ items }: { items: SourceHealthItem[] }) {
+  return (
+    <div className="source-health-box">
+      <PanelTitle icon={<Activity size={17} />} title="Source Health" />
+      {items.length === 0 ? <div className="empty-mini">Health metriky zdrojů zatím nejsou dostupné.</div> : null}
+      <div className="source-health-list">
+        {items.map((item) => (
+          <div className="source-health-row" key={item.sourceSystemId}>
+            <div>
+              <span className={`health-chip ${item.health.toLowerCase()}`}>{sourceHealthLabel(item.health)}</span>
+              <strong>{item.displayName}</strong>
+              <small>{item.sourceSystemId}</small>
+            </div>
+            <dl>
+              <div>
+                <dt>Tracks</dt>
+                <dd>{item.currentTracks}/{item.totalTracks}</dd>
+              </div>
+              <div>
+                <dt>Events</dt>
+                <dd>{item.acceptedEvents}</dd>
+              </div>
+              <div>
+                <dt>Last</dt>
+                <dd>{formatSourceAge(item.lastObservationAgeSeconds)}</dd>
+              </div>
+              <div>
+                <dt>Latency</dt>
+                <dd>{formatLatency(item.lastLatencyMs ?? item.avgLatencyMs)}</dd>
+              </div>
+            </dl>
+            {item.staleTracks > 0 || item.expiredTracks > 0 || item.lowConfidenceTracks > 0 ? (
+              <div className="source-health-warnings">
+                {item.staleTracks > 0 ? <span>{item.staleTracks} stale</span> : null}
+                {item.expiredTracks > 0 ? <span>{item.expiredTracks} expired</span> : null}
+                {item.lowConfidenceTracks > 0 ? <span>{item.lowConfidenceTracks} low confidence</span> : null}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1197,6 +1248,7 @@ function ObjectDetail({ object }: { object: CopObject }) {
   const symbol = resolveCopObjectSymbol(object);
   const affiliation = getAffiliationPresentation(object.affiliation);
   const sidc = getNatoSidc(object.objectType, object.affiliation);
+  const provenance = getObjectProvenance(object);
 
   return (
     <div className="object-detail">
@@ -1242,6 +1294,26 @@ function ObjectDetail({ object }: { object: CopObject }) {
         <div>
           <dt>Age</dt>
           <dd>{formatAge(object.lastUpdatedAt)}</dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd>{provenance?.sourceSystemId ?? "n/a"}</dd>
+        </div>
+        <div>
+          <dt>Adapter</dt>
+          <dd>{formatAdapter(provenance)}</dd>
+        </div>
+        <div>
+          <dt>Producer time</dt>
+          <dd>{formatShortDateTime(provenance?.producerTimestamp)}</dd>
+        </div>
+        <div>
+          <dt>Latency</dt>
+          <dd>{formatLatency(provenance?.latencyMs)}</dd>
+        </div>
+        <div>
+          <dt>Reliability</dt>
+          <dd>{formatReliability(provenance)}</dd>
         </div>
       </dl>
       <div className="object-flags">
@@ -1355,12 +1427,74 @@ function buildEventStream(objects: CopObject[]) {
   });
 }
 
+function getObjectProvenance(object: CopObject): ObjectProvenance | undefined {
+  return object.attributes?.provenance;
+}
+
+function sourceHealthLabel(status: SourceHealthItem["health"]): string {
+  const labels: Record<SourceHealthItem["health"], string> = {
+    DISABLED: "disabled",
+    ONLINE: "online",
+    QUIET: "quiet",
+    STALE: "stale",
+    WAITING: "waiting"
+  };
+  return labels[status];
+}
+
+function formatSourceAge(seconds: number | undefined): string {
+  if (seconds === undefined) {
+    return "no data";
+  }
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  if (seconds < 3600) {
+    return `${Math.round(seconds / 60)}m`;
+  }
+  return `${Math.round(seconds / 3600)}h`;
+}
+
 function formatPosition(object: CopObject): string {
   if (!object.position) {
     return "n/a";
   }
   const altitude = typeof object.position.altitudeM === "number" ? ` · ${Math.round(object.position.altitudeM)} m` : "";
   return `${object.position.lat.toFixed(3)}, ${object.position.lon.toFixed(3)}${altitude}`;
+}
+
+function formatAdapter(provenance: ObjectProvenance | undefined): string {
+  if (!provenance?.adapterId) {
+    return "n/a";
+  }
+  return provenance.adapterVersion ? `${provenance.adapterId} ${provenance.adapterVersion}` : provenance.adapterId;
+}
+
+function formatShortDateTime(value: string | undefined): string {
+  if (!value) {
+    return "n/a";
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return "n/a";
+  }
+  return timestamp.toLocaleTimeString("cs-CZ");
+}
+
+function formatLatency(value: number | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "n/a";
+  }
+  if (value < 1000) {
+    return `${Math.round(value)} ms`;
+  }
+  return `${(value / 1000).toFixed(1)} s`;
+}
+
+function formatReliability(provenance: ObjectProvenance | undefined): string {
+  const reliability = provenance?.sourceReliability ?? "n/a";
+  const credibility = provenance?.informationCredibility ?? "n/a";
+  return `${reliability}/${credibility}`;
 }
 
 function formatMovement(object: CopObject): string {

@@ -77,3 +77,4 @@ Status: plán.
 | 2026-05-19 | PostgreSQL temporal store v1 | Přidán volitelný PostgreSQL backend pro historii stop přes `COP_TRACK_HISTORY_STORE=postgres` a `COP_DATABASE_URL`; runbook popisuje napojení na HAProxy/Patroni. |
 | 2026-05-19 | PostgreSQL current snapshot v1 | Přidán `cop_current_tracks`, UPSERT při ingestu a obnova aktuálních objektů při startu API. |
 | 2026-05-19 | SSE live stream v1 | Přidán `/api/v1/stream/cop/live`, snapshot/delta/heartbeat zprávy, klientské čtení přes `fetch` stream s bearer hlavičkou a polling fallback. |
+| 2026-05-19 | Source Health + provenance v1 | Přidán health endpoint zdrojů, UI Source Health Center a provenance metadata v detailu objektu. |

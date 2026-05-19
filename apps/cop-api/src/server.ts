@@ -10,7 +10,9 @@ import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createHash } from "node:crypto";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
+import { withEventProvenance } from "./provenance.js";
 import { requireBearerToken } from "./security.js";
+import { buildSourceHealthItems } from "./source-health.js";
 import { appendAudit, createInitialState } from "./state.js";
 import { createTrackHistoryStoreFromEnv, type TrackHistoryStore } from "./track-history-store.js";
 import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory } from "./temporal-history.js";
@@ -195,6 +197,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.get("/api/v1/sources", async () => ({
     items: Array.from(state.sources.values())
   }));
+
+  app.get("/api/v1/sources/health", async () => {
+    const requestNow = now();
+    return {
+      items: buildSourceHealthItems(state, requestNow, trackLifecycle),
+      serverTimestamp: requestNow.toISOString()
+    };
+  });
 
   app.post("/api/v1/sources", async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
@@ -563,7 +573,7 @@ function acceptEvent(
     ingestTimestamp: event.ingestTimestamp ?? new Date().toISOString()
   };
   state.events.set(accepted.eventId, accepted);
-  const object = createCopObjectFromEvent(accepted);
+  const object = withEventProvenance(createCopObjectFromEvent(accepted), accepted);
   state.objects.set(object.objectId, object);
   const historyPoint = appendTrackHistory(state, accepted, object);
   return { accepted, historyPoint, object };

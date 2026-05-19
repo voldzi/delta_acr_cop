@@ -34,6 +34,26 @@ describe("COP web dashboard", () => {
       if (url.includes("/health/ready")) {
         return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
       }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({
+          items: [
+            {
+              acceptedEvents: 2,
+              currentTracks: 2,
+              sourceSystemId: "sim-air-situation-001",
+              displayName: "COP Air Situation Simulator",
+              expiredTracks: 0,
+              health: "ONLINE",
+              lowConfidenceTracks: 0,
+              sourceType: "SIMULATOR",
+              staleTracks: 0,
+              status: "ACTIVE",
+              synthetic: true,
+              totalTracks: 2
+            }
+          ]
+        });
+      }
       if (url.includes("/api/v1/sources")) {
         return jsonResponse({
           items: [
@@ -58,6 +78,13 @@ describe("COP web dashboard", () => {
               status: "ACTIVE",
               confidence: 0.91,
               synthetic: true,
+              attributes: {
+                provenance: {
+                  adapterId: "sim-adapter",
+                  adapterVersion: "0.1.0",
+                  sourceSystemId: "sim-air-situation-001"
+                }
+              },
               position: {
                 lat: 50.087,
                 lon: 14.421
@@ -105,7 +132,7 @@ describe("COP web dashboard", () => {
 
     await waitFor(() => expect(screen.getAllByText("AIR_SIM_AIRCRAFT-0001").length).toBeGreaterThan(0));
     expect(screen.getByTestId("cop-map").textContent).toContain("AIR_SIM_UAV-0001");
-    expect(screen.getByText("COP Air Situation Simulator")).toBeTruthy();
+    expect(screen.getAllByText("COP Air Situation Simulator").length).toBeGreaterThan(0);
     expect(screen.getByText("APP6-AIR-FRIEND-AIRCRAFT-ACTIVE")).toBeTruthy();
     expect(screen.getByText("SFAP-----------")).toBeTruthy();
     expect(screen.getByText("SIM")).toBeTruthy();
@@ -131,6 +158,9 @@ describe("COP web dashboard", () => {
       const url = String(input);
       if (url.includes("/health/ready")) {
         return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
       }
       if (url.includes("/api/v1/sources")) {
         return jsonResponse({

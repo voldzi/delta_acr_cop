@@ -1,5 +1,6 @@
 import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
 import type { CanonicalEventEnvelope, ObservedObject } from "@cop/canonical-model";
+import { withStoredCurrentProvenance } from "./provenance.js";
 import type { TrackHistoryQuery } from "./temporal-history.js";
 import type { TrackHistoryPoint } from "./types.js";
 
@@ -196,11 +197,11 @@ export class PostgresTrackHistoryStore implements TrackHistoryStore {
 
   async loadCurrent(): Promise<ObservedObject[]> {
     const result = await this.pool.query<CurrentTrackRow>(
-      `SELECT object_json
+      `SELECT event_id, last_updated_at, object_json, source_system_id, synthetic
       FROM cop_current_tracks
       ORDER BY last_updated_at DESC`
     );
-    return result.rows.map((row) => observedObjectFromJson(row.object_json));
+    return result.rows.map(observedObjectFromCurrentRow);
   }
 
   async countCurrent(): Promise<number> {
@@ -230,7 +231,11 @@ interface TrackHistoryRow extends QueryResultRow {
 }
 
 interface CurrentTrackRow extends QueryResultRow {
+  event_id: string;
+  last_updated_at: Date | string;
   object_json: ObservedObject | string;
+  source_system_id: string;
+  synthetic: boolean;
 }
 
 const createPersistenceTablesSql = `
@@ -323,6 +328,15 @@ function trackHistoryPointFromRow(row: TrackHistoryRow): TrackHistoryPoint {
 
 function observedObjectFromJson(value: ObservedObject | string): ObservedObject {
   return typeof value === "string" ? JSON.parse(value) as ObservedObject : value;
+}
+
+function observedObjectFromCurrentRow(row: CurrentTrackRow): ObservedObject {
+  return withStoredCurrentProvenance(observedObjectFromJson(row.object_json), {
+    eventId: row.event_id,
+    lastUpdatedAt: isoString(row.last_updated_at),
+    sourceSystemId: row.source_system_id,
+    synthetic: row.synthetic
+  });
 }
 
 function isoString(value: Date | string): string {

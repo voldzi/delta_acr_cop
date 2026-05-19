@@ -372,6 +372,22 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/sources/health:
+    get:
+      tags: [Sources]
+      summary: List source health summaries.
+      operationId: listSourceHealth
+      responses:
+        "200":
+          description: Source health summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceHealthList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/sources/{sourceSystemId}:
     get:
       tags: [Sources]
@@ -808,6 +824,87 @@ components:
           items:
             type: object
             additionalProperties: true
+    SourceHealthList:
+      type: object
+      required: [items, serverTimestamp]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceHealthItem"
+        serverTimestamp:
+          type: string
+          format: date-time
+    SourceHealthItem:
+      type: object
+      required:
+        - acceptedEvents
+        - currentTracks
+        - displayName
+        - expiredTracks
+        - health
+        - lowConfidenceTracks
+        - sourceSystemId
+        - sourceType
+        - staleTracks
+        - synthetic
+        - totalTracks
+      properties:
+        sourceSystemId:
+          type: string
+        displayName:
+          type: string
+        sourceType:
+          type: string
+        status:
+          type: string
+        synthetic:
+          type: boolean
+        health:
+          type: string
+          enum: [ONLINE, QUIET, STALE, WAITING, DISABLED]
+        lastEventAt:
+          type: string
+          format: date-time
+        lastObservationAt:
+          type: string
+          format: date-time
+        lastObservationAgeSeconds:
+          type: integer
+          minimum: 0
+        lastLatencyMs:
+          type: integer
+          minimum: 0
+        avgLatencyMs:
+          type: integer
+          minimum: 0
+        acceptedEvents:
+          type: integer
+          minimum: 0
+        currentTracks:
+          type: integer
+          minimum: 0
+        totalTracks:
+          type: integer
+          minimum: 0
+        staleTracks:
+          type: integer
+          minimum: 0
+        expiredTracks:
+          type: integer
+          minimum: 0
+        lowConfidenceTracks:
+          type: integer
+          minimum: 0
+        avgConfidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        eventTypeCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
     SourceLifecycleResult:
       type: object
       required: [sourceSystemId, status, changedAt]

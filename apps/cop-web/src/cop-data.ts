@@ -33,6 +33,24 @@ export interface CopObject {
   speedMps?: number | null;
   headingDeg?: number | null;
   verticalRateMps?: number | null;
+  attributes?: {
+    provenance?: ObjectProvenance;
+    [key: string]: unknown;
+  };
+}
+
+export interface ObjectProvenance {
+  adapterId?: string;
+  adapterVersion?: string;
+  eventId?: string;
+  informationCredibility?: string;
+  ingestTimestamp?: string;
+  latencyMs?: number;
+  producerTimestamp?: string;
+  sourceDeviceId?: string | null;
+  sourceReliability?: string;
+  sourceSystemId?: string;
+  synthetic?: boolean;
 }
 
 export interface ServerTrackHistoryPoint {
@@ -54,8 +72,31 @@ export interface ServerTrackHistoryPoint {
 export interface CopDashboardData {
   health: HealthStatus;
   sources: SourceSystem[];
+  sourceHealth: SourceHealthItem[];
   objects: CopObject[];
   trackHistory?: Record<string, ServerTrackHistoryPoint[]>;
+}
+
+export interface SourceHealthItem {
+  acceptedEvents: number;
+  avgConfidence?: number;
+  avgLatencyMs?: number;
+  currentTracks: number;
+  displayName: string;
+  eventTypeCounts?: Record<string, number>;
+  expiredTracks: number;
+  health: "DISABLED" | "ONLINE" | "QUIET" | "STALE" | "WAITING";
+  lastEventAt?: string;
+  lastLatencyMs?: number;
+  lastObservationAgeSeconds?: number;
+  lastObservationAt?: string;
+  lowConfidenceTracks: number;
+  sourceSystemId: string;
+  sourceType: string;
+  staleTracks: number;
+  status?: string;
+  synthetic: boolean;
+  totalTracks: number;
 }
 
 export type CopStreamStatus = "connecting" | "degraded" | "live" | "polling";
@@ -108,9 +149,10 @@ export async function fetchCopDashboardData(
   historyOptions?: CopHistoryOptions
 ): Promise<CopDashboardData> {
   const headers = { Authorization: `Bearer ${token}` };
-  const [health, sources, tracks, history] = await Promise.all([
+  const [health, sources, sourceHealth, tracks, history] = await Promise.all([
     fetchJson<HealthStatus>(`${apiBase}/health/ready`),
     fetchJson<{ items?: SourceSystem[] }>(`${apiBase}/api/v1/sources`, { headers }),
+    fetchOptionalJson<{ items?: SourceHealthItem[] }>(`${apiBase}/api/v1/sources/health`, { headers }),
     fetchJson<{ items?: CopObject[] }>(`${apiBase}/api/v1/cop/tracks?includeSynthetic=true`, { headers }),
     historyOptions
       ? fetchOptionalJson<{ items?: Array<{ objectId: string; points: ServerTrackHistoryPoint[] }> }>(
@@ -123,6 +165,7 @@ export async function fetchCopDashboardData(
   return {
     health,
     sources: sources.items ?? [],
+    sourceHealth: sourceHealth?.items ?? [],
     objects: tracks.items ?? [],
     trackHistory: history?.items ? Object.fromEntries(history.items.map((item) => [item.objectId, item.points])) : undefined
   };
