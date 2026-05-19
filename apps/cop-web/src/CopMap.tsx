@@ -5,7 +5,7 @@ import maplibregl, {
   type StyleSpecification
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { CopAlert, CopLayer, CopObject } from "./cop-data";
+import type { AoiRule, CopAlert, CopLayer, CopObject } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
 import type { MapViewState } from "./user-preferences";
@@ -22,11 +22,14 @@ const trackHistorySourceId = "cop-track-history";
 const trackPredictionSourceId = "cop-track-prediction";
 const userLocationSourceId = "cop-user-location";
 const userAlertRadiusSourceId = "cop-user-alert-radius";
+const aoiRuleSourceId = "cop-aoi-rules";
 const alertAreaSourceId = "cop-alert-areas";
 const trackHistoryLayerId = "cop-track-history-line";
 const trackPredictionLayerId = "cop-track-prediction-line";
 const userAlertRadiusFillLayerId = "cop-user-alert-radius-fill";
 const userAlertRadiusLineLayerId = "cop-user-alert-radius-line";
+const aoiRuleFillLayerId = "cop-aoi-rule-fill";
+const aoiRuleLineLayerId = "cop-aoi-rule-line";
 const alertAreaFillLayerId = "cop-alert-area-fill";
 const alertAreaLineLayerId = "cop-alert-area-line";
 const userLocationAccuracyLayerId = "cop-user-location-accuracy";
@@ -98,8 +101,18 @@ export interface AlertAreaFeatureCollection {
   }>;
 }
 
+export interface AoiRuleFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: { type: "Polygon"; coordinates: Array<Array<[number, number]>> };
+    properties: { enabled: boolean; id: string; severity: NonNullable<AoiRule["severity"]> };
+  }>;
+}
+
 interface CopMapProps {
   alerts: CopAlert[];
+  aoiRules: AoiRule[];
   objects: CopObject[];
   emptyMessage: string;
   selectedLayer: CopLayer;
@@ -126,6 +139,7 @@ interface CopMapProps {
 
 export function CopMap({
   alerts,
+  aoiRules,
   objects,
   emptyMessage,
   selectedLayer,
@@ -180,6 +194,7 @@ export function CopMap({
     () => userAlertRadiusToFeatureCollection(userLocation, alertRadiusKm, showProximityAlertRadius, hasProximityAlerts),
     [alertRadiusKm, hasProximityAlerts, showProximityAlertRadius, userLocation]
   );
+  const aoiRuleFeatureCollection = React.useMemo(() => aoiRulesToFeatureCollection(aoiRules), [aoiRules]);
   const alertAreaFeatureCollection = React.useMemo(() => alertAreasToFeatureCollection(alerts), [alerts]);
 
   objectsRef.current = objects;
@@ -236,6 +251,10 @@ export function CopMap({
           type: "geojson",
           data: emptyPolygonFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
         });
+        map.addSource(aoiRuleSourceId, {
+          type: "geojson",
+          data: emptyPolygonFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
         map.addSource(alertAreaSourceId, {
           type: "geojson",
           data: emptyPolygonFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
@@ -268,6 +287,32 @@ export function CopMap({
             "line-dasharray": [2, 1.4],
             "line-opacity": ["case", ["get", "active"], 0.72, 0.48],
             "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1.1, 12, 1.8, 16, 2.4]
+          }
+        });
+
+        map.addLayer({
+          id: aoiRuleFillLayerId,
+          type: "fill",
+          source: aoiRuleSourceId,
+          paint: {
+            "fill-color": ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#38bdf8"],
+            "fill-opacity": 0.055
+          }
+        });
+
+        map.addLayer({
+          id: aoiRuleLineLayerId,
+          type: "line",
+          source: aoiRuleSourceId,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#38bdf8"],
+            "line-dasharray": [3, 2],
+            "line-opacity": 0.58,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1, 12, 1.7, 16, 2.3]
           }
         });
 
@@ -470,6 +515,13 @@ export function CopMap({
   }, [mapReady, userAlertRadiusFeatureCollection]);
 
   React.useEffect(() => {
+    const source = mapRef.current?.getSource(aoiRuleSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(aoiRuleFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [aoiRuleFeatureCollection, mapReady]);
+
+  React.useEffect(() => {
     const source = mapRef.current?.getSource(alertAreaSourceId);
     if (mapReady && source && "setData" in source) {
       (source as GeoJSONSource).setData(alertAreaFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
@@ -579,6 +631,7 @@ export function CopMap({
         {showHistory ? <LineLegendItem label="Historie" /> : null}
         {showPrediction ? <LineLegendItem dashed label="Predikce" /> : null}
         {showProximityAlertRadius && userLocation ? <RadiusLegendItem active={hasProximityAlerts} label="Výstražný perimetr" /> : null}
+        {aoiRuleFeatureCollection.features.length > 0 ? <RadiusLegendItem active={false} label="AOI" /> : null}
         {alertAreaFeatureCollection.features.length > 0 ? <RadiusLegendItem active label="Alert vrstva" /> : null}
       </div>
       {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}
@@ -606,6 +659,31 @@ export function alertAreasToFeatureCollection(alerts: CopAlert[]): AlertAreaFeat
             alertId: alert.alertId,
             severity: alert.severity,
             type: alert.type
+          }
+        }
+      ];
+    })
+  };
+}
+
+export function aoiRulesToFeatureCollection(aoiRules: AoiRule[]): AoiRuleFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: aoiRules.flatMap((rule) => {
+      if (!rule.enabled || !Number.isFinite(rule.lat) || !Number.isFinite(rule.lon) || !Number.isFinite(rule.radiusKm) || rule.radiusKm <= 0) {
+        return [];
+      }
+      return [
+        {
+          type: "Feature" as const,
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: [buildGeodesicCircle(rule, Math.max(0.2, rule.radiusKm))]
+          },
+          properties: {
+            enabled: true,
+            id: rule.id,
+            severity: rule.severity ?? "warning"
           }
         }
       ];

@@ -14,7 +14,7 @@ Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplik
 | Server-side temporal history | Rozpracováno | API drží body stop, web je používá jako zdroj pro historii tras a PostgreSQL store přes HAProxy/Patroni persistuje historii i current snapshot. |
 | Timeline/replay | Rozpracováno v pilotu | UI má časové okno historie v sekundách; replay controller používá serverovou historii pro historické polohy objektů. |
 | Stream/delta distribuce | Pilotně hotovo | SSE endpoint posílá snapshot, delta a heartbeat; web používá stream jako primární kanál a fallback synchronizaci pro degraded režim. |
-| Perzistence a multi-user provoz | Částečně | UI nastavení a profily pohledu jsou lokální pro operátorský scope/prohlížeč; current tracks a historie mají PostgreSQL backend. |
+| Perzistence a multi-user provoz | Částečně | UI nastavení a profily pohledu jsou lokální pro operátorský scope/prohlížeč; current tracks, historie a serverové uživatelské profily mají PostgreSQL backend. |
 
 ## Prioritizované kroky
 
@@ -72,7 +72,8 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 - Object detail v2 vysvětluje confidence, provenance, lineage a informační konflikty,
 - server vrací `conflictEvidence` v aktuálních track objektech a samostatně přes `/api/v1/cop/conflicts`,
 - Alert Center vrací informační alerty přes `/api/v1/cop/alerts`, podporuje potvrzení alertu a mapovou alert vrstvu,
-- další krok je robustnější fusion skórování, retence potvrzení alertů a uživatelské alert preference přes identitu,
+- uživatelský profil může ukládat AOI pravidlo, server z něj odvozuje informační `AOI_ENTRY` alert a mapa zobrazuje velmi průsvitnou oblast zájmu,
+- další krok je robustnější fusion skórování, retence potvrzení alertů, více AOI pravidel a historie alertů,
 - metriky pro retenční velikost temporal store a stream latency.
 
 ## Evidence realizace
@@ -95,3 +96,4 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 | 2026-05-19 | PostgreSQL pool hardening v1 | API obsluhuje idle-client chyby `pg.Pool`, aby HAProxy/Patroni ukončení spojení neshodilo celý proces; diagnostika se propisuje do dependency health. |
 | 2026-05-19 | Stream Health + backpressure v1 | Přidán `/api/v1/stream/cop/health`, Prometheus stream metriky, SSE `backpressure`/`reconnect_required` provozní zprávy a UI panel `Stream Health`. |
 | 2026-05-19 | Keycloak user profiles v1 | Přidán `/api/v1/me/preferences`, serverové preference podle OIDC `sub`, per-user potvrzení alertů, PostgreSQL tabulky `cop_user_profiles` a `cop_user_alert_acknowledgements`, UI stav synchronizace profilu. |
+| 2026-05-19 | AOI alerting v1 | Přidán typ alertu `AOI_ENTRY`, uložení AOI pravidla v serverovém profilu, výpočet vstupu objektu do oblasti zájmu a samostatná velmi průsvitná AOI vrstva v mapě. |

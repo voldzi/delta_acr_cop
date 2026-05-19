@@ -48,6 +48,8 @@ import {
   getDataQualityCount,
   getUavCount,
   saveUserProfile,
+  type AoiRule,
+  type AoiRuleAffiliationScope,
   type AlertPreferences,
   type CopStreamMessage,
   type CopStreamStatus,
@@ -133,6 +135,7 @@ const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["history", "Trend"],
   ["maneuver", "Manévr"]
 ];
+const defaultAoiCenter = { lat: 50.0755, lon: 14.4378 };
 
 interface DashboardMetrics {
   activeSources: number;
@@ -481,6 +484,8 @@ export function App() {
   );
   const alertSummary = React.useMemo(() => summarizeAlerts(serverAlerts, proximityAlerts), [proximityAlerts, serverAlerts]);
   const mapAlerts = React.useMemo(() => serverAlerts.filter((alert) => alert.status === "ACTIVE"), [serverAlerts]);
+  const aoiRules = React.useMemo(() => alertPreferences.aoiRules ?? [], [alertPreferences.aoiRules]);
+  const primaryAoiRule = aoiRules[0] ?? null;
 
   const applyPreferenceSettings = React.useCallback((settings: PreferenceSettings, options: { focusMap?: boolean } = {}) => {
     if (settings.activeWorkspace !== undefined) {
@@ -775,6 +780,54 @@ export function App() {
     }
   }
 
+  function updatePrimaryAoiRule(updater: (rule: AoiRule) => AoiRule) {
+    setAlertPreferences((current) => {
+      const currentRules = current.aoiRules ?? [];
+      const baseRule = currentRules[0] ?? createDefaultAoiRule(userLocation, mapView);
+      return {
+        ...current,
+        aoiRules: [normalizeClientAoiRule(updater(baseRule)), ...currentRules.slice(1)]
+      };
+    });
+  }
+
+  function handleAoiRuleEnabledChange(enabled: boolean) {
+    updatePrimaryAoiRule((rule) => ({ ...rule, enabled }));
+  }
+
+  function handleAoiRuleRadiusChange(radiusKm: number) {
+    updatePrimaryAoiRule((rule) => ({ ...rule, radiusKm }));
+  }
+
+  function handleAoiRuleAffiliationScopeChange(affiliationScope: AoiRuleAffiliationScope) {
+    updatePrimaryAoiRule((rule) => ({ ...rule, affiliationScope }));
+  }
+
+  function handleAoiRuleSeverityChange(severity: NonNullable<AoiRule["severity"]>) {
+    updatePrimaryAoiRule((rule) => ({ ...rule, severity }));
+  }
+
+  function handleAoiRuleCenterFromMap() {
+    const center: [number, number] = mapView?.center ?? [defaultAoiCenter.lon, defaultAoiCenter.lat];
+    updatePrimaryAoiRule((rule) => ({
+      ...rule,
+      lat: center[1],
+      lon: center[0]
+    }));
+  }
+
+  function handleAoiRuleCenterFromUserLocation() {
+    if (!userLocation) {
+      locateUser();
+      return;
+    }
+    updatePrimaryAoiRule((rule) => ({
+      ...rule,
+      lat: userLocation.lat,
+      lon: userLocation.lon
+    }));
+  }
+
   async function acknowledgeServerAlert(alertId: string) {
     try {
       await acknowledgeCopAlert(apiBase, authToken, alertId);
@@ -1021,6 +1074,7 @@ export function App() {
               <ReadinessRow label="Serverové alerty" value={String(serverAlerts.length)} tone={serverAlerts.length > 0 ? "warn" : "ok"} />
               <ReadinessRow label="Critical" value={String(alertSummary.critical)} tone={alertSummary.critical > 0 ? "warn" : "ok"} />
               <ReadinessRow label="Vrstva na mapě" value={proximityAlertEnabled ? "aktivní" : "vypnuto"} tone={proximityAlertEnabled ? "ok" : "neutral"} />
+              <ReadinessRow label="AOI pravidla" value={String(aoiRules.filter((rule) => rule.enabled).length)} tone={aoiRules.some((rule) => rule.enabled) ? "ok" : "neutral"} />
               <ReadinessRow label="Poloměr" value={`${alertRadiusKm} km`} tone="neutral" />
               <ReadinessRow label="Moje poloha" value={String(proximityAlerts.length)} tone={proximityAlerts.length > 0 ? "warn" : "ok"} />
               <button className="mini-button wide" onClick={() => void loadAlerts()} type="button">
@@ -1080,6 +1134,7 @@ export function App() {
           <section className="map-stage">
             <CopMap
               alerts={mapAlerts}
+              aoiRules={aoiRules}
               objects={visibleObjects}
               emptyMessage={mapEmptyMessage}
               selectedLayer={selectedLayer}
@@ -1245,6 +1300,7 @@ export function App() {
         <SettingsDrawer
           activeTab={settingsTab}
           alertRadiusKm={alertRadiusKm}
+          aoiRule={primaryAoiRule}
           authConfig={authConfig}
           authSession={authSession}
           autoRefresh={autoRefresh}
@@ -1262,6 +1318,12 @@ export function App() {
           trackHistoryLimit={trackHistoryLimit}
           trackHistoryWindowSeconds={trackHistoryWindowSeconds}
           onAlertRadiusKmChange={setAlertRadiusKm}
+          onAoiRuleAffiliationScopeChange={handleAoiRuleAffiliationScopeChange}
+          onAoiRuleCenterFromMap={handleAoiRuleCenterFromMap}
+          onAoiRuleCenterFromUserLocation={handleAoiRuleCenterFromUserLocation}
+          onAoiRuleEnabledChange={handleAoiRuleEnabledChange}
+          onAoiRuleRadiusKmChange={handleAoiRuleRadiusChange}
+          onAoiRuleSeverityChange={handleAoiRuleSeverityChange}
           onAutoRefreshChange={setAutoRefresh}
           onClose={() => setSettingsOpen(false)}
           onIncludeSyntheticChange={setIncludeSynthetic}
@@ -1699,6 +1761,7 @@ function StreamHealthPanel({ health, telemetry }: { health: CopStreamHealth | nu
 function SettingsDrawer({
   activeTab,
   alertRadiusKm,
+  aoiRule,
   authConfig,
   authSession,
   autoRefresh,
@@ -1716,6 +1779,12 @@ function SettingsDrawer({
   trackHistoryLimit,
   trackHistoryWindowSeconds,
   onAlertRadiusKmChange,
+  onAoiRuleAffiliationScopeChange,
+  onAoiRuleCenterFromMap,
+  onAoiRuleCenterFromUserLocation,
+  onAoiRuleEnabledChange,
+  onAoiRuleRadiusKmChange,
+  onAoiRuleSeverityChange,
   onAutoRefreshChange,
   onClose,
   onIncludeSyntheticChange,
@@ -1734,6 +1803,7 @@ function SettingsDrawer({
 }: {
   activeTab: SettingsTab;
   alertRadiusKm: number;
+  aoiRule: AoiRule | null;
   authConfig: AuthConfig;
   authSession: AuthSession;
   autoRefresh: boolean;
@@ -1751,6 +1821,12 @@ function SettingsDrawer({
   trackHistoryLimit: number;
   trackHistoryWindowSeconds: number;
   onAlertRadiusKmChange: (value: number) => void;
+  onAoiRuleAffiliationScopeChange: (value: AoiRuleAffiliationScope) => void;
+  onAoiRuleCenterFromMap: () => void;
+  onAoiRuleCenterFromUserLocation: () => void;
+  onAoiRuleEnabledChange: (value: boolean) => void;
+  onAoiRuleRadiusKmChange: (value: number) => void;
+  onAoiRuleSeverityChange: (value: NonNullable<AoiRule["severity"]>) => void;
   onAutoRefreshChange: (value: boolean) => void;
   onClose: () => void;
   onIncludeSyntheticChange: (value: boolean) => void;
@@ -1891,6 +1967,58 @@ function SettingsDrawer({
                 />
                 <span>{alertRadiusKm} km</span>
               </label>
+              <div className="settings-subsection">
+                <PanelTitle icon={<AlertTriangle size={17} />} title="Oblast zájmu" />
+                <label className="toggle-row">
+                  <input type="checkbox" checked={Boolean(aoiRule?.enabled)} onChange={(event) => onAoiRuleEnabledChange(event.target.checked)} />
+                  Serverová AOI výstraha
+                </label>
+                <SegmentedControl
+                  label="Objekty"
+                  options={[
+                    ["hostile", "Cizí"],
+                    ["all", "Vše"],
+                    ["friend", "Vlastní"],
+                    ["unknown", "Neznámé"]
+                  ]}
+                  value={aoiRule?.affiliationScope ?? "hostile"}
+                  onChange={(value) => onAoiRuleAffiliationScopeChange(value as AoiRuleAffiliationScope)}
+                />
+                <SegmentedControl
+                  label="Priorita"
+                  options={[
+                    ["warning", "Warning"],
+                    ["info", "Info"],
+                    ["critical", "Critical"]
+                  ]}
+                  value={aoiRule?.severity ?? "warning"}
+                  onChange={(value) => onAoiRuleSeverityChange(value as NonNullable<AoiRule["severity"]>)}
+                />
+                <label className="range-label">
+                  AOI poloměr
+                  <input
+                    type="range"
+                    min="1"
+                    max="80"
+                    step="1"
+                    value={Math.round(aoiRule?.radiusKm ?? 10)}
+                    onChange={(event) => onAoiRuleRadiusKmChange(Number(event.target.value))}
+                  />
+                  <span>{Math.round(aoiRule?.radiusKm ?? 10)} km</span>
+                </label>
+                <div className="coordinate-readout">
+                  <span>Střed AOI</span>
+                  <strong>{formatAoiCenter(aoiRule)}</strong>
+                </div>
+                <div className="settings-button-row">
+                  <button className="mini-button" onClick={onAoiRuleCenterFromMap} type="button">
+                    Střed mapy
+                  </button>
+                  <button className="mini-button" onClick={onAoiRuleCenterFromUserLocation} type="button">
+                    Moje poloha
+                  </button>
+                </div>
+              </div>
             </section>
           ) : null}
 
@@ -2370,6 +2498,44 @@ function formatSourceAge(seconds: number | undefined): string {
   return `${Math.round(seconds / 3600)}h`;
 }
 
+function createDefaultAoiRule(userLocation: UserLocation | null, mapView: MapViewState | undefined): AoiRule {
+  const center = userLocation
+    ? { lat: userLocation.lat, lon: userLocation.lon }
+    : mapView
+      ? { lat: mapView.center[1], lon: mapView.center[0] }
+      : defaultAoiCenter;
+  return {
+    affiliationScope: "hostile",
+    enabled: false,
+    id: "primary-aoi",
+    lat: center.lat,
+    lon: center.lon,
+    name: "Primární AOI",
+    radiusKm: 10,
+    severity: "warning"
+  };
+}
+
+function normalizeClientAoiRule(rule: AoiRule): AoiRule {
+  return {
+    affiliationScope: rule.affiliationScope ?? "hostile",
+    enabled: rule.enabled,
+    id: rule.id.trim() || "primary-aoi",
+    lat: clamp(rule.lat, -90, 90),
+    lon: clamp(rule.lon, -180, 180),
+    name: rule.name.trim() || "Primární AOI",
+    radiusKm: clamp(rule.radiusKm, 1, 80),
+    severity: rule.severity ?? "warning"
+  };
+}
+
+function formatAoiCenter(rule: AoiRule | null): string {
+  if (!rule) {
+    return `${defaultAoiCenter.lat.toFixed(3)}, ${defaultAoiCenter.lon.toFixed(3)}`;
+  }
+  return `${rule.lat.toFixed(3)}, ${rule.lon.toFixed(3)}`;
+}
+
 function formatPosition(object: CopObject): string {
   if (!object.position) {
     return "n/a";
@@ -2463,6 +2629,7 @@ function alertSeverityLabel(severity: CopAlert["severity"]): string {
 
 function alertTypeLabel(type: CopAlert["type"]): string {
   const labels: Record<CopAlert["type"], string> = {
+    AOI_ENTRY: "AOI",
     LOW_CONFIDENCE: "confidence",
     SOURCE_DEGRADED: "source",
     TRACK_CONFLICT: "conflict",

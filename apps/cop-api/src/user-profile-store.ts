@@ -1,10 +1,11 @@
 import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
-import type { CopAlertSeverity, CopAlertType } from "./alerts.js";
+import type { AoiRule, AoiRuleAffiliationScope, CopAlertSeverity, CopAlertType } from "./alerts.js";
 import type { AlertAcknowledgement } from "./types.js";
 
 const { Pool } = pg;
 
 export interface UserAlertPreferences {
+  aoiRules?: AoiRule[];
   enabledTypes?: CopAlertType[];
   minimumSeverity?: CopAlertSeverity;
 }
@@ -271,10 +272,38 @@ function normalizeAlertPreferences(value: Record<string, unknown>): UserAlertPre
     ? value.enabledTypes.filter(isCopAlertType)
     : undefined;
   const minimumSeverity = isCopAlertSeverity(value.minimumSeverity) ? value.minimumSeverity : undefined;
+  const aoiRules = Array.isArray(value.aoiRules) ? value.aoiRules.flatMap(normalizeAoiRule) : undefined;
   return {
+    ...(aoiRules && aoiRules.length > 0 ? { aoiRules } : {}),
     ...(enabledTypes && enabledTypes.length > 0 ? { enabledTypes } : {}),
     ...(minimumSeverity ? { minimumSeverity } : {})
   };
+}
+
+function normalizeAoiRule(value: unknown): AoiRule[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const id = optionalTrimmedString(value.id, 80);
+  const name = optionalTrimmedString(value.name, 120);
+  const lat = finiteNumber(value.lat, -90, 90);
+  const lon = finiteNumber(value.lon, -180, 180);
+  const radiusKm = finiteNumber(value.radiusKm, 0.2, 500);
+  if (!id || !name || lat === undefined || lon === undefined || radiusKm === undefined) {
+    return [];
+  }
+  return [
+    {
+      ...(isAoiRuleAffiliationScope(value.affiliationScope) ? { affiliationScope: value.affiliationScope } : {}),
+      enabled: value.enabled === true,
+      id,
+      lat,
+      lon,
+      name,
+      radiusKm,
+      ...(isCopAlertSeverity(value.severity) ? { severity: value.severity } : {})
+    }
+  ];
 }
 
 function jsonRecord(value: Record<string, unknown> | string | null): Record<string, unknown> {
@@ -293,7 +322,8 @@ function jsonRecord(value: Record<string, unknown> | string | null): Record<stri
 }
 
 function isCopAlertType(value: unknown): value is CopAlertType {
-  return value === "LOW_CONFIDENCE"
+  return value === "AOI_ENTRY"
+    || value === "LOW_CONFIDENCE"
     || value === "SOURCE_DEGRADED"
     || value === "TRACK_CONFLICT"
     || value === "TRACK_LOST"
@@ -304,12 +334,32 @@ function isCopAlertSeverity(value: unknown): value is CopAlertSeverity {
   return value === "info" || value === "warning" || value === "critical";
 }
 
+function isAoiRuleAffiliationScope(value: unknown): value is AoiRuleAffiliationScope {
+  return value === "all" || value === "friend" || value === "hostile" || value === "unknown";
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function optionalTrimmedString(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized ? normalized.slice(0, maxLength) : undefined;
+}
+
+function finiteNumber(value: unknown, min: number, max: number): number | undefined {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  return Math.min(max, Math.max(min, parsed));
 }
 
 function readPositiveInteger(value: string | undefined, fallback: number): number {

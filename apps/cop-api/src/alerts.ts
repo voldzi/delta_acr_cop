@@ -6,7 +6,19 @@ import type { AlertAcknowledgement } from "./types.js";
 
 export type CopAlertSeverity = "info" | "warning" | "critical";
 export type CopAlertStatus = "ACKNOWLEDGED" | "ACTIVE";
-export type CopAlertType = "LOW_CONFIDENCE" | "SOURCE_DEGRADED" | "TRACK_CONFLICT" | "TRACK_LOST" | "TRACK_STALE";
+export type AoiRuleAffiliationScope = "all" | "friend" | "hostile" | "unknown";
+export type CopAlertType = "AOI_ENTRY" | "LOW_CONFIDENCE" | "SOURCE_DEGRADED" | "TRACK_CONFLICT" | "TRACK_LOST" | "TRACK_STALE";
+
+export interface AoiRule {
+  affiliationScope?: AoiRuleAffiliationScope;
+  enabled: boolean;
+  id: string;
+  lat: number;
+  lon: number;
+  name: string;
+  radiusKm: number;
+  severity?: CopAlertSeverity;
+}
 
 export interface CopAlert {
   acknowledgedAt?: string;
@@ -32,19 +44,76 @@ const lowConfidenceThreshold = 0.5;
 
 export function buildCopAlerts({
   acknowledgements,
+  aoiRules = [],
   evaluatedAt,
   objects,
   sourceHealth
 }: {
   acknowledgements: Map<string, AlertAcknowledgement>;
+  aoiRules?: AoiRule[];
   evaluatedAt: string;
   objects: ObservedObject[];
   sourceHealth: SourceHealthItem[];
 }): CopAlert[] {
   return [
+    ...buildAoiAlerts(objects, acknowledgements, evaluatedAt, aoiRules),
     ...objects.flatMap((object) => buildObjectAlerts(object, acknowledgements, evaluatedAt)),
     ...sourceHealth.flatMap((source) => buildSourceAlerts(source, acknowledgements, evaluatedAt))
   ].sort(compareAlerts);
+}
+
+function buildAoiAlerts(
+  objects: ObservedObject[],
+  acknowledgements: Map<string, AlertAcknowledgement>,
+  evaluatedAt: string,
+  aoiRules: AoiRule[]
+): CopAlert[] {
+  const rules = aoiRules.filter(isActiveAoiRule);
+  if (rules.length === 0) {
+    return [];
+  }
+
+  return objects.flatMap((object) => {
+    if (!object.position) {
+      return [];
+    }
+    return rules.flatMap((rule) => {
+      if (!matchesAoiAffiliationScope(object.affiliation, rule.affiliationScope ?? "all")) {
+        return [];
+      }
+      const distanceKm = distanceBetweenKm(
+        { lat: object.position!.lat, lon: object.position!.lon },
+        { lat: rule.lat, lon: rule.lon }
+      );
+      if (distanceKm > rule.radiusKm) {
+        return [];
+      }
+      return [
+        withAcknowledgement(
+          {
+            alertId: alertId("AOI_ENTRY", object.objectId, rule.id),
+            detail: `${object.objectId} je v oblasti ${rule.name} (${distanceKm.toFixed(1)} km od středu).`,
+            evidence: {
+              affiliationScope: rule.affiliationScope ?? "all",
+              aoiName: rule.name,
+              aoiRuleId: rule.id,
+              distanceKm: Number(distanceKm.toFixed(3)),
+              radiusKm: rule.radiusKm
+            },
+            map: { lat: rule.lat, lon: rule.lon, radiusKm: rule.radiusKm },
+            objectId: object.objectId,
+            observedAt: object.lastUpdatedAt ?? evaluatedAt,
+            severity: rule.severity ?? "warning",
+            status: "ACTIVE",
+            title: "Objekt v oblasti zájmu",
+            type: "AOI_ENTRY",
+            updatedAt: evaluatedAt
+          },
+          acknowledgements
+        )
+      ];
+    });
+  });
 }
 
 function buildObjectAlerts(
@@ -204,6 +273,43 @@ function latestSignalTimestamp(evidence: ObjectConflictEvidence): string | undef
     }
     return latest;
   }, undefined);
+}
+
+function isActiveAoiRule(rule: AoiRule): boolean {
+  return rule.enabled
+    && Number.isFinite(rule.lat)
+    && Number.isFinite(rule.lon)
+    && Number.isFinite(rule.radiusKm)
+    && rule.radiusKm > 0;
+}
+
+function matchesAoiAffiliationScope(affiliation: string, scope: AoiRuleAffiliationScope): boolean {
+  if (scope === "all") {
+    return true;
+  }
+  if (scope === "friend") {
+    return affiliation === "FRIEND" || affiliation === "ASSUMED_FRIEND";
+  }
+  if (scope === "hostile") {
+    return affiliation === "HOSTILE" || affiliation === "SUSPECT";
+  }
+  return affiliation === "UNKNOWN" || affiliation === "PENDING";
+}
+
+function distanceBetweenKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const earthRadiusKm = 6371.0088;
+  const deltaLat = degreesToRadians(b.lat - a.lat);
+  const deltaLon = degreesToRadians(b.lon - a.lon);
+  const startLat = degreesToRadians(a.lat);
+  const endLat = degreesToRadians(b.lat);
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2
+    + Math.cos(startLat) * Math.cos(endLat) * Math.sin(deltaLon / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.min(1, Math.sqrt(haversine)));
+}
+
+function degreesToRadians(value: number): number {
+  return (value * Math.PI) / 180;
 }
 
 function compareAlerts(a: CopAlert, b: CopAlert): number {

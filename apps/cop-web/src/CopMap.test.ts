@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   alertAreasToFeatureCollection,
+  aoiRulesToFeatureCollection,
   objectsToHistoryFeatureCollection,
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
@@ -173,6 +174,37 @@ describe("COP map data helpers", () => {
       alertId: "alert-1",
       severity: "critical",
       type: "TRACK_CONFLICT"
+    });
+    expect(collection.features[0]?.geometry.coordinates[0]).toHaveLength(97);
+  });
+
+  it("builds AOI rule polygons only for enabled rules", () => {
+    const collection = aoiRulesToFeatureCollection([
+      {
+        affiliationScope: "hostile",
+        enabled: true,
+        id: "primary-aoi",
+        lat: 50.1,
+        lon: 14.4,
+        name: "Primary AOI",
+        radiusKm: 12,
+        severity: "warning"
+      },
+      {
+        enabled: false,
+        id: "disabled-aoi",
+        lat: 50.2,
+        lon: 14.5,
+        name: "Disabled AOI",
+        radiusKm: 8
+      }
+    ]);
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0]?.properties).toEqual({
+      enabled: true,
+      id: "primary-aoi",
+      severity: "warning"
     });
     expect(collection.features[0]?.geometry.coordinates[0]).toHaveLength(97);
   });

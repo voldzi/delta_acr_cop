@@ -881,12 +881,45 @@ components:
     UserAlertPreferences:
       type: object
       properties:
+        aoiRules:
+          type: array
+          items:
+            $ref: "#/components/schemas/AoiRule"
         enabledTypes:
           type: array
           items:
             type: string
-            enum: [LOW_CONFIDENCE, SOURCE_DEGRADED, TRACK_CONFLICT, TRACK_LOST, TRACK_STALE]
+            enum: [AOI_ENTRY, LOW_CONFIDENCE, SOURCE_DEGRADED, TRACK_CONFLICT, TRACK_LOST, TRACK_STALE]
         minimumSeverity:
+          type: string
+          enum: [info, warning, critical]
+      additionalProperties: false
+    AoiRule:
+      type: object
+      required: [enabled, id, lat, lon, name, radiusKm]
+      properties:
+        affiliationScope:
+          type: string
+          enum: [all, friend, hostile, unknown]
+        enabled:
+          type: boolean
+        id:
+          type: string
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+        name:
+          type: string
+        radiusKm:
+          type: number
+          minimum: 0.2
+          maximum: 500
+        severity:
           type: string
           enum: [info, warning, critical]
       additionalProperties: false
@@ -1123,7 +1156,7 @@ components:
           type: string
         type:
           type: string
-          enum: [LOW_CONFIDENCE, SOURCE_DEGRADED, TRACK_CONFLICT, TRACK_LOST, TRACK_STALE]
+          enum: [AOI_ENTRY, LOW_CONFIDENCE, SOURCE_DEGRADED, TRACK_CONFLICT, TRACK_LOST, TRACK_STALE]
         severity:
           type: string
           enum: [info, warning, critical]

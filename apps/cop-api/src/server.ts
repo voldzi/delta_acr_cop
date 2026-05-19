@@ -8,7 +8,7 @@ import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
 import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
-import { buildCopAlerts, type CopAlert } from "./alerts.js";
+import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAlert } from "./alerts.js";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
@@ -372,13 +372,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       canReadObject(subject, object)
     );
     const objectsWithEvidence = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
+    const profile = await readUserProfile(actor);
     const alerts = buildCopAlerts({
       acknowledgements: await readAlertAcknowledgements(actor),
+      aoiRules: profile?.alertPreferences.aoiRules ?? [],
       evaluatedAt: requestNow.toISOString(),
       objects: objectsWithEvidence,
       sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
     });
-    const profile = await readUserProfile(actor);
     const preferredAlerts = filterAlertsByPreferences(alerts, profile?.alertPreferences ?? {});
     return includeAcknowledged ? preferredAlerts : preferredAlerts.filter((alert) => alert.status === "ACTIVE");
   }
@@ -1029,12 +1030,40 @@ function normalizeAlertPreferences(value: unknown): UserAlertPreferences {
     return {};
   }
 
+  const aoiRules = Array.isArray(value.aoiRules) ? value.aoiRules.flatMap(normalizeAoiRule) : undefined;
   const enabledTypes = Array.isArray(value.enabledTypes) ? value.enabledTypes.filter(isCopAlertType) : undefined;
   const minimumSeverity = isCopAlertSeverity(value.minimumSeverity) ? value.minimumSeverity : undefined;
   return {
+    ...(aoiRules && aoiRules.length > 0 ? { aoiRules } : {}),
     ...(enabledTypes && enabledTypes.length > 0 ? { enabledTypes } : {}),
     ...(minimumSeverity ? { minimumSeverity } : {})
   };
+}
+
+function normalizeAoiRule(value: unknown): AoiRule[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const id = optionalTrimmedString(value.id, 80);
+  const name = optionalTrimmedString(value.name, 120);
+  const lat = optionalFiniteNumber(value.lat, -90, 90);
+  const lon = optionalFiniteNumber(value.lon, -180, 180);
+  const radiusKm = optionalFiniteNumber(value.radiusKm, 0.2, 500);
+  if (!id || !name || lat === undefined || lon === undefined || radiusKm === undefined) {
+    return [];
+  }
+  return [
+    {
+      ...(isAoiRuleAffiliationScope(value.affiliationScope) ? { affiliationScope: value.affiliationScope } : {}),
+      enabled: value.enabled === true,
+      id,
+      lat,
+      lon,
+      name,
+      radiusKm,
+      ...(isCopAlertSeverity(value.severity) ? { severity: value.severity } : {})
+    }
+  ];
 }
 
 function normalizeMapViewPreference(value: unknown): Record<string, unknown> | undefined {
@@ -1072,8 +1101,17 @@ function optionalString(value: unknown, allowedValues: string[]): string | undef
   return typeof value === "string" && allowedValues.includes(value) ? value : undefined;
 }
 
+function optionalTrimmedString(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized ? normalized.slice(0, maxLength) : undefined;
+}
+
 function isCopAlertType(value: unknown): value is CopAlert["type"] {
-  return value === "LOW_CONFIDENCE"
+  return value === "AOI_ENTRY"
+    || value === "LOW_CONFIDENCE"
     || value === "SOURCE_DEGRADED"
     || value === "TRACK_CONFLICT"
     || value === "TRACK_LOST"
@@ -1082,6 +1120,10 @@ function isCopAlertType(value: unknown): value is CopAlert["type"] {
 
 function isCopAlertSeverity(value: unknown): value is CopAlert["severity"] {
   return value === "info" || value === "warning" || value === "critical";
+}
+
+function isAoiRuleAffiliationScope(value: unknown): value is AoiRuleAffiliationScope {
+  return value === "all" || value === "friend" || value === "hostile" || value === "unknown";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

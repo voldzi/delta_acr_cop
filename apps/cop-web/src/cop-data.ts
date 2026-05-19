@@ -122,7 +122,8 @@ export interface SourceHealthItem {
 
 export type CopAlertSeverity = "critical" | "info" | "warning";
 export type CopAlertStatus = "ACKNOWLEDGED" | "ACTIVE";
-export type CopAlertType = "LOW_CONFIDENCE" | "SOURCE_DEGRADED" | "TRACK_CONFLICT" | "TRACK_LOST" | "TRACK_STALE";
+export type AoiRuleAffiliationScope = "all" | "friend" | "hostile" | "unknown";
+export type CopAlertType = "AOI_ENTRY" | "LOW_CONFIDENCE" | "SOURCE_DEGRADED" | "TRACK_CONFLICT" | "TRACK_LOST" | "TRACK_STALE";
 
 export interface CopActor {
   authMode: "lab" | "oidc";
@@ -133,8 +134,20 @@ export interface CopActor {
 }
 
 export interface AlertPreferences {
+  aoiRules?: AoiRule[];
   enabledTypes?: CopAlertType[];
   minimumSeverity?: CopAlertSeverity;
+}
+
+export interface AoiRule {
+  affiliationScope?: AoiRuleAffiliationScope;
+  enabled: boolean;
+  id: string;
+  lat: number;
+  lon: number;
+  name: string;
+  radiusKm: number;
+  severity?: CopAlertSeverity;
 }
 
 export interface ServerUserProfile {
