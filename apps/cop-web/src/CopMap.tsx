@@ -170,6 +170,7 @@ export function CopMap({
   const onAutoFitChangeRef = React.useRef(onAutoFitChange);
   const onViewChangeRef = React.useRef(onViewChange);
   const lastFitSignatureRef = React.useRef("");
+  const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
   const [mapReady, setMapReady] = React.useState(false);
   const [mapError, setMapError] = React.useState<string | null>(null);
 
@@ -218,6 +219,7 @@ export function CopMap({
     });
 
     mapRef.current = map;
+    enableMapInteractions(map);
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
@@ -449,21 +451,16 @@ export function CopMap({
 
         map.on("click", trackSymbolLayerId, handleClick);
         map.on("click", trackLabelLayerId, handleClick);
-        map.on("dragstart", (event) => {
+        const handleUserMapInteraction = (event: maplibregl.MapLibreEvent) => {
           if (event.originalEvent) {
             onAutoFitChangeRef.current(false);
           }
-        });
-        map.on("zoomstart", (event) => {
-          if (event.originalEvent) {
-            onAutoFitChangeRef.current(false);
-          }
-        });
-        map.on("rotatestart", (event) => {
-          if (event.originalEvent) {
-            onAutoFitChangeRef.current(false);
-          }
-        });
+        };
+        map.on("dragstart", handleUserMapInteraction);
+        map.on("movestart", handleUserMapInteraction);
+        map.on("pitchstart", handleUserMapInteraction);
+        map.on("rotatestart", handleUserMapInteraction);
+        map.on("zoomstart", handleUserMapInteraction);
         map.on("moveend", () => {
           const center = map.getCenter();
           onViewChangeRef.current({
@@ -486,6 +483,7 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         setMapReady(true);
+        map.resize();
       })().catch((error: unknown) => {
         setMapError(error instanceof Error ? error.message : "NATO symboly nejsou dostupné.");
       });
@@ -495,10 +493,27 @@ export function CopMap({
     });
 
     return () => {
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       map.remove();
       mapRef.current = null;
     };
   }, []);
+
+  React.useEffect(() => {
+    if (!mapReady || !containerRef.current || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = new ResizeObserver(() => {
+      mapRef.current?.resize();
+    });
+    resizeObserverRef.current.observe(containerRef.current);
+    return () => {
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
+    };
+  }, [mapReady]);
 
   React.useEffect(() => {
     const source = mapRef.current?.getSource(userLocationSourceId);
@@ -599,7 +614,7 @@ export function CopMap({
   return (
     <div className="map-container">
       <div className="map-canvas" ref={containerRef} aria-label="COP georeferenced map" />
-      <div className="map-toolbar">
+      <div className="map-toolbar" onPointerDown={stopMapToolbarEvent}>
         <div>
           <span>Map layer</span>
           <strong>{selectedLayer}</strong>
@@ -639,6 +654,20 @@ export function CopMap({
       {objects.length === 0 ? <div className="map-empty">{emptyMessage}</div> : null}
     </div>
   );
+}
+
+function enableMapInteractions(map: maplibregl.Map): void {
+  map.dragPan.enable();
+  map.scrollZoom.enable();
+  map.boxZoom.enable();
+  map.dragRotate.enable();
+  map.keyboard.enable();
+  map.doubleClickZoom.enable();
+  map.touchZoomRotate.enable();
+}
+
+function stopMapToolbarEvent(event: React.PointerEvent<HTMLDivElement>): void {
+  event.stopPropagation();
 }
 
 export function alertAreasToFeatureCollection(alerts: CopAlert[]): AlertAreaFeatureCollection {

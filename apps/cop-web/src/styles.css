@@ -964,6 +964,7 @@ h1 {
 .map-canvas {
   position: absolute;
   inset: 0;
+  z-index: 0;
 }
 
 .map-canvas canvas {
@@ -975,7 +976,6 @@ h1 {
 .map-notice,
 .map-empty {
   position: absolute;
-  z-index: 2;
   border: 1px solid var(--border);
   background: rgba(8, 13, 18, 0.82);
   backdrop-filter: blur(14px);
@@ -984,12 +984,14 @@ h1 {
 .map-toolbar {
   top: 12px;
   left: 12px;
+  z-index: 5;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   max-width: calc(100% - 92px);
   padding: 8px;
+  pointer-events: auto;
 }
 
 .map-toolbar div {
@@ -1032,12 +1034,14 @@ h1 {
 .map-legend {
   right: 12px;
   bottom: 12px;
+  z-index: 3;
   display: flex;
   flex-wrap: wrap;
   gap: 9px;
   padding: 8px 10px;
   color: #cfdae4;
   font-size: 12px;
+  pointer-events: none;
 }
 
 .legend-item {
@@ -1088,10 +1092,12 @@ h1 {
 .map-notice {
   left: 12px;
   bottom: 12px;
+  z-index: 3;
   max-width: 320px;
   padding: 8px 10px;
   color: #f0dca7;
   font-size: 12px;
+  pointer-events: none;
 }
 
 .map-notice.error {
@@ -1102,6 +1108,7 @@ h1 {
 .map-empty {
   left: 50%;
   top: 50%;
+  z-index: 3;
   width: min(320px, calc(100% - 32px));
   padding: 18px;
   color: #cbd5df;
@@ -1109,6 +1116,7 @@ h1 {
   line-height: 1.45;
   text-align: center;
   transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 
 .maplibregl-ctrl-group,
