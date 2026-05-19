@@ -13,9 +13,13 @@ const defaultHistoryLimit = 120;
 const maxHistoryLimit = 1000;
 const maxStoredPointsPerTrack = 5000;
 
-export function appendTrackHistory(state: CopState, event: CanonicalEventEnvelope, object: ObservedObject): void {
+export function appendTrackHistory(
+  state: CopState,
+  event: CanonicalEventEnvelope,
+  object: ObservedObject
+): TrackHistoryPoint | undefined {
   if (!hasPosition(object)) {
-    return;
+    return undefined;
   }
 
   const point: TrackHistoryPoint = {
@@ -36,6 +40,7 @@ export function appendTrackHistory(state: CopState, event: CanonicalEventEnvelop
 
   const current = state.trackHistory.get(object.objectId) ?? [];
   state.trackHistory.set(object.objectId, [...current, point].slice(-maxStoredPointsPerTrack));
+  return point;
 }
 
 export function queryTrackHistory(

@@ -14,6 +14,7 @@
     "@cop/canonical-model": "workspace:*",
     "@cop/ingest-contracts": "workspace:*",
     "@cop/nato-symbol-renderer": "workspace:*",
-    "@cop/policy-engine": "workspace:*"
+    "@cop/policy-engine": "workspace:*",
+    "pg": "^8.21.0"
   }
 }

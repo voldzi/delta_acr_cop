@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { CanonicalEventEnvelope } from "@cop/canonical-model";
 import { buildServer } from "./server.js";
+import type { TrackHistoryStore } from "./track-history-store.js";
+import type { TrackHistoryQuery } from "./temporal-history.js";
+import type { TrackHistoryPoint } from "./types.js";
 
 describe("COP state temporal history", () => {
   it("records track history from accepted ingest events and filters it by seconds", async () => {
@@ -47,7 +50,77 @@ describe("COP state temporal history", () => {
     expect(body.items[0]?.points).toHaveLength(1);
     expect(body.items[0]?.points[0]?.timestamp).toBe("2026-05-19T08:01:00Z");
   });
+
+  it("writes accepted track points to the configured persistent history store", async () => {
+    const store = new FakeTrackHistoryStore();
+    const app = buildServer({
+      now: () => new Date("2026-05-19T08:02:10Z"),
+      trackHistoryStore: store
+    });
+
+    await ingestTrack(app, "00000000-0000-4000-8000-000000000006", "2026-05-19T08:01:00Z", 50.03, 14.03);
+
+    const response = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/track-history?objectIds=AIR_SIM_UAV-0001&seconds=90&limit=10"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(store.initCalled).toBe(true);
+    expect(store.appended).toHaveLength(1);
+    expect(store.queryCalls).toBe(1);
+    expect(response.json()).toMatchObject({
+      items: [
+        {
+          objectId: "AIR_SIM_UAV-0001",
+          points: [
+            {
+              lat: 50.03,
+              lon: 14.03,
+              objectId: "AIR_SIM_UAV-0001"
+            }
+          ]
+        }
+      ]
+    });
+
+    await app.close();
+  });
 });
+
+class FakeTrackHistoryStore implements TrackHistoryStore {
+  readonly name = "fake";
+  appended: TrackHistoryPoint[] = [];
+  initCalled = false;
+  queryCalls = 0;
+
+  async init(): Promise<void> {
+    this.initCalled = true;
+  }
+
+  async append(point: TrackHistoryPoint): Promise<void> {
+    this.appended.push(point);
+  }
+
+  async query(_query: TrackHistoryQuery, _now: Date): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>> {
+    this.queryCalls += 1;
+    return [
+      {
+        objectId: "AIR_SIM_UAV-0001",
+        points: this.appended
+      }
+    ];
+  }
+
+  async count(): Promise<number> {
+    return this.appended.length;
+  }
+
+  async close(): Promise<void> {}
+}
 
 async function ingestTrack(app: ReturnType<typeof buildServer>, eventId: string, timestamp: string, lat: number, lon: number) {
   const event: CanonicalEventEnvelope = {

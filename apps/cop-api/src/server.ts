@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { requireBearerToken } from "./security.js";
 import { appendAudit, createInitialState } from "./state.js";
+import { createTrackHistoryStoreFromEnv, type TrackHistoryStore } from "./track-history-store.js";
 import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory } from "./temporal-history.js";
 import { createTrackLifecycleConfig, selectCurrentTracks, type TrackLifecycleConfig } from "./track-lifecycle.js";
 import type { CopState, TrackHistoryPoint } from "./types.js";
@@ -19,8 +20,11 @@ export interface BuildServerOptions {
   state?: CopState;
   logger?: boolean;
   now?: () => Date;
+  trackHistoryStore?: TrackHistoryStore;
   trackLifecycle?: TrackLifecycleConfig;
 }
+
+type DependencyStatus = "disabled" | "degraded" | "ok";
 
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const app = Fastify({
@@ -31,12 +35,32 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const aiGateway = new AiGateway();
   const now = options.now ?? (() => new Date());
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
+  const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
+  let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
+  let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
 
   app.decorate("copState", state);
   void app.register(cors, { origin: true });
   void app.register(sensible);
   void app.register(websocket);
   app.addHook("preHandler", requireBearerToken);
+  app.addHook("onReady", async () => {
+    if (!trackHistoryStore) {
+      return;
+    }
+    try {
+      await trackHistoryStore.init();
+      trackHistoryStoreStatus = "ok";
+      trackHistoryStoreDetail = `${trackHistoryStore.name}: ready`;
+    } catch (error) {
+      trackHistoryStoreStatus = "degraded";
+      trackHistoryStoreDetail = `${trackHistoryStore.name}: ${errorMessage(error)}`;
+      app.log.error({ error }, "Track history store initialization failed; using in-memory fallback.");
+    }
+  });
+  app.addHook("onClose", async () => {
+    await trackHistoryStore?.close();
+  });
 
   app.get("/health/live", async () => ({
     status: "ok",
@@ -53,12 +77,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     dependencies: [
       { name: "source-registry", status: "ok" },
       { name: "in-memory-cop-state", status: "ok" },
+      { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDetail },
       { name: "ai-gateway", status: "degraded", detail: "mock provider only" }
     ]
   }));
 
   app.get("/metrics", async (_request, reply) => {
     const currentObjects = selectCurrentTracks(state.objects.values(), now(), trackLifecycle);
+    const trackHistoryPointCount = await countTrackHistoryPoints();
     const lines = [
       "# HELP cop_sources_total Registered COP source systems.",
       "# TYPE cop_sources_total gauge",
@@ -71,10 +97,55 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       `cop_objects_total ${currentObjects.length}`,
       "# HELP cop_track_history_points_total Retained temporal track history points.",
       "# TYPE cop_track_history_points_total gauge",
-      `cop_track_history_points_total ${Array.from(state.trackHistory.values()).reduce((sum, points) => sum + points.length, 0)}`
+      `cop_track_history_points_total ${trackHistoryPointCount}`
     ];
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
+
+  async function countTrackHistoryPoints(): Promise<number> {
+    if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
+      try {
+        return await trackHistoryStore.count();
+      } catch (error) {
+        markTrackHistoryStoreDegraded(error);
+      }
+    }
+    return Array.from(state.trackHistory.values()).reduce((sum, points) => sum + points.length, 0);
+  }
+
+  function markTrackHistoryStoreDegraded(error: unknown): void {
+    if (!trackHistoryStore) {
+      return;
+    }
+    trackHistoryStoreStatus = "degraded";
+    trackHistoryStoreDetail = `${trackHistoryStore.name}: ${errorMessage(error)}`;
+    app.log.error({ error }, "Track history store failed; using in-memory fallback.");
+  }
+
+  async function persistTrackHistoryPoint(point: TrackHistoryPoint | undefined): Promise<void> {
+    if (!trackHistoryStore || !point || trackHistoryStoreStatus !== "ok") {
+      return;
+    }
+    try {
+      await trackHistoryStore.append(point);
+    } catch (error) {
+      markTrackHistoryStoreDegraded(error);
+    }
+  }
+
+  async function readTrackHistory(
+    query: ReturnType<typeof parseTrackHistoryQuery>,
+    requestNow: Date
+  ): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>> {
+    if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
+      try {
+        return await trackHistoryStore.query(query, requestNow);
+      } catch (error) {
+        markTrackHistoryStoreDegraded(error);
+      }
+    }
+    return queryTrackHistory(state, query, requestNow);
+  }
 
   app.get("/api/v1/sources", async () => ({
     items: Array.from(state.sources.values())
@@ -164,7 +235,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
 
-    return handleIngestEvent(state, validation.data, request.headers, reply, correlationId);
+    return handleIngestEvent(state, validation.data, request.headers, reply, correlationId, persistTrackHistoryPoint);
   });
 
   app.post("/api/v1/ingest/batches", async (request, reply) => {
@@ -187,8 +258,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         continue;
       }
 
-      const accepted = acceptEvent(state, validation.data);
-      items.push({ eventId: accepted.eventId, status: "QUEUED" });
+      const result = acceptEvent(state, validation.data);
+      await persistTrackHistoryPoint(result.historyPoint);
+      items.push({ eventId: result.accepted.eventId, status: "QUEUED" });
     }
 
     const response = {
@@ -217,8 +289,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   app.get("/api/v1/cop/track-history", async (request) => {
     const query = parseTrackHistoryQuery(request.query as Record<string, unknown>);
+    const requestNow = now();
     const subject = defaultSystemSubject();
-    const items = queryTrackHistory(state, query, now())
+    const items = (await readTrackHistory(query, requestNow))
       .map((item) => ({
         ...item,
         points: item.points.filter((point) => canReadHistoryPoint(subject, point))
@@ -227,7 +300,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return {
       items,
       nextCursor: null,
-      serverTimestamp: now().toISOString()
+      serverTimestamp: requestNow.toISOString()
     };
   });
 
@@ -308,12 +381,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   return app;
 }
 
-function handleIngestEvent(
+async function handleIngestEvent(
   state: CopState,
   event: CanonicalEventEnvelope,
   headers: Record<string, string | string[] | undefined>,
   reply: FastifyReply,
-  correlationId: string
+  correlationId: string,
+  persistTrackHistoryPoint: (point: TrackHistoryPoint | undefined) => Promise<void>
 ) {
   const headerSource = headerAsString(headers["x-source-system-id"]);
   const sourceCheck = validateSourceForRequest(state, headerSource, event.source.sourceSystemId, correlationId);
@@ -349,7 +423,9 @@ function handleIngestEvent(
     return reply.code(202).send(previous.response);
   }
 
-  const accepted = acceptEvent(state, event);
+  const result = acceptEvent(state, event);
+  await persistTrackHistoryPoint(result.historyPoint);
+  const accepted = result.accepted;
   const response = {
     accepted: true,
     eventId: accepted.eventId,
@@ -363,7 +439,10 @@ function handleIngestEvent(
   return reply.code(202).send(response);
 }
 
-function acceptEvent(state: CopState, event: CanonicalEventEnvelope): CanonicalEventEnvelope {
+function acceptEvent(
+  state: CopState,
+  event: CanonicalEventEnvelope
+): { accepted: CanonicalEventEnvelope; historyPoint: TrackHistoryPoint | undefined } {
   const accepted: CanonicalEventEnvelope = {
     ...event,
     ingestTimestamp: event.ingestTimestamp ?? new Date().toISOString()
@@ -371,8 +450,8 @@ function acceptEvent(state: CopState, event: CanonicalEventEnvelope): CanonicalE
   state.events.set(accepted.eventId, accepted);
   const object = createCopObjectFromEvent(accepted);
   state.objects.set(object.objectId, object);
-  appendTrackHistory(state, accepted, object);
-  return accepted;
+  const historyPoint = appendTrackHistory(state, accepted, object);
+  return { accepted, historyPoint };
 }
 
 function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
@@ -440,4 +519,8 @@ function headerAsString(value: unknown): string | undefined {
     return value[0];
   }
   return typeof value === "string" ? value : undefined;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "unknown error";
 }

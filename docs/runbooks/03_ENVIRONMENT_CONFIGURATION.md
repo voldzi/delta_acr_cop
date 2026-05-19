@@ -10,6 +10,7 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 - Source Registry bootstrap,
 - AI provider enable/disable flags,
 - track lifecycle thresholds (`COP_TRACK_STALE_AFTER_MS`, `COP_TRACK_EXPIRE_AFTER_MS`),
+- temporal history persistence (`COP_TRACK_HISTORY_STORE`, `COP_DATABASE_URL`, `COP_DATABASE_SSL`),
 - classification policy,
 - audit retention,
 - metrics/exporter nastavení,
