@@ -182,8 +182,8 @@ export function CopMap({
           },
           paint: {
             "line-color": ["get", "color"],
-            "line-opacity": 0.58,
-            "line-width": ["case", ["get", "selected"], 2.8, 1.8]
+            "line-opacity": 0.66,
+            "line-width": ["case", ["get", "selected"], 3, 2]
           }
         });
 
@@ -197,9 +197,9 @@ export function CopMap({
           },
           paint: {
             "line-color": ["get", "color"],
-            "line-dasharray": [0.35, 1.4],
-            "line-opacity": 0.56,
-            "line-width": ["case", ["get", "selected"], 2.9, 1.9]
+            "line-dasharray": [1.2, 1.15],
+            "line-opacity": 0.68,
+            "line-width": ["case", ["get", "selected"], 3.1, 2.1]
           }
         });
 
