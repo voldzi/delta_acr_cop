@@ -9,6 +9,7 @@ import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createHash } from "node:crypto";
 import { correlationIdFrom, sendError } from "./errors.js";
+import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { requireBearerToken } from "./security.js";
 import { appendAudit, createInitialState } from "./state.js";
 import { createTrackHistoryStoreFromEnv, type TrackHistoryStore } from "./track-history-store.js";
@@ -22,6 +23,7 @@ export interface BuildServerOptions {
   now?: () => Date;
   trackHistoryStore?: TrackHistoryStore;
   trackLifecycle?: TrackLifecycleConfig;
+  streamBroadcaster?: CopStreamBroadcaster;
 }
 
 type DependencyStatus = "disabled" | "degraded" | "ok";
@@ -36,6 +38,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const now = options.now ?? (() => new Date());
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
+  const streamBroadcaster = options.streamBroadcaster ?? new CopStreamBroadcaster();
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
   let restoredCurrentTrackCount = 0;
@@ -103,7 +106,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       `cop_current_tracks_persisted_total ${persistedCurrentTrackCount}`,
       "# HELP cop_track_history_points_total Retained temporal track history points.",
       "# TYPE cop_track_history_points_total gauge",
-      `cop_track_history_points_total ${trackHistoryPointCount}`
+      `cop_track_history_points_total ${trackHistoryPointCount}`,
+      "# HELP cop_stream_clients_total Connected COP live stream clients.",
+      "# TYPE cop_stream_clients_total gauge",
+      `cop_stream_clients_total ${streamBroadcaster.clientCount}`
     ];
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
@@ -274,7 +280,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
 
-    return handleIngestEvent(state, validation.data, request.headers, reply, correlationId, persistCurrentTrack, persistTrackHistoryPoint);
+    return handleIngestEvent(
+      state,
+      validation.data,
+      request.headers,
+      reply,
+      correlationId,
+      persistCurrentTrack,
+      persistTrackHistoryPoint,
+      publishCurrentTracks
+    );
   });
 
   app.post("/api/v1/ingest/batches", async (request, reply) => {
@@ -290,6 +305,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     const items: Array<{ eventId: string; status: "QUEUED" | "REJECTED"; errorCode?: string }> = [];
+    const acceptedObjects: ObservedObject[] = [];
     for (const item of body.events) {
       const validation = validators.validateCanonicalEvent(item);
       if (!validation.valid || !validation.data) {
@@ -300,8 +316,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const result = acceptEvent(state, validation.data);
       await persistCurrentTrack(result.object, result.accepted);
       await persistTrackHistoryPoint(result.historyPoint);
+      acceptedObjects.push(result.object);
       items.push({ eventId: result.accepted.eventId, status: "QUEUED" });
     }
+    publishCurrentTracks(acceptedObjects);
 
     const response = {
       batchId: body.batchId,
@@ -366,6 +384,49 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
+  app.get("/api/v1/stream/cop/live", async (request, reply) => {
+    const subject = defaultSystemSubject();
+    const subscriptionId = crypto.randomUUID();
+    const writeMessage = (message: CopStreamMessage) => {
+      if (reply.raw.destroyed || reply.raw.writableEnded) {
+        return;
+      }
+
+      const visibleMessage = filterStreamMessage(subject, message);
+      if (!visibleMessage) {
+        return;
+      }
+
+      try {
+        reply.raw.write(`event: ${visibleMessage.type}\n`);
+        reply.raw.write(`id: ${visibleMessage.sequence}\n`);
+        reply.raw.write(`data: ${JSON.stringify(visibleMessage)}\n\n`);
+      } catch {
+        request.raw.destroy();
+      }
+    };
+
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "x-accel-buffering": "no"
+    });
+    reply.raw.write("retry: 5000\n\n");
+    writeMessage(streamBroadcaster.createSnapshot(subscriptionId, readableCurrentTracks(subject), now()));
+
+    const unsubscribe = streamBroadcaster.subscribe(writeMessage);
+    const heartbeat = setInterval(() => {
+      writeMessage(streamBroadcaster.createHeartbeat(now()));
+    }, 15000);
+    const cleanup = () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    };
+    request.raw.once("close", cleanup);
+  });
+
   app.get("/api/v1/stream/cop/:subscriptionId", async (request) => {
     const params = request.params as { subscriptionId: string };
     return {
@@ -418,6 +479,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return response;
   });
 
+  function readableCurrentTracks(subject: ReturnType<typeof defaultSystemSubject>): ObservedObject[] {
+    return selectCurrentTracks(state.objects.values(), now(), trackLifecycle).filter((object) => canReadObject(subject, object));
+  }
+
+  function publishCurrentTracks(objects: ObservedObject[]): void {
+    const subject = defaultSystemSubject();
+    const readableObjects = objects.filter((object) => canReadObject(subject, object));
+    streamBroadcaster.publishObjectUpserts(readableObjects, now());
+  }
+
   return app;
 }
 
@@ -428,7 +499,8 @@ async function handleIngestEvent(
   reply: FastifyReply,
   correlationId: string,
   persistCurrentTrack: (object: ObservedObject, event: CanonicalEventEnvelope) => Promise<void>,
-  persistTrackHistoryPoint: (point: TrackHistoryPoint | undefined) => Promise<void>
+  persistTrackHistoryPoint: (point: TrackHistoryPoint | undefined) => Promise<void>,
+  publishCurrentTracks: (objects: ObservedObject[]) => void
 ) {
   const headerSource = headerAsString(headers["x-source-system-id"]);
   const sourceCheck = validateSourceForRequest(state, headerSource, event.source.sourceSystemId, correlationId);
@@ -467,6 +539,7 @@ async function handleIngestEvent(
   const result = acceptEvent(state, event);
   await persistCurrentTrack(result.object, result.accepted);
   await persistTrackHistoryPoint(result.historyPoint);
+  publishCurrentTracks([result.object]);
   const accepted = result.accepted;
   const response = {
     accepted: true,
@@ -497,11 +570,31 @@ function acceptEvent(
 }
 
 function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
+  return canReadBySyntheticFlag(subject, point.synthetic);
+}
+
+function canReadObject(subject: ReturnType<typeof defaultSystemSubject>, object: ObservedObject): boolean {
+  return canReadBySyntheticFlag(subject, object.synthetic);
+}
+
+function canReadBySyntheticFlag(subject: ReturnType<typeof defaultSystemSubject>, synthetic: boolean | undefined): boolean {
   const decision = evaluateReadPolicy(subject, {
     classification: "UNCLASSIFIED",
-    synthetic: point.synthetic
+    synthetic
   });
   return decision.allowed;
+}
+
+function filterStreamMessage(subject: ReturnType<typeof defaultSystemSubject>, message: CopStreamMessage): CopStreamMessage | null {
+  if (message.type === "heartbeat") {
+    return message;
+  }
+
+  const changes = message.changes.filter((change) => canReadObject(subject, change.object));
+  if (message.type === "snapshot") {
+    return { ...message, changes };
+  }
+  return changes.length > 0 ? { ...message, changes } : null;
 }
 
 function validateSourceForRequest(

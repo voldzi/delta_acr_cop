@@ -259,11 +259,11 @@ paths:
   /api/v1/stream/cop/{subscriptionId}:
     get:
       tags: [Streaming]
-      summary: Open COP stream for a subscription.
+      summary: Read legacy COP snapshot for a subscription.
       operationId: streamCopSubscription
       description: >
-        Skeleton endpoint for WebSocket or SSE-compatible COP stream. Message
-        types are defined in docs/integration/04_STREAMING_CONTRACT.md.
+        Compatibility endpoint returning the current subscription snapshot.
+        The live browser stream is exposed at /api/v1/stream/cop/live.
       parameters:
         - name: subscriptionId
           in: path
@@ -287,6 +287,26 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/stream/cop/live:
+    get:
+      tags: [Streaming]
+      summary: Open live COP Server-Sent Events stream.
+      operationId: streamLiveCop
+      description: >
+        SSE stream that emits a policy-filtered snapshot, object delta messages
+        from accepted ingest events, and heartbeat messages. Clients authenticate
+        with the standard Authorization bearer header.
+      responses:
+        "200":
+          description: Stream established.
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/StreamMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/symbology/resolve:
     post:
       tags: [Symbology]
@@ -770,7 +790,7 @@ components:
           maximum: 1
     StreamMessage:
       type: object
-      required: [type, subscriptionId, serverTimestamp]
+      required: [type, serverTimestamp, sequence]
       properties:
         type:
           type: string

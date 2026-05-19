@@ -4,9 +4,15 @@ Streaming kontrakt distribuuje policy-filtered COP data přes subscription.
 
 ## Endpoint
 
-`GET /api/v1/stream/cop/{subscriptionId}`
+`GET /api/v1/stream/cop/live`
 
-Pilotní implementace zatím vrací snapshot. Skutečný stream s delta zprávami je plánovaný další krok. Do té doby web používá polling pro aktuální stav a samostatný temporal endpoint pro historii tras.
+Produkční pilot používá Server-Sent Events (SSE). Server po připojení pošle policy-filtered `snapshot`, následně `delta` při přijatých ingest eventech a periodický `heartbeat`. Web klient stream používá jako primární kanál a refresh interval ponechává jako polling fallback pro degraded režim.
+
+Web klient stream čte přes `fetch` nad `text/event-stream`, aby i v Keycloak režimu mohl posílat standardní `Authorization: Bearer ...` hlavičku. Token se proto neposílá v URL.
+
+Legacy snapshot endpoint zůstává k dispozici pro kompatibilitu:
+
+`GET /api/v1/stream/cop/{subscriptionId}`
 
 ## Temporal history endpoint
 

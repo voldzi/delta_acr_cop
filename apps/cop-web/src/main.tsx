@@ -38,11 +38,14 @@ import {
   type AuthSession
 } from "./auth";
 import {
+  connectCopStream,
   fetchCopDashboardData,
   filterObjectsByLayer,
   filterVisibleObjects,
   getDataQualityCount,
   getUavCount,
+  type CopStreamMessage,
+  type CopStreamStatus,
   type CopLayer,
   type CopObject,
   type HealthStatus,
@@ -116,8 +119,10 @@ export function App() {
   const [domainScope, setDomainScope] = React.useState<DomainScope>(() => readInitialDomainScope(initialPreferences.domainScope));
   const [searchQuery, setSearchQuery] = React.useState("");
   const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
+  const [lastStreamAt, setLastStreamAt] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [streamStatus, setStreamStatus] = React.useState<CopStreamStatus>("connecting");
   const [autoRefresh, setAutoRefresh] = React.useState(() => readInitialAutoRefresh(initialPreferences.autoRefresh));
   const [refreshSeconds, setRefreshSeconds] = React.useState<RefreshSeconds>(() =>
     readInitialRefreshSeconds(normalizeRefreshSeconds(initialPreferences.refreshSeconds ?? defaultRefreshSeconds))
@@ -206,14 +211,59 @@ export function App() {
   }, [load]);
 
   React.useEffect(() => {
-    if (!autoRefresh) {
+    if (!dataAccessReady) {
+      setStreamStatus("degraded");
+      return;
+    }
+
+    let active = true;
+    setStreamStatus("connecting");
+    const connection = connectCopStream(apiBase, authToken, {
+      onError: () => {
+        if (active) {
+          setStreamStatus("polling");
+        }
+      },
+      onMessage: (message) => {
+        if (!active) {
+          return;
+        }
+        applyCopStreamMessage(message, {
+          setLastLoadedAt,
+          setLastStreamAt,
+          setObjects,
+          setStreamStatus,
+          setTrackHistory,
+          trackHistoryLimit,
+          trackHistoryWindowSeconds
+        });
+      },
+      onOpen: () => {
+        if (active) {
+          setStreamStatus("live");
+        }
+      }
+    });
+    if (!connection) {
+      setStreamStatus("polling");
+      return;
+    }
+
+    return () => {
+      active = false;
+      connection.close();
+    };
+  }, [authToken, dataAccessReady, trackHistoryLimit, trackHistoryWindowSeconds]);
+
+  React.useEffect(() => {
+    if (!autoRefresh || streamStatus === "live") {
       return;
     }
     const timer = window.setInterval(() => {
       void load();
     }, refreshSeconds * 1000);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, load, refreshSeconds]);
+  }, [autoRefresh, load, refreshSeconds, streamStatus]);
 
   React.useEffect(() => {
     setTrackHistory((current) => trimTrackHistory(current, trackHistoryLimit, trackHistoryWindowSeconds));
@@ -433,9 +483,9 @@ export function App() {
         </div>
         <div className="status-strip">
           <StatusItem icon={<Wifi size={16} />} label="API" value={health?.status === "ok" ? "OK" : "loading"} tone={health?.status === "ok" ? "ok" : "warn"} />
+          <StatusItem icon={<Activity size={16} />} label="Stream" value={streamStatusLabel(streamStatus)} tone={streamStatusTone(streamStatus)} />
           <StatusItem icon={<RadioTower size={16} />} label="Sources" value={String(sources.length)} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
           <StatusItem icon={<Database size={16} />} label="Objects" value={String(visibleObjects.length)} tone="neutral" />
-          <StatusItem icon={<Bot size={16} />} label="AI" value="mock" tone="neutral" />
         </div>
         <button className="operator-button" onClick={() => openSettings("account")} type="button">
           <UserCircle size={19} />
@@ -617,6 +667,7 @@ export function App() {
             <ReadinessRow label="Source coverage" value={metrics.activeSources > 0 ? "active" : "waiting"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
             <ReadinessRow label="SIM data visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
             <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
+            <ReadinessRow label="Live stream" value={streamReadinessLabel(streamStatus, lastStreamAt)} tone={streamStatusTone(streamStatus)} />
             <ReadinessRow label="Refresh rate" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
             <ReadinessRow label="History window" value={`${trackHistoryWindowSeconds} s · max ${trackHistoryLimit} pts`} tone="neutral" />
@@ -717,6 +768,85 @@ function StatusItem({ icon, label, value, tone }: { icon: React.ReactNode; label
       <strong>{value}</strong>
     </div>
   );
+}
+
+function applyCopStreamMessage(
+  message: CopStreamMessage,
+  context: {
+    setLastLoadedAt: React.Dispatch<React.SetStateAction<string | null>>;
+    setLastStreamAt: React.Dispatch<React.SetStateAction<string | null>>;
+    setObjects: React.Dispatch<React.SetStateAction<CopObject[]>>;
+    setStreamStatus: React.Dispatch<React.SetStateAction<CopStreamStatus>>;
+    setTrackHistory: React.Dispatch<React.SetStateAction<TrackHistory>>;
+    trackHistoryLimit: number;
+    trackHistoryWindowSeconds: number;
+  }
+): void {
+  const observedAt = message.serverTimestamp || new Date().toISOString();
+  const observedAtLabel = formatStreamTime(observedAt);
+  context.setLastStreamAt(observedAtLabel);
+  context.setStreamStatus("live");
+
+  if (message.type === "heartbeat") {
+    return;
+  }
+
+  const changedObjects = message.changes.map((change) => change.object);
+  context.setLastLoadedAt(observedAtLabel);
+  context.setObjects((current) => message.type === "snapshot" ? changedObjects : upsertObjects(current, changedObjects));
+  context.setTrackHistory((current) =>
+    mergeTrackHistory(current, changedObjects, observedAt, context.trackHistoryLimit, context.trackHistoryWindowSeconds)
+  );
+}
+
+function upsertObjects(current: CopObject[], changedObjects: CopObject[]): CopObject[] {
+  const next = new Map(current.map((object) => [object.objectId, object]));
+  changedObjects.forEach((object) => next.set(object.objectId, object));
+  return Array.from(next.values());
+}
+
+function streamStatusLabel(status: CopStreamStatus): string {
+  if (status === "live") {
+    return "LIVE";
+  }
+  if (status === "connecting") {
+    return "CONNECT";
+  }
+  if (status === "polling") {
+    return "POLLING";
+  }
+  return "DEGRADED";
+}
+
+function streamStatusTone(status: CopStreamStatus): "ok" | "warn" | "neutral" {
+  if (status === "live") {
+    return "ok";
+  }
+  if (status === "connecting") {
+    return "neutral";
+  }
+  return "warn";
+}
+
+function streamReadinessLabel(status: CopStreamStatus, lastStreamAt: string | null): string {
+  if (status === "live") {
+    return lastStreamAt ? `live ${lastStreamAt}` : "live";
+  }
+  if (status === "connecting") {
+    return "connecting";
+  }
+  if (status === "polling") {
+    return "polling fallback";
+  }
+  return "degraded";
+}
+
+function formatStreamTime(value: string): string {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return new Date().toLocaleTimeString("cs-CZ");
+  }
+  return timestamp.toLocaleTimeString("cs-CZ");
 }
 
 function MetricTile({ label, value, tone }: { label: string; value: string | number; tone: "friend" | "hostile" | "ok" | "warn" }) {

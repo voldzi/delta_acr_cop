@@ -13,7 +13,7 @@ Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplik
 | Proximity awareness | Dokončeno v pilotu | Uživatel může zobrazit vlastní polohu a průsvitnou varovnou vrstvu přiblížení cizích objektů. |
 | Server-side temporal history | Rozpracováno | API drží body stop, web je používá jako zdroj pro historii tras a PostgreSQL store přes HAProxy/Patroni persistuje historii i current snapshot. |
 | Timeline/replay | Částečně | UI má časové okno historie v sekundách; plný replay nad serverovou časovou osou je další krok. |
-| Stream/delta distribuce | Částečně | Existuje snapshot endpoint; skutečný SSE/WebSocket delta stream je další krok. |
+| Stream/delta distribuce | Pilotně hotovo | SSE endpoint posílá snapshot, delta a heartbeat; web používá stream jako primární kanál a polling jako fallback. |
 | Perzistence a multi-user provoz | Částečně | UI nastavení jsou lokální pro uživatele/prohlížeč; current tracks a historie mají PostgreSQL backend. |
 
 ## Prioritizované kroky
@@ -43,12 +43,13 @@ Status: probíhá.
 
 ### P3: Realtime distribuce
 
-Status: další implementační krok po temporal store v1.
+Status: pilotně hotovo.
 
-- nahradit polling skutečným SSE nebo WebSocket streamem,
-- posílat snapshot, delta, heartbeat a reconnect signalizaci,
-- zachovat policy filtering na serveru,
-- nechat refresh interval jako fallback/degraded režim.
+- polling je doplněný skutečným SSE streamem,
+- server posílá snapshot, delta a heartbeat,
+- policy filtering zůstává na serveru,
+- refresh interval zůstává jako fallback/degraded režim,
+- další krok je měření stream latency a backpressure signalizace.
 
 ### P4: Operační nastavení a uživatelský profil
 
@@ -75,3 +76,4 @@ Status: plán.
 | 2026-05-19 | Temporal history API v1 | Přidán in-memory temporal store a endpoint `/api/v1/cop/track-history`; web jej používá pro zobrazení historie tras. |
 | 2026-05-19 | PostgreSQL temporal store v1 | Přidán volitelný PostgreSQL backend pro historii stop přes `COP_TRACK_HISTORY_STORE=postgres` a `COP_DATABASE_URL`; runbook popisuje napojení na HAProxy/Patroni. |
 | 2026-05-19 | PostgreSQL current snapshot v1 | Přidán `cop_current_tracks`, UPSERT při ingestu a obnova aktuálních objektů při startu API. |
+| 2026-05-19 | SSE live stream v1 | Přidán `/api/v1/stream/cop/live`, snapshot/delta/heartbeat zprávy, klientské čtení přes `fetch` stream s bearer hlavičkou a polling fallback. |
