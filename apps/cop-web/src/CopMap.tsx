@@ -88,6 +88,7 @@ export interface TrackLineFeatureCollection {
 
 interface CopMapProps {
   objects: CopObject[];
+  emptyMessage: string;
   selectedLayer: CopLayer;
   selectedObjectId?: string;
   showHistory: boolean;
@@ -110,6 +111,7 @@ interface CopMapProps {
 
 export function CopMap({
   objects,
+  emptyMessage,
   selectedLayer,
   selectedObjectId,
   showHistory,
@@ -511,7 +513,7 @@ export function CopMap({
       </div>
       {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}
       {mapError ? <div className="map-notice error">Mapový podklad: {mapError}</div> : null}
-      {objects.length === 0 ? <div className="map-empty">Čekám na georeferencované COP tracky.</div> : null}
+      {objects.length === 0 ? <div className="map-empty">{emptyMessage}</div> : null}
     </div>
   );
 }

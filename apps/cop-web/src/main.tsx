@@ -241,6 +241,10 @@ export function App() {
     () => filterObjectsByLayer(scopedObjects, selectedLayer),
     [scopedObjects, selectedLayer]
   );
+  const mapEmptyMessage = React.useMemo(
+    () => buildMapEmptyMessage({ loadError, objects, scopedObjects, sources, visibleObjects }),
+    [loadError, objects, scopedObjects, sources, visibleObjects]
+  );
   const selectedObject = visibleObjects.find((object) => object.objectId === selectedObjectId) ?? visibleObjects[0];
   const metrics = React.useMemo(() => buildMetrics(scopedObjects, sources), [scopedObjects, sources]);
   const eventStream = React.useMemo(() => buildEventStream(visibleObjects), [visibleObjects]);
@@ -548,6 +552,7 @@ export function App() {
           <section className="map-stage">
             <CopMap
               objects={visibleObjects}
+              emptyMessage={mapEmptyMessage}
               selectedLayer={selectedLayer}
               selectedObjectId={selectedObject?.objectId}
               showHistory={showHistory}
@@ -1167,6 +1172,44 @@ function buildMetrics(objects: CopObject[], sources: SourceSystem[]): DashboardM
     syntheticCount: objects.filter((object) => object.synthetic).length,
     warningCount: lowConfidenceCount + objects.filter((object) => object.status === "LOST" || object.status === "STALE").length
   };
+}
+
+function buildMapEmptyMessage({
+  loadError,
+  objects,
+  scopedObjects,
+  sources,
+  visibleObjects
+}: {
+  loadError: string | null;
+  objects: CopObject[];
+  scopedObjects: CopObject[];
+  sources: SourceSystem[];
+  visibleObjects: CopObject[];
+}): string {
+  if (loadError) {
+    return `COP API není dostupné: ${loadError}`;
+  }
+  if (objects.length > 0 && visibleObjects.length === 0) {
+    return scopedObjects.length > 0
+      ? "Aktivní mapová vrstva neobsahuje žádné tracky."
+      : "Aktivní filtry skrývají všechny přijaté COP tracky.";
+  }
+  if (hasActiveSimSource(sources)) {
+    return "SIM zdroj je připojený, ale COP nemá žádné aktivní georeferencované tracky. Spusť scénář v SIM.";
+  }
+  if (sources.length > 0) {
+    return "Source Registry je dostupný, ale zatím nejsou přijaty aktivní georeferencované tracky.";
+  }
+  return "Čekám na georeferencované COP tracky.";
+}
+
+function hasActiveSimSource(sources: SourceSystem[]): boolean {
+  return sources.some((source) => {
+    const sourceId = source.sourceSystemId.toLowerCase();
+    const name = source.displayName.toLowerCase();
+    return source.status === "ACTIVE" && (source.synthetic || sourceId.includes("sim") || name.includes("sim"));
+  });
 }
 
 function buildEventStream(objects: CopObject[]) {
