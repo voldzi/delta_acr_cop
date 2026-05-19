@@ -25,6 +25,14 @@ export interface CopObject {
     lon: number;
     altitudeM?: number | null;
   };
+  movement?: {
+    speedMps?: number | null;
+    headingDeg?: number | null;
+    verticalRateMps?: number | null;
+  };
+  speedMps?: number | null;
+  headingDeg?: number | null;
+  verticalRateMps?: number | null;
 }
 
 export interface CopDashboardData {

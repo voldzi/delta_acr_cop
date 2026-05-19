@@ -6,6 +6,7 @@ import maplibregl, {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { CopLayer, CopObject } from "./cop-data";
+import { predictPosition, type TrackHistory } from "./track-history";
 import {
   createNatoSymbolSvg,
   getAffiliationPresentation,
@@ -15,6 +16,10 @@ import {
 } from "./symbology";
 
 const trackSourceId = "cop-live-tracks";
+const trackHistorySourceId = "cop-track-history";
+const trackPredictionSourceId = "cop-track-prediction";
+const trackHistoryLayerId = "cop-track-history-line";
+const trackPredictionLayerId = "cop-track-prediction-line";
 const trackSelectedHaloLayerId = "cop-live-track-selected-halo";
 const trackSymbolLayerId = "cop-live-track-symbol";
 const trackLabelLayerId = "cop-live-track-label";
@@ -53,14 +58,46 @@ export interface TrackFeatureCollection {
   features: TrackFeature[];
 }
 
+export interface TrackLineFeature {
+  type: "Feature";
+  geometry: {
+    type: "LineString";
+    coordinates: Array<[number, number]>;
+  };
+  properties: {
+    objectId: string;
+    color: string;
+    selected: boolean;
+    method?: "movement" | "history";
+  };
+}
+
+export interface TrackLineFeatureCollection {
+  type: "FeatureCollection";
+  features: TrackLineFeature[];
+}
+
 interface CopMapProps {
   objects: CopObject[];
   selectedLayer: CopLayer;
   selectedObjectId?: string;
+  showHistory: boolean;
+  showPrediction: boolean;
+  trackHistory: TrackHistory;
+  predictionMinutes: number;
   onSelectObject: (object: CopObject) => void;
 }
 
-export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObject }: CopMapProps) {
+export function CopMap({
+  objects,
+  selectedLayer,
+  selectedObjectId,
+  showHistory,
+  showPrediction,
+  trackHistory,
+  predictionMinutes,
+  onSelectObject
+}: CopMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const objectsRef = React.useRef(objects);
@@ -75,6 +112,17 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
   const featureCollection = React.useMemo(
     () => objectsToTrackFeatureCollection(objects, selectedId),
     [objects, selectedId]
+  );
+  const historyFeatureCollection = React.useMemo(
+    () => (showHistory ? objectsToHistoryFeatureCollection(objects, trackHistory, selectedId) : emptyLineFeatureCollection()),
+    [objects, selectedId, showHistory, trackHistory]
+  );
+  const predictionFeatureCollection = React.useMemo(
+    () =>
+      showPrediction
+        ? objectsToPredictionFeatureCollection(objects, trackHistory, selectedId, predictionMinutes)
+        : emptyLineFeatureCollection(),
+    [objects, predictionMinutes, selectedId, showPrediction, trackHistory]
   );
 
   objectsRef.current = objects;
@@ -111,10 +159,49 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
           type: "geojson",
           data: objectsToTrackFeatureCollection(objectsRef.current, objectsRef.current[0]?.objectId) as Parameters<GeoJSONSource["setData"]>[0]
         });
+        map.addSource(trackHistorySourceId, {
+          type: "geojson",
+          data: emptyLineFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(trackPredictionSourceId, {
+          type: "geojson",
+          data: emptyLineFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
         await registerNatoSymbolImages(map);
         if (mapRef.current !== map) {
           return;
         }
+
+        map.addLayer({
+          id: trackHistoryLayerId,
+          type: "line",
+          source: trackHistorySourceId,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": ["get", "color"],
+            "line-opacity": 0.58,
+            "line-width": ["case", ["get", "selected"], 2.8, 1.8]
+          }
+        });
+
+        map.addLayer({
+          id: trackPredictionLayerId,
+          type: "line",
+          source: trackPredictionSourceId,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": ["get", "color"],
+            "line-dasharray": [0.35, 1.4],
+            "line-opacity": 0.56,
+            "line-width": ["case", ["get", "selected"], 2.9, 1.9]
+          }
+        });
 
         map.addLayer({
           id: trackSelectedHaloLayerId,
@@ -201,6 +288,20 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
   }, [featureCollection, mapReady]);
 
   React.useEffect(() => {
+    const source = mapRef.current?.getSource(trackHistorySourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(historyFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [historyFeatureCollection, mapReady]);
+
+  React.useEffect(() => {
+    const source = mapRef.current?.getSource(trackPredictionSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(predictionFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [mapReady, predictionFeatureCollection]);
+
+  React.useEffect(() => {
     if (!mapReady || !autoFit || positionedObjects.length === 0) {
       return;
     }
@@ -248,6 +349,8 @@ export function CopMap({ objects, selectedLayer, selectedObjectId, onSelectObjec
         <LegendItem disposition="hostile" color="#ef4444" label="Cizí" />
         <LegendItem disposition="neutral" color="#22c55e" label="Neutrální" />
         <LegendItem disposition="unknown" color="#facc15" label="Neznámé" />
+        {showHistory ? <LineLegendItem label="Historie" /> : null}
+        {showPrediction ? <LineLegendItem dashed label="Predikce" /> : null}
       </div>
       {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}
       {mapError ? <div className="map-notice error">Mapový podklad: {mapError}</div> : null}
@@ -284,6 +387,83 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
         }
       };
     })
+  };
+}
+
+export function objectsToHistoryFeatureCollection(
+  objects: CopObject[],
+  trackHistory: TrackHistory,
+  selectedObjectId?: string
+): TrackLineFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: objects.flatMap((object) => {
+      const points = trackHistory[object.objectId] ?? [];
+      if (points.length < 2) {
+        return [];
+      }
+      const affiliation = getAffiliationPresentation(object.affiliation);
+      return [
+        {
+          type: "Feature" as const,
+          geometry: {
+            type: "LineString" as const,
+            coordinates: points.map((point) => [point.lon, point.lat] as [number, number])
+          },
+          properties: {
+            objectId: object.objectId,
+            color: affiliation.color,
+            selected: object.objectId === selectedObjectId
+          }
+        }
+      ];
+    })
+  };
+}
+
+export function objectsToPredictionFeatureCollection(
+  objects: CopObject[],
+  trackHistory: TrackHistory,
+  selectedObjectId: string | undefined,
+  predictionMinutes: number
+): TrackLineFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: objects.flatMap((object) => {
+      if (!hasPosition(object)) {
+        return [];
+      }
+      const prediction = predictPosition(object, trackHistory[object.objectId], predictionMinutes);
+      if (!prediction) {
+        return [];
+      }
+      const affiliation = getAffiliationPresentation(object.affiliation);
+      return [
+        {
+          type: "Feature" as const,
+          geometry: {
+            type: "LineString" as const,
+            coordinates: [
+              [object.position.lon, object.position.lat],
+              [prediction.lon, prediction.lat]
+            ]
+          },
+          properties: {
+            objectId: object.objectId,
+            color: affiliation.color,
+            selected: object.objectId === selectedObjectId,
+            method: prediction.method
+          }
+        }
+      ];
+    })
+  };
+}
+
+function emptyLineFeatureCollection(): TrackLineFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: []
   };
 }
 
@@ -416,6 +596,15 @@ function LegendItem({ color, disposition, label }: { color: string; disposition:
   return (
     <div className="legend-item">
       <span className={`legend-symbol ${disposition}`} style={{ borderColor: color }} />
+      {label}
+    </div>
+  );
+}
+
+function LineLegendItem({ dashed = false, label }: { dashed?: boolean; label: string }) {
+  return (
+    <div className="legend-item">
+      <span className={`legend-line ${dashed ? "dashed" : ""}`} />
       {label}
     </div>
   );

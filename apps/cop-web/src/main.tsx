@@ -36,6 +36,7 @@ import {
 } from "./cop-data";
 import { CopMap } from "./CopMap";
 import { getAffiliationPresentation, getNatoSidc, resolveCopObjectSymbol } from "./symbology";
+import { countHistoryPoints, mergeTrackHistory, type TrackHistory } from "./track-history";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
@@ -75,16 +76,22 @@ export function App() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [replayRunning, setReplayRunning] = React.useState(false);
   const [replayPosition, setReplayPosition] = React.useState(72);
+  const [showHistory, setShowHistory] = React.useState(() => readInitialMapToggle("history"));
+  const [showPrediction, setShowPrediction] = React.useState(() => readInitialMapToggle("prediction"));
+  const [predictionMinutes, setPredictionMinutes] = React.useState(10);
+  const [trackHistory, setTrackHistory] = React.useState<TrackHistory>({});
   const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad COP daty.");
 
   const load = React.useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await fetchCopDashboardData(apiBase, labToken);
+      const observedAt = new Date();
       setHealth(data.health);
       setSources(data.sources);
       setObjects(data.objects);
-      setLastLoadedAt(new Date().toLocaleTimeString("cs-CZ"));
+      setTrackHistory((current) => mergeTrackHistory(current, data.objects, observedAt.toISOString()));
+      setLastLoadedAt(observedAt.toLocaleTimeString("cs-CZ"));
       setLoadError(null);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Nepodařilo se načíst COP data.");
@@ -126,6 +133,10 @@ export function App() {
   const selectedObject = visibleObjects.find((object) => object.objectId === selectedObjectId) ?? visibleObjects[0];
   const metrics = React.useMemo(() => buildMetrics(scopedObjects, sources), [scopedObjects, sources]);
   const eventStream = React.useMemo(() => buildEventStream(visibleObjects), [visibleObjects]);
+  const historyPointCount = React.useMemo(
+    () => countHistoryPoints(trackHistory, visibleObjects),
+    [trackHistory, visibleObjects]
+  );
 
   React.useEffect(() => {
     if (selectedObjectId && !visibleObjects.some((object) => object.objectId === selectedObjectId)) {
@@ -205,6 +216,28 @@ export function App() {
           <LayerButton active={selectedLayer === "friendly"} onClick={() => setSelectedLayer("friendly")} label="Vlastní" count={metrics.friendlyCount} />
           <LayerButton active={selectedLayer === "foreign"} onClick={() => setSelectedLayer("foreign")} label="Cizí" count={metrics.foreignCount} />
           <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={getDataQualityCount(scopedObjects)} />
+          <div className="map-layer-options">
+            <label className="toggle-row compact">
+              <input type="checkbox" checked={showHistory} onChange={(event) => setShowHistory(event.target.checked)} />
+              Historie trasy
+            </label>
+            <label className="toggle-row compact">
+              <input type="checkbox" checked={showPrediction} onChange={(event) => setShowPrediction(event.target.checked)} />
+              Predikce pohybu
+            </label>
+            <label className="range-label compact">
+              Horizont predikce
+              <input
+                type="range"
+                min="2"
+                max="20"
+                step="1"
+                value={predictionMinutes}
+                onChange={(event) => setPredictionMinutes(Number(event.target.value))}
+              />
+              <span>{predictionMinutes} min</span>
+            </label>
+          </div>
 
           <div className="control-block">
             <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry" />
@@ -267,6 +300,10 @@ export function App() {
               objects={visibleObjects}
               selectedLayer={selectedLayer}
               selectedObjectId={selectedObject?.objectId}
+              showHistory={showHistory}
+              showPrediction={showPrediction}
+              trackHistory={trackHistory}
+              predictionMinutes={predictionMinutes}
               onSelectObject={(object) => setSelectedObjectId(object.objectId)}
             />
           </section>
@@ -292,7 +329,9 @@ export function App() {
                 <div className="timeline-rail" aria-label="Replay position">
                   <span style={{ width: `${replayPosition}%` }} />
                 </div>
-                <strong>{visibleObjects.length} georeferencovaných tracků</strong>
+                <strong>
+                  {visibleObjects.length} tracků · {historyPointCount} bodů
+                </strong>
               </div>
               <EventStream events={eventStream} />
             </div>
@@ -312,6 +351,8 @@ export function App() {
             <ReadinessRow label="Source coverage" value={metrics.activeSources > 0 ? "active" : "waiting"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
             <ReadinessRow label="Synthetic visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
             <ReadinessRow label="Synthetic tracks" value={String(metrics.syntheticCount)} tone="neutral" />
+            <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
+            <ReadinessRow label="Prediction horizon" value={showPrediction ? `${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
             <ReadinessRow label="Policy scope" value="COP data only" tone="neutral" />
           </div>
 
@@ -505,6 +546,10 @@ function ObjectDetail({ object }: { object: CopObject }) {
           <dd>{formatPosition(object)}</dd>
         </div>
         <div>
+          <dt>Movement</dt>
+          <dd>{formatMovement(object)}</dd>
+        </div>
+        <div>
           <dt>Age</dt>
           <dd>{formatAge(object.lastUpdatedAt)}</dd>
         </div>
@@ -590,6 +635,17 @@ function formatPosition(object: CopObject): string {
   return `${object.position.lat.toFixed(3)}, ${object.position.lon.toFixed(3)}${altitude}`;
 }
 
+function formatMovement(object: CopObject): string {
+  const speedMps = object.movement?.speedMps ?? object.speedMps;
+  const headingDeg = object.movement?.headingDeg ?? object.headingDeg;
+  if (!Number.isFinite(speedMps) && !Number.isFinite(headingDeg)) {
+    return "n/a";
+  }
+  const speed = Number.isFinite(speedMps) ? `${Math.round(Number(speedMps) * 3.6)} km/h` : "speed n/a";
+  const heading = Number.isFinite(headingDeg) ? `${Math.round(Number(headingDeg))}°` : "heading n/a";
+  return `${speed} · ${heading}`;
+}
+
 function formatAge(value: string | undefined): string {
   if (!value) {
     return "live sample";
@@ -603,6 +659,13 @@ function formatAge(value: string | undefined): string {
     return `${seconds} s`;
   }
   return `${Math.round(seconds / 60)} min`;
+}
+
+function readInitialMapToggle(name: "history" | "prediction"): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return new URLSearchParams(window.location.search).get(name) === "1";
 }
 
 const rootElement = document.getElementById("root");
