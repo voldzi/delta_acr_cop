@@ -11,4 +11,6 @@ Hlavní UI má šest oblastí:
 
 Pravý horní roh top baru obsahuje operátorský vstup. V pilotu neslouží k autentizaci, ale otevírá centrum nastavení pro uživatelské volby mapy, dat, vlastní polohy a budoucího účtu.
 
+Primární aktualizace COP dat probíhá přes live SSE stream. Nastavení intervalu je proto v centru nastavení jako `Fallback synchronizace`; používá se v degraded režimu, při výpadku streamu, po obnově záložky a pro méně dynamická data.
+
 UI nesmí obsahovat targeting, navádění ani ovládání prostředků.

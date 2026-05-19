@@ -48,7 +48,7 @@ Status: pilotně hotovo.
 - polling je doplněný skutečným SSE streamem,
 - server posílá snapshot, delta a heartbeat,
 - policy filtering zůstává na serveru,
-- refresh interval zůstává jako fallback/degraded režim,
+- refresh interval je přesunutý do nastavení jako fallback/degraded synchronizace,
 - další krok je měření stream latency a backpressure signalizace.
 
 ### P4: Operační nastavení a uživatelský profil
@@ -88,3 +88,4 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 | 2026-05-19 | Object detail v2 + lineage | Detail objektu má sekce Identita/Poloha/Symbologie/Zdroj/Confidence/Data lineage/Konflikty/Source history a informační detekci datových konfliktů. |
 | 2026-05-19 | Server conflict evidence v1 | API odvozuje konfliktní evidenci z aktuálního objektu, historie a source health; `/api/v1/cop/tracks`, SSE a `/api/v1/cop/conflicts` ji poskytují klientům. |
 | 2026-05-19 | Alert Center v1 | Přidány serverové alerty, acknowledgement endpoint, audit potvrzení a UI workspace Výstrahy s mapovou alert vrstvou. |
+| 2026-05-19 | Fallback sync UX | Refresh interval přejmenován a přesunut do nastavení jako degraded/fallback synchronizace; hlavní panel ponechává jen ruční obnovu. |

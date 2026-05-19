@@ -762,25 +762,6 @@ export function App() {
               <RefreshCw size={16} className={isLoading ? "spin" : ""} />
             </button>
           </div>
-          <div className="refresh-control">
-            <label className="toggle-row compact">
-              <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
-              Auto refresh
-            </label>
-            <div className="refresh-segment" aria-label="Interval automatického obnovování">
-              {REFRESH_OPTIONS.map((option) => (
-                <button
-                  aria-pressed={refreshSeconds === option}
-                  className={refreshSeconds === option ? "active" : ""}
-                  key={option}
-                  onClick={() => setRefreshSeconds(option)}
-                  type="button"
-                >
-                  {option}s
-                </button>
-              ))}
-            </div>
-          </div>
           {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
 
           <ViewProfilesPanel
@@ -1031,7 +1012,7 @@ export function App() {
             <ReadinessRow label="SIM data visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
             <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
             <ReadinessRow label="Live stream" value={streamReadinessLabel(streamStatus, lastStreamAt)} tone={streamStatusTone(streamStatus)} />
-            <ReadinessRow label="Refresh rate" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
+            <ReadinessRow label="Fallback sync" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
             <ReadinessRow label="Replay" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
             <ReadinessRow label="Alert Center" value={`${alertSummary.server} server · ${alertSummary.local} local`} tone={alertSummary.total > 0 ? "warn" : "ok"} />
@@ -1578,13 +1559,16 @@ function SettingsDrawer({
 
           {activeTab === "data" ? (
             <section className="settings-section">
-              <PanelTitle icon={<RefreshCw size={17} />} title="Data a refresh" />
+              <PanelTitle icon={<RefreshCw size={17} />} title="Fallback synchronizace" />
+              <p className="settings-help">
+                Primární zdroj živých dat je SSE stream. Tato synchronizace se používá při výpadku streamu, po obnově záložky a pro méně dynamická data.
+              </p>
               <label className="toggle-row">
                 <input type="checkbox" checked={autoRefresh} onChange={(event) => onAutoRefreshChange(event.target.checked)} />
-                Auto refresh
+                Povolit fallback synchronizaci
               </label>
               <SegmentedControl
-                label="Interval"
+                label="Fallback interval"
                 options={REFRESH_OPTIONS.map((option) => [String(option), `${option}s`])}
                 value={String(refreshSeconds)}
                 onChange={(value) => onRefreshSecondsChange(normalizeRefreshSeconds(Number(value)))}
