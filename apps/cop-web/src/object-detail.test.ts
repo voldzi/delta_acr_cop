@@ -43,6 +43,44 @@ describe("object detail model", () => {
 
     expect(model.conflicts.some((conflict) => conflict.title === "Source degraded")).toBe(true);
   });
+
+  it("prefers server conflict evidence when it is present on the object", () => {
+    const object = buildObject({
+      attributes: {
+        conflictEvidence: {
+          evaluatedAt: "2026-05-19T08:00:10Z",
+          objectId: "AIR_SIM_UAV-0001",
+          severity: "warning",
+          signals: [
+            {
+              detail: "Recent history contains multiple affiliations: FRIEND, HOSTILE.",
+              observedAt: "2026-05-19T08:00:10Z",
+              severity: "warning",
+              sourceSystemIds: ["sim-air"],
+              title: "Affiliation variance",
+              type: "AFFILIATION_VARIANCE"
+            }
+          ],
+          sourceSystemIds: ["sim-air"],
+          state: "CONFLICTED"
+        }
+      }
+    });
+
+    const model = buildObjectDetailModel({
+      historyPoints: [],
+      object,
+      sourceHealth: [buildSourceHealth({ health: "ONLINE" })]
+    });
+
+    expect(model.conflicts).toEqual([
+      {
+        detail: "Recent history contains multiple affiliations: FRIEND, HOSTILE. Sources: sim-air.",
+        severity: "warn",
+        title: "Affiliation variance"
+      }
+    ]);
+  });
 });
 
 function buildObject(overrides: Partial<CopObject>): CopObject {

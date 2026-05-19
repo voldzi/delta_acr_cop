@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CanonicalEventEnvelope, ObservedObject } from "@cop/canonical-model";
+import type { Affiliation, CanonicalEventEnvelope, ObjectStatus, ObservedObject } from "@cop/canonical-model";
 import { buildServer } from "./server.js";
 import type { TrackHistoryStore } from "./track-history-store.js";
 import type { TrackHistoryQuery } from "./temporal-history.js";
@@ -183,6 +183,66 @@ describe("COP state temporal history", () => {
       ]
     });
   });
+
+  it("returns server-side conflict evidence and decorates current tracks", async () => {
+    const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
+
+    await ingestTrack(app, "00000000-0000-4000-8000-000000000008", "2026-05-19T08:01:00Z", 50.04, 14.04, {
+      affiliation: "HOSTILE"
+    });
+    await ingestTrack(app, "00000000-0000-4000-8000-000000000009", "2026-05-19T08:02:00Z", 50.05, 14.05, {
+      affiliation: "FRIEND"
+    });
+
+    const conflictsResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/conflicts?objectIds=AIR_SIM_UAV-0001&seconds=300&limit=10"
+    });
+    expect(conflictsResponse.statusCode).toBe(200);
+    expect(conflictsResponse.json()).toMatchObject({
+      items: [
+        {
+          objectId: "AIR_SIM_UAV-0001",
+          state: "CONFLICTED",
+          signals: [
+            {
+              title: "Affiliation variance",
+              type: "AFFILIATION_VARIANCE"
+            }
+          ]
+        }
+      ]
+    });
+
+    const tracksResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/tracks"
+    });
+    expect(tracksResponse.statusCode).toBe(200);
+    expect(tracksResponse.json()).toMatchObject({
+      items: [
+        {
+          attributes: {
+            conflictEvidence: {
+              state: "CONFLICTED",
+              signals: [
+                {
+                  type: "AFFILIATION_VARIANCE"
+                }
+              ]
+            }
+          },
+          objectId: "AIR_SIM_UAV-0001"
+        }
+      ]
+    });
+  });
 });
 
 class FakeTrackHistoryStore implements TrackHistoryStore {
@@ -237,7 +297,20 @@ class FakeTrackHistoryStore implements TrackHistoryStore {
   async close(): Promise<void> {}
 }
 
-async function ingestTrack(app: ReturnType<typeof buildServer>, eventId: string, timestamp: string, lat: number, lon: number) {
+async function ingestTrack(
+  app: ReturnType<typeof buildServer>,
+  eventId: string,
+  timestamp: string,
+  lat: number,
+  lon: number,
+  options: {
+    affiliation?: Affiliation;
+    confidence?: number;
+    sourceSystemId?: string;
+    status?: ObjectStatus;
+  } = {}
+) {
+  const sourceSystemId = options.sourceSystemId ?? "sim-air-situation-001";
   const event: CanonicalEventEnvelope = {
     classification: {
       handlingCaveats: [],
@@ -251,16 +324,16 @@ async function ingestTrack(app: ReturnType<typeof buildServer>, eventId: string,
     geo: { lat, lon },
     ingestTimestamp: timestamp,
     payload: {
-      affiliation: "HOSTILE",
+      affiliation: options.affiliation ?? "HOSTILE",
       domain: "AIR",
       objectId: "AIR_SIM_UAV-0001",
       objectType: "UAV",
       position: { lat, lon },
-      status: "ACTIVE"
+      status: options.status ?? "ACTIVE"
     },
     producerTimestamp: timestamp,
     quality: {
-      confidence: 0.87,
+      confidence: options.confidence ?? 0.87,
       informationCredibility: "2",
       sourceReliability: "B"
     },
@@ -270,7 +343,7 @@ async function ingestTrack(app: ReturnType<typeof buildServer>, eventId: string,
     source: {
       adapterId: "sim-adapter",
       adapterVersion: "0.1.0",
-      sourceSystemId: "sim-air-situation-001"
+      sourceSystemId
     }
   };
 
@@ -279,7 +352,7 @@ async function ingestTrack(app: ReturnType<typeof buildServer>, eventId: string,
       authorization: "Bearer dev-lab-token",
       "x-contract-version": "cop-ingest-v1",
       "x-idempotency-key": eventId,
-      "x-source-system-id": "sim-air-situation-001"
+      "x-source-system-id": sourceSystemId
     },
     method: "POST",
     payload: event,

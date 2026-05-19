@@ -10,6 +10,8 @@ Produkční pilot používá Server-Sent Events (SSE). Server po připojení po�
 
 Web klient stream čte přes `fetch` nad `text/event-stream`, aby i v Keycloak režimu mohl posílat standardní `Authorization: Bearer ...` hlavičku. Token se proto neposílá v URL.
 
+Objekty ve `snapshot` i `delta` mohou nést `attributes.conflictEvidence`. Jde o serverově odvozenou informační evidenci pro confidence/provenance panel, ne o akční pokyn.
+
 Legacy snapshot endpoint zůstává k dispozici pro kompatibilitu:
 
 `GET /api/v1/stream/cop/{subscriptionId}`

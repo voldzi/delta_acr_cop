@@ -1,4 +1,4 @@
-import type { CopObject, ObjectProvenance, SourceHealthItem } from "./cop-data";
+import type { CopObject, ObjectConflictEvidence, ObjectProvenance, SourceHealthItem } from "./cop-data";
 import type { TrackHistoryPoint } from "./track-history";
 import { getAffiliationPresentation, getNatoSidc, resolveCopObjectSymbol } from "./symbology";
 
@@ -56,6 +56,7 @@ export function buildObjectDetailModel({
   sourceHealth: SourceHealthItem[];
 }): ObjectDetailModel {
   const provenance = object.attributes?.provenance;
+  const conflictEvidence = object.attributes?.conflictEvidence;
   const sourceHealthItem = provenance?.sourceSystemId
     ? sourceHealth.find((item) => item.sourceSystemId === provenance.sourceSystemId)
     : undefined;
@@ -64,7 +65,7 @@ export function buildObjectDetailModel({
 
   return {
     affiliation: getAffiliationPresentation(object.affiliation),
-    conflicts: detectObjectConflicts(object, historyPoints, sourceHealthItem),
+    conflicts: conflictsFromServerEvidence(conflictEvidence) ?? detectObjectConflicts(object, historyPoints, sourceHealthItem),
     confidenceFactors: buildConfidenceFactors(object, provenance, sourceHealthItem),
     history: historyPoints.slice(-6).reverse().map((point) => ({
       confidence: point.confidence,
@@ -83,6 +84,28 @@ export function buildObjectDetailModel({
     sourceHealth: sourceHealthItem,
     symbolCode: symbol.symbolCode
   };
+}
+
+function conflictsFromServerEvidence(evidence: ObjectConflictEvidence | undefined): ObjectConflict[] | null {
+  if (!evidence) {
+    return null;
+  }
+
+  if (evidence.signals.length === 0) {
+    return [
+      {
+        detail: `Server fusion evaluated this object at ${evidence.evaluatedAt}; no conflicting evidence is currently visible.`,
+        severity: "neutral",
+        title: "No conflict detected"
+      }
+    ];
+  }
+
+  return evidence.signals.map((signal) => ({
+    detail: signal.sourceSystemIds.length > 0 ? `${signal.detail} Sources: ${signal.sourceSystemIds.join(", ")}.` : signal.detail,
+    severity: signal.severity === "warning" ? "warn" : "neutral",
+    title: signal.title
+  }));
 }
 
 function buildConfidenceFactors(

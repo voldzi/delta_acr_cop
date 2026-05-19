@@ -34,6 +34,7 @@ export interface CopObject {
   headingDeg?: number | null;
   verticalRateMps?: number | null;
   attributes?: {
+    conflictEvidence?: ObjectConflictEvidence;
     provenance?: ObjectProvenance;
     [key: string]: unknown;
   };
@@ -51,6 +52,24 @@ export interface ObjectProvenance {
   sourceReliability?: string;
   sourceSystemId?: string;
   synthetic?: boolean;
+}
+
+export interface ConflictSignal {
+  detail: string;
+  observedAt?: string;
+  severity: "info" | "warning";
+  sourceSystemIds: string[];
+  title: string;
+  type: string;
+}
+
+export interface ObjectConflictEvidence {
+  evaluatedAt: string;
+  objectId: string;
+  severity: "info" | "warning";
+  signals: ConflictSignal[];
+  sourceSystemIds: string[];
+  state: "CLEAR" | "CONFLICTED";
 }
 
 export interface ServerTrackHistoryPoint {

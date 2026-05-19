@@ -177,6 +177,59 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/cop/conflicts:
+    get:
+      tags: [COP]
+      summary: Query server-side COP conflict evidence.
+      operationId: listCopConflictEvidence
+      description: >
+        Returns derived data-quality conflict evidence for current COP objects.
+        Evidence may include affiliation variance, lifecycle variance, source
+        position variance, low confidence, degraded source health and object
+        states already marked as conflicted. This endpoint is informational only
+        and does not provide targeting or action recommendations.
+      parameters:
+        - name: objectIds
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated object IDs. When omitted, current objects are evaluated.
+        - name: seconds
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 300
+          description: Evaluate recent history newer than this many seconds from server time.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 24
+          description: Maximum retained points per object used for evidence.
+        - name: includeExpired
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include tracks older than the configured active display lifecycle.
+      responses:
+        "200":
+          description: Server-side conflict evidence.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopConflictEvidenceList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/cop/track-history:
     get:
       tags: [COP]
@@ -734,6 +787,65 @@ components:
           type:
             - string
             - "null"
+    CopConflictEvidenceList:
+      type: object
+      required: [items, serverTimestamp]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ObjectConflictEvidence"
+        nextCursor:
+          type:
+            - string
+            - "null"
+        serverTimestamp:
+          type: string
+          format: date-time
+    ObjectConflictEvidence:
+      type: object
+      required: [objectId, state, severity, sourceSystemIds, signals, evaluatedAt]
+      properties:
+        objectId:
+          type: string
+        state:
+          type: string
+          enum: [CLEAR, CONFLICTED]
+        severity:
+          type: string
+          enum: [info, warning]
+        sourceSystemIds:
+          type: array
+          items:
+            type: string
+        signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConflictSignal"
+        evaluatedAt:
+          type: string
+          format: date-time
+    ConflictSignal:
+      type: object
+      required: [type, title, detail, severity, sourceSystemIds]
+      properties:
+        type:
+          type: string
+          enum: [AFFILIATION_VARIANCE, LOW_CONFIDENCE, POSITION_VARIANCE, SOURCE_DEGRADED, STATE_CONFLICTED, STATUS_VARIANCE]
+        title:
+          type: string
+        detail:
+          type: string
+        severity:
+          type: string
+          enum: [info, warning]
+        sourceSystemIds:
+          type: array
+          items:
+            type: string
+        observedAt:
+          type: string
+          format: date-time
     CopSubscriptionCreated:
       type: object
       required: [subscriptionId, streamUrl, expiresAt]

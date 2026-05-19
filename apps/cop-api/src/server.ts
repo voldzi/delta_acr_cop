@@ -10,12 +10,13 @@ import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createHash } from "node:crypto";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
+import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
 import { withEventProvenance } from "./provenance.js";
 import { requireBearerToken } from "./security.js";
 import { buildSourceHealthItems } from "./source-health.js";
 import { appendAudit, createInitialState } from "./state.js";
 import { createTrackHistoryStoreFromEnv, type TrackHistoryStore } from "./track-history-store.js";
-import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory } from "./temporal-history.js";
+import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory, type TrackHistoryQuery } from "./temporal-history.js";
 import { createTrackLifecycleConfig, selectCurrentTracks, type TrackLifecycleConfig } from "./track-lifecycle.js";
 import type { CopState, TrackHistoryPoint } from "./types.js";
 
@@ -194,6 +195,56 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return queryTrackHistory(state, query, requestNow);
   }
 
+  async function buildConflictEvidenceForObjects(
+    objects: ObservedObject[],
+    requestNow: Date,
+    query: TrackHistoryQuery = {}
+  ): Promise<Map<string, ObjectConflictEvidence>> {
+    const objectIds = objects.map((object) => object.objectId);
+    if (objectIds.length === 0) {
+      return new Map();
+    }
+
+    const historyItems = await readTrackHistory(
+      {
+        ...query,
+        limit: query.limit ?? 24,
+        objectIds,
+        seconds: query.seconds ?? 300
+      },
+      requestNow
+    );
+    return buildConflictEvidenceIndex({
+      evaluatedAt: requestNow.toISOString(),
+      historyItems,
+      objects,
+      sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
+    });
+  }
+
+  async function decorateObjectsWithConflictEvidence(
+    objects: ObservedObject[],
+    requestNow: Date,
+    query?: TrackHistoryQuery
+  ): Promise<ObservedObject[]> {
+    const evidenceIndex = await buildConflictEvidenceForObjects(objects, requestNow, query);
+    return objects.map((object) => withConflictEvidence(object, evidenceIndex.get(object.objectId)));
+  }
+
+  function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): ObservedObject[] {
+    const historyItems = objects.map((object) => ({
+      objectId: object.objectId,
+      points: state.trackHistory.get(object.objectId) ?? []
+    }));
+    const evidenceIndex = buildConflictEvidenceIndex({
+      evaluatedAt: requestNow.toISOString(),
+      historyItems,
+      objects,
+      sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
+    });
+    return objects.map((object) => withConflictEvidence(object, evidenceIndex.get(object.objectId)));
+  }
+
   app.get("/api/v1/sources", async () => ({
     items: Array.from(state.sources.values())
   }));
@@ -329,7 +380,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       acceptedObjects.push(result.object);
       items.push({ eventId: result.accepted.eventId, status: "QUEUED" });
     }
-    publishCurrentTracks(acceptedObjects);
+    await publishCurrentTracks(acceptedObjects);
 
     const response = {
       batchId: body.batchId,
@@ -344,15 +395,38 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.get("/api/v1/cop/tracks", async (request) => {
     const query = request.query as { includeExpired?: string };
     const includeExpired = query.includeExpired === "true";
+    const requestNow = now();
     const subject = defaultSystemSubject();
-    const items = selectCurrentTracks(state.objects.values(), now(), trackLifecycle, includeExpired).filter((object) => {
+    const readableItems = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle, includeExpired).filter((object) => {
       const decision = evaluateReadPolicy(subject, {
         classification: "UNCLASSIFIED",
         synthetic: object.synthetic
       });
       return decision.allowed;
     });
+    const items = await decorateObjectsWithConflictEvidence(readableItems, requestNow);
     return { items, nextCursor: null };
+  });
+
+  app.get("/api/v1/cop/conflicts", async (request) => {
+    const rawQuery = request.query as Record<string, unknown> & { includeExpired?: string };
+    const query = parseTrackHistoryQuery(rawQuery);
+    const includeExpired = rawQuery.includeExpired === "true";
+    const requestNow = now();
+    const subject = defaultSystemSubject();
+    const currentObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle, includeExpired).filter((object) =>
+      canReadObject(subject, object)
+    );
+    const requestedObjectIds = new Set(query.objectIds ?? []);
+    const scopedObjects = requestedObjectIds.size > 0
+      ? currentObjects.filter((object) => requestedObjectIds.has(object.objectId))
+      : currentObjects;
+    const evidenceIndex = await buildConflictEvidenceForObjects(scopedObjects, requestNow, query);
+    return {
+      items: Array.from(evidenceIndex.values()),
+      nextCursor: null,
+      serverTimestamp: requestNow.toISOString()
+    };
   });
 
   app.get("/api/v1/cop/track-history", async (request) => {
@@ -424,7 +498,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       "x-accel-buffering": "no"
     });
     reply.raw.write("retry: 5000\n\n");
-    writeMessage(streamBroadcaster.createSnapshot(subscriptionId, readableCurrentTracks(subject), now()));
+    const snapshotNow = now();
+    writeMessage(streamBroadcaster.createSnapshot(subscriptionId, await readableCurrentTracks(subject, snapshotNow), snapshotNow));
 
     const unsubscribe = streamBroadcaster.subscribe(writeMessage);
     const heartbeat = setInterval(() => {
@@ -439,12 +514,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   app.get("/api/v1/stream/cop/:subscriptionId", async (request) => {
     const params = request.params as { subscriptionId: string };
+    const subject = defaultSystemSubject();
+    const requestNow = now();
+    const objects = await readableCurrentTracks(subject, requestNow);
     return {
       type: "snapshot",
       subscriptionId: params.subscriptionId,
-      serverTimestamp: new Date().toISOString(),
+      serverTimestamp: requestNow.toISOString(),
       sequence: 1,
-      changes: selectCurrentTracks(state.objects.values(), now(), trackLifecycle).map((object) => ({
+      changes: objects.map((object) => ({
         changeType: "OBJECT_SNAPSHOT",
         object
       }))
@@ -489,14 +567,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return response;
   });
 
-  function readableCurrentTracks(subject: ReturnType<typeof defaultSystemSubject>): ObservedObject[] {
-    return selectCurrentTracks(state.objects.values(), now(), trackLifecycle).filter((object) => canReadObject(subject, object));
+  async function readableCurrentTracks(subject: ReturnType<typeof defaultSystemSubject>, requestNow: Date): Promise<ObservedObject[]> {
+    const objects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle).filter((object) => canReadObject(subject, object));
+    return decorateObjectsWithConflictEvidence(objects, requestNow);
   }
 
-  function publishCurrentTracks(objects: ObservedObject[]): void {
+  async function publishCurrentTracks(objects: ObservedObject[]): Promise<void> {
     const subject = defaultSystemSubject();
-    const readableObjects = objects.filter((object) => canReadObject(subject, object));
-    streamBroadcaster.publishObjectUpserts(readableObjects, now());
+    const requestNow = now();
+    const readableObjects = decorateObjectsWithInMemoryConflictEvidence(
+      objects.filter((object) => canReadObject(subject, object)),
+      requestNow
+    );
+    streamBroadcaster.publishObjectUpserts(readableObjects, requestNow);
   }
 
   return app;
@@ -510,7 +593,7 @@ async function handleIngestEvent(
   correlationId: string,
   persistCurrentTrack: (object: ObservedObject, event: CanonicalEventEnvelope) => Promise<void>,
   persistTrackHistoryPoint: (point: TrackHistoryPoint | undefined) => Promise<void>,
-  publishCurrentTracks: (objects: ObservedObject[]) => void
+  publishCurrentTracks: (objects: ObservedObject[]) => Promise<void>
 ) {
   const headerSource = headerAsString(headers["x-source-system-id"]);
   const sourceCheck = validateSourceForRequest(state, headerSource, event.source.sourceSystemId, correlationId);
@@ -549,7 +632,7 @@ async function handleIngestEvent(
   const result = acceptEvent(state, event);
   await persistCurrentTrack(result.object, result.accepted);
   await persistTrackHistoryPoint(result.historyPoint);
-  publishCurrentTracks([result.object]);
+  await publishCurrentTracks([result.object]);
   const accepted = result.accepted;
   const response = {
     accepted: true,
