@@ -14,7 +14,7 @@ FROM deps AS build
 COPY docs docs
 COPY apps apps
 COPY scripts scripts
-RUN pnpm --filter @cop/cop-api... build
+RUN pnpm --workspace-concurrency=1 --filter @cop/cop-api... build
 
 FROM node:24-alpine AS runtime
 WORKDIR /app
