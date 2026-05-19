@@ -5,7 +5,7 @@ import maplibregl, {
   type StyleSpecification
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { CopLayer, CopObject } from "./cop-data";
+import type { CopAlert, CopLayer, CopObject } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
 import type { MapViewState } from "./user-preferences";
@@ -22,10 +22,13 @@ const trackHistorySourceId = "cop-track-history";
 const trackPredictionSourceId = "cop-track-prediction";
 const userLocationSourceId = "cop-user-location";
 const userAlertRadiusSourceId = "cop-user-alert-radius";
+const alertAreaSourceId = "cop-alert-areas";
 const trackHistoryLayerId = "cop-track-history-line";
 const trackPredictionLayerId = "cop-track-prediction-line";
 const userAlertRadiusFillLayerId = "cop-user-alert-radius-fill";
 const userAlertRadiusLineLayerId = "cop-user-alert-radius-line";
+const alertAreaFillLayerId = "cop-alert-area-fill";
+const alertAreaLineLayerId = "cop-alert-area-line";
 const userLocationAccuracyLayerId = "cop-user-location-accuracy";
 const userLocationLayerId = "cop-user-location-point";
 const trackSelectedHaloLayerId = "cop-live-track-selected-halo";
@@ -86,7 +89,17 @@ export interface TrackLineFeatureCollection {
   features: TrackLineFeature[];
 }
 
+export interface AlertAreaFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: { type: "Polygon"; coordinates: Array<Array<[number, number]>> };
+    properties: { alertId: string; severity: CopAlert["severity"]; type: CopAlert["type"] };
+  }>;
+}
+
 interface CopMapProps {
+  alerts: CopAlert[];
   objects: CopObject[];
   emptyMessage: string;
   selectedLayer: CopLayer;
@@ -112,6 +125,7 @@ interface CopMapProps {
 }
 
 export function CopMap({
+  alerts,
   objects,
   emptyMessage,
   selectedLayer,
@@ -166,6 +180,7 @@ export function CopMap({
     () => userAlertRadiusToFeatureCollection(userLocation, alertRadiusKm, showProximityAlertRadius, hasProximityAlerts),
     [alertRadiusKm, hasProximityAlerts, showProximityAlertRadius, userLocation]
   );
+  const alertAreaFeatureCollection = React.useMemo(() => alertAreasToFeatureCollection(alerts), [alerts]);
 
   objectsRef.current = objects;
   onSelectObjectRef.current = onSelectObject;
@@ -221,6 +236,10 @@ export function CopMap({
           type: "geojson",
           data: emptyPolygonFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
         });
+        map.addSource(alertAreaSourceId, {
+          type: "geojson",
+          data: emptyPolygonFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
         await registerNatoSymbolImages(map);
         if (mapRef.current !== map) {
           return;
@@ -249,6 +268,32 @@ export function CopMap({
             "line-dasharray": [2, 1.4],
             "line-opacity": ["case", ["get", "active"], 0.72, 0.48],
             "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1.1, 12, 1.8, 16, 2.4]
+          }
+        });
+
+        map.addLayer({
+          id: alertAreaFillLayerId,
+          type: "fill",
+          source: alertAreaSourceId,
+          paint: {
+            "fill-color": ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#8cb6d8"],
+            "fill-opacity": ["match", ["get", "severity"], "critical", 0.15, "warning", 0.1, 0.08]
+          }
+        });
+
+        map.addLayer({
+          id: alertAreaLineLayerId,
+          type: "line",
+          source: alertAreaSourceId,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#8cb6d8"],
+            "line-dasharray": [1.5, 1.1],
+            "line-opacity": 0.72,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1, 12, 1.8, 16, 2.6]
           }
         });
 
@@ -425,6 +470,13 @@ export function CopMap({
   }, [mapReady, userAlertRadiusFeatureCollection]);
 
   React.useEffect(() => {
+    const source = mapRef.current?.getSource(alertAreaSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(alertAreaFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [alertAreaFeatureCollection, mapReady]);
+
+  React.useEffect(() => {
     if (!mapReady || !userLocation || focusUserLocationRequest === 0) {
       return;
     }
@@ -527,12 +579,38 @@ export function CopMap({
         {showHistory ? <LineLegendItem label="Historie" /> : null}
         {showPrediction ? <LineLegendItem dashed label="Predikce" /> : null}
         {showProximityAlertRadius && userLocation ? <RadiusLegendItem active={hasProximityAlerts} label="Výstražný perimetr" /> : null}
+        {alertAreaFeatureCollection.features.length > 0 ? <RadiusLegendItem active label="Alert vrstva" /> : null}
       </div>
       {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}
       {mapError ? <div className="map-notice error">Mapový podklad: {mapError}</div> : null}
       {objects.length === 0 ? <div className="map-empty">{emptyMessage}</div> : null}
     </div>
   );
+}
+
+export function alertAreasToFeatureCollection(alerts: CopAlert[]): AlertAreaFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: alerts.flatMap((alert) => {
+      if (!alert.map || !Number.isFinite(alert.map.lat) || !Number.isFinite(alert.map.lon) || !Number.isFinite(alert.map.radiusKm)) {
+        return [];
+      }
+      return [
+        {
+          type: "Feature" as const,
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: [buildGeodesicCircle(alert.map, Math.max(0.2, alert.map.radiusKm))]
+          },
+          properties: {
+            alertId: alert.alertId,
+            severity: alert.severity,
+            type: alert.type
+          }
+        }
+      ];
+    })
+  };
 }
 
 export function objectsToTrackFeatureCollection(objects: CopObject[], selectedObjectId?: string): TrackFeatureCollection {
@@ -710,9 +788,9 @@ function emptyPolygonFeatureCollection() {
   };
 }
 
-function buildGeodesicCircle(userLocation: UserLocation, radiusKm: number, segments = 96): Array<[number, number]> {
-  const lat = degreesToRadians(userLocation.lat);
-  const lon = degreesToRadians(userLocation.lon);
+function buildGeodesicCircle(center: { lat: number; lon: number }, radiusKm: number, segments = 96): Array<[number, number]> {
+  const lat = degreesToRadians(center.lat);
+  const lon = degreesToRadians(center.lon);
   const angularDistance = radiusKm / earthRadiusKm;
   const coordinates: Array<[number, number]> = [];
 

@@ -230,6 +230,76 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/cop/alerts:
+    get:
+      tags: [COP]
+      summary: Query policy-filtered COP alerts.
+      operationId: listCopAlerts
+      description: >
+        Returns derived informational alerts from current COP tracks, server-side
+        conflict evidence and source health. Alerts support operator
+        acknowledgement, but do not provide tasking, targeting or weapon workflow.
+      parameters:
+        - name: includeAcknowledged
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include alerts already acknowledged by an operator.
+        - name: includeExpired
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include alerts derived from tracks outside the active lifecycle window.
+      responses:
+        "200":
+          description: Active COP alerts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopAlertList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/cop/alerts/{alertId}/acknowledge:
+    post:
+      tags: [COP]
+      summary: Acknowledge an informational COP alert.
+      operationId: acknowledgeCopAlert
+      parameters:
+        - name: alertId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                acknowledgedBy:
+                  type: string
+                note:
+                  type: string
+      responses:
+        "200":
+          description: Alert acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopAlert"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/cop/track-history:
     get:
       tags: [COP]
@@ -846,6 +916,73 @@ components:
         observedAt:
           type: string
           format: date-time
+    CopAlertList:
+      type: object
+      required: [items, serverTimestamp]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CopAlert"
+        nextCursor:
+          type:
+            - string
+            - "null"
+        serverTimestamp:
+          type: string
+          format: date-time
+    CopAlert:
+      type: object
+      required: [alertId, type, severity, status, title, detail, observedAt, updatedAt]
+      properties:
+        alertId:
+          type: string
+        type:
+          type: string
+          enum: [LOW_CONFIDENCE, SOURCE_DEGRADED, TRACK_CONFLICT, TRACK_LOST, TRACK_STALE]
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        status:
+          type: string
+          enum: [ACTIVE, ACKNOWLEDGED]
+        title:
+          type: string
+        detail:
+          type: string
+        objectId:
+          type: string
+        sourceSystemId:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type: string
+          format: date-time
+        map:
+          $ref: "#/components/schemas/CopAlertMapArea"
+        evidence:
+          type: object
+          additionalProperties: true
+    CopAlertMapArea:
+      type: object
+      required: [lat, lon, radiusKm]
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+        radiusKm:
+          type: number
+          minimum: 0
     CopSubscriptionCreated:
       type: object
       required: [subscriptionId, streamUrl, expiresAt]

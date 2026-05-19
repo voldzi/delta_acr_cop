@@ -8,6 +8,7 @@ import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
 import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createHash } from "node:crypto";
+import { buildCopAlerts, type CopAlert } from "./alerts.js";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
@@ -231,6 +232,29 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return objects.map((object) => withConflictEvidence(object, evidenceIndex.get(object.objectId)));
   }
 
+  async function buildAlertItems({
+    includeAcknowledged,
+    includeExpired,
+    requestNow
+  }: {
+    includeAcknowledged: boolean;
+    includeExpired: boolean;
+    requestNow: Date;
+  }): Promise<CopAlert[]> {
+    const subject = defaultSystemSubject();
+    const readableObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle, includeExpired).filter((object) =>
+      canReadObject(subject, object)
+    );
+    const objectsWithEvidence = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
+    const alerts = buildCopAlerts({
+      acknowledgements: state.alertAcknowledgements,
+      evaluatedAt: requestNow.toISOString(),
+      objects: objectsWithEvidence,
+      sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
+    });
+    return includeAcknowledged ? alerts : alerts.filter((alert) => alert.status === "ACTIVE");
+  }
+
   function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): ObservedObject[] {
     const historyItems = objects.map((object) => ({
       objectId: object.objectId,
@@ -426,6 +450,55 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       items: Array.from(evidenceIndex.values()),
       nextCursor: null,
       serverTimestamp: requestNow.toISOString()
+    };
+  });
+
+  app.get("/api/v1/cop/alerts", async (request) => {
+    const query = request.query as { includeAcknowledged?: string; includeExpired?: string };
+    const requestNow = now();
+    const items = await buildAlertItems({
+      includeAcknowledged: query.includeAcknowledged === "true",
+      includeExpired: query.includeExpired === "true",
+      requestNow
+    });
+    return {
+      items,
+      nextCursor: null,
+      serverTimestamp: requestNow.toISOString()
+    };
+  });
+
+  app.post("/api/v1/cop/alerts/:alertId/acknowledge", async (request, reply) => {
+    const params = request.params as { alertId: string };
+    const body = request.body as { acknowledgedBy?: string; note?: string } | undefined;
+    const requestNow = now();
+    const currentAlerts = await buildAlertItems({
+      includeAcknowledged: true,
+      includeExpired: true,
+      requestNow
+    });
+    const alert = currentAlerts.find((candidate) => candidate.alertId === params.alertId);
+    if (!alert) {
+      return sendError(reply, 404, "NOT_FOUND", "Alert was not found in current COP alert evidence.", crypto.randomUUID());
+    }
+
+    const acknowledgement = {
+      acknowledgedAt: requestNow.toISOString(),
+      acknowledgedBy: body?.acknowledgedBy,
+      alertId: params.alertId,
+      note: body?.note
+    };
+    state.alertAcknowledgements.set(params.alertId, acknowledgement);
+    appendAudit(state, "ALERT_ACKNOWLEDGED", {
+      alertId: params.alertId,
+      alertType: alert.type,
+      objectId: alert.objectId,
+      sourceSystemId: alert.sourceSystemId
+    });
+    return {
+      ...alert,
+      acknowledgedAt: acknowledgement.acknowledgedAt,
+      status: "ACKNOWLEDGED" as const
     };
   });
 

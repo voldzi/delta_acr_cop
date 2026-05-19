@@ -38,14 +38,17 @@ import {
   type AuthSession
 } from "./auth";
 import {
+  acknowledgeCopAlert,
   connectCopStream,
   fetchCopDashboardData,
+  fetchCopAlerts,
   filterObjectsByLayer,
   filterVisibleObjects,
   getDataQualityCount,
   getUavCount,
   type CopStreamMessage,
   type CopStreamStatus,
+  type CopAlert,
   type CopLayer,
   type CopObject,
   type HealthStatus,
@@ -127,6 +130,14 @@ interface DashboardMetrics {
   warningCount: number;
 }
 
+interface AlertSummary {
+  critical: number;
+  local: number;
+  server: number;
+  total: number;
+  warning: number;
+}
+
 export function App() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
@@ -138,6 +149,7 @@ export function App() {
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
   const [sources, setSources] = React.useState<SourceSystem[]>([]);
   const [sourceHealth, setSourceHealth] = React.useState<SourceHealthItem[]>([]);
+  const [serverAlerts, setServerAlerts] = React.useState<CopAlert[]>([]);
   const [objects, setObjects] = React.useState<CopObject[]>([]);
   const [selectedLayer, setSelectedLayer] = React.useState<CopLayer>(() => readInitialLayer(initialPreferences.selectedLayer));
   const [selectedObjectId, setSelectedObjectId] = React.useState<string | null>(null);
@@ -225,6 +237,7 @@ export function App() {
       setHealth(data.health);
       setSources(data.sources);
       setSourceHealth(data.sourceHealth);
+      setServerAlerts(data.alerts);
       setObjects(data.objects);
       setTrackHistory((current) =>
         data.trackHistory
@@ -240,6 +253,17 @@ export function App() {
       setIsLoading(false);
     }
   }, [authToken, dataAccessReady, trackHistoryLimit, trackHistoryWindowSeconds]);
+
+  const loadAlerts = React.useCallback(async () => {
+    if (!dataAccessReady) {
+      return;
+    }
+    try {
+      setServerAlerts(await fetchCopAlerts(apiBase, authToken));
+    } catch {
+      // Main data loading already reports API errors; alert refresh should not obscure the current COP view.
+    }
+  }, [authToken, dataAccessReady]);
 
   React.useEffect(() => {
     void load();
@@ -299,6 +323,16 @@ export function App() {
     }, refreshSeconds * 1000);
     return () => window.clearInterval(timer);
   }, [autoRefresh, load, refreshSeconds, streamStatus]);
+
+  React.useEffect(() => {
+    if (!dataAccessReady) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void loadAlerts();
+    }, Math.max(refreshSeconds, 5) * 1000);
+    return () => window.clearInterval(timer);
+  }, [dataAccessReady, loadAlerts, refreshSeconds]);
 
   React.useEffect(() => {
     setTrackHistory((current) => trimTrackHistory(current, trackHistoryLimit, trackHistoryWindowSeconds));
@@ -365,6 +399,8 @@ export function App() {
         : [],
     [alertRadiusKm, baseFilteredObjects, predictionMinutes, predictionMode, proximityAlertEnabled, replayActive, replayTrackHistory, userLocation]
   );
+  const alertSummary = React.useMemo(() => summarizeAlerts(serverAlerts, proximityAlerts), [proximityAlerts, serverAlerts]);
+  const mapAlerts = React.useMemo(() => serverAlerts.filter((alert) => alert.status === "ACTIVE"), [serverAlerts]);
 
   const applyPreferenceSettings = React.useCallback((settings: PreferenceSettings, options: { focusMap?: boolean } = {}) => {
     if (settings.activeWorkspace !== undefined) {
@@ -550,6 +586,15 @@ export function App() {
     }
     if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "default") {
       await window.Notification.requestPermission();
+    }
+  }
+
+  async function acknowledgeServerAlert(alertId: string) {
+    try {
+      await acknowledgeCopAlert(apiBase, authToken, alertId);
+      setServerAlerts((current) => current.filter((alert) => alert.alertId !== alertId));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Potvrzení výstrahy se nepodařilo.");
     }
   }
 
@@ -750,7 +795,7 @@ export function App() {
             <MetricTile label="Friendly" value={metrics.friendlyCount} tone="friend" />
             <MetricTile label="Foreign" value={metrics.foreignCount} tone="hostile" />
             <MetricTile label="Confidence" value={`${metrics.avgConfidence}%`} tone={metrics.avgConfidence >= 75 ? "ok" : "warn"} />
-            <MetricTile label="Warnings" value={metrics.warningCount} tone={metrics.warningCount > 0 ? "warn" : "ok"} />
+            <MetricTile label="Alerts" value={alertSummary.total} tone={alertSummary.total > 0 ? "warn" : "ok"} />
           </div>
 
           {showLayerControls ? (
@@ -805,10 +850,16 @@ export function App() {
 
           {showAlertControls ? (
             <div className="workspace-module-card">
-              <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
+              <PanelTitle icon={<AlertTriangle size={17} />} title="Alert Center" />
+              <ReadinessRow label="Serverové alerty" value={String(serverAlerts.length)} tone={serverAlerts.length > 0 ? "warn" : "ok"} />
+              <ReadinessRow label="Critical" value={String(alertSummary.critical)} tone={alertSummary.critical > 0 ? "warn" : "ok"} />
               <ReadinessRow label="Vrstva na mapě" value={proximityAlertEnabled ? "aktivní" : "vypnuto"} tone={proximityAlertEnabled ? "ok" : "neutral"} />
               <ReadinessRow label="Poloměr" value={`${alertRadiusKm} km`} tone="neutral" />
-              <ReadinessRow label="Aktivní výstrahy" value={String(proximityAlerts.length)} tone={proximityAlerts.length > 0 ? "warn" : "ok"} />
+              <ReadinessRow label="Moje poloha" value={String(proximityAlerts.length)} tone={proximityAlerts.length > 0 ? "warn" : "ok"} />
+              <button className="mini-button wide" onClick={() => void loadAlerts()} type="button">
+                <RefreshCw size={14} />
+                Obnovit alerty
+              </button>
               <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
                 <Settings size={14} />
                 Nastavení výstrah
@@ -860,6 +911,7 @@ export function App() {
         <section className="center-column">
           <section className="map-stage">
             <CopMap
+              alerts={mapAlerts}
               objects={visibleObjects}
               emptyMessage={mapEmptyMessage}
               selectedLayer={selectedLayer}
@@ -885,57 +937,73 @@ export function App() {
             />
           </section>
 
-          <section className="operations-deck">
-            <div className="track-board">
-              <div className="deck-header">
-                <PanelTitle icon={<ListFilter size={17} />} title="Track list" />
-                <span>{visibleObjects.length} tracks</span>
-              </div>
-              <TrackTable objects={visibleObjects} selectedObjectId={selectedObject?.objectId} onSelect={setSelectedObjectId} />
-            </div>
-            <div className="replay-board">
-              <div className="deck-header">
-                <PanelTitle icon={<History size={17} />} title="Replay" />
-                <div className="deck-actions">
-                  <button className="mini-button" disabled={!replayWindow} onClick={toggleReplayPlayback} type="button">
-                    {replayRunning ? <Pause size={14} /> : <Play size={14} />}
-                    {replayRunning ? "Pause" : "Play"}
-                  </button>
-                  <button className="mini-button" disabled={!replayWindow || replayPosition >= 100} onClick={jumpToLive} type="button">
-                    Live
-                  </button>
+          {showAlertControls ? (
+            <section className="operations-deck alert-operations-deck">
+              <AlertCenterBoard
+                alerts={serverAlerts}
+                onAcknowledge={(alertId) => void acknowledgeServerAlert(alertId)}
+                onSelectObject={setSelectedObjectId}
+              />
+              <PersonalAlertBoard
+                alerts={proximityAlerts}
+                alertRadiusKm={alertRadiusKm}
+                enabled={proximityAlertEnabled}
+                onOpenSettings={() => openSettings("awareness")}
+              />
+            </section>
+          ) : (
+            <section className="operations-deck">
+              <div className="track-board">
+                <div className="deck-header">
+                  <PanelTitle icon={<ListFilter size={17} />} title="Track list" />
+                  <span>{visibleObjects.length} tracks</span>
                 </div>
+                <TrackTable objects={visibleObjects} selectedObjectId={selectedObject?.objectId} onSelect={setSelectedObjectId} />
               </div>
-              <div className={`timeline ${replayActive ? "replay-active" : ""}`}>
-                <Clock3 size={18} />
-                <div className="timeline-rail" aria-label="Replay position">
-                  <span style={{ width: `${replayPosition}%` }} />
-                  <input
-                    aria-label="Pozice replaye"
-                    disabled={!replayWindow}
-                    max="100"
-                    min="0"
-                    onChange={(event) => {
-                      setReplayRunning(false);
-                      setReplayPosition(Number(event.target.value));
-                    }}
-                    step="1"
-                    type="range"
-                    value={replayPosition}
-                  />
+              <div className="replay-board">
+                <div className="deck-header">
+                  <PanelTitle icon={<History size={17} />} title="Replay" />
+                  <div className="deck-actions">
+                    <button className="mini-button" disabled={!replayWindow} onClick={toggleReplayPlayback} type="button">
+                      {replayRunning ? <Pause size={14} /> : <Play size={14} />}
+                      {replayRunning ? "Pause" : "Play"}
+                    </button>
+                    <button className="mini-button" disabled={!replayWindow || replayPosition >= 100} onClick={jumpToLive} type="button">
+                      Live
+                    </button>
+                  </div>
                 </div>
-                <strong>
-                  {formatReplayStatus(replayTimestamp, replayWindow, replayActive)}
-                </strong>
+                <div className={`timeline ${replayActive ? "replay-active" : ""}`}>
+                  <Clock3 size={18} />
+                  <div className="timeline-rail" aria-label="Replay position">
+                    <span style={{ width: `${replayPosition}%` }} />
+                    <input
+                      aria-label="Pozice replaye"
+                      disabled={!replayWindow}
+                      max="100"
+                      min="0"
+                      onChange={(event) => {
+                        setReplayRunning(false);
+                        setReplayPosition(Number(event.target.value));
+                      }}
+                      step="1"
+                      type="range"
+                      value={replayPosition}
+                    />
+                  </div>
+                  <strong>
+                    {formatReplayStatus(replayTimestamp, replayWindow, replayActive)}
+                  </strong>
+                </div>
+                <div className="timeline-meta">
+                  <span>{visibleObjects.length} tracků</span>
+                  <span>{historyPointCount} bodů historie</span>
+                  <span>{replayWindow ? `${replayWindow.durationSeconds}s okno` : "bez historie"}</span>
+                </div>
+                <EventStream events={eventStream} />
               </div>
-              <div className="timeline-meta">
-                <span>{visibleObjects.length} tracků</span>
-                <span>{historyPointCount} bodů historie</span>
-                <span>{replayWindow ? `${replayWindow.durationSeconds}s okno` : "bez historie"}</span>
-              </div>
-              <EventStream events={eventStream} />
-            </div>
-          </section>
+            </section>
+          )}
         </section>
 
         <aside className="panel right-panel">
@@ -966,6 +1034,7 @@ export function App() {
             <ReadinessRow label="Refresh rate" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
             <ReadinessRow label="Replay" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
+            <ReadinessRow label="Alert Center" value={`${alertSummary.server} server · ${alertSummary.local} local`} tone={alertSummary.total > 0 ? "warn" : "ok"} />
             <ReadinessRow label="History window" value={`${trackHistoryWindowSeconds} s · max ${trackHistoryLimit} pts`} tone="neutral" />
             <ReadinessRow label="Prediction" value={showPrediction ? `${predictionModeLabel(predictionMode)} · ${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
             <ReadinessRow label="Policy scope" value="COP data only" tone="neutral" />
@@ -1052,6 +1121,84 @@ function ProximityAlertList({ alerts }: { alerts: ProximityAlert[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function AlertCenterBoard({
+  alerts,
+  onAcknowledge,
+  onSelectObject
+}: {
+  alerts: CopAlert[];
+  onAcknowledge: (alertId: string) => void;
+  onSelectObject: (objectId: string) => void;
+}) {
+  const summary = summarizeAlerts(alerts, []);
+  return (
+    <div className="alert-center-board">
+      <div className="deck-header">
+        <PanelTitle icon={<AlertTriangle size={17} />} title="Server Alert Center" />
+        <span>{alerts.length} active</span>
+      </div>
+      <div className="alert-summary-grid">
+        <MetricTile label="Critical" value={summary.critical} tone={summary.critical > 0 ? "warn" : "ok"} />
+        <MetricTile label="Warning" value={summary.warning} tone={summary.warning > 0 ? "warn" : "ok"} />
+      </div>
+      <div className="alert-list">
+        {alerts.length === 0 ? <div className="empty-mini">Žádné aktivní serverové alerty.</div> : null}
+        {alerts.map((alert) => (
+          <article className={`alert-row ${alert.severity}`} key={alert.alertId}>
+            <div className="alert-severity-mark" aria-hidden="true" />
+            <div className="alert-row-body">
+              <div className="alert-row-heading">
+                <strong>{alert.title}</strong>
+                <span>{alertSeverityLabel(alert.severity)}</span>
+              </div>
+              <p>{alert.detail}</p>
+              <div className="alert-row-meta">
+                {alert.objectId ? <button type="button" onClick={() => onSelectObject(alert.objectId!)}>{alert.objectId}</button> : null}
+                {alert.sourceSystemId ? <span>{alert.sourceSystemId}</span> : null}
+                <span>{formatShortDateTime(alert.observedAt)}</span>
+                <span>{alertTypeLabel(alert.type)}</span>
+              </div>
+            </div>
+            <button className="mini-button" onClick={() => onAcknowledge(alert.alertId)} type="button">
+              Potvrdit
+            </button>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PersonalAlertBoard({
+  alerts,
+  alertRadiusKm,
+  enabled,
+  onOpenSettings
+}: {
+  alerts: ProximityAlert[];
+  alertRadiusKm: number;
+  enabled: boolean;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <div className="personal-alert-board">
+      <div className="deck-header">
+        <PanelTitle icon={<MapPin size={17} />} title="Moje poloha" />
+        <span>{enabled ? `${alertRadiusKm} km` : "off"}</span>
+      </div>
+      <div className="personal-alert-copy">
+        <ReadinessRow label="Vrstva" value={enabled ? "zapnuto" : "vypnuto"} tone={enabled ? "ok" : "neutral"} />
+        <ReadinessRow label="Lokální alerty" value={String(alerts.length)} tone={alerts.length > 0 ? "warn" : "ok"} />
+      </div>
+      <ProximityAlertList alerts={alerts} />
+      <button className="mini-button wide" onClick={onOpenSettings} type="button">
+        <Settings size={14} />
+        Nastavení perimetru
+      </button>
     </div>
   );
 }
@@ -1859,6 +2006,16 @@ function buildMetrics(objects: CopObject[], sources: SourceSystem[]): DashboardM
   };
 }
 
+function summarizeAlerts(serverAlerts: CopAlert[], proximityAlerts: ProximityAlert[]): AlertSummary {
+  return {
+    critical: serverAlerts.filter((alert) => alert.severity === "critical").length + proximityAlerts.filter((alert) => alert.type === "inside-radius").length,
+    local: proximityAlerts.length,
+    server: serverAlerts.length,
+    total: serverAlerts.length + proximityAlerts.length,
+    warning: serverAlerts.filter((alert) => alert.severity === "warning").length + proximityAlerts.filter((alert) => alert.type === "approaching").length
+  };
+}
+
 function buildMapEmptyMessage({
   loadError,
   objects,
@@ -2018,6 +2175,27 @@ function formatProximityAlert(alert: ProximityAlert): string {
     return `${current}, predikce ${alert.predictedDistanceKm.toFixed(1)} km`;
   }
   return `${current} od mé polohy`;
+}
+
+function alertSeverityLabel(severity: CopAlert["severity"]): string {
+  if (severity === "critical") {
+    return "critical";
+  }
+  if (severity === "warning") {
+    return "warning";
+  }
+  return "info";
+}
+
+function alertTypeLabel(type: CopAlert["type"]): string {
+  const labels: Record<CopAlert["type"], string> = {
+    LOW_CONFIDENCE: "confidence",
+    SOURCE_DEGRADED: "source",
+    TRACK_CONFLICT: "conflict",
+    TRACK_LOST: "lost",
+    TRACK_STALE: "stale"
+  };
+  return labels[type];
 }
 
 function predictionModeLabel(mode: PredictionMode): string {

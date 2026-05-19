@@ -9,6 +9,7 @@ export function createInitialState(): CopState {
     objects: new Map(),
     trackHistory: new Map(),
     idempotency: new Map(),
+    alertAcknowledgements: new Map(),
     auditEvents: []
   };
 }

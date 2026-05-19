@@ -15,7 +15,15 @@ export interface CopState {
   objects: Map<string, ObservedObject>;
   trackHistory: Map<string, TrackHistoryPoint[]>;
   idempotency: Map<string, { hash: string; response: unknown }>;
+  alertAcknowledgements: Map<string, AlertAcknowledgement>;
   auditEvents: Array<Record<string, unknown>>;
+}
+
+export interface AlertAcknowledgement {
+  acknowledgedAt: string;
+  alertId: string;
+  acknowledgedBy?: string;
+  note?: string;
 }
 
 export interface TrackHistoryPoint {

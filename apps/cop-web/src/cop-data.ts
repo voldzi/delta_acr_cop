@@ -89,6 +89,7 @@ export interface ServerTrackHistoryPoint {
 }
 
 export interface CopDashboardData {
+  alerts: CopAlert[];
   health: HealthStatus;
   sources: SourceSystem[];
   sourceHealth: SourceHealthItem[];
@@ -116,6 +117,30 @@ export interface SourceHealthItem {
   status?: string;
   synthetic: boolean;
   totalTracks: number;
+}
+
+export type CopAlertSeverity = "critical" | "info" | "warning";
+export type CopAlertStatus = "ACKNOWLEDGED" | "ACTIVE";
+export type CopAlertType = "LOW_CONFIDENCE" | "SOURCE_DEGRADED" | "TRACK_CONFLICT" | "TRACK_LOST" | "TRACK_STALE";
+
+export interface CopAlert {
+  acknowledgedAt?: string;
+  alertId: string;
+  detail: string;
+  evidence?: Record<string, unknown>;
+  map?: {
+    lat: number;
+    lon: number;
+    radiusKm: number;
+  };
+  objectId?: string;
+  observedAt: string;
+  severity: CopAlertSeverity;
+  sourceSystemId?: string;
+  status: CopAlertStatus;
+  title: string;
+  type: CopAlertType;
+  updatedAt: string;
 }
 
 export type CopStreamStatus = "connecting" | "degraded" | "live" | "polling";
@@ -168,11 +193,12 @@ export async function fetchCopDashboardData(
   historyOptions?: CopHistoryOptions
 ): Promise<CopDashboardData> {
   const headers = { Authorization: `Bearer ${token}` };
-  const [health, sources, sourceHealth, tracks, history] = await Promise.all([
+  const [health, sources, sourceHealth, tracks, alerts, history] = await Promise.all([
     fetchJson<HealthStatus>(`${apiBase}/health/ready`),
     fetchJson<{ items?: SourceSystem[] }>(`${apiBase}/api/v1/sources`, { headers }),
     fetchOptionalJson<{ items?: SourceHealthItem[] }>(`${apiBase}/api/v1/sources/health`, { headers }),
     fetchJson<{ items?: CopObject[] }>(`${apiBase}/api/v1/cop/tracks?includeSynthetic=true`, { headers }),
+    fetchOptionalJson<{ items?: CopAlert[] }>(`${apiBase}/api/v1/cop/alerts`, { headers }),
     historyOptions
       ? fetchOptionalJson<{ items?: Array<{ objectId: string; points: ServerTrackHistoryPoint[] }> }>(
           `${apiBase}/api/v1/cop/track-history?seconds=${historyOptions.seconds}&limit=${historyOptions.limit}`,
@@ -182,12 +208,30 @@ export async function fetchCopDashboardData(
   ]);
 
   return {
+    alerts: alerts?.items ?? [],
     health,
     sources: sources.items ?? [],
     sourceHealth: sourceHealth?.items ?? [],
     objects: tracks.items ?? [],
     trackHistory: history?.items ? Object.fromEntries(history.items.map((item) => [item.objectId, item.points])) : undefined
   };
+}
+
+export async function fetchCopAlerts(apiBase: string, token = "dev-lab-token"): Promise<CopAlert[]> {
+  const headers = { Authorization: `Bearer ${token}` };
+  const response = await fetchOptionalJson<{ items?: CopAlert[] }>(`${apiBase}/api/v1/cop/alerts`, { headers });
+  return response?.items ?? [];
+}
+
+export async function acknowledgeCopAlert(apiBase: string, token: string, alertId: string): Promise<CopAlert> {
+  return fetchJson<CopAlert>(`${apiBase}/api/v1/cop/alerts/${encodeURIComponent(alertId)}/acknowledge`, {
+    body: JSON.stringify({ acknowledgedBy: "operator" }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
 }
 
 export function connectCopStream(apiBase: string, token: string, handlers: CopStreamHandlers): CopStreamConnection | null {

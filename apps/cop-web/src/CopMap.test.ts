@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  alertAreasToFeatureCollection,
   objectsToHistoryFeatureCollection,
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
@@ -138,5 +139,41 @@ describe("COP map data helpers", () => {
     expect(ring[0]![1]).toBeGreaterThan(50.1);
     expect(userAlertRadiusToFeatureCollection(null, 10, true).features).toEqual([]);
     expect(userAlertRadiusToFeatureCollection({ lat: 50, lon: 14, updatedAt: "2026-05-19T08:00:00Z" }, 10, false).features).toEqual([]);
+  });
+
+  it("builds translucent alert area polygons for active server alerts", () => {
+    const collection = alertAreasToFeatureCollection([
+      {
+        alertId: "alert-1",
+        detail: "Track conflict",
+        map: { lat: 50.1, lon: 14.4, radiusKm: 1.2 },
+        objectId: "AIR_SIM_UAV-0001",
+        observedAt: "2026-05-19T08:00:00Z",
+        severity: "critical",
+        status: "ACTIVE",
+        title: "Konflikt dat objektu",
+        type: "TRACK_CONFLICT",
+        updatedAt: "2026-05-19T08:00:00Z"
+      },
+      {
+        alertId: "alert-source",
+        detail: "Source degraded",
+        observedAt: "2026-05-19T08:00:00Z",
+        severity: "warning",
+        sourceSystemId: "sim-air",
+        status: "ACTIVE",
+        title: "Degradovaný zdroj dat",
+        type: "SOURCE_DEGRADED",
+        updatedAt: "2026-05-19T08:00:00Z"
+      }
+    ]);
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0]?.properties).toMatchObject({
+      alertId: "alert-1",
+      severity: "critical",
+      type: "TRACK_CONFLICT"
+    });
+    expect(collection.features[0]?.geometry.coordinates[0]).toHaveLength(97);
   });
 });

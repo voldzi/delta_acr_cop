@@ -1129,13 +1129,19 @@ h1 {
 }
 
 .track-board,
-.replay-board {
+.replay-board,
+.alert-center-board,
+.personal-alert-board {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   padding: 12px;
+}
+
+.alert-operations-deck {
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
 }
 
 .deck-header {
@@ -1344,6 +1350,117 @@ h1 {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.35;
+}
+
+.alert-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.alert-summary-grid .metric-tile {
+  min-height: 50px;
+}
+
+.alert-summary-grid .metric-tile strong {
+  font-size: 18px;
+}
+
+.alert-list {
+  display: grid;
+  gap: 7px;
+  flex: 1;
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
+}
+
+.alert-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(20, 27, 33, 0.68);
+}
+
+.alert-row.critical {
+  border-color: rgba(239, 68, 68, 0.48);
+}
+
+.alert-row.warning {
+  border-color: rgba(250, 204, 21, 0.42);
+}
+
+.alert-severity-mark {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  background: var(--cyan);
+}
+
+.alert-row.critical .alert-severity-mark {
+  background: var(--red);
+  transform: rotate(45deg);
+}
+
+.alert-row.warning .alert-severity-mark {
+  background: var(--yellow);
+}
+
+.alert-row-body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.alert-row-heading,
+.alert-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.alert-row-heading strong {
+  color: #edf3f8;
+  font-size: 12px;
+}
+
+.alert-row-heading span,
+.alert-row-meta span,
+.alert-row-meta button {
+  min-height: 20px;
+  padding: 2px 6px;
+  border: 1px solid rgba(142, 157, 170, 0.2);
+  background: rgba(5, 9, 12, 0.34);
+  color: #c8d2dc;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.alert-row-meta button {
+  cursor: pointer;
+}
+
+.alert-row p,
+.personal-alert-copy {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.personal-alert-board {
+  gap: 10px;
+}
+
+.personal-alert-copy {
+  display: grid;
+  gap: 7px;
 }
 
 .workspace-context-card {

@@ -64,12 +64,13 @@ Status: pilotně hotovo pro lokální profily, serverový profil čeká na produ
 
 ### P5: Zdrojová důvěryhodnost a provozní dohled
 
-Status: pilotně hotovo, serverová evidence konfliktů v1 doplněna.
+Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 doplněny.
 
 - stav zdrojů, latence, poslední event a degradace,
 - Object detail v2 vysvětluje confidence, provenance, lineage a informační konflikty,
 - server vrací `conflictEvidence` v aktuálních track objektech a samostatně přes `/api/v1/cop/conflicts`,
-- další krok je audit log pro konfliktní evidenci a robustnější fusion skórování,
+- Alert Center vrací informační alerty přes `/api/v1/cop/alerts`, podporuje potvrzení alertu a mapovou alert vrstvu,
+- další krok je robustnější fusion skórování, retence potvrzení alertů a uživatelské alert preference přes identitu,
 - metriky pro retenční velikost temporal store a stream latency.
 
 ## Evidence realizace
@@ -86,3 +87,4 @@ Status: pilotně hotovo, serverová evidence konfliktů v1 doplněna.
 | 2026-05-19 | Workspace + view profiles v1 | Přidána modulová navigace Mapa/Data/Zdroje/Výstrahy/Replay/Nastavení a lokální profily pohledu per operátorský scope. |
 | 2026-05-19 | Object detail v2 + lineage | Detail objektu má sekce Identita/Poloha/Symbologie/Zdroj/Confidence/Data lineage/Konflikty/Source history a informační detekci datových konfliktů. |
 | 2026-05-19 | Server conflict evidence v1 | API odvozuje konfliktní evidenci z aktuálního objektu, historie a source health; `/api/v1/cop/tracks`, SSE a `/api/v1/cop/conflicts` ji poskytují klientům. |
+| 2026-05-19 | Alert Center v1 | Přidány serverové alerty, acknowledgement endpoint, audit potvrzení a UI workspace Výstrahy s mapovou alert vrstvou. |

@@ -243,6 +243,69 @@ describe("COP state temporal history", () => {
       ]
     });
   });
+
+  it("derives operational alerts and supports acknowledgement", async () => {
+    const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
+
+    await ingestTrack(app, "00000000-0000-4000-8000-000000000010", "2026-05-19T08:02:00Z", 50.04, 14.04, {
+      confidence: 0.34
+    });
+
+    const alertsResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/alerts"
+    });
+    expect(alertsResponse.statusCode).toBe(200);
+    const alertsBody = alertsResponse.json() as { items: Array<{ alertId: string; objectId?: string; status: string; type: string }> };
+    const lowConfidenceAlert = alertsBody.items.find((alert) => alert.type === "LOW_CONFIDENCE");
+    expect(lowConfidenceAlert).toMatchObject({
+      objectId: "AIR_SIM_UAV-0001",
+      status: "ACTIVE"
+    });
+
+    const acknowledgementResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "POST",
+      payload: {
+        acknowledgedBy: "operator"
+      },
+      url: `/api/v1/cop/alerts/${lowConfidenceAlert!.alertId}/acknowledge`
+    });
+    expect(acknowledgementResponse.statusCode).toBe(200);
+    expect(acknowledgementResponse.json()).toMatchObject({
+      alertId: lowConfidenceAlert!.alertId,
+      status: "ACKNOWLEDGED"
+    });
+
+    const activeOnlyResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/alerts"
+    });
+    expect((activeOnlyResponse.json() as { items: Array<{ alertId: string }> }).items.some((alert) => alert.alertId === lowConfidenceAlert!.alertId)).toBe(
+      false
+    );
+
+    const withAcknowledgedResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/alerts?includeAcknowledged=true"
+    });
+    const acknowledgedItems = (withAcknowledgedResponse.json() as { items: Array<{ alertId: string; status: string }> }).items;
+    expect(acknowledgedItems.find((alert) => alert.alertId === lowConfidenceAlert!.alertId)).toMatchObject({
+      alertId: lowConfidenceAlert!.alertId,
+      status: "ACKNOWLEDGED"
+    });
+  });
 });
 
 class FakeTrackHistoryStore implements TrackHistoryStore {
