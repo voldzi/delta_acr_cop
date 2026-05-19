@@ -409,7 +409,8 @@ h1 {
 .control-block,
 .source-list,
 .ai-box,
-.readiness-box {
+.readiness-box,
+.personal-awareness-box {
   padding-top: 13px;
   border-top: 1px solid rgba(142, 157, 170, 0.18);
 }
@@ -602,6 +603,7 @@ h1 {
   top: 12px;
   left: 12px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   max-width: calc(100% - 92px);
@@ -1093,6 +1095,61 @@ dd {
   line-height: 1.5;
 }
 
+.personal-awareness-box {
+  display: grid;
+  gap: 10px;
+}
+
+.personal-awareness-box p {
+  margin: 0;
+  color: #cbd5df;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.proximity-alert-list {
+  display: grid;
+  gap: 7px;
+}
+
+.proximity-alert {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 9px;
+  border: 1px solid rgba(250, 204, 21, 0.42);
+  background: rgba(250, 204, 21, 0.09);
+}
+
+.proximity-alert.critical {
+  border-color: rgba(239, 68, 68, 0.58);
+  background: rgba(239, 68, 68, 0.11);
+}
+
+.proximity-alert svg {
+  margin-top: 1px;
+  color: var(--yellow);
+}
+
+.proximity-alert.critical svg {
+  color: var(--red);
+}
+
+.proximity-alert strong {
+  display: block;
+  color: #f6f8fb;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.proximity-alert span {
+  display: block;
+  margin-top: 2px;
+  color: #cbd5df;
+  font-size: 12px;
+}
+
 .primary-button {
   display: inline-grid;
   grid-auto-flow: column;
@@ -1106,6 +1163,18 @@ dd {
   color: #0f151b;
   font-weight: 900;
   cursor: pointer;
+}
+
+.primary-button.secondary {
+  min-height: 36px;
+  border-color: rgba(140, 182, 216, 0.48);
+  background: rgba(22, 31, 38, 0.92);
+  color: var(--lime);
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
 }
 
 @media (max-width: 1180px) {

@@ -3,7 +3,8 @@ import {
   objectsToHistoryFeatureCollection,
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
-  parseMapCenter
+  parseMapCenter,
+  userLocationToFeatureCollection
 } from "./CopMap";
 import type { CopObject } from "./cop-data";
 
@@ -93,5 +94,24 @@ describe("COP map data helpers", () => {
     expect(predictionCollection.features[0]?.geometry.coordinates[0]).toEqual([14, 50]);
     expect(predictionCollection.features[0]?.geometry.coordinates[1]?.[0]).toBeGreaterThan(14);
     expect(predictionCollection.features[0]?.properties.method).toBe("movement");
+  });
+
+  it("builds a user location feature without adding it to COP tracks", () => {
+    expect(
+      userLocationToFeatureCollection({
+        lat: 50.1,
+        lon: 14.4,
+        accuracyM: 12,
+        updatedAt: "2026-05-19T08:00:00Z"
+      })
+    ).toMatchObject({
+      features: [
+        {
+          geometry: { coordinates: [14.4, 50.1] },
+          properties: { accuracyM: 12 }
+        }
+      ]
+    });
+    expect(userLocationToFeatureCollection(null).features).toEqual([]);
   });
 });

@@ -6,7 +6,9 @@ import maplibregl, {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { CopLayer, CopObject } from "./cop-data";
+import type { UserLocation } from "./proximity-alerts";
 import { predictPosition, type TrackHistory } from "./track-history";
+import type { MapViewState } from "./user-preferences";
 import {
   createNatoSymbolSvg,
   getAffiliationPresentation,
@@ -18,8 +20,11 @@ import {
 const trackSourceId = "cop-live-tracks";
 const trackHistorySourceId = "cop-track-history";
 const trackPredictionSourceId = "cop-track-prediction";
+const userLocationSourceId = "cop-user-location";
 const trackHistoryLayerId = "cop-track-history-line";
 const trackPredictionLayerId = "cop-track-prediction-line";
+const userLocationAccuracyLayerId = "cop-user-location-accuracy";
+const userLocationLayerId = "cop-user-location-point";
 const trackSelectedHaloLayerId = "cop-live-track-selected-halo";
 const trackSymbolLayerId = "cop-live-track-symbol";
 const trackLabelLayerId = "cop-live-track-label";
@@ -85,7 +90,14 @@ interface CopMapProps {
   showPrediction: boolean;
   trackHistory: TrackHistory;
   predictionMinutes: number;
+  autoFit: boolean;
+  focusUserLocationRequest: number;
+  initialView?: MapViewState;
   onSelectObject: (object: CopObject) => void;
+  onAutoFitChange: (value: boolean) => void;
+  onRequestUserLocation: () => void;
+  onViewChange: (view: MapViewState) => void;
+  userLocation: UserLocation | null;
 }
 
 export function CopMap({
@@ -96,15 +108,23 @@ export function CopMap({
   showPrediction,
   trackHistory,
   predictionMinutes,
-  onSelectObject
+  autoFit,
+  focusUserLocationRequest,
+  initialView,
+  onSelectObject,
+  onAutoFitChange,
+  onRequestUserLocation,
+  onViewChange,
+  userLocation
 }: CopMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const objectsRef = React.useRef(objects);
   const onSelectObjectRef = React.useRef(onSelectObject);
+  const onAutoFitChangeRef = React.useRef(onAutoFitChange);
+  const onViewChangeRef = React.useRef(onViewChange);
   const lastFitSignatureRef = React.useRef("");
   const [mapReady, setMapReady] = React.useState(false);
-  const [autoFit, setAutoFit] = React.useState(true);
   const [mapError, setMapError] = React.useState<string | null>(null);
 
   const selectedId = selectedObjectId ?? objects[0]?.objectId;
@@ -127,6 +147,8 @@ export function CopMap({
 
   objectsRef.current = objects;
   onSelectObjectRef.current = onSelectObject;
+  onAutoFitChangeRef.current = onAutoFitChange;
+  onViewChangeRef.current = onViewChange;
 
   React.useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -136,8 +158,10 @@ export function CopMap({
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: createRasterStyle(tileUrl, tileAttribution),
-      center: defaultCenter,
-      zoom: defaultZoom,
+      center: initialView?.center ?? defaultCenter,
+      zoom: initialView?.zoom ?? defaultZoom,
+      bearing: initialView?.bearing ?? 0,
+      pitch: initialView?.pitch ?? 0,
       attributionControl: false
     });
 
@@ -166,6 +190,10 @@ export function CopMap({
         map.addSource(trackPredictionSourceId, {
           type: "geojson",
           data: emptyLineFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(userLocationSourceId, {
+          type: "geojson",
+          data: userLocationToFeatureCollection(null) as Parameters<GeoJSONSource["setData"]>[0]
         });
         await registerNatoSymbolImages(map);
         if (mapRef.current !== map) {
@@ -200,6 +228,32 @@ export function CopMap({
             "line-dasharray": [1.2, 1.15],
             "line-opacity": 0.68,
             "line-width": ["case", ["get", "selected"], 3.1, 2.1]
+          }
+        });
+
+        map.addLayer({
+          id: userLocationAccuracyLayerId,
+          type: "circle",
+          source: userLocationSourceId,
+          paint: {
+            "circle-color": "#8cb6d8",
+            "circle-opacity": 0.14,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 8, 12, 24, 16, 46],
+            "circle-stroke-color": "#dff8ff",
+            "circle-stroke-opacity": 0.46,
+            "circle-stroke-width": 1
+          }
+        });
+
+        map.addLayer({
+          id: userLocationLayerId,
+          type: "circle",
+          source: userLocationSourceId,
+          paint: {
+            "circle-color": "#8cb6d8",
+            "circle-radius": 6,
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-width": 2
           }
         });
 
@@ -253,6 +307,30 @@ export function CopMap({
 
         map.on("click", trackSymbolLayerId, handleClick);
         map.on("click", trackLabelLayerId, handleClick);
+        map.on("dragstart", (event) => {
+          if (event.originalEvent) {
+            onAutoFitChangeRef.current(false);
+          }
+        });
+        map.on("zoomstart", (event) => {
+          if (event.originalEvent) {
+            onAutoFitChangeRef.current(false);
+          }
+        });
+        map.on("rotatestart", (event) => {
+          if (event.originalEvent) {
+            onAutoFitChangeRef.current(false);
+          }
+        });
+        map.on("moveend", () => {
+          const center = map.getCenter();
+          onViewChangeRef.current({
+            center: [roundCoordinate(center.lng), roundCoordinate(center.lat)],
+            zoom: roundZoom(map.getZoom()),
+            bearing: roundZoom(map.getBearing()),
+            pitch: roundZoom(map.getPitch())
+          });
+        });
         map.on("mouseenter", trackSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -279,6 +357,28 @@ export function CopMap({
       mapRef.current = null;
     };
   }, []);
+
+  React.useEffect(() => {
+    const source = mapRef.current?.getSource(userLocationSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(userLocationToFeatureCollection(userLocation) as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [mapReady, userLocation]);
+
+  React.useEffect(() => {
+    if (!mapReady || !userLocation || focusUserLocationRequest === 0) {
+      return;
+    }
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    map.easeTo({
+      center: [userLocation.lon, userLocation.lat],
+      zoom: Math.max(map.getZoom(), 13),
+      duration: 650
+    });
+  }, [focusUserLocationRequest, mapReady, userLocation]);
 
   React.useEffect(() => {
     const source = mapRef.current?.getSource(trackSourceId);
@@ -331,7 +431,7 @@ export function CopMap({
         <button
           className={`map-action ${autoFit ? "active" : ""}`}
           onClick={() => {
-            setAutoFit((current) => !current);
+            onAutoFitChange(!autoFit);
             if (!autoFit) {
               fitMapToObjects(mapRef.current, positionedObjects);
             }
@@ -342,6 +442,9 @@ export function CopMap({
         </button>
         <button className="map-action" onClick={() => fitMapToObjects(mapRef.current, positionedObjects)} type="button">
           Fit tracks
+        </button>
+        <button className="map-action" onClick={onRequestUserLocation} type="button">
+          Moje poloha
         </button>
       </div>
       <div className="map-legend">
@@ -460,6 +563,33 @@ export function objectsToPredictionFeatureCollection(
   };
 }
 
+export function userLocationToFeatureCollection(userLocation: UserLocation | null): {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: { type: "Point"; coordinates: [number, number] };
+    properties: { accuracyM: number };
+  }>;
+} {
+  return {
+    type: "FeatureCollection",
+    features: userLocation
+      ? [
+          {
+            type: "Feature",
+            geometry: {
+              type: "Point",
+              coordinates: [userLocation.lon, userLocation.lat]
+            },
+            properties: {
+              accuracyM: userLocation.accuracyM ?? 0
+            }
+          }
+        ]
+      : []
+  };
+}
+
 function emptyLineFeatureCollection(): TrackLineFeatureCollection {
   return {
     type: "FeatureCollection",
@@ -539,6 +669,14 @@ function hasPosition(object: CopObject): object is CopObject & { position: NonNu
 function parseFiniteNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function roundCoordinate(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function roundZoom(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 async function registerNatoSymbolImages(map: maplibregl.Map) {

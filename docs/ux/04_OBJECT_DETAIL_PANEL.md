@@ -10,7 +10,7 @@ Detail objektu vysvětluje, proč se objekt v COP nachází a jakou má důvěry
 - confidence score a faktory,
 - provenance a source history,
 - conflict flags,
-- synthetic/real indikace,
+- SIM/real indikace,
 - symbol resolution detail,
 - audit link.
 

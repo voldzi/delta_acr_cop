@@ -6,7 +6,6 @@ import {
   Bot,
   Clock3,
   Database,
-  Eye,
   Gauge,
   History,
   Layers,
@@ -14,7 +13,6 @@ import {
   MapPin,
   Pause,
   Play,
-  Radar,
   RefreshCw,
   RadioTower,
   Search,
@@ -35,14 +33,23 @@ import {
   type SourceSystem
 } from "./cop-data";
 import { CopMap } from "./CopMap";
+import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
 import { getAffiliationPresentation, getNatoSidc, resolveCopObjectSymbol } from "./symbology";
 import {
+  normalizeRefreshSeconds,
   parseRefreshSeconds,
   refreshMillisecondsToSeconds,
   REFRESH_OPTIONS,
   type RefreshSeconds
 } from "./refresh-config";
 import { countHistoryPoints, mergeTrackHistory, type TrackHistory } from "./track-history";
+import {
+  clamp,
+  normalizeMapView,
+  readUserPreferences,
+  writeUserPreferences,
+  type MapViewState
+} from "./user-preferences";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
@@ -67,31 +74,45 @@ interface DashboardMetrics {
 }
 
 export function App() {
+  const initialPreferences = React.useMemo(() => readUserPreferences(), []);
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
   const [sources, setSources] = React.useState<SourceSystem[]>([]);
   const [objects, setObjects] = React.useState<CopObject[]>([]);
-  const [selectedLayer, setSelectedLayer] = React.useState<CopLayer>("air-situation");
+  const [selectedLayer, setSelectedLayer] = React.useState<CopLayer>(() => readInitialLayer(initialPreferences.selectedLayer));
   const [selectedObjectId, setSelectedObjectId] = React.useState<string | null>(null);
-  const [includeSynthetic, setIncludeSynthetic] = React.useState(true);
-  const [minConfidence, setMinConfidence] = React.useState(0.2);
-  const [affiliationScope, setAffiliationScope] = React.useState<AffiliationScope>("all");
-  const [domainScope, setDomainScope] = React.useState<DomainScope>("all");
+  const [includeSynthetic, setIncludeSynthetic] = React.useState(initialPreferences.includeSynthetic ?? true);
+  const [minConfidence, setMinConfidence] = React.useState(() => clamp(initialPreferences.minConfidence ?? 0.2, 0, 1));
+  const [affiliationScope, setAffiliationScope] = React.useState<AffiliationScope>(() =>
+    readInitialAffiliationScope(initialPreferences.affiliationScope)
+  );
+  const [domainScope, setDomainScope] = React.useState<DomainScope>(() => readInitialDomainScope(initialPreferences.domainScope));
   const [searchQuery, setSearchQuery] = React.useState("");
   const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [autoRefresh, setAutoRefresh] = React.useState(() => readInitialAutoRefresh());
+  const [autoRefresh, setAutoRefresh] = React.useState(() => readInitialAutoRefresh(initialPreferences.autoRefresh));
   const [refreshSeconds, setRefreshSeconds] = React.useState<RefreshSeconds>(() =>
-    readInitialRefreshSeconds(defaultRefreshSeconds)
+    readInitialRefreshSeconds(normalizeRefreshSeconds(initialPreferences.refreshSeconds ?? defaultRefreshSeconds))
   );
   const [replayRunning, setReplayRunning] = React.useState(false);
   const [replayPosition, setReplayPosition] = React.useState(72);
-  const [showHistory, setShowHistory] = React.useState(() => readInitialMapToggle("history"));
-  const [showPrediction, setShowPrediction] = React.useState(() => readInitialMapToggle("prediction"));
-  const [predictionMinutes, setPredictionMinutes] = React.useState(10);
+  const [showHistory, setShowHistory] = React.useState(() => readInitialMapToggle("history", initialPreferences.showHistory ?? false));
+  const [showPrediction, setShowPrediction] = React.useState(() =>
+    readInitialMapToggle("prediction", initialPreferences.showPrediction ?? false)
+  );
+  const [predictionMinutes, setPredictionMinutes] = React.useState(() => clamp(initialPreferences.predictionMinutes ?? 10, 2, 20));
   const [trackHistory, setTrackHistory] = React.useState<TrackHistory>({});
+  const [autoFit, setAutoFit] = React.useState(initialPreferences.autoFit ?? true);
+  const [mapView, setMapView] = React.useState<MapViewState | undefined>(() => normalizeMapView(initialPreferences.mapView));
+  const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
+  const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
+  const [locationStatus, setLocationStatus] = React.useState("Poloha není zaměřená.");
+  const [isLocating, setIsLocating] = React.useState(false);
+  const [proximityAlertEnabled, setProximityAlertEnabled] = React.useState(initialPreferences.proximityAlertEnabled ?? false);
+  const [alertRadiusKm, setAlertRadiusKm] = React.useState(() => clamp(initialPreferences.alertRadiusKm ?? 10, 1, 50));
   const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad COP daty.");
   const loadInFlightRef = React.useRef(false);
+  const notifiedProximityAlertsRef = React.useRef<Set<string>>(new Set());
 
   const load = React.useCallback(async () => {
     if (loadInFlightRef.current) {
@@ -159,12 +180,79 @@ export function App() {
     () => countHistoryPoints(trackHistory, visibleObjects),
     [trackHistory, visibleObjects]
   );
+  const proximityAlerts = React.useMemo(
+    () =>
+      proximityAlertEnabled
+        ? buildProximityAlerts(baseFilteredObjects, userLocation, trackHistory, alertRadiusKm, predictionMinutes)
+        : [],
+    [alertRadiusKm, baseFilteredObjects, predictionMinutes, proximityAlertEnabled, trackHistory, userLocation]
+  );
+
+  React.useEffect(() => {
+    writeUserPreferences({
+      affiliationScope,
+      alertRadiusKm,
+      autoFit,
+      autoRefresh,
+      domainScope,
+      includeSynthetic,
+      mapView,
+      minConfidence,
+      predictionMinutes,
+      proximityAlertEnabled,
+      refreshSeconds,
+      selectedLayer,
+      showHistory,
+      showPrediction
+    });
+  }, [
+    affiliationScope,
+    alertRadiusKm,
+    autoFit,
+    autoRefresh,
+    domainScope,
+    includeSynthetic,
+    mapView,
+    minConfidence,
+    predictionMinutes,
+    proximityAlertEnabled,
+    refreshSeconds,
+    selectedLayer,
+    showHistory,
+    showPrediction
+  ]);
 
   React.useEffect(() => {
     if (selectedObjectId && !visibleObjects.some((object) => object.objectId === selectedObjectId)) {
       setSelectedObjectId(null);
     }
   }, [selectedObjectId, visibleObjects]);
+
+  React.useEffect(() => {
+    if (!proximityAlertEnabled || proximityAlerts.length === 0) {
+      notifiedProximityAlertsRef.current.clear();
+      return;
+    }
+
+    const activeKeys = new Set(proximityAlerts.map((alert) => `${alert.type}:${alert.object.objectId}`));
+    notifiedProximityAlertsRef.current.forEach((key) => {
+      if (!activeKeys.has(key)) {
+        notifiedProximityAlertsRef.current.delete(key);
+      }
+    });
+
+    const nextAlert = proximityAlerts.find((alert) => !notifiedProximityAlertsRef.current.has(`${alert.type}:${alert.object.objectId}`));
+    if (!nextAlert) {
+      return;
+    }
+
+    notifiedProximityAlertsRef.current.add(`${nextAlert.type}:${nextAlert.object.objectId}`);
+    if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "granted") {
+      new window.Notification("COP výstraha přiblížení", {
+        body: formatProximityAlert(nextAlert)
+      });
+    }
+  }, [proximityAlertEnabled, proximityAlerts]);
 
   async function askAi() {
     const response = await fetch(`${apiBase}/api/v1/ai/cop-assistant/query`, {
@@ -187,6 +275,51 @@ export function App() {
     });
     const payload = await response.json();
     setAiResult(payload.result?.summary ?? payload.policy?.reason ?? "AI odpověď není dostupná.");
+  }
+
+  async function handleProximityAlertToggle(checked: boolean) {
+    setProximityAlertEnabled(checked);
+    if (!checked) {
+      return;
+    }
+    if (!userLocation) {
+      locateUser();
+    }
+    if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "default") {
+      await window.Notification.requestPermission();
+    }
+  }
+
+  function locateUser() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocationStatus("Prohlížeč neposkytuje geolokaci.");
+      return;
+    }
+
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const location: UserLocation = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          accuracyM: position.coords.accuracy,
+          updatedAt: new Date().toISOString()
+        };
+        setUserLocation(location);
+        setLocationStatus(formatUserLocation(location));
+        setFocusUserLocationRequest((current) => current + 1);
+        setIsLocating(false);
+      },
+      (error) => {
+        setLocationStatus(error.message || "Polohu se nepodařilo zaměřit.");
+        setIsLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 10_000,
+        timeout: 12_000
+      }
+    );
   }
 
   return (
@@ -345,7 +478,14 @@ export function App() {
               showPrediction={showPrediction}
               trackHistory={trackHistory}
               predictionMinutes={predictionMinutes}
+              autoFit={autoFit}
+              focusUserLocationRequest={focusUserLocationRequest}
+              initialView={mapView}
               onSelectObject={(object) => setSelectedObjectId(object.objectId)}
+              onAutoFitChange={setAutoFit}
+              onRequestUserLocation={locateUser}
+              onViewChange={setMapView}
+              userLocation={userLocation}
             />
           </section>
 
@@ -398,6 +538,36 @@ export function App() {
             <ReadinessRow label="Policy scope" value="COP data only" tone="neutral" />
           </div>
 
+          <div className="personal-awareness-box">
+            <PanelTitle icon={<MapPin size={17} />} title="Moje poloha" />
+            <button className="primary-button secondary" disabled={isLocating} onClick={locateUser} type="button">
+              <MapPin size={16} />
+              {isLocating ? "Zaměřuji polohu" : "Centrovat na mou polohu"}
+            </button>
+            <p>{locationStatus}</p>
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={proximityAlertEnabled}
+                onChange={(event) => void handleProximityAlertToggle(event.target.checked)}
+              />
+              Výstraha při přiblížení cizího cíle
+            </label>
+            <label className="range-label">
+              Poloměr výstrahy
+              <input
+                type="range"
+                min="1"
+                max="50"
+                step="1"
+                value={alertRadiusKm}
+                onChange={(event) => setAlertRadiusKm(Number(event.target.value))}
+              />
+              <span>{alertRadiusKm} km</span>
+            </label>
+            <ProximityAlertList alerts={proximityAlerts} />
+          </div>
+
           <div className="ai-box">
             <PanelTitle icon={<Bot size={17} />} title="AI assistant" />
             <p>{aiResult}</p>
@@ -409,6 +579,26 @@ export function App() {
         </aside>
       </section>
     </main>
+  );
+}
+
+function ProximityAlertList({ alerts }: { alerts: ProximityAlert[] }) {
+  if (alerts.length === 0) {
+    return <div className="empty-mini">Bez aktivních výstrah pro mou polohu.</div>;
+  }
+
+  return (
+    <div className="proximity-alert-list">
+      {alerts.slice(0, 4).map((alert) => (
+        <div className={`proximity-alert ${alert.type === "inside-radius" ? "critical" : "warning"}`} key={`${alert.type}-${alert.object.objectId}`}>
+          <AlertTriangle size={15} />
+          <div>
+            <strong>{alert.object.objectId}</strong>
+            <span>{formatProximityAlert(alert)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -703,19 +893,33 @@ function formatAge(value: string | undefined): string {
   return `${Math.round(seconds / 60)} min`;
 }
 
-function readInitialMapToggle(name: "history" | "prediction"): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  return new URLSearchParams(window.location.search).get(name) === "1";
+function formatUserLocation(location: UserLocation): string {
+  const accuracy = Number.isFinite(location.accuracyM) ? ` ± ${Math.round(Number(location.accuracyM))} m` : "";
+  return `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)}${accuracy}`;
 }
 
-function readInitialAutoRefresh(): boolean {
+function formatProximityAlert(alert: ProximityAlert): string {
+  const current = `${alert.currentDistanceKm.toFixed(1)} km`;
+  if (typeof alert.predictedDistanceKm === "number") {
+    return `${current}, predikce ${alert.predictedDistanceKm.toFixed(1)} km`;
+  }
+  return `${current} od mé polohy`;
+}
+
+function readInitialMapToggle(name: "history" | "prediction", fallback: boolean): boolean {
   if (typeof window === "undefined") {
-    return true;
+    return fallback;
+  }
+  const value = new URLSearchParams(window.location.search).get(name);
+  return value === null ? fallback : value === "1";
+}
+
+function readInitialAutoRefresh(fallback = true): boolean {
+  if (typeof window === "undefined") {
+    return fallback;
   }
   const value = new URLSearchParams(window.location.search).get("autoRefresh");
-  return value === null ? true : value !== "0";
+  return value === null ? fallback : value !== "0";
 }
 
 function readInitialRefreshSeconds(fallback: RefreshSeconds): RefreshSeconds {
@@ -723,6 +927,22 @@ function readInitialRefreshSeconds(fallback: RefreshSeconds): RefreshSeconds {
     return fallback;
   }
   return parseRefreshSeconds(window.location.search, fallback);
+}
+
+function readInitialLayer(value: string | undefined): CopLayer {
+  return ["air-situation", "uav", "friendly", "foreign", "data-quality"].includes(value ?? "")
+    ? (value as CopLayer)
+    : "air-situation";
+}
+
+function readInitialAffiliationScope(value: string | undefined): AffiliationScope {
+  return ["all", "friend", "hostile", "neutral", "unknown"].includes(value ?? "")
+    ? (value as AffiliationScope)
+    : "all";
+}
+
+function readInitialDomainScope(value: string | undefined): DomainScope {
+  return ["all", "AIR", "LAND", "SEA", "RESCUE", "OTHER"].includes(value ?? "") ? (value as DomainScope) : "all";
 }
 
 const rootElement = document.getElementById("root");

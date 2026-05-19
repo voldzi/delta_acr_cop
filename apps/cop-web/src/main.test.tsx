@@ -19,6 +19,9 @@ vi.mock("./CopMap", async () => {
 
 afterEach(() => {
   cleanup();
+  if (typeof window.localStorage?.clear === "function") {
+    window.localStorage.clear();
+  }
   vi.restoreAllMocks();
 });
 
