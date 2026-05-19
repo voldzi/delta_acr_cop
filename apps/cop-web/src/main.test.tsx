@@ -8,11 +8,13 @@ import { App } from "./main";
 vi.mock("./CopMap", async () => {
   const React = await import("react");
   return {
-    CopMap: ({ objects }: { objects: Array<{ objectId: string }> }) =>
+    CopMap: ({ objects, emptyMessage }: { objects: Array<{ objectId: string }>; emptyMessage: string }) =>
       React.createElement(
         "div",
         { "data-testid": "cop-map" },
-        objects.map((object) => React.createElement("span", { key: object.objectId }, object.objectId))
+        objects.length === 0
+          ? React.createElement("span", null, emptyMessage)
+          : objects.map((object) => React.createElement("span", { key: object.objectId }, object.objectId))
       )
   };
 });
@@ -122,6 +124,41 @@ describe("COP web dashboard", () => {
     expect(screen.getByRole("button", { name: "180s" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "60s" }));
     expect(screen.getByRole("button", { name: "60s" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("explains an empty map when the SIM source is connected but no active tracks are present", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({
+          items: [
+            {
+              sourceSystemId: "sim-air-situation-001",
+              displayName: "COP Air Situation Simulator",
+              sourceType: "SIMULATOR",
+              status: "ACTIVE",
+              synthetic: true
+            }
+          ]
+        });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/track-history?seconds=180&limit=120")) {
+        return jsonResponse({ items: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText(/SIM zdroj je připojený/u)).toBeTruthy());
+    expect(screen.queryByText("Čekám na georeferencované COP tracky.")).toBeNull();
   });
 });
 
