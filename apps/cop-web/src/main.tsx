@@ -63,7 +63,18 @@ import {
   REFRESH_OPTIONS,
   type RefreshSeconds
 } from "./refresh-config";
-import { countHistoryPoints, mergeTrackHistory, trimTrackHistory, type PredictionMode, type TrackHistory } from "./track-history";
+import {
+  countHistoryPoints,
+  getReplayTimestamp,
+  getReplayWindow,
+  mergeTrackHistory,
+  selectReplayObjects,
+  trimHistoryToTimestamp,
+  trimTrackHistory,
+  type PredictionMode,
+  type ReplayWindow,
+  type TrackHistory
+} from "./track-history";
 import {
   clamp,
   normalizeMapView,
@@ -131,7 +142,7 @@ export function App() {
     readInitialRefreshSeconds(normalizeRefreshSeconds(initialPreferences.refreshSeconds ?? defaultRefreshSeconds))
   );
   const [replayRunning, setReplayRunning] = React.useState(false);
-  const [replayPosition, setReplayPosition] = React.useState(72);
+  const [replayPosition, setReplayPosition] = React.useState(100);
   const [showHistory, setShowHistory] = React.useState(() => readInitialMapToggle("history", initialPreferences.showHistory ?? false));
   const [showPrediction, setShowPrediction] = React.useState(() =>
     readInitialMapToggle("prediction", initialPreferences.showPrediction ?? false)
@@ -278,14 +289,35 @@ export function App() {
       return;
     }
     const timer = window.setInterval(() => {
-      setReplayPosition((current) => (current >= 100 ? 0 : current + 2));
+      setReplayPosition((current) => Math.min(100, current + 2));
     }, 800);
     return () => window.clearInterval(timer);
   }, [replayRunning]);
 
+  React.useEffect(() => {
+    if (replayRunning && replayPosition >= 100) {
+      setReplayRunning(false);
+    }
+  }, [replayPosition, replayRunning]);
+
+  const replayWindow = React.useMemo(() => getReplayWindow(trackHistory), [trackHistory]);
+  const replayTimestamp = React.useMemo(
+    () => (showHistory ? getReplayTimestamp(trackHistory, replayPosition) : null),
+    [replayPosition, showHistory, trackHistory]
+  );
+  const replayActive = Boolean(showHistory && replayTimestamp && replayPosition < 100);
+  const replayTrackHistory = React.useMemo(
+    () => (replayActive && replayTimestamp ? trimHistoryToTimestamp(trackHistory, replayTimestamp) : trackHistory),
+    [replayActive, replayTimestamp, trackHistory]
+  );
+  const objectsForDisplay = React.useMemo(
+    () => (replayActive && replayTimestamp ? selectReplayObjects(objects, trackHistory, replayTimestamp) : objects),
+    [objects, replayActive, replayTimestamp, trackHistory]
+  );
+
   const baseFilteredObjects = React.useMemo(
-    () => filterVisibleObjects(objects, { includeSynthetic, minConfidence }),
-    [includeSynthetic, minConfidence, objects]
+    () => filterVisibleObjects(objectsForDisplay, { includeSynthetic, minConfidence }),
+    [includeSynthetic, minConfidence, objectsForDisplay]
   );
   const scopedObjects = React.useMemo(
     () => applyOperationalFilters(baseFilteredObjects, affiliationScope, domainScope, searchQuery),
@@ -296,22 +328,22 @@ export function App() {
     [scopedObjects, selectedLayer]
   );
   const mapEmptyMessage = React.useMemo(
-    () => buildMapEmptyMessage({ loadError, objects, scopedObjects, sources, visibleObjects }),
-    [loadError, objects, scopedObjects, sources, visibleObjects]
+    () => buildMapEmptyMessage({ loadError, objects: objectsForDisplay, replayActive, scopedObjects, sources, visibleObjects }),
+    [loadError, objectsForDisplay, replayActive, scopedObjects, sources, visibleObjects]
   );
   const selectedObject = visibleObjects.find((object) => object.objectId === selectedObjectId) ?? visibleObjects[0];
   const metrics = React.useMemo(() => buildMetrics(scopedObjects, sources), [scopedObjects, sources]);
   const eventStream = React.useMemo(() => buildEventStream(visibleObjects), [visibleObjects]);
   const historyPointCount = React.useMemo(
-    () => countHistoryPoints(trackHistory, visibleObjects),
-    [trackHistory, visibleObjects]
+    () => countHistoryPoints(replayTrackHistory, visibleObjects),
+    [replayTrackHistory, visibleObjects]
   );
   const proximityAlerts = React.useMemo(
     () =>
-      proximityAlertEnabled
-        ? buildProximityAlerts(baseFilteredObjects, userLocation, trackHistory, alertRadiusKm, predictionMinutes, predictionMode)
+      proximityAlertEnabled && !replayActive
+        ? buildProximityAlerts(baseFilteredObjects, userLocation, replayTrackHistory, alertRadiusKm, predictionMinutes, predictionMode)
         : [],
-    [alertRadiusKm, baseFilteredObjects, predictionMinutes, predictionMode, proximityAlertEnabled, trackHistory, userLocation]
+    [alertRadiusKm, baseFilteredObjects, predictionMinutes, predictionMode, proximityAlertEnabled, replayActive, replayTrackHistory, userLocation]
   );
 
   React.useEffect(() => {
@@ -457,6 +489,23 @@ export function App() {
   function openSettings(tab: SettingsTab) {
     setSettingsTab(tab);
     setSettingsOpen(true);
+  }
+
+  function toggleReplayPlayback() {
+    if (replayRunning) {
+      setReplayRunning(false);
+      return;
+    }
+    if (!replayWindow) {
+      return;
+    }
+    setReplayPosition((current) => (current >= 100 ? 0 : current));
+    setReplayRunning(true);
+  }
+
+  function jumpToLive() {
+    setReplayRunning(false);
+    setReplayPosition(100);
   }
 
   function loginOperator() {
@@ -613,7 +662,7 @@ export function App() {
               selectedObjectId={selectedObject?.objectId}
               showHistory={showHistory}
               showPrediction={showPrediction}
-              trackHistory={trackHistory}
+              trackHistory={replayTrackHistory}
               predictionMinutes={predictionMinutes}
               predictionMode={predictionMode}
               autoFit={autoFit}
@@ -641,19 +690,42 @@ export function App() {
             <div className="replay-board">
               <div className="deck-header">
                 <PanelTitle icon={<History size={17} />} title="Replay" />
-                <button className="mini-button" onClick={() => setReplayRunning((current) => !current)} type="button">
-                  {replayRunning ? <Pause size={14} /> : <Play size={14} />}
-                  {replayRunning ? "Pause" : "Play"}
-                </button>
+                <div className="deck-actions">
+                  <button className="mini-button" disabled={!replayWindow} onClick={toggleReplayPlayback} type="button">
+                    {replayRunning ? <Pause size={14} /> : <Play size={14} />}
+                    {replayRunning ? "Pause" : "Play"}
+                  </button>
+                  <button className="mini-button" disabled={!replayWindow || replayPosition >= 100} onClick={jumpToLive} type="button">
+                    Live
+                  </button>
+                </div>
               </div>
-              <div className="timeline">
+              <div className={`timeline ${replayActive ? "replay-active" : ""}`}>
                 <Clock3 size={18} />
                 <div className="timeline-rail" aria-label="Replay position">
                   <span style={{ width: `${replayPosition}%` }} />
+                  <input
+                    aria-label="Pozice replaye"
+                    disabled={!replayWindow}
+                    max="100"
+                    min="0"
+                    onChange={(event) => {
+                      setReplayRunning(false);
+                      setReplayPosition(Number(event.target.value));
+                    }}
+                    step="1"
+                    type="range"
+                    value={replayPosition}
+                  />
                 </div>
                 <strong>
-                  {visibleObjects.length} tracků · {historyPointCount} bodů
+                  {formatReplayStatus(replayTimestamp, replayWindow, replayActive)}
                 </strong>
+              </div>
+              <div className="timeline-meta">
+                <span>{visibleObjects.length} tracků</span>
+                <span>{historyPointCount} bodů historie</span>
+                <span>{replayWindow ? `${replayWindow.durationSeconds}s okno` : "bez historie"}</span>
               </div>
               <EventStream events={eventStream} />
             </div>
@@ -676,6 +748,7 @@ export function App() {
             <ReadinessRow label="Live stream" value={streamReadinessLabel(streamStatus, lastStreamAt)} tone={streamStatusTone(streamStatus)} />
             <ReadinessRow label="Refresh rate" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
+            <ReadinessRow label="Replay" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
             <ReadinessRow label="History window" value={`${trackHistoryWindowSeconds} s · max ${trackHistoryLimit} pts`} tone="neutral" />
             <ReadinessRow label="Prediction" value={showPrediction ? `${predictionModeLabel(predictionMode)} · ${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
             <ReadinessRow label="Policy scope" value="COP data only" tone="neutral" />
@@ -845,6 +918,16 @@ function streamReadinessLabel(status: CopStreamStatus, lastStreamAt: string | nu
     return "polling fallback";
   }
   return "degraded";
+}
+
+function formatReplayStatus(timestamp: string | null, replayWindow: ReplayWindow | null, active: boolean): string {
+  if (!replayWindow) {
+    return "bez historie";
+  }
+  if (!active || !timestamp) {
+    return "LIVE";
+  }
+  return `REPLAY ${formatShortDateTime(timestamp)}`;
 }
 
 function formatStreamTime(value: string): string {
@@ -1379,18 +1462,23 @@ function buildMetrics(objects: CopObject[], sources: SourceSystem[]): DashboardM
 function buildMapEmptyMessage({
   loadError,
   objects,
+  replayActive,
   scopedObjects,
   sources,
   visibleObjects
 }: {
   loadError: string | null;
   objects: CopObject[];
+  replayActive: boolean;
   scopedObjects: CopObject[];
   sources: SourceSystem[];
   visibleObjects: CopObject[];
 }): string {
   if (loadError) {
     return `COP API není dostupné: ${loadError}`;
+  }
+  if (replayActive && objects.length === 0) {
+    return "Zvolený čas replaye neobsahuje žádné tracky. Posuň časovou osu nebo přepni zpět na live.";
   }
   if (objects.length > 0 && visibleObjects.length === 0) {
     return scopedObjects.length > 0

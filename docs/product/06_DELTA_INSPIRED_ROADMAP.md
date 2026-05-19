@@ -12,7 +12,7 @@ Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplik
 | Lifecycle objektů | Dokončeno v pilotu | Aktivní/stale/lost stav chrání mapu před trvalým zobrazováním zastavených simulovaných dat. |
 | Proximity awareness | Dokončeno v pilotu | Uživatel může zobrazit vlastní polohu a průsvitnou varovnou vrstvu přiblížení cizích objektů. |
 | Server-side temporal history | Rozpracováno | API drží body stop, web je používá jako zdroj pro historii tras a PostgreSQL store přes HAProxy/Patroni persistuje historii i current snapshot. |
-| Timeline/replay | Částečně | UI má časové okno historie v sekundách; plný replay nad serverovou časovou osou je další krok. |
+| Timeline/replay | Rozpracováno v pilotu | UI má časové okno historie v sekundách; replay controller používá serverovou historii pro historické polohy objektů. |
 | Stream/delta distribuce | Pilotně hotovo | SSE endpoint posílá snapshot, delta a heartbeat; web používá stream jako primární kanál a polling jako fallback. |
 | Perzistence a multi-user provoz | Částečně | UI nastavení jsou lokální pro uživatele/prohlížeč; current tracks a historie mají PostgreSQL backend. |
 
@@ -38,7 +38,7 @@ Status: probíhá.
 - UI časové okno historie může být v sekundách,
 - temporal history lze persistovat do PostgreSQL přes `haproxy.home.cz`,
 - current snapshot se persistuje do PostgreSQL a obnovuje při startu API,
-- další krok je replay controller nad serverovou časovou osou,
+- replay controller nad serverovou časovou osou přepíná mapu mezi live a historickým časem,
 - další krok je retence a stránkování dlouhých tras.
 
 ### P3: Realtime distribuce
@@ -62,7 +62,7 @@ Status: částečně hotovo.
 
 ### P5: Zdrojová důvěryhodnost a provozní dohled
 
-Status: plán.
+Status: pilotně hotovo.
 
 - stav zdrojů, latence, poslední event a degradace,
 - vysvětlení confidence a provenance v detailu objektu,
@@ -78,3 +78,4 @@ Status: plán.
 | 2026-05-19 | PostgreSQL current snapshot v1 | Přidán `cop_current_tracks`, UPSERT při ingestu a obnova aktuálních objektů při startu API. |
 | 2026-05-19 | SSE live stream v1 | Přidán `/api/v1/stream/cop/live`, snapshot/delta/heartbeat zprávy, klientské čtení přes `fetch` stream s bearer hlavičkou a polling fallback. |
 | 2026-05-19 | Source Health + provenance v1 | Přidán health endpoint zdrojů, UI Source Health Center a provenance metadata v detailu objektu. |
+| 2026-05-19 | Replay controller v1 | Timeline umí přepnout mapu z live režimu do historického času a objektům nastavuje polohy z `/api/v1/cop/track-history`. |

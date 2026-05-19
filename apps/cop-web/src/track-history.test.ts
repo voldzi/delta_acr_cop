@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { CopObject } from "./cop-data";
-import { countHistoryPoints, mergeTrackHistory, predictPosition, trimTrackHistory } from "./track-history";
+import {
+  countHistoryPoints,
+  getReplayTimestamp,
+  getReplayWindow,
+  mergeTrackHistory,
+  predictPosition,
+  selectReplayObjects,
+  trimHistoryToTimestamp,
+  trimTrackHistory
+} from "./track-history";
 
 describe("track history helpers", () => {
   it("merges positioned track snapshots and skips duplicate coordinates", () => {
@@ -158,5 +167,95 @@ describe("track history helpers", () => {
     expect(prediction?.path).toHaveLength(7);
     expect(prediction?.path[3]?.lat).toBeGreaterThan(50.02);
     expect(prediction?.lon).toBeLessThan(14.02);
+  });
+
+  it("derives a replay window and timestamp from retained history", () => {
+    const history = {
+      "AIR_SIM_UAV-0001": [
+        { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
+        { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.1, lon: 14.1, timestamp: "2026-05-19T08:02:00Z" }
+      ],
+      "AIR_SIM_AIRCRAFT-0002": [
+        { objectId: "AIR_SIM_AIRCRAFT-0002", affiliation: "FRIEND", lat: 49.9, lon: 13.9, timestamp: "2026-05-19T08:01:00Z" }
+      ]
+    };
+
+    expect(getReplayWindow(history)).toEqual({
+      durationSeconds: 120,
+      end: "2026-05-19T08:02:00.000Z",
+      start: "2026-05-19T08:00:00.000Z"
+    });
+    expect(getReplayTimestamp(history, 50)).toBe("2026-05-19T08:01:00.000Z");
+  });
+
+  it("selects replay object positions at or before the chosen timestamp", () => {
+    const objects = [
+      {
+        objectId: "AIR_SIM_UAV-0001",
+        objectType: "UAV",
+        affiliation: "HOSTILE",
+        domain: "AIR",
+        status: "ACTIVE",
+        confidence: 0.8,
+        position: { lat: 50.2, lon: 14.2 }
+      },
+      {
+        objectId: "AIR_SIM_UAV-0002",
+        objectType: "UAV",
+        affiliation: "HOSTILE",
+        domain: "AIR",
+        status: "ACTIVE",
+        position: { lat: 51, lon: 15 }
+      }
+    ] satisfies CopObject[];
+    const history = {
+      "AIR_SIM_UAV-0001": [
+        {
+          objectId: "AIR_SIM_UAV-0001",
+          affiliation: "HOSTILE",
+          confidence: 0.55,
+          lat: 50,
+          lon: 14,
+          status: "STALE",
+          timestamp: "2026-05-19T08:00:00Z"
+        },
+        {
+          objectId: "AIR_SIM_UAV-0001",
+          affiliation: "HOSTILE",
+          confidence: 0.9,
+          lat: 50.2,
+          lon: 14.2,
+          timestamp: "2026-05-19T08:02:00Z"
+        }
+      ],
+      "AIR_SIM_UAV-0002": [
+        { objectId: "AIR_SIM_UAV-0002", affiliation: "HOSTILE", lat: 51, lon: 15, timestamp: "2026-05-19T08:02:00Z" }
+      ]
+    };
+
+    const replayObjects = selectReplayObjects(objects, history, "2026-05-19T08:01:00Z");
+
+    expect(replayObjects).toHaveLength(1);
+    expect(replayObjects[0]).toMatchObject({
+      confidence: 0.55,
+      lastUpdatedAt: "2026-05-19T08:00:00Z",
+      objectId: "AIR_SIM_UAV-0001",
+      position: { lat: 50, lon: 14 },
+      status: "STALE"
+    });
+  });
+
+  it("trims replay history to the chosen timestamp", () => {
+    const trimmed = trimHistoryToTimestamp(
+      {
+        "AIR_SIM_UAV-0001": [
+          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
+          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.1, lon: 14.1, timestamp: "2026-05-19T08:02:00Z" }
+        ]
+      },
+      "2026-05-19T08:01:00Z"
+    );
+
+    expect(trimmed["AIR_SIM_UAV-0001"]?.map((point) => point.timestamp)).toEqual(["2026-05-19T08:00:00Z"]);
   });
 });

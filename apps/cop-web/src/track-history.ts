@@ -3,14 +3,28 @@ import type { CopObject } from "./cop-data";
 export interface TrackHistoryPoint {
   objectId: string;
   affiliation: string;
+  confidence?: number;
+  eventId?: string;
+  ingestTimestamp?: string;
   lat: number;
   lon: number;
+  objectType?: string;
+  producerTimestamp?: string;
+  sourceSystemId?: string;
+  status?: string;
+  synthetic?: boolean;
   timestamp: string;
 }
 
 export type TrackHistory = Record<string, TrackHistoryPoint[]>;
 export type PredictionMode = "adaptive" | "telemetry" | "history" | "maneuver";
 export type PredictionMethod = "telemetry" | "history" | "maneuver";
+
+export interface ReplayWindow {
+  durationSeconds: number;
+  end: string;
+  start: string;
+}
 
 export interface PredictedPosition {
   lat: number;
@@ -111,6 +125,85 @@ function trimTrackPoints(
 
 export function countHistoryPoints(history: TrackHistory, objects: CopObject[]): number {
   return objects.reduce((sum, object) => sum + (history[object.objectId]?.length ?? 0), 0);
+}
+
+export function getReplayWindow(history: TrackHistory): ReplayWindow | null {
+  const timestamps = Object.values(history)
+    .flat()
+    .map((point) => new Date(point.timestamp).getTime())
+    .filter(Number.isFinite);
+
+  if (timestamps.length === 0) {
+    return null;
+  }
+
+  const startMs = Math.min(...timestamps);
+  const endMs = Math.max(...timestamps);
+  return {
+    durationSeconds: Math.max(0, Math.round((endMs - startMs) / 1000)),
+    end: new Date(endMs).toISOString(),
+    start: new Date(startMs).toISOString()
+  };
+}
+
+export function getReplayTimestamp(history: TrackHistory, positionPercent: number): string | null {
+  const window = getReplayWindow(history);
+  if (!window) {
+    return null;
+  }
+
+  const startMs = new Date(window.start).getTime();
+  const endMs = new Date(window.end).getTime();
+  const position = Math.min(100, Math.max(0, positionPercent)) / 100;
+  return new Date(startMs + (endMs - startMs) * position).toISOString();
+}
+
+export function trimHistoryToTimestamp(history: TrackHistory, timestamp: string): TrackHistory {
+  const cutoffMs = new Date(timestamp).getTime();
+  if (!Number.isFinite(cutoffMs)) {
+    return history;
+  }
+
+  return Object.fromEntries(
+    Object.entries(history).map(([objectId, points]) => [
+      objectId,
+      points.filter((point) => {
+        const pointMs = new Date(point.timestamp).getTime();
+        return Number.isFinite(pointMs) ? pointMs <= cutoffMs : false;
+      })
+    ])
+  );
+}
+
+export function selectReplayObjects(objects: CopObject[], history: TrackHistory, timestamp: string): CopObject[] {
+  const cutoffMs = new Date(timestamp).getTime();
+  if (!Number.isFinite(cutoffMs)) {
+    return objects;
+  }
+
+  return objects.flatMap((object) => {
+    const point = findLastPointAtOrBefore(history[object.objectId] ?? [], cutoffMs);
+    if (!point) {
+      return [];
+    }
+
+    return [
+      {
+        ...object,
+        affiliation: point.affiliation ?? object.affiliation,
+        confidence: point.confidence ?? object.confidence,
+        lastUpdatedAt: point.timestamp,
+        objectType: point.objectType ?? object.objectType,
+        position: {
+          ...(object.position ?? {}),
+          lat: point.lat,
+          lon: point.lon
+        },
+        status: point.status ?? object.status,
+        synthetic: point.synthetic ?? object.synthetic
+      }
+    ];
+  });
 }
 
 export function predictPosition(
@@ -277,6 +370,20 @@ function buildRecentSegments(historyPoints: TrackHistoryPoint[]): Array<{
   }
 
   return segments;
+}
+
+function findLastPointAtOrBefore(points: TrackHistoryPoint[], cutoffMs: number): TrackHistoryPoint | null {
+  return points.reduce<TrackHistoryPoint | null>((selected, point) => {
+    const pointMs = new Date(point.timestamp).getTime();
+    if (!Number.isFinite(pointMs) || pointMs > cutoffMs) {
+      return selected;
+    }
+    if (!selected) {
+      return point;
+    }
+    const selectedMs = new Date(selected.timestamp).getTime();
+    return pointMs >= selectedMs ? point : selected;
+  }, null);
 }
 
 function projectPosition(lat: number, lon: number, distanceM: number, headingDeg: number): { lat: number; lon: number } {
