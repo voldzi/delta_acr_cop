@@ -4,6 +4,7 @@ import {
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
   parseMapCenter,
+  userAlertRadiusToFeatureCollection,
   userLocationToFeatureCollection
 } from "./CopMap";
 import type { CopObject } from "./cop-data";
@@ -113,5 +114,28 @@ describe("COP map data helpers", () => {
       ]
     });
     expect(userLocationToFeatureCollection(null).features).toEqual([]);
+  });
+
+  it("builds a geodesic user alert radius polygon", () => {
+    const collection = userAlertRadiusToFeatureCollection(
+      {
+        lat: 50.1,
+        lon: 14.4,
+        accuracyM: 12,
+        updatedAt: "2026-05-19T08:00:00Z"
+      },
+      10,
+      true,
+      true
+    );
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0]?.properties).toEqual({ radiusKm: 10, active: true });
+    const ring = collection.features[0]!.geometry.coordinates[0]!;
+    expect(ring).toHaveLength(97);
+    expect(ring[0]).toEqual(ring[ring.length - 1]);
+    expect(ring[0]![1]).toBeGreaterThan(50.1);
+    expect(userAlertRadiusToFeatureCollection(null, 10, true).features).toEqual([]);
+    expect(userAlertRadiusToFeatureCollection({ lat: 50, lon: 14, updatedAt: "2026-05-19T08:00:00Z" }, 10, false).features).toEqual([]);
   });
 });

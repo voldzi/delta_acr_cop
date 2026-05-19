@@ -479,12 +479,15 @@ export function App() {
               trackHistory={trackHistory}
               predictionMinutes={predictionMinutes}
               autoFit={autoFit}
+              alertRadiusKm={alertRadiusKm}
               focusUserLocationRequest={focusUserLocationRequest}
+              hasProximityAlerts={proximityAlerts.length > 0}
               initialView={mapView}
               onSelectObject={(object) => setSelectedObjectId(object.objectId)}
               onAutoFitChange={setAutoFit}
               onRequestUserLocation={locateUser}
               onViewChange={setMapView}
+              showProximityAlertRadius={proximityAlertEnabled}
               userLocation={userLocation}
             />
           </section>

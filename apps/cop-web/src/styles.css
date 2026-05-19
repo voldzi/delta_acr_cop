@@ -697,6 +697,12 @@ h1 {
   border-top-style: dashed;
 }
 
+.legend-radius {
+  border-style: dashed;
+  border-width: 1px;
+  border-radius: 999px;
+}
+
 .map-notice {
   left: 12px;
   bottom: 12px;

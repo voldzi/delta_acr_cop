@@ -21,8 +21,11 @@ const trackSourceId = "cop-live-tracks";
 const trackHistorySourceId = "cop-track-history";
 const trackPredictionSourceId = "cop-track-prediction";
 const userLocationSourceId = "cop-user-location";
+const userAlertRadiusSourceId = "cop-user-alert-radius";
 const trackHistoryLayerId = "cop-track-history-line";
 const trackPredictionLayerId = "cop-track-prediction-line";
+const userAlertRadiusFillLayerId = "cop-user-alert-radius-fill";
+const userAlertRadiusLineLayerId = "cop-user-alert-radius-line";
 const userLocationAccuracyLayerId = "cop-user-location-accuracy";
 const userLocationLayerId = "cop-user-location-point";
 const trackSelectedHaloLayerId = "cop-live-track-selected-halo";
@@ -33,6 +36,7 @@ const tileUrl = import.meta.env.VITE_COP_TILE_URL ?? "https://tile.openstreetmap
 const tileAttribution = import.meta.env.VITE_COP_TILE_ATTRIBUTION ?? "&copy; OpenStreetMap contributors";
 const defaultCenter = parseMapCenter(import.meta.env.VITE_COP_MAP_CENTER);
 const defaultZoom = parseFiniteNumber(import.meta.env.VITE_COP_MAP_ZOOM, 8);
+const earthRadiusKm = 6371.0088;
 
 export interface TrackFeatureProperties {
   objectId: string;
@@ -91,12 +95,15 @@ interface CopMapProps {
   trackHistory: TrackHistory;
   predictionMinutes: number;
   autoFit: boolean;
+  alertRadiusKm: number;
   focusUserLocationRequest: number;
+  hasProximityAlerts: boolean;
   initialView?: MapViewState;
   onSelectObject: (object: CopObject) => void;
   onAutoFitChange: (value: boolean) => void;
   onRequestUserLocation: () => void;
   onViewChange: (view: MapViewState) => void;
+  showProximityAlertRadius: boolean;
   userLocation: UserLocation | null;
 }
 
@@ -109,12 +116,15 @@ export function CopMap({
   trackHistory,
   predictionMinutes,
   autoFit,
+  alertRadiusKm,
   focusUserLocationRequest,
+  hasProximityAlerts,
   initialView,
   onSelectObject,
   onAutoFitChange,
   onRequestUserLocation,
   onViewChange,
+  showProximityAlertRadius,
   userLocation
 }: CopMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -143,6 +153,10 @@ export function CopMap({
         ? objectsToPredictionFeatureCollection(objects, trackHistory, selectedId, predictionMinutes)
         : emptyLineFeatureCollection(),
     [objects, predictionMinutes, selectedId, showPrediction, trackHistory]
+  );
+  const userAlertRadiusFeatureCollection = React.useMemo(
+    () => userAlertRadiusToFeatureCollection(userLocation, alertRadiusKm, showProximityAlertRadius, hasProximityAlerts),
+    [alertRadiusKm, hasProximityAlerts, showProximityAlertRadius, userLocation]
   );
 
   objectsRef.current = objects;
@@ -195,10 +209,40 @@ export function CopMap({
           type: "geojson",
           data: userLocationToFeatureCollection(null) as Parameters<GeoJSONSource["setData"]>[0]
         });
+        map.addSource(userAlertRadiusSourceId, {
+          type: "geojson",
+          data: emptyPolygonFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
         await registerNatoSymbolImages(map);
         if (mapRef.current !== map) {
           return;
         }
+
+        map.addLayer({
+          id: userAlertRadiusFillLayerId,
+          type: "fill",
+          source: userAlertRadiusSourceId,
+          paint: {
+            "fill-color": ["case", ["get", "active"], "#ef4444", "#facc15"],
+            "fill-opacity": ["case", ["get", "active"], 0.13, 0.08]
+          }
+        });
+
+        map.addLayer({
+          id: userAlertRadiusLineLayerId,
+          type: "line",
+          source: userAlertRadiusSourceId,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": ["case", ["get", "active"], "#ef4444", "#facc15"],
+            "line-dasharray": [2, 1.4],
+            "line-opacity": ["case", ["get", "active"], 0.72, 0.48],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1.1, 12, 1.8, 16, 2.4]
+          }
+        });
 
         map.addLayer({
           id: trackHistoryLayerId,
@@ -366,6 +410,13 @@ export function CopMap({
   }, [mapReady, userLocation]);
 
   React.useEffect(() => {
+    const source = mapRef.current?.getSource(userAlertRadiusSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(userAlertRadiusFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [mapReady, userAlertRadiusFeatureCollection]);
+
+  React.useEffect(() => {
     if (!mapReady || !userLocation || focusUserLocationRequest === 0) {
       return;
     }
@@ -454,6 +505,7 @@ export function CopMap({
         <LegendItem disposition="unknown" color="#facc15" label="Neznámé" />
         {showHistory ? <LineLegendItem label="Historie" /> : null}
         {showPrediction ? <LineLegendItem dashed label="Predikce" /> : null}
+        {showProximityAlertRadius && userLocation ? <RadiusLegendItem active={hasProximityAlerts} label="Výstražný perimetr" /> : null}
       </div>
       {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}
       {mapError ? <div className="map-notice error">Mapový podklad: {mapError}</div> : null}
@@ -590,11 +642,90 @@ export function userLocationToFeatureCollection(userLocation: UserLocation | nul
   };
 }
 
+export function userAlertRadiusToFeatureCollection(
+  userLocation: UserLocation | null,
+  radiusKm: number,
+  visible: boolean,
+  active = false
+): {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: { type: "Polygon"; coordinates: Array<Array<[number, number]>> };
+    properties: { radiusKm: number; active: boolean };
+  }>;
+} {
+  if (!visible || !userLocation || !Number.isFinite(radiusKm) || radiusKm <= 0) {
+    return emptyPolygonFeatureCollection();
+  }
+
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: {
+          type: "Polygon",
+          coordinates: [buildGeodesicCircle(userLocation, radiusKm)]
+        },
+        properties: {
+          radiusKm,
+          active
+        }
+      }
+    ]
+  };
+}
+
 function emptyLineFeatureCollection(): TrackLineFeatureCollection {
   return {
     type: "FeatureCollection",
     features: []
   };
+}
+
+function emptyPolygonFeatureCollection() {
+  return {
+    type: "FeatureCollection" as const,
+    features: []
+  };
+}
+
+function buildGeodesicCircle(userLocation: UserLocation, radiusKm: number, segments = 96): Array<[number, number]> {
+  const lat = degreesToRadians(userLocation.lat);
+  const lon = degreesToRadians(userLocation.lon);
+  const angularDistance = radiusKm / earthRadiusKm;
+  const coordinates: Array<[number, number]> = [];
+
+  for (let index = 0; index < segments; index += 1) {
+    const bearing = (index / segments) * Math.PI * 2;
+    const pointLat = Math.asin(
+      Math.sin(lat) * Math.cos(angularDistance) + Math.cos(lat) * Math.sin(angularDistance) * Math.cos(bearing)
+    );
+    const pointLon =
+      lon +
+      Math.atan2(
+        Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat),
+        Math.cos(angularDistance) - Math.sin(lat) * Math.sin(pointLat)
+      );
+
+    coordinates.push([normalizeLongitude(radiansToDegrees(pointLon)), radiansToDegrees(pointLat)]);
+  }
+
+  coordinates.push(coordinates[0]!);
+  return coordinates;
+}
+
+function degreesToRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function radiansToDegrees(value: number) {
+  return (value * 180) / Math.PI;
+}
+
+function normalizeLongitude(value: number) {
+  return ((((value + 180) % 360) + 360) % 360) - 180;
 }
 
 export function parseMapCenter(value: string | undefined): [number, number] {
@@ -743,6 +874,21 @@ function LineLegendItem({ dashed = false, label }: { dashed?: boolean; label: st
   return (
     <div className="legend-item">
       <span className={`legend-line ${dashed ? "dashed" : ""}`} />
+      {label}
+    </div>
+  );
+}
+
+function RadiusLegendItem({ active, label }: { active: boolean; label: string }) {
+  return (
+    <div className="legend-item">
+      <span
+        className="legend-radius"
+        style={{
+          background: active ? "rgba(239, 68, 68, 0.16)" : "rgba(250, 204, 21, 0.13)",
+          borderColor: active ? "#ef4444" : "#facc15"
+        }}
+      />
       {label}
     </div>
   );
