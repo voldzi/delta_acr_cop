@@ -36,6 +36,12 @@ import {
 } from "./cop-data";
 import { CopMap } from "./CopMap";
 import { getAffiliationPresentation, getNatoSidc, resolveCopObjectSymbol } from "./symbology";
+import {
+  parseRefreshSeconds,
+  refreshMillisecondsToSeconds,
+  REFRESH_OPTIONS,
+  type RefreshSeconds
+} from "./refresh-config";
 import { countHistoryPoints, mergeTrackHistory, type TrackHistory } from "./track-history";
 import "./styles.css";
 
@@ -45,7 +51,7 @@ const labToken =
   import.meta.env.VITE_COP_AUTH_VALUE ??
   import.meta.env.VITE_COP_LAB_TOKEN ??
   "dev-lab-token";
-const refreshIntervalMs = Number.parseInt(import.meta.env.VITE_COP_REFRESH_MS ?? "5000", 10);
+const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_COP_REFRESH_MS ?? "5000");
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
 type DomainScope = "all" | "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
@@ -74,6 +80,10 @@ export function App() {
   const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [autoRefresh, setAutoRefresh] = React.useState(() => readInitialAutoRefresh());
+  const [refreshSeconds, setRefreshSeconds] = React.useState<RefreshSeconds>(() =>
+    readInitialRefreshSeconds(defaultRefreshSeconds)
+  );
   const [replayRunning, setReplayRunning] = React.useState(false);
   const [replayPosition, setReplayPosition] = React.useState(72);
   const [showHistory, setShowHistory] = React.useState(() => readInitialMapToggle("history"));
@@ -81,8 +91,13 @@ export function App() {
   const [predictionMinutes, setPredictionMinutes] = React.useState(10);
   const [trackHistory, setTrackHistory] = React.useState<TrackHistory>({});
   const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad COP daty.");
+  const loadInFlightRef = React.useRef(false);
 
   const load = React.useCallback(async () => {
+    if (loadInFlightRef.current) {
+      return;
+    }
+    loadInFlightRef.current = true;
     setIsLoading(true);
     try {
       const data = await fetchCopDashboardData(apiBase, labToken);
@@ -96,17 +111,24 @@ export function App() {
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Nepodařilo se načíst COP data.");
     } finally {
+      loadInFlightRef.current = false;
       setIsLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
     void load();
+  }, [load]);
+
+  React.useEffect(() => {
+    if (!autoRefresh) {
+      return;
+    }
     const timer = window.setInterval(() => {
       void load();
-    }, refreshIntervalMs);
+    }, refreshSeconds * 1000);
     return () => window.clearInterval(timer);
-  }, [load]);
+  }, [autoRefresh, load, refreshSeconds]);
 
   React.useEffect(() => {
     if (!replayRunning) {
@@ -200,6 +222,25 @@ export function App() {
             <button className="icon-button" onClick={() => void load()} disabled={isLoading} title="Obnovit COP data">
               <RefreshCw size={16} className={isLoading ? "spin" : ""} />
             </button>
+          </div>
+          <div className="refresh-control">
+            <label className="toggle-row compact">
+              <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
+              Auto refresh
+            </label>
+            <div className="refresh-segment" aria-label="Interval automatického obnovování">
+              {REFRESH_OPTIONS.map((option) => (
+                <button
+                  aria-pressed={refreshSeconds === option}
+                  className={refreshSeconds === option ? "active" : ""}
+                  key={option}
+                  onClick={() => setRefreshSeconds(option)}
+                  type="button"
+                >
+                  {option}s
+                </button>
+              ))}
+            </div>
           </div>
           {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
 
@@ -351,6 +392,7 @@ export function App() {
             <ReadinessRow label="Source coverage" value={metrics.activeSources > 0 ? "active" : "waiting"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
             <ReadinessRow label="Synthetic visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
             <ReadinessRow label="Synthetic tracks" value={String(metrics.syntheticCount)} tone="neutral" />
+            <ReadinessRow label="Refresh rate" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
             <ReadinessRow label="Prediction horizon" value={showPrediction ? `${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
             <ReadinessRow label="Policy scope" value="COP data only" tone="neutral" />
@@ -666,6 +708,21 @@ function readInitialMapToggle(name: "history" | "prediction"): boolean {
     return false;
   }
   return new URLSearchParams(window.location.search).get(name) === "1";
+}
+
+function readInitialAutoRefresh(): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  const value = new URLSearchParams(window.location.search).get("autoRefresh");
+  return value === null ? true : value !== "0";
+}
+
+function readInitialRefreshSeconds(fallback: RefreshSeconds): RefreshSeconds {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+  return parseRefreshSeconds(window.location.search, fallback);
 }
 
 const rootElement = document.getElementById("root");

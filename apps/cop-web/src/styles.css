@@ -229,6 +229,35 @@ h1 {
   font-size: 14px;
 }
 
+.refresh-control {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(142, 157, 170, 0.18);
+}
+
+.refresh-segment {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.refresh-segment button {
+  min-height: 30px;
+  border: 1px solid rgba(142, 157, 170, 0.24);
+  background: rgba(16, 24, 30, 0.88);
+  color: #dce5ee;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.refresh-segment button.active {
+  border-color: rgba(200, 240, 141, 0.74);
+  background: rgba(151, 199, 104, 0.18);
+  color: var(--lime);
+}
+
 .icon-button,
 .mini-button {
   display: inline-grid;
