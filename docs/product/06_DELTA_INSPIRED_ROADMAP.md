@@ -6,7 +6,7 @@ Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplik
 
 | Oblast | Stav | Poznámka |
 | --- | --- | --- |
-| Profesionální mapové COP UI | Dokončeno v pilotu | Mapová plocha, vrstvy, detail objektu, refresh, historie/predikce, per-user nastavení, PWA metadata a veřejné publikování. |
+| Profesionální mapové COP UI | Dokončeno v pilotu | Mapová plocha, vrstvy, detail objektu, refresh, historie/predikce, per-user nastavení, PWA metadata, responzivní tablet/telefon režim a veřejné publikování. |
 | SIM integrace | Dokončeno v pilotu | COP přijímá a zobrazuje cíle ze SIM projektu přes ingest kontrakt. |
 | NATO symbologie | Dokončeno v pilotu | Vlastní prvky jsou modré, cizí prvky červené, symboly jsou řešené přes renderer a UI metadata. |
 | Lifecycle objektů | Dokončeno v pilotu | Aktivní/stale/lost stav chrání mapu před trvalým zobrazováním zastavených simulovaných dat. |
@@ -79,3 +79,4 @@ Status: pilotně hotovo.
 | 2026-05-19 | SSE live stream v1 | Přidán `/api/v1/stream/cop/live`, snapshot/delta/heartbeat zprávy, klientské čtení přes `fetch` stream s bearer hlavičkou a polling fallback. |
 | 2026-05-19 | Source Health + provenance v1 | Přidán health endpoint zdrojů, UI Source Health Center a provenance metadata v detailu objektu. |
 | 2026-05-19 | Replay controller v1 | Timeline umí přepnout mapu z live režimu do historického času a objektům nastavuje polohy z `/api/v1/cop/track-history`. |
+| 2026-05-19 | Responsive COP workspace v1 | Tablet a telefon režim drží mapu jako primární plochu, zkracuje horní lištu a ponechává nastavení dostupné přes operátorskou ikonu. |

@@ -540,7 +540,13 @@ export function App() {
           <StatusItem icon={<RadioTower size={16} />} label="Sources" value={String(sources.length)} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
           <StatusItem icon={<Database size={16} />} label="Objects" value={String(visibleObjects.length)} tone="neutral" />
         </div>
-        <button className="operator-button" onClick={() => openSettings("account")} type="button">
+        <button
+          aria-label="Operátor - otevřít nastavení"
+          className="operator-button"
+          onClick={() => openSettings("account")}
+          title="Operátor - otevřít nastavení"
+          type="button"
+        >
           <UserCircle size={19} />
           <span>
             Operátor
