@@ -8,6 +8,7 @@ export interface MapViewState {
 }
 
 export interface UserPreferences {
+  activeWorkspace?: string;
   affiliationScope?: string;
   alertRadiusKm?: number;
   autoFit?: boolean;
@@ -27,7 +28,7 @@ export interface UserPreferences {
   trackHistoryWindowSeconds?: number;
 }
 
-export function readUserPreferences(): UserPreferences {
+export function readUserPreferences(scope?: string): UserPreferences {
   if (typeof window === "undefined") {
     return {};
   }
@@ -36,7 +37,8 @@ export function readUserPreferences(): UserPreferences {
     if (typeof window.localStorage?.getItem !== "function") {
       return {};
     }
-    const raw = window.localStorage.getItem(preferencesKey);
+    const key = scopedStorageKey(preferencesKey, scope);
+    const raw = window.localStorage.getItem(key) ?? (key === preferencesKey ? null : window.localStorage.getItem(preferencesKey));
     if (!raw) {
       return {};
     }
@@ -47,7 +49,7 @@ export function readUserPreferences(): UserPreferences {
   }
 }
 
-export function writeUserPreferences(preferences: UserPreferences): void {
+export function writeUserPreferences(preferences: UserPreferences, scope?: string): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -55,7 +57,7 @@ export function writeUserPreferences(preferences: UserPreferences): void {
   if (typeof window.localStorage?.setItem !== "function") {
     return;
   }
-  window.localStorage.setItem(preferencesKey, JSON.stringify(preferences));
+  window.localStorage.setItem(scopedStorageKey(preferencesKey, scope), JSON.stringify(preferences));
 }
 
 export function normalizeMapView(value: unknown): MapViewState | undefined {
@@ -82,6 +84,7 @@ export function clamp(value: number, min: number, max: number): number {
 
 function normalizePreferences(value: Record<string, unknown>): UserPreferences {
   return {
+    activeWorkspace: optionalString(value.activeWorkspace),
     affiliationScope: optionalString(value.affiliationScope),
     alertRadiusKm: optionalFiniteNumber(value.alertRadiusKm),
     autoFit: optionalBoolean(value.autoFit),
@@ -117,4 +120,21 @@ function optionalFiniteNumber(value: unknown): number | undefined {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function scopedStorageKey(baseKey: string, scope: string | undefined): string {
+  const normalizedScope = normalizeStorageScope(scope);
+  return normalizedScope ? `${baseKey}.${normalizedScope}` : baseKey;
+}
+
+function normalizeStorageScope(scope: string | undefined): string {
+  if (!scope) {
+    return "";
+  }
+  return scope
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }

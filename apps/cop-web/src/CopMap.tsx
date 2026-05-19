@@ -98,6 +98,8 @@ interface CopMapProps {
   predictionMode: PredictionMode;
   autoFit: boolean;
   alertRadiusKm: number;
+  focusView?: MapViewState;
+  focusViewRequest: number;
   focusUserLocationRequest: number;
   hasProximityAlerts: boolean;
   initialView?: MapViewState;
@@ -121,6 +123,8 @@ export function CopMap({
   predictionMode,
   autoFit,
   alertRadiusKm,
+  focusView,
+  focusViewRequest,
   focusUserLocationRequest,
   hasProximityAlerts,
   initialView,
@@ -434,6 +438,19 @@ export function CopMap({
       duration: 650
     });
   }, [focusUserLocationRequest, mapReady, userLocation]);
+
+  React.useEffect(() => {
+    if (!mapReady || !focusView || focusViewRequest === 0) {
+      return;
+    }
+    mapRef.current?.easeTo({
+      bearing: focusView.bearing ?? 0,
+      center: focusView.center,
+      duration: 650,
+      pitch: focusView.pitch ?? 0,
+      zoom: focusView.zoom
+    });
+  }, [focusView, focusViewRequest, mapReady]);
 
   React.useEffect(() => {
     const source = mapRef.current?.getSource(trackSourceId);

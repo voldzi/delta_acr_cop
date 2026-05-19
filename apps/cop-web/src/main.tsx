@@ -80,8 +80,18 @@ import {
   normalizeMapView,
   readUserPreferences,
   writeUserPreferences,
-  type MapViewState
+  type MapViewState,
+  type UserPreferences
 } from "./user-preferences";
+import {
+  builtInViewProfiles,
+  normalizeWorkspaceModule,
+  readViewProfiles,
+  writeCustomViewProfiles,
+  type ViewProfile,
+  type ViewProfileSettings,
+  type WorkspaceModule
+} from "./view-profiles";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
@@ -94,6 +104,7 @@ const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
 type DomainScope = "all" | "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
+type PreferenceSettings = ViewProfileSettings | UserPreferences;
 type SettingsTab = "map" | "data" | "awareness" | "account";
 
 const historyLimitOptions = [36, 72, 120, 240, 600] as const;
@@ -116,9 +127,13 @@ interface DashboardMetrics {
 }
 
 export function App() {
-  const initialPreferences = React.useMemo(() => readUserPreferences(), []);
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
+  const userStorageScope = React.useMemo(() => userPreferenceScope(authSession), [authSession.profile?.username, authSession.status]);
+  const initialPreferences = React.useMemo(() => readUserPreferences(userStorageScope), [userStorageScope]);
+  const [activeWorkspace, setActiveWorkspace] = React.useState<WorkspaceModule>(() =>
+    normalizeWorkspaceModule(initialPreferences.activeWorkspace)
+  );
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
   const [sources, setSources] = React.useState<SourceSystem[]>([]);
   const [sourceHealth, setSourceHealth] = React.useState<SourceHealthItem[]>([]);
@@ -158,14 +173,18 @@ export function App() {
   const [settingsTab, setSettingsTab] = React.useState<SettingsTab>("map");
   const [autoFit, setAutoFit] = React.useState(initialPreferences.autoFit ?? true);
   const [mapView, setMapView] = React.useState<MapViewState | undefined>(() => normalizeMapView(initialPreferences.mapView));
+  const [focusViewRequest, setFocusViewRequest] = React.useState(0);
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
   const [locationStatus, setLocationStatus] = React.useState("Poloha není zaměřená.");
   const [isLocating, setIsLocating] = React.useState(false);
   const [proximityAlertEnabled, setProximityAlertEnabled] = React.useState(initialPreferences.proximityAlertEnabled ?? false);
   const [alertRadiusKm, setAlertRadiusKm] = React.useState(() => clamp(initialPreferences.alertRadiusKm ?? 10, 1, 50));
+  const [viewProfiles, setViewProfiles] = React.useState<ViewProfile[]>(() => readViewProfiles(userStorageScope));
+  const [lastProfileName, setLastProfileName] = React.useState<string | null>(null);
   const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad COP daty.");
   const loadInFlightRef = React.useRef(false);
+  const skipNextPreferenceWriteRef = React.useRef(false);
   const notifiedProximityAlertsRef = React.useRef<Set<string>>(new Set());
   const authToken = getAuthorizationToken(authSession, labToken);
   const dataAccessReady = authConfig.mode !== "oidc" || Boolean(authSession.accessToken);
@@ -346,8 +365,85 @@ export function App() {
     [alertRadiusKm, baseFilteredObjects, predictionMinutes, predictionMode, proximityAlertEnabled, replayActive, replayTrackHistory, userLocation]
   );
 
+  const applyPreferenceSettings = React.useCallback((settings: PreferenceSettings, options: { focusMap?: boolean } = {}) => {
+    if (settings.activeWorkspace !== undefined) {
+      setActiveWorkspace(normalizeWorkspaceModule(settings.activeWorkspace));
+    }
+    if (settings.selectedLayer !== undefined) {
+      setSelectedLayer(readInitialLayer(settings.selectedLayer));
+    }
+    if (settings.affiliationScope !== undefined) {
+      setAffiliationScope(readInitialAffiliationScope(settings.affiliationScope));
+    }
+    if (settings.domainScope !== undefined) {
+      setDomainScope(readInitialDomainScope(settings.domainScope));
+    }
+    if (settings.includeSynthetic !== undefined) {
+      setIncludeSynthetic(settings.includeSynthetic);
+    }
+    if (settings.minConfidence !== undefined) {
+      setMinConfidence(clamp(settings.minConfidence, 0, 1));
+    }
+    if (settings.autoRefresh !== undefined) {
+      setAutoRefresh(settings.autoRefresh);
+    }
+    if (settings.refreshSeconds !== undefined) {
+      setRefreshSeconds(normalizeRefreshSeconds(settings.refreshSeconds));
+    }
+    if (settings.showHistory !== undefined) {
+      setShowHistory(settings.showHistory);
+    }
+    if (settings.showPrediction !== undefined) {
+      setShowPrediction(settings.showPrediction);
+    }
+    if (settings.predictionMinutes !== undefined) {
+      setPredictionMinutes(clamp(settings.predictionMinutes, 2, 20));
+    }
+    if (settings.predictionMode !== undefined) {
+      setPredictionMode(readInitialPredictionMode(settings.predictionMode));
+    }
+    if (settings.trackHistoryLimit !== undefined) {
+      setTrackHistoryLimit(readInitialHistoryLimit(settings.trackHistoryLimit));
+    }
+    if (settings.trackHistoryWindowSeconds !== undefined) {
+      setTrackHistoryWindowSeconds(normalizeHistoryWindowSeconds(settings.trackHistoryWindowSeconds));
+    }
+    if (settings.proximityAlertEnabled !== undefined) {
+      setProximityAlertEnabled(settings.proximityAlertEnabled);
+    }
+    if (settings.alertRadiusKm !== undefined) {
+      setAlertRadiusKm(clamp(settings.alertRadiusKm, 1, 50));
+    }
+    if (settings.autoFit !== undefined) {
+      setAutoFit(settings.autoFit);
+    }
+
+    const normalizedMapView = normalizeMapView(settings.mapView);
+    if (normalizedMapView) {
+      setMapView(normalizedMapView);
+      if (settings.autoFit === undefined) {
+        setAutoFit(false);
+      }
+      if (options.focusMap) {
+        setFocusViewRequest((current) => current + 1);
+      }
+    }
+  }, []);
+
   React.useEffect(() => {
+    skipNextPreferenceWriteRef.current = true;
+    applyPreferenceSettings(readUserPreferences(userStorageScope), { focusMap: true });
+    setViewProfiles(readViewProfiles(userStorageScope));
+    setLastProfileName(null);
+  }, [applyPreferenceSettings, userStorageScope]);
+
+  React.useEffect(() => {
+    if (skipNextPreferenceWriteRef.current) {
+      skipNextPreferenceWriteRef.current = false;
+      return;
+    }
     writeUserPreferences({
+      activeWorkspace,
       affiliationScope,
       alertRadiusKm,
       autoFit,
@@ -365,8 +461,9 @@ export function App() {
       showPrediction,
       trackHistoryLimit,
       trackHistoryWindowSeconds
-    });
+    }, userStorageScope);
   }, [
+    activeWorkspace,
     affiliationScope,
     alertRadiusKm,
     autoFit,
@@ -383,7 +480,8 @@ export function App() {
     showHistory,
     showPrediction,
     trackHistoryLimit,
-    trackHistoryWindowSeconds
+    trackHistoryWindowSeconds,
+    userStorageScope
   ]);
 
   React.useEffect(() => {
@@ -517,6 +615,55 @@ export function App() {
     setAuthSession(createInitialAuthSession(authConfig));
   }
 
+  function applyViewProfile(profile: ViewProfile) {
+    applyPreferenceSettings(profile.settings, { focusMap: true });
+    setLastProfileName(profile.name);
+  }
+
+  function saveCurrentViewProfile() {
+    const now = new Date();
+    const name = `Pohled ${workspaceLabel(activeWorkspace)} ${now.toLocaleTimeString("cs-CZ", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    })}`;
+    const profile: ViewProfile = {
+      description: "Uložený lokální profil vrstev, filtrů, refresh režimu, replaye a aktuální mapy.",
+      id: `custom-${now.getTime()}`,
+      name,
+      settings: {
+        activeWorkspace,
+        affiliationScope,
+        alertRadiusKm,
+        autoFit: false,
+        autoRefresh,
+        domainScope,
+        includeSynthetic,
+        mapView,
+        minConfidence,
+        predictionMinutes,
+        predictionMode,
+        proximityAlertEnabled,
+        refreshSeconds,
+        selectedLayer,
+        showHistory,
+        showPrediction,
+        trackHistoryLimit,
+        trackHistoryWindowSeconds
+      }
+    };
+    const nextCustomProfiles = [...viewProfiles.filter((candidate) => !candidate.builtIn), profile].slice(-12);
+    writeCustomViewProfiles(nextCustomProfiles, userStorageScope);
+    setViewProfiles([...builtInViewProfiles, ...nextCustomProfiles]);
+    setLastProfileName(profile.name);
+  }
+
+  const workspace = workspaceMetadata(activeWorkspace);
+  const showLayerControls = activeWorkspace === "map" || activeWorkspace === "data";
+  const showSourceControls = activeWorkspace === "map" || activeWorkspace === "sources";
+  const showAlertControls = activeWorkspace === "alerts";
+  const showReplayControls = activeWorkspace === "replay";
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -556,6 +703,8 @@ export function App() {
         </button>
       </header>
 
+      <WorkspaceNavigator activeWorkspace={activeWorkspace} onChange={setActiveWorkspace} onOpenSettings={() => openSettings("map")} />
+
       <section className="workspace">
         <aside className="panel left-panel">
           <div className="refresh-row">
@@ -588,6 +737,14 @@ export function App() {
           </div>
           {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
 
+          <ViewProfilesPanel
+            activeProfileName={lastProfileName}
+            profiles={viewProfiles}
+            userScope={userStorageScope}
+            onApply={applyViewProfile}
+            onSave={saveCurrentViewProfile}
+          />
+
           <div className="mission-metrics">
             <MetricTile label="Friendly" value={metrics.friendlyCount} tone="friend" />
             <MetricTile label="Foreign" value={metrics.foreignCount} tone="hostile" />
@@ -595,68 +752,108 @@ export function App() {
             <MetricTile label="Warnings" value={metrics.warningCount} tone={metrics.warningCount > 0 ? "warn" : "ok"} />
           </div>
 
-          <PanelTitle icon={<Layers size={17} />} title="Vrstvy" />
-          <LayerButton active={selectedLayer === "air-situation"} onClick={() => setSelectedLayer("air-situation")} label="Air situation" count={scopedObjects.length} />
-          <LayerButton active={selectedLayer === "uav"} onClick={() => setSelectedLayer("uav")} label="UAV" count={getUavCount(scopedObjects)} />
-          <LayerButton active={selectedLayer === "friendly"} onClick={() => setSelectedLayer("friendly")} label="Vlastní" count={metrics.friendlyCount} />
-          <LayerButton active={selectedLayer === "foreign"} onClick={() => setSelectedLayer("foreign")} label="Cizí" count={metrics.foreignCount} />
-          <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={getDataQualityCount(scopedObjects)} />
+          {showLayerControls ? (
+            <>
+              <PanelTitle icon={<Layers size={17} />} title="Vrstvy" />
+              <LayerButton active={selectedLayer === "air-situation"} onClick={() => setSelectedLayer("air-situation")} label="Air situation" count={scopedObjects.length} />
+              <LayerButton active={selectedLayer === "uav"} onClick={() => setSelectedLayer("uav")} label="UAV" count={getUavCount(scopedObjects)} />
+              <LayerButton active={selectedLayer === "friendly"} onClick={() => setSelectedLayer("friendly")} label="Vlastní" count={metrics.friendlyCount} />
+              <LayerButton active={selectedLayer === "foreign"} onClick={() => setSelectedLayer("foreign")} label="Cizí" count={metrics.foreignCount} />
+              <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={getDataQualityCount(scopedObjects)} />
 
-          <div className="control-block">
-            <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry" />
-            <label className="search-field">
-              <Search size={15} />
-              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Object ID, type, affiliation" />
-            </label>
-            <label className="toggle-row">
-              <input type="checkbox" checked={includeSynthetic} onChange={(event) => setIncludeSynthetic(event.target.checked)} />
-              Zobrazit simulované cíle
-            </label>
-            <label className="range-label">
-              Minimum confidence
-              <input type="range" min="0" max="1" step="0.05" value={minConfidence} onChange={(event) => setMinConfidence(Number(event.target.value))} />
-              <span>{Math.round(minConfidence * 100)} %</span>
-            </label>
-            <SegmentedControl
-              label="Affiliation"
-              options={[
-                ["all", "All"],
-                ["friend", "Vlastní"],
-                ["hostile", "Cizí"],
-                ["unknown", "Unknown"]
-              ]}
-              value={affiliationScope}
-              onChange={(value) => setAffiliationScope(value as AffiliationScope)}
-            />
-            <SegmentedControl
-              label="Domain"
-              options={[
-                ["all", "All"],
-                ["AIR", "AIR"],
-                ["LAND", "LAND"],
-                ["RESCUE", "RESCUE"]
-              ]}
-              value={domainScope}
-              onChange={(value) => setDomainScope(value as DomainScope)}
-            />
-          </div>
-
-          <div className="source-list">
-            <PanelTitle icon={<ShieldCheck size={17} />} title="Source Registry" />
-            {sources.map((source) => (
-              <div className="source-row" key={source.sourceSystemId}>
-                <span className={`dot ${source.status === "ACTIVE" ? "ok" : "warn"}`} />
-                <div>
-                  <strong>{source.displayName}</strong>
-                  <small>{source.sourceSystemId}</small>
-                </div>
-                <em>{source.status ?? "REGISTERED"}</em>
+              <div className="control-block">
+                <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry" />
+                <label className="search-field">
+                  <Search size={15} />
+                  <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Object ID, type, affiliation" />
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={includeSynthetic} onChange={(event) => setIncludeSynthetic(event.target.checked)} />
+                  Zobrazit simulované cíle
+                </label>
+                <label className="range-label">
+                  Minimum confidence
+                  <input type="range" min="0" max="1" step="0.05" value={minConfidence} onChange={(event) => setMinConfidence(Number(event.target.value))} />
+                  <span>{Math.round(minConfidence * 100)} %</span>
+                </label>
+                <SegmentedControl
+                  label="Affiliation"
+                  options={[
+                    ["all", "All"],
+                    ["friend", "Vlastní"],
+                    ["hostile", "Cizí"],
+                    ["unknown", "Unknown"]
+                  ]}
+                  value={affiliationScope}
+                  onChange={(value) => setAffiliationScope(value as AffiliationScope)}
+                />
+                <SegmentedControl
+                  label="Domain"
+                  options={[
+                    ["all", "All"],
+                    ["AIR", "AIR"],
+                    ["LAND", "LAND"],
+                    ["RESCUE", "RESCUE"]
+                  ]}
+                  value={domainScope}
+                  onChange={(value) => setDomainScope(value as DomainScope)}
+                />
               </div>
-            ))}
-            {sources.length === 0 ? <div className="empty-mini">Source Registry zatím nevrátil žádné zdroje.</div> : null}
-          </div>
+            </>
+          ) : null}
 
-          <SourceHealthCenter items={sourceHealth} />
+          {showAlertControls ? (
+            <div className="workspace-module-card">
+              <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
+              <ReadinessRow label="Vrstva na mapě" value={proximityAlertEnabled ? "aktivní" : "vypnuto"} tone={proximityAlertEnabled ? "ok" : "neutral"} />
+              <ReadinessRow label="Poloměr" value={`${alertRadiusKm} km`} tone="neutral" />
+              <ReadinessRow label="Aktivní výstrahy" value={String(proximityAlerts.length)} tone={proximityAlerts.length > 0 ? "warn" : "ok"} />
+              <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
+                <Settings size={14} />
+                Nastavení výstrah
+              </button>
+            </div>
+          ) : null}
+
+          {showReplayControls ? (
+            <div className="workspace-module-card">
+              <PanelTitle icon={<History size={17} />} title="Replay workspace" />
+              <ReadinessRow label="Stav" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
+              <ReadinessRow label="Historie" value={`${trackHistoryWindowSeconds} s / ${historyPointCount} bodů`} tone={showHistory ? "ok" : "neutral"} />
+              <ReadinessRow label="Predikce" value={showPrediction ? predictionModeLabel(predictionMode) : "vypnuto"} tone={showPrediction ? "ok" : "neutral"} />
+              <div className="module-action-row">
+                <button className="mini-button" disabled={!replayWindow} onClick={toggleReplayPlayback} type="button">
+                  {replayRunning ? <Pause size={14} /> : <Play size={14} />}
+                  {replayRunning ? "Pause" : "Play"}
+                </button>
+                <button className="mini-button" onClick={() => openSettings("map")} type="button">
+                  <Settings size={14} />
+                  Režim
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showSourceControls ? (
+            <>
+              <div className="source-list">
+                <PanelTitle icon={<ShieldCheck size={17} />} title="Source Registry" />
+                {sources.map((source) => (
+                  <div className="source-row" key={source.sourceSystemId}>
+                    <span className={`dot ${source.status === "ACTIVE" ? "ok" : "warn"}`} />
+                    <div>
+                      <strong>{source.displayName}</strong>
+                      <small>{source.sourceSystemId}</small>
+                    </div>
+                    <em>{source.status ?? "REGISTERED"}</em>
+                  </div>
+                ))}
+                {sources.length === 0 ? <div className="empty-mini">Source Registry zatím nevrátil žádné zdroje.</div> : null}
+              </div>
+
+              <SourceHealthCenter items={sourceHealth} />
+            </>
+          ) : null}
         </aside>
 
         <section className="center-column">
@@ -673,6 +870,8 @@ export function App() {
               predictionMode={predictionMode}
               autoFit={autoFit}
               alertRadiusKm={alertRadiusKm}
+              focusView={mapView}
+              focusViewRequest={focusViewRequest}
               focusUserLocationRequest={focusUserLocationRequest}
               hasProximityAlerts={proximityAlerts.length > 0}
               initialView={mapView}
@@ -739,6 +938,12 @@ export function App() {
         </section>
 
         <aside className="panel right-panel">
+          <div className="workspace-context-card">
+            <span>Workspace</span>
+            <strong>{workspace.label}</strong>
+            <p>{workspace.description}</p>
+          </div>
+
           <PanelTitle icon={<Database size={17} />} title="Object detail" />
           {selectedObject ? (
             <ObjectDetail object={selectedObject} />
@@ -841,6 +1046,84 @@ function ProximityAlertList({ alerts }: { alerts: ProximityAlert[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function WorkspaceNavigator({
+  activeWorkspace,
+  onChange,
+  onOpenSettings
+}: {
+  activeWorkspace: WorkspaceModule;
+  onChange: (workspace: WorkspaceModule) => void;
+  onOpenSettings: () => void;
+}) {
+  const modules: WorkspaceModule[] = ["map", "data", "sources", "alerts", "replay"];
+  return (
+    <nav className="workspace-nav" aria-label="COP workspace">
+      {modules.map((module) => {
+        const metadata = workspaceMetadata(module);
+        return (
+          <button
+            aria-pressed={activeWorkspace === module}
+            className={`workspace-tab ${activeWorkspace === module ? "active" : ""}`}
+            key={module}
+            onClick={() => onChange(module)}
+            title={metadata.description}
+            type="button"
+          >
+            {workspaceIcon(module)}
+            <span>{metadata.label}</span>
+          </button>
+        );
+      })}
+      <button className="workspace-settings-button" onClick={onOpenSettings} title="Nastavení operátora" type="button">
+        <Settings size={16} />
+        <span>Nastavení</span>
+      </button>
+    </nav>
+  );
+}
+
+function ViewProfilesPanel({
+  activeProfileName,
+  profiles,
+  userScope,
+  onApply,
+  onSave
+}: {
+  activeProfileName: string | null;
+  profiles: ViewProfile[];
+  userScope: string;
+  onApply: (profile: ViewProfile) => void;
+  onSave: () => void;
+  }) {
+  return (
+    <div className="view-profile-box">
+      <div className="view-profile-header">
+        <PanelTitle icon={<UserCircle size={17} />} title="Profily pohledu" />
+        <span>{userScope}</span>
+      </div>
+      <div className="view-profile-list">
+        {profiles.map((profile) => (
+          <button
+            className={`view-profile-button ${activeProfileName === profile.name ? "active" : ""}`}
+            key={profile.id}
+            onClick={() => onApply(profile)}
+            title={profile.description}
+            type="button"
+          >
+            <span>{profile.name}</span>
+            <small>{profile.builtIn ? "systémový profil" : "uložený profil"}</small>
+          </button>
+        ))}
+      </div>
+      <button className="mini-button wide save-profile-button" onClick={onSave} type="button">
+        <Settings size={14} />
+        Uložit aktuální pohled
+      </button>
+      {activeProfileName ? <div className="profile-applied-note">Aktivní: {activeProfileName}</div> : null}
     </div>
   );
 }
@@ -1660,6 +1943,52 @@ function authStatusLabel(session: AuthSession, config: AuthConfig): string {
   return isOidcEnabled(config) ? "bez přihlášení" : "lab režim";
 }
 
+function userPreferenceScope(session: AuthSession): string {
+  if (session.profile?.username) {
+    return session.profile.username;
+  }
+  if (session.profile?.email) {
+    return session.profile.email;
+  }
+  return session.status === "lab" ? "lab" : "anonymous";
+}
+
+function workspaceMetadata(module: WorkspaceModule): { description: string; label: string } {
+  switch (module) {
+    case "data":
+      return { description: "Track list, filtrování a datové vrstvy.", label: "Data" };
+    case "sources":
+      return { description: "Source Registry, health, latence a kvalita ingestu.", label: "Zdroje" };
+    case "alerts":
+      return { description: "Výstrahy, oblast polohy operátora a aktivní přiblížení.", label: "Výstrahy" };
+    case "replay":
+      return { description: "Historie stop, replay a predikční režimy.", label: "Replay" };
+    case "map":
+    default:
+      return { description: "Primární situační mapa se symboly APP-6.", label: "Mapa" };
+  }
+}
+
+function workspaceLabel(module: WorkspaceModule): string {
+  return workspaceMetadata(module).label;
+}
+
+function workspaceIcon(module: WorkspaceModule): React.ReactNode {
+  switch (module) {
+    case "data":
+      return <ListFilter size={16} />;
+    case "sources":
+      return <RadioTower size={16} />;
+    case "alerts":
+      return <AlertTriangle size={16} />;
+    case "replay":
+      return <History size={16} />;
+    case "map":
+    default:
+      return <Layers size={16} />;
+  }
+}
+
 function readInitialMapToggle(name: "history" | "prediction", fallback: boolean): boolean {
   if (typeof window === "undefined") {
     return fallback;
@@ -1716,6 +2045,10 @@ function readInitialHistoryWindowSeconds(value: number | undefined): number {
     }
   }
 
+  return normalizeHistoryWindowSeconds(value);
+}
+
+function normalizeHistoryWindowSeconds(value: number | undefined): number {
   const normalizedValue = Number(value);
   return historyWindowOptions.includes(normalizedValue as (typeof historyWindowOptions)[number]) ? normalizedValue : 180;
 }

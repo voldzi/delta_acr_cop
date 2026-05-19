@@ -14,7 +14,7 @@ Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplik
 | Server-side temporal history | Rozpracováno | API drží body stop, web je používá jako zdroj pro historii tras a PostgreSQL store přes HAProxy/Patroni persistuje historii i current snapshot. |
 | Timeline/replay | Rozpracováno v pilotu | UI má časové okno historie v sekundách; replay controller používá serverovou historii pro historické polohy objektů. |
 | Stream/delta distribuce | Pilotně hotovo | SSE endpoint posílá snapshot, delta a heartbeat; web používá stream jako primární kanál a polling jako fallback. |
-| Perzistence a multi-user provoz | Částečně | UI nastavení jsou lokální pro uživatele/prohlížeč; current tracks a historie mají PostgreSQL backend. |
+| Perzistence a multi-user provoz | Částečně | UI nastavení a profily pohledu jsou lokální pro operátorský scope/prohlížeč; current tracks a historie mají PostgreSQL backend. |
 
 ## Prioritizované kroky
 
@@ -53,10 +53,12 @@ Status: pilotně hotovo.
 
 ### P4: Operační nastavení a uživatelský profil
 
-Status: částečně hotovo.
+Status: pilotně hotovo pro lokální profily, serverový profil čeká na produkční identity policy.
 
-- soustředit narůstající nastavení do kompaktního centra nastavení,
-- oddělit lokální mapové nastavení od budoucího serverového profilu,
+- workspace model rozděluje práci na Mapa, Data, Zdroje, Výstrahy, Replay a Nastavení,
+- lokální profily pohledu ukládají vrstvu, filtr, refresh, historii, predikci a mapový zoom pro daný operátorský scope,
+- centrum nastavení zůstává přes operátorskou ikonu a drží detailní volby mapy, dat, polohy a účtu,
+- lokální mapové nastavení je oddělené od budoucího serverového profilu,
 - přidat Keycloak login bez zásahu do existujících realmů,
 - uložit sdílené preference až po zavedení identity a jasné politiky.
 
@@ -80,3 +82,4 @@ Status: pilotně hotovo.
 | 2026-05-19 | Source Health + provenance v1 | Přidán health endpoint zdrojů, UI Source Health Center a provenance metadata v detailu objektu. |
 | 2026-05-19 | Replay controller v1 | Timeline umí přepnout mapu z live režimu do historického času a objektům nastavuje polohy z `/api/v1/cop/track-history`. |
 | 2026-05-19 | Responsive COP workspace v1 | Tablet a telefon režim drží mapu jako primární plochu, zkracuje horní lištu a ponechává nastavení dostupné přes operátorskou ikonu. |
+| 2026-05-19 | Workspace + view profiles v1 | Přidána modulová navigace Mapa/Data/Zdroje/Výstrahy/Replay/Nastavení a lokální profily pohledu per operátorský scope. |

@@ -50,7 +50,7 @@ button {
 
 .shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   padding: 16px;
@@ -215,6 +215,53 @@ h1 {
   font-size: 13px;
 }
 
+.workspace-nav {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(92px, 1fr)) minmax(116px, auto);
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  background: rgba(8, 13, 18, 0.76);
+  box-shadow: var(--shadow);
+}
+
+.workspace-tab,
+.workspace-settings-button {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, auto);
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(142, 157, 170, 0.22);
+  background: rgba(18, 25, 31, 0.84);
+  color: #cbd7e2;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.workspace-tab svg,
+.workspace-settings-button svg {
+  color: var(--cyan);
+}
+
+.workspace-tab.active {
+  border-color: rgba(200, 240, 141, 0.7);
+  background: rgba(151, 199, 104, 0.16);
+  color: var(--lime);
+}
+
+.workspace-tab.active svg {
+  color: var(--lime);
+}
+
+.workspace-settings-button {
+  border-color: rgba(140, 182, 216, 0.34);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) minmax(290px, 360px);
@@ -363,6 +410,79 @@ h1 {
   gap: 8px;
 }
 
+.view-profile-box,
+.workspace-module-card,
+.workspace-context-card {
+  padding: 12px;
+  border: 1px solid rgba(142, 157, 170, 0.2);
+  background: rgba(5, 9, 12, 0.38);
+}
+
+.view-profile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.view-profile-header .panel-title {
+  margin-bottom: 0;
+}
+
+.view-profile-header > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.view-profile-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.view-profile-button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: 43px;
+  padding: 7px 9px;
+  border: 1px solid rgba(142, 157, 170, 0.22);
+  background: rgba(18, 25, 31, 0.76);
+  color: #dce5ee;
+  cursor: pointer;
+  text-align: left;
+}
+
+.view-profile-button.active {
+  border-color: rgba(200, 240, 141, 0.68);
+  background: rgba(151, 199, 104, 0.13);
+}
+
+.view-profile-button span {
+  color: #f1f6fb;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.view-profile-button small,
+.profile-applied-note {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.save-profile-button {
+  margin-top: 9px;
+}
+
+.profile-applied-note {
+  margin-top: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .metric-tile {
   min-height: 58px;
   padding: 9px 10px;
@@ -458,6 +578,22 @@ h1 {
 .personal-awareness-box {
   padding-top: 13px;
   border-top: 1px solid rgba(142, 157, 170, 0.18);
+}
+
+.workspace-module-card {
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-module-card .panel-title {
+  margin-bottom: 0;
+}
+
+.module-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 2px;
 }
 
 .search-field {
@@ -1210,6 +1346,29 @@ h1 {
   line-height: 1.35;
 }
 
+.workspace-context-card {
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-context-card span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.workspace-context-card strong {
+  color: var(--lime);
+  font-size: 16px;
+}
+
+.workspace-context-card p {
+  color: #c8d2dc;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .object-detail {
   display: grid;
   gap: 12px;
@@ -1497,6 +1656,18 @@ dd {
     grid-template-columns: 1fr;
   }
 
+  .workspace-nav {
+    grid-auto-columns: minmax(108px, max-content);
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    overflow-x: auto;
+  }
+
+  .workspace-tab,
+  .workspace-settings-button {
+    min-width: 108px;
+  }
+
   .workspace {
     overflow: visible;
   }
@@ -1625,8 +1796,14 @@ dd {
   }
 
   .center-column {
-    grid-template-rows: minmax(520px, calc(100svh - 188px)) auto;
+    grid-template-rows: minmax(430px, calc(100svh - 238px)) auto;
     gap: 8px;
+  }
+
+  .workspace-tab,
+  .workspace-settings-button {
+    min-height: 36px;
+    padding: 0 9px;
   }
 
   .map-toolbar {

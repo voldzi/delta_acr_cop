@@ -106,7 +106,7 @@ describe("COP web dashboard", () => {
           ]
         });
       }
-      if (url.includes("/api/v1/cop/track-history?seconds=180&limit=120")) {
+      if (url.includes("/api/v1/cop/track-history?")) {
         return jsonResponse({
           items: [
             {
@@ -137,6 +137,12 @@ describe("COP web dashboard", () => {
     expect(screen.getByText("SFAP-----------")).toBeTruthy();
     expect(screen.getByText("SIM")).toBeTruthy();
     expect(screen.getByText("Zobrazit simulované cíle")).toBeTruthy();
+    expect(screen.getByText("Profily pohledu")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Mapa/u }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /Zdroje/u }));
+    expect(screen.getByRole("button", { name: /Zdroje/u }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /UAV watch/u }));
+    expect(screen.getByText("Aktivní: UAV watch")).toBeTruthy();
     expect(screen.getAllByText("UAV").some((node) => node.closest("button")?.textContent?.includes("1"))).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/cop/tracks?includeSynthetic=true"), {
       headers: { Authorization: "Bearer dev-lab-token" }
@@ -148,7 +154,7 @@ describe("COP web dashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: /Operátor/u }));
     fireEvent.click(screen.getByRole("tab", { name: "Mapa" }));
     expect(screen.getByText("Čas historie")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "180s" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "60s" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "60s" }));
     expect(screen.getByRole("button", { name: "60s" }).getAttribute("aria-pressed")).toBe("true");
   });
