@@ -236,7 +236,7 @@ export function CopMap({
           source: trackSourceId,
           layout: {
             "text-field": ["get", "label"],
-            "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+            "text-font": ["Open Sans Semibold"],
             "text-size": 11,
             "text-offset": [0, 1.45],
             "text-anchor": "top",
