@@ -1,6 +1,6 @@
 # 00 Index
 
-Tento adresář je dokumentační baseline pro hlavní COP systém **ACR COP Data Fabric / SITDATA-COP**. Projekt popisuje datovou a situační platformu pro příjem, normalizaci, korelaci a distribuci Common Operating Picture. Neobsahuje produkční implementaci backendu, frontendu ani databázových migrací.
+Tento adresář je dokumentační baseline pro hlavní COP systém **ACR COP Data Fabric / SITDATA-COP**. Projekt popisuje datovou a situační platformu pro příjem, normalizaci, korelaci a distribuci Common Operating Picture. Repozitář současně obsahuje pilotní implementaci backendu a webového klienta; produkční databázové migrace a perzistentní temporal store jsou další krok.
 
 ## Základní dokumenty
 

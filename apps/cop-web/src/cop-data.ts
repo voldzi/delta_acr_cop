@@ -35,10 +35,32 @@ export interface CopObject {
   verticalRateMps?: number | null;
 }
 
+export interface ServerTrackHistoryPoint {
+  affiliation: string;
+  confidence?: number;
+  eventId?: string;
+  ingestTimestamp?: string;
+  lat: number;
+  lon: number;
+  objectId: string;
+  objectType?: string;
+  producerTimestamp?: string;
+  sourceSystemId?: string;
+  status?: string;
+  synthetic?: boolean;
+  timestamp: string;
+}
+
 export interface CopDashboardData {
   health: HealthStatus;
   sources: SourceSystem[];
   objects: CopObject[];
+  trackHistory?: Record<string, ServerTrackHistoryPoint[]>;
+}
+
+export interface CopHistoryOptions {
+  limit: number;
+  seconds: number;
 }
 
 export interface CopDashboardFilters {
@@ -48,18 +70,29 @@ export interface CopDashboardFilters {
 
 export type CopLayer = "air-situation" | "uav" | "friendly" | "foreign" | "data-quality";
 
-export async function fetchCopDashboardData(apiBase: string, token = "dev-lab-token"): Promise<CopDashboardData> {
+export async function fetchCopDashboardData(
+  apiBase: string,
+  token = "dev-lab-token",
+  historyOptions?: CopHistoryOptions
+): Promise<CopDashboardData> {
   const headers = { Authorization: `Bearer ${token}` };
-  const [health, sources, tracks] = await Promise.all([
+  const [health, sources, tracks, history] = await Promise.all([
     fetchJson<HealthStatus>(`${apiBase}/health/ready`),
     fetchJson<{ items?: SourceSystem[] }>(`${apiBase}/api/v1/sources`, { headers }),
-    fetchJson<{ items?: CopObject[] }>(`${apiBase}/api/v1/cop/tracks?includeSynthetic=true`, { headers })
+    fetchJson<{ items?: CopObject[] }>(`${apiBase}/api/v1/cop/tracks?includeSynthetic=true`, { headers }),
+    historyOptions
+      ? fetchOptionalJson<{ items?: Array<{ objectId: string; points: ServerTrackHistoryPoint[] }> }>(
+          `${apiBase}/api/v1/cop/track-history?seconds=${historyOptions.seconds}&limit=${historyOptions.limit}`,
+          { headers }
+        )
+      : Promise.resolve(undefined)
   ]);
 
   return {
     health,
     sources: sources.items ?? [],
-    objects: tracks.items ?? []
+    objects: tracks.items ?? [],
+    trackHistory: history?.items ? Object.fromEntries(history.items.map((item) => [item.objectId, item.points])) : undefined
   };
 }
 
@@ -102,4 +135,12 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(`${response.status} ${response.statusText || "API request failed"} for ${url}`);
   }
   return (await response.json()) as T;
+}
+
+async function fetchOptionalJson<T>(url: string, init?: RequestInit): Promise<T | undefined> {
+  try {
+    return await fetchJson<T>(url, init);
+  } catch {
+    return undefined;
+  }
 }

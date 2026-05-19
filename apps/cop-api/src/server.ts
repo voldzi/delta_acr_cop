@@ -11,8 +11,9 @@ import { createHash } from "node:crypto";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { requireBearerToken } from "./security.js";
 import { appendAudit, createInitialState } from "./state.js";
+import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory } from "./temporal-history.js";
 import { createTrackLifecycleConfig, selectCurrentTracks, type TrackLifecycleConfig } from "./track-lifecycle.js";
-import type { CopState } from "./types.js";
+import type { CopState, TrackHistoryPoint } from "./types.js";
 
 export interface BuildServerOptions {
   state?: CopState;
@@ -67,7 +68,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       `cop_events_total ${state.events.size}`,
       "# HELP cop_objects_total Current non-expired COP objects.",
       "# TYPE cop_objects_total gauge",
-      `cop_objects_total ${currentObjects.length}`
+      `cop_objects_total ${currentObjects.length}`,
+      "# HELP cop_track_history_points_total Retained temporal track history points.",
+      "# TYPE cop_track_history_points_total gauge",
+      `cop_track_history_points_total ${Array.from(state.trackHistory.values()).reduce((sum, points) => sum + points.length, 0)}`
     ];
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
@@ -211,6 +215,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return { items, nextCursor: null };
   });
 
+  app.get("/api/v1/cop/track-history", async (request) => {
+    const query = parseTrackHistoryQuery(request.query as Record<string, unknown>);
+    const subject = defaultSystemSubject();
+    const items = queryTrackHistory(state, query, now())
+      .map((item) => ({
+        ...item,
+        points: item.points.filter((point) => canReadHistoryPoint(subject, point))
+      }))
+      .filter((item) => item.points.length > 0);
+    return {
+      items,
+      nextCursor: null,
+      serverTimestamp: now().toISOString()
+    };
+  });
+
   app.post("/api/v1/cop/subscriptions", async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const validation = validators.validateCopSubscription(request.body);
@@ -351,7 +371,16 @@ function acceptEvent(state: CopState, event: CanonicalEventEnvelope): CanonicalE
   state.events.set(accepted.eventId, accepted);
   const object = createCopObjectFromEvent(accepted);
   state.objects.set(object.objectId, object);
+  appendTrackHistory(state, accepted, object);
   return accepted;
+}
+
+function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
+  const decision = evaluateReadPolicy(subject, {
+    classification: "UNCLASSIFIED",
+    synthetic: point.synthetic
+  });
+  return decision.allowed;
 }
 
 function validateSourceForRequest(

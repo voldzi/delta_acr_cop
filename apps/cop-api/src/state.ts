@@ -7,6 +7,7 @@ export function createInitialState(): CopState {
     sources: new Map([[sim.sourceSystemId, sim]]),
     events: new Map(),
     objects: new Map(),
+    trackHistory: new Map(),
     idempotency: new Map(),
     auditEvents: []
   };

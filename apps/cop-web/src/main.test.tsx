@@ -77,6 +77,24 @@ describe("COP web dashboard", () => {
           ]
         });
       }
+      if (url.includes("/api/v1/cop/track-history?seconds=180&limit=120")) {
+        return jsonResponse({
+          items: [
+            {
+              objectId: "AIR_SIM_AIRCRAFT-0001",
+              points: [
+                {
+                  affiliation: "FRIEND",
+                  lat: 50.087,
+                  lon: 14.421,
+                  objectId: "AIR_SIM_AIRCRAFT-0001",
+                  timestamp: "2026-05-19T08:00:00Z"
+                }
+              ]
+            }
+          ]
+        });
+      }
       throw new Error(`Unexpected request ${url}`);
     });
 
@@ -92,6 +110,9 @@ describe("COP web dashboard", () => {
     expect(screen.getByText("Zobrazit simulované cíle")).toBeTruthy();
     expect(screen.getAllByText("UAV").some((node) => node.closest("button")?.textContent?.includes("1"))).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/cop/tracks?includeSynthetic=true"), {
+      headers: { Authorization: "Bearer dev-lab-token" }
+    });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/cop/track-history?seconds=180&limit=120"), {
       headers: { Authorization: "Bearer dev-lab-token" }
     });
 

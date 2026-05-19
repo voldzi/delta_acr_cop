@@ -178,13 +178,18 @@ export function App() {
     loadInFlightRef.current = true;
     setIsLoading(true);
     try {
-      const data = await fetchCopDashboardData(apiBase, authToken);
+      const data = await fetchCopDashboardData(apiBase, authToken, {
+        limit: trackHistoryLimit,
+        seconds: trackHistoryWindowSeconds
+      });
       const observedAt = new Date();
       setHealth(data.health);
       setSources(data.sources);
       setObjects(data.objects);
       setTrackHistory((current) =>
-        mergeTrackHistory(current, data.objects, observedAt.toISOString(), trackHistoryLimit, trackHistoryWindowSeconds)
+        data.trackHistory
+          ? trimTrackHistory(data.trackHistory, trackHistoryLimit, trackHistoryWindowSeconds, observedAt.toISOString())
+          : mergeTrackHistory(current, data.objects, observedAt.toISOString(), trackHistoryLimit, trackHistoryWindowSeconds)
       );
       setLastLoadedAt(observedAt.toLocaleTimeString("cs-CZ"));
       setLoadError(null);

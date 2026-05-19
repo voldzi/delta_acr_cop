@@ -1,4 +1,4 @@
-import type { CanonicalEventEnvelope, ObservedObject, SourceSystem } from "@cop/canonical-model";
+import type { Affiliation, CanonicalEventEnvelope, ObjectStatus, ObjectType, ObservedObject, SourceSystem } from "@cop/canonical-model";
 
 export interface ErrorResponse {
   error: {
@@ -13,6 +13,23 @@ export interface CopState {
   sources: Map<string, SourceSystem>;
   events: Map<string, CanonicalEventEnvelope>;
   objects: Map<string, ObservedObject>;
+  trackHistory: Map<string, TrackHistoryPoint[]>;
   idempotency: Map<string, { hash: string; response: unknown }>;
   auditEvents: Array<Record<string, unknown>>;
+}
+
+export interface TrackHistoryPoint {
+  affiliation: Affiliation;
+  confidence?: number;
+  eventId: string;
+  ingestTimestamp?: string;
+  lat: number;
+  lon: number;
+  objectId: string;
+  objectType: ObjectType;
+  producerTimestamp: string;
+  sourceSystemId: string;
+  status: ObjectStatus;
+  synthetic: boolean;
+  timestamp: string;
 }
