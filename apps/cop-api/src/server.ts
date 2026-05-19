@@ -42,7 +42,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const now = options.now ?? (() => new Date());
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
-  const streamBroadcaster = options.streamBroadcaster ?? new CopStreamBroadcaster();
+  const streamBroadcaster = options.streamBroadcaster ?? createStreamBroadcasterFromEnv();
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
   let restoredCurrentTrackCount = 0;
@@ -95,6 +95,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const currentObjects = selectCurrentTracks(state.objects.values(), now(), trackLifecycle);
     const trackHistoryPointCount = await countTrackHistoryPoints();
     const persistedCurrentTrackCount = await countPersistedCurrentTracks();
+    const streamMetrics = streamBroadcaster.metrics;
     const lines = [
       "# HELP cop_sources_total Registered COP source systems.",
       "# TYPE cop_sources_total gauge",
@@ -113,7 +114,30 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       `cop_track_history_points_total ${trackHistoryPointCount}`,
       "# HELP cop_stream_clients_total Connected COP live stream clients.",
       "# TYPE cop_stream_clients_total gauge",
-      `cop_stream_clients_total ${streamBroadcaster.clientCount}`
+      `cop_stream_clients_total ${streamMetrics.clientCount}`,
+      "# HELP cop_stream_messages_total COP live stream messages created by type.",
+      "# TYPE cop_stream_messages_total counter",
+      `cop_stream_messages_total{type="snapshot"} ${streamMetrics.snapshotMessagesTotal}`,
+      `cop_stream_messages_total{type="delta"} ${streamMetrics.deltaMessagesTotal}`,
+      `cop_stream_messages_total{type="heartbeat"} ${streamMetrics.heartbeatMessagesTotal}`,
+      `cop_stream_messages_total{type="backpressure"} ${streamMetrics.backpressureMessagesTotal}`,
+      `cop_stream_messages_total{type="reconnect_required"} ${streamMetrics.reconnectRequiredMessagesTotal}`,
+      "# HELP cop_stream_write_errors_total COP live stream write errors.",
+      "# TYPE cop_stream_write_errors_total counter",
+      `cop_stream_write_errors_total ${streamMetrics.writeErrorsTotal}`,
+      "# HELP cop_stream_backpressure_active Whether COP stream backpressure is currently active.",
+      "# TYPE cop_stream_backpressure_active gauge",
+      `cop_stream_backpressure_active ${streamMetrics.backpressureActive ? 1 : 0}`,
+      "# HELP cop_stream_backpressure_client_threshold Client threshold for stream backpressure.",
+      "# TYPE cop_stream_backpressure_client_threshold gauge",
+      `cop_stream_backpressure_client_threshold ${streamMetrics.backpressureClientThreshold}`,
+      "# HELP cop_stream_last_message_timestamp_seconds Last COP stream message timestamp by type.",
+      "# TYPE cop_stream_last_message_timestamp_seconds gauge",
+      `cop_stream_last_message_timestamp_seconds{type="snapshot"} ${timestampSeconds(streamMetrics.lastSnapshotAt)}`,
+      `cop_stream_last_message_timestamp_seconds{type="delta"} ${timestampSeconds(streamMetrics.lastDeltaAt)}`,
+      `cop_stream_last_message_timestamp_seconds{type="heartbeat"} ${timestampSeconds(streamMetrics.lastHeartbeatAt)}`,
+      `cop_stream_last_message_timestamp_seconds{type="backpressure"} ${timestampSeconds(streamMetrics.lastBackpressureAt)}`,
+      `cop_stream_last_message_timestamp_seconds{type="write_error"} ${timestampSeconds(streamMetrics.lastWriteErrorAt)}`
     ];
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
@@ -524,6 +548,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
+  app.get("/api/v1/stream/cop/health", async () => {
+    const requestNow = now();
+    const metrics = streamBroadcaster.metrics;
+    return {
+      metrics,
+      serverTimestamp: requestNow.toISOString(),
+      status: streamHealthStatus(metrics, requestNow)
+    };
+  });
+
   app.post("/api/v1/cop/subscriptions", async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const validation = validators.validateCopSubscription(request.body);
@@ -564,6 +598,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         reply.raw.write(`id: ${visibleMessage.sequence}\n`);
         reply.raw.write(`data: ${JSON.stringify(visibleMessage)}\n\n`);
       } catch {
+        streamBroadcaster.recordWriteError(now());
+        streamBroadcaster.createReconnectRequired("stream_write_failed", now());
         request.raw.destroy();
       }
     };
@@ -576,12 +612,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       "x-accel-buffering": "no"
     });
     reply.raw.write("retry: 5000\n\n");
+    const unsubscribe = streamBroadcaster.subscribe(writeMessage);
     const snapshotNow = now();
     writeMessage(streamBroadcaster.createSnapshot(subscriptionId, await readableCurrentTracks(subject, snapshotNow), snapshotNow));
+    const initialBackpressure = streamBroadcaster.createBackpressure(now());
+    if (initialBackpressure) {
+      writeMessage(initialBackpressure);
+    }
 
-    const unsubscribe = streamBroadcaster.subscribe(writeMessage);
     const heartbeat = setInterval(() => {
-      writeMessage(streamBroadcaster.createHeartbeat(now()));
+      const heartbeatNow = now();
+      const backpressure = streamBroadcaster.createBackpressure(heartbeatNow);
+      if (backpressure) {
+        writeMessage(backpressure);
+      }
+      writeMessage(streamBroadcaster.createHeartbeat(heartbeatNow));
     }, 15000);
     const cleanup = () => {
       clearInterval(heartbeat);
@@ -757,7 +802,7 @@ function canReadBySyntheticFlag(subject: ReturnType<typeof defaultSystemSubject>
 }
 
 function filterStreamMessage(subject: ReturnType<typeof defaultSystemSubject>, message: CopStreamMessage): CopStreamMessage | null {
-  if (message.type === "heartbeat") {
+  if (message.type === "heartbeat" || message.type === "backpressure" || message.type === "reconnect_required") {
     return message;
   }
 
@@ -829,4 +874,32 @@ function headerAsString(value: unknown): string | undefined {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "unknown error";
+}
+
+function createStreamBroadcasterFromEnv(env: Record<string, string | undefined> = process.env): CopStreamBroadcaster {
+  return new CopStreamBroadcaster({
+    backpressureClientThreshold: readPositiveInteger(env.COP_STREAM_BACKPRESSURE_CLIENTS, 25),
+    recommendedRetryMs: readPositiveInteger(env.COP_STREAM_RETRY_MS, 5000)
+  });
+}
+
+function readPositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
+
+function timestampSeconds(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? Math.floor(timestamp / 1000) : 0;
+}
+
+function streamHealthStatus(metrics: CopStreamBroadcaster["metrics"], now: Date): "degraded" | "ok" {
+  if (metrics.backpressureActive) {
+    return "degraded";
+  }
+  const lastWriteErrorMs = metrics.lastWriteErrorAt ? Date.parse(metrics.lastWriteErrorAt) : Number.NaN;
+  return Number.isFinite(lastWriteErrorMs) && now.getTime() - lastWriteErrorMs < 5 * 60 * 1000 ? "degraded" : "ok";
 }

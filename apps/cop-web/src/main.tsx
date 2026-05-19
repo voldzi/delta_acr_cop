@@ -51,6 +51,7 @@ import {
   type CopAlert,
   type CopLayer,
   type CopObject,
+  type CopStreamHealth,
   type HealthStatus,
   type ObjectProvenance,
   type SourceHealthItem,
@@ -157,6 +158,7 @@ export function App() {
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
   const [sources, setSources] = React.useState<SourceSystem[]>([]);
   const [sourceHealth, setSourceHealth] = React.useState<SourceHealthItem[]>([]);
+  const [streamHealth, setStreamHealth] = React.useState<CopStreamHealth | null>(null);
   const [serverAlerts, setServerAlerts] = React.useState<CopAlert[]>([]);
   const [objects, setObjects] = React.useState<CopObject[]>([]);
   const [selectedLayer, setSelectedLayer] = React.useState<CopLayer>(() => readInitialLayer(initialPreferences.selectedLayer));
@@ -248,6 +250,7 @@ export function App() {
       setHealth(data.health);
       setSources(data.sources);
       setSourceHealth(data.sourceHealth);
+      setStreamHealth(data.streamHealth ?? null);
       setServerAlerts(data.alerts);
       setObjects(data.objects);
       setTrackHistory((current) =>
@@ -333,6 +336,11 @@ export function App() {
           return;
         }
         setStreamTelemetry((current) => updateStreamTelemetryForMessage(current, message));
+        if (message.type === "reconnect_required") {
+          setStreamStatus("degraded");
+          setStreamReconnectAttempt((current) => current + 1);
+          return;
+        }
         applyCopStreamMessage(message, {
           setLastLoadedAt,
           setLastStreamAt,
@@ -941,6 +949,7 @@ export function App() {
                 {sources.length === 0 ? <div className="empty-mini">Source Registry zatím nevrátil žádné zdroje.</div> : null}
               </div>
 
+              <StreamHealthPanel health={streamHealth} telemetry={streamTelemetry} />
               <SourceHealthCenter items={sourceHealth} />
             </>
           ) : null}
@@ -1071,6 +1080,8 @@ export function App() {
             <ReadinessRow label="Stream mode" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
             <ReadinessRow label="Stream latency" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
             <ReadinessRow label="Last heartbeat" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
+            <ReadinessRow label="Server clients" value={formatServerClientCount(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
+            <ReadinessRow label="Backpressure" value={formatBackpressureState(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
             <ReadinessRow label="Reconnects" value={String(streamTelemetry.reconnectCount)} tone={streamTelemetry.reconnectCount > 0 ? "warn" : "ok"} />
             {streamTelemetry.lastError ? <ReadinessRow label="Stream error" value={streamTelemetry.lastError} tone="warn" /> : null}
             <ReadinessRow label="Fallback sync" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
@@ -1350,7 +1361,7 @@ function applyCopStreamMessage(
   context.setLastStreamAt(observedAtLabel);
   context.setStreamStatus("live");
 
-  if (message.type === "heartbeat") {
+  if (message.type === "heartbeat" || message.type === "backpressure" || message.type === "reconnect_required") {
     return;
   }
 
@@ -1417,6 +1428,60 @@ function streamHeartbeatTone(telemetry: StreamTelemetry): "ok" | "warn" | "neutr
     return "neutral";
   }
   return ageMs > 45000 ? "warn" : "ok";
+}
+
+function streamServerTone(health: CopStreamHealth | null, telemetry: StreamTelemetry): "ok" | "warn" | "neutral" {
+  if (health) {
+    return health.status === "ok" && !health.metrics.backpressureActive ? "ok" : "warn";
+  }
+  return telemetry.lastBackpressureReason ? "warn" : "neutral";
+}
+
+function streamWriteErrorsTone(health: CopStreamHealth | null, telemetry: StreamTelemetry): "ok" | "warn" | "neutral" {
+  const writeErrors = health?.metrics.writeErrorsTotal ?? telemetry.serverWriteErrorsTotal;
+  if (writeErrors === null || writeErrors === undefined) {
+    return "neutral";
+  }
+  return writeErrors > 0 ? "warn" : "ok";
+}
+
+function formatServerClientCount(health: CopStreamHealth | null, telemetry: StreamTelemetry): string {
+  const clientCount = health?.metrics.clientCount ?? telemetry.serverClientCount;
+  if (clientCount === null || clientCount === undefined) {
+    return "n/a";
+  }
+  const threshold = health?.metrics.backpressureClientThreshold;
+  return threshold ? `${clientCount}/${threshold}` : String(clientCount);
+}
+
+function formatBackpressureState(health: CopStreamHealth | null, telemetry: StreamTelemetry): string {
+  if (health) {
+    return health.metrics.backpressureActive ? `active · retry ${formatRetryMs(health.metrics.recommendedRetryMs)}` : "clear";
+  }
+  if (telemetry.lastBackpressureAt) {
+    return `seen ${formatStreamObservation(telemetry.lastBackpressureAt)}`;
+  }
+  return "clear";
+}
+
+function formatStreamWriteErrors(health: CopStreamHealth | null, telemetry: StreamTelemetry): string {
+  const writeErrors = health?.metrics.writeErrorsTotal ?? telemetry.serverWriteErrorsTotal;
+  return writeErrors === null || writeErrors === undefined ? "n/a" : String(writeErrors);
+}
+
+function formatStreamMessageTotals(health: CopStreamHealth | null): string {
+  const metrics = health?.metrics;
+  if (!metrics) {
+    return "n/a";
+  }
+  return `delta ${metrics.deltaMessagesTotal} · hb ${metrics.heartbeatMessagesTotal}`;
+}
+
+function formatRetryMs(value: number | null | undefined): string {
+  if (!value) {
+    return "n/a";
+  }
+  return value < 1000 ? `${value} ms` : `${(value / 1000).toFixed(1)} s`;
 }
 
 function formatReplayStatus(timestamp: string | null, replayWindow: ReplayWindow | null, active: boolean): string {
@@ -1487,6 +1552,21 @@ function SourceHealthCenter({ items }: { items: SourceHealthItem[] }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function StreamHealthPanel({ health, telemetry }: { health: CopStreamHealth | null; telemetry: StreamTelemetry }) {
+  const metrics = health?.metrics;
+  return (
+    <div className="source-health-box stream-health-box">
+      <PanelTitle icon={<Activity size={17} />} title="Stream Health" />
+      <ReadinessRow label="Server status" value={health?.status ?? "waiting"} tone={streamServerTone(health, telemetry)} />
+      <ReadinessRow label="Clients" value={formatServerClientCount(health, telemetry)} tone={streamServerTone(health, telemetry)} />
+      <ReadinessRow label="Messages" value={formatStreamMessageTotals(health)} tone="neutral" />
+      <ReadinessRow label="Last delta" value={formatStreamObservation(metrics?.lastDeltaAt ?? null)} tone={metrics?.lastDeltaAt ? "ok" : "neutral"} />
+      <ReadinessRow label="Backpressure" value={formatBackpressureState(health, telemetry)} tone={streamServerTone(health, telemetry)} />
+      <ReadinessRow label="Write errors" value={formatStreamWriteErrors(health, telemetry)} tone={streamWriteErrorsTone(health, telemetry)} />
     </div>
   );
 }

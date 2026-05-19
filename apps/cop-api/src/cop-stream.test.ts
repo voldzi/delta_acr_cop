@@ -29,6 +29,59 @@ describe("COP stream broadcaster", () => {
       sequence: 1,
       type: "delta"
     });
+    expect(broadcaster.metrics).toMatchObject({
+      clientCount: 0,
+      deltaMessagesTotal: 1,
+      heartbeatMessagesTotal: 1,
+      sequence: 2,
+      snapshotMessagesTotal: 0,
+      writeErrorsTotal: 0
+    });
+  });
+
+  it("creates backpressure messages when client count reaches the threshold", () => {
+    const broadcaster = new CopStreamBroadcaster({ backpressureClientThreshold: 1, recommendedRetryMs: 7500 });
+    const unsubscribe = broadcaster.subscribe(() => undefined);
+
+    const message = broadcaster.createBackpressure(new Date("2026-05-19T08:01:00Z"));
+
+    unsubscribe();
+    expect(message).toMatchObject({
+      clientCount: 1,
+      reason: "stream_client_count_above_threshold",
+      recommendedRetryMs: 7500,
+      sequence: 1,
+      severity: "warning",
+      threshold: 1,
+      type: "backpressure"
+    });
+    expect(broadcaster.metrics).toMatchObject({
+      backpressureActive: false,
+      backpressureMessagesTotal: 1,
+      clientCount: 0,
+      lastBackpressureAt: "2026-05-19T08:01:00.000Z",
+      recommendedRetryMs: 7500
+    });
+  });
+
+  it("records stream write errors for health reporting", () => {
+    const broadcaster = new CopStreamBroadcaster();
+
+    broadcaster.recordWriteError(new Date("2026-05-19T08:02:00Z"));
+    const reconnect = broadcaster.createReconnectRequired("stream_write_failed", new Date("2026-05-19T08:02:01Z"));
+
+    expect(reconnect).toMatchObject({
+      reason: "stream_write_failed",
+      retryAfterMs: 5000,
+      sequence: 1,
+      type: "reconnect_required"
+    });
+    expect(broadcaster.metrics).toMatchObject({
+      lastReconnectRequiredAt: "2026-05-19T08:02:01.000Z",
+      lastWriteErrorAt: "2026-05-19T08:02:00.000Z",
+      reconnectRequiredMessagesTotal: 1,
+      writeErrorsTotal: 1
+    });
   });
 });
 

@@ -430,6 +430,23 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/stream/cop/health:
+    get:
+      tags: [Streaming]
+      summary: Read COP stream health and backpressure metrics.
+      operationId: getCopStreamHealth
+      description: Operational health for the live COP stream. This endpoint reports distribution metrics only; it does not expose targeting or action workflow.
+      responses:
+        "200":
+          description: Stream health.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamHealth"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/symbology/resolve:
     post:
       tags: [Symbology]
@@ -1073,6 +1090,97 @@ components:
           items:
             type: object
             additionalProperties: true
+        clientCount:
+          type: integer
+        threshold:
+          type: integer
+        recommendedRetryMs:
+          type: integer
+        retryAfterMs:
+          type: integer
+        reason:
+          type: string
+        severity:
+          type: string
+          enum: [info, warning]
+        writeErrorsTotal:
+          type: integer
+    StreamHealth:
+      type: object
+      required: [status, serverTimestamp, metrics]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        serverTimestamp:
+          type: string
+          format: date-time
+        metrics:
+          $ref: "#/components/schemas/StreamMetrics"
+    StreamMetrics:
+      type: object
+      required:
+        - backpressureActive
+        - backpressureClientThreshold
+        - backpressureMessagesTotal
+        - clientCount
+        - deltaMessagesTotal
+        - heartbeatMessagesTotal
+        - reconnectRequiredMessagesTotal
+        - recommendedRetryMs
+        - sequence
+        - snapshotMessagesTotal
+        - writeErrorsTotal
+      properties:
+        backpressureActive:
+          type: boolean
+        backpressureClientThreshold:
+          type: integer
+        backpressureMessagesTotal:
+          type: integer
+        clientCount:
+          type: integer
+        deltaMessagesTotal:
+          type: integer
+        heartbeatMessagesTotal:
+          type: integer
+        lastBackpressureAt:
+          type: string
+          format: date-time
+        lastClientConnectedAt:
+          type: string
+          format: date-time
+        lastClientDisconnectedAt:
+          type: string
+          format: date-time
+        lastDeltaAt:
+          type: string
+          format: date-time
+        lastHeartbeatAt:
+          type: string
+          format: date-time
+        lastMessageAt:
+          type: string
+          format: date-time
+        lastReconnectRequiredAt:
+          type: string
+          format: date-time
+        lastSnapshotAt:
+          type: string
+          format: date-time
+        lastWriteErrorAt:
+          type: string
+          format: date-time
+        reconnectRequiredMessagesTotal:
+          type: integer
+        recommendedRetryMs:
+          type: integer
+        sequence:
+          type: integer
+        snapshotMessagesTotal:
+          type: integer
+        writeErrorsTotal:
+          type: integer
     SourceHealthList:
       type: object
       required: [items, serverTimestamp]

@@ -93,6 +93,7 @@ export interface CopDashboardData {
   health: HealthStatus;
   sources: SourceSystem[];
   sourceHealth: SourceHealthItem[];
+  streamHealth?: CopStreamHealth;
   objects: CopObject[];
   trackHistory?: Record<string, ServerTrackHistoryPoint[]>;
 }
@@ -145,6 +146,35 @@ export interface CopAlert {
 
 export type CopStreamStatus = "connecting" | "degraded" | "live" | "offline";
 
+export interface CopStreamServerMetrics {
+  backpressureActive: boolean;
+  backpressureClientThreshold: number;
+  backpressureMessagesTotal: number;
+  clientCount: number;
+  deltaMessagesTotal: number;
+  heartbeatMessagesTotal: number;
+  lastBackpressureAt?: string;
+  lastClientConnectedAt?: string;
+  lastClientDisconnectedAt?: string;
+  lastDeltaAt?: string;
+  lastHeartbeatAt?: string;
+  lastMessageAt?: string;
+  lastReconnectRequiredAt?: string;
+  lastSnapshotAt?: string;
+  lastWriteErrorAt?: string;
+  reconnectRequiredMessagesTotal: number;
+  recommendedRetryMs: number;
+  sequence: number;
+  snapshotMessagesTotal: number;
+  writeErrorsTotal: number;
+}
+
+export interface CopStreamHealth {
+  metrics: CopStreamServerMetrics;
+  serverTimestamp: string;
+  status: "degraded" | "ok";
+}
+
 export type CopStreamMessage =
   | {
       changes: Array<{ changeType: "OBJECT_SNAPSHOT" | "OBJECT_UPSERT"; object: CopObject }>;
@@ -163,6 +193,25 @@ export type CopStreamMessage =
       sequence: number;
       serverTimestamp: string;
       type: "heartbeat";
+    }
+  | {
+      clientCount: number;
+      reason: string;
+      recommendedRetryMs: number;
+      sequence: number;
+      serverTimestamp: string;
+      severity: "info" | "warning";
+      threshold: number;
+      type: "backpressure";
+      writeErrorsTotal: number;
+    }
+  | {
+      reason: string;
+      retryAfterMs: number;
+      sequence: number;
+      serverTimestamp: string;
+      severity: "info" | "warning";
+      type: "reconnect_required";
     };
 
 export interface CopStreamConnection {
@@ -193,10 +242,11 @@ export async function fetchCopDashboardData(
   historyOptions?: CopHistoryOptions
 ): Promise<CopDashboardData> {
   const headers = { Authorization: `Bearer ${token}` };
-  const [health, sources, sourceHealth, tracks, alerts, history] = await Promise.all([
+  const [health, sources, sourceHealth, streamHealth, tracks, alerts, history] = await Promise.all([
     fetchJson<HealthStatus>(`${apiBase}/health/ready`),
     fetchJson<{ items?: SourceSystem[] }>(`${apiBase}/api/v1/sources`, { headers }),
     fetchOptionalJson<{ items?: SourceHealthItem[] }>(`${apiBase}/api/v1/sources/health`, { headers }),
+    fetchOptionalJson<CopStreamHealth>(`${apiBase}/api/v1/stream/cop/health`, { headers }),
     fetchJson<{ items?: CopObject[] }>(`${apiBase}/api/v1/cop/tracks?includeSynthetic=true`, { headers }),
     fetchOptionalJson<{ items?: CopAlert[] }>(`${apiBase}/api/v1/cop/alerts`, { headers }),
     historyOptions
@@ -212,6 +262,7 @@ export async function fetchCopDashboardData(
     health,
     sources: sources.items ?? [],
     sourceHealth: sourceHealth?.items ?? [],
+    streamHealth,
     objects: tracks.items ?? [],
     trackHistory: history?.items ? Object.fromEntries(history.items.map((item) => [item.objectId, item.points])) : undefined
   };

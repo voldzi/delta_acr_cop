@@ -50,7 +50,8 @@ Status: pilotně hotovo.
 - policy filtering zůstává na serveru,
 - refresh interval je přesunutý do nastavení jako fallback/degraded synchronizace,
 - web měří stav streamu, latenci, heartbeat, reconnecty a poslední chybu,
-- další krok je server-side backpressure signalizace a metriky do provozního monitoringu.
+- server zveřejňuje stream health, Prometheus metriky a backpressure/reconnect provozní signály,
+- další krok je retence stream health historie a napojení na externí monitoring.
 
 ### P4: Operační nastavení a uživatelský profil
 
@@ -92,3 +93,4 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 | 2026-05-19 | Fallback sync UX | Refresh interval přejmenován a přesunut do nastavení jako degraded/fallback synchronizace; hlavní panel ponechává jen ruční obnovu. |
 | 2026-05-19 | Stream observability v1 | Web zobrazuje `LIVE` / `DEGRADED` / `OFFLINE`, latenci streamu, poslední heartbeat, reconnecty a poslední chybu v Data readiness. |
 | 2026-05-19 | PostgreSQL pool hardening v1 | API obsluhuje idle-client chyby `pg.Pool`, aby HAProxy/Patroni ukončení spojení neshodilo celý proces; diagnostika se propisuje do dependency health. |
+| 2026-05-19 | Stream Health + backpressure v1 | Přidán `/api/v1/stream/cop/health`, Prometheus stream metriky, SSE `backpressure`/`reconnect_required` provozní zprávy a UI panel `Stream Health`. |

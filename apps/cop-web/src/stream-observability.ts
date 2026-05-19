@@ -1,22 +1,34 @@
 import type { CopStreamMessage } from "./cop-data";
 
 export interface StreamTelemetry {
+  lastBackpressureAt: string | null;
+  lastBackpressureReason: string | null;
   lastError: string | null;
   lastHeartbeatAt: string | null;
   lastMessageAt: string | null;
+  lastReconnectRequiredAt: string | null;
   latencyMs: number | null;
+  recommendedRetryMs: number | null;
   reconnectCount: number;
   sequence: number | null;
+  serverClientCount: number | null;
+  serverWriteErrorsTotal: number | null;
 }
 
 export function createInitialStreamTelemetry(): StreamTelemetry {
   return {
+    lastBackpressureAt: null,
+    lastBackpressureReason: null,
     lastError: null,
     lastHeartbeatAt: null,
     lastMessageAt: null,
+    lastReconnectRequiredAt: null,
     latencyMs: null,
+    recommendedRetryMs: null,
     reconnectCount: 0,
-    sequence: null
+    sequence: null,
+    serverClientCount: null,
+    serverWriteErrorsTotal: null
   };
 }
 
@@ -37,10 +49,16 @@ export function updateStreamTelemetryForMessage(
   return {
     ...current,
     lastError: null,
+    lastBackpressureAt: message.type === "backpressure" ? receivedAtIso : current.lastBackpressureAt,
+    lastBackpressureReason: message.type === "backpressure" ? message.reason : current.lastBackpressureReason,
     lastHeartbeatAt: message.type === "heartbeat" ? receivedAtIso : current.lastHeartbeatAt,
     lastMessageAt: receivedAtIso,
+    lastReconnectRequiredAt: message.type === "reconnect_required" ? receivedAtIso : current.lastReconnectRequiredAt,
     latencyMs: calculateStreamLatencyMs(message.serverTimestamp, receivedAt.getTime()),
-    sequence: message.sequence
+    recommendedRetryMs: message.type === "backpressure" ? message.recommendedRetryMs : message.type === "reconnect_required" ? message.retryAfterMs : current.recommendedRetryMs,
+    sequence: message.sequence,
+    serverClientCount: message.type === "backpressure" ? message.clientCount : current.serverClientCount,
+    serverWriteErrorsTotal: message.type === "backpressure" ? message.writeErrorsTotal : current.serverWriteErrorsTotal
   };
 }
 

@@ -18,6 +18,12 @@ Legacy snapshot endpoint zůstává k dispozici pro kompatibilitu:
 
 `GET /api/v1/stream/cop/{subscriptionId}`
 
+## Stream health endpoint
+
+`GET /api/v1/stream/cop/health`
+
+Endpoint vrací provozní stav stream distribuční vrstvy: počet připojených klientů, sekvenci, počty `snapshot`/`delta`/`heartbeat`/`backpressure`/`reconnect_required` zpráv, poslední časy zpráv, write errory a aktuální backpressure stav. Používá se pro UI `Stream Health`, readiness panel a Prometheus metriky. Nevrací žádné akční doporučení k objektům.
+
 ## Temporal history endpoint
 
 `GET /api/v1/cop/track-history`
@@ -37,8 +43,10 @@ Temporal endpoint je analytická čtecí vrstva. Neslouží k zadávání úkol�
 - `delta`: změny od poslední sekvence.
 - `heartbeat`: udržení spojení a server time.
 - `policy_update`: změna policy ovlivnila viditelnost dat.
-- `backpressure`: server omezuje frekvenci.
-- `reconnect_required`: klient má obnovit spojení.
+- `backpressure`: provozní signál, že stream distribuční vrstva je nad nastaveným limitem; klient má udržet fallback synchronizaci a respektovat doporučený retry interval.
+- `reconnect_required`: provozní signál, že klient má obnovit stream spojení po technické chybě.
 - `error`: standardizovaná chyba streamu.
 
 Každá zpráva obsahuje `subscriptionId`, `serverTimestamp` a monotónní `sequence`, pokud je to pro typ zprávy relevantní.
+
+Pilotní limity lze nastavit přes `COP_STREAM_BACKPRESSURE_CLIENTS` a `COP_STREAM_RETRY_MS`.

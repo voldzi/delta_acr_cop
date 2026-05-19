@@ -40,6 +40,33 @@ describe("stream observability", () => {
     });
   });
 
+  it("tracks server backpressure operational messages", () => {
+    const telemetry = updateStreamTelemetryForMessage(
+      createInitialStreamTelemetry(),
+      {
+        clientCount: 30,
+        reason: "stream_client_count_above_threshold",
+        recommendedRetryMs: 7500,
+        sequence: 7,
+        serverTimestamp: "2026-05-19T08:00:00.000Z",
+        severity: "warning",
+        threshold: 25,
+        type: "backpressure",
+        writeErrorsTotal: 2
+      },
+      new Date("2026-05-19T08:00:00.200Z")
+    );
+
+    expect(telemetry).toMatchObject({
+      lastBackpressureAt: "2026-05-19T08:00:00.200Z",
+      lastBackpressureReason: "stream_client_count_above_threshold",
+      recommendedRetryMs: 7500,
+      sequence: 7,
+      serverClientCount: 30,
+      serverWriteErrorsTotal: 2
+    });
+  });
+
   it("formats latency for readiness rows", () => {
     expect(formatStreamLatency(null)).toBe("n/a");
     expect(formatStreamLatency(125)).toBe("125 ms");
