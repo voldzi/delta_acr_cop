@@ -10,6 +10,8 @@ import {
   History,
   Layers,
   ListFilter,
+  LogIn,
+  LogOut,
   MapPin,
   Pause,
   Play,
@@ -24,6 +26,17 @@ import {
   X,
   Wifi
 } from "lucide-react";
+import {
+  beginLogin,
+  createInitialAuthSession,
+  endSession,
+  getAuthorizationToken,
+  initializeAuth,
+  isOidcEnabled,
+  readAuthConfig,
+  type AuthConfig,
+  type AuthSession
+} from "./auth";
 import {
   fetchCopDashboardData,
   filterObjectsByLayer,
@@ -87,6 +100,8 @@ interface DashboardMetrics {
 
 export function App() {
   const initialPreferences = React.useMemo(() => readUserPreferences(), []);
+  const authConfig = React.useMemo(() => readAuthConfig(), []);
+  const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
   const [sources, setSources] = React.useState<SourceSystem[]>([]);
   const [objects, setObjects] = React.useState<CopObject[]>([]);
@@ -129,15 +144,37 @@ export function App() {
   const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad COP daty.");
   const loadInFlightRef = React.useRef(false);
   const notifiedProximityAlertsRef = React.useRef<Set<string>>(new Set());
+  const authToken = getAuthorizationToken(authSession, labToken);
+  const dataAccessReady = authConfig.mode !== "oidc" || Boolean(authSession.accessToken);
+
+  React.useEffect(() => {
+    if (!isOidcEnabled(authConfig)) {
+      return;
+    }
+
+    setAuthSession((current) => current.status === "authenticated" ? current : { ...current, status: "authenticating" });
+    initializeAuth(authConfig)
+      .then(setAuthSession)
+      .catch((error: unknown) => {
+        setAuthSession({
+          error: error instanceof Error ? error.message : "OIDC přihlášení selhalo.",
+          status: "error"
+        });
+      });
+  }, [authConfig]);
 
   const load = React.useCallback(async () => {
+    if (!dataAccessReady) {
+      setLoadError("Pro načtení COP dat je potřeba přihlášení.");
+      return;
+    }
     if (loadInFlightRef.current) {
       return;
     }
     loadInFlightRef.current = true;
     setIsLoading(true);
     try {
-      const data = await fetchCopDashboardData(apiBase, labToken);
+      const data = await fetchCopDashboardData(apiBase, authToken);
       const observedAt = new Date();
       setHealth(data.health);
       setSources(data.sources);
@@ -151,7 +188,7 @@ export function App() {
       loadInFlightRef.current = false;
       setIsLoading(false);
     }
-  }, [trackHistoryLimit]);
+  }, [authToken, dataAccessReady, trackHistoryLimit]);
 
   React.useEffect(() => {
     void load();
@@ -283,7 +320,7 @@ export function App() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${labToken}`
+        Authorization: `Bearer ${authToken}`
       },
       body: JSON.stringify({
         requestId: crypto.randomUUID(),
@@ -351,6 +388,15 @@ export function App() {
     setSettingsOpen(true);
   }
 
+  function loginOperator() {
+    void beginLogin(authConfig);
+  }
+
+  function logoutOperator() {
+    endSession(authConfig, authSession);
+    setAuthSession(createInitialAuthSession(authConfig));
+  }
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -374,11 +420,11 @@ export function App() {
           <StatusItem icon={<Database size={16} />} label="Objects" value={String(visibleObjects.length)} tone="neutral" />
           <StatusItem icon={<Bot size={16} />} label="AI" value="mock" tone="neutral" />
         </div>
-        <button className="operator-button" onClick={() => setSettingsOpen(true)} type="button">
+        <button className="operator-button" onClick={() => openSettings("account")} type="button">
           <UserCircle size={19} />
           <span>
             Operátor
-            <strong>Nastavení</strong>
+            <strong>{operatorDisplayName(authSession, authConfig)}</strong>
           </span>
           <Settings size={16} />
         </button>
@@ -590,6 +636,8 @@ export function App() {
         <SettingsDrawer
           activeTab={settingsTab}
           alertRadiusKm={alertRadiusKm}
+          authConfig={authConfig}
+          authSession={authSession}
           autoRefresh={autoRefresh}
           includeSynthetic={includeSynthetic}
           minConfidence={minConfidence}
@@ -613,6 +661,8 @@ export function App() {
           onShowPredictionChange={setShowPrediction}
           onTabChange={setSettingsTab}
           onTrackHistoryLimitChange={setTrackHistoryLimit}
+          onLogin={loginOperator}
+          onLogout={logoutOperator}
         />
       ) : null}
     </main>
@@ -661,6 +711,8 @@ function MetricTile({ label, value, tone }: { label: string; value: string | num
 function SettingsDrawer({
   activeTab,
   alertRadiusKm,
+  authConfig,
+  authSession,
   autoRefresh,
   includeSynthetic,
   minConfidence,
@@ -683,10 +735,14 @@ function SettingsDrawer({
   onShowHistoryChange,
   onShowPredictionChange,
   onTabChange,
-  onTrackHistoryLimitChange
+  onTrackHistoryLimitChange,
+  onLogin,
+  onLogout
 }: {
   activeTab: SettingsTab;
   alertRadiusKm: number;
+  authConfig: AuthConfig;
+  authSession: AuthSession;
   autoRefresh: boolean;
   includeSynthetic: boolean;
   minConfidence: number;
@@ -710,6 +766,8 @@ function SettingsDrawer({
   onShowPredictionChange: (value: boolean) => void;
   onTabChange: (value: SettingsTab) => void;
   onTrackHistoryLimitChange: (value: number) => void;
+  onLogin: () => void;
+  onLogout: () => void;
 }) {
   return (
     <div className="settings-backdrop" role="presentation">
@@ -832,9 +890,26 @@ function SettingsDrawer({
           {activeTab === "account" ? (
             <section className="settings-section">
               <PanelTitle icon={<UserCircle size={17} />} title="Přihlášení" />
-              <ReadinessRow label="Stav" value="bez přihlášení" tone="neutral" />
-              <ReadinessRow label="Profil" value="lokální zařízení" tone="neutral" />
-              <ReadinessRow label="Uložení" value="prohlížeč" tone="neutral" />
+              <ReadinessRow label="Stav" value={authStatusLabel(authSession, authConfig)} tone={authSession.status === "authenticated" ? "ok" : "neutral"} />
+              <ReadinessRow label="Profil" value={authSession.profile?.name ?? "nepřihlášen"} tone="neutral" />
+              <ReadinessRow label="Provider" value={isOidcEnabled(authConfig) ? "Keycloak" : "lab token"} tone="neutral" />
+              <ReadinessRow label="Realm" value={authConfig.issuer ? authConfig.issuer.split("/").pop() ?? "n/a" : "n/a"} tone="neutral" />
+              {isOidcEnabled(authConfig) ? (
+                authSession.status === "authenticated" ? (
+                  <button className="primary-button secondary" onClick={onLogout} type="button">
+                    <LogOut size={16} />
+                    Odhlásit
+                  </button>
+                ) : (
+                  <button className="primary-button" onClick={onLogin} type="button">
+                    <LogIn size={16} />
+                    Přihlásit přes Keycloak
+                  </button>
+                )
+              ) : (
+                <div className="empty-mini">Keycloak není v této build konfiguraci zapnutý. Aplikace běží v laboratorním token režimu.</div>
+              )}
+              {authSession.error ? <div className="error-banner">Přihlášení: {authSession.error}</div> : null}
             </section>
           ) : null}
         </div>
@@ -1131,6 +1206,32 @@ function formatProximityAlert(alert: ProximityAlert): string {
 
 function predictionModeLabel(mode: PredictionMode): string {
   return predictionModeOptions.find(([value]) => value === mode)?.[1] ?? "Adaptivní";
+}
+
+function operatorDisplayName(session: AuthSession, config: AuthConfig): string {
+  if (session.status === "authenticated") {
+    return session.profile?.name ?? "Přihlášen";
+  }
+  if (session.status === "authenticating") {
+    return "Ověřuji";
+  }
+  if (isOidcEnabled(config)) {
+    return "Přihlásit";
+  }
+  return "Lab režim";
+}
+
+function authStatusLabel(session: AuthSession, config: AuthConfig): string {
+  if (session.status === "authenticated") {
+    return "přihlášen";
+  }
+  if (session.status === "authenticating") {
+    return "ověřuji";
+  }
+  if (session.status === "error") {
+    return "chyba";
+  }
+  return isOidcEnabled(config) ? "bez přihlášení" : "lab režim";
 }
 
 function readInitialMapToggle(name: "history" | "prediction", fallback: boolean): boolean {

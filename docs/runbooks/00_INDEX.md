@@ -7,3 +7,4 @@
 - [05 Running Contract Tests](05_RUNNING_CONTRACT_TESTS.md)
 - [06 Demo Runbook](06_DEMO_RUNBOOK.md)
 - [07 DMZ Publication for cop.zeleznalady.cz](07_DMZ_PUBLICATION_COP_ZELEZNALADY.md)
+- [08 Keycloak for COP](08_KEYCLOAK_COP.md)

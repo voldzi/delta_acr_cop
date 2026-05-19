@@ -6,8 +6,14 @@ services:
     image: delta-acr-cop-api:local
     environment:
       COP_API_PORT: "4310"
-      COP_ALLOW_LAB_TOKEN: "true"
-      COP_LAB_TOKEN: "dev-lab-token"
+      COP_AUTH_MODE: "${COP_AUTH_MODE:-lab}"
+      COP_ALLOW_LAB_TOKEN: "${COP_ALLOW_LAB_TOKEN:-true}"
+      COP_LAB_TOKEN: "${COP_LAB_TOKEN:-dev-lab-token}"
+      COP_OIDC_ISSUER: "${COP_OIDC_ISSUER:-}"
+      COP_OIDC_JWKS_URI: "${COP_OIDC_JWKS_URI:-}"
+      COP_OIDC_ALLOWED_CLIENTS: "${COP_OIDC_ALLOWED_CLIENTS:-}"
+      COP_OIDC_CLIENT_ID: "${COP_OIDC_CLIENT_ID:-cop-web}"
+      COP_OIDC_REQUIRED_ROLE: "${COP_OIDC_REQUIRED_ROLE:-}"
       COP_EXTERNAL_AI_ENABLED: "false"
       COP_AI_DEFAULT_PROVIDER: "mock"
       COP_TRACK_STALE_AFTER_MS: "${COP_TRACK_STALE_AFTER_MS:-30000}"
@@ -27,6 +33,10 @@ services:
       args:
         VITE_COP_API_BASE_URL: "${COP_PUBLIC_API_BASE_URL-http://localhost:${COP_API_PORT:-4310}}"
         VITE_COP_PUBLIC_LAB_VALUE: "${COP_PUBLIC_LAB_VALUE:-dev-lab-token}"
+        VITE_COP_AUTH_MODE: "${COP_WEB_AUTH_MODE:-lab}"
+        VITE_COP_OIDC_ISSUER: "${COP_OIDC_ISSUER:-}"
+        VITE_COP_OIDC_CLIENT_ID: "${COP_OIDC_CLIENT_ID:-cop-web}"
+        VITE_COP_OIDC_SCOPE: "${COP_OIDC_SCOPE:-openid profile email}"
         VITE_COP_REFRESH_MS: "${COP_WEB_REFRESH_MS:-5000}"
         VITE_COP_TILE_URL: "${COP_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}"
         VITE_COP_TILE_ATTRIBUTION: "${COP_TILE_ATTRIBUTION:-&copy; OpenStreetMap contributors}"
