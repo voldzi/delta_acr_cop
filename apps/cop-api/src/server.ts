@@ -6,20 +6,27 @@ import { createCopObjectFromEvent, type CanonicalEventEnvelope, type ObservedObj
 import { ContractValidators, formatValidationErrors } from "@cop/ingest-contracts";
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
 import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
-import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
 import { buildCopAlerts, type CopAlert } from "./alerts.js";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
 import { withEventProvenance } from "./provenance.js";
-import { requireBearerToken } from "./security.js";
+import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems } from "./source-health.js";
 import { appendAudit, createInitialState } from "./state.js";
 import { createTrackHistoryStoreFromEnv, type TrackHistoryStore } from "./track-history-store.js";
 import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory, type TrackHistoryQuery } from "./temporal-history.js";
 import { createTrackLifecycleConfig, selectCurrentTracks, type TrackLifecycleConfig } from "./track-lifecycle.js";
-import type { CopState, TrackHistoryPoint } from "./types.js";
+import type { AlertAcknowledgement, CopState, TrackHistoryPoint } from "./types.js";
+import {
+  createUserProfileStoreFromEnv,
+  InMemoryUserProfileStore,
+  type UserAlertPreferences,
+  type UserProfileRecord,
+  type UserProfileStore
+} from "./user-profile-store.js";
 
 export interface BuildServerOptions {
   state?: CopState;
@@ -28,6 +35,7 @@ export interface BuildServerOptions {
   trackHistoryStore?: TrackHistoryStore;
   trackLifecycle?: TrackLifecycleConfig;
   streamBroadcaster?: CopStreamBroadcaster;
+  userProfileStore?: UserProfileStore;
 }
 
 type DependencyStatus = "disabled" | "degraded" | "ok";
@@ -43,8 +51,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
   const streamBroadcaster = options.streamBroadcaster ?? createStreamBroadcasterFromEnv();
+  const userProfileStore = options.userProfileStore ?? createUserProfileStoreFromEnv();
+  const userProfileFallbackStore = new InMemoryUserProfileStore("memory-fallback");
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
+  let userProfileStoreStatus: DependencyStatus = "degraded";
+  let userProfileStoreDetail = `${userProfileStore.name}: initializing`;
   let restoredCurrentTrackCount = 0;
 
   app.decorate("copState", state);
@@ -53,6 +65,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   void app.register(websocket);
   app.addHook("preHandler", requireBearerToken);
   app.addHook("onReady", async () => {
+    await initializeUserProfileStore();
     if (!trackHistoryStore) {
       return;
     }
@@ -69,6 +82,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   });
   app.addHook("onClose", async () => {
     await trackHistoryStore?.close();
+    await userProfileStore.close();
+    await userProfileFallbackStore.close();
   });
 
   app.get("/health/live", async () => ({
@@ -87,6 +102,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "source-registry", status: "ok" },
       { name: "in-memory-cop-state", status: "ok" },
       { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
+      { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
       { name: "ai-gateway", status: "degraded", detail: "mock provider only" }
     ]
   }));
@@ -142,6 +158,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
 
+  async function initializeUserProfileStore(): Promise<void> {
+    try {
+      await userProfileStore.init();
+      userProfileStoreStatus = "ok";
+      userProfileStoreDetail = `${userProfileStore.name}: ready`;
+    } catch (error) {
+      userProfileStoreStatus = "degraded";
+      userProfileStoreDetail = `${userProfileStore.name}: ${errorMessage(error)}`;
+      await userProfileFallbackStore.init();
+      app.log.error({ error }, "User profile store initialization failed; using in-memory fallback.");
+    }
+  }
+
   async function countTrackHistoryPoints(): Promise<number> {
     if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
       try {
@@ -187,6 +216,72 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   function trackHistoryStoreDependencyDetail(): string {
     const diagnostics = trackHistoryStore?.diagnostics?.();
     return diagnostics ? `${trackHistoryStoreDetail}; ${diagnostics}` : trackHistoryStoreDetail;
+  }
+
+  function markUserProfileStoreDegraded(error: unknown): void {
+    userProfileStoreStatus = "degraded";
+    userProfileStoreDetail = `${userProfileStore.name}: ${errorMessage(error)}`;
+    app.log.error({ error }, "User profile store failed; using in-memory fallback.");
+  }
+
+  function userProfileStoreDependencyDetail(): string {
+    const diagnostics = userProfileStore.diagnostics?.();
+    return diagnostics ? `${userProfileStoreDetail}; ${diagnostics}` : userProfileStoreDetail;
+  }
+
+  function activeUserProfileStore(): UserProfileStore {
+    return userProfileStoreStatus === "ok" ? userProfileStore : userProfileFallbackStore;
+  }
+
+  async function readUserProfile(actor: AuthenticatedActor): Promise<UserProfileRecord | null> {
+    try {
+      return await activeUserProfileStore().getProfile(actor.subjectId);
+    } catch (error) {
+      markUserProfileStoreDegraded(error);
+      return userProfileFallbackStore.getProfile(actor.subjectId);
+    }
+  }
+
+  async function upsertUserProfile(profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">): Promise<UserProfileRecord> {
+    try {
+      return await activeUserProfileStore().upsertProfile(profile);
+    } catch (error) {
+      markUserProfileStoreDegraded(error);
+      return userProfileFallbackStore.upsertProfile(profile);
+    }
+  }
+
+  async function readAlertAcknowledgements(actor: AuthenticatedActor): Promise<Map<string, AlertAcknowledgement>> {
+    try {
+      return await activeUserProfileStore().getAlertAcknowledgements(actor.subjectId);
+    } catch (error) {
+      markUserProfileStoreDegraded(error);
+      return userProfileFallbackStore.getAlertAcknowledgements(actor.subjectId);
+    }
+  }
+
+  async function acknowledgeAlertForActor(actor: AuthenticatedActor, acknowledgement: AlertAcknowledgement): Promise<void> {
+    try {
+      await activeUserProfileStore().acknowledgeAlert(actor.subjectId, acknowledgement);
+    } catch (error) {
+      markUserProfileStoreDegraded(error);
+      await userProfileFallbackStore.acknowledgeAlert(actor.subjectId, acknowledgement);
+    }
+  }
+
+  function requireActor(request: FastifyRequest, reply: FastifyReply): AuthenticatedActor | null {
+    const actor = actorFromRequest(request);
+    if (actor) {
+      return actor;
+    }
+    sendError(
+      reply,
+      401,
+      "UNAUTHORIZED",
+      "Authenticated operator identity is required.",
+      correlationIdFrom(request.headers["x-correlation-id"])
+    );
+    return null;
   }
 
   async function persistTrackHistoryPoint(point: TrackHistoryPoint | undefined): Promise<void> {
@@ -262,10 +357,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function buildAlertItems({
+    actor,
     includeAcknowledged,
     includeExpired,
     requestNow
   }: {
+    actor: AuthenticatedActor;
     includeAcknowledged: boolean;
     includeExpired: boolean;
     requestNow: Date;
@@ -276,12 +373,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     );
     const objectsWithEvidence = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
     const alerts = buildCopAlerts({
-      acknowledgements: state.alertAcknowledgements,
+      acknowledgements: await readAlertAcknowledgements(actor),
       evaluatedAt: requestNow.toISOString(),
       objects: objectsWithEvidence,
       sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
     });
-    return includeAcknowledged ? alerts : alerts.filter((alert) => alert.status === "ACTIVE");
+    const profile = await readUserProfile(actor);
+    const preferredAlerts = filterAlertsByPreferences(alerts, profile?.alertPreferences ?? {});
+    return includeAcknowledged ? preferredAlerts : preferredAlerts.filter((alert) => alert.status === "ACTIVE");
   }
 
   function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): ObservedObject[] {
@@ -297,6 +396,58 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
     return objects.map((object) => withConflictEvidence(object, evidenceIndex.get(object.objectId)));
   }
+
+  app.get("/api/v1/me/preferences", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+
+    const profile = await readUserProfile(actor);
+    return {
+      actor,
+      alertPreferences: profile?.alertPreferences ?? {},
+      preferences: profile?.preferences ?? {},
+      updatedAt: profile?.updatedAt ?? null
+    };
+  });
+
+  app.put("/api/v1/me/preferences", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+
+    const existing = await readUserProfile(actor);
+    const body = isRecord(request.body) ? request.body : {};
+    const preferences = hasOwn(body, "preferences")
+      ? normalizeUserPreferences(body.preferences)
+      : existing?.preferences ?? {};
+    const alertPreferences = hasOwn(body, "alertPreferences")
+      ? normalizeAlertPreferences(body.alertPreferences)
+      : existing?.alertPreferences ?? {};
+
+    const profile = await upsertUserProfile({
+      alertPreferences,
+      displayName: actor.displayName,
+      ...(actor.email ? { email: actor.email } : {}),
+      preferences,
+      subjectId: actor.subjectId,
+      username: actor.username
+    });
+    appendAudit(state, "USER_PROFILE_UPDATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      preferenceKeys: Object.keys(preferences).sort()
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+
+    return {
+      actor,
+      alertPreferences: profile.alertPreferences,
+      preferences: profile.preferences,
+      updatedAt: profile.updatedAt
+    };
+  });
 
   app.get("/api/v1/sources", async () => ({
     items: Array.from(state.sources.values())
@@ -482,10 +633,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/cop/alerts", async (request) => {
+  app.get("/api/v1/cop/alerts", async (request, reply) => {
     const query = request.query as { includeAcknowledged?: string; includeExpired?: string };
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
     const requestNow = now();
     const items = await buildAlertItems({
+      actor,
       includeAcknowledged: query.includeAcknowledged === "true",
       includeExpired: query.includeExpired === "true",
       requestNow
@@ -499,9 +655,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   app.post("/api/v1/cop/alerts/:alertId/acknowledge", async (request, reply) => {
     const params = request.params as { alertId: string };
-    const body = request.body as { acknowledgedBy?: string; note?: string } | undefined;
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const body = request.body as { note?: string } | undefined;
     const requestNow = now();
     const currentAlerts = await buildAlertItems({
+      actor,
       includeAcknowledged: true,
       includeExpired: true,
       requestNow
@@ -513,12 +674,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     const acknowledgement = {
       acknowledgedAt: requestNow.toISOString(),
-      acknowledgedBy: body?.acknowledgedBy,
+      acknowledgedBy: actor.username,
       alertId: params.alertId,
       note: body?.note
     };
-    state.alertAcknowledgements.set(params.alertId, acknowledgement);
+    await acknowledgeAlertForActor(actor, acknowledgement);
     appendAudit(state, "ALERT_ACKNOWLEDGED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
       alertId: params.alertId,
       alertType: alert.type,
       objectId: alert.objectId,
@@ -811,6 +974,126 @@ function filterStreamMessage(subject: ReturnType<typeof defaultSystemSubject>, m
     return { ...message, changes };
   }
   return changes.length > 0 ? { ...message, changes } : null;
+}
+
+function filterAlertsByPreferences(alerts: CopAlert[], preferences: UserAlertPreferences): CopAlert[] {
+  const enabledTypes = new Set(preferences.enabledTypes ?? []);
+  const minimumSeverity = preferences.minimumSeverity;
+  return alerts.filter((alert) => {
+    if (enabledTypes.size > 0 && !enabledTypes.has(alert.type)) {
+      return false;
+    }
+    return !minimumSeverity || alertSeverityRank(alert.severity) >= alertSeverityRank(minimumSeverity);
+  });
+}
+
+function alertSeverityRank(severity: CopAlert["severity"]): number {
+  if (severity === "critical") {
+    return 3;
+  }
+  if (severity === "warning") {
+    return 2;
+  }
+  return 1;
+}
+
+function normalizeUserPreferences(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return compactRecord({
+    activeWorkspace: optionalString(value.activeWorkspace, ["map", "data", "sources", "alerts", "replay"]),
+    affiliationScope: optionalString(value.affiliationScope, ["all", "friend", "hostile", "neutral", "unknown"]),
+    alertRadiusKm: optionalFiniteNumber(value.alertRadiusKm, 1, 50),
+    autoFit: optionalBoolean(value.autoFit),
+    autoRefresh: optionalBoolean(value.autoRefresh),
+    domainScope: optionalString(value.domainScope, ["all", "AIR", "LAND", "SEA", "RESCUE", "OTHER"]),
+    includeSynthetic: optionalBoolean(value.includeSynthetic),
+    mapView: normalizeMapViewPreference(value.mapView),
+    minConfidence: optionalFiniteNumber(value.minConfidence, 0, 1),
+    predictionMinutes: optionalFiniteNumber(value.predictionMinutes, 2, 20),
+    predictionMode: optionalString(value.predictionMode, ["adaptive", "telemetry", "history", "maneuver"]),
+    proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
+    refreshSeconds: optionalFiniteNumber(value.refreshSeconds, 1, 60),
+    selectedLayer: optionalString(value.selectedLayer, ["air-situation", "uav", "friendly", "foreign", "data-quality"]),
+    showHistory: optionalBoolean(value.showHistory),
+    showPrediction: optionalBoolean(value.showPrediction),
+    trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),
+    trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600)
+  });
+}
+
+function normalizeAlertPreferences(value: unknown): UserAlertPreferences {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const enabledTypes = Array.isArray(value.enabledTypes) ? value.enabledTypes.filter(isCopAlertType) : undefined;
+  const minimumSeverity = isCopAlertSeverity(value.minimumSeverity) ? value.minimumSeverity : undefined;
+  return {
+    ...(enabledTypes && enabledTypes.length > 0 ? { enabledTypes } : {}),
+    ...(minimumSeverity ? { minimumSeverity } : {})
+  };
+}
+
+function normalizeMapViewPreference(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value) || !Array.isArray(value.center) || value.center.length !== 2) {
+    return undefined;
+  }
+  const lon = Number(value.center[0]);
+  const lat = Number(value.center[1]);
+  const zoom = Number(value.zoom);
+  if (!Number.isFinite(lon) || !Number.isFinite(lat) || !Number.isFinite(zoom)) {
+    return undefined;
+  }
+  return compactRecord({
+    bearing: optionalFiniteNumber(value.bearing, -360, 360),
+    center: [clampNumber(lon, -180, 180), clampNumber(lat, -90, 90)],
+    pitch: optionalFiniteNumber(value.pitch, 0, 85),
+    zoom: clampNumber(zoom, 0, 22)
+  });
+}
+
+function compactRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function optionalFiniteNumber(value: unknown, min: number, max: number): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? clampNumber(parsed, min, max) : undefined;
+}
+
+function optionalString(value: unknown, allowedValues: string[]): string | undefined {
+  return typeof value === "string" && allowedValues.includes(value) ? value : undefined;
+}
+
+function isCopAlertType(value: unknown): value is CopAlert["type"] {
+  return value === "LOW_CONFIDENCE"
+    || value === "SOURCE_DEGRADED"
+    || value === "TRACK_CONFLICT"
+    || value === "TRACK_LOST"
+    || value === "TRACK_STALE";
+}
+
+function isCopAlertSeverity(value: unknown): value is CopAlert["severity"] {
+  return value === "info" || value === "warning" || value === "critical";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function validateSourceForRequest(

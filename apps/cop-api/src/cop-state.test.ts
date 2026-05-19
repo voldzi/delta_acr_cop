@@ -272,7 +272,7 @@ describe("COP state temporal history", () => {
       },
       method: "POST",
       payload: {
-        acknowledgedBy: "operator"
+        note: "checked"
       },
       url: `/api/v1/cop/alerts/${lowConfidenceAlert!.alertId}/acknowledge`
     });

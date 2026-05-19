@@ -42,10 +42,13 @@ import {
   connectCopStream,
   fetchCopDashboardData,
   fetchCopAlerts,
+  fetchUserProfile,
   filterObjectsByLayer,
   filterVisibleObjects,
   getDataQualityCount,
   getUavCount,
+  saveUserProfile,
+  type AlertPreferences,
   type CopStreamMessage,
   type CopStreamStatus,
   type CopAlert,
@@ -91,6 +94,7 @@ import {
 import {
   clamp,
   normalizeMapView,
+  normalizeUserPreferences,
   readUserPreferences,
   writeUserPreferences,
   type MapViewState,
@@ -119,6 +123,7 @@ type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
 type DomainScope = "all" | "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
 type PreferenceSettings = ViewProfileSettings | UserPreferences;
 type SettingsTab = "map" | "data" | "awareness" | "account";
+type ProfileSyncStatus = "disabled" | "error" | "loading" | "saving" | "synced";
 
 const historyLimitOptions = [36, 72, 120, 240, 600] as const;
 const historyWindowOptions = [30, 60, 120, 180, 300, 600] as const;
@@ -150,7 +155,10 @@ interface AlertSummary {
 export function App() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
-  const userStorageScope = React.useMemo(() => userPreferenceScope(authSession), [authSession.profile?.username, authSession.status]);
+  const userStorageScope = React.useMemo(
+    () => userPreferenceScope(authSession),
+    [authSession.profile?.subjectId, authSession.profile?.username, authSession.status]
+  );
   const initialPreferences = React.useMemo(() => readUserPreferences(userStorageScope), [userStorageScope]);
   const [activeWorkspace, setActiveWorkspace] = React.useState<WorkspaceModule>(() =>
     normalizeWorkspaceModule(initialPreferences.activeWorkspace)
@@ -208,8 +216,15 @@ export function App() {
   const [alertRadiusKm, setAlertRadiusKm] = React.useState(() => clamp(initialPreferences.alertRadiusKm ?? 10, 1, 50));
   const [viewProfiles, setViewProfiles] = React.useState<ViewProfile[]>(() => readViewProfiles(userStorageScope));
   const [lastProfileName, setLastProfileName] = React.useState<string | null>(null);
+  const [alertPreferences, setAlertPreferences] = React.useState<AlertPreferences>({});
+  const [profileSyncStatus, setProfileSyncStatus] = React.useState<ProfileSyncStatus>("loading");
+  const [profileSyncError, setProfileSyncError] = React.useState<string | null>(null);
+  const [serverProfileUpdatedAt, setServerProfileUpdatedAt] = React.useState<string | null>(null);
   const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad COP daty.");
   const loadInFlightRef = React.useRef(false);
+  const profileHydratedRef = React.useRef(false);
+  const profileLoadKeyRef = React.useRef<string | null>(null);
+  const profileSaveTimerRef = React.useRef<number | undefined>(undefined);
   const skipNextPreferenceWriteRef = React.useRef(false);
   const notifiedProximityAlertsRef = React.useRef<Set<string>>(new Set());
   const authToken = getAuthorizationToken(authSession, labToken);
@@ -532,39 +547,7 @@ export function App() {
     }
   }, []);
 
-  React.useEffect(() => {
-    skipNextPreferenceWriteRef.current = true;
-    applyPreferenceSettings(readUserPreferences(userStorageScope), { focusMap: true });
-    setViewProfiles(readViewProfiles(userStorageScope));
-    setLastProfileName(null);
-  }, [applyPreferenceSettings, userStorageScope]);
-
-  React.useEffect(() => {
-    if (skipNextPreferenceWriteRef.current) {
-      skipNextPreferenceWriteRef.current = false;
-      return;
-    }
-    writeUserPreferences({
-      activeWorkspace,
-      affiliationScope,
-      alertRadiusKm,
-      autoFit,
-      autoRefresh,
-      domainScope,
-      includeSynthetic,
-      mapView,
-      minConfidence,
-      predictionMinutes,
-      predictionMode,
-      proximityAlertEnabled,
-      refreshSeconds,
-      selectedLayer,
-      showHistory,
-      showPrediction,
-      trackHistoryLimit,
-      trackHistoryWindowSeconds
-    }, userStorageScope);
-  }, [
+  const currentPreferences = React.useMemo<UserPreferences>(() => ({
     activeWorkspace,
     affiliationScope,
     alertRadiusKm,
@@ -582,7 +565,145 @@ export function App() {
     showHistory,
     showPrediction,
     trackHistoryLimit,
-    trackHistoryWindowSeconds,
+    trackHistoryWindowSeconds
+  }), [
+    activeWorkspace,
+    affiliationScope,
+    alertRadiusKm,
+    autoFit,
+    autoRefresh,
+    domainScope,
+    includeSynthetic,
+    mapView,
+    minConfidence,
+    predictionMinutes,
+    predictionMode,
+    proximityAlertEnabled,
+    refreshSeconds,
+    selectedLayer,
+    showHistory,
+    showPrediction,
+    trackHistoryLimit,
+    trackHistoryWindowSeconds
+  ]);
+
+  React.useEffect(() => {
+    profileHydratedRef.current = false;
+    profileLoadKeyRef.current = null;
+    skipNextPreferenceWriteRef.current = true;
+    applyPreferenceSettings(readUserPreferences(userStorageScope), { focusMap: true });
+    setViewProfiles(readViewProfiles(userStorageScope));
+    setLastProfileName(null);
+    setServerProfileUpdatedAt(null);
+    setProfileSyncError(null);
+    setProfileSyncStatus(dataAccessReady ? "loading" : "disabled");
+  }, [applyPreferenceSettings, dataAccessReady, userStorageScope]);
+
+  React.useEffect(() => {
+    if (!dataAccessReady) {
+      profileHydratedRef.current = false;
+      setProfileSyncStatus("disabled");
+      return;
+    }
+
+    const loadKey = `${userStorageScope}:${authSession.profile?.subjectId ?? authSession.profile?.username ?? authSession.status}`;
+    if (profileLoadKeyRef.current === loadKey) {
+      return;
+    }
+    profileLoadKeyRef.current = loadKey;
+    let cancelled = false;
+    setProfileSyncStatus("loading");
+    setProfileSyncError(null);
+
+    fetchUserProfile(apiBase, authToken)
+      .then(async (profile) => {
+        if (cancelled) {
+          return;
+        }
+        const serverPreferences = normalizeUserPreferences(profile.preferences);
+        setAlertPreferences(profile.alertPreferences ?? {});
+        setServerProfileUpdatedAt(profile.updatedAt);
+        if (Object.keys(serverPreferences).length > 0) {
+          writeUserPreferences(serverPreferences, userStorageScope);
+          skipNextPreferenceWriteRef.current = true;
+          applyPreferenceSettings(serverPreferences, { focusMap: true });
+        } else {
+          const localPreferences = readUserPreferences(userStorageScope);
+          const seedPreferences = Object.keys(localPreferences).length > 0 ? localPreferences : currentPreferences;
+          const savedProfile = await saveUserProfile(apiBase, authToken, {
+            alertPreferences: profile.alertPreferences ?? {},
+            preferences: seedPreferences
+          });
+          if (!cancelled) {
+            setServerProfileUpdatedAt(savedProfile.updatedAt);
+          }
+        }
+        if (!cancelled) {
+          profileHydratedRef.current = true;
+          setProfileSyncStatus("synced");
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          profileHydratedRef.current = false;
+          setProfileSyncStatus("error");
+          setProfileSyncError(error instanceof Error ? error.message : "Synchronizace profilu selhala.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    applyPreferenceSettings,
+    authSession.profile?.subjectId,
+    authSession.profile?.username,
+    authSession.status,
+    authToken,
+    currentPreferences,
+    dataAccessReady,
+    userStorageScope
+  ]);
+
+  React.useEffect(() => () => {
+    if (profileSaveTimerRef.current !== undefined) {
+      window.clearTimeout(profileSaveTimerRef.current);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (skipNextPreferenceWriteRef.current) {
+      skipNextPreferenceWriteRef.current = false;
+      return;
+    }
+    writeUserPreferences(currentPreferences, userStorageScope);
+    if (!dataAccessReady || !profileHydratedRef.current) {
+      return;
+    }
+    if (profileSaveTimerRef.current !== undefined) {
+      window.clearTimeout(profileSaveTimerRef.current);
+    }
+    setProfileSyncStatus("saving");
+    profileSaveTimerRef.current = window.setTimeout(() => {
+      saveUserProfile(apiBase, authToken, {
+        alertPreferences,
+        preferences: currentPreferences
+      })
+        .then((profile) => {
+          setServerProfileUpdatedAt(profile.updatedAt);
+          setProfileSyncError(null);
+          setProfileSyncStatus("synced");
+        })
+        .catch((error: unknown) => {
+          setProfileSyncStatus("error");
+          setProfileSyncError(error instanceof Error ? error.message : "Uložení profilu selhalo.");
+        });
+    }, 650);
+  }, [
+    alertPreferences,
+    authToken,
+    currentPreferences,
+    dataAccessReady,
     userStorageScope
   ]);
 
@@ -1084,6 +1205,7 @@ export function App() {
             <ReadinessRow label="Backpressure" value={formatBackpressureState(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
             <ReadinessRow label="Reconnects" value={String(streamTelemetry.reconnectCount)} tone={streamTelemetry.reconnectCount > 0 ? "warn" : "ok"} />
             {streamTelemetry.lastError ? <ReadinessRow label="Stream error" value={streamTelemetry.lastError} tone="warn" /> : null}
+            <ReadinessRow label="User profile" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
             <ReadinessRow label="Fallback sync" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
             <ReadinessRow label="Replay" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
@@ -1130,8 +1252,11 @@ export function App() {
           minConfidence={minConfidence}
           predictionMinutes={predictionMinutes}
           predictionMode={predictionMode}
+          profileSyncError={profileSyncError}
+          profileSyncStatus={profileSyncStatus}
           proximityAlertEnabled={proximityAlertEnabled}
           refreshSeconds={refreshSeconds}
+          serverProfileUpdatedAt={serverProfileUpdatedAt}
           showHistory={showHistory}
           showPrediction={showPrediction}
           trackHistoryLimit={trackHistoryLimit}
@@ -1581,8 +1706,11 @@ function SettingsDrawer({
   minConfidence,
   predictionMinutes,
   predictionMode,
+  profileSyncError,
+  profileSyncStatus,
   proximityAlertEnabled,
   refreshSeconds,
+  serverProfileUpdatedAt,
   showHistory,
   showPrediction,
   trackHistoryLimit,
@@ -1613,8 +1741,11 @@ function SettingsDrawer({
   minConfidence: number;
   predictionMinutes: number;
   predictionMode: PredictionMode;
+  profileSyncError: string | null;
+  profileSyncStatus: ProfileSyncStatus;
   proximityAlertEnabled: boolean;
   refreshSeconds: RefreshSeconds;
+  serverProfileUpdatedAt: string | null;
   showHistory: boolean;
   showPrediction: boolean;
   trackHistoryLimit: number;
@@ -1770,6 +1901,8 @@ function SettingsDrawer({
               <ReadinessRow label="Profil" value={authSession.profile?.name ?? "nepřihlášen"} tone="neutral" />
               <ReadinessRow label="Provider" value={isOidcEnabled(authConfig) ? "Keycloak" : "lab token"} tone="neutral" />
               <ReadinessRow label="Realm" value={authConfig.issuer ? authConfig.issuer.split("/").pop() ?? "n/a" : "n/a"} tone="neutral" />
+              <ReadinessRow label="Serverový profil" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
+              <ReadinessRow label="Uloženo" value={formatProfileUpdatedAt(serverProfileUpdatedAt)} tone="neutral" />
               {isOidcEnabled(authConfig) ? (
                 authSession.status === "authenticated" ? (
                   <button className="primary-button secondary" onClick={onLogout} type="button">
@@ -1785,6 +1918,7 @@ function SettingsDrawer({
               ) : (
                 <div className="empty-mini">Keycloak není v této build konfiguraci zapnutý. Aplikace běží v laboratorním token režimu.</div>
               )}
+              {profileSyncError ? <div className="error-banner">Profil: {profileSyncError}</div> : null}
               {authSession.error ? <div className="error-banner">Přihlášení: {authSession.error}</div> : null}
             </section>
           ) : null}
@@ -2368,7 +2502,38 @@ function authStatusLabel(session: AuthSession, config: AuthConfig): string {
   return isOidcEnabled(config) ? "bez přihlášení" : "lab režim";
 }
 
+function profileSyncLabel(status: ProfileSyncStatus): string {
+  const labels: Record<ProfileSyncStatus, string> = {
+    disabled: "vypnuto",
+    error: "chyba",
+    loading: "načítám",
+    saving: "ukládám",
+    synced: "synchronizován"
+  };
+  return labels[status];
+}
+
+function profileSyncTone(status: ProfileSyncStatus): "neutral" | "ok" | "warn" {
+  if (status === "synced") {
+    return "ok";
+  }
+  if (status === "error") {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function formatProfileUpdatedAt(value: string | null): string {
+  if (!value) {
+    return "zatím ne";
+  }
+  return formatShortDateTime(value);
+}
+
 function userPreferenceScope(session: AuthSession): string {
+  if (session.profile?.subjectId) {
+    return session.profile.subjectId;
+  }
   if (session.profile?.username) {
     return session.profile.username;
   }

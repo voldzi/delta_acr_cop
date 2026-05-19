@@ -34,6 +34,22 @@ describe("COP web dashboard", () => {
       if (url.includes("/health/ready")) {
         return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
       }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {
+            trackHistoryLimit: 120,
+            trackHistoryWindowSeconds: 180
+          },
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
       if (url.includes("/api/v1/sources/health")) {
         return jsonResponse({
           items: [
@@ -164,6 +180,22 @@ describe("COP web dashboard", () => {
       const url = String(input);
       if (url.includes("/health/ready")) {
         return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {
+            trackHistoryLimit: 120,
+            trackHistoryWindowSeconds: 180
+          },
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
       }
       if (url.includes("/api/v1/sources/health")) {
         return jsonResponse({ items: [] });

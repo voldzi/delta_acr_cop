@@ -94,3 +94,4 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 | 2026-05-19 | Stream observability v1 | Web zobrazuje `LIVE` / `DEGRADED` / `OFFLINE`, latenci streamu, poslední heartbeat, reconnecty a poslední chybu v Data readiness. |
 | 2026-05-19 | PostgreSQL pool hardening v1 | API obsluhuje idle-client chyby `pg.Pool`, aby HAProxy/Patroni ukončení spojení neshodilo celý proces; diagnostika se propisuje do dependency health. |
 | 2026-05-19 | Stream Health + backpressure v1 | Přidán `/api/v1/stream/cop/health`, Prometheus stream metriky, SSE `backpressure`/`reconnect_required` provozní zprávy a UI panel `Stream Health`. |
+| 2026-05-19 | Keycloak user profiles v1 | Přidán `/api/v1/me/preferences`, serverové preference podle OIDC `sub`, per-user potvrzení alertů, PostgreSQL tabulky `cop_user_profiles` a `cop_user_alert_acknowledgements`, UI stav synchronizace profilu. |

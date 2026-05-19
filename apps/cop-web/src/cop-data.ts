@@ -124,6 +124,26 @@ export type CopAlertSeverity = "critical" | "info" | "warning";
 export type CopAlertStatus = "ACKNOWLEDGED" | "ACTIVE";
 export type CopAlertType = "LOW_CONFIDENCE" | "SOURCE_DEGRADED" | "TRACK_CONFLICT" | "TRACK_LOST" | "TRACK_STALE";
 
+export interface CopActor {
+  authMode: "lab" | "oidc";
+  displayName: string;
+  email?: string;
+  subjectId: string;
+  username: string;
+}
+
+export interface AlertPreferences {
+  enabledTypes?: CopAlertType[];
+  minimumSeverity?: CopAlertSeverity;
+}
+
+export interface ServerUserProfile {
+  actor: CopActor;
+  alertPreferences: AlertPreferences;
+  preferences: Record<string, unknown>;
+  updatedAt: string | null;
+}
+
 export interface CopAlert {
   acknowledgedAt?: string;
   alertId: string;
@@ -274,9 +294,32 @@ export async function fetchCopAlerts(apiBase: string, token = "dev-lab-token"): 
   return response?.items ?? [];
 }
 
-export async function acknowledgeCopAlert(apiBase: string, token: string, alertId: string): Promise<CopAlert> {
+export async function fetchUserProfile(apiBase: string, token: string): Promise<ServerUserProfile> {
+  return fetchJson<ServerUserProfile>(`${apiBase}/api/v1/me/preferences`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+}
+
+export async function saveUserProfile(
+  apiBase: string,
+  token: string,
+  payload: { alertPreferences?: AlertPreferences; preferences?: object }
+): Promise<ServerUserProfile> {
+  return fetchJson<ServerUserProfile>(`${apiBase}/api/v1/me/preferences`, {
+    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "PUT"
+  });
+}
+
+export async function acknowledgeCopAlert(apiBase: string, token: string, alertId: string, note?: string): Promise<CopAlert> {
   return fetchJson<CopAlert>(`${apiBase}/api/v1/cop/alerts/${encodeURIComponent(alertId)}/acknowledge`, {
-    body: JSON.stringify({ acknowledgedBy: "operator" }),
+    body: JSON.stringify(note ? { note } : {}),
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"

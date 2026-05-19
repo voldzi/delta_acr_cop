@@ -10,17 +10,29 @@ interface JwtHeader {
   typ?: string;
 }
 
-interface JwtPayload {
+export interface JwtPayload {
   aud?: string | string[];
   azp?: string;
+  email?: string;
   exp?: number;
   iat?: number;
   iss?: string;
+  name?: string;
   nbf?: number;
+  preferred_username?: string;
   realm_access?: {
     roles?: string[];
   };
   resource_access?: Record<string, { roles?: string[] }>;
+  sub?: string;
+}
+
+export interface AuthenticatedActor {
+  authMode: "lab" | "oidc";
+  displayName: string;
+  email?: string;
+  subjectId: string;
+  username: string;
 }
 
 interface JsonWebKeySet {
@@ -97,6 +109,44 @@ export async function verifyOidcToken(token: string): Promise<boolean> {
   return verifyJwtSignature(token, key);
 }
 
+export function actorFromRequest(request: FastifyRequest): AuthenticatedActor | null {
+  const token = readBearerToken(request.headers.authorization);
+  if (!token) {
+    return null;
+  }
+
+  if (isLabTokenAllowed(token)) {
+    return {
+      authMode: "lab",
+      displayName: "Lab operator",
+      subjectId: "lab",
+      username: "lab"
+    };
+  }
+
+  if (!isOidcMode()) {
+    return null;
+  }
+
+  const decoded = decodeJwt(token);
+  const subjectId = decoded?.payload.sub?.trim();
+  if (!decoded || !subjectId) {
+    return null;
+  }
+
+  const username = decoded.payload.preferred_username?.trim()
+    || decoded.payload.email?.trim()
+    || decoded.payload.name?.trim()
+    || subjectId;
+  return {
+    authMode: "oidc",
+    displayName: decoded.payload.name?.trim() || username,
+    ...(decoded.payload.email?.trim() ? { email: decoded.payload.email.trim() } : {}),
+    subjectId,
+    username
+  };
+}
+
 export function clearJwksCacheForTests(): void {
   jwksCache.clear();
 }
@@ -121,7 +171,7 @@ function readAuthMode(): AuthMode {
   return value === "oidc" || value === "hybrid" ? value : "lab";
 }
 
-function readBearerToken(authorization: string | undefined): string | null {
+export function readBearerToken(authorization: string | undefined): string | null {
   const match = /^Bearer\s+(.+)$/iu.exec(authorization ?? "");
   return match?.[1]?.trim() || null;
 }
@@ -136,7 +186,7 @@ function unauthorized(request: FastifyRequest, reply: FastifyReply): void {
   );
 }
 
-function decodeJwt(token: string): { header: JwtHeader; payload: JwtPayload; signedContent: string; signature: Buffer } | null {
+export function decodeJwt(token: string): { header: JwtHeader; payload: JwtPayload; signedContent: string; signature: Buffer } | null {
   const [encodedHeader, encodedPayload, encodedSignature] = token.split(".");
   if (!encodedHeader || !encodedPayload || !encodedSignature) {
     return null;

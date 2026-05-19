@@ -43,7 +43,7 @@ export function readUserPreferences(scope?: string): UserPreferences {
       return {};
     }
     const parsed = JSON.parse(raw);
-    return isRecord(parsed) ? normalizePreferences(parsed) : {};
+    return isRecord(parsed) ? normalizeUserPreferences(parsed) : {};
   } catch {
     return {};
   }
@@ -82,7 +82,7 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function normalizePreferences(value: Record<string, unknown>): UserPreferences {
+export function normalizeUserPreferences(value: Record<string, unknown>): UserPreferences {
   return {
     activeWorkspace: optionalString(value.activeWorkspace),
     affiliationScope: optionalString(value.affiliationScope),

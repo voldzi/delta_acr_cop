@@ -11,6 +11,7 @@ export interface AuthConfig {
 export interface AuthProfile {
   email?: string;
   name: string;
+  subjectId?: string;
   username: string;
 }
 
@@ -227,6 +228,7 @@ function profileFromPayload(payload: Record<string, unknown>): AuthProfile {
   return {
     email: optionalString(payload.email),
     name,
+    subjectId: optionalString(payload.sub),
     username: preferredUsername ?? name
   };
 }

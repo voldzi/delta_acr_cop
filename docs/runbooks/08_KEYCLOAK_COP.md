@@ -77,6 +77,7 @@ COP_OIDC_CLIENT_ID=cop-web
 COP_OIDC_ALLOWED_CLIENTS=cop-web
 COP_OIDC_REQUIRED_ROLE=cop_operator
 COP_OIDC_SCOPE=openid profile email
+COP_USER_PROFILE_STORE=auto
 ```
 
 Striktni rezim bez lab tokenu:
@@ -89,6 +90,7 @@ COP_OIDC_ISSUER=https://login.zeleznalady.cz/realms/cop
 COP_OIDC_CLIENT_ID=cop-web
 COP_OIDC_ALLOWED_CLIENTS=cop-web
 COP_OIDC_REQUIRED_ROLE=cop_operator
+COP_USER_PROFILE_STORE=auto
 ```
 
 Po zmene buildu webu je potreba rebuild:
@@ -100,8 +102,36 @@ curl -fsS http://docker.home.cz:4310/health/ready
 curl -I http://docker.home.cz:4311
 ```
 
+## Serverove profily operatoru
+
+API uklada uzivatelske nastaveni podle identity z bearer tokenu:
+
+- OIDC rezim pouziva stabilni claim `sub` z Keycloaku.
+- Lab rezim pouziva sdileny subject `lab`.
+- Endpointy jsou `GET /api/v1/me/preferences` a `PUT /api/v1/me/preferences`.
+- Uklada se pouze zobrazeni, workspace, mapa, replay/historie, lokalni radius vystrah a informacni alert preference.
+- Potvrzeni serverovych alertu je per-user; potvrzeni jednoho operatora nezmizi ostatnim.
+
+Persistenci ridi `COP_USER_PROFILE_STORE=auto`. Pri `auto` se pouzije PostgreSQL z `COP_DATABASE_URL`; bez databaze se pouzije in-memory fallback. V pilotu s HAProxy/Patroni tedy staci mit nastaveny stejny `COP_DATABASE_URL` jako pro temporal store.
+
+API si vytvari tabulky:
+
+- `cop_user_profiles`
+- `cop_user_alert_acknowledgements`
+
+Kontrola:
+
+```bash
+cd /srv/cop
+set -a; . ./.env; set +a
+curl -fsS -H "Authorization: Bearer ${COP_PUBLIC_LAB_VALUE:-$COP_LAB_TOKEN}" \
+  http://docker.home.cz:4310/health/dependencies
+```
+
+Ocekavany radek: `user-profile-store` se stavem `ok`.
+
 ## Poznamky
 
 - API overuje podpis access tokenu pres JWKS z `${COP_OIDC_ISSUER}/protocol/openid-connect/certs`.
 - Pokud API nema pristup na verejny issuer, lze nastavit `COP_OIDC_JWKS_URI=http://docker.home.cz:8081/realms/cop/protocol/openid-connect/certs`, ale `iss` v tokenu musi zustat `https://login.zeleznalady.cz/realms/cop`.
-- Web uklada OIDC session do `sessionStorage`; uzivatelske mapove preference zustavaji v `localStorage`.
+- Web uklada OIDC session do `sessionStorage`; uzivatelske preference se synchronizuji do API a `localStorage` slouzi jako lokalni fallback/cache.

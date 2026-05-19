@@ -90,6 +90,108 @@ describe("COP API authentication", () => {
     expect(response.statusCode).toBe(200);
   });
 
+  it("keeps server-side preferences isolated by OIDC subject", async () => {
+    const issuer = "https://login.zeleznalady.cz/realms/cop";
+    const keyId = "cop-test-key";
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const publicJwk = {
+      ...publicKey.export({ format: "jwk" }),
+      alg: "RS256",
+      kid: keyId,
+      use: "sig"
+    };
+
+    process.env.COP_AUTH_MODE = "oidc";
+    process.env.COP_OIDC_ISSUER = issuer;
+    process.env.COP_OIDC_ALLOWED_CLIENTS = "cop-web";
+    process.env.COP_OIDC_REQUIRED_ROLE = "cop_operator";
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ keys: [publicJwk] })));
+    const now = Math.floor(Date.now() / 1000);
+    const commonPayload = {
+      azp: "cop-web",
+      exp: now + 300,
+      iat: now,
+      iss: issuer,
+      realm_access: {
+        roles: ["cop_operator"]
+      }
+    };
+    const operatorAToken = signJwt(privateKey, keyId, {
+      ...commonPayload,
+      name: "Operator A",
+      preferred_username: "operator.a",
+      sub: "operator-a"
+    });
+    const operatorBToken = signJwt(privateKey, keyId, {
+      ...commonPayload,
+      name: "Operator B",
+      preferred_username: "operator.b",
+      sub: "operator-b"
+    });
+    const app = buildServer();
+
+    const updateResponse = await app.inject({
+      headers: {
+        authorization: `Bearer ${operatorAToken}`
+      },
+      method: "PUT",
+      payload: {
+        alertPreferences: {
+          minimumSeverity: "warning"
+        },
+        preferences: {
+          selectedLayer: "foreign",
+          trackHistoryWindowSeconds: 60
+        }
+      },
+      url: "/api/v1/me/preferences"
+    });
+    expect(updateResponse.statusCode).toBe(200);
+    expect(updateResponse.json()).toMatchObject({
+      actor: {
+        subjectId: "operator-a",
+        username: "operator.a"
+      },
+      alertPreferences: {
+        minimumSeverity: "warning"
+      },
+      preferences: {
+        selectedLayer: "foreign",
+        trackHistoryWindowSeconds: 60
+      }
+    });
+
+    const operatorAProfile = await app.inject({
+      headers: {
+        authorization: `Bearer ${operatorAToken}`
+      },
+      method: "GET",
+      url: "/api/v1/me/preferences"
+    });
+    const operatorBProfile = await app.inject({
+      headers: {
+        authorization: `Bearer ${operatorBToken}`
+      },
+      method: "GET",
+      url: "/api/v1/me/preferences"
+    });
+
+    expect(operatorAProfile.json()).toMatchObject({
+      preferences: {
+        selectedLayer: "foreign"
+      }
+    });
+    expect(operatorBProfile.json()).toMatchObject({
+      actor: {
+        subjectId: "operator-b"
+      },
+      preferences: {}
+    });
+
+    await app.close();
+  });
+
   it("rejects OIDC tokens without surfacing JWKS fetch failures", async () => {
     const issuer = "https://login.zeleznalady.cz/realms/cop";
     const keyId = "missing-key";
