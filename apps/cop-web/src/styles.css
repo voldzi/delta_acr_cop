@@ -59,7 +59,7 @@ button {
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto minmax(380px, auto);
+  grid-template-columns: minmax(260px, 1fr) auto minmax(380px, auto) auto;
   align-items: center;
   gap: 14px;
   min-height: 78px;
@@ -177,6 +177,44 @@ h1 {
   font-size: 14px;
 }
 
+.operator-button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 156px;
+  min-height: 50px;
+  padding: 0 11px;
+  border: 1px solid rgba(140, 182, 216, 0.38);
+  background: rgba(22, 31, 38, 0.92);
+  color: #e8eef5;
+  cursor: pointer;
+}
+
+.operator-button:hover {
+  border-color: rgba(200, 240, 141, 0.74);
+}
+
+.operator-button svg {
+  color: var(--cyan);
+}
+
+.operator-button span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.operator-button strong {
+  color: var(--lime);
+  font-size: 13px;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) minmax(290px, 360px);
@@ -281,6 +319,11 @@ h1 {
   padding: 0 10px;
   font-size: 12px;
   font-weight: 800;
+}
+
+.mini-button.wide {
+  justify-content: center;
+  width: 100%;
 }
 
 .icon-button:hover,
@@ -494,7 +537,7 @@ h1 {
 
 .segmented-control {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
   gap: 1px;
   padding: 2px;
   border: 1px solid var(--border);
@@ -513,6 +556,93 @@ h1 {
 .segmented-control button.active {
   background: rgba(140, 182, 216, 0.18);
   color: #f4f7fb;
+}
+
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(3, 7, 10, 0.52);
+  backdrop-filter: blur(4px);
+}
+
+.settings-drawer {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  width: min(430px, 100vw);
+  height: 100%;
+  border-left: 1px solid var(--border-strong);
+  background:
+    linear-gradient(180deg, rgba(17, 25, 31, 0.98), rgba(7, 12, 16, 0.98)),
+    var(--panel);
+  box-shadow: -24px 0 64px rgba(0, 0, 0, 0.45);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 78px;
+  padding: 16px;
+  border-bottom: 1px solid rgba(142, 157, 170, 0.2);
+}
+
+.settings-header span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.settings-header strong {
+  display: block;
+  margin-top: 3px;
+  color: #f4f7fb;
+  font-size: 18px;
+}
+
+.settings-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  padding: 10px;
+  border-bottom: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(5, 9, 12, 0.34);
+}
+
+.settings-tabs button {
+  min-height: 34px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #b8c4cf;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.settings-tabs button.active {
+  border-color: rgba(200, 240, 141, 0.58);
+  background: rgba(151, 199, 104, 0.14);
+  color: var(--lime);
+}
+
+.settings-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.settings-section {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-section .panel-title {
+  margin-bottom: 0;
 }
 
 .source-row {

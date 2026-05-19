@@ -9,4 +9,6 @@ Hlavní UI má šest oblastí:
 - bottom timeline/replay panel: časový posun a změny confidence,
 - AI assistant drawer: povolené datové dotazy a vysvětlení.
 
+Pravý horní roh top baru obsahuje operátorský vstup. V pilotu neslouží k autentizaci, ale otevírá centrum nastavení pro uživatelské volby mapy, dat, vlastní polohy a budoucího účtu.
+
 UI nesmí obsahovat targeting, navádění ani ovládání prostředků.

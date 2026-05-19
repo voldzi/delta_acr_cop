@@ -9,9 +9,19 @@ export interface TrackHistoryPoint {
 }
 
 export type TrackHistory = Record<string, TrackHistoryPoint[]>;
+export type PredictionMode = "adaptive" | "telemetry" | "history" | "maneuver";
+export type PredictionMethod = "telemetry" | "history" | "maneuver";
+
+export interface PredictedPosition {
+  lat: number;
+  lon: number;
+  method: PredictionMethod;
+  path: Array<{ lat: number; lon: number }>;
+}
 
 const earthRadiusM = 6371000;
 const samePointTolerance = 0.000001;
+const defaultPredictionSteps = 6;
 
 export function mergeTrackHistory(
   currentHistory: TrackHistory,
@@ -52,6 +62,11 @@ export function mergeTrackHistory(
   return nextHistory;
 }
 
+export function trimTrackHistory(history: TrackHistory, maxPointsPerTrack: number): TrackHistory {
+  const pointLimit = Math.max(1, Math.trunc(maxPointsPerTrack));
+  return Object.fromEntries(Object.entries(history).map(([objectId, points]) => [objectId, points.slice(-pointLimit)]));
+}
+
 export function countHistoryPoints(history: TrackHistory, objects: CopObject[]): number {
   return objects.reduce((sum, object) => sum + (history[object.objectId]?.length ?? 0), 0);
 }
@@ -59,41 +74,167 @@ export function countHistoryPoints(history: TrackHistory, objects: CopObject[]):
 export function predictPosition(
   object: CopObject,
   historyPoints: TrackHistoryPoint[] = [],
-  horizonMinutes: number
-): { lat: number; lon: number; method: "movement" | "history" } | null {
+  horizonMinutes: number,
+  mode: PredictionMode = "adaptive"
+): PredictedPosition | null {
   if (!hasPosition(object) || horizonMinutes <= 0) {
+    return null;
+  }
+
+  if (mode === "telemetry") {
+    return predictFromTelemetry(object, horizonMinutes);
+  }
+  if (mode === "history") {
+    return predictFromHistory(object, historyPoints, horizonMinutes);
+  }
+  if (mode === "maneuver") {
+    return predictFromManeuver(object, historyPoints, horizonMinutes) ?? predictFromHistory(object, historyPoints, horizonMinutes);
+  }
+
+  return predictFromTelemetry(object, horizonMinutes) ?? predictFromHistory(object, historyPoints, horizonMinutes);
+}
+
+function predictFromTelemetry(object: CopObject, horizonMinutes: number): PredictedPosition | null {
+  if (!hasPosition(object)) {
     return null;
   }
 
   const speedMps = object.movement?.speedMps ?? object.speedMps;
   const headingDeg = object.movement?.headingDeg ?? object.headingDeg;
-  if (Number.isFinite(speedMps) && Number.isFinite(headingDeg) && Number(speedMps) > 0) {
-    return {
-      ...projectPosition(object.position.lat, object.position.lon, Number(speedMps) * horizonMinutes * 60, Number(headingDeg)),
-      method: "movement"
-    };
-  }
-
-  const lastTwoPoints = historyPoints.slice(-2);
-  if (lastTwoPoints.length < 2) {
+  if (!Number.isFinite(speedMps) || !Number.isFinite(headingDeg) || Number(speedMps) <= 0) {
     return null;
   }
 
-  const previousPoint = lastTwoPoints[0]!;
-  const lastPoint = lastTwoPoints[1]!;
-  const elapsedSeconds = (new Date(lastPoint.timestamp).getTime() - new Date(previousPoint.timestamp).getTime()) / 1000;
-  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
+  const path = buildTelemetryPath(object.position, Number(speedMps), Number(headingDeg), horizonMinutes);
+  return {
+    ...path[path.length - 1]!,
+    method: "telemetry",
+    path
+  };
+}
+
+function predictFromHistory(object: CopObject, historyPoints: TrackHistoryPoint[], horizonMinutes: number): PredictedPosition | null {
+  if (!hasPosition(object)) {
+    return null;
+  }
+
+  const vector = estimateHistoryVector(historyPoints.slice(-4));
+  if (!vector) {
     return null;
   }
 
   const horizonSeconds = horizonMinutes * 60;
-  const latDelta = ((lastPoint.lat - previousPoint.lat) / elapsedSeconds) * horizonSeconds;
-  const lonDelta = ((lastPoint.lon - previousPoint.lon) / elapsedSeconds) * horizonSeconds;
+  const path = [{ lat: object.position.lat, lon: object.position.lon }];
+  for (let step = 1; step <= defaultPredictionSteps; step += 1) {
+    const seconds = (horizonSeconds / defaultPredictionSteps) * step;
+    path.push({
+      lat: clampLatitude(object.position.lat + vector.latPerSecond * seconds),
+      lon: wrapLongitude(object.position.lon + vector.lonPerSecond * seconds)
+    });
+  }
+
   return {
-    lat: clampLatitude(lastPoint.lat + latDelta),
-    lon: wrapLongitude(lastPoint.lon + lonDelta),
-    method: "history"
+    ...path[path.length - 1]!,
+    method: "history",
+    path
   };
+}
+
+function predictFromManeuver(object: CopObject, historyPoints: TrackHistoryPoint[], horizonMinutes: number): PredictedPosition | null {
+  if (!hasPosition(object)) {
+    return null;
+  }
+
+  const segments = buildRecentSegments(historyPoints.slice(-5));
+  if (segments.length < 2) {
+    return null;
+  }
+
+  const lastSegment = segments[segments.length - 1]!;
+  const previousSegment = segments[segments.length - 2]!;
+  const turnRateDegPerSecond = angularDeltaDeg(lastSegment.headingDeg, previousSegment.headingDeg) / Math.max(1, lastSegment.elapsedSeconds);
+  const speedMps = average(segments.slice(-3).map((segment) => segment.speedMps));
+  if (!Number.isFinite(speedMps) || speedMps <= 0) {
+    return null;
+  }
+
+  const stepSeconds = (horizonMinutes * 60) / defaultPredictionSteps;
+  const path = [{ lat: object.position.lat, lon: object.position.lon }];
+  let current = object.position;
+  let headingDeg = lastSegment.headingDeg;
+
+  for (let step = 1; step <= defaultPredictionSteps; step += 1) {
+    headingDeg = normalizeHeading(headingDeg + turnRateDegPerSecond * stepSeconds);
+    current = projectPosition(current.lat, current.lon, speedMps * stepSeconds, headingDeg);
+    path.push(current);
+  }
+
+  return {
+    ...path[path.length - 1]!,
+    method: "maneuver",
+    path
+  };
+}
+
+function buildTelemetryPath(
+  position: { lat: number; lon: number },
+  speedMps: number,
+  headingDeg: number,
+  horizonMinutes: number
+): Array<{ lat: number; lon: number }> {
+  const path = [{ lat: position.lat, lon: position.lon }];
+  for (let step = 1; step <= defaultPredictionSteps; step += 1) {
+    const distanceM = speedMps * horizonMinutes * 60 * (step / defaultPredictionSteps);
+    path.push(projectPosition(position.lat, position.lon, distanceM, headingDeg));
+  }
+  return path;
+}
+
+function estimateHistoryVector(historyPoints: TrackHistoryPoint[]): { latPerSecond: number; lonPerSecond: number } | null {
+  const segments = buildRecentSegments(historyPoints);
+  if (segments.length === 0) {
+    return null;
+  }
+
+  return {
+    latPerSecond: average(segments.map((segment) => segment.latPerSecond)),
+    lonPerSecond: average(segments.map((segment) => segment.lonPerSecond))
+  };
+}
+
+function buildRecentSegments(historyPoints: TrackHistoryPoint[]): Array<{
+  elapsedSeconds: number;
+  headingDeg: number;
+  latPerSecond: number;
+  lonPerSecond: number;
+  speedMps: number;
+}> {
+  const segments: Array<{
+    elapsedSeconds: number;
+    headingDeg: number;
+    latPerSecond: number;
+    lonPerSecond: number;
+    speedMps: number;
+  }> = [];
+
+  for (let index = 1; index < historyPoints.length; index += 1) {
+    const previousPoint = historyPoints[index - 1]!;
+    const lastPoint = historyPoints[index]!;
+    const elapsedSeconds = (new Date(lastPoint.timestamp).getTime() - new Date(previousPoint.timestamp).getTime()) / 1000;
+    if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
+      continue;
+    }
+
+    segments.push({
+      elapsedSeconds,
+      headingDeg: headingBetweenPoints(previousPoint, lastPoint),
+      latPerSecond: (lastPoint.lat - previousPoint.lat) / elapsedSeconds,
+      lonPerSecond: (lastPoint.lon - previousPoint.lon) / elapsedSeconds,
+      speedMps: distanceMeters(previousPoint, lastPoint) / elapsedSeconds
+    });
+  }
+
+  return segments;
 }
 
 function projectPosition(lat: number, lon: number, distanceM: number, headingDeg: number): { lat: number; lon: number } {
@@ -119,8 +260,41 @@ function projectPosition(lat: number, lon: number, distanceM: number, headingDeg
   };
 }
 
+function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const dLat = toRadians(b.lat - a.lat);
+  const dLon = toRadians(b.lon - a.lon);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const haversine =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * earthRadiusM * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function headingBetweenPoints(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const dLon = toRadians(b.lon - a.lon);
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return normalizeHeading(toDegrees(Math.atan2(y, x)));
+}
+
 function hasPosition(object: CopObject): object is CopObject & { position: NonNullable<CopObject["position"]> } {
   return Number.isFinite(object.position?.lat) && Number.isFinite(object.position?.lon);
+}
+
+function angularDeltaDeg(current: number, previous: number): number {
+  return ((((current - previous + 540) % 360) + 360) % 360) - 180;
+}
+
+function average(values: number[]): number {
+  const finiteValues = values.filter(Number.isFinite);
+  return finiteValues.length ? finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length : 0;
+}
+
+function normalizeHeading(value: number): number {
+  return ((value % 360) + 360) % 360;
 }
 
 function toRadians(value: number): number {

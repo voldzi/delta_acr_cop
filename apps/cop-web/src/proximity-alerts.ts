@@ -1,6 +1,6 @@
 import type { CopObject } from "./cop-data";
 import { getAffiliationPresentation } from "./symbology";
-import { predictPosition, type TrackHistory } from "./track-history";
+import { predictPosition, type PredictionMode, type TrackHistory } from "./track-history";
 
 export interface UserLocation {
   accuracyM?: number | null;
@@ -21,14 +21,15 @@ export function buildProximityAlerts(
   userLocation: UserLocation | null,
   trackHistory: TrackHistory,
   radiusKm: number,
-  predictionMinutes: number
+  predictionMinutes: number,
+  predictionMode: PredictionMode = "adaptive"
 ): ProximityAlert[] {
   if (!userLocation) {
     return [];
   }
 
   return objects
-    .flatMap((object) => buildObjectAlert(object, userLocation, trackHistory, radiusKm, predictionMinutes))
+    .flatMap((object) => buildObjectAlert(object, userLocation, trackHistory, radiusKm, predictionMinutes, predictionMode))
     .sort((a, b) => a.currentDistanceKm - b.currentDistanceKm);
 }
 
@@ -49,7 +50,8 @@ function buildObjectAlert(
   userLocation: UserLocation,
   trackHistory: TrackHistory,
   radiusKm: number,
-  predictionMinutes: number
+  predictionMinutes: number,
+  predictionMode: PredictionMode
 ): ProximityAlert[] {
   if (!hasPosition(object) || getAffiliationPresentation(object.affiliation).disposition !== "hostile") {
     return [];
@@ -60,7 +62,7 @@ function buildObjectAlert(
     return [{ currentDistanceKm, object, type: "inside-radius" }];
   }
 
-  const prediction = predictPosition(object, trackHistory[object.objectId], predictionMinutes);
+  const prediction = predictPosition(object, trackHistory[object.objectId], predictionMinutes, predictionMode);
   if (!prediction) {
     return [];
   }

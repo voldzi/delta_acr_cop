@@ -16,9 +16,12 @@ import {
   RefreshCw,
   RadioTower,
   Search,
+  Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  UserCircle,
+  X,
   Wifi
 } from "lucide-react";
 import {
@@ -42,7 +45,7 @@ import {
   REFRESH_OPTIONS,
   type RefreshSeconds
 } from "./refresh-config";
-import { countHistoryPoints, mergeTrackHistory, type TrackHistory } from "./track-history";
+import { countHistoryPoints, mergeTrackHistory, trimTrackHistory, type PredictionMode, type TrackHistory } from "./track-history";
 import {
   clamp,
   normalizeMapView,
@@ -62,6 +65,15 @@ const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
 type DomainScope = "all" | "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
+type SettingsTab = "map" | "data" | "awareness" | "account";
+
+const historyLimitOptions = [12, 24, 36, 72, 120] as const;
+const predictionModeOptions: Array<[PredictionMode, string]> = [
+  ["adaptive", "Adaptivní"],
+  ["telemetry", "Telemetrie"],
+  ["history", "Trend"],
+  ["maneuver", "Manévr"]
+];
 
 interface DashboardMetrics {
   activeSources: number;
@@ -101,7 +113,11 @@ export function App() {
     readInitialMapToggle("prediction", initialPreferences.showPrediction ?? false)
   );
   const [predictionMinutes, setPredictionMinutes] = React.useState(() => clamp(initialPreferences.predictionMinutes ?? 10, 2, 20));
+  const [predictionMode, setPredictionMode] = React.useState<PredictionMode>(() => readInitialPredictionMode(initialPreferences.predictionMode));
+  const [trackHistoryLimit, setTrackHistoryLimit] = React.useState(() => readInitialHistoryLimit(initialPreferences.trackHistoryLimit));
   const [trackHistory, setTrackHistory] = React.useState<TrackHistory>({});
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [settingsTab, setSettingsTab] = React.useState<SettingsTab>("map");
   const [autoFit, setAutoFit] = React.useState(initialPreferences.autoFit ?? true);
   const [mapView, setMapView] = React.useState<MapViewState | undefined>(() => normalizeMapView(initialPreferences.mapView));
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
@@ -126,7 +142,7 @@ export function App() {
       setHealth(data.health);
       setSources(data.sources);
       setObjects(data.objects);
-      setTrackHistory((current) => mergeTrackHistory(current, data.objects, observedAt.toISOString()));
+      setTrackHistory((current) => mergeTrackHistory(current, data.objects, observedAt.toISOString(), trackHistoryLimit));
       setLastLoadedAt(observedAt.toLocaleTimeString("cs-CZ"));
       setLoadError(null);
     } catch (error) {
@@ -135,7 +151,7 @@ export function App() {
       loadInFlightRef.current = false;
       setIsLoading(false);
     }
-  }, []);
+  }, [trackHistoryLimit]);
 
   React.useEffect(() => {
     void load();
@@ -150,6 +166,10 @@ export function App() {
     }, refreshSeconds * 1000);
     return () => window.clearInterval(timer);
   }, [autoRefresh, load, refreshSeconds]);
+
+  React.useEffect(() => {
+    setTrackHistory((current) => trimTrackHistory(current, trackHistoryLimit));
+  }, [trackHistoryLimit]);
 
   React.useEffect(() => {
     if (!replayRunning) {
@@ -183,9 +203,9 @@ export function App() {
   const proximityAlerts = React.useMemo(
     () =>
       proximityAlertEnabled
-        ? buildProximityAlerts(baseFilteredObjects, userLocation, trackHistory, alertRadiusKm, predictionMinutes)
+        ? buildProximityAlerts(baseFilteredObjects, userLocation, trackHistory, alertRadiusKm, predictionMinutes, predictionMode)
         : [],
-    [alertRadiusKm, baseFilteredObjects, predictionMinutes, proximityAlertEnabled, trackHistory, userLocation]
+    [alertRadiusKm, baseFilteredObjects, predictionMinutes, predictionMode, proximityAlertEnabled, trackHistory, userLocation]
   );
 
   React.useEffect(() => {
@@ -199,11 +219,13 @@ export function App() {
       mapView,
       minConfidence,
       predictionMinutes,
+      predictionMode,
       proximityAlertEnabled,
       refreshSeconds,
       selectedLayer,
       showHistory,
-      showPrediction
+      showPrediction,
+      trackHistoryLimit
     });
   }, [
     affiliationScope,
@@ -215,11 +237,13 @@ export function App() {
     mapView,
     minConfidence,
     predictionMinutes,
+    predictionMode,
     proximityAlertEnabled,
     refreshSeconds,
     selectedLayer,
     showHistory,
-    showPrediction
+    showPrediction,
+    trackHistoryLimit
   ]);
 
   React.useEffect(() => {
@@ -322,6 +346,11 @@ export function App() {
     );
   }
 
+  function openSettings(tab: SettingsTab) {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  }
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -345,6 +374,14 @@ export function App() {
           <StatusItem icon={<Database size={16} />} label="Objects" value={String(visibleObjects.length)} tone="neutral" />
           <StatusItem icon={<Bot size={16} />} label="AI" value="mock" tone="neutral" />
         </div>
+        <button className="operator-button" onClick={() => setSettingsOpen(true)} type="button">
+          <UserCircle size={19} />
+          <span>
+            Operátor
+            <strong>Nastavení</strong>
+          </span>
+          <Settings size={16} />
+        </button>
       </header>
 
       <section className="workspace">
@@ -392,28 +429,6 @@ export function App() {
           <LayerButton active={selectedLayer === "friendly"} onClick={() => setSelectedLayer("friendly")} label="Vlastní" count={metrics.friendlyCount} />
           <LayerButton active={selectedLayer === "foreign"} onClick={() => setSelectedLayer("foreign")} label="Cizí" count={metrics.foreignCount} />
           <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={getDataQualityCount(scopedObjects)} />
-          <div className="map-layer-options">
-            <label className="toggle-row compact">
-              <input type="checkbox" checked={showHistory} onChange={(event) => setShowHistory(event.target.checked)} />
-              Historie trasy
-            </label>
-            <label className="toggle-row compact">
-              <input type="checkbox" checked={showPrediction} onChange={(event) => setShowPrediction(event.target.checked)} />
-              Predikce pohybu
-            </label>
-            <label className="range-label compact">
-              Horizont predikce
-              <input
-                type="range"
-                min="2"
-                max="20"
-                step="1"
-                value={predictionMinutes}
-                onChange={(event) => setPredictionMinutes(Number(event.target.value))}
-              />
-              <span>{predictionMinutes} min</span>
-            </label>
-          </div>
 
           <div className="control-block">
             <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry" />
@@ -480,6 +495,7 @@ export function App() {
               showPrediction={showPrediction}
               trackHistory={trackHistory}
               predictionMinutes={predictionMinutes}
+              predictionMode={predictionMode}
               autoFit={autoFit}
               alertRadiusKm={alertRadiusKm}
               focusUserLocationRequest={focusUserLocationRequest}
@@ -539,7 +555,8 @@ export function App() {
             <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
             <ReadinessRow label="Refresh rate" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
-            <ReadinessRow label="Prediction horizon" value={showPrediction ? `${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
+            <ReadinessRow label="History depth" value={`${trackHistoryLimit} pts / track`} tone="neutral" />
+            <ReadinessRow label="Prediction" value={showPrediction ? `${predictionModeLabel(predictionMode)} · ${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
             <ReadinessRow label="Policy scope" value="COP data only" tone="neutral" />
           </div>
 
@@ -550,26 +567,11 @@ export function App() {
               {isLocating ? "Zaměřuji polohu" : "Centrovat na mou polohu"}
             </button>
             <p>{locationStatus}</p>
-            <label className="toggle-row">
-              <input
-                type="checkbox"
-                checked={proximityAlertEnabled}
-                onChange={(event) => void handleProximityAlertToggle(event.target.checked)}
-              />
-              Výstraha při přiblížení cizího cíle
-            </label>
-            <label className="range-label">
-              Poloměr výstrahy
-              <input
-                type="range"
-                min="1"
-                max="50"
-                step="1"
-                value={alertRadiusKm}
-                onChange={(event) => setAlertRadiusKm(Number(event.target.value))}
-              />
-              <span>{alertRadiusKm} km</span>
-            </label>
+            <ReadinessRow label="Výstraha" value={proximityAlertEnabled ? `${alertRadiusKm} km` : "vypnuto"} tone={proximityAlertEnabled ? "ok" : "neutral"} />
+            <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
+              <Settings size={14} />
+              Nastavení výstrah
+            </button>
             <ProximityAlertList alerts={proximityAlerts} />
           </div>
 
@@ -583,6 +585,36 @@ export function App() {
           </div>
         </aside>
       </section>
+
+      {settingsOpen ? (
+        <SettingsDrawer
+          activeTab={settingsTab}
+          alertRadiusKm={alertRadiusKm}
+          autoRefresh={autoRefresh}
+          includeSynthetic={includeSynthetic}
+          minConfidence={minConfidence}
+          predictionMinutes={predictionMinutes}
+          predictionMode={predictionMode}
+          proximityAlertEnabled={proximityAlertEnabled}
+          refreshSeconds={refreshSeconds}
+          showHistory={showHistory}
+          showPrediction={showPrediction}
+          trackHistoryLimit={trackHistoryLimit}
+          onAlertRadiusKmChange={setAlertRadiusKm}
+          onAutoRefreshChange={setAutoRefresh}
+          onClose={() => setSettingsOpen(false)}
+          onIncludeSyntheticChange={setIncludeSynthetic}
+          onMinConfidenceChange={setMinConfidence}
+          onPredictionMinutesChange={setPredictionMinutes}
+          onPredictionModeChange={setPredictionMode}
+          onProximityAlertEnabledChange={(value) => void handleProximityAlertToggle(value)}
+          onRefreshSecondsChange={setRefreshSeconds}
+          onShowHistoryChange={setShowHistory}
+          onShowPredictionChange={setShowPrediction}
+          onTabChange={setSettingsTab}
+          onTrackHistoryLimitChange={setTrackHistoryLimit}
+        />
+      ) : null}
     </main>
   );
 }
@@ -626,6 +658,191 @@ function MetricTile({ label, value, tone }: { label: string; value: string | num
   );
 }
 
+function SettingsDrawer({
+  activeTab,
+  alertRadiusKm,
+  autoRefresh,
+  includeSynthetic,
+  minConfidence,
+  predictionMinutes,
+  predictionMode,
+  proximityAlertEnabled,
+  refreshSeconds,
+  showHistory,
+  showPrediction,
+  trackHistoryLimit,
+  onAlertRadiusKmChange,
+  onAutoRefreshChange,
+  onClose,
+  onIncludeSyntheticChange,
+  onMinConfidenceChange,
+  onPredictionMinutesChange,
+  onPredictionModeChange,
+  onProximityAlertEnabledChange,
+  onRefreshSecondsChange,
+  onShowHistoryChange,
+  onShowPredictionChange,
+  onTabChange,
+  onTrackHistoryLimitChange
+}: {
+  activeTab: SettingsTab;
+  alertRadiusKm: number;
+  autoRefresh: boolean;
+  includeSynthetic: boolean;
+  minConfidence: number;
+  predictionMinutes: number;
+  predictionMode: PredictionMode;
+  proximityAlertEnabled: boolean;
+  refreshSeconds: RefreshSeconds;
+  showHistory: boolean;
+  showPrediction: boolean;
+  trackHistoryLimit: number;
+  onAlertRadiusKmChange: (value: number) => void;
+  onAutoRefreshChange: (value: boolean) => void;
+  onClose: () => void;
+  onIncludeSyntheticChange: (value: boolean) => void;
+  onMinConfidenceChange: (value: number) => void;
+  onPredictionMinutesChange: (value: number) => void;
+  onPredictionModeChange: (value: PredictionMode) => void;
+  onProximityAlertEnabledChange: (value: boolean) => void;
+  onRefreshSecondsChange: (value: RefreshSeconds) => void;
+  onShowHistoryChange: (value: boolean) => void;
+  onShowPredictionChange: (value: boolean) => void;
+  onTabChange: (value: SettingsTab) => void;
+  onTrackHistoryLimitChange: (value: number) => void;
+}) {
+  return (
+    <div className="settings-backdrop" role="presentation">
+      <aside className="settings-drawer" aria-label="Nastavení operátora">
+        <div className="settings-header">
+          <div>
+            <span>Operátor</span>
+            <strong>Nastavení</strong>
+          </div>
+          <button className="icon-button" onClick={onClose} title="Zavřít nastavení" type="button">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="settings-tabs" role="tablist" aria-label="Sekce nastavení">
+          {[
+            ["map", "Mapa"],
+            ["data", "Data"],
+            ["awareness", "Poloha"],
+            ["account", "Účet"]
+          ].map(([tab, label]) => (
+            <button
+              aria-selected={activeTab === tab}
+              className={activeTab === tab ? "active" : ""}
+              key={tab}
+              onClick={() => onTabChange(tab as SettingsTab)}
+              role="tab"
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="settings-content">
+          {activeTab === "map" ? (
+            <section className="settings-section">
+              <PanelTitle icon={<History size={17} />} title="Historie a predikce" />
+              <label className="toggle-row">
+                <input type="checkbox" checked={showHistory} onChange={(event) => onShowHistoryChange(event.target.checked)} />
+                Historie trasy
+              </label>
+              <SegmentedControl
+                label="Bodů historie"
+                options={historyLimitOptions.map((option) => [String(option), String(option)])}
+                value={String(trackHistoryLimit)}
+                onChange={(value) => onTrackHistoryLimitChange(Number(value))}
+              />
+              <label className="toggle-row">
+                <input type="checkbox" checked={showPrediction} onChange={(event) => onShowPredictionChange(event.target.checked)} />
+                Predikce pohybu
+              </label>
+              <SegmentedControl
+                label="Režim predikce"
+                options={predictionModeOptions}
+                value={predictionMode}
+                onChange={(value) => onPredictionModeChange(value as PredictionMode)}
+              />
+              <label className="range-label">
+                Horizont predikce
+                <input
+                  type="range"
+                  min="2"
+                  max="20"
+                  step="1"
+                  value={predictionMinutes}
+                  onChange={(event) => onPredictionMinutesChange(Number(event.target.value))}
+                />
+                <span>{predictionMinutes} min</span>
+              </label>
+            </section>
+          ) : null}
+
+          {activeTab === "data" ? (
+            <section className="settings-section">
+              <PanelTitle icon={<RefreshCw size={17} />} title="Data a refresh" />
+              <label className="toggle-row">
+                <input type="checkbox" checked={autoRefresh} onChange={(event) => onAutoRefreshChange(event.target.checked)} />
+                Auto refresh
+              </label>
+              <SegmentedControl
+                label="Interval"
+                options={REFRESH_OPTIONS.map((option) => [String(option), `${option}s`])}
+                value={String(refreshSeconds)}
+                onChange={(value) => onRefreshSecondsChange(normalizeRefreshSeconds(Number(value)))}
+              />
+              <label className="toggle-row">
+                <input type="checkbox" checked={includeSynthetic} onChange={(event) => onIncludeSyntheticChange(event.target.checked)} />
+                Zobrazit simulované cíle
+              </label>
+              <label className="range-label">
+                Minimum confidence
+                <input type="range" min="0" max="1" step="0.05" value={minConfidence} onChange={(event) => onMinConfidenceChange(Number(event.target.value))} />
+                <span>{Math.round(minConfidence * 100)} %</span>
+              </label>
+            </section>
+          ) : null}
+
+          {activeTab === "awareness" ? (
+            <section className="settings-section">
+              <PanelTitle icon={<MapPin size={17} />} title="Poloha a výstrahy" />
+              <label className="toggle-row">
+                <input type="checkbox" checked={proximityAlertEnabled} onChange={(event) => onProximityAlertEnabledChange(event.target.checked)} />
+                Výstraha při přiblížení cizího cíle
+              </label>
+              <label className="range-label">
+                Poloměr výstrahy
+                <input
+                  type="range"
+                  min="1"
+                  max="50"
+                  step="1"
+                  value={alertRadiusKm}
+                  onChange={(event) => onAlertRadiusKmChange(Number(event.target.value))}
+                />
+                <span>{alertRadiusKm} km</span>
+              </label>
+            </section>
+          ) : null}
+
+          {activeTab === "account" ? (
+            <section className="settings-section">
+              <PanelTitle icon={<UserCircle size={17} />} title="Přihlášení" />
+              <ReadinessRow label="Stav" value="bez přihlášení" tone="neutral" />
+              <ReadinessRow label="Profil" value="lokální zařízení" tone="neutral" />
+              <ReadinessRow label="Uložení" value="prohlížeč" tone="neutral" />
+            </section>
+          ) : null}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function PanelTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
     <div className="panel-title">
@@ -661,6 +878,7 @@ function SegmentedControl({
       <div className="segmented-control">
         {options.map(([optionValue, optionLabel]) => (
           <button
+            aria-pressed={value === optionValue}
             className={value === optionValue ? "active" : ""}
             key={optionValue}
             onClick={() => onChange(optionValue)}
@@ -911,6 +1129,10 @@ function formatProximityAlert(alert: ProximityAlert): string {
   return `${current} od mé polohy`;
 }
 
+function predictionModeLabel(mode: PredictionMode): string {
+  return predictionModeOptions.find(([value]) => value === mode)?.[1] ?? "Adaptivní";
+}
+
 function readInitialMapToggle(name: "history" | "prediction", fallback: boolean): boolean {
   if (typeof window === "undefined") {
     return fallback;
@@ -948,6 +1170,15 @@ function readInitialAffiliationScope(value: string | undefined): AffiliationScop
 
 function readInitialDomainScope(value: string | undefined): DomainScope {
   return ["all", "AIR", "LAND", "SEA", "RESCUE", "OTHER"].includes(value ?? "") ? (value as DomainScope) : "all";
+}
+
+function readInitialPredictionMode(value: string | undefined): PredictionMode {
+  return predictionModeOptions.some(([option]) => option === value) ? (value as PredictionMode) : "adaptive";
+}
+
+function readInitialHistoryLimit(value: number | undefined): number {
+  const normalizedValue = Number(value);
+  return historyLimitOptions.includes(normalizedValue as (typeof historyLimitOptions)[number]) ? normalizedValue : 36;
 }
 
 const rootElement = document.getElementById("root");

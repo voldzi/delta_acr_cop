@@ -17,11 +17,13 @@ export interface UserPreferences {
   mapView?: MapViewState;
   minConfidence?: number;
   predictionMinutes?: number;
+  predictionMode?: string;
   proximityAlertEnabled?: boolean;
   refreshSeconds?: number;
   selectedLayer?: string;
   showHistory?: boolean;
   showPrediction?: boolean;
+  trackHistoryLimit?: number;
 }
 
 export function readUserPreferences(): UserPreferences {
@@ -88,11 +90,13 @@ function normalizePreferences(value: Record<string, unknown>): UserPreferences {
     mapView: normalizeMapView(value.mapView),
     minConfidence: optionalFiniteNumber(value.minConfidence),
     predictionMinutes: optionalFiniteNumber(value.predictionMinutes),
+    predictionMode: optionalString(value.predictionMode),
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
     refreshSeconds: optionalFiniteNumber(value.refreshSeconds),
     selectedLayer: optionalString(value.selectedLayer),
     showHistory: optionalBoolean(value.showHistory),
-    showPrediction: optionalBoolean(value.showPrediction)
+    showPrediction: optionalBoolean(value.showPrediction),
+    trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit)
   };
 }
 

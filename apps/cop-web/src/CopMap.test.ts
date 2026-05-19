@@ -93,8 +93,9 @@ describe("COP map data helpers", () => {
     });
     expect(predictionCollection.features).toHaveLength(1);
     expect(predictionCollection.features[0]?.geometry.coordinates[0]).toEqual([14, 50]);
+    expect(predictionCollection.features[0]?.geometry.coordinates).toHaveLength(7);
     expect(predictionCollection.features[0]?.geometry.coordinates[1]?.[0]).toBeGreaterThan(14);
-    expect(predictionCollection.features[0]?.properties.method).toBe("movement");
+    expect(predictionCollection.features[0]?.properties.method).toBe("telemetry");
   });
 
   it("builds a user location feature without adding it to COP tracks", () => {

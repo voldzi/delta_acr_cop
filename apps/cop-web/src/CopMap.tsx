@@ -7,7 +7,7 @@ import maplibregl, {
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { CopLayer, CopObject } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
-import { predictPosition, type TrackHistory } from "./track-history";
+import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
 import type { MapViewState } from "./user-preferences";
 import {
   createNatoSymbolSvg,
@@ -77,7 +77,7 @@ export interface TrackLineFeature {
     objectId: string;
     color: string;
     selected: boolean;
-    method?: "movement" | "history";
+    method?: PredictionMethod;
   };
 }
 
@@ -94,6 +94,7 @@ interface CopMapProps {
   showPrediction: boolean;
   trackHistory: TrackHistory;
   predictionMinutes: number;
+  predictionMode: PredictionMode;
   autoFit: boolean;
   alertRadiusKm: number;
   focusUserLocationRequest: number;
@@ -115,6 +116,7 @@ export function CopMap({
   showPrediction,
   trackHistory,
   predictionMinutes,
+  predictionMode,
   autoFit,
   alertRadiusKm,
   focusUserLocationRequest,
@@ -150,9 +152,9 @@ export function CopMap({
   const predictionFeatureCollection = React.useMemo(
     () =>
       showPrediction
-        ? objectsToPredictionFeatureCollection(objects, trackHistory, selectedId, predictionMinutes)
+        ? objectsToPredictionFeatureCollection(objects, trackHistory, selectedId, predictionMinutes, predictionMode)
         : emptyLineFeatureCollection(),
-    [objects, predictionMinutes, selectedId, showPrediction, trackHistory]
+    [objects, predictionMinutes, predictionMode, selectedId, showPrediction, trackHistory]
   );
   const userAlertRadiusFeatureCollection = React.useMemo(
     () => userAlertRadiusToFeatureCollection(userLocation, alertRadiusKm, showProximityAlertRadius, hasProximityAlerts),
@@ -580,7 +582,8 @@ export function objectsToPredictionFeatureCollection(
   objects: CopObject[],
   trackHistory: TrackHistory,
   selectedObjectId: string | undefined,
-  predictionMinutes: number
+  predictionMinutes: number,
+  predictionMode: PredictionMode = "adaptive"
 ): TrackLineFeatureCollection {
   return {
     type: "FeatureCollection",
@@ -588,7 +591,7 @@ export function objectsToPredictionFeatureCollection(
       if (!hasPosition(object)) {
         return [];
       }
-      const prediction = predictPosition(object, trackHistory[object.objectId], predictionMinutes);
+      const prediction = predictPosition(object, trackHistory[object.objectId], predictionMinutes, predictionMode);
       if (!prediction) {
         return [];
       }
@@ -598,10 +601,7 @@ export function objectsToPredictionFeatureCollection(
           type: "Feature" as const,
           geometry: {
             type: "LineString" as const,
-            coordinates: [
-              [object.position.lon, object.position.lat],
-              [prediction.lon, prediction.lat]
-            ]
+            coordinates: prediction.path.map((point) => [point.lon, point.lat] as [number, number])
           },
           properties: {
             objectId: object.objectId,
