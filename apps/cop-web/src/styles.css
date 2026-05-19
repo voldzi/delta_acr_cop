@@ -375,6 +375,46 @@ h1 {
   line-height: 1.45;
 }
 
+.offline-snapshot-banner {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(250, 204, 21, 0.48);
+  background: rgba(250, 204, 21, 0.09);
+  color: #f6e8a9;
+}
+
+.offline-snapshot-banner.offline {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fecaca;
+}
+
+.offline-snapshot-banner svg {
+  color: currentColor;
+}
+
+.offline-snapshot-banner strong {
+  display: block;
+  color: #fff8db;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.offline-snapshot-banner.offline strong {
+  color: #fee2e2;
+}
+
+.offline-snapshot-banner span {
+  display: block;
+  margin-top: 2px;
+  color: currentColor;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .mission-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

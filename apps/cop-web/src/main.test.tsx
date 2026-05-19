@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./main";
+import { writeCopOfflineSnapshot } from "./pwa-offline";
 
 vi.mock("./CopMap", async () => {
   const React = await import("react");
@@ -228,6 +229,56 @@ describe("COP web dashboard", () => {
     await waitFor(() => expect(screen.getByText(/SIM zdroj je připojený/u)).toBeTruthy());
     expect(screen.queryByText("Čekám na georeferencované COP tracky.")).toBeNull();
   });
+
+  it("restores the last local snapshot when the COP API is unavailable", async () => {
+    installTestLocalStorage();
+    writeCopOfflineSnapshot(
+      {
+        alerts: [],
+        health: {
+          status: "ok",
+          timestamp: "2026-05-19T08:00:00Z"
+        },
+        objects: [
+          {
+            affiliation: "HOSTILE",
+            confidence: 0.88,
+            domain: "AIR",
+            objectId: "OFFLINE_TRACK-001",
+            objectType: "UAV",
+            position: {
+              lat: 50.11,
+              lon: 14.45
+            },
+            status: "ACTIVE",
+            synthetic: true
+          }
+        ],
+        sourceHealth: [],
+        sources: [
+          {
+            displayName: "Cached SIM source",
+            sourceSystemId: "sim-air-situation-001",
+            sourceType: "SIMULATOR",
+            status: "ACTIVE",
+            synthetic: true
+          }
+        ],
+        trackHistory: {}
+      },
+      "lab",
+      "2026-05-19T08:00:00Z"
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new Error("Network down");
+    }));
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getAllByText("OFFLINE_TRACK-001").length).toBeGreaterThan(0));
+    expect(screen.getByText("Degraded read-only fallback")).toBeTruthy();
+    expect(screen.getByText(/Zobrazuji lokální read-only snapshot/u)).toBeTruthy();
+  });
 });
 
 function jsonResponse(body: unknown): Response {
@@ -237,4 +288,17 @@ function jsonResponse(body: unknown): Response {
     statusText: "OK",
     json: async () => body
   } as Response;
+}
+
+function installTestLocalStorage(): void {
+  const localStorageData = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      clear: () => localStorageData.clear(),
+      getItem: (key: string) => localStorageData.get(key) ?? null,
+      removeItem: (key: string) => localStorageData.delete(key),
+      setItem: (key: string, value: string) => localStorageData.set(key, value)
+    }
+  });
 }

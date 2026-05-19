@@ -48,6 +48,7 @@ import {
   getDataQualityCount,
   getUavCount,
   saveUserProfile,
+  type CopDashboardData,
   type AoiRule,
   type AoiRuleAffiliationScope,
   type AlertPreferences,
@@ -111,6 +112,13 @@ import {
   type ViewProfileSettings,
   type WorkspaceModule
 } from "./view-profiles";
+import {
+  readCopOfflineSnapshot,
+  registerCopServiceWorker,
+  snapshotAgeSeconds,
+  writeCopOfflineSnapshot,
+  type CopOfflineSnapshot
+} from "./pwa-offline";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
@@ -123,6 +131,11 @@ const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
 type DomainScope = "all" | "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
+type OperatingMode = "DEGRADED" | "OFFLINE" | "ONLINE";
+type OfflineSnapshotState =
+  | { kind: "active"; objectCount: number; reason: string; restoredAt: string; savedAt: string; sourceCount: number }
+  | { kind: "available"; objectCount: number; savedAt: string; sourceCount: number }
+  | { kind: "none" };
 type PreferenceSettings = ViewProfileSettings | UserPreferences;
 type SettingsTab = "map" | "data" | "awareness" | "account";
 type ProfileSyncStatus = "disabled" | "error" | "loading" | "saving" | "synced";
@@ -161,6 +174,9 @@ export function App() {
   const userStorageScope = React.useMemo(
     () => userPreferenceScope(authSession),
     [authSession.profile?.subjectId, authSession.profile?.username, authSession.status]
+  );
+  const [offlineSnapshotState, setOfflineSnapshotState] = React.useState<OfflineSnapshotState>(() =>
+    initialOfflineSnapshotState(userStorageScope)
   );
   const initialPreferences = React.useMemo(() => readUserPreferences(userStorageScope), [userStorageScope]);
   const [activeWorkspace, setActiveWorkspace] = React.useState<WorkspaceModule>(() =>
@@ -233,6 +249,34 @@ export function App() {
   const authToken = getAuthorizationToken(authSession, labToken);
   const dataAccessReady = authConfig.mode !== "oidc" || Boolean(authSession.accessToken);
 
+  const applyDashboardData = React.useCallback((data: CopDashboardData, observedAt: Date) => {
+    setHealth(data.health);
+    setSources(data.sources);
+    setSourceHealth(data.sourceHealth);
+    setStreamHealth(data.streamHealth ?? null);
+    setServerAlerts(data.alerts);
+    setObjects(data.objects);
+    setTrackHistory((current) =>
+      data.trackHistory
+        ? trimTrackHistory(data.trackHistory, trackHistoryLimit, trackHistoryWindowSeconds, observedAt.toISOString())
+        : mergeTrackHistory(current, data.objects, observedAt.toISOString(), trackHistoryLimit, trackHistoryWindowSeconds)
+    );
+    setLastLoadedAt(observedAt.toLocaleTimeString("cs-CZ"));
+  }, [trackHistoryLimit, trackHistoryWindowSeconds]);
+
+  const persistOfflineSnapshot = React.useCallback((data: CopDashboardData, savedAt = new Date().toISOString()) => {
+    const snapshot = writeCopOfflineSnapshot(data, userStorageScope, savedAt);
+    if (!snapshot) {
+      return;
+    }
+    setOfflineSnapshotState({
+      kind: "available",
+      objectCount: snapshot.objectCount,
+      savedAt: snapshot.savedAt,
+      sourceCount: snapshot.sourceCount
+    });
+  }, [userStorageScope]);
+
   React.useEffect(() => {
     if (!isOidcEnabled(authConfig)) {
       return;
@@ -265,26 +309,33 @@ export function App() {
         seconds: trackHistoryWindowSeconds
       });
       const observedAt = new Date();
-      setHealth(data.health);
-      setSources(data.sources);
-      setSourceHealth(data.sourceHealth);
-      setStreamHealth(data.streamHealth ?? null);
-      setServerAlerts(data.alerts);
-      setObjects(data.objects);
-      setTrackHistory((current) =>
-        data.trackHistory
-          ? trimTrackHistory(data.trackHistory, trackHistoryLimit, trackHistoryWindowSeconds, observedAt.toISOString())
-          : mergeTrackHistory(current, data.objects, observedAt.toISOString(), trackHistoryLimit, trackHistoryWindowSeconds)
-      );
-      setLastLoadedAt(observedAt.toLocaleTimeString("cs-CZ"));
+      applyDashboardData(data, observedAt);
+      persistOfflineSnapshot(data, observedAt.toISOString());
       setLoadError(null);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Nepodařilo se načíst COP data.");
+      const errorMessage = error instanceof Error ? error.message : "Nepodařilo se načíst COP data.";
+      const snapshot = readCopOfflineSnapshot(userStorageScope);
+      if (snapshot) {
+        const restoredAt = new Date();
+        applyDashboardData(snapshot.data, restoredAt);
+        setOfflineSnapshotState({
+          kind: "active",
+          objectCount: snapshot.objectCount,
+          reason: errorMessage,
+          restoredAt: restoredAt.toISOString(),
+          savedAt: snapshot.savedAt,
+          sourceCount: snapshot.sourceCount
+        });
+        setStreamStatus(browserOnline ? "degraded" : "offline");
+        setLoadError(`${errorMessage}. Zobrazuji lokální read-only snapshot (${formatSnapshotAge(snapshot)}).`);
+      } else {
+        setLoadError(errorMessage);
+      }
     } finally {
       loadInFlightRef.current = false;
       setIsLoading(false);
     }
-  }, [authToken, dataAccessReady, trackHistoryLimit, trackHistoryWindowSeconds]);
+  }, [applyDashboardData, authToken, browserOnline, dataAccessReady, persistOfflineSnapshot, trackHistoryLimit, trackHistoryWindowSeconds, userStorageScope]);
 
   const loadAlerts = React.useCallback(async () => {
     if (!dataAccessReady) {
@@ -416,6 +467,36 @@ export function App() {
     }, Math.max(refreshSeconds, 5) * 1000);
     return () => window.clearInterval(timer);
   }, [dataAccessReady, loadAlerts, refreshSeconds]);
+
+  React.useEffect(() => {
+    if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      persistOfflineSnapshot({
+        alerts: serverAlerts,
+        health,
+        objects,
+        sourceHealth,
+        sources,
+        streamHealth: streamHealth ?? undefined,
+        trackHistory
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [
+    dataAccessReady,
+    health,
+    objects,
+    offlineSnapshotState.kind,
+    persistOfflineSnapshot,
+    serverAlerts,
+    sourceHealth,
+    sources,
+    streamHealth,
+    streamStatus,
+    trackHistory
+  ]);
 
   React.useEffect(() => {
     setTrackHistory((current) => trimTrackHistory(current, trackHistoryLimit, trackHistoryWindowSeconds));
@@ -598,6 +679,7 @@ export function App() {
     skipNextPreferenceWriteRef.current = true;
     applyPreferenceSettings(readUserPreferences(userStorageScope), { focusMap: true });
     setViewProfiles(readViewProfiles(userStorageScope));
+    setOfflineSnapshotState(initialOfflineSnapshotState(userStorageScope));
     setLastProfileName(null);
     setServerProfileUpdatedAt(null);
     setProfileSyncError(null);
@@ -948,6 +1030,10 @@ export function App() {
   const showSourceControls = activeWorkspace === "map" || activeWorkspace === "sources";
   const showAlertControls = activeWorkspace === "alerts";
   const showReplayControls = activeWorkspace === "replay";
+  const operatingMode = React.useMemo(
+    () => resolveOperatingMode({ browserOnline, health, loadError, offlineSnapshotState, streamStatus }),
+    [browserOnline, health, loadError, offlineSnapshotState, streamStatus]
+  );
 
   return (
     <main className="shell">
@@ -963,11 +1049,11 @@ export function App() {
         </div>
         <div className="mission-strip" aria-label="COP operating context">
           <span>LAB</span>
-          <strong>SIM LIVE</strong>
+          <strong>{missionModeLabel(operatingMode, offlineSnapshotState)}</strong>
           <small>OpenStreetMap + APP-6</small>
         </div>
         <div className="status-strip">
-          <StatusItem icon={<Wifi size={16} />} label="API" value={health?.status === "ok" ? "OK" : "loading"} tone={health?.status === "ok" ? "ok" : "warn"} />
+          <StatusItem icon={<Wifi size={16} />} label="Mode" value={operatingMode} tone={operatingModeTone(operatingMode)} />
           <StatusItem icon={<Activity size={16} />} label="Stream" value={streamStatusLabel(streamStatus)} tone={streamStatusTone(streamStatus)} />
           <StatusItem icon={<RadioTower size={16} />} label="Sources" value={String(sources.length)} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
           <StatusItem icon={<Database size={16} />} label="Objects" value={String(visibleObjects.length)} tone="neutral" />
@@ -1002,6 +1088,7 @@ export function App() {
             </button>
           </div>
           {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
+          <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} />
 
           <ViewProfilesPanel
             activeProfileName={lastProfileName}
@@ -1251,6 +1338,8 @@ export function App() {
           <div className="readiness-box">
             <PanelTitle icon={<Gauge size={17} />} title="Data readiness" />
             <ReadinessRow label="Source coverage" value={metrics.activeSources > 0 ? "active" : "waiting"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
+            <ReadinessRow label="Connectivity" value={operatingMode} tone={operatingModeTone(operatingMode)} />
+            <ReadinessRow label="Offline snapshot" value={formatOfflineSnapshotState(offlineSnapshotState)} tone={offlineSnapshotTone(offlineSnapshotState)} />
             <ReadinessRow label="SIM data visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
             <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
             <ReadinessRow label="Stream mode" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
@@ -1531,6 +1620,24 @@ function StatusItem({ icon, label, value, tone }: { icon: React.ReactNode; label
   );
 }
 
+function OfflineSnapshotNotice({ mode, state }: { mode: OperatingMode; state: OfflineSnapshotState }) {
+  if (state.kind !== "active") {
+    return null;
+  }
+
+  return (
+    <div className={`offline-snapshot-banner ${mode === "OFFLINE" ? "offline" : "degraded"}`}>
+      <Wifi size={16} />
+      <div>
+        <strong>{mode === "OFFLINE" ? "Offline read-only režim" : "Degraded read-only fallback"}</strong>
+        <span>
+          Snapshot {formatSnapshotAge(state)} · {state.objectCount} objektů · {state.sourceCount} zdrojů
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function applyCopStreamMessage(
   message: CopStreamMessage,
   context: {
@@ -1576,6 +1683,42 @@ function streamStatusLabel(status: CopStreamStatus): string {
   return "DEGRADED";
 }
 
+function resolveOperatingMode({
+  browserOnline,
+  health,
+  loadError,
+  offlineSnapshotState,
+  streamStatus
+}: {
+  browserOnline: boolean;
+  health: HealthStatus | null;
+  loadError: string | null;
+  offlineSnapshotState: OfflineSnapshotState;
+  streamStatus: CopStreamStatus;
+}): OperatingMode {
+  if (!browserOnline || (offlineSnapshotState.kind === "active" && streamStatus === "offline")) {
+    return "OFFLINE";
+  }
+  if (offlineSnapshotState.kind === "active" || loadError || health?.status !== "ok" || streamStatus !== "live") {
+    return "DEGRADED";
+  }
+  return "ONLINE";
+}
+
+function operatingModeTone(mode: OperatingMode): "ok" | "warn" | "neutral" {
+  return mode === "ONLINE" ? "ok" : "warn";
+}
+
+function missionModeLabel(mode: OperatingMode, snapshotState: OfflineSnapshotState): string {
+  if (snapshotState.kind === "active") {
+    return mode === "OFFLINE" ? "OFFLINE SNAPSHOT" : "DEGRADED SNAPSHOT";
+  }
+  if (mode === "ONLINE") {
+    return "SIM LIVE";
+  }
+  return mode;
+}
+
 function streamStatusTone(status: CopStreamStatus): "ok" | "warn" | "neutral" {
   if (status === "live") {
     return "ok";
@@ -1597,6 +1740,50 @@ function streamReadinessLabel(status: CopStreamStatus, telemetry: StreamTelemetr
     return "offline";
   }
   return telemetry.lastError ? "fallback active" : "degraded";
+}
+
+function formatOfflineSnapshotState(state: OfflineSnapshotState): string {
+  if (state.kind === "none") {
+    return "není uložen";
+  }
+  const suffix = state.kind === "active" ? "aktivní" : "připraven";
+  return `${suffix} · ${formatSnapshotAge(state)} · ${state.objectCount} obj.`;
+}
+
+function offlineSnapshotTone(state: OfflineSnapshotState): "ok" | "warn" | "neutral" {
+  if (state.kind === "active") {
+    return "warn";
+  }
+  return state.kind === "available" ? "ok" : "neutral";
+}
+
+function initialOfflineSnapshotState(scope: string): OfflineSnapshotState {
+  const snapshot = readCopOfflineSnapshot(scope);
+  if (!snapshot) {
+    return { kind: "none" };
+  }
+  return {
+    kind: "available",
+    objectCount: snapshot.objectCount,
+    savedAt: snapshot.savedAt,
+    sourceCount: snapshot.sourceCount
+  };
+}
+
+function formatSnapshotAge(snapshot: Pick<CopOfflineSnapshot, "savedAt">): string {
+  const ageSeconds = snapshotAgeSeconds(snapshot);
+  if (ageSeconds === null) {
+    return "neznámé stáří";
+  }
+  if (ageSeconds < 60) {
+    return `${ageSeconds} s starý`;
+  }
+  const ageMinutes = Math.round(ageSeconds / 60);
+  if (ageMinutes < 60) {
+    return `${ageMinutes} min starý`;
+  }
+  const ageHours = Math.round(ageMinutes / 60);
+  return `${ageHours} h starý`;
 }
 
 function streamLatencyTone(telemetry: StreamTelemetry): "ok" | "warn" | "neutral" {
@@ -1925,6 +2112,9 @@ function SettingsDrawer({
               <PanelTitle icon={<RefreshCw size={17} />} title="Fallback synchronizace" />
               <p className="settings-help">
                 Primární zdroj živých dat je SSE stream. Tato synchronizace se používá při výpadku streamu, po obnově záložky a pro méně dynamická data.
+              </p>
+              <p className="settings-help">
+                PWA režim ukládá aplikační shell a poslední povolený COP snapshot pro read-only zobrazení při výpadku spojení.
               </p>
               <label className="toggle-row">
                 <input type="checkbox" checked={autoRefresh} onChange={(event) => onAutoRefreshChange(event.target.checked)} />
@@ -2809,6 +2999,8 @@ function normalizeHistoryWindowSeconds(value: number | undefined): number {
   const normalizedValue = Number(value);
   return historyWindowOptions.includes(normalizedValue as (typeof historyWindowOptions)[number]) ? normalizedValue : 180;
 }
+
+registerCopServiceWorker();
 
 const rootElement = document.getElementById("root");
 if (rootElement) {

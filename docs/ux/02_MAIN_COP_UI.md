@@ -13,4 +13,6 @@ Pravý horní roh top baru obsahuje operátorský vstup. V pilotu neslouží k a
 
 Primární aktualizace COP dat probíhá přes live SSE stream. Nastavení intervalu je proto v centru nastavení jako `Fallback synchronizace`; používá se v degraded režimu, při výpadku streamu, po obnově záložky a pro méně dynamická data.
 
+PWA offline režim automaticky ukládá poslední povolený COP snapshot pro daný operátorský scope. Při výpadku API nebo sítě topbar přepne na `DEGRADED` nebo `OFFLINE`, levý panel ukáže stáří snapshotu a zobrazení je read-only, dokud se neobnoví serverové spojení.
+
 UI nesmí obsahovat targeting, navádění ani ovládání prostředků.

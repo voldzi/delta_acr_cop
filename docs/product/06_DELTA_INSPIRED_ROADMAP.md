@@ -6,14 +6,14 @@ Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplik
 
 | Oblast | Stav | Poznámka |
 | --- | --- | --- |
-| Profesionální mapové COP UI | Dokončeno v pilotu | Mapová plocha, vrstvy, detail objektu, refresh, historie/predikce, per-user nastavení, PWA metadata, responzivní tablet/telefon režim a veřejné publikování. |
+| Profesionální mapové COP UI | Dokončeno v pilotu | Mapová plocha, vrstvy, detail objektu, refresh, historie/predikce, per-user nastavení, PWA metadata, offline shell, responzivní tablet/telefon režim a veřejné publikování. |
 | SIM integrace | Dokončeno v pilotu | COP přijímá a zobrazuje cíle ze SIM projektu přes ingest kontrakt. |
 | NATO symbologie | Dokončeno v pilotu | Vlastní prvky jsou modré, cizí prvky červené, symboly jsou řešené přes renderer a UI metadata. |
 | Lifecycle objektů | Dokončeno v pilotu | Aktivní/stale/lost stav chrání mapu před trvalým zobrazováním zastavených simulovaných dat. |
 | Proximity awareness | Dokončeno v pilotu | Uživatel může zobrazit vlastní polohu a průsvitnou varovnou vrstvu přiblížení cizích objektů. |
 | Server-side temporal history | Rozpracováno | API drží body stop, web je používá jako zdroj pro historii tras a PostgreSQL store přes HAProxy/Patroni persistuje historii i current snapshot. |
 | Timeline/replay | Rozpracováno v pilotu | UI má časové okno historie v sekundách; replay controller používá serverovou historii pro historické polohy objektů. |
-| Stream/delta distribuce | Pilotně hotovo | SSE endpoint posílá snapshot, delta a heartbeat; web používá stream jako primární kanál a fallback synchronizaci pro degraded režim. |
+| Stream/delta distribuce | Pilotně hotovo | SSE endpoint posílá snapshot, delta a heartbeat; web používá stream jako primární kanál, fallback synchronizaci a lokální read-only snapshot pro degraded/offline režim. |
 | Perzistence a multi-user provoz | Částečně | UI nastavení a profily pohledu jsou lokální pro operátorský scope/prohlížeč; current tracks, historie a serverové uživatelské profily mají PostgreSQL backend. |
 
 ## Prioritizované kroky
@@ -97,3 +97,4 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 | 2026-05-19 | Stream Health + backpressure v1 | Přidán `/api/v1/stream/cop/health`, Prometheus stream metriky, SSE `backpressure`/`reconnect_required` provozní zprávy a UI panel `Stream Health`. |
 | 2026-05-19 | Keycloak user profiles v1 | Přidán `/api/v1/me/preferences`, serverové preference podle OIDC `sub`, per-user potvrzení alertů, PostgreSQL tabulky `cop_user_profiles` a `cop_user_alert_acknowledgements`, UI stav synchronizace profilu. |
 | 2026-05-19 | AOI alerting v1 | Přidán typ alertu `AOI_ENTRY`, uložení AOI pravidla v serverovém profilu, výpočet vstupu objektu do oblasti zájmu a samostatná velmi průsvitná AOI vrstva v mapě. |
+| 2026-05-19 | PWA offline/degraded mode v1 | Přidán service worker pro offline shell, lokální cache posledního COP snapshotu per operátorský scope a jasné UI `ONLINE` / `DEGRADED` / `OFFLINE` s read-only fallbackem. |
