@@ -82,11 +82,12 @@ button {
   width: 48px;
   height: 48px;
   flex: 0 0 48px;
-  border: 1px solid rgba(151, 199, 104, 0.62);
-  background: rgba(151, 199, 104, 0.14);
-  color: var(--lime);
-  font-weight: 900;
-  letter-spacing: 0;
+}
+
+.brand-mark img {
+  display: block;
+  width: 48px;
+  height: 48px;
 }
 
 h1,

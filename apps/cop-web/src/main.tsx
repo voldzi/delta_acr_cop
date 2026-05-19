@@ -326,7 +326,9 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">COP</div>
+          <div className="brand-mark" aria-hidden="true">
+            <img src="/icons/cop-icon.svg" alt="" />
+          </div>
           <div>
             <h1>ACR COP Data Fabric</h1>
             <p>SITDATA-COP / lab common operating picture</p>
