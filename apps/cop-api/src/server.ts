@@ -39,6 +39,27 @@ export interface BuildServerOptions {
 }
 
 type DependencyStatus = "disabled" | "degraded" | "ok";
+type MobilePlatform = "ios" | "ipados";
+
+interface MobileSnapshotQuery {
+  includeAcknowledged: boolean;
+  includeExpired: boolean;
+  historyQuery: TrackHistoryQuery;
+}
+
+interface MobileDeviceRegistration {
+  appVersion: string;
+  buildNumber?: string;
+  capabilities: string[];
+  deviceId: string;
+  deviceModel?: string;
+  deviceSessionId: string;
+  osVersion?: string;
+  platform: MobilePlatform;
+  pushTokenRegistered: boolean;
+  registeredAt: string;
+  subjectId: string;
+}
 
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const app = Fastify({
@@ -53,6 +74,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const streamBroadcaster = options.streamBroadcaster ?? createStreamBroadcasterFromEnv();
   const userProfileStore = options.userProfileStore ?? createUserProfileStoreFromEnv();
   const userProfileFallbackStore = new InMemoryUserProfileStore("memory-fallback");
+  const mobileDeviceRegistrations = new Map<string, MobileDeviceRegistration>();
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
   let userProfileStoreStatus: DependencyStatus = "degraded";
@@ -384,6 +406,68 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return includeAcknowledged ? preferredAlerts : preferredAlerts.filter((alert) => alert.status === "ACTIVE");
   }
 
+  async function buildMobileSnapshot(actor: AuthenticatedActor, requestNow: Date, query: MobileSnapshotQuery) {
+    const subject = defaultSystemSubject();
+    const readableObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle, query.includeExpired).filter((object) =>
+      canReadObject(subject, object)
+    );
+    const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow, query.historyQuery);
+    const objectIds = query.historyQuery.objectIds && query.historyQuery.objectIds.length > 0
+      ? query.historyQuery.objectIds
+      : decoratedObjects.map((object) => object.objectId);
+    const historyItems = (await readTrackHistory({ ...query.historyQuery, objectIds }, requestNow))
+      .map((item) => ({
+        ...item,
+        points: item.points.filter((point) => canReadHistoryPoint(subject, point))
+      }))
+      .filter((item) => item.points.length > 0);
+    const sourceHealthItems = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const alerts = await buildAlertItems({
+      actor,
+      includeAcknowledged: query.includeAcknowledged,
+      includeExpired: query.includeExpired,
+      requestNow
+    });
+    return {
+      alerts,
+      cachePolicy: mobileCachePolicy(),
+      health: {
+        status: "ok",
+        timestamp: requestNow.toISOString()
+      },
+      objects: decoratedObjects,
+      serverTimestamp: requestNow.toISOString(),
+      snapshotId: createMobileSnapshotId(requestNow, decoratedObjects, alerts, historyItems),
+      sourceHealth: sourceHealthItems,
+      sources: Array.from(state.sources.values()),
+      streamHealth: {
+        metrics: streamBroadcaster.metrics,
+        serverTimestamp: requestNow.toISOString(),
+        status: streamHealthStatus(streamBroadcaster.metrics, requestNow)
+      },
+      trackHistory: historyItems
+    };
+  }
+
+  async function buildMobileBootstrap(actor: AuthenticatedActor, requestNow: Date, query: MobileSnapshotQuery) {
+    const profile = await readUserProfile(actor);
+    return {
+      actor,
+      auth: mobileAuthConfig(),
+      capabilities: mobileCapabilities(),
+      endpoints: mobileEndpoints(),
+      map: mobileMapConfig(),
+      policy: mobileNativePolicy(),
+      profile: {
+        alertPreferences: profile?.alertPreferences ?? {},
+        preferences: profile?.preferences ?? {},
+        updatedAt: profile?.updatedAt ?? null
+      },
+      snapshot: await buildMobileSnapshot(actor, requestNow, query),
+      serverTimestamp: requestNow.toISOString()
+    };
+  }
+
   function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): ObservedObject[] {
     const historyItems = objects.map((object) => ({
       objectId: object.objectId,
@@ -448,6 +532,57 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       preferences: profile.preferences,
       updatedAt: profile.updatedAt
     };
+  });
+
+  app.get("/api/v1/mobile/bootstrap", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const requestNow = now();
+    return buildMobileBootstrap(actor, requestNow, parseMobileSnapshotQuery(request.query as Record<string, unknown>));
+  });
+
+  app.get("/api/v1/mobile/offline-snapshot", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const requestNow = now();
+    return buildMobileSnapshot(actor, requestNow, parseMobileSnapshotQuery(request.query as Record<string, unknown>));
+  });
+
+  app.post("/api/v1/mobile/devices", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const registration = normalizeMobileDeviceRegistration(request.body, actor, now());
+    if (!registration) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Mobile device registration payload does not match contract.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    mobileDeviceRegistrations.set(`${actor.subjectId}:${registration.deviceId}`, registration);
+    appendAudit(state, "MOBILE_DEVICE_REGISTERED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      appVersion: registration.appVersion,
+      capabilities: registration.capabilities,
+      deviceId: registration.deviceId,
+      platform: registration.platform,
+      pushTokenRegistered: registration.pushTokenRegistered
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return reply.code(202).send({
+      actor,
+      device: registration,
+      policy: mobileNativePolicy(),
+      serverTimestamp: registration.registeredAt
+    });
   });
 
   app.get("/api/v1/sources", async () => ({
@@ -998,6 +1133,155 @@ function alertSeverityRank(severity: CopAlert["severity"]): number {
   return 1;
 }
 
+function parseMobileSnapshotQuery(query: Record<string, unknown>): MobileSnapshotQuery {
+  const historyQuery = parseTrackHistoryQuery(query);
+  return {
+    historyQuery: {
+      ...historyQuery,
+      seconds: historyQuery.seconds ?? 180
+    },
+    includeAcknowledged: query.includeAcknowledged === "true",
+    includeExpired: query.includeExpired === "true"
+  };
+}
+
+function createMobileSnapshotId(
+  requestNow: Date,
+  objects: ObservedObject[],
+  alerts: CopAlert[],
+  historyItems: Array<{ objectId: string; points: TrackHistoryPoint[] }>
+): string {
+  const payload = {
+    alerts: alerts.map((alert) => [alert.alertId, alert.status, alert.updatedAt]),
+    history: historyItems.map((item) => [item.objectId, item.points.at(-1)?.timestamp ?? null, item.points.length]),
+    objects: objects.map((object) => [object.objectId, object.status, object.lastUpdatedAt ?? null]),
+    serverTimestamp: requestNow.toISOString()
+  };
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 32);
+}
+
+function normalizeMobileDeviceRegistration(
+  value: unknown,
+  actor: AuthenticatedActor,
+  registeredAt: Date
+): MobileDeviceRegistration | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const deviceId = optionalTrimmedString(value.deviceId, 160);
+  const appVersion = optionalTrimmedString(value.appVersion, 40);
+  const platform = isMobilePlatform(value.platform) ? value.platform : undefined;
+  if (!deviceId || !appVersion || !platform) {
+    return null;
+  }
+  const pushToken = optionalTrimmedString(value.pushToken, 4096);
+  return {
+    appVersion,
+    ...(optionalTrimmedString(value.buildNumber, 40) ? { buildNumber: optionalTrimmedString(value.buildNumber, 40) } : {}),
+    capabilities: normalizeStringList(value.capabilities, 16, 80),
+    deviceId,
+    ...(optionalTrimmedString(value.deviceModel, 80) ? { deviceModel: optionalTrimmedString(value.deviceModel, 80) } : {}),
+    deviceSessionId: crypto.randomUUID(),
+    ...(optionalTrimmedString(value.osVersion, 40) ? { osVersion: optionalTrimmedString(value.osVersion, 40) } : {}),
+    platform,
+    pushTokenRegistered: Boolean(pushToken),
+    registeredAt: registeredAt.toISOString(),
+    subjectId: actor.subjectId
+  };
+}
+
+function mobileAuthConfig(env: Record<string, string | undefined> = process.env) {
+  const issuer = env.COP_OIDC_ISSUER ?? "";
+  return {
+    clientId: env.COP_OIDC_CLIENT_ID ?? "cop-web",
+    issuer: issuer || null,
+    mode: env.COP_AUTH_MODE === "oidc" || env.COP_AUTH_MODE === "hybrid" ? env.COP_AUTH_MODE : "lab",
+    redirectUriScheme: env.COP_MOBILE_REDIRECT_SCHEME ?? "cop",
+    scope: env.COP_OIDC_SCOPE ?? "openid profile email"
+  };
+}
+
+function mobileCapabilities() {
+  return {
+    alertAcknowledgement: true,
+    aoiAlerts: true,
+    bootstrap: true,
+    deviceRegistration: true,
+    offlineSnapshot: true,
+    pushNotifications: false,
+    serverUserProfile: true,
+    sseStream: true,
+    trackHistory: true
+  };
+}
+
+function mobileEndpoints() {
+  return {
+    acknowledgeAlert: "/api/v1/cop/alerts/{alertId}/acknowledge",
+    alerts: "/api/v1/cop/alerts",
+    bootstrap: "/api/v1/mobile/bootstrap",
+    deviceRegistration: "/api/v1/mobile/devices",
+    offlineSnapshot: "/api/v1/mobile/offline-snapshot",
+    preferences: "/api/v1/me/preferences",
+    sourceHealth: "/api/v1/sources/health",
+    sources: "/api/v1/sources",
+    stream: "/api/v1/stream/cop/live",
+    trackHistory: "/api/v1/cop/track-history",
+    tracks: "/api/v1/cop/tracks"
+  };
+}
+
+function mobileMapConfig(env: Record<string, string | undefined> = process.env) {
+  return {
+    attribution: env.COP_TILE_ATTRIBUTION ?? "&copy; OpenStreetMap contributors",
+    defaultCenter: parseCoordinatePair(env.COP_MAP_CENTER, [14.42, 50.08]),
+    defaultZoom: readPositiveNumber(env.COP_MAP_ZOOM, 8),
+    tileTemplateUrl: env.COP_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+  };
+}
+
+function mobileCachePolicy(env: Record<string, string | undefined> = process.env) {
+  return {
+    apiResponses: "network-only",
+    maxHistoryPointsPerObject: readPositiveInteger(env.COP_MOBILE_MAX_HISTORY_POINTS, 120),
+    maxHistorySeconds: readPositiveInteger(env.COP_MOBILE_MAX_HISTORY_SECONDS, 180),
+    mode: "read-only",
+    offlineCacheTtlSeconds: readPositiveInteger(env.COP_MOBILE_OFFLINE_CACHE_TTL_SECONDS, 900),
+    recommendedStorage: "encrypted-device-storage"
+  };
+}
+
+function mobileNativePolicy(env: Record<string, string | undefined> = process.env) {
+  return {
+    minimumAppVersion: env.COP_MOBILE_MINIMUM_APP_VERSION ?? "0.1.0",
+    offlineCacheTtlSeconds: mobileCachePolicy(env).offlineCacheTtlSeconds,
+    pushNotifications: "not_configured",
+    requireBiometricUnlock: readBoolean(env.COP_MOBILE_REQUIRE_BIOMETRIC_UNLOCK, false),
+    requireManagedDevice: readBoolean(env.COP_MOBILE_REQUIRE_MANAGED_DEVICE, false)
+  };
+}
+
+function isMobilePlatform(value: unknown): value is MobilePlatform {
+  return value === "ios" || value === "ipados";
+}
+
+function normalizeStringList(value: unknown, maxItems: number, maxLength: number): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .flatMap((item) => typeof item === "string" ? [item.trim().slice(0, maxLength)] : [])
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function parseCoordinatePair(value: string | undefined, fallback: [number, number]): [number, number] {
+  const [lonRaw, latRaw] = (value ?? "").split(",");
+  const lon = Number(lonRaw);
+  const lat = Number(latRaw);
+  return Number.isFinite(lon) && Number.isFinite(lat) ? [clampNumber(lon, -180, 180), clampNumber(lat, -90, 90)] : fallback;
+}
+
 function normalizeUserPreferences(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) {
     return {};
@@ -1211,6 +1495,18 @@ function createStreamBroadcasterFromEnv(env: Record<string, string | undefined> 
 function readPositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
+
+function readPositiveNumber(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+  return value === "true" || value === "1";
 }
 
 function timestampSeconds(value: string | undefined): number {

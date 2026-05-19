@@ -19,6 +19,8 @@ security:
 tags:
   - name: Identity
     description: Authenticated operator profile and user-scoped preferences.
+  - name: Mobile
+    description: Native iPhone/iPad bootstrap, offline snapshot and device registration endpoints.
   - name: Ingest
     description: Event and batch ingest endpoints for registered external sources.
   - name: COP
@@ -76,6 +78,94 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserPreferenceProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/mobile/bootstrap:
+    get:
+      tags: [Mobile]
+      summary: Read native mobile bootstrap payload.
+      operationId: getMobileBootstrap
+      description: >
+        Single startup endpoint for iPhone/iPad clients. It returns safe public
+        mobile configuration, user profile, map settings, endpoint discovery,
+        capabilities and the current policy-filtered read-only COP snapshot.
+      parameters:
+        - $ref: "#/components/parameters/HistorySecondsQuery"
+        - $ref: "#/components/parameters/HistoryLimitQuery"
+        - $ref: "#/components/parameters/ObjectIdsQuery"
+        - $ref: "#/components/parameters/IncludeExpiredQuery"
+        - name: includeAcknowledged
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include acknowledged informational alerts in the snapshot.
+      responses:
+        "200":
+          description: Native mobile bootstrap payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileBootstrap"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/mobile/offline-snapshot:
+    get:
+      tags: [Mobile]
+      summary: Read native mobile offline snapshot.
+      operationId: getMobileOfflineSnapshot
+      description: >
+        Returns the same policy-filtered read-only COP data used by bootstrap,
+        without profile/config metadata. Native clients store this in encrypted
+        device storage and must mark it stale according to cachePolicy.
+      parameters:
+        - $ref: "#/components/parameters/HistorySecondsQuery"
+        - $ref: "#/components/parameters/HistoryLimitQuery"
+        - $ref: "#/components/parameters/ObjectIdsQuery"
+        - $ref: "#/components/parameters/IncludeExpiredQuery"
+        - name: includeAcknowledged
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Native mobile offline snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileOfflineSnapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/mobile/devices:
+    post:
+      tags: [Mobile]
+      summary: Register or refresh a native mobile device session.
+      operationId: registerMobileDevice
+      description: >
+        Pilot endpoint for future APNS, MDM and device/session policy. The
+        server records a device session and audit event. It does not currently
+        send push notifications and does not store the raw APNS token in the
+        response.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileDeviceRegistrationRequest"
+      responses:
+        "202":
+          description: Mobile device session accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileDeviceRegistrationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
   /api/v1/ingest/events:
@@ -789,6 +879,44 @@ components:
       required: true
       schema:
         type: string
+    HistorySecondsQuery:
+      name: seconds
+      in: query
+      required: false
+      schema:
+        type: number
+        minimum: 1
+        default: 180
+      description: Rolling history window in seconds.
+    HistoryLimitQuery:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 120
+      description: Maximum number of history points returned per object.
+    ObjectIdsQuery:
+      name: objectIds
+      in: query
+      required: false
+      schema:
+        type: array
+        items:
+          type: string
+      style: form
+      explode: false
+      description: Optional comma-separated object IDs.
+    IncludeExpiredQuery:
+      name: includeExpired
+      in: query
+      required: false
+      schema:
+        type: boolean
+        default: false
+      description: Include tracks older than the configured active display lifecycle.
   responses:
     BadRequest:
       description: Bad request or schema validation error.
@@ -1062,6 +1190,270 @@ components:
                 enum: [QUEUED, REJECTED]
               errorCode:
                 type: string
+    MobileBootstrap:
+      type: object
+      required: [actor, auth, capabilities, endpoints, map, policy, profile, snapshot, serverTimestamp]
+      properties:
+        actor:
+          $ref: "#/components/schemas/AuthenticatedActor"
+        auth:
+          $ref: "#/components/schemas/MobileAuthConfig"
+        capabilities:
+          $ref: "#/components/schemas/MobileCapabilities"
+        endpoints:
+          $ref: "#/components/schemas/MobileEndpoints"
+        map:
+          $ref: "#/components/schemas/MobileMapConfig"
+        policy:
+          $ref: "#/components/schemas/MobileNativePolicy"
+        profile:
+          type: object
+          required: [alertPreferences, preferences, updatedAt]
+          properties:
+            alertPreferences:
+              $ref: "#/components/schemas/UserAlertPreferences"
+            preferences:
+              $ref: "#/components/schemas/UserDisplayPreferences"
+            updatedAt:
+              type:
+                - string
+                - "null"
+              format: date-time
+        snapshot:
+          $ref: "#/components/schemas/MobileOfflineSnapshot"
+        serverTimestamp:
+          type: string
+          format: date-time
+    MobileAuthConfig:
+      type: object
+      required: [clientId, mode, redirectUriScheme, scope]
+      properties:
+        mode:
+          type: string
+          enum: [lab, hybrid, oidc]
+        issuer:
+          type:
+            - string
+            - "null"
+        clientId:
+          type: string
+        redirectUriScheme:
+          type: string
+        scope:
+          type: string
+    MobileCapabilities:
+      type: object
+      required:
+        - alertAcknowledgement
+        - aoiAlerts
+        - bootstrap
+        - deviceRegistration
+        - offlineSnapshot
+        - pushNotifications
+        - serverUserProfile
+        - sseStream
+        - trackHistory
+      properties:
+        alertAcknowledgement:
+          type: boolean
+        aoiAlerts:
+          type: boolean
+        bootstrap:
+          type: boolean
+        deviceRegistration:
+          type: boolean
+        offlineSnapshot:
+          type: boolean
+        pushNotifications:
+          type: boolean
+        serverUserProfile:
+          type: boolean
+        sseStream:
+          type: boolean
+        trackHistory:
+          type: boolean
+    MobileEndpoints:
+      type: object
+      additionalProperties:
+        type: string
+    MobileMapConfig:
+      type: object
+      required: [attribution, defaultCenter, defaultZoom, tileTemplateUrl]
+      properties:
+        attribution:
+          type: string
+        defaultCenter:
+          type: array
+          prefixItems:
+            - type: number
+              minimum: -180
+              maximum: 180
+            - type: number
+              minimum: -90
+              maximum: 90
+          minItems: 2
+          maxItems: 2
+        defaultZoom:
+          type: number
+        tileTemplateUrl:
+          type: string
+    MobileNativePolicy:
+      type: object
+      required: [minimumAppVersion, offlineCacheTtlSeconds, pushNotifications, requireBiometricUnlock, requireManagedDevice]
+      properties:
+        minimumAppVersion:
+          type: string
+        offlineCacheTtlSeconds:
+          type: integer
+          minimum: 1
+        pushNotifications:
+          type: string
+          enum: [not_configured, enabled]
+        requireBiometricUnlock:
+          type: boolean
+        requireManagedDevice:
+          type: boolean
+    MobileOfflineSnapshot:
+      type: object
+      required:
+        - alerts
+        - cachePolicy
+        - health
+        - objects
+        - serverTimestamp
+        - snapshotId
+        - sourceHealth
+        - sources
+        - streamHealth
+        - trackHistory
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CopAlert"
+        cachePolicy:
+          $ref: "#/components/schemas/MobileCachePolicy"
+        health:
+          $ref: "#/components/schemas/HealthStatus"
+        objects:
+          type: array
+          items:
+            $ref: "./schemas/observed-object.schema.json"
+        serverTimestamp:
+          type: string
+          format: date-time
+        snapshotId:
+          type: string
+        sourceHealth:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceHealthItem"
+        sources:
+          type: array
+          items:
+            $ref: "./schemas/source-system.schema.json"
+        streamHealth:
+          $ref: "#/components/schemas/StreamHealth"
+        trackHistory:
+          type: array
+          items:
+            type: object
+            required: [objectId, points]
+            properties:
+              objectId:
+                type: string
+              points:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrackHistoryPoint"
+    MobileCachePolicy:
+      type: object
+      required: [apiResponses, maxHistoryPointsPerObject, maxHistorySeconds, mode, offlineCacheTtlSeconds, recommendedStorage]
+      properties:
+        apiResponses:
+          type: string
+          enum: [network-only]
+        maxHistoryPointsPerObject:
+          type: integer
+          minimum: 1
+        maxHistorySeconds:
+          type: integer
+          minimum: 1
+        mode:
+          type: string
+          enum: [read-only]
+        offlineCacheTtlSeconds:
+          type: integer
+          minimum: 1
+        recommendedStorage:
+          type: string
+          enum: [encrypted-device-storage]
+    MobileDeviceRegistrationRequest:
+      type: object
+      required: [appVersion, deviceId, platform]
+      properties:
+        appVersion:
+          type: string
+        buildNumber:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        deviceId:
+          type: string
+        deviceModel:
+          type: string
+        osVersion:
+          type: string
+        platform:
+          type: string
+          enum: [ios, ipados]
+        pushToken:
+          type: string
+          description: APNS token. Accepted for readiness; raw value is not returned by the API.
+    MobileDeviceRegistrationResponse:
+      type: object
+      required: [actor, device, policy, serverTimestamp]
+      properties:
+        actor:
+          $ref: "#/components/schemas/AuthenticatedActor"
+        device:
+          type: object
+          required: [appVersion, capabilities, deviceId, deviceSessionId, platform, pushTokenRegistered, registeredAt, subjectId]
+          properties:
+            appVersion:
+              type: string
+            buildNumber:
+              type: string
+            capabilities:
+              type: array
+              items:
+                type: string
+            deviceId:
+              type: string
+            deviceModel:
+              type: string
+            deviceSessionId:
+              type: string
+              format: uuid
+            osVersion:
+              type: string
+            platform:
+              type: string
+              enum: [ios, ipados]
+            pushTokenRegistered:
+              type: boolean
+            registeredAt:
+              type: string
+              format: date-time
+            subjectId:
+              type: string
+        policy:
+          $ref: "#/components/schemas/MobileNativePolicy"
+        serverTimestamp:
+          type: string
+          format: date-time
     CopTrackList:
       type: object
       required: [items]

@@ -364,6 +364,108 @@ describe("COP state temporal history", () => {
       aoiRuleId: "hq-aoi"
     });
   });
+
+  it("returns a native mobile bootstrap payload with profile, config and offline snapshot", async () => {
+    const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
+
+    await ingestTrack(app, "00000000-0000-4000-8000-000000000012", "2026-05-19T08:02:00Z", 50.04, 14.04, {
+      affiliation: "HOSTILE"
+    });
+
+    const response = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/mobile/bootstrap?seconds=90&limit=10"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      actor: {
+        subjectId: "lab"
+      },
+      capabilities: {
+        bootstrap: true,
+        offlineSnapshot: true,
+        sseStream: true
+      },
+      endpoints: {
+        offlineSnapshot: "/api/v1/mobile/offline-snapshot",
+        stream: "/api/v1/stream/cop/live"
+      },
+      policy: {
+        offlineCacheTtlSeconds: 900
+      },
+      snapshot: {
+        cachePolicy: {
+          mode: "read-only"
+        },
+        objects: [
+          {
+            objectId: "AIR_SIM_UAV-0001"
+          }
+        ],
+        trackHistory: [
+          {
+            objectId: "AIR_SIM_UAV-0001",
+            points: [
+              {
+                lat: 50.04,
+                lon: 14.04
+              }
+            ]
+          }
+        ]
+      }
+    });
+    expect((response.json() as { snapshot: { snapshotId: string } }).snapshot.snapshotId).toHaveLength(32);
+  });
+
+  it("registers native mobile devices for future device policy and push integration", async () => {
+    const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
+
+    const response = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token",
+        "x-correlation-id": "mobile-registration-test"
+      },
+      method: "POST",
+      payload: {
+        appVersion: "0.1.0",
+        buildNumber: "42",
+        capabilities: ["offlineSnapshot", "sseStream"],
+        deviceId: "ios-device-001",
+        deviceModel: "iPad14,3",
+        osVersion: "18.5",
+        platform: "ipados",
+        pushToken: "apns-token-redacted-in-response"
+      },
+      url: "/api/v1/mobile/devices"
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({
+      actor: {
+        subjectId: "lab"
+      },
+      device: {
+        appVersion: "0.1.0",
+        buildNumber: "42",
+        capabilities: ["offlineSnapshot", "sseStream"],
+        deviceId: "ios-device-001",
+        deviceModel: "iPad14,3",
+        osVersion: "18.5",
+        platform: "ipados",
+        pushTokenRegistered: true,
+        subjectId: "lab"
+      },
+      policy: {
+        pushNotifications: "not_configured"
+      }
+    });
+    expect(JSON.stringify(response.json())).not.toContain("apns-token-redacted-in-response");
+  });
 });
 
 class FakeTrackHistoryStore implements TrackHistoryStore {

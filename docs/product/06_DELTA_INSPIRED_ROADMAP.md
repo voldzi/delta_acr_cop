@@ -98,3 +98,4 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 | 2026-05-19 | Keycloak user profiles v1 | Přidán `/api/v1/me/preferences`, serverové preference podle OIDC `sub`, per-user potvrzení alertů, PostgreSQL tabulky `cop_user_profiles` a `cop_user_alert_acknowledgements`, UI stav synchronizace profilu. |
 | 2026-05-19 | AOI alerting v1 | Přidán typ alertu `AOI_ENTRY`, uložení AOI pravidla v serverovém profilu, výpočet vstupu objektu do oblasti zájmu a samostatná velmi průsvitná AOI vrstva v mapě. |
 | 2026-05-19 | PWA offline/degraded mode v1 | Přidán service worker pro offline shell, lokální cache posledního COP snapshotu per operátorský scope a jasné UI `ONLINE` / `DEGRADED` / `OFFLINE` s read-only fallbackem. |
+| 2026-05-19 | Native iOS/iPadOS API baseline | Přidány endpointy `/api/v1/mobile/bootstrap`, `/api/v1/mobile/offline-snapshot`, `/api/v1/mobile/devices` a realizační dokument pro nativní mobilní aplikaci. |
