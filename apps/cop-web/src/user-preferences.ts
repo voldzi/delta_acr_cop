@@ -24,6 +24,7 @@ export interface UserPreferences {
   showHistory?: boolean;
   showPrediction?: boolean;
   trackHistoryLimit?: number;
+  trackHistoryWindowSeconds?: number;
 }
 
 export function readUserPreferences(): UserPreferences {
@@ -96,7 +97,8 @@ function normalizePreferences(value: Record<string, unknown>): UserPreferences {
     selectedLayer: optionalString(value.selectedLayer),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
-    trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit)
+    trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit),
+    trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds)
   };
 }
 

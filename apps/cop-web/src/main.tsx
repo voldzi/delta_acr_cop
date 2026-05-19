@@ -80,7 +80,8 @@ type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
 type DomainScope = "all" | "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
 type SettingsTab = "map" | "data" | "awareness" | "account";
 
-const historyLimitOptions = [12, 24, 36, 72, 120] as const;
+const historyLimitOptions = [36, 72, 120, 240, 600] as const;
+const historyWindowOptions = [30, 60, 120, 180, 300, 600] as const;
 const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["adaptive", "Adaptivní"],
   ["telemetry", "Telemetrie"],
@@ -130,6 +131,9 @@ export function App() {
   const [predictionMinutes, setPredictionMinutes] = React.useState(() => clamp(initialPreferences.predictionMinutes ?? 10, 2, 20));
   const [predictionMode, setPredictionMode] = React.useState<PredictionMode>(() => readInitialPredictionMode(initialPreferences.predictionMode));
   const [trackHistoryLimit, setTrackHistoryLimit] = React.useState(() => readInitialHistoryLimit(initialPreferences.trackHistoryLimit));
+  const [trackHistoryWindowSeconds, setTrackHistoryWindowSeconds] = React.useState(() =>
+    readInitialHistoryWindowSeconds(initialPreferences.trackHistoryWindowSeconds)
+  );
   const [trackHistory, setTrackHistory] = React.useState<TrackHistory>({});
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<SettingsTab>("map");
@@ -179,7 +183,9 @@ export function App() {
       setHealth(data.health);
       setSources(data.sources);
       setObjects(data.objects);
-      setTrackHistory((current) => mergeTrackHistory(current, data.objects, observedAt.toISOString(), trackHistoryLimit));
+      setTrackHistory((current) =>
+        mergeTrackHistory(current, data.objects, observedAt.toISOString(), trackHistoryLimit, trackHistoryWindowSeconds)
+      );
       setLastLoadedAt(observedAt.toLocaleTimeString("cs-CZ"));
       setLoadError(null);
     } catch (error) {
@@ -188,7 +194,7 @@ export function App() {
       loadInFlightRef.current = false;
       setIsLoading(false);
     }
-  }, [authToken, dataAccessReady, trackHistoryLimit]);
+  }, [authToken, dataAccessReady, trackHistoryLimit, trackHistoryWindowSeconds]);
 
   React.useEffect(() => {
     void load();
@@ -205,8 +211,8 @@ export function App() {
   }, [autoRefresh, load, refreshSeconds]);
 
   React.useEffect(() => {
-    setTrackHistory((current) => trimTrackHistory(current, trackHistoryLimit));
-  }, [trackHistoryLimit]);
+    setTrackHistory((current) => trimTrackHistory(current, trackHistoryLimit, trackHistoryWindowSeconds));
+  }, [trackHistoryLimit, trackHistoryWindowSeconds]);
 
   React.useEffect(() => {
     if (!replayRunning) {
@@ -262,7 +268,8 @@ export function App() {
       selectedLayer,
       showHistory,
       showPrediction,
-      trackHistoryLimit
+      trackHistoryLimit,
+      trackHistoryWindowSeconds
     });
   }, [
     affiliationScope,
@@ -280,7 +287,8 @@ export function App() {
     selectedLayer,
     showHistory,
     showPrediction,
-    trackHistoryLimit
+    trackHistoryLimit,
+    trackHistoryWindowSeconds
   ]);
 
   React.useEffect(() => {
@@ -601,7 +609,7 @@ export function App() {
             <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
             <ReadinessRow label="Refresh rate" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
-            <ReadinessRow label="History depth" value={`${trackHistoryLimit} pts / track`} tone="neutral" />
+            <ReadinessRow label="History window" value={`${trackHistoryWindowSeconds} s · max ${trackHistoryLimit} pts`} tone="neutral" />
             <ReadinessRow label="Prediction" value={showPrediction ? `${predictionModeLabel(predictionMode)} · ${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
             <ReadinessRow label="Policy scope" value="COP data only" tone="neutral" />
           </div>
@@ -648,6 +656,7 @@ export function App() {
           showHistory={showHistory}
           showPrediction={showPrediction}
           trackHistoryLimit={trackHistoryLimit}
+          trackHistoryWindowSeconds={trackHistoryWindowSeconds}
           onAlertRadiusKmChange={setAlertRadiusKm}
           onAutoRefreshChange={setAutoRefresh}
           onClose={() => setSettingsOpen(false)}
@@ -661,6 +670,7 @@ export function App() {
           onShowPredictionChange={setShowPrediction}
           onTabChange={setSettingsTab}
           onTrackHistoryLimitChange={setTrackHistoryLimit}
+          onTrackHistoryWindowSecondsChange={setTrackHistoryWindowSeconds}
           onLogin={loginOperator}
           onLogout={logoutOperator}
         />
@@ -723,6 +733,7 @@ function SettingsDrawer({
   showHistory,
   showPrediction,
   trackHistoryLimit,
+  trackHistoryWindowSeconds,
   onAlertRadiusKmChange,
   onAutoRefreshChange,
   onClose,
@@ -736,6 +747,7 @@ function SettingsDrawer({
   onShowPredictionChange,
   onTabChange,
   onTrackHistoryLimitChange,
+  onTrackHistoryWindowSecondsChange,
   onLogin,
   onLogout
 }: {
@@ -753,6 +765,7 @@ function SettingsDrawer({
   showHistory: boolean;
   showPrediction: boolean;
   trackHistoryLimit: number;
+  trackHistoryWindowSeconds: number;
   onAlertRadiusKmChange: (value: number) => void;
   onAutoRefreshChange: (value: boolean) => void;
   onClose: () => void;
@@ -766,6 +779,7 @@ function SettingsDrawer({
   onShowPredictionChange: (value: boolean) => void;
   onTabChange: (value: SettingsTab) => void;
   onTrackHistoryLimitChange: (value: number) => void;
+  onTrackHistoryWindowSecondsChange: (value: number) => void;
   onLogin: () => void;
   onLogout: () => void;
 }) {
@@ -810,7 +824,13 @@ function SettingsDrawer({
                 Historie trasy
               </label>
               <SegmentedControl
-                label="Bodů historie"
+                label="Čas historie"
+                options={historyWindowOptions.map((option) => [String(option), `${option}s`])}
+                value={String(trackHistoryWindowSeconds)}
+                onChange={(value) => onTrackHistoryWindowSecondsChange(Number(value))}
+              />
+              <SegmentedControl
+                label="Bodový strop"
                 options={historyLimitOptions.map((option) => [String(option), String(option)])}
                 value={String(trackHistoryLimit)}
                 onChange={(value) => onTrackHistoryLimitChange(Number(value))}
@@ -1279,7 +1299,19 @@ function readInitialPredictionMode(value: string | undefined): PredictionMode {
 
 function readInitialHistoryLimit(value: number | undefined): number {
   const normalizedValue = Number(value);
-  return historyLimitOptions.includes(normalizedValue as (typeof historyLimitOptions)[number]) ? normalizedValue : 36;
+  return historyLimitOptions.includes(normalizedValue as (typeof historyLimitOptions)[number]) ? normalizedValue : 120;
+}
+
+function readInitialHistoryWindowSeconds(value: number | undefined): number {
+  if (typeof window !== "undefined") {
+    const queryValue = Number(new URLSearchParams(window.location.search).get("historySeconds"));
+    if (historyWindowOptions.includes(queryValue as (typeof historyWindowOptions)[number])) {
+      return queryValue;
+    }
+  }
+
+  const normalizedValue = Number(value);
+  return historyWindowOptions.includes(normalizedValue as (typeof historyWindowOptions)[number]) ? normalizedValue : 180;
 }
 
 const rootElement = document.getElementById("root");

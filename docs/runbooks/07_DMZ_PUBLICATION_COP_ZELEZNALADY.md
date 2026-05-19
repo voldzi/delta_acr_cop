@@ -289,7 +289,7 @@ curl -fsS https://cop.zeleznalady.cz/health/ready
 V prohlizeci otevri:
 
 ```text
-https://cop.zeleznalady.cz?history=1&prediction=1&refresh=1
+https://cop.zeleznalady.cz?history=1&prediction=1&refresh=1&historySeconds=60
 ```
 
 ## Rollback

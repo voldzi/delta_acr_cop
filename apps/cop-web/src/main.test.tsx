@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./main";
@@ -94,6 +94,13 @@ describe("COP web dashboard", () => {
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/cop/tracks?includeSynthetic=true"), {
       headers: { Authorization: "Bearer dev-lab-token" }
     });
+
+    fireEvent.click(screen.getByRole("button", { name: /Operátor/u }));
+    fireEvent.click(screen.getByRole("tab", { name: "Mapa" }));
+    expect(screen.getByText("Čas historie")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "180s" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "60s" }));
+    expect(screen.getByRole("button", { name: "60s" }).getAttribute("aria-pressed")).toBe("true");
   });
 });
 

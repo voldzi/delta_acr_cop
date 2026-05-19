@@ -90,6 +90,51 @@ describe("track history helpers", () => {
     ]);
   });
 
+  it("limits retained history to the configured age in seconds", () => {
+    const history = trimTrackHistory(
+      {
+        "AIR_SIM_UAV-0001": [
+          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
+          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.01, lon: 14.01, timestamp: "2026-05-19T08:01:30Z" },
+          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.02, lon: 14.02, timestamp: "2026-05-19T08:02:00Z" }
+        ]
+      },
+      10,
+      60,
+      "2026-05-19T08:02:15Z"
+    );
+
+    expect(history["AIR_SIM_UAV-0001"]?.map((point) => point.timestamp)).toEqual([
+      "2026-05-19T08:01:30Z",
+      "2026-05-19T08:02:00Z"
+    ]);
+  });
+
+  it("trims stationary duplicate tracks by age without adding duplicate points", () => {
+    const object = {
+      objectId: "AIR_SIM_UAV-0001",
+      objectType: "UAV",
+      affiliation: "HOSTILE",
+      domain: "AIR",
+      status: "ACTIVE",
+      position: { lat: 50, lon: 14 },
+      lastUpdatedAt: "2026-05-19T08:00:00Z"
+    } satisfies CopObject;
+    const history = mergeTrackHistory(
+      {
+        "AIR_SIM_UAV-0001": [
+          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" }
+        ]
+      },
+      [object],
+      "2026-05-19T08:02:00Z",
+      10,
+      60
+    );
+
+    expect(history["AIR_SIM_UAV-0001"]).toEqual([]);
+  });
+
   it("can predict a curved maneuver from recent track turns", () => {
     const prediction = predictPosition(
       {

@@ -27,7 +27,8 @@ export function mergeTrackHistory(
   currentHistory: TrackHistory,
   objects: CopObject[],
   observedAt: string,
-  maxPointsPerTrack = 36
+  maxPointsPerTrack = 36,
+  maxAgeSeconds?: number
 ): TrackHistory {
   const nextHistory: TrackHistory = { ...currentHistory };
 
@@ -38,33 +39,74 @@ export function mergeTrackHistory(
 
     const timestamp = object.lastUpdatedAt ?? observedAt;
     const currentPoints = nextHistory[object.objectId] ?? [];
+    const retainedPoints = trimTrackPoints(currentPoints, maxPointsPerTrack, maxAgeSeconds, observedAt);
     const lastPoint = currentPoints[currentPoints.length - 1];
     if (
       lastPoint &&
       Math.abs(lastPoint.lat - object.position.lat) < samePointTolerance &&
       Math.abs(lastPoint.lon - object.position.lon) < samePointTolerance
     ) {
+      nextHistory[object.objectId] = retainedPoints;
       return;
     }
 
-    nextHistory[object.objectId] = [
-      ...currentPoints,
-      {
-        objectId: object.objectId,
-        affiliation: object.affiliation,
-        lat: object.position.lat,
-        lon: object.position.lon,
-        timestamp
-      }
-    ].slice(-maxPointsPerTrack);
+    nextHistory[object.objectId] = trimTrackPoints(
+      [
+        ...retainedPoints,
+        {
+          objectId: object.objectId,
+          affiliation: object.affiliation,
+          lat: object.position.lat,
+          lon: object.position.lon,
+          timestamp
+        }
+      ],
+      maxPointsPerTrack,
+      maxAgeSeconds,
+      observedAt
+    );
   });
 
   return nextHistory;
 }
 
-export function trimTrackHistory(history: TrackHistory, maxPointsPerTrack: number): TrackHistory {
+export function trimTrackHistory(
+  history: TrackHistory,
+  maxPointsPerTrack: number,
+  maxAgeSeconds?: number,
+  observedAt = new Date().toISOString()
+): TrackHistory {
+  return Object.fromEntries(
+    Object.entries(history).map(([objectId, points]) => [
+      objectId,
+      trimTrackPoints(points, maxPointsPerTrack, maxAgeSeconds, observedAt)
+    ])
+  );
+}
+
+function trimTrackPoints(
+  points: TrackHistoryPoint[],
+  maxPointsPerTrack: number,
+  maxAgeSeconds: number | undefined,
+  observedAt: string
+): TrackHistoryPoint[] {
   const pointLimit = Math.max(1, Math.trunc(maxPointsPerTrack));
-  return Object.fromEntries(Object.entries(history).map(([objectId, points]) => [objectId, points.slice(-pointLimit)]));
+  const pointLimited = points.slice(-pointLimit);
+  const ageLimit = Number(maxAgeSeconds);
+  if (!Number.isFinite(ageLimit) || ageLimit <= 0) {
+    return pointLimited;
+  }
+
+  const observedAtMs = new Date(observedAt).getTime();
+  if (!Number.isFinite(observedAtMs)) {
+    return pointLimited;
+  }
+
+  const cutoffMs = observedAtMs - ageLimit * 1000;
+  return pointLimited.filter((point) => {
+    const timestampMs = new Date(point.timestamp).getTime();
+    return Number.isFinite(timestampMs) ? timestampMs >= cutoffMs : true;
+  });
 }
 
 export function countHistoryPoints(history: TrackHistory, objects: CopObject[]): number {

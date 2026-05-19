@@ -23,7 +23,7 @@ Poloha uživatele je klientský stav. Neposílá se do COP API a používá se p
 
 ## Historie a predikce
 
-Historie trasy se drží v klientovi po jednotlivých objektech. Výchozí hloubka je 36 bodů na objekt; operátor ji může v pilotu přepnout na 12, 24, 36, 72 nebo 120 bodů. Duplicitní souřadnice se do historie nepřidávají.
+Historie trasy se drží v klientovi po jednotlivých objektech. Výchozí časové okno je 180 sekund; operátor jej může v pilotu přepnout na 30, 60, 120, 180, 300 nebo 600 sekund. Zároveň platí bodový strop na objekt kvůli výkonu mapy při rychlém refreshi. Duplicitní souřadnice se do historie nepřidávají, ale staré body se i u stojícího objektu odstraňují podle časového okna.
 
 Predikce je analytická vizualizace pro orientaci operátora, nikoli navádění. Pilot podporuje režimy:
 
