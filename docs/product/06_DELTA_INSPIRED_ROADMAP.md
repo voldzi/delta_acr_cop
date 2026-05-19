@@ -91,3 +91,4 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 | 2026-05-19 | Alert Center v1 | Přidány serverové alerty, acknowledgement endpoint, audit potvrzení a UI workspace Výstrahy s mapovou alert vrstvou. |
 | 2026-05-19 | Fallback sync UX | Refresh interval přejmenován a přesunut do nastavení jako degraded/fallback synchronizace; hlavní panel ponechává jen ruční obnovu. |
 | 2026-05-19 | Stream observability v1 | Web zobrazuje `LIVE` / `DEGRADED` / `OFFLINE`, latenci streamu, poslední heartbeat, reconnecty a poslední chybu v Data readiness. |
+| 2026-05-19 | PostgreSQL pool hardening v1 | API obsluhuje idle-client chyby `pg.Pool`, aby HAProxy/Patroni ukončení spojení neshodilo celý proces; diagnostika se propisuje do dependency health. |

@@ -86,7 +86,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     dependencies: [
       { name: "source-registry", status: "ok" },
       { name: "in-memory-cop-state", status: "ok" },
-      { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDetail },
+      { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
       { name: "ai-gateway", status: "degraded", detail: "mock provider only" }
     ]
   }));
@@ -158,6 +158,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     trackHistoryStoreStatus = "degraded";
     trackHistoryStoreDetail = `${trackHistoryStore.name}: ${errorMessage(error)}`;
     app.log.error({ error }, "Track history store failed; using in-memory fallback.");
+  }
+
+  function trackHistoryStoreDependencyDetail(): string {
+    const diagnostics = trackHistoryStore?.diagnostics?.();
+    return diagnostics ? `${trackHistoryStoreDetail}; ${diagnostics}` : trackHistoryStoreDetail;
   }
 
   async function persistTrackHistoryPoint(point: TrackHistoryPoint | undefined): Promise<void> {

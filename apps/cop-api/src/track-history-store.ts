@@ -12,6 +12,7 @@ export interface TrackHistoryStore {
   close(): Promise<void>;
   countCurrent(): Promise<number>;
   count(): Promise<number>;
+  diagnostics?(): string | undefined;
   init(): Promise<void>;
   loadCurrent(): Promise<ObservedObject[]>;
   query(query: TrackHistoryQuery, now: Date): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>>;
@@ -43,10 +44,14 @@ export function createTrackHistoryStoreFromEnv(env: Record<string, string | unde
 
 export class PostgresTrackHistoryStore implements TrackHistoryStore {
   readonly name = "postgres";
+  private lastIdleClientError: string | undefined;
   private readonly pool: PgPool;
 
   constructor(config: PoolConfig) {
     this.pool = new Pool(config);
+    this.pool.on("error", (error) => {
+      this.lastIdleClientError = errorMessage(error);
+    });
   }
 
   async init(): Promise<void> {
@@ -209,6 +214,10 @@ export class PostgresTrackHistoryStore implements TrackHistoryStore {
     return Number(result.rows[0]?.count ?? 0);
   }
 
+  diagnostics(): string | undefined {
+    return this.lastIdleClientError ? `last idle client error: ${this.lastIdleClientError}` : undefined;
+  }
+
   async close(): Promise<void> {
     await this.pool.end();
   }
@@ -346,6 +355,10 @@ function isoString(value: Date | string): string {
 function readPositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function readSslConfig(env: Record<string, string | undefined>): PoolConfig["ssl"] {
