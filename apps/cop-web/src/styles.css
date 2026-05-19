@@ -1771,6 +1771,7 @@ dd {
 }
 
 .readiness-row span {
+  flex-shrink: 0;
   color: var(--muted);
   font-size: 12px;
 }
@@ -1778,6 +1779,8 @@ dd {
 .readiness-row strong {
   color: var(--text);
   font-size: 12px;
+  overflow-wrap: anywhere;
+  text-align: right;
   text-transform: uppercase;
 }
 

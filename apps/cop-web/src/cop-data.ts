@@ -143,7 +143,7 @@ export interface CopAlert {
   updatedAt: string;
 }
 
-export type CopStreamStatus = "connecting" | "degraded" | "live" | "polling";
+export type CopStreamStatus = "connecting" | "degraded" | "live" | "offline";
 
 export type CopStreamMessage =
   | {

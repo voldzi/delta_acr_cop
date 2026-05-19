@@ -13,7 +13,7 @@ Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplik
 | Proximity awareness | Dokončeno v pilotu | Uživatel může zobrazit vlastní polohu a průsvitnou varovnou vrstvu přiblížení cizích objektů. |
 | Server-side temporal history | Rozpracováno | API drží body stop, web je používá jako zdroj pro historii tras a PostgreSQL store přes HAProxy/Patroni persistuje historii i current snapshot. |
 | Timeline/replay | Rozpracováno v pilotu | UI má časové okno historie v sekundách; replay controller používá serverovou historii pro historické polohy objektů. |
-| Stream/delta distribuce | Pilotně hotovo | SSE endpoint posílá snapshot, delta a heartbeat; web používá stream jako primární kanál a polling jako fallback. |
+| Stream/delta distribuce | Pilotně hotovo | SSE endpoint posílá snapshot, delta a heartbeat; web používá stream jako primární kanál a fallback synchronizaci pro degraded režim. |
 | Perzistence a multi-user provoz | Částečně | UI nastavení a profily pohledu jsou lokální pro operátorský scope/prohlížeč; current tracks a historie mají PostgreSQL backend. |
 
 ## Prioritizované kroky
@@ -49,7 +49,8 @@ Status: pilotně hotovo.
 - server posílá snapshot, delta a heartbeat,
 - policy filtering zůstává na serveru,
 - refresh interval je přesunutý do nastavení jako fallback/degraded synchronizace,
-- další krok je měření stream latency a backpressure signalizace.
+- web měří stav streamu, latenci, heartbeat, reconnecty a poslední chybu,
+- další krok je server-side backpressure signalizace a metriky do provozního monitoringu.
 
 ### P4: Operační nastavení a uživatelský profil
 
@@ -80,7 +81,7 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 | 2026-05-19 | Temporal history API v1 | Přidán in-memory temporal store a endpoint `/api/v1/cop/track-history`; web jej používá pro zobrazení historie tras. |
 | 2026-05-19 | PostgreSQL temporal store v1 | Přidán volitelný PostgreSQL backend pro historii stop přes `COP_TRACK_HISTORY_STORE=postgres` a `COP_DATABASE_URL`; runbook popisuje napojení na HAProxy/Patroni. |
 | 2026-05-19 | PostgreSQL current snapshot v1 | Přidán `cop_current_tracks`, UPSERT při ingestu a obnova aktuálních objektů při startu API. |
-| 2026-05-19 | SSE live stream v1 | Přidán `/api/v1/stream/cop/live`, snapshot/delta/heartbeat zprávy, klientské čtení přes `fetch` stream s bearer hlavičkou a polling fallback. |
+| 2026-05-19 | SSE live stream v1 | Přidán `/api/v1/stream/cop/live`, snapshot/delta/heartbeat zprávy, klientské čtení přes `fetch` stream s bearer hlavičkou a fallback synchronizace. |
 | 2026-05-19 | Source Health + provenance v1 | Přidán health endpoint zdrojů, UI Source Health Center a provenance metadata v detailu objektu. |
 | 2026-05-19 | Replay controller v1 | Timeline umí přepnout mapu z live režimu do historického času a objektům nastavuje polohy z `/api/v1/cop/track-history`. |
 | 2026-05-19 | Responsive COP workspace v1 | Tablet a telefon režim drží mapu jako primární plochu, zkracuje horní lištu a ponechává nastavení dostupné přes operátorskou ikonu. |
@@ -89,3 +90,4 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 | 2026-05-19 | Server conflict evidence v1 | API odvozuje konfliktní evidenci z aktuálního objektu, historie a source health; `/api/v1/cop/tracks`, SSE a `/api/v1/cop/conflicts` ji poskytují klientům. |
 | 2026-05-19 | Alert Center v1 | Přidány serverové alerty, acknowledgement endpoint, audit potvrzení a UI workspace Výstrahy s mapovou alert vrstvou. |
 | 2026-05-19 | Fallback sync UX | Refresh interval přejmenován a přesunut do nastavení jako degraded/fallback synchronizace; hlavní panel ponechává jen ruční obnovu. |
+| 2026-05-19 | Stream observability v1 | Web zobrazuje `LIVE` / `DEGRADED` / `OFFLINE`, latenci streamu, poslední heartbeat, reconnecty a poslední chybu v Data readiness. |

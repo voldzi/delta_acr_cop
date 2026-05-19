@@ -59,6 +59,14 @@ import {
 import { CopMap } from "./CopMap";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
+import {
+  createInitialStreamTelemetry,
+  formatStreamLatency,
+  formatStreamObservation,
+  updateStreamTelemetryForError,
+  updateStreamTelemetryForMessage,
+  type StreamTelemetry
+} from "./stream-observability";
 import { getAffiliationPresentation } from "./symbology";
 import {
   normalizeRefreshSeconds,
@@ -161,10 +169,13 @@ export function App() {
   const [domainScope, setDomainScope] = React.useState<DomainScope>(() => readInitialDomainScope(initialPreferences.domainScope));
   const [searchQuery, setSearchQuery] = React.useState("");
   const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
-  const [lastStreamAt, setLastStreamAt] = React.useState<string | null>(null);
+  const [, setLastStreamAt] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [streamStatus, setStreamStatus] = React.useState<CopStreamStatus>("connecting");
+  const [streamTelemetry, setStreamTelemetry] = React.useState<StreamTelemetry>(() => createInitialStreamTelemetry());
+  const [streamReconnectAttempt, setStreamReconnectAttempt] = React.useState(0);
+  const [browserOnline, setBrowserOnline] = React.useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
   const [autoRefresh, setAutoRefresh] = React.useState(() => readInitialAutoRefresh(initialPreferences.autoRefresh));
   const [refreshSeconds, setRefreshSeconds] = React.useState<RefreshSeconds>(() =>
     readInitialRefreshSeconds(normalizeRefreshSeconds(initialPreferences.refreshSeconds ?? defaultRefreshSeconds))
@@ -270,23 +281,58 @@ export function App() {
   }, [load]);
 
   React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const handleOnline = () => {
+      setBrowserOnline(true);
+      setStreamReconnectAttempt((current) => current + 1);
+    };
+    const handleOffline = () => {
+      setBrowserOnline(false);
+      setStreamStatus("offline");
+    };
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  React.useEffect(() => {
     if (!dataAccessReady) {
-      setStreamStatus("degraded");
+      setStreamStatus("offline");
+      return;
+    }
+    if (!browserOnline) {
+      setStreamStatus("offline");
       return;
     }
 
     let active = true;
+    let reconnectTimer: number | undefined;
+    const scheduleReconnect = () => {
+      reconnectTimer = window.setTimeout(() => {
+        if (active) {
+          setStreamReconnectAttempt((current) => current + 1);
+        }
+      }, 5000);
+    };
     setStreamStatus("connecting");
     const connection = connectCopStream(apiBase, authToken, {
-      onError: () => {
+      onError: (error) => {
         if (active) {
-          setStreamStatus("polling");
+          setStreamTelemetry((current) => updateStreamTelemetryForError(current, error));
+          setStreamStatus(browserOnline ? "degraded" : "offline");
+          scheduleReconnect();
         }
       },
       onMessage: (message) => {
         if (!active) {
           return;
         }
+        setStreamTelemetry((current) => updateStreamTelemetryForMessage(current, message));
         applyCopStreamMessage(message, {
           setLastLoadedAt,
           setLastStreamAt,
@@ -300,22 +346,33 @@ export function App() {
       onOpen: () => {
         if (active) {
           setStreamStatus("live");
+          setStreamTelemetry((current) => ({ ...current, lastError: null }));
         }
       }
     });
     if (!connection) {
-      setStreamStatus("polling");
-      return;
+      setStreamTelemetry((current) => updateStreamTelemetryForError(current, new Error("Readable stream is not available.")));
+      setStreamStatus("degraded");
+      scheduleReconnect();
+      return () => {
+        active = false;
+        if (reconnectTimer !== undefined) {
+          window.clearTimeout(reconnectTimer);
+        }
+      };
     }
 
     return () => {
       active = false;
+      if (reconnectTimer !== undefined) {
+        window.clearTimeout(reconnectTimer);
+      }
       connection.close();
     };
-  }, [authToken, dataAccessReady, trackHistoryLimit, trackHistoryWindowSeconds]);
+  }, [authToken, browserOnline, dataAccessReady, streamReconnectAttempt, trackHistoryLimit, trackHistoryWindowSeconds]);
 
   React.useEffect(() => {
-    if (!autoRefresh || streamStatus === "live") {
+    if (!autoRefresh || streamStatus === "live" || streamStatus === "offline") {
       return;
     }
     const timer = window.setInterval(() => {
@@ -1011,7 +1068,11 @@ export function App() {
             <ReadinessRow label="Source coverage" value={metrics.activeSources > 0 ? "active" : "waiting"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
             <ReadinessRow label="SIM data visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
             <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
-            <ReadinessRow label="Live stream" value={streamReadinessLabel(streamStatus, lastStreamAt)} tone={streamStatusTone(streamStatus)} />
+            <ReadinessRow label="Stream mode" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
+            <ReadinessRow label="Stream latency" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
+            <ReadinessRow label="Last heartbeat" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
+            <ReadinessRow label="Reconnects" value={String(streamTelemetry.reconnectCount)} tone={streamTelemetry.reconnectCount > 0 ? "warn" : "ok"} />
+            {streamTelemetry.lastError ? <ReadinessRow label="Stream error" value={streamTelemetry.lastError} tone="warn" /> : null}
             <ReadinessRow label="Fallback sync" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
             <ReadinessRow label="Replay" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
@@ -1311,11 +1372,8 @@ function streamStatusLabel(status: CopStreamStatus): string {
   if (status === "live") {
     return "LIVE";
   }
-  if (status === "connecting") {
-    return "CONNECT";
-  }
-  if (status === "polling") {
-    return "POLLING";
+  if (status === "offline") {
+    return "OFFLINE";
   }
   return "DEGRADED";
 }
@@ -1330,17 +1388,35 @@ function streamStatusTone(status: CopStreamStatus): "ok" | "warn" | "neutral" {
   return "warn";
 }
 
-function streamReadinessLabel(status: CopStreamStatus, lastStreamAt: string | null): string {
+function streamReadinessLabel(status: CopStreamStatus, telemetry: StreamTelemetry): string {
   if (status === "live") {
-    return lastStreamAt ? `live ${lastStreamAt}` : "live";
+    return telemetry.lastMessageAt ? `live ${formatStreamObservation(telemetry.lastMessageAt)}` : "live";
   }
   if (status === "connecting") {
     return "connecting";
   }
-  if (status === "polling") {
-    return "polling fallback";
+  if (status === "offline") {
+    return "offline";
   }
-  return "degraded";
+  return telemetry.lastError ? "fallback active" : "degraded";
+}
+
+function streamLatencyTone(telemetry: StreamTelemetry): "ok" | "warn" | "neutral" {
+  if (telemetry.latencyMs === null) {
+    return "neutral";
+  }
+  return telemetry.latencyMs > 5000 ? "warn" : "ok";
+}
+
+function streamHeartbeatTone(telemetry: StreamTelemetry): "ok" | "warn" | "neutral" {
+  if (!telemetry.lastHeartbeatAt) {
+    return "neutral";
+  }
+  const ageMs = Date.now() - Date.parse(telemetry.lastHeartbeatAt);
+  if (!Number.isFinite(ageMs)) {
+    return "neutral";
+  }
+  return ageMs > 45000 ? "warn" : "ok";
 }
 
 function formatReplayStatus(timestamp: string | null, replayWindow: ReplayWindow | null, active: boolean): string {

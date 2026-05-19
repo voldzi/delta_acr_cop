@@ -6,11 +6,13 @@ Streaming kontrakt distribuuje policy-filtered COP data přes subscription.
 
 `GET /api/v1/stream/cop/live`
 
-Produkční pilot používá Server-Sent Events (SSE). Server po připojení pošle policy-filtered `snapshot`, následně `delta` při přijatých ingest eventech a periodický `heartbeat`. Web klient stream používá jako primární kanál a refresh interval ponechává jako polling fallback pro degraded režim.
+Produkční pilot používá Server-Sent Events (SSE). Server po připojení pošle policy-filtered `snapshot`, následně `delta` při přijatých ingest eventech a periodický `heartbeat`. Web klient stream používá jako primární kanál a refresh interval ponechává jako fallback synchronizaci pro degraded režim.
 
 Web klient stream čte přes `fetch` nad `text/event-stream`, aby i v Keycloak režimu mohl posílat standardní `Authorization: Bearer ...` hlavičku. Token se proto neposílá v URL.
 
 Objekty ve `snapshot` i `delta` mohou nést `attributes.conflictEvidence`. Jde o serverově odvozenou informační evidenci pro confidence/provenance panel, ne o akční pokyn.
+
+Klient sleduje provozní telemetrii streamu: stav `LIVE` / `DEGRADED` / `OFFLINE`, odhad latence ze serverového času, poslední přijatý heartbeat, počet reconnectů a poslední chybu. Tato data jsou zobrazena v panelu Data readiness a slouží k operátorskému přehledu, ne k řízení objektů.
 
 Legacy snapshot endpoint zůstává k dispozici pro kompatibilitu:
 
