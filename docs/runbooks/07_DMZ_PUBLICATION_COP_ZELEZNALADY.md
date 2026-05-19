@@ -3,7 +3,7 @@
 Tento runbook publikuje pilotni COP aplikaci bez otevreni API jako samostatne verejne sluzby. Verejna domena `cop.zeleznalady.cz` bezi na `dmz.home.cz`, nginx tam reverzne proxyuje:
 
 - web UI na `http://docker.home.cz:4311`,
-- COP API na `http://docker.home.cz:4310` pod stejnou domenou pres `/api/` a `/health/`.
+- COP API na `http://docker.home.cz:4310` pod stejnou domenou pres `/api/`, `/health/` a volitelne `/metrics`.
 
 Frontend musi byt buildnuty se same-origin API base URL, tedy s prazdnou hodnotou `COP_PUBLIC_API_BASE_URL=`.
 
@@ -120,6 +120,20 @@ server {
         proxy_buffering off;
     }
 
+    location = /metrics {
+        proxy_pass http://docker.home.cz:4310/metrics;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_buffering off;
+    }
+
     location / {
         proxy_pass http://docker.home.cz:4311;
         proxy_http_version 1.1;
@@ -149,6 +163,7 @@ Kontrola:
 ```bash
 curl -I http://cop.zeleznalady.cz
 curl -fsS http://cop.zeleznalady.cz/health/ready
+curl -fsS http://cop.zeleznalady.cz/metrics | grep cop_stream_clients_total
 ```
 
 V teto fazi musi fungovat `http://cop.zeleznalady.cz` bez redirectu na HTTPS.
@@ -255,6 +270,20 @@ server {
         proxy_buffering off;
     }
 
+    location = /metrics {
+        proxy_pass http://docker.home.cz:4310/metrics;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_buffering off;
+    }
+
     location / {
         proxy_pass http://docker.home.cz:4311;
         proxy_http_version 1.1;
@@ -284,6 +313,7 @@ Kontrola:
 curl -I http://cop.zeleznalady.cz
 curl -I https://cop.zeleznalady.cz
 curl -fsS https://cop.zeleznalady.cz/health/ready
+curl -fsS https://cop.zeleznalady.cz/metrics | grep cop_stream_clients_total
 ```
 
 V prohlizeci otevri:
