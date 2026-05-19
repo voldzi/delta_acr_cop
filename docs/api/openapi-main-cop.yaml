@@ -159,6 +159,13 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: includeExpired
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include tracks older than the configured active display lifecycle.
       responses:
         "200":
           description: COP tracks.

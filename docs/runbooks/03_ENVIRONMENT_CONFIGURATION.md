@@ -9,6 +9,7 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 - OIDC issuer/client configuration,
 - Source Registry bootstrap,
 - AI provider enable/disable flags,
+- track lifecycle thresholds (`COP_TRACK_STALE_AFTER_MS`, `COP_TRACK_EXPIRE_AFTER_MS`),
 - classification policy,
 - audit retention,
 - metrics/exporter nastavení,

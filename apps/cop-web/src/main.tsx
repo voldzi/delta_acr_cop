@@ -176,7 +176,7 @@ export function App() {
       body: JSON.stringify({
         requestId: crypto.randomUUID(),
         purpose: "DATA_QUALITY_CHECK",
-        prompt: "Shrň kvalitu aktuálního COP pohledu a odliš syntetická data.",
+        prompt: "Shrň kvalitu aktuálního COP pohledu a odliš simulovaná data.",
         context: {
           objectIds: visibleObjects.map((object) => object.objectId)
         },
@@ -288,7 +288,7 @@ export function App() {
             </label>
             <label className="toggle-row">
               <input type="checkbox" checked={includeSynthetic} onChange={(event) => setIncludeSynthetic(event.target.checked)} />
-              Zobrazit syntetická data
+              Zobrazit simulované cíle
             </label>
             <label className="range-label">
               Minimum confidence
@@ -390,8 +390,8 @@ export function App() {
           <div className="readiness-box">
             <PanelTitle icon={<Gauge size={17} />} title="Data readiness" />
             <ReadinessRow label="Source coverage" value={metrics.activeSources > 0 ? "active" : "waiting"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
-            <ReadinessRow label="Synthetic visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
-            <ReadinessRow label="Synthetic tracks" value={String(metrics.syntheticCount)} tone="neutral" />
+            <ReadinessRow label="SIM data visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
+            <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
             <ReadinessRow label="Refresh rate" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
             <ReadinessRow label="Prediction horizon" value={showPrediction ? `${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
@@ -597,7 +597,7 @@ function ObjectDetail({ object }: { object: CopObject }) {
         </div>
       </dl>
       <div className="object-flags">
-        {object.synthetic ? <span className="synthetic-badge">SYNTHETIC</span> : null}
+        {object.synthetic ? <span className="synthetic-badge">SIM</span> : null}
         {(object.confidence ?? 0) < 0.5 ? <span className="warning-badge">LOW CONFIDENCE</span> : null}
       </div>
     </div>

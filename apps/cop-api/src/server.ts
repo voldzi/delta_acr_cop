@@ -11,11 +11,14 @@ import { createHash } from "node:crypto";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { requireBearerToken } from "./security.js";
 import { appendAudit, createInitialState } from "./state.js";
+import { createTrackLifecycleConfig, selectCurrentTracks, type TrackLifecycleConfig } from "./track-lifecycle.js";
 import type { CopState } from "./types.js";
 
 export interface BuildServerOptions {
   state?: CopState;
   logger?: boolean;
+  now?: () => Date;
+  trackLifecycle?: TrackLifecycleConfig;
 }
 
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
@@ -25,6 +28,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const state = options.state ?? createInitialState();
   const validators = new ContractValidators();
   const aiGateway = new AiGateway();
+  const now = options.now ?? (() => new Date());
+  const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
 
   app.decorate("copState", state);
   void app.register(cors, { origin: true });
@@ -52,6 +57,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }));
 
   app.get("/metrics", async (_request, reply) => {
+    const currentObjects = selectCurrentTracks(state.objects.values(), now(), trackLifecycle);
     const lines = [
       "# HELP cop_sources_total Registered COP source systems.",
       "# TYPE cop_sources_total gauge",
@@ -59,9 +65,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       "# HELP cop_events_total Accepted ingest events.",
       "# TYPE cop_events_total counter",
       `cop_events_total ${state.events.size}`,
-      "# HELP cop_objects_total Current COP objects.",
+      "# HELP cop_objects_total Current non-expired COP objects.",
       "# TYPE cop_objects_total gauge",
-      `cop_objects_total ${state.objects.size}`
+      `cop_objects_total ${currentObjects.length}`
     ];
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
@@ -191,9 +197,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return reply.code(202).send(response);
   });
 
-  app.get("/api/v1/cop/tracks", async () => {
+  app.get("/api/v1/cop/tracks", async (request) => {
+    const query = request.query as { includeExpired?: string };
+    const includeExpired = query.includeExpired === "true";
     const subject = defaultSystemSubject();
-    const items = Array.from(state.objects.values()).filter((object) => {
+    const items = selectCurrentTracks(state.objects.values(), now(), trackLifecycle, includeExpired).filter((object) => {
       const decision = evaluateReadPolicy(subject, {
         classification: "UNCLASSIFIED",
         synthetic: object.synthetic
@@ -232,7 +240,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       subscriptionId: params.subscriptionId,
       serverTimestamp: new Date().toISOString(),
       sequence: 1,
-      changes: Array.from(state.objects.values()).map((object) => ({
+      changes: selectCurrentTracks(state.objects.values(), now(), trackLifecycle).map((object) => ({
         changeType: "OBJECT_SNAPSHOT",
         object
       }))

@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("COP web dashboard", () => {
-  it("renders synthetic tracks returned from COP API", async () => {
+  it("renders SIM tracks returned from COP API", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/health/ready")) {
@@ -85,7 +85,8 @@ describe("COP web dashboard", () => {
     expect(screen.getByText("COP Air Situation Simulator")).toBeTruthy();
     expect(screen.getByText("APP6-AIR-FRIEND-AIRCRAFT-ACTIVE")).toBeTruthy();
     expect(screen.getByText("SFAP-----------")).toBeTruthy();
-    expect(screen.getByText("SYNTHETIC")).toBeTruthy();
+    expect(screen.getByText("SIM")).toBeTruthy();
+    expect(screen.getByText("Zobrazit simulované cíle")).toBeTruthy();
     expect(screen.getAllByText("UAV").some((node) => node.closest("button")?.textContent?.includes("1"))).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/cop/tracks?includeSynthetic=true"), {
       headers: { Authorization: "Bearer dev-lab-token" }

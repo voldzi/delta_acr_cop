@@ -226,4 +226,56 @@ describe("Shared Integration Contract v1", () => {
     expect(response.statusCode).toBe(422);
     expect(response.json().error.code).toBe("SYNTHETIC_FLAG_REQUIRED");
   });
+
+  it("marks tracks stale and hides expired tracks when source updates stop", async () => {
+    let currentTime = new Date("2026-05-19T08:00:00.000Z");
+    const app = buildServer({
+      now: () => currentTime,
+      trackLifecycle: {
+        staleAfterMs: 30_000,
+        expireAfterMs: 120_000
+      }
+    });
+    const event = cloneEvent({
+      eventId: "13131313-1313-4313-8313-131313131313",
+      ingestTimestamp: "2026-05-19T08:00:00.000Z"
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/api/v1/ingest/events",
+      headers: {
+        ...authHeaders,
+        "x-idempotency-key": "14141414-1414-4414-8414-141414141414"
+      },
+      payload: event
+    });
+
+    currentTime = new Date("2026-05-19T08:00:45.000Z");
+    const staleResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/cop/tracks",
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      }
+    });
+    expect(staleResponse.statusCode).toBe(200);
+    expect(staleResponse.json().items).toEqual([
+      expect.objectContaining({
+        objectId: "SIM-AIR-001",
+        status: "STALE"
+      })
+    ]);
+
+    currentTime = new Date("2026-05-19T08:02:01.000Z");
+    const expiredResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/cop/tracks",
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      }
+    });
+    expect(expiredResponse.statusCode).toBe(200);
+    expect(expiredResponse.json().items).toEqual([]);
+  });
 });
