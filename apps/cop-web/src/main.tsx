@@ -55,7 +55,6 @@ import {
   saveUserProfile,
   type CopDashboardData,
   type AoiRule,
-  type AoiRuleAffiliationScope,
   type AlertPreferences,
   type CopStreamMessage,
   type CopStreamStatus,
@@ -267,7 +266,7 @@ export function App() {
   const [profileSyncStatus, setProfileSyncStatus] = React.useState<ProfileSyncStatus>("loading");
   const [profileSyncError, setProfileSyncError] = React.useState<string | null>(null);
   const [serverProfileUpdatedAt, setServerProfileUpdatedAt] = React.useState<string | null>(null);
-  const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad COP daty.");
+  const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad situačními daty.");
   const loadInFlightRef = React.useRef(false);
   const profileHydratedRef = React.useRef(false);
   const profileLoadKeyRef = React.useRef<string | null>(null);
@@ -323,7 +322,7 @@ export function App() {
 
   const load = React.useCallback(async () => {
     if (!dataAccessReady) {
-      setLoadError("Pro načtení COP dat je potřeba přihlášení.");
+      setLoadError("Pro načtení situačních dat je potřeba přihlášení.");
       return;
     }
     if (loadInFlightRef.current) {
@@ -341,7 +340,7 @@ export function App() {
       persistOfflineSnapshot(data, observedAt.toISOString());
       setLoadError(null);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Nepodařilo se načíst COP data.";
+      const errorMessage = error instanceof Error ? error.message : "Nepodařilo se načíst situační data.";
       const snapshot = readCopOfflineSnapshot(userStorageScope);
       if (snapshot) {
         const restoredAt = new Date();
@@ -372,7 +371,7 @@ export function App() {
     try {
       setServerAlerts(await fetchCopAlerts(apiBase, authToken));
     } catch {
-      // Main data loading already reports API errors; alert refresh should not obscure the current COP view.
+      // Main data loading already reports API errors; alert refresh should not obscure the current situation view.
     }
   }, [authToken, dataAccessReady]);
 
@@ -988,7 +987,7 @@ export function App() {
 
     notifiedProximityAlertsRef.current.add(`${nextAlert.type}:${nextAlert.object.objectId}`);
     if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "granted") {
-      new window.Notification("COP výstraha přiblížení", {
+      new window.Notification("Výstraha v okolí", {
         body: formatProximityAlert(nextAlert)
       });
     }
@@ -1004,7 +1003,7 @@ export function App() {
       body: JSON.stringify({
         requestId: crypto.randomUUID(),
         purpose: "DATA_QUALITY_CHECK",
-        prompt: "Shrň kvalitu aktuálního COP pohledu a odliš simulovaná data.",
+        prompt: "Shrň kvalitu aktuálního situačního pohledu a odliš simulovaná data.",
         context: {
           objectIds: visibleObjects.map((object) => object.objectId)
         },
@@ -1042,27 +1041,22 @@ export function App() {
   }
 
   function handleAoiRuleEnabledChange(enabled: boolean) {
-    updatePrimaryAoiRule((rule) => ({ ...rule, enabled }));
+    updatePrimaryAoiRule((rule) => ({ ...rule, affiliationScope: "all", enabled, severity: "warning" }));
   }
 
   function handleAoiRuleRadiusChange(radiusKm: number) {
-    updatePrimaryAoiRule((rule) => ({ ...rule, radiusKm }));
-  }
-
-  function handleAoiRuleAffiliationScopeChange(affiliationScope: AoiRuleAffiliationScope) {
-    updatePrimaryAoiRule((rule) => ({ ...rule, affiliationScope }));
-  }
-
-  function handleAoiRuleSeverityChange(severity: NonNullable<AoiRule["severity"]>) {
-    updatePrimaryAoiRule((rule) => ({ ...rule, severity }));
+    updatePrimaryAoiRule((rule) => ({ ...rule, affiliationScope: "all", radiusKm, severity: "warning" }));
   }
 
   function handleAoiRuleCenterFromMap() {
     const center: [number, number] = mapView?.center ?? [defaultAoiCenter.lon, defaultAoiCenter.lat];
     updatePrimaryAoiRule((rule) => ({
       ...rule,
+      affiliationScope: "all",
+      enabled: true,
       lat: center[1],
-      lon: center[0]
+      lon: center[0],
+      severity: "warning"
     }));
   }
 
@@ -1073,8 +1067,11 @@ export function App() {
     }
     updatePrimaryAoiRule((rule) => ({
       ...rule,
+      affiliationScope: "all",
+      enabled: true,
       lat: userLocation.lat,
-      lon: userLocation.lon
+      lon: userLocation.lon,
+      severity: "warning"
     }));
   }
 
@@ -1234,14 +1231,14 @@ export function App() {
             <img src="/icons/cop-icon.svg" alt="" />
           </div>
           <div>
-            <h1>ACR COP Data Fabric</h1>
-            <p>SITDATA-COP / lab common operating picture</p>
+            <h1>Civilní situační mapa</h1>
+            <p>Rizika v okolí, výstrahy a sdílené informace</p>
           </div>
         </div>
-        <div className="mission-strip" aria-label="COP operating context">
+        <div className="mission-strip" aria-label="Civil situation map operating context">
           <span>LAB</span>
           <strong>{missionModeLabel(operatingMode, offlineSnapshotState)}</strong>
-          <small>OpenStreetMap + APP-6</small>
+          <small>OpenStreetMap + situační vrstvy</small>
         </div>
         <div className="status-strip">
           <StatusItem icon={<Wifi size={16} />} label="Mode" value={operatingMode} tone={operatingModeTone(operatingMode)} />
@@ -1274,7 +1271,7 @@ export function App() {
               <span>Poslední načtení</span>
               <strong>{lastLoadedAt ?? "čekám na data"}</strong>
             </div>
-            <button className="icon-button" onClick={() => void load()} disabled={isLoading} title="Obnovit COP data">
+            <button className="icon-button" onClick={() => void load()} disabled={isLoading} title="Obnovit situační data">
               <RefreshCw size={16} className={isLoading ? "spin" : ""} />
             </button>
           </div>
@@ -1290,8 +1287,8 @@ export function App() {
           />
 
           <div className="mission-metrics">
-            <MetricTile label="Friendly" value={metrics.friendlyCount} tone="friend" />
-            <MetricTile label="Foreign" value={metrics.foreignCount} tone="hostile" />
+            <MetricTile label="Vlastní" value={metrics.friendlyCount} tone="friend" />
+            <MetricTile label="Rizikové" value={metrics.foreignCount} tone="hostile" />
             <MetricTile label="Confidence" value={`${metrics.avgConfidence}%`} tone={metrics.avgConfidence >= 75 ? "ok" : "warn"} />
             <MetricTile label="Alerts" value={alertSummary.total} tone={alertSummary.total > 0 ? "warn" : "ok"} />
           </div>
@@ -1317,6 +1314,12 @@ export function App() {
                 onToggle={toggleSituationLayer}
               />
 
+              <UserZoneLayerControls
+                zone={primaryAoiRule}
+                onEnabledChange={handleAoiRuleEnabledChange}
+                onOpenSettings={() => openSettings("awareness")}
+              />
+
               <div className="control-block">
                 <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry" />
                 <label className="search-field">
@@ -1325,7 +1328,7 @@ export function App() {
                 </label>
                 <label className="toggle-row">
                   <input type="checkbox" checked={includeSynthetic} onChange={(event) => setIncludeSynthetic(event.target.checked)} />
-                  Zobrazit simulované cíle
+                  Zobrazit simulovaná data
                 </label>
                 <label className="range-label">
                   Minimum confidence
@@ -1335,10 +1338,10 @@ export function App() {
                 <SegmentedControl
                   label="Affiliation"
                   options={[
-                    ["all", "All"],
+                    ["all", "Vše"],
                     ["friend", "Vlastní"],
-                    ["hostile", "Cizí"],
-                    ["unknown", "Unknown"]
+                    ["hostile", "Rizikové"],
+                    ["unknown", "Neznámé"]
                   ]}
                   value={affiliationScope}
                   onChange={(value) => setAffiliationScope(value as AffiliationScope)}
@@ -1364,7 +1367,7 @@ export function App() {
               <ReadinessRow label="Serverové alerty" value={String(serverAlerts.length)} tone={serverAlerts.length > 0 ? "warn" : "ok"} />
               <ReadinessRow label="Critical" value={String(alertSummary.critical)} tone={alertSummary.critical > 0 ? "warn" : "ok"} />
               <ReadinessRow label="Vrstva na mapě" value={showAlertAreas || proximityAlertEnabled ? "aktivní" : "vypnuto"} tone={showAlertAreas || proximityAlertEnabled ? "ok" : "neutral"} />
-              <ReadinessRow label="AOI pravidla" value={String(aoiRules.filter((rule) => rule.enabled).length)} tone={aoiRules.some((rule) => rule.enabled) ? "ok" : "neutral"} />
+              <ReadinessRow label="Uživatelské zóny" value={String(aoiRules.filter((rule) => rule.enabled).length)} tone={aoiRules.some((rule) => rule.enabled) ? "ok" : "neutral"} />
               <ReadinessRow label="Poloměr" value={`${alertRadiusKm} km`} tone="neutral" />
               <ReadinessRow label="Moje poloha" value={String(proximityAlerts.length)} tone={proximityAlerts.length > 0 ? "warn" : "ok"} />
               <button className="mini-button wide" onClick={() => void loadAlerts()} type="button">
@@ -1560,7 +1563,7 @@ export function App() {
               sourceHealth={sourceHealth}
             />
           ) : (
-            <div className="empty-state">Zatím nejsou přijata žádná COP data. Pošli validní ingest event ze SIM fixture.</div>
+            <div className="empty-state">Zatím nejsou přijata žádná situační data. Pošli validní ingest event ze SIM fixture.</div>
           )}
 
           <div className="readiness-box">
@@ -1588,7 +1591,7 @@ export function App() {
             <ReadinessRow label="Alert Center" value={`${alertSummary.server} server · ${alertSummary.local} local`} tone={alertSummary.total > 0 ? "warn" : "ok"} />
             <ReadinessRow label="History window" value={`${trackHistoryWindowSeconds} s · max ${trackHistoryLimit} pts`} tone="neutral" />
             <ReadinessRow label="Prediction" value={showPrediction ? `${predictionModeLabel(predictionMode)} · ${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
-            <ReadinessRow label="Policy scope" value="COP data only" tone="neutral" />
+            <ReadinessRow label="Policy scope" value="situační data" tone="neutral" />
           </div>
 
           <div className="personal-awareness-box">
@@ -1641,12 +1644,10 @@ export function App() {
           trackHistoryLimit={trackHistoryLimit}
           trackHistoryWindowSeconds={trackHistoryWindowSeconds}
           onAlertRadiusKmChange={setAlertRadiusKm}
-          onAoiRuleAffiliationScopeChange={handleAoiRuleAffiliationScopeChange}
           onAoiRuleCenterFromMap={handleAoiRuleCenterFromMap}
           onAoiRuleCenterFromUserLocation={handleAoiRuleCenterFromUserLocation}
           onAoiRuleEnabledChange={handleAoiRuleEnabledChange}
           onAoiRuleRadiusKmChange={handleAoiRuleRadiusChange}
-          onAoiRuleSeverityChange={handleAoiRuleSeverityChange}
           onAutoRefreshChange={setAutoRefresh}
           onClose={() => setSettingsOpen(false)}
           onIncludeSyntheticChange={setIncludeSynthetic}
@@ -1779,7 +1780,7 @@ function WorkspaceNavigator({
 }) {
   const modules: WorkspaceModule[] = ["map", "data", "sources", "alerts", "replay"];
   return (
-    <nav className="workspace-nav" aria-label="COP workspace">
+    <nav className="workspace-nav" aria-label="Situační pracovní plocha">
       {modules.map((module) => {
         const metadata = workspaceMetadata(module);
         return (
@@ -2211,12 +2212,10 @@ function SettingsDrawer({
   trackHistoryLimit,
   trackHistoryWindowSeconds,
   onAlertRadiusKmChange,
-  onAoiRuleAffiliationScopeChange,
   onAoiRuleCenterFromMap,
   onAoiRuleCenterFromUserLocation,
   onAoiRuleEnabledChange,
   onAoiRuleRadiusKmChange,
-  onAoiRuleSeverityChange,
   onAutoRefreshChange,
   onClose,
   onIncludeSyntheticChange,
@@ -2257,12 +2256,10 @@ function SettingsDrawer({
   trackHistoryLimit: number;
   trackHistoryWindowSeconds: number;
   onAlertRadiusKmChange: (value: number) => void;
-  onAoiRuleAffiliationScopeChange: (value: AoiRuleAffiliationScope) => void;
   onAoiRuleCenterFromMap: () => void;
   onAoiRuleCenterFromUserLocation: () => void;
   onAoiRuleEnabledChange: (value: boolean) => void;
   onAoiRuleRadiusKmChange: (value: number) => void;
-  onAoiRuleSeverityChange: (value: NonNullable<AoiRule["severity"]>) => void;
   onAutoRefreshChange: (value: boolean) => void;
   onClose: () => void;
   onIncludeSyntheticChange: (value: boolean) => void;
@@ -2297,7 +2294,7 @@ function SettingsDrawer({
           {[
             ["map", "Mapa"],
             ["data", "Data"],
-            ["awareness", "Poloha"],
+            ["awareness", "Výstrahy"],
             ["account", "Účet"]
           ].map(([tab, label]) => (
             <button
@@ -2371,7 +2368,7 @@ function SettingsDrawer({
                 Primární zdroj živých dat je SSE stream. Tato synchronizace se používá při výpadku streamu, po obnově záložky a pro méně dynamická data.
               </p>
               <p className="settings-help">
-                PWA režim ukládá aplikační shell a poslední povolený COP snapshot pro read-only zobrazení při výpadku spojení.
+                PWA režim ukládá aplikační shell a poslední povolený situační snapshot pro read-only zobrazení při výpadku spojení.
               </p>
               <label className="toggle-row">
                 <input type="checkbox" checked={autoRefresh} onChange={(event) => onAutoRefreshChange(event.target.checked)} />
@@ -2385,7 +2382,7 @@ function SettingsDrawer({
               />
               <label className="toggle-row">
                 <input type="checkbox" checked={includeSynthetic} onChange={(event) => onIncludeSyntheticChange(event.target.checked)} />
-                Zobrazit simulované cíle
+                Zobrazit simulovaná data
               </label>
               <label className="range-label">
                 Minimum confidence
@@ -2397,18 +2394,18 @@ function SettingsDrawer({
 
           {activeTab === "awareness" ? (
             <section className="settings-section">
-              <PanelTitle icon={<MapPin size={17} />} title="Poloha a výstrahy" />
+              <PanelTitle icon={<MapPin size={17} />} title="Výstrahy a zóny" />
               <label className="toggle-row">
                 <input type="checkbox" checked={proximityAlertEnabled} onChange={(event) => onProximityAlertEnabledChange(event.target.checked)} />
-                Výstraha při přiblížení cizího cíle
+                Upozornit na rizika v okolí mojí polohy
               </label>
               <label className="toggle-row">
                 <input type="checkbox" checked={showAlertAreas} onChange={(event) => onShowAlertAreasChange(event.target.checked)} />
-                Serverové výstražné kruhy v mapě
+                Zobrazit výstražné oblasti v mapě
               </label>
-              <p className="settings-help">Žluté kruhy kolem flight-data stop jsou mapové oblasti aktivních serverových výstrah, typicky AOI, stale nebo nízká confidence. Vypnutím zůstane seznam výstrah dostupný bez zahlcení mapy.</p>
+              <p className="settings-help">Výstražné oblasti jsou mapová vrstva pro rizika v okolí, uživatelské zóny a serverové události. Seznam výstrah zůstává dostupný i při vypnutém zobrazení v mapě.</p>
               <label className="range-label">
-                Poloměr výstrahy
+                Poloměr okolí
                 <input
                   type="range"
                   min="1"
@@ -2420,34 +2417,14 @@ function SettingsDrawer({
                 <span>{alertRadiusKm} km</span>
               </label>
               <div className="settings-subsection">
-                <PanelTitle icon={<AlertTriangle size={17} />} title="Oblast zájmu" />
+                <PanelTitle icon={<AlertTriangle size={17} />} title="Uživatelská zóna" />
                 <label className="toggle-row">
                   <input type="checkbox" checked={Boolean(aoiRule?.enabled)} onChange={(event) => onAoiRuleEnabledChange(event.target.checked)} />
-                  Serverová AOI výstraha
+                  Upozornit na události ve zvolené zóně
                 </label>
-                <SegmentedControl
-                  label="Objekty"
-                  options={[
-                    ["hostile", "Cizí"],
-                    ["all", "Vše"],
-                    ["friend", "Vlastní"],
-                    ["unknown", "Neznámé"]
-                  ]}
-                  value={aoiRule?.affiliationScope ?? "hostile"}
-                  onChange={(value) => onAoiRuleAffiliationScopeChange(value as AoiRuleAffiliationScope)}
-                />
-                <SegmentedControl
-                  label="Priorita"
-                  options={[
-                    ["warning", "Warning"],
-                    ["info", "Info"],
-                    ["critical", "Critical"]
-                  ]}
-                  value={aoiRule?.severity ?? "warning"}
-                  onChange={(value) => onAoiRuleSeverityChange(value as NonNullable<AoiRule["severity"]>)}
-                />
+                <p className="settings-help">Zóna je osobní sledovaný prostor. Teď sleduje dostupná situační data a objekty; další krok je komunitní hlášení typu požár, foto a popis.</p>
                 <label className="range-label">
-                  AOI poloměr
+                  Poloměr zóny
                   <input
                     type="range"
                     min="1"
@@ -2459,15 +2436,15 @@ function SettingsDrawer({
                   <span>{Math.round(aoiRule?.radiusKm ?? 10)} km</span>
                 </label>
                 <div className="coordinate-readout">
-                  <span>Střed AOI</span>
+                  <span>Střed zóny</span>
                   <strong>{formatAoiCenter(aoiRule)}</strong>
                 </div>
                 <div className="settings-button-row">
                   <button className="mini-button" onClick={onAoiRuleCenterFromMap} type="button">
-                    Střed mapy
+                    Vytvořit ze středu mapy
                   </button>
                   <button className="mini-button" onClick={onAoiRuleCenterFromUserLocation} type="button">
-                    Moje poloha
+                    Vytvořit z mojí polohy
                   </button>
                 </div>
               </div>
@@ -2536,7 +2513,7 @@ function LayerSourceTree({
     { count: scopedObjects.length, description: "Všechny přijaté georeferencované tracky po aktivních filtrech.", label: "Celkový obraz", layerId: "air-situation" },
     { count: getUavCount(scopedObjects), description: "Bezpilotní prostředky a UAV tracky.", label: "UAV", layerId: "uav" },
     { count: metrics.friendlyCount, description: "Vlastní a pravděpodobně vlastní objekty.", label: "Vlastní", layerId: "friendly" },
-    { count: metrics.foreignCount, description: "Cizí, suspect nebo hostile objekty.", label: "Cizí", layerId: "foreign" },
+    { count: metrics.foreignCount, description: "Rizikové nebo neověřené objekty.", label: "Rizikové", layerId: "foreign" },
     { count: metrics.publicFlightCount, description: "Veřejná letová data ze SIM flight-data zdroje.", label: "Public flights", layerId: "public-flights" },
     { count: getDataQualityCount(scopedObjects), description: "Tracky s nízkou confidence nebo datovou nejistotou.", label: "Data quality", layerId: "data-quality" }
   ];
@@ -2645,6 +2622,37 @@ function SituationLayerControls({
   );
 }
 
+function UserZoneLayerControls({
+  zone,
+  onEnabledChange,
+  onOpenSettings
+}: {
+  zone: AoiRule | null;
+  onEnabledChange: (enabled: boolean) => void;
+  onOpenSettings: () => void;
+}) {
+  const enabled = Boolean(zone?.enabled);
+  return (
+    <div className="user-zone-layer-box">
+      <div className="situation-layer-header">
+        <PanelTitle icon={<MapPin size={17} />} title="Uživatelské zóny" />
+        <span className={`situation-status ${enabled ? "online" : "disabled"}`}>{enabled ? "aktivní" : "vypnuto"}</span>
+      </div>
+      <label className="situation-layer-toggle" title="Zobrazí v mapě vaši zónu a zapne výstrahu pro události nebo objekty uvnitř zóny.">
+        <input checked={enabled} onChange={(event) => onEnabledChange(event.target.checked)} type="checkbox" />
+        <span>
+          <strong>{zone?.name ?? "Moje výstražná zóna"}</strong>
+          <small>{enabled ? `${Math.round(zone?.radiusKm ?? 10)} km · ${formatAoiCenter(zone)}` : "Zapněte zónu nebo ji vytvořte v nastavení výstrah."}</small>
+        </span>
+      </label>
+      <button className="mini-button wide" onClick={onOpenSettings} type="button">
+        <Settings size={14} />
+        Nastavit zónu
+      </button>
+    </div>
+  );
+}
+
 function SegmentedControl({
   label,
   options,
@@ -2690,7 +2698,7 @@ function TrackTable({
   }
 
   return (
-    <div className="track-table" role="table" aria-label="COP track list">
+    <div className="track-table" role="table" aria-label="Seznam situačních objektů">
       <div className="track-table-head" role="row">
         <span>ID</span>
         <span>Type</span>
@@ -3128,7 +3136,7 @@ function buildMapEmptyMessage({
   visibleObjects: CopObject[];
 }): string {
   if (loadError) {
-    return `COP API není dostupné: ${loadError}`;
+    return `API situační mapy není dostupné: ${loadError}`;
   }
   if (replayActive && objects.length === 0) {
     return "Zvolený čas replaye neobsahuje žádné tracky. Posuň časovou osu nebo přepni zpět na live.";
@@ -3139,15 +3147,15 @@ function buildMapEmptyMessage({
     }
     return scopedObjects.length > 0
       ? "Zapnuté track streamy neobsahují žádné objekty. Změň výběr streamů nebo zapni kontextové vrstvy."
-      : "Aktivní filtry skrývají všechny přijaté COP tracky.";
+      : "Aktivní filtry skrývají všechny přijaté objekty.";
   }
   if (hasActiveSimSource(sources)) {
-    return "SIM zdroj je připojený, ale COP nemá žádné aktivní georeferencované tracky. Spusť scénář v SIM.";
+    return "SIM zdroj je připojený, ale mapa nemá žádné aktivní georeferencované objekty. Spusť scénář v SIM.";
   }
   if (sources.length > 0) {
     return "Source Registry je dostupný, ale zatím nejsou přijaty aktivní georeferencované tracky.";
   }
-  return "Čekám na georeferencované COP tracky.";
+  return "Čekám na georeferencované situační objekty.";
 }
 
 function hasActiveSimSource(sources: SourceSystem[]): boolean {
@@ -3204,12 +3212,12 @@ function createDefaultAoiRule(userLocation: UserLocation | null, mapView: MapVie
       ? { lat: mapView.center[1], lon: mapView.center[0] }
       : defaultAoiCenter;
   return {
-    affiliationScope: "hostile",
+    affiliationScope: "all",
     enabled: false,
     id: "primary-aoi",
     lat: center.lat,
     lon: center.lon,
-    name: "Primární AOI",
+    name: "Moje výstražná zóna",
     radiusKm: 10,
     severity: "warning"
   };
@@ -3217,14 +3225,14 @@ function createDefaultAoiRule(userLocation: UserLocation | null, mapView: MapVie
 
 function normalizeClientAoiRule(rule: AoiRule): AoiRule {
   return {
-    affiliationScope: rule.affiliationScope ?? "hostile",
+    affiliationScope: "all",
     enabled: rule.enabled,
     id: rule.id.trim() || "primary-aoi",
     lat: clamp(rule.lat, -90, 90),
     lon: clamp(rule.lon, -180, 180),
-    name: rule.name.trim() || "Primární AOI",
+    name: rule.name.trim() || "Moje výstražná zóna",
     radiusKm: clamp(rule.radiusKm, 1, 80),
-    severity: rule.severity ?? "warning"
+    severity: "warning"
   };
 }
 
@@ -3253,7 +3261,7 @@ function defaultSituationLayers(): SituationLayer[] {
     },
     {
       defaultVisible: false,
-      description: "Mobilní kontextové prvky mimo COP tracks.",
+      description: "Mobilní kontextové prvky mimo hlavní track streamy.",
       geometryTypes: ["Point"],
       label: "Mobile",
       layerId: "mobile"
@@ -3459,7 +3467,7 @@ function alertSeverityLabel(severity: CopAlert["severity"]): string {
 
 function alertTypeLabel(type: CopAlert["type"]): string {
   const labels: Record<CopAlert["type"], string> = {
-    AOI_ENTRY: "AOI",
+    AOI_ENTRY: "zóna",
     LOW_CONFIDENCE: "confidence",
     SOURCE_DEGRADED: "source",
     TRACK_CONFLICT: "conflict",

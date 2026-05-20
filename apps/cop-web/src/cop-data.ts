@@ -515,12 +515,12 @@ export function connectCopStream(apiBase: string, token: string, handlers: CopSt
   void readCopStream(apiBase, token, controller.signal, handlers)
     .then(() => {
       if (!controller.signal.aborted) {
-        handlers.onError(new Error("COP live stream closed."));
+        handlers.onError(new Error("Živý stream situačních dat byl ukončen."));
       }
     })
     .catch((error: unknown) => {
       if (!controller.signal.aborted) {
-        handlers.onError(error instanceof Error ? error : new Error("COP live stream failed."));
+        handlers.onError(error instanceof Error ? error : new Error("Živý stream situačních dat selhal."));
       }
     });
 
@@ -615,10 +615,10 @@ async function readCopStream(apiBase: string, token: string, signal: AbortSignal
     signal
   });
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText || "COP stream failed"}`);
+    throw new Error(`${response.status} ${response.statusText || "Živý stream selhal"}`);
   }
   if (!response.body) {
-    throw new Error("Browser does not expose a readable COP stream.");
+    throw new Error("Prohlížeč neposkytuje čitelný stream situačních dat.");
   }
 
   handlers.onOpen();

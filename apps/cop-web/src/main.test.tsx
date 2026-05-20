@@ -153,7 +153,7 @@ describe("COP web dashboard", () => {
     expect(screen.getByText("APP6-AIR-FRIEND-AIRCRAFT-ACTIVE")).toBeTruthy();
     expect(screen.getByText("SFAP-----------")).toBeTruthy();
     expect(screen.getByText("SIM")).toBeTruthy();
-    expect(screen.getByText("Zobrazit simulované cíle")).toBeTruthy();
+    expect(screen.getByText("Zobrazit simulovaná data")).toBeTruthy();
     expect(screen.getByText("Profily pohledu")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Mapa/u }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: /Zdroje/u }));

@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
-  title: ACR COP Data Fabric Main COP API
+  title: Civil Situation Map API
   version: 0.1.0
-  summary: Documentation-first OpenAPI skeleton for the main COP system.
+  summary: Documentation-first OpenAPI skeleton for the civil situation map.
   license:
     name: Internal baseline - license pending
     identifier: LicenseRef-Internal-Baseline
   description: >
-    API baseline for ingest, COP query, subscriptions, source registry,
+    API baseline for ingest, situation queries, subscriptions, source registry,
     symbology, audit, AI assistance, health and metrics. The API supports
     situational awareness and data interoperability only; it does not define
     targeting, weapon control or use-of-force workflows.
@@ -23,12 +23,12 @@ tags:
     description: Native iPhone/iPad bootstrap, offline snapshot and device registration endpoints.
   - name: Ingest
     description: Event and batch ingest endpoints for registered external sources.
-  - name: COP
-    description: Query and subscription endpoints for policy-filtered COP state.
+  - name: Situation State
+    description: Query and subscription endpoints for policy-filtered situation state.
   - name: Streaming
     description: Snapshot and delta stream endpoints.
   - name: Symbology
-    description: NATO symbol resolution endpoints owned by the main COP system.
+    description: Symbol resolution endpoints owned by the situation map system.
   - name: Sources
     description: Source Registry lifecycle endpoints.
   - name: Situation Context

@@ -664,13 +664,18 @@ h1 {
   text-align: right;
 }
 
-.situation-layer-box {
+.situation-layer-box,
+.user-zone-layer-box {
   display: grid;
   gap: 8px;
   margin: 10px 0 14px;
   padding: 10px;
   border: 1px solid rgba(140, 182, 216, 0.24);
   background: rgba(5, 9, 12, 0.38);
+}
+
+.user-zone-layer-box {
+  border-color: rgba(200, 240, 141, 0.24);
 }
 
 .situation-layer-header {

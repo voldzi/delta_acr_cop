@@ -67,7 +67,7 @@ export function getAffiliationPresentation(affiliation: string): AffiliationPres
     return { disposition: "friend", color: "#3b82f6", label: "Vlastní" };
   }
   if (normalized === "HOSTILE" || normalized === "SUSPECT") {
-    return { disposition: "hostile", color: "#ef4444", label: "Cizí" };
+    return { disposition: "hostile", color: "#ef4444", label: "Rizikové" };
   }
   if (normalized === "NEUTRAL") {
     return { disposition: "neutral", color: "#22c55e", label: "Neutrální" };

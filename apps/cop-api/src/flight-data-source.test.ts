@@ -88,7 +88,7 @@ function sampleFlightResponse() {
         enabled: true,
         label: "Synthetic local flight feed",
         license: {
-          attribution: "DELTA ACR SIM",
+          attribution: "SIM flight data",
           name: "Synthetic internal test data"
         },
         mode: "mock",

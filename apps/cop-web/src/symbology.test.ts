@@ -35,12 +35,12 @@ describe("COP web symbology", () => {
     expect(presentation).toMatchObject({
       disposition: "hostile",
       color: "#ef4444",
-      label: "Cizí"
+      label: "Rizikové"
     });
     expect(suspect).toMatchObject({
       disposition: "hostile",
       color: "#ef4444",
-      label: "Cizí"
+      label: "Rizikové"
     });
     expect(getNatoIconKey("UAV", "HOSTILE")).toBe("nato-hostile-uav");
     expect(getNatoSidc("UAV", "HOSTILE")).toBe("SHAPMFQ--------");

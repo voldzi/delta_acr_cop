@@ -1,6 +1,6 @@
-# ACR COP Data Fabric / SITDATA-COP
+# Civilní situační mapa
 
-Implementační skeleton hlavního COP systému. Projekt navazuje na dokumentační baseline v `docs/` a připravuje samostatný COP monorepo skeleton pro lokální pilot.
+Implementační skeleton civilní situační mapy pro zobrazení rizik v okolí, výstrah, zdrojových vrstev a budoucích komunitních hlášení uživatelů.
 
 ## Stack
 
@@ -30,4 +30,4 @@ Pilotní compose soubor používá porty `4310` a `4311`. Před nasazením na se
 
 ## Bezpečnostní hranice
 
-Systém je situační datová platforma. Nepřidává targeting, navádění, řízení zbraní, doporučování použití síly ani autonomní operační rozhodování.
+Systém je situační datová platforma pro civilní informování a ochranu osob. Nepřidává targeting, navádění, řízení zbraní, doporučování použití síly ani autonomní operační rozhodování.

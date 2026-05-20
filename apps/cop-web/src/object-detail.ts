@@ -168,7 +168,7 @@ function buildLineage(
     },
     {
       detail: `${object.domain} / ${object.status} / confidence ${Math.round((object.confidence ?? 0) * 100)} %`,
-      label: "Canonical COP object",
+      label: "Kanonický situační objekt",
       status: object.objectId
     },
     {
@@ -187,7 +187,7 @@ function detectObjectConflicts(
   const conflicts: ObjectConflict[] = [];
   if (object.status === "CONFLICTED") {
     conflicts.push({
-      detail: "Object status is marked CONFLICTED in the COP state.",
+      detail: "Object status is marked CONFLICTED in the situation state.",
       severity: "warn",
       title: "State conflict"
     });

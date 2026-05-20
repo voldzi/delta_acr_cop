@@ -1064,7 +1064,7 @@ export function CopMap({
 
   return (
     <div className="map-container">
-      <div className="map-canvas" ref={containerRef} aria-label="COP georeferenced map" />
+      <div className="map-canvas" ref={containerRef} aria-label="Georeferencovaná situační mapa" />
       <div
         className="map-toolbar"
         onClick={stopMapToolbarEvent}
@@ -1098,13 +1098,13 @@ export function CopMap({
       </div>
       <div className="map-legend">
         <LegendItem disposition="friend" color="#3b82f6" label="Vlastní" />
-        <LegendItem disposition="hostile" color="#ef4444" label="Cizí" />
+        <LegendItem disposition="hostile" color="#ef4444" label="Rizikové" />
         <LegendItem disposition="neutral" color="#22c55e" label="Neutrální" />
         <LegendItem disposition="unknown" color="#facc15" label="Neznámé" />
         {showHistory ? <LineLegendItem label="Historie" /> : null}
         {showPrediction ? <LineLegendItem dashed label="Predikce" /> : null}
         {showProximityAlertRadius && userLocation ? <RadiusLegendItem active={hasProximityAlerts} label="Výstražný perimetr" /> : null}
-        {aoiRuleFeatureCollection.features.length > 0 ? <RadiusLegendItem active={false} label="AOI" /> : null}
+        {aoiRuleFeatureCollection.features.length > 0 ? <RadiusLegendItem active={false} label="Uživatelská zóna" /> : null}
         {alertAreaFeatureCollection.features.length > 0 ? <RadiusLegendItem active label="Alert vrstva" /> : null}
         {situationFeatureCollection.features.length > 0 ? <SituationLegendItem label="Situační kontext" /> : null}
         {clusterTracks ? <ClusterLegendItem label="Shluky" /> : null}

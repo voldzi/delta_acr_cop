@@ -1,7 +1,7 @@
 {
-  "name": "ACR COP Data Fabric",
-  "short_name": "COP",
-  "description": "Common operating picture for SITDATA-COP lab operations.",
+  "name": "Civilní situační mapa",
+  "short_name": "Situační mapa",
+  "description": "Mapa rizik v okolí, výstrah a sdílených situačních informací.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

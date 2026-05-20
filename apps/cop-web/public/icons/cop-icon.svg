@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">COP app icon</title>
-  <desc id="desc">Dark tactical common operating picture icon with COP lettering, map grid, and friendly and hostile track markers.</desc>
+  <title id="title">Civil risk map app icon</title>
+  <desc id="desc">Civil situation map icon with map grid, alert zone, weather point, and shared risk markers.</desc>
   <defs>
     <linearGradient id="bg" x1="72" x2="440" y1="32" y2="480" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#15242c" />
@@ -43,7 +43,7 @@
     <circle cx="256" cy="256" r="6" fill="#c8f08d" />
 
     <rect x="188" y="134" width="48" height="34" fill="#1d4ed8" stroke="#9cc7ff" stroke-width="5" />
-    <path d="M361 179L386 204L361 229L336 204Z" fill="#b91c1c" stroke="#ff8b8b" stroke-width="5" />
+    <path d="M361 179L386 204L361 229L336 204Z" fill="#ef4444" stroke="#ffb4b4" stroke-width="5" />
     <circle cx="148" cy="300" r="21" fill="#221d08" stroke="#facc15" stroke-width="5" />
     <path d="M318 355L341 379H295Z" fill="#122119" stroke="#6ee7a4" stroke-width="5" />
 
@@ -52,6 +52,6 @@
     <path d="M168 291L224 274" fill="none" stroke="#8cb6d8" stroke-opacity="0.5" stroke-width="3" />
   </g>
 
-  <text x="256" y="313" text-anchor="middle" fill="#eaffc9" filter="url(#text-glow)" font-family="Inter, Arial, sans-serif" font-size="116" font-weight="900" letter-spacing="0">COP</text>
+  <text x="256" y="313" text-anchor="middle" fill="#eaffc9" filter="url(#text-glow)" font-family="Inter, Arial, sans-serif" font-size="106" font-weight="900" letter-spacing="0">MAP</text>
   <path d="M122 404H390" stroke="#c8f08d" stroke-opacity="0.72" stroke-width="6" stroke-linecap="square" />
 </svg>
