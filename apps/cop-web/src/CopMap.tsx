@@ -5,7 +5,7 @@ import maplibregl, {
   type StyleSpecification
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { AoiRule, CopAlert, CopLayer, CopObject, MapBounds, SituationFeature, SituationFeatureCollectionResponse } from "./cop-data";
+import type { AoiRule, CopAlert, CopObject, MapBounds, SituationFeature, SituationFeatureCollectionResponse } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
 import type { MapViewState } from "./user-preferences";
@@ -37,6 +37,8 @@ const alertAreaLineLayerId = "cop-alert-area-line";
 const situationFillLayerId = "cop-situation-fill";
 const situationLineLayerId = "cop-situation-line";
 const situationPointSelectedLayerId = "cop-situation-point-selected";
+const situationWeatherPointLayerId = "cop-situation-weather-point";
+const situationWeatherLabelLayerId = "cop-situation-weather-label";
 const situationPointLayerId = "cop-situation-point";
 const situationLabelLayerId = "cop-situation-label";
 const userLocationAccuracyLayerId = "cop-user-location-accuracy";
@@ -129,6 +131,12 @@ export interface SituationContextFeatureCollection {
     geometry: SituationFeature["geometry"];
     properties: SituationFeature["properties"] & {
       selected: boolean;
+      weatherCloudCoverPercent?: number;
+      weatherLabel?: string;
+      weatherPrecipitationMm?: number;
+      weatherTemperatureC?: number;
+      weatherWindDirectionDeg?: number;
+      weatherWindSpeedMps?: number;
     };
   }>;
 }
@@ -139,8 +147,9 @@ interface CopMapProps {
   clusterTracks: boolean;
   objects: CopObject[];
   emptyMessage: string;
+  hasSituationContextEnabled: boolean;
+  mapLayerLabel: string;
   selectedSituationFeatureId?: string;
-  selectedLayer: CopLayer;
   selectedObjectId?: string;
   showHistory: boolean;
   showPrediction: boolean;
@@ -184,8 +193,9 @@ export function CopMap({
   clusterTracks,
   objects,
   emptyMessage,
+  hasSituationContextEnabled,
+  mapLayerLabel,
   selectedSituationFeatureId,
-  selectedLayer,
   selectedObjectId,
   showHistory,
   showPrediction,
@@ -508,7 +518,7 @@ export function CopMap({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["==", ["geometry-type"], "Point"],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"]],
           paint: {
             "circle-color": [
               "match",
@@ -535,7 +545,7 @@ export function CopMap({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["==", ["geometry-type"], "Point"],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"]],
           layout: {
             "text-field": ["get", "label"],
             "text-font": ["Open Sans Semibold"],
@@ -550,6 +560,65 @@ export function CopMap({
             "text-halo-color": "#061019",
             "text-halo-width": 1.5,
             "text-halo-blur": 0.4
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherPointLayerId,
+          type: "circle",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "weather"]],
+          paint: {
+            "circle-color": [
+              "interpolate",
+              ["linear"],
+              ["coalesce", ["get", "weatherTemperatureC"], 12],
+              -15,
+              "#60a5fa",
+              0,
+              "#38bdf8",
+              15,
+              "#22c55e",
+              25,
+              "#facc15",
+              35,
+              "#ef4444"
+            ],
+            "circle-opacity": ["case", ["get", "stale"], 0.48, 0.74],
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 10, 11, 18, 16, 30],
+            "circle-stroke-color": ["case", [">", ["coalesce", ["get", "weatherPrecipitationMm"], 0], 0], "#dff8ff", "#061019"],
+            "circle-stroke-opacity": 0.9,
+            "circle-stroke-width": [
+              "interpolate",
+              ["linear"],
+              ["coalesce", ["get", "weatherCloudCoverPercent"], 0],
+              0,
+              1.2,
+              100,
+              3.2
+            ]
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherLabelLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "weather"]],
+          layout: {
+            "text-field": ["get", "weatherLabel"],
+            "text-font": ["Open Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 6, 10, 11, 12, 15, 14],
+            "text-allow-overlap": true,
+            "text-ignore-placement": true,
+            "text-offset": [0, 0],
+            "text-anchor": "center"
+          },
+          paint: {
+            "text-color": "#061019",
+            "text-halo-color": "rgba(244, 247, 251, 0.88)",
+            "text-halo-width": 1.3,
+            "text-halo-blur": 0.2
           }
         });
 
@@ -753,6 +822,8 @@ export function CopMap({
         map.on("click", trackClusterLabelLayerId, handleClick);
         map.on("click", situationPointLayerId, handleSituationClick);
         map.on("click", situationLabelLayerId, handleSituationClick);
+        map.on("click", situationWeatherPointLayerId, handleSituationClick);
+        map.on("click", situationWeatherLabelLayerId, handleSituationClick);
         map.on("click", situationLineLayerId, handleSituationClick);
         map.on("click", situationFillLayerId, handleSituationClick);
         map.on("click", trackClusterCircleLayerId, handleClusterClick);
@@ -792,6 +863,12 @@ export function CopMap({
         map.on("mouseenter", situationLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationWeatherPointLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationWeatherLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationLineLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -820,6 +897,12 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationWeatherPointLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationWeatherLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationLineLayerId, () => {
@@ -991,7 +1074,7 @@ export function CopMap({
       >
         <div>
           <span>Map layer</span>
-          <strong>{selectedLayer}</strong>
+          <strong>{mapLayerLabel}</strong>
         </div>
         <button
           className={`map-action ${autoFit ? "active" : ""}`}
@@ -1029,7 +1112,7 @@ export function CopMap({
       {clusterInfo ? <ClusterPanel cluster={clusterInfo} onClose={() => setClusterInfo(null)} /> : null}
       {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}
       {mapError ? <div className="map-notice error">Mapový podklad: {mapError}</div> : null}
-      {objects.length === 0 ? <div className="map-empty">{emptyMessage}</div> : null}
+      {objects.length === 0 && !hasSituationContextEnabled && situationFeatureCollection.features.length === 0 ? <div className="map-empty">{emptyMessage}</div> : null}
     </div>
   );
 }
@@ -1211,11 +1294,51 @@ export function situationFeaturesToFeatureCollection(
       geometry: feature.geometry,
       properties: {
         ...feature.properties,
+        ...buildSituationRenderProperties(feature),
         selected: feature.properties.featureId === selectedFeatureId
       },
       type: "Feature"
     }))
   };
+}
+
+function buildSituationRenderProperties(feature: SituationFeature): Partial<SituationContextFeatureCollection["features"][number]["properties"]> {
+  if (feature.properties.layer !== "weather") {
+    return {};
+  }
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const temperatureC = recordNumber(metrics, "temperatureC");
+  const windSpeedMps = recordNumber(metrics, "windSpeedMps");
+  const windDirectionDeg = recordNumber(metrics, "windDirectionDeg");
+  const precipitationMm = recordNumber(metrics, "precipitationMm");
+  const cloudCoverPercent = recordNumber(metrics, "cloudCoverPercent");
+  return {
+    weatherCloudCoverPercent: cloudCoverPercent,
+    weatherLabel: formatWeatherMapLabel(temperatureC, windSpeedMps, precipitationMm),
+    weatherPrecipitationMm: precipitationMm,
+    weatherTemperatureC: temperatureC,
+    weatherWindDirectionDeg: windDirectionDeg,
+    weatherWindSpeedMps: windSpeedMps
+  };
+}
+
+function formatWeatherMapLabel(temperatureC: number | undefined, windSpeedMps: number | undefined, precipitationMm: number | undefined): string {
+  const parts: string[] = [];
+  if (temperatureC !== undefined) {
+    parts.push(`${Math.round(temperatureC)}°C`);
+  }
+  if (windSpeedMps !== undefined && windSpeedMps >= 0.5) {
+    parts.push(`${Math.round(windSpeedMps)} m/s`);
+  }
+  if (precipitationMm !== undefined && precipitationMm > 0) {
+    parts.push(`${precipitationMm.toFixed(1)} mm`);
+  }
+  return parts.length > 0 ? parts.slice(0, 2).join("\n") : "WX";
+}
+
+function recordNumber(record: Record<string, unknown>, key: string): number | undefined {
+  const value = Number(record[key]);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 export function objectsToTrackFeatureCollection(objects: CopObject[], selectedObjectId?: string): TrackFeatureCollection {

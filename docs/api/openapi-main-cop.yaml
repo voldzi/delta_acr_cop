@@ -1176,6 +1176,11 @@ components:
           items:
             type: string
             enum: [weather, ground, mobile, traffic]
+        trackLayerIds:
+          type: array
+          items:
+            type: string
+            enum: [air-situation, uav, friendly, foreign, public-flights, data-quality]
         trackHistoryLimit:
           type: number
           minimum: 1

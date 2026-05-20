@@ -572,6 +572,98 @@ h1 {
   font-size: 13px;
 }
 
+.layer-source-tree {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.layer-source-group {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(140, 182, 216, 0.24);
+  background: rgba(5, 9, 12, 0.38);
+}
+
+.layer-source-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.layer-source-header strong {
+  display: block;
+  color: #edf3f8;
+  font-size: 13px;
+}
+
+.layer-source-header span,
+.layer-source-header small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.layer-source-header small {
+  padding-top: 2px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.source-layer-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.source-layer-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 7px 8px;
+  border: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(18, 25, 31, 0.58);
+  color: #d9e4ee;
+  cursor: pointer;
+}
+
+.source-layer-toggle.cluster-toggle {
+  margin-top: 2px;
+  border-color: rgba(200, 240, 141, 0.22);
+}
+
+.source-layer-toggle input {
+  accent-color: var(--lime);
+}
+
+.source-layer-toggle span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.source-layer-toggle strong {
+  color: #edf3f8;
+  font-size: 12px;
+}
+
+.source-layer-toggle small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.source-layer-toggle em {
+  min-width: 28px;
+  color: var(--cyan);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  text-align: right;
+}
+
 .situation-layer-box {
   display: grid;
   gap: 8px;

@@ -45,8 +45,9 @@ import {
   fetchSituationFeatures,
   fetchSituationLayers,
   fetchUserProfile,
-  filterObjectsByLayer,
+  filterObjectsByLayers,
   filterVisibleObjects,
+  copLayerIds,
   getDataQualityCount,
   getPublicFlightCount,
   getUavCount,
@@ -202,6 +203,9 @@ export function App() {
   const [serverAlerts, setServerAlerts] = React.useState<CopAlert[]>([]);
   const [objects, setObjects] = React.useState<CopObject[]>([]);
   const [selectedLayer, setSelectedLayer] = React.useState<CopLayer>(() => readInitialLayer(initialPreferences.selectedLayer));
+  const [visibleTrackLayerIds, setVisibleTrackLayerIds] = React.useState<CopLayer[]>(() =>
+    normalizeTrackLayerIds(initialPreferences.trackLayerIds, readInitialLayer(initialPreferences.selectedLayer))
+  );
   const [selectedObjectId, setSelectedObjectId] = React.useState<string | null>(null);
   const [includeSynthetic, setIncludeSynthetic] = React.useState(initialPreferences.includeSynthetic ?? true);
   const [minConfidence, setMinConfidence] = React.useState(() => clamp(initialPreferences.minConfidence ?? 0.2, 0, 1));
@@ -228,7 +232,7 @@ export function App() {
   const [showPrediction, setShowPrediction] = React.useState(() =>
     readInitialMapToggle("prediction", initialPreferences.showPrediction ?? false)
   );
-  const [mapClusterEnabled, setMapClusterEnabled] = React.useState(initialPreferences.mapClusterEnabled ?? true);
+  const [mapClusterEnabled, setMapClusterEnabled] = React.useState(initialPreferences.mapClusterEnabled ?? false);
   const [showAlertAreas, setShowAlertAreas] = React.useState(initialPreferences.showAlertAreas ?? false);
   const [predictionMinutes, setPredictionMinutes] = React.useState(() => clamp(initialPreferences.predictionMinutes ?? 10, 2, 20));
   const [predictionMode, setPredictionMode] = React.useState<PredictionMode>(() => readInitialPredictionMode(initialPreferences.predictionMode));
@@ -658,12 +662,26 @@ export function App() {
     [affiliationScope, baseFilteredObjects, domainScope, searchQuery]
   );
   const visibleObjects = React.useMemo(
-    () => filterObjectsByLayer(scopedObjects, selectedLayer),
-    [scopedObjects, selectedLayer]
+    () => filterObjectsByLayers(scopedObjects, visibleTrackLayerIds),
+    [scopedObjects, visibleTrackLayerIds]
+  );
+  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0;
+  const mapLayerLabel = React.useMemo(
+    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds),
+    [visibleSituationLayerIds, visibleTrackLayerIds]
   );
   const mapEmptyMessage = React.useMemo(
-    () => buildMapEmptyMessage({ loadError, objects: objectsForDisplay, replayActive, scopedObjects, sources, visibleObjects }),
-    [loadError, objectsForDisplay, replayActive, scopedObjects, sources, visibleObjects]
+    () =>
+      buildMapEmptyMessage({
+        contextLayersEnabled: visibleSituationContextEnabled,
+        loadError,
+        objects: objectsForDisplay,
+        replayActive,
+        scopedObjects,
+        sources,
+        visibleObjects
+      }),
+    [loadError, objectsForDisplay, replayActive, scopedObjects, sources, visibleObjects, visibleSituationContextEnabled]
   );
   const selectedObject = visibleObjects.find((object) => object.objectId === selectedObjectId) ?? visibleObjects[0];
   const selectedSituationFeature = situationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
@@ -690,7 +708,17 @@ export function App() {
       setActiveWorkspace(normalizeWorkspaceModule(settings.activeWorkspace));
     }
     if (settings.selectedLayer !== undefined) {
-      setSelectedLayer(readInitialLayer(settings.selectedLayer));
+      const nextLayer = readInitialLayer(settings.selectedLayer);
+      setSelectedLayer(nextLayer);
+      if (settings.trackLayerIds === undefined) {
+        setVisibleTrackLayerIds([nextLayer]);
+      }
+    }
+    if (settings.trackLayerIds !== undefined) {
+      const fallbackLayer = settings.selectedLayer !== undefined ? readInitialLayer(settings.selectedLayer) : undefined;
+      const nextTrackLayerIds = normalizeTrackLayerIds(settings.trackLayerIds, fallbackLayer);
+      setVisibleTrackLayerIds(nextTrackLayerIds);
+      setSelectedLayer(nextTrackLayerIds[0] ?? fallbackLayer ?? "air-situation");
     }
     if (settings.affiliationScope !== undefined) {
       setAffiliationScope(readInitialAffiliationScope(settings.affiliationScope));
@@ -779,6 +807,7 @@ export function App() {
     showHistory,
     showPrediction,
     situationLayerIds: visibleSituationLayerIds,
+    trackLayerIds: visibleTrackLayerIds,
     trackHistoryLimit,
     trackHistoryWindowSeconds
   }), [
@@ -801,6 +830,7 @@ export function App() {
     showHistory,
     showPrediction,
     visibleSituationLayerIds,
+    visibleTrackLayerIds,
     trackHistoryLimit,
     trackHistoryWindowSeconds
   ]);
@@ -1057,6 +1087,16 @@ export function App() {
     });
   }
 
+  function toggleTrackLayer(layerId: CopLayer) {
+    setVisibleTrackLayerIds((current) => {
+      const next = current.includes(layerId)
+        ? current.filter((item) => item !== layerId)
+        : normalizeTrackLayerIds([...current, layerId], layerId);
+      setSelectedLayer(next[0] ?? layerId);
+      return next;
+    });
+  }
+
   async function acknowledgeServerAlert(alertId: string) {
     try {
       await acknowledgeCopAlert(apiBase, authToken, alertId);
@@ -1165,6 +1205,7 @@ export function App() {
         showHistory,
         showPrediction,
         situationLayerIds: visibleSituationLayerIds,
+        trackLayerIds: visibleTrackLayerIds,
         trackHistoryLimit,
         trackHistoryWindowSeconds
       }
@@ -1257,13 +1298,15 @@ export function App() {
 
           {showLayerControls ? (
             <>
-              <PanelTitle icon={<Layers size={17} />} title="Vrstvy" />
-              <LayerButton active={selectedLayer === "air-situation"} onClick={() => setSelectedLayer("air-situation")} label="Air situation" count={scopedObjects.length} />
-              <LayerButton active={selectedLayer === "uav"} onClick={() => setSelectedLayer("uav")} label="UAV" count={getUavCount(scopedObjects)} />
-              <LayerButton active={selectedLayer === "friendly"} onClick={() => setSelectedLayer("friendly")} label="Vlastní" count={metrics.friendlyCount} />
-              <LayerButton active={selectedLayer === "foreign"} onClick={() => setSelectedLayer("foreign")} label="Cizí" count={metrics.foreignCount} />
-              <LayerButton active={selectedLayer === "public-flights"} onClick={() => setSelectedLayer("public-flights")} label="Public flights" count={metrics.publicFlightCount} />
-              <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={getDataQualityCount(scopedObjects)} />
+              <PanelTitle icon={<Layers size={17} />} title="Mapové vrstvy" />
+              <LayerSourceTree
+                clusterTracks={mapClusterEnabled}
+                metrics={metrics}
+                scopedObjects={scopedObjects}
+                selectedLayerIds={visibleTrackLayerIds}
+                onClusterTracksChange={setMapClusterEnabled}
+                onToggleTrackLayer={toggleTrackLayer}
+              />
 
               <SituationLayerControls
                 featureCount={situationFeatures?.summary.featureCount ?? 0}
@@ -1386,7 +1429,6 @@ export function App() {
               objects={visibleObjects}
               emptyMessage={mapEmptyMessage}
               selectedSituationFeatureId={selectedSituationFeatureId ?? undefined}
-              selectedLayer={selectedLayer}
               selectedObjectId={selectedObject?.objectId}
               showHistory={showHistory}
               showPrediction={showPrediction}
@@ -1399,7 +1441,9 @@ export function App() {
               focusViewRequest={focusViewRequest}
               focusUserLocationRequest={focusUserLocationRequest}
               hasProximityAlerts={proximityAlerts.length > 0}
+              hasSituationContextEnabled={visibleSituationContextEnabled}
               initialView={mapView}
+              mapLayerLabel={mapLayerLabel}
               situationFeatures={situationFeatures}
               onBoundsChange={setMapBounds}
               onSelectObject={(object) => {
@@ -2473,12 +2517,86 @@ function PanelTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
   );
 }
 
-function LayerButton({ active, label, count, onClick }: { active: boolean; label: string; count: number; onClick: () => void }) {
+function LayerSourceTree({
+  clusterTracks,
+  metrics,
+  scopedObjects,
+  selectedLayerIds,
+  onClusterTracksChange,
+  onToggleTrackLayer
+}: {
+  clusterTracks: boolean;
+  metrics: DashboardMetrics;
+  scopedObjects: CopObject[];
+  selectedLayerIds: CopLayer[];
+  onClusterTracksChange: (value: boolean) => void;
+  onToggleTrackLayer: (layerId: CopLayer) => void;
+}) {
+  const streams: Array<{ count: number; description: string; label: string; layerId: CopLayer }> = [
+    { count: scopedObjects.length, description: "Všechny přijaté georeferencované tracky po aktivních filtrech.", label: "Celkový obraz", layerId: "air-situation" },
+    { count: getUavCount(scopedObjects), description: "Bezpilotní prostředky a UAV tracky.", label: "UAV", layerId: "uav" },
+    { count: metrics.friendlyCount, description: "Vlastní a pravděpodobně vlastní objekty.", label: "Vlastní", layerId: "friendly" },
+    { count: metrics.foreignCount, description: "Cizí, suspect nebo hostile objekty.", label: "Cizí", layerId: "foreign" },
+    { count: metrics.publicFlightCount, description: "Veřejná letová data ze SIM flight-data zdroje.", label: "Public flights", layerId: "public-flights" },
+    { count: getDataQualityCount(scopedObjects), description: "Tracky s nízkou confidence nebo datovou nejistotou.", label: "Data quality", layerId: "data-quality" }
+  ];
+
   return (
-    <button className={`layer-button ${active ? "active" : ""}`} onClick={onClick}>
-      <span>{label}</span>
-      <strong>{count}</strong>
-    </button>
+    <div className="layer-source-tree">
+      <div className="layer-source-group">
+        <div className="layer-source-header">
+          <div>
+            <strong>Air situation</strong>
+            <span>{selectedLayerIds.length} streamů zapnuto</span>
+          </div>
+          <small>{scopedObjects.length} tracků</small>
+        </div>
+        <div className="source-layer-grid">
+          {streams.map((stream) => (
+            <SourceLayerToggle
+              checked={selectedLayerIds.includes(stream.layerId)}
+              count={stream.count}
+              description={stream.description}
+              key={stream.layerId}
+              label={stream.label}
+              onToggle={() => onToggleTrackLayer(stream.layerId)}
+            />
+          ))}
+        </div>
+        <label className="source-layer-toggle cluster-toggle" title="Shlukování je volitelné. Když není zapnuté, mapa vykresluje jednotlivé tracky v aktuálním výřezu.">
+          <input type="checkbox" checked={clusterTracks} onChange={(event) => onClusterTracksChange(event.target.checked)} />
+          <span>
+            <strong>Shlukování tracků</strong>
+            <small>{clusterTracks ? "Zapnuto - kliknutí na shluk přiblíží mapu." : "Vypnuto - zobrazují se jednotlivé tracky."}</small>
+          </span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function SourceLayerToggle({
+  checked,
+  count,
+  description,
+  label,
+  onToggle
+}: {
+  checked: boolean;
+  count: number;
+  description: string;
+  label: string;
+  onToggle: () => void;
+}) {
+  return (
+    <label className="source-layer-toggle" title={description}>
+      <input checked={checked} onChange={onToggle} type="checkbox" />
+      <span>
+        <strong>{label}</strong>
+        <small>{description}</small>
+      </span>
+      <em>{count}</em>
+    </label>
   );
 }
 
@@ -2993,6 +3111,7 @@ function summarizeAlerts(serverAlerts: CopAlert[], proximityAlerts: ProximityAle
 }
 
 function buildMapEmptyMessage({
+  contextLayersEnabled,
   loadError,
   objects,
   replayActive,
@@ -3000,6 +3119,7 @@ function buildMapEmptyMessage({
   sources,
   visibleObjects
 }: {
+  contextLayersEnabled: boolean;
   loadError: string | null;
   objects: CopObject[];
   replayActive: boolean;
@@ -3014,8 +3134,11 @@ function buildMapEmptyMessage({
     return "Zvolený čas replaye neobsahuje žádné tracky. Posuň časovou osu nebo přepni zpět na live.";
   }
   if (objects.length > 0 && visibleObjects.length === 0) {
+    if (contextLayersEnabled) {
+      return "Track streamy jsou vypnuté nebo neodpovídají filtrům; mapa může dál zobrazovat vybrané kontextové vrstvy.";
+    }
     return scopedObjects.length > 0
-      ? "Aktivní mapová vrstva neobsahuje žádné tracky."
+      ? "Zapnuté track streamy neobsahují žádné objekty. Změň výběr streamů nebo zapni kontextové vrstvy."
       : "Aktivní filtry skrývají všechny přijaté COP tracky.";
   }
   if (hasActiveSimSource(sources)) {
@@ -3477,9 +3600,29 @@ function readInitialRefreshSeconds(fallback: RefreshSeconds): RefreshSeconds {
 }
 
 function readInitialLayer(value: string | undefined): CopLayer {
-  return ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"].includes(value ?? "")
+  return copLayerIds.includes((value ?? "") as CopLayer)
     ? (value as CopLayer)
     : "air-situation";
+}
+
+function normalizeTrackLayerIds(value: string[] | undefined, fallback: CopLayer = "air-situation"): CopLayer[] {
+  const layers = (value ?? [fallback]).filter(isCopLayer);
+  return Array.from(new Set(layers));
+}
+
+function isCopLayer(value: string): value is CopLayer {
+  return copLayerIds.includes(value as CopLayer);
+}
+
+function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[]): string {
+  const parts: string[] = [];
+  if (trackLayerIds.length > 0) {
+    parts.push(`${trackLayerIds.length} air`);
+  }
+  if (situationLayerIds.length > 0) {
+    parts.push(`${situationLayerIds.length} context`);
+  }
+  return parts.length > 0 ? parts.join(" + ") : "žádná vrstva";
 }
 
 function readInitialAffiliationScope(value: string | undefined): AffiliationScope {

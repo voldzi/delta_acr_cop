@@ -26,6 +26,7 @@ export interface ViewProfileSettings {
   showHistory?: boolean;
   showPrediction?: boolean;
   situationLayerIds?: string[];
+  trackLayerIds?: CopLayer[];
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
 }
@@ -55,6 +56,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       minConfidence: 0.2,
       refreshSeconds: 5,
       selectedLayer: "air-situation",
+      trackLayerIds: ["air-situation"],
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
@@ -79,6 +81,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       minConfidence: 0.2,
       refreshSeconds: 2,
       selectedLayer: "uav",
+      trackLayerIds: ["uav"],
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
@@ -103,6 +106,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       minConfidence: 0,
       refreshSeconds: 5,
       selectedLayer: "public-flights",
+      trackLayerIds: ["public-flights"],
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
@@ -126,6 +130,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       minConfidence: 0,
       refreshSeconds: 5,
       selectedLayer: "data-quality",
+      trackLayerIds: ["data-quality"],
       showAlertAreas: true,
       showHistory: false,
       showPrediction: false,
@@ -146,6 +151,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       mapClusterEnabled: false,
       minConfidence: 0.1,
       selectedLayer: "air-situation",
+      trackLayerIds: ["air-situation"],
       showAlertAreas: true,
       showHistory: true,
       showPrediction: false,
@@ -234,6 +240,7 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
     situationLayerIds: optionalStringArray(value.situationLayerIds),
+    trackLayerIds: optionalLayerArray(value.trackLayerIds),
     trackHistoryLimit: optionalNumber(value.trackHistoryLimit),
     trackHistoryWindowSeconds: optionalNumber(value.trackHistoryWindowSeconds)
   };
@@ -243,6 +250,14 @@ function normalizeLayer(value: unknown): CopLayer | undefined {
   return value === "air-situation" || value === "uav" || value === "friendly" || value === "foreign" || value === "public-flights" || value === "data-quality"
     ? value
     : undefined;
+}
+
+function optionalLayerArray(value: unknown): CopLayer[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const layers = value.filter((item): item is CopLayer => normalizeLayer(item) !== undefined);
+  return layers.length > 0 ? Array.from(new Set(layers)) : [];
 }
 
 function normalizePredictionMode(value: unknown): PredictionMode | undefined {

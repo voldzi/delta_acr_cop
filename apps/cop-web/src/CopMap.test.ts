@@ -102,6 +102,13 @@ describe("COP map data helpers", () => {
             featureId: "weather:prague",
             label: "Praha weather",
             layer: "weather",
+            metrics: {
+              cloudCoverPercent: 82,
+              precipitationMm: 0,
+              temperatureC: 19.4,
+              windDirectionDeg: 230,
+              windSpeedMps: 3.2
+            },
             observedAt: "2026-05-20T10:00:00Z",
             sourceId: "open_meteo",
             stale: false
@@ -137,7 +144,12 @@ describe("COP map data helpers", () => {
           properties: {
             featureId: "weather:prague",
             layer: "weather",
-            selected: true
+            selected: true,
+            weatherCloudCoverPercent: 82,
+            weatherLabel: "19°C\n3 m/s",
+            weatherTemperatureC: 19.4,
+            weatherWindDirectionDeg: 230,
+            weatherWindSpeedMps: 3.2
           }
         }
       ]

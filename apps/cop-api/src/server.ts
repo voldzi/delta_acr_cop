@@ -1580,6 +1580,7 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
     situationLayerIds: optionalStringArray(value.situationLayerIds, ["weather", "ground", "mobile", "traffic"]),
+    trackLayerIds: optionalStringArray(value.trackLayerIds, ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600)
   });

@@ -412,6 +412,7 @@ export interface CopDashboardFilters {
 }
 
 export type CopLayer = "air-situation" | "uav" | "friendly" | "foreign" | "public-flights" | "data-quality";
+export const copLayerIds: CopLayer[] = ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"];
 
 export async function fetchCopDashboardData(
   apiBase: string,
@@ -554,6 +555,23 @@ export function filterObjectsByLayer(objects: CopObject[], layer: CopLayer): Cop
     return objects.filter(isPublicFlightObject);
   }
   return objects;
+}
+
+export function filterObjectsByLayers(objects: CopObject[], layers: CopLayer[]): CopObject[] {
+  const normalizedLayers = layers.filter((layer, index) => copLayerIds.includes(layer) && layers.indexOf(layer) === index);
+  if (normalizedLayers.length === 0) {
+    return [];
+  }
+  const seen = new Set<string>();
+  return normalizedLayers.flatMap((layer) =>
+    filterObjectsByLayer(objects, layer).filter((object) => {
+      if (seen.has(object.objectId)) {
+        return false;
+      }
+      seen.add(object.objectId);
+      return true;
+    })
+  );
 }
 
 export function getDataQualityCount(objects: CopObject[]): number {
