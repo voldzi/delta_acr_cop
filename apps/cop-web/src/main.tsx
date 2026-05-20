@@ -13,8 +13,10 @@ import {
   LogIn,
   LogOut,
   MapPin,
+  MousePointer2,
   Pause,
   Play,
+  Plus,
   RefreshCw,
   RadioTower,
   Search,
@@ -22,6 +24,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   UserCircle,
   X,
   Wifi
@@ -165,6 +168,7 @@ const historyLimitOptions = [36, 72, 120, 240, 600] as const;
 const historyWindowOptions = [30, 60, 120, 180, 300, 600] as const;
 const defaultSituationLayerIds: SituationLayerId[] = ["weather"];
 const defaultSafetyLayerIds: SafetyLayerId[] = ["warnings"];
+const zoneColorOptions = ["#8cb6d8", "#c8f08d", "#facc15", "#fb923c", "#ef4444", "#a78bfa"] as const;
 const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["adaptive", "Adaptivní"],
   ["telemetry", "Telemetrie"],
@@ -253,6 +257,7 @@ export function App() {
   const [trackHistory, setTrackHistory] = React.useState<TrackHistory>({});
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<SettingsTab>("map");
+  const [zoneCreationMode, setZoneCreationMode] = React.useState(false);
   const [autoFit, setAutoFit] = React.useState(initialPreferences.autoFit ?? true);
   const [mapView, setMapView] = React.useState<MapViewState | undefined>(() => normalizeMapView(initialPreferences.mapView));
   const [mapBounds, setMapBounds] = React.useState<MapBounds | undefined>();
@@ -1163,50 +1168,77 @@ export function App() {
     }
   }
 
-  function updatePrimaryAoiRule(updater: (rule: AoiRule) => AoiRule) {
+  function updateAoiRule(ruleId: string, updater: (rule: AoiRule) => AoiRule) {
     setAlertPreferences((current) => {
       const currentRules = current.aoiRules ?? [];
-      const baseRule = currentRules[0] ?? createDefaultAoiRule(userLocation, mapView);
       return {
         ...current,
-        aoiRules: [normalizeClientAoiRule(updater(baseRule)), ...currentRules.slice(1)]
+        aoiRules: currentRules.map((rule) => (rule.id === ruleId ? normalizeClientAoiRule(updater(rule)) : rule))
       };
     });
   }
 
-  function handleAoiRuleEnabledChange(enabled: boolean) {
-    updatePrimaryAoiRule((rule) => ({ ...rule, affiliationScope: "all", enabled, severity: "warning" }));
+  function handleAoiRuleEnabledChange(ruleId: string, enabled: boolean) {
+    updateAoiRule(ruleId, (rule) => ({ ...rule, affiliationScope: "all", enabled, severity: "warning" }));
   }
 
-  function handleAoiRuleRadiusChange(radiusKm: number) {
-    updatePrimaryAoiRule((rule) => ({ ...rule, affiliationScope: "all", radiusKm, severity: "warning" }));
+  function handleAoiRuleRadiusChange(ruleId: string, radiusKm: number) {
+    updateAoiRule(ruleId, (rule) => ({ ...rule, affiliationScope: "all", radiusKm, severity: "warning" }));
   }
 
-  function handleAoiRuleCenterFromMap() {
-    const center: [number, number] = mapView?.center ?? [defaultAoiCenter.lon, defaultAoiCenter.lat];
-    updatePrimaryAoiRule((rule) => ({
-      ...rule,
-      affiliationScope: "all",
-      enabled: true,
-      lat: center[1],
-      lon: center[0],
-      severity: "warning"
+  function handleAoiRuleColorChange(ruleId: string, color: string) {
+    updateAoiRule(ruleId, (rule) => ({ ...rule, color, fillOpacity: rule.fillOpacity ?? 0.12 }));
+  }
+
+  function handleAoiRuleDelete(ruleId: string) {
+    setAlertPreferences((current) => ({
+      ...current,
+      aoiRules: (current.aoiRules ?? []).filter((rule) => rule.id !== ruleId)
     }));
   }
 
-  function handleAoiRuleCenterFromUserLocation() {
+  function handleCreateAoiRuleFromMap() {
+    const center: [number, number] = mapView?.center ?? [defaultAoiCenter.lon, defaultAoiCenter.lat];
+    createAoiRule({ lat: center[1], lon: center[0] });
+  }
+
+  function handleCreateAoiRuleFromUserLocation() {
     if (!userLocation) {
       locateUser();
       return;
     }
-    updatePrimaryAoiRule((rule) => ({
-      ...rule,
-      affiliationScope: "all",
-      enabled: true,
-      lat: userLocation.lat,
-      lon: userLocation.lon,
-      severity: "warning"
-    }));
+    createAoiRule({ lat: userLocation.lat, lon: userLocation.lon });
+  }
+
+  function handleCreateAoiRuleFromMapClick(center: { lat: number; lon: number }) {
+    createAoiRule(center);
+    setZoneCreationMode(false);
+  }
+
+  function createAoiRule(center: { lat: number; lon: number }) {
+    setAlertPreferences((current) => {
+      const currentRules = current.aoiRules ?? [];
+      const nextIndex = currentRules.length + 1;
+      const color = zoneColorOptions[currentRules.length % zoneColorOptions.length];
+      return {
+        ...current,
+        aoiRules: [
+          ...currentRules,
+          normalizeClientAoiRule({
+            affiliationScope: "all",
+            color,
+            enabled: true,
+            fillOpacity: 0.12,
+            id: `user-zone-${Date.now()}`,
+            lat: center.lat,
+            lon: center.lon,
+            name: `Zóna ${nextIndex}`,
+            radiusKm: 10,
+            severity: "warning"
+          })
+        ]
+      };
+    });
   }
 
   function toggleSituationLayer(layerId: SituationLayerId) {
@@ -1463,15 +1495,16 @@ export function App() {
                 />
 
                 <UserZoneLayerControls
-                  zone={primaryAoiRule}
+                  creationMode={zoneCreationMode}
+                  zones={aoiRules}
+                  onColorChange={handleAoiRuleColorChange}
+                  onCreateFromMap={handleCreateAoiRuleFromMap}
+                  onCreateFromUserLocation={handleCreateAoiRuleFromUserLocation}
+                  onDelete={handleAoiRuleDelete}
                   onEnabledChange={handleAoiRuleEnabledChange}
-                  onOpenSettings={() => openSettings("awareness")}
+                  onRadiusChange={handleAoiRuleRadiusChange}
+                  onStartMapClickCreation={() => setZoneCreationMode((current) => !current)}
                 />
-
-                <button className="mini-button wide" onClick={() => openSettings("map")} type="button">
-                  <Settings size={14} />
-                  Nastavení zobrazení
-                </button>
               </div>
 
               <div className="control-block compact-control-block">
@@ -1669,11 +1702,13 @@ export function App() {
                 setSelectedObjectId(null);
               }}
               onAutoFitChange={setAutoFit}
+              onCreateZoneAt={handleCreateAoiRuleFromMapClick}
               onRequestUserLocation={locateUser}
               onViewChange={setMapView}
               showAlertAreas={showAlertAreas}
               showProximityAlertRadius={proximityAlertEnabled}
               userLocation={userLocation}
+              zoneCreationActive={zoneCreationMode}
             />
           </section>
 
@@ -1912,10 +1947,20 @@ export function App() {
           trackHistoryLimit={trackHistoryLimit}
           trackHistoryWindowSeconds={trackHistoryWindowSeconds}
           onAlertRadiusKmChange={setAlertRadiusKm}
-          onAoiRuleCenterFromMap={handleAoiRuleCenterFromMap}
-          onAoiRuleCenterFromUserLocation={handleAoiRuleCenterFromUserLocation}
-          onAoiRuleEnabledChange={handleAoiRuleEnabledChange}
-          onAoiRuleRadiusKmChange={handleAoiRuleRadiusChange}
+          onAoiRuleCenterFromMap={handleCreateAoiRuleFromMap}
+          onAoiRuleCenterFromUserLocation={handleCreateAoiRuleFromUserLocation}
+          onAoiRuleEnabledChange={(value) => {
+            if (primaryAoiRule) {
+              handleAoiRuleEnabledChange(primaryAoiRule.id, value);
+            } else if (value) {
+              handleCreateAoiRuleFromMap();
+            }
+          }}
+          onAoiRuleRadiusKmChange={(value) => {
+            if (primaryAoiRule) {
+              handleAoiRuleRadiusChange(primaryAoiRule.id, value);
+            }
+          }}
           onAutoRefreshChange={setAutoRefresh}
           onClose={() => setSettingsOpen(false)}
           onIncludeSyntheticChange={setIncludeSynthetic}
@@ -3041,32 +3086,89 @@ function SafetyLayerControls({
 }
 
 function UserZoneLayerControls({
-  zone,
+  creationMode,
+  zones,
+  onColorChange,
+  onCreateFromMap,
+  onCreateFromUserLocation,
+  onDelete,
   onEnabledChange,
-  onOpenSettings
+  onRadiusChange,
+  onStartMapClickCreation
 }: {
-  zone: AoiRule | null;
-  onEnabledChange: (enabled: boolean) => void;
-  onOpenSettings: () => void;
+  creationMode: boolean;
+  zones: AoiRule[];
+  onColorChange: (zoneId: string, color: string) => void;
+  onCreateFromMap: () => void;
+  onCreateFromUserLocation: () => void;
+  onDelete: (zoneId: string) => void;
+  onEnabledChange: (zoneId: string, enabled: boolean) => void;
+  onRadiusChange: (zoneId: string, radiusKm: number) => void;
+  onStartMapClickCreation: () => void;
 }) {
-  const enabled = Boolean(zone?.enabled);
+  const activeCount = zones.filter((zone) => zone.enabled).length;
   return (
     <div className="user-zone-layer-box">
       <div className="situation-layer-header">
         <PanelTitle icon={<MapPin size={17} />} title="Uživatelské zóny" />
-        <span className={`situation-status ${enabled ? "online" : "disabled"}`}>{enabled ? "aktivní" : "vypnuto"}</span>
+        <span className={`situation-status ${activeCount > 0 ? "online" : "disabled"}`}>{activeCount > 0 ? `${activeCount} aktivní` : "vypnuto"}</span>
       </div>
-      <label className="situation-layer-toggle" title="Zobrazí v mapě vaši zónu a zapne výstrahu pro události nebo objekty uvnitř zóny.">
-        <input checked={enabled} onChange={(event) => onEnabledChange(event.target.checked)} type="checkbox" />
-        <span>
-          <strong>{zone?.name ?? "Moje výstražná zóna"}</strong>
-          <small>{enabled ? `${Math.round(zone?.radiusKm ?? 10)} km · ${formatAoiCenter(zone)}` : "Zapněte zónu nebo ji vytvořte v nastavení výstrah."}</small>
-        </span>
-      </label>
-      <button className="mini-button wide" onClick={onOpenSettings} type="button">
-        <Settings size={14} />
-        Nastavit zónu
-      </button>
+      {zones.length === 0 ? <div className="empty-mini">Vytvořte zónu ze středu mapy, z mojí polohy nebo kliknutím přímo do mapy.</div> : null}
+      <div className="user-zone-list">
+        {zones.map((zone) => (
+          <div className="user-zone-row" key={zone.id}>
+            <label className="user-zone-main" title="Zapnutí zóny ji zobrazí v mapě a aktivuje výstrahu pro objekty uvnitř.">
+              <input checked={zone.enabled} onChange={(event) => onEnabledChange(zone.id, event.target.checked)} type="checkbox" />
+              <span style={{ background: normalizeAoiColor(zone.color) }} />
+              <strong>{zone.name}</strong>
+              <small>{Math.round(zone.radiusKm)} km · {formatAoiCenter(zone)}</small>
+            </label>
+            <div className="zone-color-row" aria-label={`Barva zóny ${zone.name}`}>
+              {zoneColorOptions.map((color) => (
+                <button
+                  aria-label={`Nastavit barvu ${color}`}
+                  aria-pressed={normalizeAoiColor(zone.color) === color}
+                  className={normalizeAoiColor(zone.color) === color ? "active" : ""}
+                  key={color}
+                  onClick={() => onColorChange(zone.id, color)}
+                  style={{ background: color }}
+                  type="button"
+                />
+              ))}
+            </div>
+            <label className="range-label compact">
+              Poloměr
+              <span>{Math.round(zone.radiusKm)} km</span>
+              <input
+                max="80"
+                min="1"
+                onChange={(event) => onRadiusChange(zone.id, Number(event.target.value))}
+                step="1"
+                type="range"
+                value={Math.round(zone.radiusKm)}
+              />
+            </label>
+            <button className="mini-button danger wide" onClick={() => onDelete(zone.id)} type="button">
+              <Trash2 size={14} />
+              Smazat
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="zone-action-grid">
+        <button className={`mini-button wide ${creationMode ? "active" : ""}`} onClick={onStartMapClickCreation} type="button">
+          <MousePointer2 size={14} />
+          {creationMode ? "Klikněte do mapy" : "Vytvořit kliknutím"}
+        </button>
+        <button className="mini-button wide" onClick={onCreateFromMap} type="button">
+          <Plus size={14} />
+          Střed mapy
+        </button>
+        <button className="mini-button wide" onClick={onCreateFromUserLocation} type="button">
+          <MapPin size={14} />
+          Moje poloha
+        </button>
+      </div>
     </div>
   );
 }
@@ -3756,7 +3858,9 @@ function createDefaultAoiRule(userLocation: UserLocation | null, mapView: MapVie
       : defaultAoiCenter;
   return {
     affiliationScope: "all",
+    color: "#8cb6d8",
     enabled: false,
+    fillOpacity: 0.12,
     id: "primary-aoi",
     lat: center.lat,
     lon: center.lon,
@@ -3769,7 +3873,9 @@ function createDefaultAoiRule(userLocation: UserLocation | null, mapView: MapVie
 function normalizeClientAoiRule(rule: AoiRule): AoiRule {
   return {
     affiliationScope: "all",
+    color: normalizeAoiColor(rule.color),
     enabled: rule.enabled,
+    fillOpacity: clamp(rule.fillOpacity ?? 0.12, 0.02, 0.35),
     id: rule.id.trim() || "primary-aoi",
     lat: clamp(rule.lat, -90, 90),
     lon: clamp(rule.lon, -180, 180),
@@ -3777,6 +3883,10 @@ function normalizeClientAoiRule(rule: AoiRule): AoiRule {
     radiusKm: clamp(rule.radiusKm, 1, 80),
     severity: "warning"
   };
+}
+
+function normalizeAoiColor(value: string | undefined): string {
+  return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#8cb6d8";
 }
 
 function formatAoiCenter(rule: AoiRule | null): string {

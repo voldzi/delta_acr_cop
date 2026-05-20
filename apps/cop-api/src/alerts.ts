@@ -11,7 +11,9 @@ export type CopAlertType = "AOI_ENTRY" | "LOW_CONFIDENCE" | "SOURCE_DEGRADED" | 
 
 export interface AoiRule {
   affiliationScope?: AoiRuleAffiliationScope;
+  color?: string;
   enabled: boolean;
+  fillOpacity?: number;
   id: string;
   lat: number;
   lon: number;

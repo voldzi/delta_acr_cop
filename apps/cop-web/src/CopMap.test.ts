@@ -403,6 +403,8 @@ describe("COP map data helpers", () => {
         lon: 14.4,
         name: "Primary AOI",
         radiusKm: 12,
+        color: "#c8f08d",
+        fillOpacity: 0.14,
         severity: "warning"
       },
       {
@@ -417,8 +419,11 @@ describe("COP map data helpers", () => {
 
     expect(collection.features).toHaveLength(1);
     expect(collection.features[0]?.properties).toEqual({
+      color: "#c8f08d",
       enabled: true,
+      fillOpacity: 0.14,
       id: "primary-aoi",
+      name: "Primary AOI",
       severity: "warning"
     });
     expect(collection.features[0]?.geometry.coordinates[0]).toHaveLength(97);

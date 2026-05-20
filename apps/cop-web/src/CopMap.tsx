@@ -125,7 +125,7 @@ export interface AoiRuleFeatureCollection {
   features: Array<{
     type: "Feature";
     geometry: { type: "Polygon"; coordinates: Array<Array<[number, number]>> };
-    properties: { enabled: boolean; id: string; severity: NonNullable<AoiRule["severity"]> };
+    properties: { color: string; enabled: boolean; fillOpacity: number; id: string; name: string; severity: NonNullable<AoiRule["severity"]> };
   }>;
 }
 
@@ -182,6 +182,8 @@ interface CopMapProps {
   onViewChange: (view: MapViewState) => void;
   showAlertAreas: boolean;
   showProximityAlertRadius: boolean;
+  zoneCreationActive?: boolean;
+  onCreateZoneAt?: (center: { lat: number; lon: number }) => void;
   userLocation: UserLocation | null;
 }
 
@@ -224,11 +226,13 @@ export function CopMap({
   onSelectObject,
   onSelectSituationFeature,
   onAutoFitChange,
+  onCreateZoneAt,
   onRequestUserLocation,
   onViewChange,
   showAlertAreas,
   showProximityAlertRadius,
-  userLocation
+  userLocation,
+  zoneCreationActive = false
 }: CopMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
@@ -238,7 +242,9 @@ export function CopMap({
   const onSelectObjectRef = React.useRef(onSelectObject);
   const onSelectSituationFeatureRef = React.useRef(onSelectSituationFeature);
   const onAutoFitChangeRef = React.useRef(onAutoFitChange);
+  const onCreateZoneAtRef = React.useRef(onCreateZoneAt);
   const onViewChangeRef = React.useRef(onViewChange);
+  const zoneCreationActiveRef = React.useRef(zoneCreationActive);
   const lastFitSignatureRef = React.useRef("");
   const handledFocusViewRequestRef = React.useRef(0);
   const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
@@ -284,7 +290,9 @@ export function CopMap({
   onSelectObjectRef.current = onSelectObject;
   onSelectSituationFeatureRef.current = onSelectSituationFeature;
   onAutoFitChangeRef.current = onAutoFitChange;
+  onCreateZoneAtRef.current = onCreateZoneAt;
   onViewChangeRef.current = onViewChange;
+  zoneCreationActiveRef.current = zoneCreationActive;
 
   React.useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -400,8 +408,8 @@ export function CopMap({
           type: "fill",
           source: aoiRuleSourceId,
           paint: {
-            "fill-color": ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#38bdf8"],
-            "fill-opacity": 0.055
+            "fill-color": ["coalesce", ["get", "color"], ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#38bdf8"]],
+            "fill-opacity": ["coalesce", ["get", "fillOpacity"], 0.08]
           }
         });
 
@@ -414,7 +422,7 @@ export function CopMap({
             "line-join": "round"
           },
           paint: {
-            "line-color": ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#38bdf8"],
+            "line-color": ["coalesce", ["get", "color"], ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#38bdf8"]],
             "line-dasharray": [3, 2],
             "line-opacity": 0.58,
             "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1, 12, 1.7, 16, 2.3]
@@ -913,11 +921,18 @@ export function CopMap({
             onAutoFitChangeRef.current(false);
           }
         };
+        const handleMapClick = (event: maplibregl.MapMouseEvent) => {
+          if (!zoneCreationActiveRef.current || !onCreateZoneAtRef.current) {
+            return;
+          }
+          onCreateZoneAtRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
+        };
         map.on("dragstart", handleUserMapInteraction);
         map.on("movestart", handleUserMapInteraction);
         map.on("pitchstart", handleUserMapInteraction);
         map.on("rotatestart", handleUserMapInteraction);
         map.on("zoomstart", handleUserMapInteraction);
+        map.on("click", handleMapClick);
         map.on("moveend", () => emitMapViewport(map, onViewChangeRef, onBoundsChangeRef));
         map.on("mouseenter", trackSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
@@ -1169,6 +1184,7 @@ export function CopMap({
   return (
     <div className={`map-container ${mapFullscreen ? "fullscreen" : ""}`}>
       <div className="map-canvas" ref={containerRef} aria-label="Georeferencovaná situační mapa" />
+      {zoneCreationActive ? <div className="map-zone-create-hint">Kliknutím do mapy vytvoříte novou uživatelskou zónu</div> : null}
       <div
         className="map-toolbar"
         onClick={stopMapToolbarEvent}
@@ -1390,12 +1406,23 @@ export function aoiRulesToFeatureCollection(aoiRules: AoiRule[]): AoiRuleFeature
           properties: {
             enabled: true,
             id: rule.id,
+            color: normalizeZoneColor(rule.color),
+            fillOpacity: normalizeZoneOpacity(rule.fillOpacity),
+            name: rule.name,
             severity: rule.severity ?? "warning"
           }
         }
       ];
     })
   };
+}
+
+function normalizeZoneColor(value: string | undefined): string {
+  return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#8cb6d8";
+}
+
+function normalizeZoneOpacity(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(0.35, Math.max(0.02, value)) : 0.1;
 }
 
 export function situationFeaturesToFeatureCollection(

@@ -434,7 +434,9 @@ export interface AlertPreferences {
 
 export interface AoiRule {
   affiliationScope?: AoiRuleAffiliationScope;
+  color?: string;
   enabled: boolean;
+  fillOpacity?: number;
   id: string;
   lat: number;
   lon: number;

@@ -289,13 +289,16 @@ function normalizeAoiRule(value: unknown): AoiRule[] {
   const lat = finiteNumber(value.lat, -90, 90);
   const lon = finiteNumber(value.lon, -180, 180);
   const radiusKm = finiteNumber(value.radiusKm, 0.2, 500);
+  const fillOpacity = finiteNumber(value.fillOpacity, 0.02, 0.35);
   if (!id || !name || lat === undefined || lon === undefined || radiusKm === undefined) {
     return [];
   }
   return [
     {
       ...(isAoiRuleAffiliationScope(value.affiliationScope) ? { affiliationScope: value.affiliationScope } : {}),
+      ...(isHexColor(value.color) ? { color: value.color } : {}),
       enabled: value.enabled === true,
+      ...(fillOpacity !== undefined ? { fillOpacity } : {}),
       id,
       lat,
       lon,
@@ -304,6 +307,10 @@ function normalizeAoiRule(value: unknown): AoiRule[] {
       ...(isCopAlertSeverity(value.severity) ? { severity: value.severity } : {})
     }
   ];
+}
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
 function jsonRecord(value: Record<string, unknown> | string | null): Record<string, unknown> {

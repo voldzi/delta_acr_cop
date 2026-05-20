@@ -1910,13 +1910,16 @@ function normalizeAoiRule(value: unknown): AoiRule[] {
   const lat = optionalFiniteNumber(value.lat, -90, 90);
   const lon = optionalFiniteNumber(value.lon, -180, 180);
   const radiusKm = optionalFiniteNumber(value.radiusKm, 0.2, 500);
+  const fillOpacity = optionalFiniteNumber(value.fillOpacity, 0.02, 0.35);
   if (!id || !name || lat === undefined || lon === undefined || radiusKm === undefined) {
     return [];
   }
   return [
     {
       ...(isAoiRuleAffiliationScope(value.affiliationScope) ? { affiliationScope: value.affiliationScope } : {}),
+      ...(isHexColor(value.color) ? { color: value.color } : {}),
       enabled: value.enabled === true,
+      ...(fillOpacity !== undefined ? { fillOpacity } : {}),
       id,
       lat,
       lon,
@@ -1925,6 +1928,10 @@ function normalizeAoiRule(value: unknown): AoiRule[] {
       ...(isCopAlertSeverity(value.severity) ? { severity: value.severity } : {})
     }
   ];
+}
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
 function normalizeMapViewPreference(value: unknown): Record<string, unknown> | undefined {
