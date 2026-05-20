@@ -1229,6 +1229,14 @@ export function App() {
 
   function toggleTrackLayer(layerId: CopLayer) {
     setVisibleTrackLayerIds((current) => {
+      if (layerId === "air-situation") {
+        const next: CopLayer[] = current.includes("air-situation") ? [] : ["air-situation"];
+        setSelectedLayer(next[0] ?? "air-situation");
+        return next;
+      }
+      if (current.includes("air-situation")) {
+        return current;
+      }
       const next = current.includes(layerId)
         ? current.filter((item) => item !== layerId)
         : normalizeTrackLayerIds([...current, layerId], layerId);
@@ -1358,8 +1366,9 @@ export function App() {
   }
 
   const workspace = workspaceMetadata(activeWorkspace);
-  const showLayerControls = activeWorkspace === "map" || activeWorkspace === "data";
-  const showSourceControls = activeWorkspace === "map" || activeWorkspace === "sources";
+  const showMapLayerControls = activeWorkspace === "map";
+  const showDataControls = activeWorkspace === "data";
+  const showSourceControls = activeWorkspace === "sources";
   const showAlertControls = activeWorkspace === "alerts";
   const showReplayControls = activeWorkspace === "replay";
   const operatingMode = React.useMemo(
@@ -1408,7 +1417,7 @@ export function App() {
 
       <WorkspaceNavigator activeWorkspace={activeWorkspace} onChange={setActiveWorkspace} onOpenSettings={() => openSettings("map")} />
 
-      <section className="workspace">
+      <section className={`workspace workspace-${activeWorkspace}`}>
         <aside className="panel left-panel">
           <div className="refresh-row">
             <div>
@@ -1422,61 +1431,108 @@ export function App() {
           {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
           <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} />
 
-          <ViewProfilesPanel
-            activeProfileName={lastProfileName}
-            profiles={viewProfiles}
-            userScope={userStorageScope}
-            onApply={applyViewProfile}
-            onSave={saveCurrentViewProfile}
-          />
-
-          <div className="mission-metrics">
-            <MetricTile label="Vlastní" value={metrics.friendlyCount} tone="friend" />
-            <MetricTile label="Rizikové" value={metrics.foreignCount} tone="hostile" />
-            <MetricTile label="Confidence" value={`${metrics.avgConfidence}%`} tone={metrics.avgConfidence >= 75 ? "ok" : "warn"} />
-            <MetricTile label="Alerts" value={alertSummary.total} tone={alertSummary.total > 0 ? "warn" : "ok"} />
-          </div>
-
-          {showLayerControls ? (
+          {showMapLayerControls ? (
             <>
-              <PanelTitle icon={<Layers size={17} />} title="Mapové vrstvy" />
+              <div className="workspace-module-card map-layer-card">
+                <PanelTitle icon={<Layers size={17} />} title="Operační vrstvy" />
+                <LayerSourceTree
+                  metrics={metrics}
+                  scopedObjects={scopedObjects}
+                  selectedLayerIds={visibleTrackLayerIds}
+                  onToggleTrackLayer={toggleTrackLayer}
+                />
+
+                <SituationLayerControls
+                  featureCount={situationFeatures?.summary.featureCount ?? 0}
+                  layers={situationLayers}
+                  status={situationStatus}
+                  visibleLayerIds={visibleSituationLayerIds}
+                  warnings={situationWarnings}
+                  onToggle={toggleSituationLayer}
+                />
+
+                <SafetyLayerControls
+                  config={safetyConfig}
+                  featureCount={safetyFeatures?.summary.featureCount ?? 0}
+                  layers={safetyLayers}
+                  sources={safetySources}
+                  status={safetyStatus}
+                  visibleLayerIds={visibleSafetyLayerIds}
+                  warnings={safetyWarnings}
+                  onToggle={toggleSafetyLayer}
+                />
+
+                <UserZoneLayerControls
+                  zone={primaryAoiRule}
+                  onEnabledChange={handleAoiRuleEnabledChange}
+                  onOpenSettings={() => openSettings("awareness")}
+                />
+
+                <button className="mini-button wide" onClick={() => openSettings("map")} type="button">
+                  <Settings size={14} />
+                  Nastavení zobrazení
+                </button>
+              </div>
+
+              <div className="control-block compact-control-block">
+                <PanelTitle icon={<SlidersHorizontal size={17} />} title="Rychlé filtry" />
+                <label className="search-field">
+                  <Search size={15} />
+                  <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="ID, typ, zdroj" />
+                </label>
+                <SegmentedControl
+                  label="Affiliation"
+                  options={[
+                    ["all", "Vše"],
+                    ["friend", "Vlastní"],
+                    ["hostile", "Rizikové"],
+                    ["unknown", "Neznámé"]
+                  ]}
+                  value={affiliationScope}
+                  onChange={(value) => setAffiliationScope(value as AffiliationScope)}
+                />
+                <SegmentedControl
+                  label="Domain"
+                  options={[
+                    ["all", "All"],
+                    ["AIR", "AIR"],
+                    ["LAND", "LAND"],
+                    ["RESCUE", "RESCUE"]
+                  ]}
+                  value={domainScope}
+                  onChange={(value) => setDomainScope(value as DomainScope)}
+                />
+              </div>
+            </>
+          ) : null}
+
+          {showDataControls ? (
+            <>
+              <ViewProfilesPanel
+                activeProfileName={lastProfileName}
+                profiles={viewProfiles}
+                userScope={userStorageScope}
+                onApply={applyViewProfile}
+                onSave={saveCurrentViewProfile}
+              />
+
+              <div className="mission-metrics">
+                <MetricTile label="Vlastní" value={metrics.friendlyCount} tone="friend" />
+                <MetricTile label="Rizikové" value={metrics.foreignCount} tone="hostile" />
+                <MetricTile label="Confidence" value={`${metrics.avgConfidence}%`} tone={metrics.avgConfidence >= 75 ? "ok" : "warn"} />
+                <MetricTile label="Alerts" value={alertSummary.total} tone={alertSummary.total > 0 ? "warn" : "ok"} />
+              </div>
+
+              <PanelTitle icon={<Layers size={17} />} title="Datové pohledy" />
               <LayerSourceTree
-                clusterTracks={mapClusterEnabled}
                 metrics={metrics}
                 scopedObjects={scopedObjects}
                 selectedLayerIds={visibleTrackLayerIds}
-                onClusterTracksChange={setMapClusterEnabled}
                 onToggleTrackLayer={toggleTrackLayer}
               />
 
-              <SituationLayerControls
-                featureCount={situationFeatures?.summary.featureCount ?? 0}
-                layers={situationLayers}
-                status={situationStatus}
-                visibleLayerIds={visibleSituationLayerIds}
-                warnings={situationWarnings}
-                onToggle={toggleSituationLayer}
-              />
-
-              <SafetyLayerControls
-                config={safetyConfig}
-                featureCount={safetyFeatures?.summary.featureCount ?? 0}
-                layers={safetyLayers}
-                sources={safetySources}
-                status={safetyStatus}
-                visibleLayerIds={visibleSafetyLayerIds}
-                warnings={safetyWarnings}
-                onToggle={toggleSafetyLayer}
-              />
-
-              <UserZoneLayerControls
-                zone={primaryAoiRule}
-                onEnabledChange={handleAoiRuleEnabledChange}
-                onOpenSettings={() => openSettings("awareness")}
-              />
-
               <div className="control-block">
-                <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry" />
+                <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry dat" />
                 <label className="search-field">
                   <Search size={15} />
                   <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Object ID, type, affiliation" />
@@ -1578,7 +1634,7 @@ export function App() {
           ) : null}
         </aside>
 
-        <section className="center-column">
+        <section className={`center-column center-column-${activeWorkspace}`}>
           <section className="map-stage">
             <CopMap
               alerts={mapAlerts}
@@ -1621,7 +1677,7 @@ export function App() {
             />
           </section>
 
-          {activeWorkspace === "data" ? (
+          {activeWorkspace === "map" ? null : activeWorkspace === "data" ? (
             <section className="operations-deck data-operations-deck">
               <div className="track-board data-track-board">
                 <div className="deck-header">
@@ -1645,6 +1701,29 @@ export function App() {
                 situationFeatures={combinedSituationFeatures}
                 onOpenSettings={() => openSettings("data")}
               />
+            </section>
+          ) : showSourceControls ? (
+            <section className="operations-deck source-operations-deck">
+              <div className="source-operations-board">
+                <div className="deck-header">
+                  <PanelTitle icon={<RadioTower size={17} />} title="Stav zdrojů" />
+                  <span>{sourceHealth.length} zdrojů</span>
+                </div>
+                <ReadinessRow label="Flight data" value={sourceHealthSummary(sourceHealth, "flight")} tone={sourceHealthTone(sourceHealth, "flight")} />
+                <ReadinessRow label="Situation data" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
+                <ReadinessRow label="Safety data" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
+                <ReadinessRow label="Source registry" value={`${sources.length} zdrojů`} tone={sources.length > 0 ? "ok" : "neutral"} />
+              </div>
+              <div className="source-operations-board">
+                <div className="deck-header">
+                  <PanelTitle icon={<Activity size={17} />} title="Stream" />
+                  <span>{streamStatusLabel(streamStatus)}</span>
+                </div>
+                <ReadinessRow label="Mode" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
+                <ReadinessRow label="Latency" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
+                <ReadinessRow label="Last heartbeat" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
+                <ReadinessRow label="Backpressure" value={formatBackpressureState(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
+              </div>
             </section>
           ) : showAlertControls ? (
             <section className="operations-deck alert-operations-deck">
@@ -1726,11 +1805,13 @@ export function App() {
         </section>
 
         <aside className="panel right-panel">
-          <div className="workspace-context-card">
-            <span>Workspace</span>
-            <strong>{workspace.label}</strong>
-            <p>{workspace.description}</p>
-          </div>
+          {activeWorkspace !== "map" ? (
+            <div className="workspace-context-card">
+              <span>Workspace</span>
+              <strong>{workspace.label}</strong>
+              <p>{workspace.description}</p>
+            </div>
+          ) : null}
 
           <PanelTitle icon={<Database size={17} />} title={selectedSituationFeature ? "Situation detail" : "Object detail"} />
           {selectedSituationFeature ? (
@@ -1746,35 +1827,38 @@ export function App() {
             <div className="empty-state">Zatím nejsou přijata žádná situační data. Pošli validní ingest event ze SIM fixture.</div>
           )}
 
-          <div className="readiness-box">
-            <PanelTitle icon={<Gauge size={17} />} title="Data readiness" />
-            <ReadinessRow label="Source coverage" value={metrics.activeSources > 0 ? "active" : "waiting"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
-            <ReadinessRow label="Connectivity" value={operatingMode} tone={operatingModeTone(operatingMode)} />
-            <ReadinessRow label="Offline snapshot" value={formatOfflineSnapshotState(offlineSnapshotState)} tone={offlineSnapshotTone(offlineSnapshotState)} />
-            <ReadinessRow label="SIM data visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
-            <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
-            <ReadinessRow label="Public flights" value={String(metrics.publicFlightCount)} tone={metrics.publicFlightCount > 0 ? "ok" : "neutral"} />
-            <ReadinessRow label="Situation context" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
-            <ReadinessRow label="Safety data" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
-            <ReadinessRow label="Stream mode" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
-            <ReadinessRow label="Stream latency" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
-            <ReadinessRow label="Last heartbeat" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
-            <ReadinessRow label="Server clients" value={formatServerClientCount(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
-            <ReadinessRow label="Backpressure" value={formatBackpressureState(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
-            <ReadinessRow label="Reconnects" value={String(streamTelemetry.reconnectCount)} tone={streamTelemetry.reconnectCount > 0 ? "warn" : "ok"} />
-            {streamTelemetry.lastError ? <ReadinessRow label="Stream error" value={streamTelemetry.lastError} tone="warn" /> : null}
-            <ReadinessRow label="User profile" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
-            <ReadinessRow label="Fallback sync" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
-            <ReadinessRow label="Map clusters" value={mapClusterEnabled ? "enabled" : "off"} tone={mapClusterEnabled ? "ok" : "neutral"} />
-            <ReadinessRow label="Alert map areas" value={showAlertAreas ? "enabled" : "off"} tone={showAlertAreas ? "warn" : "neutral"} />
-            <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
-            <ReadinessRow label="Replay" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
-            <ReadinessRow label="Alert Center" value={`${alertSummary.server} server · ${alertSummary.local} local`} tone={alertSummary.total > 0 ? "warn" : "ok"} />
-            <ReadinessRow label="History window" value={`${trackHistoryWindowSeconds} s · max ${trackHistoryLimit} pts`} tone="neutral" />
-            <ReadinessRow label="Prediction" value={showPrediction ? `${predictionModeLabel(predictionMode)} · ${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
-            <ReadinessRow label="Policy scope" value="situační data" tone="neutral" />
-          </div>
+          {activeWorkspace === "data" || activeWorkspace === "sources" ? (
+            <div className="readiness-box">
+              <PanelTitle icon={<Gauge size={17} />} title="Data readiness" />
+              <ReadinessRow label="Source coverage" value={metrics.activeSources > 0 ? "active" : "waiting"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
+              <ReadinessRow label="Connectivity" value={operatingMode} tone={operatingModeTone(operatingMode)} />
+              <ReadinessRow label="Offline snapshot" value={formatOfflineSnapshotState(offlineSnapshotState)} tone={offlineSnapshotTone(offlineSnapshotState)} />
+              <ReadinessRow label="SIM data visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
+              <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
+              <ReadinessRow label="Public flights" value={String(metrics.publicFlightCount)} tone={metrics.publicFlightCount > 0 ? "ok" : "neutral"} />
+              <ReadinessRow label="Situation context" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
+              <ReadinessRow label="Safety data" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
+              <ReadinessRow label="Stream mode" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
+              <ReadinessRow label="Stream latency" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
+              <ReadinessRow label="Last heartbeat" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
+              <ReadinessRow label="Server clients" value={formatServerClientCount(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
+              <ReadinessRow label="Backpressure" value={formatBackpressureState(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
+              <ReadinessRow label="Reconnects" value={String(streamTelemetry.reconnectCount)} tone={streamTelemetry.reconnectCount > 0 ? "warn" : "ok"} />
+              {streamTelemetry.lastError ? <ReadinessRow label="Stream error" value={streamTelemetry.lastError} tone="warn" /> : null}
+              <ReadinessRow label="User profile" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
+              <ReadinessRow label="Fallback sync" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
+              <ReadinessRow label="Map clusters" value={mapClusterEnabled ? "enabled" : "off"} tone={mapClusterEnabled ? "ok" : "neutral"} />
+              <ReadinessRow label="Alert map areas" value={showAlertAreas ? "enabled" : "off"} tone={showAlertAreas ? "warn" : "neutral"} />
+              <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
+              <ReadinessRow label="Replay" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
+              <ReadinessRow label="Alert Center" value={`${alertSummary.server} server · ${alertSummary.local} local`} tone={alertSummary.total > 0 ? "warn" : "ok"} />
+              <ReadinessRow label="History window" value={`${trackHistoryWindowSeconds} s · max ${trackHistoryLimit} pts`} tone="neutral" />
+              <ReadinessRow label="Prediction" value={showPrediction ? `${predictionModeLabel(predictionMode)} · ${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
+              <ReadinessRow label="Policy scope" value="situační data" tone="neutral" />
+            </div>
+          ) : null}
 
+          {activeWorkspace === "map" || activeWorkspace === "alerts" ? (
           <div className="personal-awareness-box">
             <PanelTitle icon={<MapPin size={17} />} title="Moje poloha" />
             <button className="primary-button secondary" disabled={isLocating} onClick={locateUser} type="button">
@@ -1789,7 +1873,9 @@ export function App() {
             </button>
             <ProximityAlertList alerts={proximityAlerts} />
           </div>
+          ) : null}
 
+          {activeWorkspace === "data" ? (
           <div className="ai-box">
             <PanelTitle icon={<Bot size={17} />} title="AI assistant" />
             <p>{aiResult}</p>
@@ -1798,6 +1884,7 @@ export function App() {
               Zkontrolovat kvalitu dat
             </button>
           </div>
+          ) : null}
         </aside>
       </section>
 
@@ -2783,20 +2870,17 @@ function PanelTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
 }
 
 function LayerSourceTree({
-  clusterTracks,
   metrics,
   scopedObjects,
   selectedLayerIds,
-  onClusterTracksChange,
   onToggleTrackLayer
 }: {
-  clusterTracks: boolean;
   metrics: DashboardMetrics;
   scopedObjects: CopObject[];
   selectedLayerIds: CopLayer[];
-  onClusterTracksChange: (value: boolean) => void;
   onToggleTrackLayer: (layerId: CopLayer) => void;
 }) {
+  const overallSelected = selectedLayerIds.includes("air-situation");
   const streams: Array<{ count: number; description: string; label: string; layerId: CopLayer }> = [
     { count: scopedObjects.length, description: "Všechny přijaté georeferencované tracky po aktivních filtrech.", label: "Celkový obraz", layerId: "air-situation" },
     { count: getUavCount(scopedObjects), description: "Bezpilotní prostředky a UAV tracky.", label: "UAV", layerId: "uav" },
@@ -2812,29 +2896,23 @@ function LayerSourceTree({
         <div className="layer-source-header">
           <div>
             <strong>Air situation</strong>
-            <span>{selectedLayerIds.length} streamů zapnuto</span>
+            <span>{overallSelected ? "Celkový obraz bere všechny streamy" : `${selectedLayerIds.length} streamů zapnuto`}</span>
           </div>
           <small>{scopedObjects.length} tracků</small>
         </div>
         <div className="source-layer-grid">
           {streams.map((stream) => (
             <SourceLayerToggle
-              checked={selectedLayerIds.includes(stream.layerId)}
+              checked={overallSelected || selectedLayerIds.includes(stream.layerId)}
               count={stream.count}
               description={stream.description}
+              disabled={overallSelected && stream.layerId !== "air-situation"}
               key={stream.layerId}
               label={stream.label}
               onToggle={() => onToggleTrackLayer(stream.layerId)}
             />
           ))}
         </div>
-        <label className="source-layer-toggle cluster-toggle" title="Shlukování je volitelné. Když není zapnuté, mapa vykresluje jednotlivé tracky v aktuálním výřezu.">
-          <input type="checkbox" checked={clusterTracks} onChange={(event) => onClusterTracksChange(event.target.checked)} />
-          <span>
-            <strong>Shlukování tracků</strong>
-            <small>{clusterTracks ? "Zapnuto - kliknutí na shluk přiblíží mapu." : "Vypnuto - zobrazují se jednotlivé tracky."}</small>
-          </span>
-        </label>
       </div>
     </div>
   );
@@ -2844,18 +2922,20 @@ function SourceLayerToggle({
   checked,
   count,
   description,
+  disabled,
   label,
   onToggle
 }: {
   checked: boolean;
   count: number;
   description: string;
+  disabled?: boolean;
   label: string;
   onToggle: () => void;
 }) {
   return (
-    <label className="source-layer-toggle" title={description}>
-      <input checked={checked} onChange={onToggle} type="checkbox" />
+    <label className={`source-layer-toggle ${disabled ? "disabled" : ""}`} title={description}>
+      <input checked={checked} disabled={disabled} onChange={onToggle} type="checkbox" />
       <span>
         <strong>{label}</strong>
         <small>{description}</small>
@@ -3625,6 +3705,34 @@ function sourceHealthLabel(status: SourceHealthItem["health"]): string {
     WAITING: "waiting"
   };
   return labels[status];
+}
+
+function sourceHealthSummary(items: SourceHealthItem[], sourceKey: string): string {
+  const item = findSourceHealth(items, sourceKey);
+  if (!item) {
+    return "waiting";
+  }
+  if (item.detail) {
+    return item.detail;
+  }
+  return `${sourceHealthLabel(item.health)} · ${item.currentTracks}/${item.totalTracks}`;
+}
+
+function sourceHealthTone(items: SourceHealthItem[], sourceKey: string): "ok" | "warn" | "neutral" {
+  const item = findSourceHealth(items, sourceKey);
+  if (!item) {
+    return "neutral";
+  }
+  return item.health === "ONLINE" || item.health === "QUIET" ? "ok" : item.health === "WAITING" || item.health === "DISABLED" ? "neutral" : "warn";
+}
+
+function findSourceHealth(items: SourceHealthItem[], sourceKey: string): SourceHealthItem | undefined {
+  const normalizedKey = sourceKey.toLowerCase();
+  return items.find((item) => {
+    const id = item.sourceSystemId.toLowerCase();
+    const type = item.sourceType.toLowerCase();
+    return id.includes(normalizedKey) || type.includes(normalizedKey);
+  });
 }
 
 function formatSourceAge(seconds: number | undefined): string {

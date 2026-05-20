@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./main";
@@ -149,18 +149,24 @@ describe("COP web dashboard", () => {
 
     await waitFor(() => expect(screen.getAllByText("AIR_SIM_AIRCRAFT-0001").length).toBeGreaterThan(0));
     expect(screen.getByTestId("cop-map").textContent).toContain("AIR_SIM_UAV-0001");
-    expect(screen.getAllByText("COP Air Situation Simulator").length).toBeGreaterThan(0);
     expect(screen.getByText("APP6-AIR-FRIEND-AIRCRAFT-ACTIVE")).toBeTruthy();
     expect(screen.getByText("SFAP-----------")).toBeTruthy();
     expect(screen.getByText("SIM")).toBeTruthy();
+    expect(screen.queryByText("Source Registry")).toBeNull();
+    const airSituationGroup = screen.getByText("Air situation").closest(".layer-source-group") as HTMLElement;
+    const trackLayerCheckboxes = within(airSituationGroup).getAllByRole("checkbox") as HTMLInputElement[];
+    expect(trackLayerCheckboxes[0]?.checked).toBe(true);
+    expect(trackLayerCheckboxes.slice(1).every((checkbox) => checkbox.checked && checkbox.disabled)).toBe(true);
+    expect(screen.getByRole("button", { name: /Mapa/u }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /Data/u }));
     expect(screen.getByText("Zobrazit simulovaná data")).toBeTruthy();
     expect(screen.getByText("Profily pohledu")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Mapa/u }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: /Zdroje/u }));
-    expect(screen.getByRole("button", { name: /Zdroje/u }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: /UAV watch/u }));
     expect(screen.getByText("Aktivní: UAV watch")).toBeTruthy();
     expect(screen.getAllByText("UAV").some((node) => node.closest("button")?.textContent?.includes("1"))).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /Zdroje/u }));
+    expect(screen.getByRole("button", { name: /Zdroje/u }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getAllByText("COP Air Situation Simulator").length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/cop/tracks?includeSynthetic=true"), {
       headers: { Authorization: "Bearer dev-lab-token" }
     });
