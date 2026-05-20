@@ -47,7 +47,7 @@ COP_SITUATION_DATA_ENABLED=true
 COP_SITUATION_DATA_BASE_URL=https://sim.zeleznalady.cz/situation-data/api/v1
 COP_SITUATION_DATA_CACHE_TTL_MS=20000
 COP_SITUATION_DATA_MAX_LIMIT=250
-COP_SITUATION_DATA_TIMEOUT_MS=7000
+COP_SITUATION_DATA_TIMEOUT_MS=15000
 ```
 
-Web klient volá pouze COP API (`/api/v1/situation/layers`, `/api/v1/situation/features`). COP API při volání SIM nepřeposílá bearer token operátora. Při výpadku SIM endpointu vrací prázdný degraded `FeatureCollection`, aby mapa zůstala použitelná.
+Web klient volá pouze COP API (`/api/v1/situation/layers`, `/api/v1/situation/features`). COP API při volání SIM nepřeposílá bearer token operátora. Při výpadku SIM endpointu vrací prázdný degraded `FeatureCollection`, aby mapa zůstala použitelná. Timeout je vyšší než běžná obnovovací kadence mapy, protože kombinované veřejné vrstvy mohou po studeném startu trvat několik sekund.
