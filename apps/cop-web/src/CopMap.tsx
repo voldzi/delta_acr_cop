@@ -1,4 +1,5 @@
 import React from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import maplibregl, {
   type GeoJSONSource,
   type MapLayerMouseEvent,
@@ -137,6 +138,9 @@ export interface SituationContextFeatureCollection {
       weatherTemperatureC?: number;
       weatherWindDirectionDeg?: number;
       weatherWindSpeedMps?: number;
+      situationStatusColor?: string;
+      situationStatusLabel?: string;
+      situationStatusTone?: string;
     };
   }>;
 }
@@ -235,6 +239,7 @@ export function CopMap({
   const [mapReady, setMapReady] = React.useState(false);
   const [mapError, setMapError] = React.useState<string | null>(null);
   const [clusterInfo, setClusterInfo] = React.useState<ClusterInfo | null>(null);
+  const [mapFullscreen, setMapFullscreen] = React.useState(false);
 
   const selectedId = selectedObjectId ?? objects[0]?.objectId;
   const positionedObjects = React.useMemo(() => objects.filter(hasPosition), [objects]);
@@ -494,17 +499,20 @@ export function CopMap({
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "selected"], true]],
           paint: {
             "circle-color": [
-              "match",
-              ["get", "layer"],
-              "weather",
-              "#38bdf8",
-              "ground",
-              "#22c55e",
-              "mobile",
-              "#a78bfa",
-              "traffic",
-              "#facc15",
-              "#8cb6d8"
+              "case",
+              ["==", ["get", "layer"], "mobile"],
+              ["coalesce", ["get", "situationStatusColor"], "#a78bfa"],
+              [
+                "match",
+                ["get", "layer"],
+                "weather",
+                "#38bdf8",
+                "ground",
+                "#22c55e",
+                "traffic",
+                "#facc15",
+                "#8cb6d8"
+              ]
             ],
             "circle-opacity": 0.18,
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 14, 12, 22, 16, 30],
@@ -521,23 +529,36 @@ export function CopMap({
           filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"]],
           paint: {
             "circle-color": [
-              "match",
-              ["get", "layer"],
-              "weather",
-              "#38bdf8",
-              "ground",
-              "#22c55e",
-              "mobile",
-              "#a78bfa",
-              "traffic",
-              "#facc15",
-              "#8cb6d8"
+              "case",
+              ["==", ["get", "layer"], "mobile"],
+              ["coalesce", ["get", "situationStatusColor"], "#a78bfa"],
+              [
+                "match",
+                ["get", "layer"],
+                "weather",
+                "#38bdf8",
+                "ground",
+                "#22c55e",
+                "traffic",
+                "#facc15",
+                "#8cb6d8"
+              ]
             ],
             "circle-opacity": ["case", ["get", "stale"], 0.52, 0.88],
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 5, 12, 7, 16, 10],
+            "circle-radius": [
+              "case",
+              ["==", ["get", "layer"], "mobile"],
+              ["interpolate", ["linear"], ["zoom"], 7, 7, 12, 10, 16, 15],
+              ["interpolate", ["linear"], ["zoom"], 7, 5, 12, 7, 16, 10]
+            ],
             "circle-stroke-color": "#061019",
             "circle-stroke-opacity": 0.9,
-            "circle-stroke-width": ["case", ["get", "stale"], 1, 1.6]
+            "circle-stroke-width": [
+              "case",
+              ["==", ["get", "layer"], "mobile"],
+              ["match", ["get", "situationStatusTone"], "critical", 3, "warning", 2.5, "advisory", 2, 1.6],
+              ["case", ["get", "stale"], 1, 1.6]
+            ]
           }
         });
 
@@ -547,7 +568,12 @@ export function CopMap({
           source: situationSourceId,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"]],
           layout: {
-            "text-field": ["get", "label"],
+            "text-field": [
+              "case",
+              ["==", ["get", "layer"], "mobile"],
+              ["concat", ["get", "label"], "\n", ["get", "situationStatusLabel"]],
+              ["get", "label"]
+            ],
             "text-font": ["Open Sans Semibold"],
             "text-size": ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 10, 14, 12],
             "text-offset": [0, 1.25],
@@ -1060,10 +1086,28 @@ export function CopMap({
     }
   }, [autoFit, mapReady, positionedObjects]);
 
+  React.useEffect(() => {
+    if (!mapFullscreen) {
+      return undefined;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMapFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [mapFullscreen]);
+
+  React.useEffect(() => {
+    const frame = window.requestAnimationFrame(() => mapRef.current?.resize());
+    return () => window.cancelAnimationFrame(frame);
+  }, [mapFullscreen]);
+
   const missingPositionCount = objects.length - positionedObjects.length;
 
   return (
-    <div className="map-container">
+    <div className={`map-container ${mapFullscreen ? "fullscreen" : ""}`}>
       <div className="map-canvas" ref={containerRef} aria-label="Georeferencovaná situační mapa" />
       <div
         className="map-toolbar"
@@ -1094,6 +1138,16 @@ export function CopMap({
         </button>
         <button className="map-action" onClick={onRequestUserLocation} type="button">
           Moje poloha
+        </button>
+        <button
+          aria-pressed={mapFullscreen}
+          className={`map-action icon-map-action ${mapFullscreen ? "active" : ""}`}
+          onClick={() => setMapFullscreen((current) => !current)}
+          title={mapFullscreen ? "Ukončit celou obrazovku" : "Zobrazit mapu přes celou obrazovku"}
+          type="button"
+        >
+          {mapFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          <span>{mapFullscreen ? "Zmenšit" : "Celá mapa"}</span>
         </button>
       </div>
       <div className="map-legend">
@@ -1303,8 +1357,13 @@ export function situationFeaturesToFeatureCollection(
 }
 
 function buildSituationRenderProperties(feature: SituationFeature): Partial<SituationContextFeatureCollection["features"][number]["properties"]> {
+  const status = situationFeatureStatus(feature);
   if (feature.properties.layer !== "weather") {
-    return {};
+    return {
+      situationStatusColor: status.color,
+      situationStatusLabel: status.label,
+      situationStatusTone: status.tone
+    };
   }
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   const temperatureC = recordNumber(metrics, "temperatureC");
@@ -1318,8 +1377,39 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
     weatherPrecipitationMm: precipitationMm,
     weatherTemperatureC: temperatureC,
     weatherWindDirectionDeg: windDirectionDeg,
-    weatherWindSpeedMps: windSpeedMps
+    weatherWindSpeedMps: windSpeedMps,
+    situationStatusColor: status.color,
+    situationStatusLabel: status.label,
+    situationStatusTone: status.tone
   };
+}
+
+function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
+  if (feature.properties.stale) {
+    return { color: "#facc15", label: "STALE", tone: "warning" };
+  }
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const raw = stringProperty(tags.status)
+    ?? stringProperty(tags.networkStatus)
+    ?? stringProperty(metrics.status)
+    ?? stringProperty(metrics.networkStatus)
+    ?? feature.properties.severity
+    ?? "info";
+  const normalized = raw.toLowerCase();
+  if (["critical", "down", "offline", "outage", "failed", "error"].includes(normalized)) {
+    return { color: "#ef4444", label: "KRITICKÝ", tone: "critical" };
+  }
+  if (["warning", "degraded", "poor", "weak"].includes(normalized)) {
+    return { color: "#facc15", label: "ZHORŠENÝ", tone: "warning" };
+  }
+  if (["advisory", "limited", "fair"].includes(normalized)) {
+    return { color: "#fb923c", label: "OMEZENÝ", tone: "advisory" };
+  }
+  if (["ok", "online", "good", "fresh", "info"].includes(normalized)) {
+    return { color: "#22c55e", label: "OK", tone: "info" };
+  }
+  return { color: "#a78bfa", label: raw.toUpperCase(), tone: "unknown" };
 }
 
 function formatWeatherMapLabel(temperatureC: number | undefined, windSpeedMps: number | undefined, precipitationMm: number | undefined): string {

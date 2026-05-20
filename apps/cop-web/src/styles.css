@@ -1184,6 +1184,15 @@ h1 {
   touch-action: none;
 }
 
+.map-container.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  height: 100dvh;
+  min-height: 100dvh;
+  background: #071016;
+}
+
 .map-canvas {
   position: absolute;
   inset: 0;
@@ -1267,6 +1276,16 @@ h1 {
   border-color: rgba(200, 240, 141, 0.7);
   background: rgba(151, 199, 104, 0.17);
   color: #dff8b7;
+}
+
+.icon-map-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-map-action svg {
+  flex: 0 0 auto;
 }
 
 .map-legend {
@@ -1490,6 +1509,57 @@ h1 {
 
 .alert-operations-deck {
   grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+}
+
+.data-operations-deck {
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+}
+
+.data-workspace-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.data-summary-grid,
+.mobile-status-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.data-metric {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(5, 9, 12, 0.32);
+}
+
+.data-metric span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.data-metric strong {
+  color: #edf3f8;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.data-metric.ok strong {
+  color: var(--lime);
+}
+
+.data-metric.warn strong {
+  color: var(--yellow);
 }
 
 .deck-header {
@@ -1883,6 +1953,13 @@ h1 {
   background: var(--lime);
 }
 
+.object-header-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .public-flight-badge {
   background: #7dd3fc;
 }
@@ -1893,6 +1970,35 @@ h1 {
 
 .warning-badge {
   background: var(--yellow);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  color: #081015;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.status-badge.ok {
+  background: var(--lime);
+}
+
+.status-badge.warn {
+  background: var(--yellow);
+}
+
+.status-badge.critical {
+  background: var(--red);
+  color: #fff7f2;
+}
+
+.status-badge.neutral {
+  background: #8cb6d8;
 }
 
 .object-detail-section {

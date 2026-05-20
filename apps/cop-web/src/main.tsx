@@ -1466,7 +1466,32 @@ export function App() {
             />
           </section>
 
-          {showAlertControls ? (
+          {activeWorkspace === "data" ? (
+            <section className="operations-deck data-operations-deck">
+              <div className="track-board data-track-board">
+                <div className="deck-header">
+                  <PanelTitle icon={<ListFilter size={17} />} title="Datové objekty" />
+                  <span>{visibleObjects.length} objektů</span>
+                </div>
+                <TrackTable
+                  objects={visibleObjects}
+                  selectedObjectId={selectedObject?.objectId}
+                  onSelect={(objectId) => {
+                    setSelectedObjectId(objectId);
+                    setSelectedSituationFeatureId(null);
+                  }}
+                />
+              </div>
+              <DataWorkspaceBoard
+                metrics={metrics}
+                objects={visibleObjects}
+                selectedObject={selectedObject ?? null}
+                selectedSituationFeature={selectedSituationFeature}
+                situationFeatures={situationFeatures}
+                onOpenSettings={() => openSettings("data")}
+              />
+            </section>
+          ) : showAlertControls ? (
             <section className="operations-deck alert-operations-deck">
               <AlertCenterBoard
                 alerts={serverAlerts}
@@ -1767,6 +1792,113 @@ function PersonalAlertBoard({
       </button>
     </div>
   );
+}
+
+function DataWorkspaceBoard({
+  metrics,
+  objects,
+  selectedObject,
+  selectedSituationFeature,
+  situationFeatures,
+  onOpenSettings
+}: {
+  metrics: DashboardMetrics;
+  objects: CopObject[];
+  selectedObject: CopObject | null;
+  selectedSituationFeature: SituationFeature | null;
+  situationFeatures: SituationFeatureCollectionResponse | null;
+  onOpenSettings: () => void;
+}) {
+  const staleOrLostCount = objects.filter((object) => object.status === "STALE" || object.status === "LOST").length;
+  const contextCount = situationFeatures?.summary.featureCount ?? 0;
+  return (
+    <div className="data-workspace-board">
+      <div className="deck-header">
+        <PanelTitle icon={<Database size={17} />} title="Datový přehled" />
+        <button className="mini-button" onClick={onOpenSettings} type="button">
+          <Settings size={14} />
+          Nastavení dat
+        </button>
+      </div>
+
+      <div className="data-summary-grid">
+        <DataMetric label="Objekty" value={String(objects.length)} tone="neutral" />
+        <DataMetric label="Nízká confidence" value={String(metrics.lowConfidenceCount)} tone={metrics.lowConfidenceCount > 0 ? "warn" : "ok"} />
+        <DataMetric label="Stale/lost" value={String(staleOrLostCount)} tone={staleOrLostCount > 0 ? "warn" : "ok"} />
+        <DataMetric label="Kontext" value={String(contextCount)} tone={contextCount > 0 ? "ok" : "neutral"} />
+      </div>
+
+      {selectedSituationFeature ? (
+        <SelectedSituationDataCard feature={selectedSituationFeature} />
+      ) : selectedObject ? (
+        <SelectedObjectDataCard object={selectedObject} />
+      ) : (
+        <div className="empty-mini">Vyber objekt nebo situační prvek v mapě/tabulce. Tady se zobrazí stav, kvalita a zdrojová data.</div>
+      )}
+    </div>
+  );
+}
+
+function DataMetric({ label, value, tone }: { label: string; value: string; tone: "neutral" | "ok" | "warn" }) {
+  return (
+    <div className={`data-metric ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function SelectedObjectDataCard({ object }: { object: CopObject }) {
+  const provenance = object.attributes?.provenance;
+  return (
+    <ObjectDetailSection title="Vybraný objekt">
+      <DetailGrid
+        rows={[
+          ["ID", object.objectId],
+          ["Stav", <StatusBadge key="status" label={object.status} tone={objectStatusTone(object.status)} />],
+          ["Typ", `${object.objectType} / ${object.domain}`],
+          ["Confidence", formatOptionalPercent(object.confidence)],
+          ["Zdroj", provenance?.sourceSystemId ?? "n/a"],
+          ["Aktualizace", formatShortDateTime(object.lastUpdatedAt ?? provenance?.producerTimestamp)]
+        ]}
+      />
+    </ObjectDetailSection>
+  );
+}
+
+function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
+  const status = situationFeatureStatusModel(feature);
+  return (
+    <ObjectDetailSection title="Vybraný situační prvek">
+      <DetailGrid
+        rows={[
+          ["Název", feature.properties.label],
+          ["Vrstva", situationLayerLabel(feature.properties.layer)],
+          ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
+          ["Kategorie", feature.properties.category],
+          ["Zdroj", feature.properties.sourceId],
+          ["Aktualizace", formatShortDateTime(feature.properties.observedAt)]
+        ]}
+      />
+      {feature.properties.layer === "mobile" ? <MobileNetworkStatusSummary feature={feature} /> : null}
+    </ObjectDetailSection>
+  );
+}
+
+function MobileNetworkStatusSummary({ feature }: { feature: SituationFeature }) {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  return (
+    <div className="mobile-status-summary">
+      <DataMetric label="Download" value={formatOptionalNumber(recordNumber(metrics, "downloadMbps"), " Mbps")} tone={mobileMetricTone(recordNumber(metrics, "downloadMbps"), 15, 5, true)} />
+      <DataMetric label="Upload" value={formatOptionalNumber(recordNumber(metrics, "uploadMbps"), " Mbps")} tone={mobileMetricTone(recordNumber(metrics, "uploadMbps"), 5, 1.5, true)} />
+      <DataMetric label="Latence" value={formatOptionalNumber(recordNumber(metrics, "latencyMs"), " ms")} tone={mobileMetricTone(recordNumber(metrics, "latencyMs"), 75, 150, false)} />
+      <DataMetric label="Signál" value={formatOptionalNumber(recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"), " dBm")} tone={mobileMetricTone(recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"), -100, -110, true)} />
+    </div>
+  );
+}
+
+function StatusBadge({ label, tone }: { label: string; tone: "neutral" | "ok" | "warn" | "critical" }) {
+  return <span className={`status-badge ${tone}`}>{label}</span>;
 }
 
 function WorkspaceNavigator({
@@ -2869,6 +3001,7 @@ function ObjectDetail({
 
 function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
   const properties = feature.properties;
+  const status = situationFeatureStatusModel(feature);
   return (
     <div className="object-detail situation-feature-detail">
       <div className="object-header">
@@ -2876,7 +3009,10 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
           <strong>{properties.label}</strong>
           <span>{properties.featureId}</span>
         </div>
-        <em>{properties.layer}</em>
+        <div className="object-header-badges">
+          <em>{properties.layer}</em>
+          <StatusBadge label={status.label} tone={status.tone} />
+        </div>
       </div>
 
       <ObjectDetailSection title="Kontext">
@@ -2888,10 +3024,12 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
             ["Observed", formatShortDateTime(properties.observedAt)],
             ["Age", formatAge(properties.observedAt)],
             ["Confidence", formatOptionalPercent(properties.confidence)],
-            ["Status", properties.stale ? "stale" : properties.severity ?? "fresh"]
+            ["Status", <StatusBadge key="status" label={status.label} tone={status.tone} />]
           ]}
         />
       </ObjectDetailSection>
+
+      {properties.layer === "mobile" ? <MobileNetworkStatusSummary feature={feature} /> : null}
 
       <ObjectDetailSection title="Poloha">
         <DetailGrid
@@ -3359,6 +3497,79 @@ function formatSituationRecord(value: Record<string, unknown> | undefined): stri
     .slice(0, 5)
     .map(([key, entry]) => `${key}: ${formatRecordValue(entry)}`)
     .join(" · ");
+}
+
+function situationFeatureStatusModel(feature: SituationFeature): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } {
+  if (feature.properties.stale) {
+    return { label: "STALE", tone: "warn" };
+  }
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const raw = stringProperty(tags.status)
+    ?? stringProperty(tags.networkStatus)
+    ?? stringProperty(metrics.status)
+    ?? stringProperty(metrics.networkStatus)
+    ?? feature.properties.severity
+    ?? "info";
+  const normalized = raw.toLowerCase();
+  if (["critical", "down", "offline", "outage", "failed", "error"].includes(normalized)) {
+    return { label: "KRITICKÝ", tone: "critical" };
+  }
+  if (["warning", "degraded", "poor", "weak"].includes(normalized)) {
+    return { label: "ZHORŠENÝ", tone: "warn" };
+  }
+  if (["advisory", "limited", "fair"].includes(normalized)) {
+    return { label: "OMEZENÝ", tone: "warn" };
+  }
+  if (["ok", "online", "good", "fresh", "info"].includes(normalized)) {
+    return { label: "OK", tone: "ok" };
+  }
+  return { label: raw.toUpperCase(), tone: "neutral" };
+}
+
+function objectStatusTone(status: string): "neutral" | "ok" | "warn" | "critical" {
+  const normalized = status.toUpperCase();
+  if (normalized === "ACTIVE") {
+    return "ok";
+  }
+  if (normalized === "CONFLICTED" || normalized === "LOST") {
+    return "critical";
+  }
+  if (normalized === "STALE" || normalized === "INACTIVE") {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function mobileMetricTone(value: number | undefined, goodThreshold: number, warnThreshold: number, higherIsBetter: boolean): "neutral" | "ok" | "warn" {
+  if (value === undefined) {
+    return "neutral";
+  }
+  if (higherIsBetter) {
+    return value >= goodThreshold ? "ok" : value >= warnThreshold ? "warn" : "warn";
+  }
+  return value <= goodThreshold ? "ok" : value <= warnThreshold ? "warn" : "warn";
+}
+
+function formatOptionalNumber(value: number | undefined, unit: string): string {
+  return value === undefined ? "n/a" : `${Math.round(value * 10) / 10}${unit}`;
+}
+
+function recordNumber(record: Record<string, unknown>, key: string): number | undefined {
+  const value = Number(record[key]);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringProperty(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function formatRecordValue(value: unknown): string {
