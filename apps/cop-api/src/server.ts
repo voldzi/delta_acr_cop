@@ -25,6 +25,15 @@ import {
   type SituationDataSource,
   type SituationFeatureQuery
 } from "./situation-data-source.js";
+import {
+  buildSafetyDataHealth,
+  createSafetyDataSourceFromEnv,
+  emptySafetyFeatureCollection,
+  parseSafetyFeatureQuery,
+  unavailableSafetyDataHealth,
+  type SafetyDataSource,
+  type SafetyFeatureQuery
+} from "./safety-data-source.js";
 import { appendAudit, createInitialState } from "./state.js";
 import { createTrackHistoryStoreFromEnv, type TrackHistoryStore } from "./track-history-store.js";
 import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory, type TrackHistoryQuery } from "./temporal-history.js";
@@ -40,6 +49,7 @@ import {
 
 export interface BuildServerOptions {
   flightDataSource?: FlightDataSource;
+  safetyDataSource?: SafetyDataSource;
   situationDataSource?: SituationDataSource;
   state?: CopState;
   logger?: boolean;
@@ -87,6 +97,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const userProfileStore = options.userProfileStore ?? createUserProfileStoreFromEnv();
   const userProfileFallbackStore = new InMemoryUserProfileStore("memory-fallback");
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
+  const safetyDataSource = options.safetyDataSource ?? createSafetyDataSourceFromEnv();
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
   const mobileDeviceRegistrations = new Map<string, MobileDeviceRegistration>();
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
@@ -102,6 +113,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
   if (situationDataSource) {
     state.sources.set(situationDataSource.sourceSystem.sourceSystemId, situationDataSource.sourceSystem);
+  }
+  if (safetyDataSource) {
+    state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, safetyDataSource.sourceSystem);
   }
   void app.register(cors, { origin: true });
   void app.register(sensible);
@@ -151,6 +165,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
       ...(flightDataSource ? [flightDataDependency()] : []),
       ...(situationDataSource ? [situationDataDependency()] : []),
+      ...(safetyDataSource ? [safetyDataDependency()] : []),
       { name: "ai-gateway", status: "degraded", detail: "mock provider only" }
     ]
   }));
@@ -202,7 +217,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       `cop_stream_last_message_timestamp_seconds{type="heartbeat"} ${timestampSeconds(streamMetrics.lastHeartbeatAt)}`,
       `cop_stream_last_message_timestamp_seconds{type="backpressure"} ${timestampSeconds(streamMetrics.lastBackpressureAt)}`,
       `cop_stream_last_message_timestamp_seconds{type="write_error"} ${timestampSeconds(streamMetrics.lastWriteErrorAt)}`,
-      ...situationDataCacheMetricLines()
+      ...situationDataCacheMetricLines(),
+      ...safetyDataCacheMetricLines()
     ];
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
@@ -406,6 +422,58 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       throw new Error("Situation data source is not enabled.");
     }
     return state.sources.get(situationDataSource.sourceSystem.sourceSystemId) ?? situationDataSource.sourceSystem;
+  }
+
+  function safetyDataDependency(): { detail: string; name: string; status: DependencyStatus } {
+    if (!safetyDataSource) {
+      return { detail: "disabled", name: "safety-data-source", status: "disabled" };
+    }
+    const health = readSafetyDataHealth(state.sources.get(safetyDataSource.sourceSystem.sourceSystemId));
+    if (!health) {
+      return { detail: "waiting for first request", name: "safety-data-source", status: "degraded" };
+    }
+    return {
+      detail: health.detail ?? health.lastError ?? health.health.toLowerCase(),
+      name: "safety-data-source",
+      status: health.health === "ONLINE" ? "ok" : "degraded"
+    };
+  }
+
+  function safetyDataCacheMetricLines(): string[] {
+    const cache = safetyDataSource?.cacheStats?.();
+    if (!cache) {
+      return [];
+    }
+    return [
+      "# HELP cop_safety_cache_entries Cached safety-data canonical viewport entries.",
+      "# TYPE cop_safety_cache_entries gauge",
+      `cop_safety_cache_entries ${cache.entries}`,
+      "# HELP cop_safety_cache_inflight In-flight safety-data cache refreshes.",
+      "# TYPE cop_safety_cache_inflight gauge",
+      `cop_safety_cache_inflight ${cache.inflight}`,
+      "# HELP cop_safety_cache_requests_total Safety-data cache requests by result.",
+      "# TYPE cop_safety_cache_requests_total counter",
+      `cop_safety_cache_requests_total{result="hit"} ${cache.hits}`,
+      `cop_safety_cache_requests_total{result="miss"} ${cache.misses}`,
+      `cop_safety_cache_requests_total{result="coalesced"} ${cache.coalescedHits}`,
+      `cop_safety_cache_requests_total{result="stale"} ${cache.staleHits}`,
+      "# HELP cop_safety_cache_refreshes_total Safety-data upstream refreshes completed by COP.",
+      "# TYPE cop_safety_cache_refreshes_total counter",
+      `cop_safety_cache_refreshes_total ${cache.refreshes}`,
+      "# HELP cop_safety_cache_errors_total Safety-data upstream refresh errors observed by COP.",
+      "# TYPE cop_safety_cache_errors_total counter",
+      `cop_safety_cache_errors_total ${cache.errors}`,
+      "# HELP cop_safety_cache_evictions_total Safety-data cache evictions.",
+      "# TYPE cop_safety_cache_evictions_total counter",
+      `cop_safety_cache_evictions_total ${cache.evictions}`
+    ];
+  }
+
+  function activeSafetyDataSourceSystem(): SourceSystem {
+    if (!safetyDataSource) {
+      throw new Error("Safety data source is not enabled.");
+    }
+    return state.sources.get(safetyDataSource.sourceSystem.sourceSystemId) ?? safetyDataSource.sourceSystem;
   }
 
   async function readUserProfile(actor: AuthenticatedActor): Promise<UserProfileRecord | null> {
@@ -827,6 +895,172 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       app.log.warn({ error }, "Situation data features request failed.");
       return {
         ...emptySituationFeatureCollection(query, requestNow, [health.lastError ?? "Situation data features are unavailable."]),
+        sourceHealth: health
+      };
+    }
+  });
+
+  app.get("/api/v1/safety/layers", async () => {
+    const requestNow = now();
+    if (!safetyDataSource) {
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceStatus: "disabled",
+        warnings: ["Safety data source is disabled."]
+      };
+    }
+
+    try {
+      const items = await safetyDataSource.fetchLayers(requestNow);
+      const health = buildSafetyDataHealth(items, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      return {
+        items,
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health
+      };
+    } catch (error) {
+      const health = unavailableSafetyDataHealth(error, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      appendAudit(state, "SAFETY_DATA_LAYERS_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Safety data layers request failed.");
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health,
+        warnings: [health.lastError ?? "Safety data layers are unavailable."]
+      };
+    }
+  });
+
+  app.get("/api/v1/safety/sources", async () => {
+    const requestNow = now();
+    if (!safetyDataSource) {
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceStatus: "disabled",
+        warnings: ["Safety data source is disabled."]
+      };
+    }
+
+    try {
+      const items = await safetyDataSource.fetchSources(requestNow);
+      const health = buildSafetyDataHealth(items, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      return {
+        items,
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health
+      };
+    } catch (error) {
+      const health = unavailableSafetyDataHealth(error, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      appendAudit(state, "SAFETY_DATA_SOURCES_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Safety data sources request failed.");
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health,
+        warnings: [health.lastError ?? "Safety data sources are unavailable."]
+      };
+    }
+  });
+
+  app.get("/api/v1/safety/config", async () => {
+    const requestNow = now();
+    if (!safetyDataSource) {
+      return {
+        config: {},
+        serverTimestamp: requestNow.toISOString(),
+        sourceStatus: "disabled",
+        warnings: ["Safety data source is disabled."]
+      };
+    }
+
+    try {
+      const config = await safetyDataSource.fetchConfig(requestNow);
+      const health: SourceHealthOverride = {
+        detail: "config available",
+        evaluatedAt: requestNow.toISOString(),
+        health: "ONLINE",
+        lastPollAt: requestNow.toISOString(),
+        lastSuccessAt: requestNow.toISOString()
+      };
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      return {
+        config,
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health
+      };
+    } catch (error) {
+      const health = unavailableSafetyDataHealth(error, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      appendAudit(state, "SAFETY_DATA_CONFIG_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Safety data config request failed.");
+      return {
+        config: {},
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health,
+        warnings: [health.lastError ?? "Safety data config is unavailable."]
+      };
+    }
+  });
+
+  app.get("/api/v1/safety/features", async (request, reply) => {
+    const requestNow = now();
+    if (!safetyDataSource) {
+      const fallbackQuery = defaultSafetyFeatureQuery();
+      return {
+        ...emptySafetyFeatureCollection(fallbackQuery, requestNow, ["Safety data source is disabled."]),
+        sourceHealth: {
+          detail: "disabled",
+          evaluatedAt: requestNow.toISOString(),
+          health: "WAITING" as const,
+          lastPollAt: requestNow.toISOString()
+        }
+      };
+    }
+
+    const query = parseSafetyFeatureQuery(request.query as Record<string, unknown>, safetyDataSource.config);
+    if (!query) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Safety feature query requires bbox=west,south,east,north.", crypto.randomUUID());
+    }
+
+    try {
+      const collection = await safetyDataSource.fetchFeatures(query, requestNow);
+      const health = buildSafetyDataHealth(collection, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      return {
+        ...collection,
+        sourceHealth: health
+      };
+    } catch (error) {
+      const health = unavailableSafetyDataHealth(error, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      appendAudit(state, "SAFETY_DATA_FEATURES_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Safety data features request failed.");
+      return {
+        ...emptySafetyFeatureCollection(query, requestNow, [health.lastError ?? "Safety data features are unavailable."]),
         sourceHealth: health
       };
     }
@@ -1343,12 +1577,28 @@ function withSituationDataHealth(source: SourceSystem, health: SourceHealthOverr
   };
 }
 
+function withSafetyDataHealth(source: SourceSystem, health: SourceHealthOverride): SourceSystem {
+  return {
+    ...source,
+    attributes: {
+      ...source.attributes,
+      sourceHealth: health,
+      safetyDataHealth: health
+    },
+    updatedAt: health.evaluatedAt
+  };
+}
+
 function readFlightDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
   return readSourceHealthFromAttributes(source?.attributes?.flightDataHealth);
 }
 
 function readSituationDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
   return readSourceHealthFromAttributes(source?.attributes?.situationDataHealth ?? source?.attributes?.sourceHealth);
+}
+
+function readSafetyDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
+  return readSourceHealthFromAttributes(source?.attributes?.safetyDataHealth ?? source?.attributes?.sourceHealth);
 }
 
 function readSourceHealthFromAttributes(value: unknown): SourceHealthOverride | undefined {
@@ -1381,6 +1631,19 @@ function defaultSituationFeatureQuery(): SituationFeatureQuery {
       west: 13.85
     },
     layers: ["weather"],
+    limit: 250
+  };
+}
+
+function defaultSafetyFeatureQuery(): SafetyFeatureQuery {
+  return {
+    bbox: {
+      east: 15.35,
+      north: 50.45,
+      south: 49.65,
+      west: 13.85
+    },
+    layers: ["warnings", "flood"],
     limit: 250
   };
 }
@@ -1510,6 +1773,7 @@ function mobileCapabilities() {
     deviceRegistration: true,
     offlineSnapshot: true,
     pushNotifications: false,
+    safetyContext: true,
     serverUserProfile: true,
     situationContext: true,
     sseStream: true,
@@ -1527,6 +1791,10 @@ function mobileEndpoints() {
     preferences: "/api/v1/me/preferences",
     sourceHealth: "/api/v1/sources/health",
     sources: "/api/v1/sources",
+    safetyConfig: "/api/v1/safety/config",
+    safetyFeatures: "/api/v1/safety/features",
+    safetyLayers: "/api/v1/safety/layers",
+    safetySources: "/api/v1/safety/sources",
     situationFeatures: "/api/v1/situation/features",
     situationLayers: "/api/v1/situation/layers",
     stream: "/api/v1/stream/cop/live",
@@ -1610,7 +1878,8 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
-    situationLayerIds: optionalStringArray(value.situationLayerIds, ["weather", "ground", "mobile", "traffic"]),
+    safetyLayerIds: optionalStringArray(value.safetyLayerIds, ["warnings", "flood"]),
+    situationLayerIds: optionalStringArray(value.situationLayerIds, ["weather", "ground", "mobile", "traffic", "air_quality"]),
     trackLayerIds: optionalStringArray(value.trackLayerIds, ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600)

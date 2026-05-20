@@ -106,7 +106,10 @@ function resolveSourceHealth(
 }
 
 function readSourceHealthOverride(source: SourceSystem): SourceHealthOverride | undefined {
-  const value = source.attributes?.sourceHealth ?? source.attributes?.flightDataHealth ?? source.attributes?.situationDataHealth;
+  const value = source.attributes?.sourceHealth
+    ?? source.attributes?.flightDataHealth
+    ?? source.attributes?.situationDataHealth
+    ?? source.attributes?.safetyDataHealth;
   if (!isRecord(value)) {
     return undefined;
   }

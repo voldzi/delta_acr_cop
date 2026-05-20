@@ -33,6 +33,8 @@ tags:
     description: Source Registry lifecycle endpoints.
   - name: Situation Context
     description: Context-only public situation layers proxied from SIM situation-data-api.
+  - name: Safety Data
+    description: Context-only public safety layers proxied from SIM safety-data-api.
   - name: Audit
     description: Audit and provenance query endpoints.
   - name: AI
@@ -727,6 +729,104 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/safety/layers:
+    get:
+      tags: [Safety Data]
+      summary: List available context-only public safety layers.
+      operationId: listSafetyLayers
+      description: >
+        Proxies SIM safety-data-api layer metadata. These layers are contextual
+        public safety overlays only and are not persisted as COP tracks,
+        history, tasking or action workflow state.
+      responses:
+        "200":
+          description: Safety layer descriptors and source health.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetyLayersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/safety/sources:
+    get:
+      tags: [Safety Data]
+      summary: List upstream public safety sources.
+      operationId: listSafetySources
+      responses:
+        "200":
+          description: Safety source descriptors and source health.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetySourcesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/safety/config:
+    get:
+      tags: [Safety Data]
+      summary: Read public safety source runtime configuration.
+      operationId: getSafetyConfig
+      responses:
+        "200":
+          description: Safety data public configuration and source health.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetyConfigResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/safety/features:
+    get:
+      tags: [Safety Data]
+      summary: Read context-only public safety features for the current map bbox.
+      operationId: listSafetyFeatures
+      description: >
+        Returns GeoJSON features from SIM safety-data-api for display as map
+        overlays. The COP API does not forward the operator bearer token to SIM
+        and returns an empty degraded FeatureCollection when the upstream source
+        is unavailable.
+      parameters:
+        - name: bbox
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
+          description: "west,south,east,north"
+        - name: layers
+          in: query
+          required: false
+          schema:
+            type: string
+            default: warnings,flood
+          description: "Comma-separated layer IDs: warnings, flood."
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 250
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection with normalized public safety properties.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetyFeatureCollection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/sources/{sourceSystemId}:
     get:
       tags: [Sources]
@@ -1162,6 +1262,11 @@ components:
           type: number
           minimum: 1
           maximum: 60
+        safetyLayerIds:
+          type: array
+          items:
+            type: string
+            enum: [warnings, flood]
         selectedLayer:
           type: string
           enum: [air-situation, uav, friendly, foreign, public-flights, data-quality]
@@ -2200,6 +2305,322 @@ components:
         warningCount:
           type: integer
           minimum: 0
+    SafetyLayersResponse:
+      type: object
+      required: [items, serverTimestamp]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetyLayer"
+        serverTimestamp:
+          type: string
+          format: date-time
+        sourceHealth:
+          $ref: "#/components/schemas/SourceHealthOverride"
+        sourceStatus:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+    SafetySourcesResponse:
+      type: object
+      required: [items, serverTimestamp]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetySourceDescriptor"
+        serverTimestamp:
+          type: string
+          format: date-time
+        sourceHealth:
+          $ref: "#/components/schemas/SourceHealthOverride"
+        sourceStatus:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+    SafetyConfigResponse:
+      type: object
+      required: [config, serverTimestamp]
+      properties:
+        config:
+          $ref: "#/components/schemas/SafetyPublicConfig"
+        serverTimestamp:
+          type: string
+          format: date-time
+        sourceHealth:
+          $ref: "#/components/schemas/SourceHealthOverride"
+        sourceStatus:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+    SafetyLayer:
+      type: object
+      required: [defaultVisible, label, layerId]
+      properties:
+        layerId:
+          type: string
+          enum: [warnings, flood]
+        label:
+          type: string
+        description:
+          type: string
+        defaultVisible:
+          type: boolean
+        expectedCadenceSeconds:
+          type: integer
+          minimum: 1
+        geometryTypes:
+          type: array
+          items:
+            type: string
+            enum: [Point, Polygon]
+    SafetyFeatureCollection:
+      type: object
+      required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
+      properties:
+        contractVersion:
+          type: string
+          const: cop-safety-source-v1
+        type:
+          type: string
+          const: FeatureCollection
+        generatedAt:
+          type: string
+          format: date-time
+        query:
+          $ref: "#/components/schemas/SafetyFeatureQuery"
+        source:
+          $ref: "#/components/schemas/SafetyRootSource"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetySourceDescriptor"
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetyFeature"
+        summary:
+          $ref: "#/components/schemas/SafetySummary"
+        sourceHealth:
+          $ref: "#/components/schemas/SourceHealthOverride"
+        warnings:
+          type: array
+          items:
+            type: string
+    SafetyFeatureQuery:
+      type: object
+      required: [bbox, layers, limit]
+      properties:
+        bbox:
+          $ref: "#/components/schemas/SituationBbox"
+        layers:
+          type: array
+          items:
+            type: string
+            enum: [warnings, flood]
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        sources:
+          type: array
+          items:
+            type: string
+            enum: [chmi_alerts, chmi_hydro, mock]
+    SafetyRootSource:
+      type: object
+      required: [sourceId, sourceType]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        sourceId:
+          type: string
+          const: safety-data-api
+        sourceType:
+          type: string
+          const: PUBLIC_SAFETY_AGGREGATE
+    SafetySourceDescriptor:
+      type: object
+      required: [sourceId]
+      properties:
+        sourceId:
+          type: string
+          enum: [chmi_alerts, chmi_hydro, mock]
+        label:
+          type: string
+        enabled:
+          type: boolean
+        mode:
+          type: string
+        priority:
+          type: number
+        baseUrl:
+          type: string
+          format: uri
+        updateCadenceSeconds:
+          type: integer
+          minimum: 1
+        layers:
+          type: array
+          items:
+            type: string
+            enum: [warnings, flood]
+        license:
+          type: object
+          additionalProperties: true
+    SafetyFeature:
+      type: object
+      required: [geometry, properties, type]
+      properties:
+        type:
+          type: string
+          const: Feature
+        id:
+          oneOf:
+            - type: string
+            - type: number
+        geometry:
+          oneOf:
+            - $ref: "#/components/schemas/GeoJsonPoint"
+            - $ref: "#/components/schemas/GeoJsonPolygon"
+        properties:
+          $ref: "#/components/schemas/SafetyFeatureProperties"
+    SafetyFeatureProperties:
+      type: object
+      required: [category, featureId, headline, layer, sourceId]
+      properties:
+        featureId:
+          type: string
+        layer:
+          type: string
+          enum: [warnings, flood]
+        headline:
+          type: string
+        category:
+          type: string
+        sourceId:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+        effectiveAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        stale:
+          type: boolean
+        severity:
+          type: string
+          enum: [advisory, critical, info, warning]
+        urgency:
+          type: string
+        certainty:
+          type: string
+        affectedAreas:
+          type: array
+          items:
+            type: string
+        geocodes:
+          type: array
+          items:
+            type: object
+            required: [scheme, value]
+            properties:
+              scheme:
+                type: string
+              value:
+                type: string
+        description:
+          type: string
+        recommendedAction:
+          type: string
+        license:
+          type: object
+          additionalProperties: true
+        metrics:
+          type: object
+          additionalProperties: true
+        tags:
+          type: object
+          additionalProperties: true
+    SafetySummary:
+      type: object
+      required: [advisoryCount, criticalCount, featureCount, sourceCount, staleFeatureCount, warningCount]
+      properties:
+        advisoryCount:
+          type: integer
+          minimum: 0
+        criticalCount:
+          type: integer
+          minimum: 0
+        featureCount:
+          type: integer
+          minimum: 0
+        sourceCount:
+          type: integer
+          minimum: 0
+        staleFeatureCount:
+          type: integer
+          minimum: 0
+        warningCount:
+          type: integer
+          minimum: 0
+    SafetyPublicConfig:
+      type: object
+      properties:
+        cacheMaxEntries:
+          type: integer
+          minimum: 1
+        cacheTtlSeconds:
+          type: integer
+          minimum: 1
+        staleAfterSeconds:
+          type: integer
+          minimum: 1
+        staleIfErrorSeconds:
+          type: integer
+          minimum: 0
+        requestTimeoutMs:
+          type: integer
+          minimum: 1
+        hydroMaxStations:
+          type: integer
+          minimum: 1
+        defaultBbox:
+          $ref: "#/components/schemas/SituationBbox"
+        enabledSources:
+          type: array
+          items:
+            type: string
+            enum: [chmi_alerts, chmi_hydro, mock]
+        providers:
+          type: array
+          items:
+            type: object
+            required: [sourceId]
+            properties:
+              sourceId:
+                type: string
+                enum: [chmi_alerts, chmi_hydro, mock]
+              authConfigured:
+                type: boolean
+              baseUrl:
+                type: string
+                format: uri
     SourceHealthOverride:
       type: object
       required: [evaluatedAt, health]

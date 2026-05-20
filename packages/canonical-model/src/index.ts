@@ -123,6 +123,7 @@ export interface SourceSystem {
     | "SIMULATOR"
     | "AIR_SYSTEM"
     | "PUBLIC_FLIGHT_AGGREGATE"
+    | "PUBLIC_SAFETY_AGGREGATE"
     | "PUBLIC_SITUATION_AGGREGATE"
     | "GROUND_SYSTEM"
     | "UAV_SYSTEM"
@@ -192,6 +193,28 @@ export function createPublicSituationAggregateSourceSystem(): SourceSystem {
     attributes: {
       contextOnly: true,
       contractVersion: "cop-situation-source-v1"
+    },
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+export function createPublicSafetyAggregateSourceSystem(): SourceSystem {
+  const now = new Date().toISOString();
+  return {
+    sourceSystemId: "safety-data-api",
+    displayName: "SIM Safety Data",
+    sourceType: "PUBLIC_SAFETY_AGGREGATE",
+    owner: "SIM safety-data-api",
+    allowedEventTypes: [],
+    allowedObjectTypes: ["INCIDENT", "REPORT", "UNKNOWN"],
+    trustProfile: "UNKNOWN",
+    classificationLimit: "UNCLASSIFIED",
+    synthetic: false,
+    status: "ACTIVE",
+    attributes: {
+      contextOnly: true,
+      contractVersion: "cop-safety-source-v1"
     },
     createdAt: now,
     updatedAt: now

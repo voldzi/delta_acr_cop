@@ -130,6 +130,8 @@ export interface CopDashboardData {
 }
 
 export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "traffic" | "warnings" | "weather";
+export type SafetyLayerId = "flood" | "warnings";
+export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "mock";
 
 export interface MapBounds {
   east: number;
@@ -205,18 +207,27 @@ export type SituationGeometry =
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface SituationFeatureProperties {
+  affectedAreas?: string[];
   category: string;
+  certainty?: string;
   confidence?: number;
+  description?: string;
+  effectiveAt?: string;
+  expiresAt?: string;
   featureId: string;
+  geocodes?: Array<{ scheme: string; value: string }>;
+  headline?: string;
   label: string;
   layer: SituationLayerId;
   license?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
   observedAt?: string;
+  recommendedAction?: string;
   severity?: string;
   sourceId: string;
   stale?: boolean;
   tags?: Record<string, unknown>;
+  urgency?: string;
 }
 
 export interface SituationSourceDescriptor {
@@ -242,6 +253,138 @@ export interface SituationLayersResponse {
 export interface SituationFeatureOptions {
   bbox: MapBounds;
   layers: SituationLayerId[];
+  limit?: number;
+}
+
+export interface SafetyLayer {
+  defaultVisible: boolean;
+  description?: string;
+  expectedCadenceSeconds?: number;
+  geometryTypes?: string[];
+  label: string;
+  layerId: SafetyLayerId;
+}
+
+export interface SafetyFeatureCollectionResponse {
+  contractVersion: "cop-safety-source-v1";
+  features: SafetyFeature[];
+  generatedAt: string;
+  query: {
+    bbox: MapBounds;
+    layers: SafetyLayerId[];
+    limit: number;
+    sources?: SafetyDataSourceId[];
+  };
+  source: {
+    generatedAt?: string;
+    sourceId: "safety-data-api";
+    sourceType: "PUBLIC_SAFETY_AGGREGATE";
+  };
+  cache?: {
+    key: string;
+    status: "coalesced" | "hit" | "miss" | "stale";
+    ttlMs: number;
+    upstreamBbox: MapBounds;
+  };
+  sourceHealth?: SourceHealthOverride;
+  sources: SafetySourceDescriptor[];
+  summary: {
+    advisoryCount: number;
+    criticalCount: number;
+    featureCount: number;
+    sourceCount: number;
+    staleFeatureCount: number;
+    warningCount: number;
+  };
+  type: "FeatureCollection";
+  warnings: string[];
+}
+
+export interface SafetyFeature {
+  geometry: SafetyGeometry;
+  id?: string | number;
+  properties: SafetyFeatureProperties;
+  type: "Feature";
+}
+
+export type SafetyGeometry =
+  | { coordinates: [number, number]; type: "Point" }
+  | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
+
+export interface SafetyFeatureProperties {
+  affectedAreas?: string[];
+  category: string;
+  certainty?: string;
+  confidence?: number;
+  description?: string;
+  effectiveAt?: string;
+  expiresAt?: string;
+  featureId: string;
+  geocodes?: Array<{ scheme: string; value: string }>;
+  headline: string;
+  layer: SafetyLayerId;
+  license?: Record<string, unknown>;
+  metrics?: Record<string, unknown>;
+  observedAt?: string;
+  recommendedAction?: string;
+  severity?: string;
+  sourceId: string;
+  stale?: boolean;
+  tags?: Record<string, unknown>;
+  urgency?: string;
+}
+
+export interface SafetySourceDescriptor {
+  baseUrl?: string;
+  enabled?: boolean;
+  label?: string;
+  layers?: SafetyLayerId[];
+  license?: Record<string, unknown>;
+  mode?: string;
+  priority?: number;
+  sourceId: SafetyDataSourceId;
+  updateCadenceSeconds?: number;
+}
+
+export interface SafetyDataPublicConfig {
+  cacheMaxEntries?: number;
+  cacheTtlSeconds?: number;
+  defaultBbox?: MapBounds;
+  enabledSources?: SafetyDataSourceId[];
+  hydroMaxStations?: number;
+  providers?: Array<{ authConfigured?: boolean; baseUrl?: string; sourceId: SafetyDataSourceId }>;
+  requestTimeoutMs?: number;
+  staleAfterSeconds?: number;
+  staleIfErrorSeconds?: number;
+}
+
+export interface SafetyLayersResponse {
+  items: SafetyLayer[];
+  serverTimestamp?: string;
+  sourceHealth?: SourceHealthOverride;
+  sourceStatus?: string;
+  warnings?: string[];
+}
+
+export interface SafetySourcesResponse {
+  items: SafetySourceDescriptor[];
+  serverTimestamp?: string;
+  sourceHealth?: SourceHealthOverride;
+  sourceStatus?: string;
+  warnings?: string[];
+}
+
+export interface SafetyConfigResponse {
+  config: SafetyDataPublicConfig;
+  serverTimestamp?: string;
+  sourceHealth?: SourceHealthOverride;
+  sourceStatus?: string;
+  warnings?: string[];
+}
+
+export interface SafetyFeatureOptions {
+  bbox: MapBounds;
+  layers: SafetyLayerId[];
   limit?: number;
 }
 
@@ -474,6 +617,38 @@ export async function fetchSituationFeatures(
   query.set("layers", options.layers.join(","));
   query.set("limit", String(options.limit ?? 250));
   return fetchJson<SituationFeatureCollectionResponse>(`${apiBase}/api/v1/situation/features?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function fetchSafetyLayers(apiBase: string, token = "dev-lab-token"): Promise<SafetyLayersResponse> {
+  return fetchJson<SafetyLayersResponse>(`${apiBase}/api/v1/safety/layers`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function fetchSafetySources(apiBase: string, token = "dev-lab-token"): Promise<SafetySourcesResponse> {
+  return fetchJson<SafetySourcesResponse>(`${apiBase}/api/v1/safety/sources`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function fetchSafetyConfig(apiBase: string, token = "dev-lab-token"): Promise<SafetyConfigResponse> {
+  return fetchJson<SafetyConfigResponse>(`${apiBase}/api/v1/safety/config`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function fetchSafetyFeatures(
+  apiBase: string,
+  token = "dev-lab-token",
+  options: SafetyFeatureOptions
+): Promise<SafetyFeatureCollectionResponse> {
+  const query = new URLSearchParams();
+  query.set("bbox", `${options.bbox.west},${options.bbox.south},${options.bbox.east},${options.bbox.north}`);
+  query.set("layers", options.layers.join(","));
+  query.set("limit", String(options.limit ?? 250));
+  return fetchJson<SafetyFeatureCollectionResponse>(`${apiBase}/api/v1/safety/features?${query.toString()}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
 }

@@ -42,6 +42,10 @@ import {
   connectCopStream,
   fetchCopDashboardData,
   fetchCopAlerts,
+  fetchSafetyConfig,
+  fetchSafetyFeatures,
+  fetchSafetyLayers,
+  fetchSafetySources,
   fetchSituationFeatures,
   fetchSituationLayers,
   fetchUserProfile,
@@ -68,6 +72,12 @@ import {
   type ObjectProvenance,
   type SourceHealthItem,
   type SourceSystem,
+  type SafetyConfigResponse,
+  type SafetyFeature,
+  type SafetyFeatureCollectionResponse,
+  type SafetyLayer,
+  type SafetyLayerId,
+  type SafetySourceDescriptor,
   type SituationFeature,
   type SituationFeatureCollectionResponse,
   type SituationLayer,
@@ -154,6 +164,7 @@ type SituationLayerStatus = "disabled" | "loading" | "online" | "degraded" | "zo
 const historyLimitOptions = [36, 72, 120, 240, 600] as const;
 const historyWindowOptions = [30, 60, 120, 180, 300, 600] as const;
 const defaultSituationLayerIds: SituationLayerId[] = ["weather"];
+const defaultSafetyLayerIds: SafetyLayerId[] = ["warnings"];
 const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["adaptive", "Adaptivní"],
   ["telemetry", "Telemetrie"],
@@ -253,6 +264,15 @@ export function App() {
   const [situationFeatures, setSituationFeatures] = React.useState<SituationFeatureCollectionResponse | null>(null);
   const [situationStatus, setSituationStatus] = React.useState<SituationLayerStatus>("loading");
   const [situationWarnings, setSituationWarnings] = React.useState<string[]>([]);
+  const [safetyLayers, setSafetyLayers] = React.useState<SafetyLayer[]>([]);
+  const [visibleSafetyLayerIds, setVisibleSafetyLayerIds] = React.useState<SafetyLayerId[]>(() =>
+    normalizeSafetyLayerIds(initialPreferences.safetyLayerIds)
+  );
+  const [safetyFeatures, setSafetyFeatures] = React.useState<SafetyFeatureCollectionResponse | null>(null);
+  const [safetyStatus, setSafetyStatus] = React.useState<SituationLayerStatus>("loading");
+  const [safetyWarnings, setSafetyWarnings] = React.useState<string[]>([]);
+  const [safetySources, setSafetySources] = React.useState<SafetySourceDescriptor[]>([]);
+  const [safetyConfig, setSafetyConfig] = React.useState<SafetyConfigResponse | null>(null);
   const [selectedSituationFeatureId, setSelectedSituationFeatureId] = React.useState<string | null>(null);
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
@@ -509,11 +529,12 @@ export function App() {
         if (cancelled) {
           return;
         }
-        setSituationLayers(response.items);
+        setSituationLayers(response.items.filter((layer) => !isSafetyLayerId(layer.layerId)));
         setSituationWarnings([...(response.warnings ?? []), ...(response.sourceHealth?.warnings ?? [])]);
         setSituationStatus(situationStatusFromHealth(response.sourceHealth?.health, response.sourceStatus));
         if (initialPreferences.situationLayerIds === undefined) {
           const defaultLayers = response.items
+            .filter((layer) => !isSafetyLayerId(layer.layerId))
             .filter((layer) => layer.defaultVisible)
             .map((layer) => layer.layerId);
           if (defaultLayers.length > 0) {
@@ -534,7 +555,60 @@ export function App() {
     };
   }, [authToken, dataAccessReady, initialPreferences.situationLayerIds]);
 
+  React.useEffect(() => {
+    if (!dataAccessReady) {
+      setSafetyStatus("disabled");
+      setSafetyWarnings(["Pro načtení bezpečnostních vrstev je potřeba přihlášení."]);
+      return;
+    }
+
+    let cancelled = false;
+    setSafetyStatus("loading");
+    Promise.all([
+      fetchSafetyLayers(apiBase, authToken),
+      fetchSafetySources(apiBase, authToken),
+      fetchSafetyConfig(apiBase, authToken)
+    ])
+      .then(([layersResponse, sourcesResponse, configResponse]) => {
+        if (cancelled) {
+          return;
+        }
+        setSafetyLayers(layersResponse.items);
+        setSafetySources(sourcesResponse.items);
+        setSafetyConfig(configResponse);
+        setSafetyWarnings([
+          ...(layersResponse.warnings ?? []),
+          ...(layersResponse.sourceHealth?.warnings ?? []),
+          ...(sourcesResponse.warnings ?? []),
+          ...(configResponse.warnings ?? [])
+        ]);
+        setSafetyStatus(situationStatusFromHealth(layersResponse.sourceHealth?.health, layersResponse.sourceStatus));
+        if (initialPreferences.safetyLayerIds === undefined) {
+          const defaultLayers = layersResponse.items
+            .filter((layer) => layer.defaultVisible)
+            .map((layer) => layer.layerId);
+          if (defaultLayers.length > 0) {
+            setVisibleSafetyLayerIds(normalizeSafetyLayerIds(defaultLayers));
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setSafetyLayers([]);
+          setSafetySources([]);
+          setSafetyConfig(null);
+          setSafetyStatus("degraded");
+          setSafetyWarnings([error instanceof Error ? error.message : "Bezpečnostní vrstvy nejsou dostupné."]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, dataAccessReady, initialPreferences.safetyLayerIds]);
+
   const visibleSituationLayerKey = visibleSituationLayerIds.join(",");
+  const visibleSafetyLayerKey = visibleSafetyLayerIds.join(",");
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -586,6 +660,57 @@ export function App() {
       window.clearTimeout(timer);
     };
   }, [authToken, dataAccessReady, mapBounds, mapView?.zoom, visibleSituationLayerIds, visibleSituationLayerKey]);
+
+  React.useEffect(() => {
+    if (!dataAccessReady) {
+      return;
+    }
+    if (visibleSafetyLayerIds.length === 0) {
+      setSafetyFeatures(null);
+      setSafetyStatus("disabled");
+      setSafetyWarnings([]);
+      return;
+    }
+    if (!mapBounds) {
+      return;
+    }
+    if (shouldSkipSituationFeatureLoad(mapBounds, mapView?.zoom)) {
+      setSafetyFeatures(null);
+      setSafetyStatus("zoom");
+      setSafetyWarnings(["Bezpečnostní vrstvy se načítají až po přiblížení mapy na rozumný výřez."]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setSafetyStatus((current) => current === "online" ? "online" : "loading");
+      fetchSafetyFeatures(apiBase, authToken, {
+        bbox: mapBounds,
+        layers: visibleSafetyLayerIds,
+        limit: 250
+      })
+        .then((collection) => {
+          if (cancelled) {
+            return;
+          }
+          setSafetyFeatures(collection);
+          setSafetyWarnings([...(collection.warnings ?? []), ...(collection.sourceHealth?.warnings ?? [])]);
+          setSafetyStatus(situationStatusFromHealth(collection.sourceHealth?.health));
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setSafetyFeatures(null);
+            setSafetyStatus("degraded");
+            setSafetyWarnings([error instanceof Error ? error.message : "Bezpečnostní vrstvy nejsou dostupné."]);
+          }
+        });
+    }, 2200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [authToken, dataAccessReady, mapBounds, mapView?.zoom, visibleSafetyLayerIds, visibleSafetyLayerKey]);
 
   React.useEffect(() => {
     if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
@@ -664,10 +789,14 @@ export function App() {
     () => filterObjectsByLayers(scopedObjects, visibleTrackLayerIds),
     [scopedObjects, visibleTrackLayerIds]
   );
-  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0;
+  const combinedSituationFeatures = React.useMemo(
+    () => mergeSituationAndSafetyFeatures(situationFeatures, safetyFeatures),
+    [safetyFeatures, situationFeatures]
+  );
+  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0 || visibleSafetyLayerIds.length > 0;
   const mapLayerLabel = React.useMemo(
-    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds),
-    [visibleSituationLayerIds, visibleTrackLayerIds]
+    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds),
+    [visibleSafetyLayerIds, visibleSituationLayerIds, visibleTrackLayerIds]
   );
   const mapEmptyMessage = React.useMemo(
     () =>
@@ -683,7 +812,7 @@ export function App() {
     [loadError, objectsForDisplay, replayActive, scopedObjects, sources, visibleObjects, visibleSituationContextEnabled]
   );
   const selectedObject = visibleObjects.find((object) => object.objectId === selectedObjectId) ?? visibleObjects[0];
-  const selectedSituationFeature = situationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
+  const selectedSituationFeature = combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
   const metrics = React.useMemo(() => buildMetrics(scopedObjects, sources), [scopedObjects, sources]);
   const eventStream = React.useMemo(() => buildEventStream(visibleObjects), [visibleObjects]);
   const historyPointCount = React.useMemo(
@@ -752,6 +881,9 @@ export function App() {
     if (settings.situationLayerIds !== undefined) {
       setVisibleSituationLayerIds(normalizeSituationLayerIds(settings.situationLayerIds));
     }
+    if (settings.safetyLayerIds !== undefined) {
+      setVisibleSafetyLayerIds(normalizeSafetyLayerIds(settings.safetyLayerIds));
+    }
     if (settings.predictionMinutes !== undefined) {
       setPredictionMinutes(clamp(settings.predictionMinutes, 2, 20));
     }
@@ -801,6 +933,7 @@ export function App() {
     predictionMode,
     proximityAlertEnabled,
     refreshSeconds,
+    safetyLayerIds: visibleSafetyLayerIds,
     selectedLayer,
     showAlertAreas,
     showHistory,
@@ -824,6 +957,7 @@ export function App() {
     predictionMode,
     proximityAlertEnabled,
     refreshSeconds,
+    visibleSafetyLayerIds,
     selectedLayer,
     showAlertAreas,
     showHistory,
@@ -962,10 +1096,10 @@ export function App() {
   }, [selectedObjectId, visibleObjects]);
 
   React.useEffect(() => {
-    if (selectedSituationFeatureId && !situationFeatures?.features.some((feature) => feature.properties.featureId === selectedSituationFeatureId)) {
+    if (selectedSituationFeatureId && !combinedSituationFeatures?.features.some((feature) => feature.properties.featureId === selectedSituationFeatureId)) {
       setSelectedSituationFeatureId(null);
     }
-  }, [selectedSituationFeatureId, situationFeatures]);
+  }, [combinedSituationFeatures, selectedSituationFeatureId]);
 
   React.useEffect(() => {
     if (!proximityAlertEnabled || proximityAlerts.length === 0) {
@@ -1084,6 +1218,15 @@ export function App() {
     });
   }
 
+  function toggleSafetyLayer(layerId: SafetyLayerId) {
+    setVisibleSafetyLayerIds((current) => {
+      if (current.includes(layerId)) {
+        return current.filter((item) => item !== layerId);
+      }
+      return normalizeSafetyLayerIds([...current, layerId]);
+    });
+  }
+
   function toggleTrackLayer(layerId: CopLayer) {
     setVisibleTrackLayerIds((current) => {
       const next = current.includes(layerId)
@@ -1197,6 +1340,7 @@ export function App() {
         predictionMode,
         proximityAlertEnabled,
         refreshSeconds,
+        safetyLayerIds: visibleSafetyLayerIds,
         selectedLayer,
         showAlertAreas,
         showHistory,
@@ -1312,6 +1456,17 @@ export function App() {
                 visibleLayerIds={visibleSituationLayerIds}
                 warnings={situationWarnings}
                 onToggle={toggleSituationLayer}
+              />
+
+              <SafetyLayerControls
+                config={safetyConfig}
+                featureCount={safetyFeatures?.summary.featureCount ?? 0}
+                layers={safetyLayers}
+                sources={safetySources}
+                status={safetyStatus}
+                visibleLayerIds={visibleSafetyLayerIds}
+                warnings={safetyWarnings}
+                onToggle={toggleSafetyLayer}
               />
 
               <UserZoneLayerControls
@@ -1447,7 +1602,7 @@ export function App() {
               hasSituationContextEnabled={visibleSituationContextEnabled}
               initialView={mapView}
               mapLayerLabel={mapLayerLabel}
-              situationFeatures={situationFeatures}
+              situationFeatures={combinedSituationFeatures}
               onBoundsChange={setMapBounds}
               onSelectObject={(object) => {
                 setSelectedObjectId(object.objectId);
@@ -1487,7 +1642,7 @@ export function App() {
                 objects={visibleObjects}
                 selectedObject={selectedObject ?? null}
                 selectedSituationFeature={selectedSituationFeature}
-                situationFeatures={situationFeatures}
+                situationFeatures={combinedSituationFeatures}
                 onOpenSettings={() => openSettings("data")}
               />
             </section>
@@ -1600,6 +1755,7 @@ export function App() {
             <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
             <ReadinessRow label="Public flights" value={String(metrics.publicFlightCount)} tone={metrics.publicFlightCount > 0 ? "ok" : "neutral"} />
             <ReadinessRow label="Situation context" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
+            <ReadinessRow label="Safety data" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
             <ReadinessRow label="Stream mode" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
             <ReadinessRow label="Stream latency" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
             <ReadinessRow label="Last heartbeat" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
@@ -1872,7 +2028,7 @@ function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
     <ObjectDetailSection title="Vybraný situační prvek">
       <DetailGrid
         rows={[
-          ["Název", feature.properties.label],
+          ["Název", feature.properties.headline ?? feature.properties.label],
           ["Vrstva", situationLayerLabel(feature.properties.layer)],
           ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
           ["Kategorie", feature.properties.category],
@@ -2754,6 +2910,56 @@ function SituationLayerControls({
   );
 }
 
+function SafetyLayerControls({
+  config,
+  featureCount,
+  layers,
+  sources,
+  status,
+  visibleLayerIds,
+  warnings,
+  onToggle
+}: {
+  config: SafetyConfigResponse | null;
+  featureCount: number;
+  layers: SafetyLayer[];
+  sources: SafetySourceDescriptor[];
+  status: SituationLayerStatus;
+  visibleLayerIds: SafetyLayerId[];
+  warnings: string[];
+  onToggle: (layerId: SafetyLayerId) => void;
+}) {
+  const layerItems = layers.length > 0 ? layers : defaultSafetyLayers();
+  return (
+    <div className="situation-layer-box safety-layer-box">
+      <div className="situation-layer-header">
+        <PanelTitle icon={<AlertTriangle size={17} />} title="Bezpečnostní data" />
+        <span className={`situation-status ${status}`}>{situationStatusLabel(status)}</span>
+      </div>
+      <div className="situation-layer-grid">
+        {layerItems.map((layer) => (
+          <label className="situation-layer-toggle" key={layer.layerId} title={layer.description ?? layer.label}>
+            <input
+              checked={visibleLayerIds.includes(layer.layerId)}
+              onChange={() => onToggle(layer.layerId)}
+              type="checkbox"
+            />
+            <span>
+              <strong>{safetyLayerLabel(layer.layerId)}</strong>
+              <small>{safetyLayerHint(layer)}</small>
+            </span>
+          </label>
+        ))}
+      </div>
+      <ReadinessRow label="Prvky" value={String(featureCount)} tone={featureCount > 0 ? "ok" : "neutral"} />
+      <ReadinessRow label="Zdroje" value={formatSafetySources(sources, config)} tone={sources.some((source) => source.enabled) ? "ok" : "neutral"} />
+      {warnings.slice(0, 2).map((warning) => (
+        <div className="situation-warning" key={warning}>{warning}</div>
+      ))}
+    </div>
+  );
+}
+
 function UserZoneLayerControls({
   zone,
   onEnabledChange,
@@ -3006,7 +3212,7 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
     <div className="object-detail situation-feature-detail">
       <div className="object-header">
         <div>
-          <strong>{properties.label}</strong>
+          <strong>{properties.headline ?? properties.label}</strong>
           <span>{properties.featureId}</span>
         </div>
         <div className="object-header-badges">
@@ -3022,14 +3228,28 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
             ["Category", properties.category],
             ["Source", properties.sourceId],
             ["Observed", formatShortDateTime(properties.observedAt)],
+            ["Effective", formatShortDateTime(properties.effectiveAt)],
+            ["Expires", formatShortDateTime(properties.expiresAt)],
             ["Age", formatAge(properties.observedAt)],
             ["Confidence", formatOptionalPercent(properties.confidence)],
+            ["Urgency", properties.urgency ?? "n/a"],
+            ["Certainty", properties.certainty ?? "n/a"],
             ["Status", <StatusBadge key="status" label={status.label} tone={status.tone} />]
           ]}
         />
       </ObjectDetailSection>
 
       {properties.layer === "mobile" ? <MobileNetworkStatusSummary feature={feature} /> : null}
+      {properties.description || properties.recommendedAction ? (
+        <ObjectDetailSection title="Popis">
+          <DetailGrid
+            rows={[
+              ["Popis", properties.description ?? "n/a"],
+              ["Doporučení", properties.recommendedAction ?? "n/a"]
+            ]}
+          />
+        </ObjectDetailSection>
+      ) : null}
 
       <ObjectDetailSection title="Poloha">
         <DetailGrid
@@ -3045,13 +3265,16 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
           rows={[
             ["License", formatSituationRecord(properties.license)],
             ["Metrics", formatSituationRecord(properties.metrics)],
-            ["Tags", formatSituationRecord(properties.tags)]
+            ["Tags", formatSituationRecord(properties.tags)],
+            ["Affected areas", formatStringList(properties.affectedAreas)],
+            ["Geocodes", formatGeocodes(properties.geocodes)]
           ]}
         />
       </ObjectDetailSection>
 
       <div className="object-flags">
         <span className="situation-badge">CONTEXT</span>
+        {isSafetyLayerId(properties.layer) ? <span className="warning-badge">SAFETY DATA</span> : null}
         {properties.stale ? <span className="warning-badge">STALE</span> : null}
         {properties.severity ? <span className="warning-badge">{properties.severity.toUpperCase()}</span> : null}
       </div>
@@ -3256,6 +3479,80 @@ function summarizeAlerts(serverAlerts: CopAlert[], proximityAlerts: ProximityAle
   };
 }
 
+function mergeSituationAndSafetyFeatures(
+  situation: SituationFeatureCollectionResponse | null,
+  safety: SafetyFeatureCollectionResponse | null
+): SituationFeatureCollectionResponse | null {
+  if (!situation && !safety) {
+    return null;
+  }
+  const situationFeatures = situation?.features ?? [];
+  const safetyFeatures = safety?.features.map(safetyFeatureToSituationFeature) ?? [];
+  const features = [...situationFeatures, ...safetyFeatures];
+  const warnings = [...(situation?.warnings ?? []), ...(safety?.warnings ?? [])];
+  return {
+    contractVersion: "cop-situation-source-v1",
+    features,
+    generatedAt: latestTimestamp([situation?.generatedAt, safety?.generatedAt]) ?? new Date().toISOString(),
+    query: {
+      bbox: situation?.query.bbox ?? safety?.query.bbox ?? { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
+      layers: [
+        ...(situation?.query.layers ?? []),
+        ...((safety?.query.layers ?? []) as SituationLayerId[])
+      ],
+      limit: Math.max(situation?.query.limit ?? 0, safety?.query.limit ?? 0, 250)
+    },
+    source: {
+      generatedAt: latestTimestamp([situation?.source.generatedAt, safety?.source.generatedAt]),
+      sourceId: "situation-data-api",
+      sourceType: "PUBLIC_SITUATION_AGGREGATE"
+    },
+    sourceHealth: situation?.sourceHealth ?? safety?.sourceHealth,
+    sources: [
+      ...(situation?.sources ?? []),
+      ...((safety?.sources ?? []).map((source) => ({
+        ...source,
+        layers: source.layers as SituationLayerId[]
+      })))
+    ],
+    summary: {
+      featureCount: features.length,
+      sourceCount: (situation?.summary.sourceCount ?? 0) + (safety?.summary.sourceCount ?? 0),
+      staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
+      warningCount: (situation?.summary.warningCount ?? 0) + (safety?.summary.warningCount ?? 0) + (safety?.summary.criticalCount ?? 0)
+    },
+    type: "FeatureCollection",
+    warnings
+  };
+}
+
+function safetyFeatureToSituationFeature(feature: SafetyFeature): SituationFeature {
+  return {
+    geometry: feature.geometry,
+    id: feature.id,
+    properties: {
+      ...feature.properties,
+      label: feature.properties.headline,
+      tags: {
+        ...(isRecord(feature.properties.tags) ? feature.properties.tags : {}),
+        dataSource: "safety-data"
+      }
+    },
+    type: "Feature"
+  };
+}
+
+function latestTimestamp(values: Array<string | undefined>): string | undefined {
+  return values
+    .filter((value): value is string => Boolean(value))
+    .reduce<string | undefined>((latest, value) => {
+      if (!latest) {
+        return value;
+      }
+      return Date.parse(value) > Date.parse(latest) ? value : latest;
+    }, undefined);
+}
+
 function buildMapEmptyMessage({
   contextLayersEnabled,
   loadError,
@@ -3413,20 +3710,6 @@ function defaultSituationLayers(): SituationLayer[] {
     },
     {
       defaultVisible: false,
-      description: "Výstrahy a rizikové události z veřejných zdrojů.",
-      geometryTypes: ["Point", "Polygon"],
-      label: "Warnings",
-      layerId: "warnings"
-    },
-    {
-      defaultVisible: false,
-      description: "Hydrologický a povodňový kontext.",
-      geometryTypes: ["Point", "Polygon"],
-      label: "Flood",
-      layerId: "flood"
-    },
-    {
-      defaultVisible: false,
       description: "Kvalita ovzduší a environmentální kontext.",
       geometryTypes: ["Point", "Polygon"],
       label: "Air quality",
@@ -3435,7 +3718,34 @@ function defaultSituationLayers(): SituationLayer[] {
   ];
 }
 
+function defaultSafetyLayers(): SafetyLayer[] {
+  return [
+    {
+      defaultVisible: true,
+      description: "Veřejné výstrahy a rizikové události.",
+      expectedCadenceSeconds: 300,
+      geometryTypes: ["Point", "Polygon"],
+      label: "Official warnings",
+      layerId: "warnings"
+    },
+    {
+      defaultVisible: true,
+      description: "Povodňový a hydrologický kontext.",
+      expectedCadenceSeconds: 600,
+      geometryTypes: ["Point", "Polygon"],
+      label: "Flood and water levels",
+      layerId: "flood"
+    }
+  ];
+}
+
 function situationLayerHint(layer: SituationLayer): string {
+  const cadence = layer.expectedCadenceSeconds ? `${layer.expectedCadenceSeconds}s` : "cadence n/a";
+  const geometry = layer.geometryTypes?.join("/") ?? "geo";
+  return `${geometry} · ${cadence}`;
+}
+
+function safetyLayerHint(layer: SafetyLayer): string {
   const cadence = layer.expectedCadenceSeconds ? `${layer.expectedCadenceSeconds}s` : "cadence n/a";
   const geometry = layer.geometryTypes?.join("/") ?? "geo";
   return `${geometry} · ${cadence}`;
@@ -3452,6 +3762,19 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     weather: "Weather"
   };
   return labels[layerId];
+}
+
+function safetyLayerLabel(layerId: SafetyLayerId): string {
+  return layerId === "flood" ? "Povodně a voda" : "Veřejné výstrahy";
+}
+
+function formatSafetySources(sources: SafetySourceDescriptor[], config: SafetyConfigResponse | null): string {
+  const enabled = sources.filter((source) => source.enabled).length;
+  const total = sources.length || config?.config.enabledSources?.length || 0;
+  if (total === 0) {
+    return "čekám";
+  }
+  return `${enabled}/${total}`;
 }
 
 function situationStatusFromHealth(health: string | undefined, sourceStatus?: string): SituationLayerStatus {
@@ -3499,6 +3822,16 @@ function formatSituationReadiness(status: SituationLayerStatus, collection: Situ
   return situationStatusLabel(status);
 }
 
+function formatSafetyReadiness(status: SituationLayerStatus, collection: SafetyFeatureCollectionResponse | null): string {
+  if (status === "online" && collection) {
+    return `${collection.summary.featureCount} prvků`;
+  }
+  if (status === "zoom") {
+    return "přiblížit";
+  }
+  return situationStatusLabel(status);
+}
+
 function formatSituationCoordinates(feature: SituationFeature): string {
   if (feature.geometry.type === "Point") {
     return `${feature.geometry.coordinates[1].toFixed(4)}, ${feature.geometry.coordinates[0].toFixed(4)}`;
@@ -3521,6 +3854,14 @@ function formatSituationRecord(value: Record<string, unknown> | undefined): stri
     .slice(0, 5)
     .map(([key, entry]) => `${key}: ${formatRecordValue(entry)}`)
     .join(" · ");
+}
+
+function formatStringList(value: string[] | undefined): string {
+  return value && value.length > 0 ? value.slice(0, 6).join(", ") : "n/a";
+}
+
+function formatGeocodes(value: Array<{ scheme: string; value: string }> | undefined): string {
+  return value && value.length > 0 ? value.slice(0, 6).map((item) => `${item.scheme}:${item.value}`).join(", ") : "n/a";
 }
 
 function situationFeatureStatusModel(feature: SituationFeature): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } {
@@ -3857,13 +4198,16 @@ function isCopLayer(value: string): value is CopLayer {
   return copLayerIds.includes(value as CopLayer);
 }
 
-function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[]): string {
+function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[]): string {
   const parts: string[] = [];
   if (trackLayerIds.length > 0) {
     parts.push(`${trackLayerIds.length} air`);
   }
   if (situationLayerIds.length > 0) {
     parts.push(`${situationLayerIds.length} context`);
+  }
+  if (safetyLayerIds.length > 0) {
+    parts.push(`${safetyLayerIds.length} safety`);
   }
   return parts.length > 0 ? parts.join(" + ") : "žádná vrstva";
 }
@@ -3906,7 +4250,7 @@ function normalizeHistoryWindowSeconds(value: number | undefined): number {
 function normalizeSituationLayerIds(value: string[] | undefined): SituationLayerId[] {
   const layers = (value ?? defaultSituationLayerIds).filter(isSituationLayerId);
   const unique = Array.from(new Set(layers));
-  return unique.length > 0 ? unique : [...defaultSituationLayerIds];
+  return value === undefined && unique.length === 0 ? [...defaultSituationLayerIds] : unique;
 }
 
 function isSituationLayerId(value: string): value is SituationLayerId {
@@ -3914,9 +4258,17 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "ground"
     || value === "mobile"
     || value === "traffic"
-    || value === "warnings"
-    || value === "flood"
     || value === "air_quality";
+}
+
+function normalizeSafetyLayerIds(value: string[] | undefined): SafetyLayerId[] {
+  const layers = (value ?? defaultSafetyLayerIds).filter(isSafetyLayerId);
+  const unique = Array.from(new Set(layers));
+  return value === undefined && unique.length === 0 ? [...defaultSafetyLayerIds] : unique;
+}
+
+function isSafetyLayerId(value: string): value is SafetyLayerId {
+  return value === "warnings" || value === "flood";
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {

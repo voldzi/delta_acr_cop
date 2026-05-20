@@ -21,6 +21,7 @@ export interface ViewProfileSettings {
   predictionMode?: PredictionMode;
   proximityAlertEnabled?: boolean;
   refreshSeconds?: number;
+  safetyLayerIds?: string[];
   selectedLayer?: CopLayer;
   showAlertAreas?: boolean;
   showHistory?: boolean;
@@ -55,6 +56,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       mapClusterEnabled: true,
       minConfidence: 0.2,
       refreshSeconds: 5,
+      safetyLayerIds: ["warnings"],
       selectedLayer: "air-situation",
       trackLayerIds: ["air-situation"],
       showAlertAreas: false,
@@ -80,6 +82,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       mapClusterEnabled: true,
       minConfidence: 0.2,
       refreshSeconds: 2,
+      safetyLayerIds: ["warnings"],
       selectedLayer: "uav",
       trackLayerIds: ["uav"],
       showAlertAreas: false,
@@ -105,6 +108,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       mapClusterEnabled: true,
       minConfidence: 0,
       refreshSeconds: 5,
+      safetyLayerIds: ["warnings", "flood"],
       selectedLayer: "public-flights",
       trackLayerIds: ["public-flights"],
       showAlertAreas: false,
@@ -129,6 +133,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       mapClusterEnabled: true,
       minConfidence: 0,
       refreshSeconds: 5,
+      safetyLayerIds: ["warnings", "flood"],
       selectedLayer: "data-quality",
       trackLayerIds: ["data-quality"],
       showAlertAreas: true,
@@ -150,6 +155,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       includeSynthetic: true,
       mapClusterEnabled: false,
       minConfidence: 0.1,
+      safetyLayerIds: ["warnings", "flood"],
       selectedLayer: "air-situation",
       trackLayerIds: ["air-situation"],
       showAlertAreas: true,
@@ -235,6 +241,7 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     predictionMode: normalizePredictionMode(value.predictionMode),
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
     refreshSeconds: optionalNumber(value.refreshSeconds),
+    safetyLayerIds: optionalStringArray(value.safetyLayerIds),
     selectedLayer: normalizeLayer(value.selectedLayer),
     showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),

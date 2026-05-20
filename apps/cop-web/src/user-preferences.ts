@@ -22,6 +22,7 @@ export interface UserPreferences {
   predictionMode?: string;
   proximityAlertEnabled?: boolean;
   refreshSeconds?: number;
+  safetyLayerIds?: string[];
   selectedLayer?: string;
   showAlertAreas?: boolean;
   showHistory?: boolean;
@@ -102,6 +103,7 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     predictionMode: optionalString(value.predictionMode),
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
     refreshSeconds: optionalFiniteNumber(value.refreshSeconds),
+    safetyLayerIds: optionalStringArray(value.safetyLayerIds),
     selectedLayer: optionalString(value.selectedLayer),
     showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),

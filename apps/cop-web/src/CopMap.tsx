@@ -454,23 +454,27 @@ export function CopMap({
           filter: ["==", ["geometry-type"], "Polygon"],
           paint: {
             "fill-color": [
-              "match",
-              ["get", "layer"],
-              "weather",
-              "#38bdf8",
-              "ground",
-              "#22c55e",
-              "mobile",
-              "#a78bfa",
-              "traffic",
-              "#facc15",
-              "warnings",
-              "#ef4444",
-              "flood",
-              "#38bdf8",
-              "air_quality",
-              "#22c55e",
-              "#8cb6d8"
+              "coalesce",
+              ["get", "situationStatusColor"],
+              [
+                "match",
+                ["get", "layer"],
+                "weather",
+                "#38bdf8",
+                "ground",
+                "#22c55e",
+                "mobile",
+                "#a78bfa",
+                "traffic",
+                "#facc15",
+                "warnings",
+                "#ef4444",
+                "flood",
+                "#38bdf8",
+                "air_quality",
+                "#22c55e",
+                "#8cb6d8"
+              ]
             ],
             "fill-opacity": ["case", ["get", "stale"], 0.06, 0.1]
           }
@@ -487,23 +491,27 @@ export function CopMap({
           },
           paint: {
             "line-color": [
-              "match",
-              ["get", "layer"],
-              "weather",
-              "#38bdf8",
-              "ground",
-              "#22c55e",
-              "mobile",
-              "#a78bfa",
-              "traffic",
-              "#facc15",
-              "warnings",
-              "#ef4444",
-              "flood",
-              "#38bdf8",
-              "air_quality",
-              "#22c55e",
-              "#8cb6d8"
+              "coalesce",
+              ["get", "situationStatusColor"],
+              [
+                "match",
+                ["get", "layer"],
+                "weather",
+                "#38bdf8",
+                "ground",
+                "#22c55e",
+                "mobile",
+                "#a78bfa",
+                "traffic",
+                "#facc15",
+                "warnings",
+                "#ef4444",
+                "flood",
+                "#38bdf8",
+                "air_quality",
+                "#22c55e",
+                "#8cb6d8"
+              ]
             ],
             "line-dasharray": ["case", ["get", "stale"], ["literal", [2, 1.2]], ["literal", [1, 0]]],
             "line-opacity": ["case", ["get", "stale"], 0.48, 0.76],
@@ -518,9 +526,8 @@ export function CopMap({
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "selected"], true]],
           paint: {
             "circle-color": [
-              "case",
-              ["==", ["get", "layer"], "mobile"],
-              ["coalesce", ["get", "situationStatusColor"], "#a78bfa"],
+              "coalesce",
+              ["get", "situationStatusColor"],
               [
                 "match",
                 ["get", "layer"],
@@ -558,6 +565,9 @@ export function CopMap({
               ["get", "stale"],
               "#facc15",
               [
+                "coalesce",
+                ["get", "situationStatusColor"],
+                [
                 "match",
                 ["get", "layer"],
                 "ground",
@@ -571,6 +581,7 @@ export function CopMap({
                 "air_quality",
                 "#22c55e",
                 "#8cb6d8"
+                ]
               ]
             ],
             "circle-opacity": ["case", ["get", "stale"], 0.52, 0.88],
