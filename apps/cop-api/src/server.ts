@@ -201,7 +201,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       `cop_stream_last_message_timestamp_seconds{type="delta"} ${timestampSeconds(streamMetrics.lastDeltaAt)}`,
       `cop_stream_last_message_timestamp_seconds{type="heartbeat"} ${timestampSeconds(streamMetrics.lastHeartbeatAt)}`,
       `cop_stream_last_message_timestamp_seconds{type="backpressure"} ${timestampSeconds(streamMetrics.lastBackpressureAt)}`,
-      `cop_stream_last_message_timestamp_seconds{type="write_error"} ${timestampSeconds(streamMetrics.lastWriteErrorAt)}`
+      `cop_stream_last_message_timestamp_seconds{type="write_error"} ${timestampSeconds(streamMetrics.lastWriteErrorAt)}`,
+      ...situationDataCacheMetricLines()
     ];
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
@@ -368,6 +369,36 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       name: "situation-data-source",
       status: health.health === "ONLINE" ? "ok" : "degraded"
     };
+  }
+
+  function situationDataCacheMetricLines(): string[] {
+    const cache = situationDataSource?.cacheStats?.();
+    if (!cache) {
+      return [];
+    }
+    return [
+      "# HELP cop_situation_cache_entries Cached situation-data canonical viewport entries.",
+      "# TYPE cop_situation_cache_entries gauge",
+      `cop_situation_cache_entries ${cache.entries}`,
+      "# HELP cop_situation_cache_inflight In-flight situation-data cache refreshes.",
+      "# TYPE cop_situation_cache_inflight gauge",
+      `cop_situation_cache_inflight ${cache.inflight}`,
+      "# HELP cop_situation_cache_requests_total Situation-data cache requests by result.",
+      "# TYPE cop_situation_cache_requests_total counter",
+      `cop_situation_cache_requests_total{result="hit"} ${cache.hits}`,
+      `cop_situation_cache_requests_total{result="miss"} ${cache.misses}`,
+      `cop_situation_cache_requests_total{result="coalesced"} ${cache.coalescedHits}`,
+      `cop_situation_cache_requests_total{result="stale"} ${cache.staleHits}`,
+      "# HELP cop_situation_cache_refreshes_total Situation-data upstream refreshes completed by COP.",
+      "# TYPE cop_situation_cache_refreshes_total counter",
+      `cop_situation_cache_refreshes_total ${cache.refreshes}`,
+      "# HELP cop_situation_cache_errors_total Situation-data upstream refresh errors observed by COP.",
+      "# TYPE cop_situation_cache_errors_total counter",
+      `cop_situation_cache_errors_total ${cache.errors}`,
+      "# HELP cop_situation_cache_evictions_total Situation-data cache evictions.",
+      "# TYPE cop_situation_cache_evictions_total counter",
+      `cop_situation_cache_evictions_total ${cache.evictions}`
+    ];
   }
 
   function activeSituationDataSourceSystem(): SourceSystem {

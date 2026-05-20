@@ -129,7 +129,7 @@ export interface CopDashboardData {
   trackHistory?: Record<string, ServerTrackHistoryPoint[]>;
 }
 
-export type SituationLayerId = "ground" | "mobile" | "traffic" | "weather";
+export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "traffic" | "warnings" | "weather";
 
 export interface MapBounds {
   east: number;
@@ -161,6 +161,12 @@ export interface SituationFeatureCollectionResponse {
     generatedAt?: string;
     sourceId: "situation-data-api";
     sourceType: "PUBLIC_SITUATION_AGGREGATE";
+  };
+  cache?: {
+    key: string;
+    status: "coalesced" | "hit" | "miss" | "stale";
+    ttlMs: number;
+    upstreamBbox: MapBounds;
   };
   sourceHealth?: SourceHealthOverride;
   sources: SituationSourceDescriptor[];

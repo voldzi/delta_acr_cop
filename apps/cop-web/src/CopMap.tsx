@@ -464,6 +464,12 @@ export function CopMap({
               "#a78bfa",
               "traffic",
               "#facc15",
+              "warnings",
+              "#ef4444",
+              "flood",
+              "#38bdf8",
+              "air_quality",
+              "#22c55e",
               "#8cb6d8"
             ],
             "fill-opacity": ["case", ["get", "stale"], 0.06, 0.1]
@@ -491,6 +497,12 @@ export function CopMap({
               "#a78bfa",
               "traffic",
               "#facc15",
+              "warnings",
+              "#ef4444",
+              "flood",
+              "#38bdf8",
+              "air_quality",
+              "#22c55e",
               "#8cb6d8"
             ],
             "line-dasharray": ["case", ["get", "stale"], ["literal", [2, 1.2]], ["literal", [1, 0]]],
@@ -518,6 +530,12 @@ export function CopMap({
                 "#22c55e",
                 "traffic",
                 "#facc15",
+                "warnings",
+                "#ef4444",
+                "flood",
+                "#38bdf8",
+                "air_quality",
+                "#22c55e",
                 "#8cb6d8"
               ]
             ],
@@ -539,7 +557,21 @@ export function CopMap({
               "case",
               ["get", "stale"],
               "#facc15",
-              ["match", ["get", "layer"], "ground", "#22c55e", "traffic", "#facc15", "#8cb6d8"]
+              [
+                "match",
+                ["get", "layer"],
+                "ground",
+                "#22c55e",
+                "traffic",
+                "#facc15",
+                "warnings",
+                "#ef4444",
+                "flood",
+                "#38bdf8",
+                "air_quality",
+                "#22c55e",
+                "#8cb6d8"
+              ]
             ],
             "circle-opacity": ["case", ["get", "stale"], 0.52, 0.88],
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 5, 12, 7, 16, 10],

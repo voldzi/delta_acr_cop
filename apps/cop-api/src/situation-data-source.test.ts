@@ -34,7 +34,7 @@ describe("SituationDataSourceAdapter", () => {
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/situation-data/api/v1/layers");
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=13.85%2C49.65%2C15.35%2C50.45&layers=weather%2Ctraffic&limit=20"
+      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=weather%2Ctraffic&limit=20"
     );
     expect(layers).toMatchObject([
       {
@@ -61,6 +61,45 @@ describe("SituationDataSourceAdapter", () => {
         featureCount: 1,
         staleFeatureCount: 0
       }
+    });
+    expect(features.cache).toMatchObject({
+      status: "miss",
+      upstreamBbox: { east: 15.75, north: 50.75, south: 49.5, west: 13.5 }
+    });
+    expect(features.query.bbox).toEqual({ east: 15.35, north: 50.45, south: 49.65, west: 13.85 });
+  });
+
+  it("reuses canonical viewport cache for small map pans", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SituationDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/situation-data/api/v1",
+      cacheTtlMs: 20000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const first = await adapter.fetchFeatures({
+      bbox: { east: 14.485, north: 50.019, south: 49.988, west: 14.423 },
+      layers: ["mobile"],
+      limit: 10
+    }, new Date("2026-05-20T10:00:06Z"));
+    const second = await adapter.fetchFeatures({
+      bbox: { east: 14.486, north: 50.02, south: 49.989, west: 14.424 },
+      layers: ["mobile"],
+      limit: 10
+    }, new Date("2026-05-20T10:00:07Z"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(first.cache?.status).toBe("miss");
+    expect(second.cache?.status).toBe("hit");
+    expect(adapter.cacheStats()).toMatchObject({
+      entries: 1,
+      hits: 1,
+      misses: 1,
+      refreshes: 1
     });
   });
 });

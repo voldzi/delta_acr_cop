@@ -3410,6 +3410,27 @@ function defaultSituationLayers(): SituationLayer[] {
       geometryTypes: ["Point", "LineString"],
       label: "Traffic",
       layerId: "traffic"
+    },
+    {
+      defaultVisible: false,
+      description: "Výstrahy a rizikové události z veřejných zdrojů.",
+      geometryTypes: ["Point", "Polygon"],
+      label: "Warnings",
+      layerId: "warnings"
+    },
+    {
+      defaultVisible: false,
+      description: "Hydrologický a povodňový kontext.",
+      geometryTypes: ["Point", "Polygon"],
+      label: "Flood",
+      layerId: "flood"
+    },
+    {
+      defaultVisible: false,
+      description: "Kvalita ovzduší a environmentální kontext.",
+      geometryTypes: ["Point", "Polygon"],
+      label: "Air quality",
+      layerId: "air_quality"
     }
   ];
 }
@@ -3422,9 +3443,12 @@ function situationLayerHint(layer: SituationLayer): string {
 
 function situationLayerLabel(layerId: SituationLayerId): string {
   const labels: Record<SituationLayerId, string> = {
+    air_quality: "Air quality",
+    flood: "Flood",
     ground: "Ground",
     mobile: "Mobile",
     traffic: "Traffic",
+    warnings: "Warnings",
     weather: "Weather"
   };
   return labels[layerId];
@@ -3886,7 +3910,13 @@ function normalizeSituationLayerIds(value: string[] | undefined): SituationLayer
 }
 
 function isSituationLayerId(value: string): value is SituationLayerId {
-  return value === "weather" || value === "ground" || value === "mobile" || value === "traffic";
+  return value === "weather"
+    || value === "ground"
+    || value === "mobile"
+    || value === "traffic"
+    || value === "warnings"
+    || value === "flood"
+    || value === "air_quality";
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {
