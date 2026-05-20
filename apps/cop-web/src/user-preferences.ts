@@ -28,6 +28,7 @@ export interface UserPreferences {
   showHistory?: boolean;
   showPrediction?: boolean;
   situationLayerIds?: string[];
+  situationSourceIds?: string[];
   trackLayerIds?: string[];
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
@@ -109,6 +110,7 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
     situationLayerIds: optionalStringArray(value.situationLayerIds),
+    situationSourceIds: optionalStringArray(value.situationSourceIds),
     trackLayerIds: optionalStringArray(value.trackLayerIds),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds)

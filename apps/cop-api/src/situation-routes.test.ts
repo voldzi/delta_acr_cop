@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPublicSituationAggregateSourceSystem } from "@cop/canonical-model";
 import { buildServer } from "./server.js";
 import type {
@@ -10,6 +10,10 @@ import type {
 } from "./situation-data-source.js";
 
 describe("situation context routes", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("returns context layers and features without adding COP tracks", async () => {
     const app = buildServer({
       now: () => new Date("2026-05-20T10:00:05Z"),
@@ -31,6 +35,27 @@ describe("situation context routes", () => {
         }
       ],
       sourceStatus: "ONLINE"
+    });
+
+    const sourcesResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/situation/sources"
+    });
+    expect(sourcesResponse.statusCode).toBe(200);
+    expect(sourcesResponse.json()).toMatchObject({
+      items: [
+        {
+          enabled: true,
+          label: "Open-Meteo",
+          sourceId: "open_meteo"
+        },
+        {
+          enabled: true,
+          label: "Aviation Weather",
+          sourceId: "aviation_weather"
+        }
+      ]
     });
 
     const featuresResponse = await app.inject({
@@ -105,6 +130,36 @@ describe("situation context routes", () => {
       }
     });
   });
+
+  it("hides restricted ARDOS features unless explicitly enabled", async () => {
+    vi.stubEnv("COP_ARDOS_PARTNER_ENABLED", "false");
+    const app = buildServer({
+      now: () => new Date("2026-05-20T10:00:05Z"),
+      situationDataSource: new FakeSituationDataSource(false, true)
+    });
+
+    const sourcesResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/situation/sources"
+    });
+    expect(sourcesResponse.statusCode).toBe(200);
+    expect((sourcesResponse.json() as { items: Array<{ sourceId: string }> }).items.map((source) => source.sourceId)).not.toContain("ardos_partner");
+
+    const featuresResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/situation/features?bbox=13.85,49.65,15.35,50.45&layers=ground,mobile,traffic&source=ardos_partner&limit=20"
+    });
+    expect(featuresResponse.statusCode).toBe(200);
+    expect(featuresResponse.json()).toMatchObject({
+      features: [],
+      summary: {
+        featureCount: 0,
+        warningCount: 1
+      }
+    });
+  });
 });
 
 class FakeSituationDataSource implements SituationDataSource {
@@ -118,7 +173,7 @@ class FakeSituationDataSource implements SituationDataSource {
 
   readonly sourceSystem = createPublicSituationAggregateSourceSystem();
 
-  constructor(private readonly fail = false) {}
+  constructor(private readonly fail = false, private readonly includeArdos = false) {}
 
   async fetchLayers(_requestNow: Date): Promise<SituationLayerDescriptor[]> {
     if (this.fail) {
@@ -133,6 +188,36 @@ class FakeSituationDataSource implements SituationDataSource {
         label: "Weather",
         layerId: "weather"
       }
+    ];
+  }
+
+  async fetchSources(_requestNow: Date) {
+    if (this.fail) {
+      throw new Error("upstream unavailable");
+    }
+    return [
+      {
+        enabled: true,
+        label: "Open-Meteo",
+        layers: ["weather" as const],
+        sourceId: "open_meteo"
+      },
+      {
+        enabled: true,
+        label: "Aviation Weather",
+        layers: ["weather" as const],
+        sourceId: "aviation_weather"
+      },
+      ...(this.includeArdos
+        ? [
+            {
+              enabled: true,
+              label: "ARDOS partner field operations",
+              layers: ["ground" as const, "mobile" as const, "traffic" as const],
+              sourceId: "ardos_partner"
+            }
+          ]
+        : [])
     ];
   }
 
@@ -157,6 +242,25 @@ class FakeSituationDataSource implements SituationDataSource {
           },
           type: "Feature"
         }
+        ,
+        ...(this.includeArdos
+          ? [
+              {
+                geometry: { coordinates: [14.5, 50.1] as [number, number], type: "Point" as const },
+                properties: {
+                  category: "field_report",
+                  confidence: 0.7,
+                  featureId: "ardos:field-report-1",
+                  label: "Partner report",
+                  layer: "ground" as const,
+                  observedAt: requestNow.toISOString(),
+                  sourceId: "ardos_partner",
+                  stale: false
+                },
+                type: "Feature" as const
+              }
+            ]
+          : [])
       ],
       generatedAt: requestNow.toISOString(),
       query,

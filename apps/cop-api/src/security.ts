@@ -31,6 +31,7 @@ export interface AuthenticatedActor {
   authMode: "lab" | "oidc";
   displayName: string;
   email?: string;
+  roles?: string[];
   subjectId: string;
   username: string;
 }
@@ -142,6 +143,7 @@ export function actorFromRequest(request: FastifyRequest): AuthenticatedActor | 
     authMode: "oidc",
     displayName: decoded.payload.name?.trim() || username,
     ...(decoded.payload.email?.trim() ? { email: decoded.payload.email.trim() } : {}),
+    roles: tokenRoles(decoded.payload),
     subjectId,
     username
   };
@@ -266,6 +268,14 @@ function matchesRequiredRole(payload: JwtPayload): boolean {
   const realmRoles = payload.realm_access?.roles ?? [];
   const clientRoles = clientId ? payload.resource_access?.[clientId]?.roles ?? [] : [];
   return realmRoles.includes(requiredRole) || clientRoles.includes(requiredRole);
+}
+
+function tokenRoles(payload: JwtPayload): string[] {
+  const clientId = process.env.COP_OIDC_CLIENT_ID?.trim();
+  return Array.from(new Set([
+    ...(payload.realm_access?.roles ?? []),
+    ...(clientId ? payload.resource_access?.[clientId]?.roles ?? [] : [])
+  ]));
 }
 
 function readCsv(value: string | undefined): string[] {

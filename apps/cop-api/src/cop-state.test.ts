@@ -614,6 +614,7 @@ class FakeTrackHistoryStore implements TrackHistoryStore {
 
 class FakeFlightDataSource implements FlightDataSource {
   readonly config = {
+    airportCacheTtlMs: 3600000,
     baseUrl: "https://sim.zeleznalady.cz/flight-data",
     enabled: true,
     includeStale: true,

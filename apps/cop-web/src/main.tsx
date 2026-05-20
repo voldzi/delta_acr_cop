@@ -51,6 +51,7 @@ import {
   fetchSafetySources,
   fetchSituationFeatures,
   fetchSituationLayers,
+  fetchSituationSources,
   fetchUserProfile,
   filterObjectsByLayers,
   filterVisibleObjects,
@@ -84,7 +85,8 @@ import {
   type SituationFeature,
   type SituationFeatureCollectionResponse,
   type SituationLayer,
-  type SituationLayerId
+  type SituationLayerId,
+  type SituationSourceDescriptor
 } from "./cop-data";
 import { CopMap } from "./CopMap";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
@@ -263,8 +265,12 @@ export function App() {
   const [mapBounds, setMapBounds] = React.useState<MapBounds | undefined>();
   const [focusViewRequest, setFocusViewRequest] = React.useState(0);
   const [situationLayers, setSituationLayers] = React.useState<SituationLayer[]>([]);
+  const [situationSources, setSituationSources] = React.useState<SituationSourceDescriptor[]>([]);
   const [visibleSituationLayerIds, setVisibleSituationLayerIds] = React.useState<SituationLayerId[]>(() =>
     normalizeSituationLayerIds(initialPreferences.situationLayerIds)
+  );
+  const [visibleSituationSourceIds, setVisibleSituationSourceIds] = React.useState<string[]>(() =>
+    normalizeSourceIds(initialPreferences.situationSourceIds)
   );
   const [situationFeatures, setSituationFeatures] = React.useState<SituationFeatureCollectionResponse | null>(null);
   const [situationStatus, setSituationStatus] = React.useState<SituationLayerStatus>("loading");
@@ -529,13 +535,22 @@ export function App() {
 
     let cancelled = false;
     setSituationStatus("loading");
-    fetchSituationLayers(apiBase, authToken)
-      .then((response) => {
+    Promise.all([
+      fetchSituationLayers(apiBase, authToken),
+      fetchSituationSources(apiBase, authToken)
+    ])
+      .then(([response, sourcesResponse]) => {
         if (cancelled) {
           return;
         }
         setSituationLayers(response.items.filter((layer) => !isSafetyLayerId(layer.layerId)));
-        setSituationWarnings([...(response.warnings ?? []), ...(response.sourceHealth?.warnings ?? [])]);
+        setSituationSources(sourcesResponse.items);
+        setSituationWarnings([
+          ...(response.warnings ?? []),
+          ...(response.sourceHealth?.warnings ?? []),
+          ...(sourcesResponse.warnings ?? []),
+          ...(sourcesResponse.sourceHealth?.warnings ?? [])
+        ]);
         setSituationStatus(situationStatusFromHealth(response.sourceHealth?.health, response.sourceStatus));
         if (initialPreferences.situationLayerIds === undefined) {
           const defaultLayers = response.items
@@ -550,6 +565,7 @@ export function App() {
       .catch((error: unknown) => {
         if (!cancelled) {
           setSituationLayers([]);
+          setSituationSources([]);
           setSituationStatus("degraded");
           setSituationWarnings([error instanceof Error ? error.message : "Situační vrstvy nejsou dostupné."]);
         }
@@ -613,6 +629,7 @@ export function App() {
   }, [authToken, dataAccessReady, initialPreferences.safetyLayerIds]);
 
   const visibleSituationLayerKey = visibleSituationLayerIds.join(",");
+  const visibleSituationSourceKey = visibleSituationSourceIds.join(",");
   const visibleSafetyLayerKey = visibleSafetyLayerIds.join(",");
 
   React.useEffect(() => {
@@ -641,7 +658,8 @@ export function App() {
       fetchSituationFeatures(apiBase, authToken, {
         bbox: mapBounds,
         layers: visibleSituationLayerIds,
-        limit: 250
+        limit: 250,
+        sources: visibleSituationSourceIds.length > 0 ? visibleSituationSourceIds : undefined
       })
         .then((collection) => {
           if (cancelled) {
@@ -664,7 +682,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, dataAccessReady, mapBounds, mapView?.zoom, visibleSituationLayerIds, visibleSituationLayerKey]);
+  }, [authToken, dataAccessReady, mapBounds, mapView?.zoom, visibleSituationLayerIds, visibleSituationLayerKey, visibleSituationSourceIds, visibleSituationSourceKey]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -886,6 +904,9 @@ export function App() {
     if (settings.situationLayerIds !== undefined) {
       setVisibleSituationLayerIds(normalizeSituationLayerIds(settings.situationLayerIds));
     }
+    if (settings.situationSourceIds !== undefined) {
+      setVisibleSituationSourceIds(normalizeSourceIds(settings.situationSourceIds));
+    }
     if (settings.safetyLayerIds !== undefined) {
       setVisibleSafetyLayerIds(normalizeSafetyLayerIds(settings.safetyLayerIds));
     }
@@ -944,6 +965,7 @@ export function App() {
     showHistory,
     showPrediction,
     situationLayerIds: visibleSituationLayerIds,
+    situationSourceIds: visibleSituationSourceIds,
     trackLayerIds: visibleTrackLayerIds,
     trackHistoryLimit,
     trackHistoryWindowSeconds
@@ -968,6 +990,7 @@ export function App() {
     showHistory,
     showPrediction,
     visibleSituationLayerIds,
+    visibleSituationSourceIds,
     visibleTrackLayerIds,
     trackHistoryLimit,
     trackHistoryWindowSeconds
@@ -1250,6 +1273,26 @@ export function App() {
     });
   }
 
+  function toggleSituationSource(sourceId: string) {
+    setVisibleSituationSourceIds((current) => {
+      const selectableSourceIds = situationSources.filter((source) => source.enabled !== false).map((source) => source.sourceId);
+      if (!selectableSourceIds.includes(sourceId)) {
+        return current;
+      }
+      const selected = new Set(current.length > 0 ? current : selectableSourceIds);
+      if (selected.has(sourceId)) {
+        if (selected.size <= 1) {
+          return current;
+        }
+        selected.delete(sourceId);
+      } else {
+        selected.add(sourceId);
+      }
+      const next = selectableSourceIds.filter((item) => selected.has(item));
+      return next.length === selectableSourceIds.length ? [] : next;
+    });
+  }
+
   function toggleSafetyLayer(layerId: SafetyLayerId) {
     setVisibleSafetyLayerIds((current) => {
       if (current.includes(layerId)) {
@@ -1386,6 +1429,7 @@ export function App() {
         showHistory,
         showPrediction,
         situationLayerIds: visibleSituationLayerIds,
+        situationSourceIds: visibleSituationSourceIds,
         trackLayerIds: visibleTrackLayerIds,
         trackHistoryLimit,
         trackHistoryWindowSeconds
@@ -1477,10 +1521,13 @@ export function App() {
                 <SituationLayerControls
                   featureCount={situationFeatures?.summary.featureCount ?? 0}
                   layers={situationLayers}
+                  sources={situationSources}
                   status={situationStatus}
                   visibleLayerIds={visibleSituationLayerIds}
+                  visibleSourceIds={visibleSituationSourceIds}
                   warnings={situationWarnings}
                   onToggle={toggleSituationLayer}
+                  onToggleSource={toggleSituationSource}
                 />
 
                 <SafetyLayerControls
@@ -2127,7 +2174,7 @@ function DataWorkspaceBoard({
   );
 }
 
-function DataMetric({ label, value, tone }: { label: string; value: string; tone: "neutral" | "ok" | "warn" }) {
+function DataMetric({ label, value, tone }: { label: string; value: string; tone: "critical" | "neutral" | "ok" | "warn" }) {
   return (
     <div className={`data-metric ${tone}`}>
       <span>{label}</span>
@@ -2169,6 +2216,7 @@ function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
         ]}
       />
       {feature.properties.layer === "mobile" ? <MobileNetworkStatusSummary feature={feature} /> : null}
+      {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
     </ObjectDetailSection>
   );
 }
@@ -2181,6 +2229,19 @@ function MobileNetworkStatusSummary({ feature }: { feature: SituationFeature }) 
       <DataMetric label="Upload" value={formatOptionalNumber(recordNumber(metrics, "uploadMbps"), " Mbps")} tone={mobileMetricTone(recordNumber(metrics, "uploadMbps"), 5, 1.5, true)} />
       <DataMetric label="Latence" value={formatOptionalNumber(recordNumber(metrics, "latencyMs"), " ms")} tone={mobileMetricTone(recordNumber(metrics, "latencyMs"), 75, 150, false)} />
       <DataMetric label="Signál" value={formatOptionalNumber(recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"), " dBm")} tone={mobileMetricTone(recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"), -100, -110, true)} />
+    </div>
+  );
+}
+
+function AviationWeatherSummary({ feature }: { feature: SituationFeature }) {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return (
+    <div className="mobile-status-summary">
+      <DataMetric label="Kategorie" value={stringProperty(tags.flightCategory) ?? "n/a"} tone={aviationCategoryTone(stringProperty(tags.flightCategory))} />
+      <DataMetric label="Vítr" value={formatWind(recordNumber(metrics, "windDirectionDeg"), recordNumber(metrics, "windSpeedMps"), recordNumber(metrics, "windSpeedKt"))} tone="neutral" />
+      <DataMetric label="Teplota" value={formatOptionalNumber(recordNumber(metrics, "temperatureC"), " °C")} tone="neutral" />
+      <DataMetric label="QNH" value={formatOptionalNumber(recordNumber(metrics, "altimeterHpa"), " hPa")} tone="neutral" />
     </div>
   );
 }
@@ -2993,19 +3054,26 @@ function SourceLayerToggle({
 function SituationLayerControls({
   featureCount,
   layers,
+  sources,
   status,
   visibleLayerIds,
+  visibleSourceIds,
   warnings,
-  onToggle
+  onToggle,
+  onToggleSource
 }: {
   featureCount: number;
   layers: SituationLayer[];
+  sources: SituationSourceDescriptor[];
   status: SituationLayerStatus;
   visibleLayerIds: SituationLayerId[];
+  visibleSourceIds: string[];
   warnings: string[];
   onToggle: (layerId: SituationLayerId) => void;
+  onToggleSource: (sourceId: string) => void;
 }) {
   const layerItems = layers.length > 0 ? layers : defaultSituationLayers();
+  const sourceItems = sources.filter((source) => !isSafetyOnlySituationSource(source));
   return (
     <div className="situation-layer-box">
       <div className="situation-layer-header">
@@ -3027,6 +3095,23 @@ function SituationLayerControls({
           </label>
         ))}
       </div>
+      {sourceItems.length > 0 ? (
+        <div className="situation-source-list">
+          {sourceItems.map((source) => {
+            const checked = visibleSourceIds.length === 0 || visibleSourceIds.includes(source.sourceId);
+            const disabled = source.enabled === false;
+            return (
+              <label className={`situation-source-toggle ${disabled ? "disabled" : ""}`} key={source.sourceId} title={source.label ?? source.sourceId}>
+                <input checked={!disabled && checked} disabled={disabled} onChange={() => onToggleSource(source.sourceId)} type="checkbox" />
+                <span>
+                  <strong>{source.label ?? source.sourceId}</strong>
+                  <small>{formatSituationSourceHint(source)}</small>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      ) : null}
       <ReadinessRow label="Features" value={String(featureCount)} tone={featureCount > 0 ? "ok" : "neutral"} />
       {warnings.slice(0, 2).map((warning) => (
         <div className="situation-warning" key={warning}>{warning}</div>
@@ -3412,6 +3497,7 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
             ["Observed", formatShortDateTime(properties.observedAt)],
             ["Effective", formatShortDateTime(properties.effectiveAt)],
             ["Expires", formatShortDateTime(properties.expiresAt)],
+            ["Valid until", formatShortDateTime(properties.validUntil)],
             ["Age", formatAge(properties.observedAt)],
             ["Confidence", formatOptionalPercent(properties.confidence)],
             ["Urgency", properties.urgency ?? "n/a"],
@@ -3422,6 +3508,7 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
       </ObjectDetailSection>
 
       {properties.layer === "mobile" ? <MobileNetworkStatusSummary feature={feature} /> : null}
+      {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {properties.description || properties.recommendedAction ? (
         <ObjectDetailSection title="Popis">
           <DetailGrid
@@ -3496,10 +3583,10 @@ function formatFlightAircraft(flightData: FlightDataAttributes): string {
 function formatFlightProviders(flightData: FlightDataAttributes): string {
   const providers = flightData.providers ?? [];
   if (providers.length > 0) {
-    return providers.map((provider) => provider.label ?? provider.sourceId ?? "unknown").join(", ");
+    return providers.map((provider) => provider.label ?? formatFlightSourceId(provider.sourceId) ?? "unknown").join(", ");
   }
   const sourceIds = flightData.sources?.map((source) => source.sourceId).filter(Boolean) ?? [];
-  return sourceIds.length > 0 ? sourceIds.join(", ") : "n/a";
+  return sourceIds.length > 0 ? sourceIds.map(formatFlightSourceId).join(", ") : "n/a";
 }
 
 function formatFlightLicenses(flightData: FlightDataAttributes): string {
@@ -3524,6 +3611,16 @@ function isMockFlightObject(object: CopObject): boolean {
     flightData?.providers?.some((provider) => provider.sourceId === "mock" || provider.mode === "mock")
     || flightData?.sources?.some((source) => source.sourceId === "mock")
   );
+}
+
+function formatFlightSourceId(sourceId: string | undefined): string {
+  const labels: Record<string, string> = {
+    adsb_lol: "ADSB.lol",
+    local_adsb: "Local ADS-B",
+    mock: "SIM mock",
+    opensky: "OpenSky"
+  };
+  return sourceId ? labels[sourceId] ?? sourceId : "unknown";
 }
 
 function recordString(value: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -3963,6 +4060,18 @@ function situationLayerHint(layer: SituationLayer): string {
   return `${geometry} · ${cadence}`;
 }
 
+function formatSituationSourceHint(source: SituationSourceDescriptor): string {
+  const layers = source.layers?.filter((layer) => !isSafetyLayerId(layer)).map(situationLayerLabel).join(", ") || "vrstvy n/a";
+  const cadence = source.updateCadenceSeconds ? `${source.updateCadenceSeconds}s` : "cadence n/a";
+  const state = source.enabled === false ? "vypnuto" : source.mode ?? "live";
+  return `${layers} · ${cadence} · ${state}`;
+}
+
+function isSafetyOnlySituationSource(source: SituationSourceDescriptor): boolean {
+  const layers = source.layers ?? [];
+  return layers.length > 0 && layers.every(isSafetyLayerId);
+}
+
 function safetyLayerHint(layer: SafetyLayer): string {
   const cadence = layer.expectedCadenceSeconds ? `${layer.expectedCadenceSeconds}s` : "cadence n/a";
   const geometry = layer.geometryTypes?.join("/") ?? "geo";
@@ -4086,6 +4195,10 @@ function situationFeatureStatusModel(feature: SituationFeature): { label: string
   if (feature.properties.stale) {
     return { label: "STALE", tone: "warn" };
   }
+  const aviationCategory = aviationFlightCategoryModel(feature);
+  if (aviationCategory) {
+    return aviationCategory;
+  }
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
   const raw = stringProperty(tags.status)
@@ -4108,6 +4221,50 @@ function situationFeatureStatusModel(feature: SituationFeature): { label: string
     return { label: "OK", tone: "ok" };
   }
   return { label: raw.toUpperCase(), tone: "neutral" };
+}
+
+function isAviationWeatherFeature(feature: SituationFeature): boolean {
+  return feature.properties.sourceId === "aviation_weather" || feature.properties.category === "aviation_weather_station";
+}
+
+function aviationFlightCategoryModel(feature: SituationFeature): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } | null {
+  if (!isAviationWeatherFeature(feature)) {
+    return null;
+  }
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const raw = stringProperty(tags.flightCategory)?.toUpperCase();
+  if (raw === "VFR") {
+    return { label: "VFR", tone: "ok" };
+  }
+  if (raw === "MVFR" || raw === "IFR") {
+    return { label: raw, tone: "warn" };
+  }
+  if (raw === "LIFR") {
+    return { label: "LIFR", tone: "critical" };
+  }
+  return raw ? { label: raw, tone: "neutral" } : null;
+}
+
+function aviationCategoryTone(category: string | undefined): "neutral" | "ok" | "warn" | "critical" {
+  const normalized = category?.toUpperCase();
+  if (normalized === "VFR") {
+    return "ok";
+  }
+  if (normalized === "LIFR") {
+    return "critical";
+  }
+  if (normalized === "MVFR" || normalized === "IFR") {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function formatWind(directionDeg: number | undefined, speedMps: number | undefined, speedKt: number | undefined): string {
+  const speed = speedKt !== undefined ? `${Math.round(speedKt)} kt` : speedMps !== undefined ? `${Math.round(speedMps)} m/s` : undefined;
+  if (directionDeg === undefined && !speed) {
+    return "n/a";
+  }
+  return [directionDeg !== undefined ? `${Math.round(directionDeg)}°` : undefined, speed].filter(Boolean).join(" / ");
 }
 
 function objectStatusTone(status: string): "neutral" | "ok" | "warn" | "critical" {
@@ -4469,6 +4626,10 @@ function normalizeSituationLayerIds(value: string[] | undefined): SituationLayer
   const layers = (value ?? defaultSituationLayerIds).filter(isSituationLayerId);
   const unique = Array.from(new Set(layers));
   return value === undefined && unique.length === 0 ? [...defaultSituationLayerIds] : unique;
+}
+
+function normalizeSourceIds(value: string[] | undefined): string[] {
+  return Array.from(new Set((value ?? []).map((item) => item.trim()).filter(Boolean))).slice(0, 32);
 }
 
 function isSituationLayerId(value: string): value is SituationLayerId {

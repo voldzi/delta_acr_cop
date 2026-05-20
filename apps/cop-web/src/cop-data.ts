@@ -228,6 +228,7 @@ export interface SituationFeatureProperties {
   stale?: boolean;
   tags?: Record<string, unknown>;
   urgency?: string;
+  validUntil?: string;
 }
 
 export interface SituationSourceDescriptor {
@@ -250,10 +251,19 @@ export interface SituationLayersResponse {
   warnings?: string[];
 }
 
+export interface SituationSourcesResponse {
+  items: SituationSourceDescriptor[];
+  serverTimestamp?: string;
+  sourceHealth?: SourceHealthOverride;
+  sourceStatus?: string;
+  warnings?: string[];
+}
+
 export interface SituationFeatureOptions {
   bbox: MapBounds;
   layers: SituationLayerId[];
   limit?: number;
+  sources?: string[];
 }
 
 export interface SafetyLayer {
@@ -609,6 +619,12 @@ export async function fetchSituationLayers(apiBase: string, token = "dev-lab-tok
   });
 }
 
+export async function fetchSituationSources(apiBase: string, token = "dev-lab-token"): Promise<SituationSourcesResponse> {
+  return fetchJson<SituationSourcesResponse>(`${apiBase}/api/v1/situation/sources`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
 export async function fetchSituationFeatures(
   apiBase: string,
   token = "dev-lab-token",
@@ -618,6 +634,9 @@ export async function fetchSituationFeatures(
   query.set("bbox", `${options.bbox.west},${options.bbox.south},${options.bbox.east},${options.bbox.north}`);
   query.set("layers", options.layers.join(","));
   query.set("limit", String(options.limit ?? 250));
+  if (options.sources && options.sources.length > 0) {
+    query.set("source", options.sources.join(","));
+  }
   return fetchJson<SituationFeatureCollectionResponse>(`${apiBase}/api/v1/situation/features?${query.toString()}`, {
     headers: { Authorization: `Bearer ${token}` }
   });

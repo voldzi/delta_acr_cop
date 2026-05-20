@@ -10,6 +10,7 @@ describe("FlightDataSourceAdapter", () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleFlightResponse()), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const adapter = new FlightDataSourceAdapter({
+      airportCacheTtlMs: 3600000,
       baseUrl: "https://sim.zeleznalady.cz/flight-data/",
       enabled: true,
       includeStale: true,
@@ -72,6 +73,34 @@ describe("FlightDataSourceAdapter", () => {
       }
     });
     expect(result.events[0]?.eventId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it("proxies and caches airport reference data from SIM flight-data", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleAirportResponse()), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new FlightDataSourceAdapter({
+      airportCacheTtlMs: 3600000,
+      baseUrl: "https://sim.zeleznalady.cz/flight-data/",
+      enabled: true,
+      includeStale: true,
+      limit: 5,
+      pollMs: 0,
+      timeoutMs: 6000
+    });
+
+    const first = await adapter.fetchAirports({ limit: 1, query: "LKPR" }, new Date("2026-05-20T10:00:05Z"));
+    const second = await adapter.fetchAirports({ limit: 1, query: "LKPR" }, new Date("2026-05-20T10:00:10Z"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/flight-data/api/v1/airports?limit=1&query=LKPR");
+    expect(first).toEqual(second);
+    expect(first.items[0]).toMatchObject({
+      dataSource: "ourairports:airports.csv",
+      ident: "LKPR",
+      iata: "PRG",
+      name: "Václav Havel Airport Prague",
+      type: "large_airport"
+    });
   });
 });
 
@@ -141,5 +170,33 @@ function sampleFlightResponse() {
       }
     ],
     warnings: []
+  };
+}
+
+function sampleAirportResponse() {
+  return {
+    items: [
+      {
+        countryCode: "CZ",
+        dataSource: "ourairports:airports.csv",
+        elevationFt: 1247,
+        iata: "PRG",
+        ident: "LKPR",
+        lat: 50.100874,
+        lon: 14.259911,
+        municipality: "Prague",
+        name: "Václav Havel Airport Prague",
+        type: "large_airport"
+      }
+    ],
+    source: {
+      label: "OurAirports airport reference data",
+      license: "Public domain compatible",
+      loadedAt: "2026-05-20T18:43:46.000Z",
+      warnings: []
+    },
+    summary: {
+      totalReferenceAirports: 2467
+    }
   };
 }

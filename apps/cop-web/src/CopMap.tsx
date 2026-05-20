@@ -137,8 +137,10 @@ export interface SituationContextFeatureCollection {
     properties: SituationFeature["properties"] & {
       selected: boolean;
       weatherCloudCoverPercent?: number;
+      weatherFlightCategoryColor?: string;
       weatherLabel?: string;
       weatherPrecipitationMm?: number;
+      weatherStationIcao?: string;
       weatherTemperatureC?: number;
       weatherWindDirectionDeg?: number;
       weatherWindSpeedMps?: number;
@@ -657,19 +659,23 @@ export function CopMap({
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "weather"]],
           paint: {
             "circle-color": [
-              "interpolate",
-              ["linear"],
-              ["coalesce", ["get", "weatherTemperatureC"], 12],
-              -15,
-              "#60a5fa",
-              0,
-              "#38bdf8",
-              15,
-              "#22c55e",
-              25,
-              "#facc15",
-              35,
-              "#ef4444"
+              "coalesce",
+              ["get", "weatherFlightCategoryColor"],
+              [
+                "interpolate",
+                ["linear"],
+                ["coalesce", ["get", "weatherTemperatureC"], 12],
+                -15,
+                "#60a5fa",
+                0,
+                "#38bdf8",
+                15,
+                "#22c55e",
+                25,
+                "#facc15",
+                35,
+                "#ef4444"
+              ]
             ],
             "circle-opacity": ["case", ["get", "stale"], 0.48, 0.74],
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 10, 11, 18, 16, 30],
@@ -1462,15 +1468,20 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
     };
   }
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const aviationCategory = aviationFlightCategory(feature);
   const temperatureC = recordNumber(metrics, "temperatureC");
   const windSpeedMps = recordNumber(metrics, "windSpeedMps");
   const windDirectionDeg = recordNumber(metrics, "windDirectionDeg");
   const precipitationMm = recordNumber(metrics, "precipitationMm");
   const cloudCoverPercent = recordNumber(metrics, "cloudCoverPercent");
+  const stationIcao = stringProperty(tags.icaoId);
   return {
     weatherCloudCoverPercent: cloudCoverPercent,
-    weatherLabel: formatWeatherMapLabel(temperatureC, windSpeedMps, precipitationMm),
+    weatherFlightCategoryColor: aviationCategory ? aviationCategory.color : undefined,
+    weatherLabel: aviationCategory ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label) : formatWeatherMapLabel(temperatureC, windSpeedMps, precipitationMm),
     weatherPrecipitationMm: precipitationMm,
+    weatherStationIcao: stationIcao,
     weatherTemperatureC: temperatureC,
     weatherWindDirectionDeg: windDirectionDeg,
     weatherWindSpeedMps: windSpeedMps,
@@ -1483,6 +1494,10 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
   if (feature.properties.stale) {
     return { color: "#facc15", label: "STALE", tone: "warning" };
+  }
+  const aviationCategory = aviationFlightCategory(feature);
+  if (aviationCategory) {
+    return aviationCategory;
   }
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
@@ -1506,6 +1521,27 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
     return { color: "#22c55e", label: "OK", tone: "info" };
   }
   return { color: "#a78bfa", label: raw.toUpperCase(), tone: "unknown" };
+}
+
+function aviationFlightCategory(feature: SituationFeature): { color: string; label: string; tone: string } | null {
+  if (feature.properties.sourceId !== "aviation_weather" && feature.properties.category !== "aviation_weather_station") {
+    return null;
+  }
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const raw = stringProperty(tags.flightCategory)?.toUpperCase();
+  if (raw === "LIFR") {
+    return { color: "#ef4444", label: "LIFR", tone: "critical" };
+  }
+  if (raw === "IFR") {
+    return { color: "#fb923c", label: "IFR", tone: "advisory" };
+  }
+  if (raw === "MVFR") {
+    return { color: "#facc15", label: "MVFR", tone: "warning" };
+  }
+  if (raw === "VFR") {
+    return { color: "#22c55e", label: "VFR", tone: "info" };
+  }
+  return raw ? { color: "#8cb6d8", label: raw, tone: "unknown" } : null;
 }
 
 function formatMobileNetworkLabel(feature: SituationFeature): string {
@@ -1592,6 +1628,10 @@ function formatWeatherMapLabel(temperatureC: number | undefined, windSpeedMps: n
     parts.push(`${precipitationMm.toFixed(1)} mm`);
   }
   return parts.length > 0 ? parts.slice(0, 2).join("\n") : "WX";
+}
+
+function formatAviationWeatherMapLabel(icaoId: string | undefined, flightCategory: string): string {
+  return [icaoId, flightCategory].filter(Boolean).join("\n") || "METAR";
 }
 
 function recordNumber(record: Record<string, unknown>, key: string): number | undefined {

@@ -800,12 +800,19 @@ h1 {
   color: var(--yellow);
 }
 
-.situation-layer-grid {
+.situation-layer-grid,
+.situation-source-list {
   display: grid;
   gap: 6px;
 }
 
-.situation-layer-toggle {
+.situation-source-list {
+  padding-top: 4px;
+  border-top: 1px solid rgba(142, 157, 170, 0.14);
+}
+
+.situation-layer-toggle,
+.situation-source-toggle {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -818,22 +825,30 @@ h1 {
   cursor: pointer;
 }
 
-.situation-layer-toggle input {
+.situation-source-toggle.disabled {
+  opacity: 0.58;
+}
+
+.situation-layer-toggle input,
+.situation-source-toggle input {
   accent-color: var(--cyan);
 }
 
-.situation-layer-toggle span {
+.situation-layer-toggle span,
+.situation-source-toggle span {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.situation-layer-toggle strong {
+.situation-layer-toggle strong,
+.situation-source-toggle strong {
   color: #edf3f8;
   font-size: 12px;
 }
 
 .situation-layer-toggle small,
+.situation-source-toggle small,
 .situation-warning {
   color: var(--muted);
   font-size: 10px;
@@ -1699,6 +1714,10 @@ h1 {
 
 .data-metric.warn strong {
   color: var(--yellow);
+}
+
+.data-metric.critical strong {
+  color: var(--red);
 }
 
 .deck-header {

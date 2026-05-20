@@ -9,6 +9,7 @@ import {
 import type { SourceHealthOverride } from "./types.js";
 
 export interface FlightDataSourceConfig {
+  airportCacheTtlMs: number;
   baseUrl: string;
   bbox?: string;
   enabled: boolean;
@@ -28,7 +29,40 @@ export interface FlightDataPollResult {
 export interface FlightDataSource {
   readonly config: FlightDataSourceConfig;
   readonly sourceSystem: SourceSystem;
+  fetchAirports?(query: FlightAirportQuery, requestNow: Date): Promise<FlightAirportCollection>;
   poll(pollNow: Date): Promise<FlightDataPollResult>;
+}
+
+export interface FlightAirportQuery {
+  bbox?: string;
+  limit: number;
+  query?: string;
+}
+
+export interface FlightAirportCollection {
+  items: FlightAirportReference[];
+  source: {
+    label?: string;
+    license?: string;
+    loadedAt?: string;
+    warnings: string[];
+  };
+  summary: {
+    totalReferenceAirports?: number;
+  };
+}
+
+export interface FlightAirportReference {
+  countryCode?: string;
+  dataSource?: string;
+  elevationFt?: number;
+  iata?: string;
+  ident: string;
+  lat: number;
+  lon: number;
+  municipality?: string;
+  name: string;
+  type: string;
 }
 
 interface FlightDataResponse {
@@ -102,6 +136,7 @@ interface FlightTrack {
 }
 
 const defaultConfig: FlightDataSourceConfig = {
+  airportCacheTtlMs: 60 * 60 * 1000,
   baseUrl: "https://sim.zeleznalady.cz/flight-data",
   enabled: false,
   includeStale: true,
@@ -112,6 +147,7 @@ const defaultConfig: FlightDataSourceConfig = {
 
 export function createFlightDataSourceConfigFromEnv(env: Record<string, string | undefined> = process.env): FlightDataSourceConfig {
   return {
+    airportCacheTtlMs: readInteger(env.COP_FLIGHT_DATA_AIRPORT_CACHE_TTL_MS, defaultConfig.airportCacheTtlMs, 60_000, 24 * 60 * 60 * 1000),
     baseUrl: trimTrailingSlash(env.COP_FLIGHT_DATA_BASE_URL ?? defaultConfig.baseUrl),
     ...(optionalTrimmedString(env.COP_FLIGHT_DATA_BBOX) ? { bbox: optionalTrimmedString(env.COP_FLIGHT_DATA_BBOX) } : {}),
     enabled: readBoolean(env.COP_FLIGHT_DATA_ENABLED, defaultConfig.enabled),
@@ -130,9 +166,25 @@ export function createFlightDataSourceFromEnv(env: Record<string, string | undef
 
 export class FlightDataSourceAdapter implements FlightDataSource {
   readonly sourceSystem: SourceSystem;
+  private readonly airportCache = new Map<string, { expiresAtMs: number; value: FlightAirportCollection }>();
 
   constructor(readonly config: FlightDataSourceConfig) {
     this.sourceSystem = createPublicFlightAggregateSourceSystem();
+  }
+
+  async fetchAirports(query: FlightAirportQuery, requestNow: Date): Promise<FlightAirportCollection> {
+    const normalizedQuery = normalizeAirportQuery(query);
+    const cacheKey = airportCacheKey(normalizedQuery);
+    const cached = this.airportCache.get(cacheKey);
+    if (cached && cached.expiresAtMs > requestNow.getTime()) {
+      return cached.value;
+    }
+    const value = await fetchFlightAirports(this.config, normalizedQuery, requestNow);
+    this.airportCache.set(cacheKey, {
+      expiresAtMs: requestNow.getTime() + this.config.airportCacheTtlMs,
+      value
+    });
+    return value;
   }
 
   async poll(pollNow: Date): Promise<FlightDataPollResult> {
@@ -142,6 +194,35 @@ export class FlightDataSourceAdapter implements FlightDataSource {
       health: buildFlightDataHealth(response, pollNow),
       response
     };
+  }
+}
+
+async function fetchFlightAirports(config: FlightDataSourceConfig, query: FlightAirportQuery, requestNow: Date): Promise<FlightAirportCollection> {
+  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/api/v1/airports`);
+  url.searchParams.set("limit", String(query.limit));
+  if (query.bbox) {
+    url.searchParams.set("bbox", query.bbox);
+  }
+  if (query.query) {
+    url.searchParams.set("query", query.query);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "X-COP-Request-At": requestNow.toISOString()
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText || "Airport reference request failed"}`);
+    }
+    return normalizeFlightAirportCollection(await response.json());
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -340,6 +421,63 @@ function normalizeFlightDataResponse(value: unknown): FlightDataResponse {
     tracks: value.tracks.flatMap(normalizeTrack),
     warnings: value.warnings.filter((warning): warning is string => typeof warning === "string")
   };
+}
+
+function normalizeFlightAirportCollection(value: unknown): FlightAirportCollection {
+  if (!isRecord(value) || !Array.isArray(value.items)) {
+    throw new Error("Flight airport response is incomplete.");
+  }
+  const source = isRecord(value.source) ? value.source : {};
+  const summary = isRecord(value.summary) ? value.summary : {};
+  return {
+    items: value.items.flatMap(normalizeFlightAirport),
+    source: {
+      label: optionalString(source.label),
+      license: optionalString(source.license),
+      loadedAt: optionalString(source.loadedAt),
+      warnings: Array.isArray(source.warnings) ? source.warnings.filter((warning): warning is string => typeof warning === "string") : []
+    },
+    summary: {
+      totalReferenceAirports: optionalNumber(summary.totalReferenceAirports)
+    }
+  };
+}
+
+function normalizeFlightAirport(value: unknown): FlightAirportReference[] {
+  if (!isRecord(value) || typeof value.ident !== "string" || typeof value.name !== "string" || typeof value.type !== "string") {
+    return [];
+  }
+  const lat = optionalNumber(value.lat);
+  const lon = optionalNumber(value.lon);
+  if (lat === undefined || lon === undefined) {
+    return [];
+  }
+  return [
+    {
+      countryCode: optionalString(value.countryCode),
+      dataSource: optionalString(value.dataSource),
+      elevationFt: optionalNumber(value.elevationFt),
+      iata: optionalString(value.iata),
+      ident: value.ident,
+      lat,
+      lon,
+      municipality: optionalString(value.municipality),
+      name: value.name,
+      type: value.type
+    }
+  ];
+}
+
+function normalizeAirportQuery(query: FlightAirportQuery): FlightAirportQuery {
+  return {
+    ...(optionalString(query.bbox) ? { bbox: optionalString(query.bbox) } : {}),
+    limit: Math.round(clampNumber(query.limit, 1, 500)),
+    ...(optionalString(query.query) ? { query: optionalString(query.query) } : {})
+  };
+}
+
+function airportCacheKey(query: FlightAirportQuery): string {
+  return [query.bbox ?? "", query.query ?? "", query.limit].join("|");
 }
 
 function normalizeSummary(value: Record<string, unknown>): FlightTrackSummary {

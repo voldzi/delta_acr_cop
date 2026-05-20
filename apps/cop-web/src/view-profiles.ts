@@ -27,6 +27,7 @@ export interface ViewProfileSettings {
   showHistory?: boolean;
   showPrediction?: boolean;
   situationLayerIds?: string[];
+  situationSourceIds?: string[];
   trackLayerIds?: CopLayer[];
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
@@ -247,6 +248,7 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
     situationLayerIds: optionalStringArray(value.situationLayerIds),
+    situationSourceIds: optionalStringArray(value.situationSourceIds),
     trackLayerIds: optionalLayerArray(value.trackLayerIds),
     trackHistoryLimit: optionalNumber(value.trackHistoryLimit),
     trackHistoryWindowSeconds: optionalNumber(value.trackHistoryWindowSeconds)

@@ -29,12 +29,13 @@ describe("SituationDataSourceAdapter", () => {
     const features = await adapter.fetchFeatures({
       bbox: { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: ["weather", "traffic"],
-      limit: 20
+      limit: 20,
+      sources: ["aviation_weather"]
     }, new Date("2026-05-20T10:00:06Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/situation-data/api/v1/layers");
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=weather%2Ctraffic&limit=20"
+      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=weather%2Ctraffic&limit=20&source=aviation_weather"
     );
     expect(layers).toMatchObject([
       {
@@ -53,7 +54,8 @@ describe("SituationDataSourceAdapter", () => {
             featureId: "weather:prague",
             label: "Praha weather",
             layer: "weather",
-            sourceId: "open_meteo"
+            sourceId: "aviation_weather",
+            validUntil: "2026-05-20T11:00:00Z"
           }
         }
       ],
@@ -67,6 +69,38 @@ describe("SituationDataSourceAdapter", () => {
       upstreamBbox: { east: 15.75, north: 50.75, south: 49.5, west: 13.5 }
     });
     expect(features.query.bbox).toEqual({ east: 15.35, north: 50.45, south: 49.65, west: 13.85 });
+    expect(features.query.sources).toEqual(["aviation_weather"]);
+  });
+
+  it("proxies SIM situation-data source descriptors", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleSourcesResponse()), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SituationDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/situation-data/api/v1",
+      cacheTtlMs: 20000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const sources = await adapter.fetchSources(new Date("2026-05-20T10:00:05Z"));
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/situation-data/api/v1/sources");
+    expect(sources).toMatchObject([
+      {
+        enabled: true,
+        label: "NOAA AWC METAR/TAF aviation weather",
+        layers: ["weather"],
+        sourceId: "aviation_weather"
+      },
+      {
+        enabled: false,
+        label: "ARDOS partner field operations",
+        layers: ["ground", "mobile", "traffic"],
+        sourceId: "ardos_partner"
+      }
+    ]);
   });
 
   it("reuses canonical viewport cache for small map pans", async () => {
@@ -143,8 +177,9 @@ function sampleFeatureCollection() {
             windMps: 4.1
           },
           observedAt: "2026-05-20T10:00:00Z",
-          sourceId: "open_meteo",
-          stale: false
+            sourceId: "aviation_weather",
+            stale: false,
+            validUntil: "2026-05-20T11:00:00Z"
         },
         type: "Feature"
       }
@@ -165,7 +200,7 @@ function sampleFeatureCollection() {
         enabled: true,
         label: "Open-Meteo",
         layers: ["weather"],
-        sourceId: "open_meteo"
+        sourceId: "aviation_weather"
       }
     ],
     summary: {
@@ -176,5 +211,28 @@ function sampleFeatureCollection() {
     },
     type: "FeatureCollection",
     warnings: []
+  };
+}
+
+function sampleSourcesResponse() {
+  return {
+    items: [
+      {
+        enabled: true,
+        label: "NOAA AWC METAR/TAF aviation weather",
+        layers: ["weather"],
+        mode: "live",
+        sourceId: "aviation_weather",
+        updateCadenceSeconds: 600
+      },
+      {
+        enabled: false,
+        label: "ARDOS partner field operations",
+        layers: ["ground", "mobile", "traffic"],
+        mode: "live",
+        sourceId: "ardos_partner",
+        updateCadenceSeconds: 15
+      }
+    ]
   };
 }

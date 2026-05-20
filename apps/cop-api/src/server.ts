@@ -12,7 +12,7 @@ import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAle
 import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
-import { createFlightDataSourceFromEnv, unavailableFlightDataHealth, type FlightDataSource } from "./flight-data-source.js";
+import { createFlightDataSourceFromEnv, unavailableFlightDataHealth, type FlightAirportQuery, type FlightDataSource } from "./flight-data-source.js";
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems } from "./source-health.js";
@@ -23,7 +23,9 @@ import {
   parseSituationFeatureQuery,
   unavailableSituationDataHealth,
   type SituationDataSource,
-  type SituationFeatureQuery
+  type SituationFeatureCollection,
+  type SituationFeatureQuery,
+  type SituationSourceDescriptor
 } from "./situation-data-source.js";
 import {
   buildSafetyDataHealth,
@@ -818,6 +820,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
+  app.get("/api/v1/flight-data/airports", async (request, reply) => {
+    const requestNow = now();
+    if (!flightDataSource?.fetchAirports) {
+      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Flight airport reference source is disabled.", crypto.randomUUID());
+    }
+    const query = parseFlightAirportQuery(request.query as Record<string, unknown>);
+    try {
+      return {
+        ...await flightDataSource.fetchAirports(query, requestNow),
+        serverTimestamp: requestNow.toISOString()
+      };
+    } catch (error) {
+      appendAudit(state, "FLIGHT_AIRPORTS_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: flightDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Flight airport reference request failed.");
+      return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), crypto.randomUUID());
+    }
+  });
+
   app.get("/api/v1/situation/layers", async () => {
     const requestNow = now();
     if (!situationDataSource) {
@@ -857,8 +880,53 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  app.get("/api/v1/situation/sources", async (request) => {
+    const requestNow = now();
+    const actor = actorFromRequest(request);
+    if (!situationDataSource) {
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceStatus: "disabled",
+        warnings: ["Situation data source is disabled."]
+      };
+    }
+
+    try {
+      const items = filterSituationSourcesForActor(await situationDataSource.fetchSources(requestNow), actor);
+      const health = buildSituationDataHealth(items.map((source) => ({
+        defaultVisible: source.enabled === true,
+        label: source.label ?? source.sourceId,
+        layerId: source.layers?.[0] ?? "weather"
+      })), requestNow);
+      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      return {
+        items,
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health
+      };
+    } catch (error) {
+      const health = unavailableSituationDataHealth(error, requestNow);
+      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      appendAudit(state, "SITUATION_DATA_SOURCES_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Situation data sources request failed.");
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health,
+        warnings: [health.lastError ?? "Situation data sources are unavailable."]
+      };
+    }
+  });
+
   app.get("/api/v1/situation/features", async (request, reply) => {
     const requestNow = now();
+    const actor = actorFromRequest(request);
     if (!situationDataSource) {
       const fallbackQuery = defaultSituationFeatureQuery();
       return {
@@ -876,9 +944,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!query) {
       return sendError(reply, 400, "VALIDATION_ERROR", "Situation feature query requires bbox=west,south,east,north.", crypto.randomUUID());
     }
+    const sanitized = sanitizeSituationQueryForActor(query, actor);
+    const sourceWarnings = sanitized.warnings;
+    if (sanitized.blocked) {
+      const collection = emptySituationFeatureCollection(sanitized.query, requestNow, sourceWarnings);
+      const health = buildSituationDataHealth(collection, requestNow);
+      return {
+        ...collection,
+        sourceHealth: health
+      };
+    }
 
     try {
-      const collection = await situationDataSource.fetchFeatures(query, requestNow);
+      const collection = filterSituationCollectionForActor(await situationDataSource.fetchFeatures(sanitized.query, requestNow), actor, sourceWarnings);
       const health = buildSituationDataHealth(collection, requestNow);
       state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
       return {
@@ -894,7 +972,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       });
       app.log.warn({ error }, "Situation data features request failed.");
       return {
-        ...emptySituationFeatureCollection(query, requestNow, [health.lastError ?? "Situation data features are unavailable."]),
+        ...emptySituationFeatureCollection(sanitized.query, requestNow, [health.lastError ?? "Situation data features are unavailable."]),
         sourceHealth: health
       };
     }
@@ -1635,6 +1713,82 @@ function defaultSituationFeatureQuery(): SituationFeatureQuery {
   };
 }
 
+function parseFlightAirportQuery(value: Record<string, unknown>): FlightAirportQuery {
+  return {
+    ...(typeof value.bbox === "string" && value.bbox.trim() ? { bbox: value.bbox.trim() } : {}),
+    limit: optionalFiniteNumber(value.limit, 1, 500) ?? 200,
+    ...(typeof value.query === "string" && value.query.trim() ? { query: value.query.trim().slice(0, 80) } : {})
+  };
+}
+
+function sanitizeSituationQueryForActor(query: SituationFeatureQuery, actor: AuthenticatedActor | null): { blocked: boolean; query: SituationFeatureQuery; warnings: string[] } {
+  const sources = query.sources;
+  if (!sources || sources.length === 0) {
+    return { blocked: false, query, warnings: [] };
+  }
+  const allowedSources = sources.filter((sourceId) => canReadSituationSource(sourceId, actor));
+  const blockedSources = sources.filter((sourceId) => !allowedSources.includes(sourceId));
+  const warnings = blockedSources.length > 0
+    ? [`Restricted situation source hidden: ${blockedSources.join(", ")}.`]
+    : [];
+  if (allowedSources.length === 0) {
+    return {
+      blocked: true,
+      query: { ...query, sources: [] },
+      warnings
+    };
+  }
+  return {
+    blocked: false,
+    query: { ...query, sources: allowedSources },
+    warnings
+  };
+}
+
+function filterSituationCollectionForActor(
+  collection: SituationFeatureCollection,
+  actor: AuthenticatedActor | null,
+  extraWarnings: string[] = []
+): SituationFeatureCollection {
+  const features = collection.features.filter((feature) => canReadSituationSource(feature.properties.sourceId, actor));
+  const sources = filterSituationSourcesForActor(collection.sources, actor);
+  const warnings = [...collection.warnings, ...extraWarnings];
+  return {
+    ...collection,
+    features,
+    sources,
+    summary: {
+      ...collection.summary,
+      featureCount: features.length,
+      sourceCount: sources.length,
+      staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
+      warningCount: warnings.length
+    },
+    warnings
+  };
+}
+
+function filterSituationSourcesForActor(sources: SituationSourceDescriptor[], actor: AuthenticatedActor | null): SituationSourceDescriptor[] {
+  return sources.filter((source) => canReadSituationSource(source.sourceId, actor));
+}
+
+function canReadSituationSource(sourceId: string, actor: AuthenticatedActor | null): boolean {
+  if (sourceId !== "ardos_partner") {
+    return true;
+  }
+  if (process.env.COP_ARDOS_PARTNER_ENABLED !== "true") {
+    return false;
+  }
+  if (!actor) {
+    return false;
+  }
+  if (actor.authMode === "lab") {
+    return true;
+  }
+  const requiredRole = process.env.COP_ARDOS_REQUIRED_ROLE?.trim();
+  return requiredRole ? Boolean(actor.roles?.includes(requiredRole)) : true;
+}
+
 function defaultSafetyFeatureQuery(): SafetyFeatureQuery {
   return {
     bbox: {
@@ -1880,6 +2034,7 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     showPrediction: optionalBoolean(value.showPrediction),
     safetyLayerIds: optionalStringArray(value.safetyLayerIds, ["warnings", "flood"]),
     situationLayerIds: optionalStringArray(value.situationLayerIds, ["weather", "ground", "mobile", "traffic", "air_quality"]),
+    situationSourceIds: normalizeStringList(value.situationSourceIds, 32, 80),
     trackLayerIds: optionalStringArray(value.trackLayerIds, ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600)

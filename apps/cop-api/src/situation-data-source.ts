@@ -24,6 +24,7 @@ export interface SituationDataSourceConfig {
   enabled: boolean;
   layerCacheTtlMs?: Partial<Record<SituationLayerId, number>>;
   maxLimit: number;
+  sourceCacheTtlMs?: Record<string, number>;
   staleIfErrorMs?: number;
   timeoutMs: number;
 }
@@ -32,6 +33,7 @@ export interface SituationFeatureQuery {
   bbox: SituationBbox;
   layers: SituationLayerId[];
   limit: number;
+  sources?: string[];
 }
 
 export interface SituationBbox {
@@ -107,6 +109,7 @@ export interface SituationFeatureProperties {
   sourceId: string;
   stale?: boolean;
   tags?: Record<string, unknown>;
+  validUntil?: string;
 }
 
 export interface SituationSourceDescriptor {
@@ -127,6 +130,7 @@ export interface SituationDataSource {
   cacheStats?(): SituationDataCacheStats;
   fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection>;
   fetchLayers(requestNow: Date): Promise<SituationLayerDescriptor[]>;
+  fetchSources(requestNow: Date): Promise<SituationSourceDescriptor[]>;
 }
 
 const defaultConfig: SituationDataSourceConfig = {
@@ -144,6 +148,10 @@ const defaultConfig: SituationDataSourceConfig = {
     weather: 5 * 60 * 1000
   },
   maxLimit: 250,
+  sourceCacheTtlMs: {
+    ardos_partner: 10 * 1000,
+    aviation_weather: 120 * 1000
+  },
   staleIfErrorMs: 10 * 60 * 1000,
   timeoutMs: 7000
 };
@@ -167,6 +175,10 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
     },
     maxLimit: readInteger(env.COP_SITUATION_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 1000),
+    sourceCacheTtlMs: {
+      ardos_partner: readInteger(env.COP_SITUATION_DATA_ARDOS_CACHE_TTL_MS, 10 * 1000, 1000, 5 * 60 * 1000),
+      aviation_weather: readInteger(env.COP_SITUATION_DATA_AVIATION_WEATHER_CACHE_TTL_MS, 120 * 1000, 1000, 24 * 60 * 60 * 1000)
+    },
     staleIfErrorMs: readInteger(env.COP_SITUATION_DATA_STALE_IF_ERROR_MS, defaultConfig.staleIfErrorMs ?? 600000, 0, 24 * 60 * 60 * 1000),
     timeoutMs: readInteger(env.COP_SITUATION_DATA_TIMEOUT_MS, defaultConfig.timeoutMs, 1000, 60000)
   };
@@ -181,6 +193,7 @@ export class SituationDataSourceAdapter implements SituationDataSource {
   readonly sourceSystem: SourceSystem;
   private readonly featureCache: ManagedSituationCache<SituationFeatureCollection>;
   private layerCache: { expiresAtMs: number; value: SituationLayerDescriptor[] } | null = null;
+  private sourceCache: { expiresAtMs: number; value: SituationSourceDescriptor[] } | null = null;
 
   constructor(readonly config: SituationDataSourceConfig) {
     this.sourceSystem = createPublicSituationAggregateSourceSystem();
@@ -206,11 +219,26 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     return layers;
   }
 
+  async fetchSources(requestNow: Date): Promise<SituationSourceDescriptor[]> {
+    if (this.sourceCache && this.sourceCache.expiresAtMs > requestNow.getTime()) {
+      return this.sourceCache.value;
+    }
+    const sources = await fetchSituationSources(this.config, requestNow);
+    this.sourceCache = {
+      expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
+      value: sources
+    };
+    return sources;
+  }
+
   async fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
     const normalizedQuery = normalizeSituationFeatureQuery(query, this.config);
     const upstreamQuery = canonicalizeSituationFeatureQuery(normalizedQuery);
     const cacheKey = situationFeatureCacheKey(upstreamQuery);
-    const ttlMs = cacheTtlMsForLayers(normalizedQuery.layers, this.config);
+    const ttlMs = Math.min(
+      cacheTtlMsForLayers(normalizedQuery.layers, this.config),
+      cacheTtlMsForSources(normalizedQuery.sources, this.config) ?? Number.POSITIVE_INFINITY
+    );
     const cached = await this.featureCache.getOrLoad(cacheKey, ttlMs, () => fetchSituationFeatures(this.config, upstreamQuery, requestNow));
     return projectSituationFeatureCollection(cached.value, normalizedQuery, {
       cacheKey,
@@ -406,7 +434,8 @@ export function parseSituationFeatureQuery(rawQuery: Record<string, unknown>, co
   return normalizeSituationFeatureQuery({
     bbox,
     layers: parseSituationLayers(typeof rawQuery.layers === "string" ? rawQuery.layers : undefined),
-    limit: optionalNumber(rawQuery.limit) ?? config.maxLimit
+    limit: optionalNumber(rawQuery.limit) ?? config.maxLimit,
+    sources: parseSituationSources(rawQuery)
   }, config);
 }
 
@@ -421,7 +450,8 @@ export function normalizeSituationFeatureQuery(query: SituationFeatureQuery, con
     layers: query.layers.filter(isSituationLayerId).length > 0
       ? uniqueLayers(query.layers.filter(isSituationLayerId))
       : ["weather"],
-    limit: Math.round(clampNumber(query.limit, 1, config.maxLimit))
+    limit: Math.round(clampNumber(query.limit, 1, config.maxLimit)),
+    ...(query.sources && query.sources.length > 0 ? { sources: uniqueStrings(query.sources) } : {})
   };
 }
 
@@ -438,7 +468,8 @@ function canonicalizeSituationFeatureQuery(query: SituationFeatureQuery): Situat
   return {
     bbox: snapBboxToGrid(paddedBbox, gridSizeDegrees),
     layers: query.layers,
-    limit: query.limit
+    limit: query.limit,
+    ...(query.sources && query.sources.length > 0 ? { sources: query.sources } : {})
   };
 }
 
@@ -448,8 +479,11 @@ function projectSituationFeatureCollection(
   options: ProjectSituationFeatureCollectionOptions
 ): SituationFeatureCollection {
   const features = collection.features.filter((feature) =>
-    requestQuery.layers.includes(feature.properties.layer) && isFeatureInBbox(feature, requestQuery.bbox)
+    requestQuery.layers.includes(feature.properties.layer)
+    && (!requestQuery.sources || requestQuery.sources.includes(feature.properties.sourceId))
+    && isFeatureInBbox(feature, requestQuery.bbox)
   );
+  const sources = collection.sources.filter((source) => !requestQuery.sources || requestQuery.sources.includes(source.sourceId));
   const warnings = options.cacheStatus === "stale"
     ? [...collection.warnings, "COP served stale situation-data cache because SIM refresh failed."]
     : collection.warnings;
@@ -467,11 +501,12 @@ function projectSituationFeatureCollection(
       bbox: requestQuery.bbox,
       layers: requestQuery.layers,
       limit: requestQuery.limit,
-      sources: collection.query.sources
+      sources: requestQuery.sources ?? collection.query.sources
     },
+    sources,
     summary: {
       featureCount: features.length,
-      sourceCount: collection.summary.sourceCount,
+      sourceCount: requestQuery.sources ? sources.length : collection.summary.sourceCount,
       staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
       warningCount: warnings.length
     },
@@ -487,11 +522,22 @@ async function fetchSituationLayers(config: SituationDataSourceConfig, requestNo
   return response.items.flatMap(normalizeSituationLayer);
 }
 
+async function fetchSituationSources(config: SituationDataSourceConfig, requestNow: Date): Promise<SituationSourceDescriptor[]> {
+  const response = await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/sources`), config, requestNow);
+  if (!isRecord(response) || !Array.isArray(response.items)) {
+    throw new Error("Situation sources response is incomplete.");
+  }
+  return response.items.flatMap(normalizeSituationSourceDescriptor);
+}
+
 async function fetchSituationFeatures(config: SituationDataSourceConfig, query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
   const url = new URL(`${trimTrailingSlash(config.baseUrl)}/cop/features`);
   url.searchParams.set("bbox", `${query.bbox.west},${query.bbox.south},${query.bbox.east},${query.bbox.north}`);
   url.searchParams.set("layers", query.layers.join(","));
   url.searchParams.set("limit", String(query.limit));
+  if (query.sources && query.sources.length > 0) {
+    url.searchParams.set("source", query.sources.join(","));
+  }
   return normalizeSituationFeatureCollection(await fetchJson(url, config, requestNow), query);
 }
 
@@ -597,7 +643,8 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     severity: optionalString(value.severity),
     sourceId,
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
-    tags: isRecord(value.tags) ? value.tags : undefined
+    tags: isRecord(value.tags) ? value.tags : undefined,
+    validUntil: optionalString(value.validUntil)
   };
 }
 
@@ -643,7 +690,7 @@ function normalizeResponseQuery(value: unknown, fallback: SituationFeatureQuery)
     },
     layers: Array.isArray(value.layers) ? value.layers.filter(isSituationLayerId) : fallback.layers,
     limit: optionalNumber(value.limit) ?? fallback.limit,
-    sources: Array.isArray(value.sources) ? value.sources.filter((source): source is string => typeof source === "string") : undefined
+    sources: Array.isArray(value.sources) ? value.sources.filter((source): source is string => typeof source === "string") : fallback.sources
   };
 }
 
@@ -707,6 +754,16 @@ function parseSituationLayers(value: string | undefined): SituationLayerId[] {
   return layers.length > 0 ? uniqueLayers(layers) : ["weather"];
 }
 
+function parseSituationSources(rawQuery: Record<string, unknown>): string[] | undefined {
+  const raw = typeof rawQuery.source === "string"
+    ? rawQuery.source
+    : typeof rawQuery.sources === "string"
+      ? rawQuery.sources
+      : undefined;
+  const sources = raw?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
+  return sources.length > 0 ? uniqueStrings(sources) : undefined;
+}
+
 function situationFeatureCacheKey(query: SituationFeatureQuery): string {
   return [
     query.bbox.west.toFixed(4),
@@ -714,12 +771,23 @@ function situationFeatureCacheKey(query: SituationFeatureQuery): string {
     query.bbox.east.toFixed(4),
     query.bbox.north.toFixed(4),
     query.layers.join(","),
-    query.limit
+    query.limit,
+    query.sources?.join(",") ?? "*"
   ].join("|");
 }
 
 function cacheTtlMsForLayers(layers: SituationLayerId[], config: SituationDataSourceConfig): number {
   return Math.min(...layers.map((layer) => layerCacheTtlMs(layer, config)));
+}
+
+function cacheTtlMsForSources(sources: string[] | undefined, config: SituationDataSourceConfig): number | undefined {
+  if (!sources || sources.length === 0) {
+    return undefined;
+  }
+  const ttlValues = sources
+    .map((source) => config.sourceCacheTtlMs?.[source] ?? defaultConfig.sourceCacheTtlMs?.[source])
+    .filter((ttl): ttl is number => typeof ttl === "number" && Number.isFinite(ttl));
+  return ttlValues.length > 0 ? Math.min(...ttlValues.map((ttl) => Math.max(1000, Math.trunc(ttl)))) : undefined;
 }
 
 function layerCacheTtlMs(layer: SituationLayerId, config: SituationDataSourceConfig): number {
@@ -816,6 +884,10 @@ function bboxIntersects(a: SituationBbox, b: SituationBbox): boolean {
 
 function uniqueLayers(layers: SituationLayerId[]): SituationLayerId[] {
   return allowedLayerIds.filter((layer) => layers.includes(layer));
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
 function isSituationLayerId(value: unknown): value is SituationLayerId {
