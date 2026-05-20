@@ -1073,6 +1073,8 @@ components:
           enum: [all, AIR, LAND, SEA, RESCUE, OTHER]
         includeSynthetic:
           type: boolean
+        mapClusterEnabled:
+          type: boolean
         mapView:
           $ref: "#/components/schemas/MapViewPreference"
         minConfidence:
@@ -1095,6 +1097,8 @@ components:
         selectedLayer:
           type: string
           enum: [air-situation, uav, friendly, foreign, public-flights, data-quality]
+        showAlertAreas:
+          type: boolean
         showHistory:
           type: boolean
         showPrediction:

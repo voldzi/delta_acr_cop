@@ -14,6 +14,7 @@ export interface ViewProfileSettings {
   autoRefresh?: boolean;
   domainScope?: string;
   includeSynthetic?: boolean;
+  mapClusterEnabled?: boolean;
   mapView?: MapViewState;
   minConfidence?: number;
   predictionMinutes?: number;
@@ -21,6 +22,7 @@ export interface ViewProfileSettings {
   proximityAlertEnabled?: boolean;
   refreshSeconds?: number;
   selectedLayer?: CopLayer;
+  showAlertAreas?: boolean;
   showHistory?: boolean;
   showPrediction?: boolean;
   trackHistoryLimit?: number;
@@ -48,9 +50,11 @@ export const builtInViewProfiles: ViewProfile[] = [
       autoRefresh: true,
       domainScope: "AIR",
       includeSynthetic: true,
+      mapClusterEnabled: true,
       minConfidence: 0.2,
       refreshSeconds: 5,
       selectedLayer: "air-situation",
+      showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
       trackHistoryLimit: 120,
@@ -69,9 +73,11 @@ export const builtInViewProfiles: ViewProfile[] = [
       autoRefresh: true,
       domainScope: "AIR",
       includeSynthetic: true,
+      mapClusterEnabled: true,
       minConfidence: 0.2,
       refreshSeconds: 2,
       selectedLayer: "uav",
+      showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
       trackHistoryLimit: 72,
@@ -90,9 +96,11 @@ export const builtInViewProfiles: ViewProfile[] = [
       autoRefresh: true,
       domainScope: "AIR",
       includeSynthetic: true,
+      mapClusterEnabled: true,
       minConfidence: 0,
       refreshSeconds: 5,
       selectedLayer: "public-flights",
+      showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
       trackHistoryLimit: 120,
@@ -110,9 +118,11 @@ export const builtInViewProfiles: ViewProfile[] = [
       autoRefresh: true,
       domainScope: "all",
       includeSynthetic: true,
+      mapClusterEnabled: true,
       minConfidence: 0,
       refreshSeconds: 5,
       selectedLayer: "data-quality",
+      showAlertAreas: true,
       showHistory: false,
       showPrediction: false
     }
@@ -128,8 +138,10 @@ export const builtInViewProfiles: ViewProfile[] = [
       autoRefresh: false,
       domainScope: "all",
       includeSynthetic: true,
+      mapClusterEnabled: false,
       minConfidence: 0.1,
       selectedLayer: "air-situation",
+      showAlertAreas: true,
       showHistory: true,
       showPrediction: false,
       trackHistoryLimit: 240,
@@ -204,6 +216,7 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     autoRefresh: optionalBoolean(value.autoRefresh),
     domainScope: optionalString(value.domainScope),
     includeSynthetic: optionalBoolean(value.includeSynthetic),
+    mapClusterEnabled: optionalBoolean(value.mapClusterEnabled),
     mapView: normalizeMapView(value.mapView),
     minConfidence: optionalNumber(value.minConfidence),
     predictionMinutes: optionalNumber(value.predictionMinutes),
@@ -211,6 +224,7 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
     refreshSeconds: optionalNumber(value.refreshSeconds),
     selectedLayer: normalizeLayer(value.selectedLayer),
+    showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
     trackHistoryLimit: optionalNumber(value.trackHistoryLimit),

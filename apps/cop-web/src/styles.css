@@ -1025,6 +1025,7 @@ h1 {
 
 .map-toolbar,
 .map-legend,
+.map-cluster-panel,
 .map-notice,
 .map-empty {
   position: absolute;
@@ -1144,6 +1145,97 @@ h1 {
   border-style: dashed;
   border-width: 1px;
   border-radius: 999px;
+}
+
+.legend-cluster {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(6, 16, 25, 0.86);
+  border-radius: 999px;
+  background: #8cb6d8;
+  color: #061019;
+  font-size: 10px;
+  font-weight: 900;
+  box-shadow: 0 0 0 1px rgba(238, 245, 251, 0.5);
+}
+
+.map-cluster-panel {
+  top: 74px;
+  left: 12px;
+  z-index: 5;
+  display: grid;
+  gap: 8px;
+  width: min(280px, calc(100% - 24px));
+  padding: 10px;
+  color: #dbe7f2;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.map-cluster-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.map-cluster-panel-header span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.map-cluster-panel-header button {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(142, 157, 170, 0.28);
+  background: rgba(22, 32, 43, 0.76);
+  color: #eef5fb;
+  cursor: pointer;
+}
+
+.map-cluster-panel > strong {
+  color: #f4f7fb;
+  font-size: 18px;
+}
+
+.map-cluster-panel > small,
+.map-cluster-panel p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.map-cluster-panel ul {
+  display: grid;
+  gap: 6px;
+  max-height: 170px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.map-cluster-panel li {
+  display: grid;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(142, 157, 170, 0.14);
+}
+
+.map-cluster-panel li span {
+  color: #eef5fb;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.map-cluster-panel li em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
 }
 
 .map-notice {
@@ -2192,6 +2284,14 @@ dd {
     gap: 7px;
     padding: 7px 8px;
     font-size: 11px;
+  }
+
+  .map-cluster-panel {
+    top: auto;
+    left: 10px;
+    right: 10px;
+    bottom: 78px;
+    width: auto;
   }
 
   .track-table {

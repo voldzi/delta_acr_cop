@@ -3,6 +3,7 @@ import {
   alertAreasToFeatureCollection,
   aoiRulesToFeatureCollection,
   fitMapToObjects,
+  formatTrackLabel,
   objectsToHistoryFeatureCollection,
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
@@ -45,10 +46,47 @@ describe("COP map data helpers", () => {
         objectId: "AIR_SIM_AIRCRAFT-0001",
         objectType: "AIRCRAFT",
         confidence: 0.96,
+        label: "AIR_SIM_AIRCRAFT-0001",
         synthetic: true,
         selected: true
       }
     });
+  });
+
+  it("uses flight-data callsigns for map labels before falling back to ICAO24", () => {
+    const publicFlight = {
+      objectId: "flight:icao24:49f007",
+      objectType: "AIRCRAFT",
+      affiliation: "NEUTRAL",
+      domain: "AIR",
+      status: "ACTIVE",
+      confidence: 0.82,
+      position: { lat: 50.1, lon: 14.4 },
+      attributes: {
+        dataOrigin: "PUBLIC_FLIGHT_AGGREGATE",
+        flightData: {
+          callsign: "  CSA42  ",
+          icao24: "49f007",
+          registration: "OK-ABC"
+        }
+      }
+    } satisfies CopObject;
+
+    const fallbackFlight = {
+      ...publicFlight,
+      objectId: "flight:icao24:49f008",
+      attributes: {
+        dataOrigin: "PUBLIC_FLIGHT_AGGREGATE",
+        flightData: {
+          callsign: " ",
+          icao24: "49f008"
+        }
+      }
+    } satisfies CopObject;
+
+    expect(formatTrackLabel(publicFlight)).toBe("CSA42");
+    expect(formatTrackLabel(fallbackFlight)).toBe("49F008");
+    expect(objectsToTrackFeatureCollection([publicFlight]).features[0]?.properties.label).toBe("CSA42");
   });
 
   it("parses map center from longitude and latitude env value", () => {

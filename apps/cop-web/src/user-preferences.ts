@@ -15,6 +15,7 @@ export interface UserPreferences {
   autoRefresh?: boolean;
   domainScope?: string;
   includeSynthetic?: boolean;
+  mapClusterEnabled?: boolean;
   mapView?: MapViewState;
   minConfidence?: number;
   predictionMinutes?: number;
@@ -22,6 +23,7 @@ export interface UserPreferences {
   proximityAlertEnabled?: boolean;
   refreshSeconds?: number;
   selectedLayer?: string;
+  showAlertAreas?: boolean;
   showHistory?: boolean;
   showPrediction?: boolean;
   trackHistoryLimit?: number;
@@ -91,6 +93,7 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     autoRefresh: optionalBoolean(value.autoRefresh),
     domainScope: optionalString(value.domainScope),
     includeSynthetic: optionalBoolean(value.includeSynthetic),
+    mapClusterEnabled: optionalBoolean(value.mapClusterEnabled),
     mapView: normalizeMapView(value.mapView),
     minConfidence: optionalFiniteNumber(value.minConfidence),
     predictionMinutes: optionalFiniteNumber(value.predictionMinutes),
@@ -98,6 +101,7 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
     refreshSeconds: optionalFiniteNumber(value.refreshSeconds),
     selectedLayer: optionalString(value.selectedLayer),
+    showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit),

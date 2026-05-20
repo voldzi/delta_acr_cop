@@ -18,6 +18,7 @@ import {
 } from "./symbology";
 
 const trackSourceId = "cop-live-tracks";
+const trackClusterSourceId = "cop-live-track-clusters";
 const trackHistorySourceId = "cop-track-history";
 const trackPredictionSourceId = "cop-track-prediction";
 const userLocationSourceId = "cop-user-location";
@@ -37,6 +38,11 @@ const userLocationLayerId = "cop-user-location-point";
 const trackSelectedHaloLayerId = "cop-live-track-selected-halo";
 const trackSymbolLayerId = "cop-live-track-symbol";
 const trackLabelLayerId = "cop-live-track-label";
+const trackClusterCircleLayerId = "cop-live-track-cluster-circle";
+const trackClusterCountLayerId = "cop-live-track-cluster-count";
+const trackClusterSelectedHaloLayerId = "cop-live-track-cluster-selected-halo";
+const trackClusterSymbolLayerId = "cop-live-track-cluster-symbol";
+const trackClusterLabelLayerId = "cop-live-track-cluster-label";
 
 const tileUrl = import.meta.env.VITE_COP_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const tileAttribution = import.meta.env.VITE_COP_TILE_ATTRIBUTION ?? "&copy; OpenStreetMap contributors";
@@ -113,6 +119,7 @@ export interface AoiRuleFeatureCollection {
 interface CopMapProps {
   alerts: CopAlert[];
   aoiRules: AoiRule[];
+  clusterTracks: boolean;
   objects: CopObject[];
   emptyMessage: string;
   selectedLayer: CopLayer;
@@ -133,13 +140,27 @@ interface CopMapProps {
   onAutoFitChange: (value: boolean) => void;
   onRequestUserLocation: () => void;
   onViewChange: (view: MapViewState) => void;
+  showAlertAreas: boolean;
   showProximityAlertRadius: boolean;
   userLocation: UserLocation | null;
+}
+
+interface ClusterInfo {
+  center: [number, number];
+  count: number;
+  leaves: Array<{
+    affiliation: string;
+    label: string;
+    objectType: string;
+    status: string;
+  }>;
+  zoom: number;
 }
 
 export function CopMap({
   alerts,
   aoiRules,
+  clusterTracks,
   objects,
   emptyMessage,
   selectedLayer,
@@ -160,6 +181,7 @@ export function CopMap({
   onAutoFitChange,
   onRequestUserLocation,
   onViewChange,
+  showAlertAreas,
   showProximityAlertRadius,
   userLocation
 }: CopMapProps) {
@@ -174,6 +196,7 @@ export function CopMap({
   const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
   const [mapReady, setMapReady] = React.useState(false);
   const [mapError, setMapError] = React.useState<string | null>(null);
+  const [clusterInfo, setClusterInfo] = React.useState<ClusterInfo | null>(null);
 
   const selectedId = selectedObjectId ?? objects[0]?.objectId;
   const positionedObjects = React.useMemo(() => objects.filter(hasPosition), [objects]);
@@ -197,7 +220,10 @@ export function CopMap({
     [alertRadiusKm, hasProximityAlerts, showProximityAlertRadius, userLocation]
   );
   const aoiRuleFeatureCollection = React.useMemo(() => aoiRulesToFeatureCollection(aoiRules), [aoiRules]);
-  const alertAreaFeatureCollection = React.useMemo(() => alertAreasToFeatureCollection(alerts), [alerts]);
+  const alertAreaFeatureCollection = React.useMemo(
+    () => (showAlertAreas ? alertAreasToFeatureCollection(alerts) : emptyPolygonFeatureCollection()),
+    [alerts, showAlertAreas]
+  );
 
   objectsRef.current = objects;
   onSelectObjectRef.current = onSelectObject;
@@ -237,6 +263,13 @@ export function CopMap({
         map.addSource(trackSourceId, {
           type: "geojson",
           data: objectsToTrackFeatureCollection(objectsRef.current, objectsRef.current[0]?.objectId) as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(trackClusterSourceId, {
+          type: "geojson",
+          data: objectsToTrackFeatureCollection(objectsRef.current, objectsRef.current[0]?.objectId) as Parameters<GeoJSONSource["setData"]>[0],
+          cluster: true,
+          clusterMaxZoom: 14,
+          clusterRadius: 52
         });
         map.addSource(trackHistorySourceId, {
           type: "geojson",
@@ -418,6 +451,90 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: trackClusterCircleLayerId,
+          type: "circle",
+          source: trackClusterSourceId,
+          filter: ["has", "point_count"],
+          paint: {
+            "circle-color": ["step", ["get", "point_count"], "#8cb6d8", 8, "#facc15", 22, "#ef4444"],
+            "circle-opacity": 0.88,
+            "circle-radius": ["step", ["get", "point_count"], 18, 8, 24, 22, 30, 60, 36],
+            "circle-stroke-color": "#061019",
+            "circle-stroke-opacity": 0.9,
+            "circle-stroke-width": 2
+          }
+        });
+
+        map.addLayer({
+          id: trackClusterCountLayerId,
+          type: "symbol",
+          source: trackClusterSourceId,
+          filter: ["has", "point_count"],
+          layout: {
+            "text-field": ["get", "point_count_abbreviated"],
+            "text-font": ["Open Sans Bold"],
+            "text-size": ["step", ["get", "point_count"], 12, 8, 13, 22, 14],
+            "text-allow-overlap": true,
+            "text-ignore-placement": true
+          },
+          paint: {
+            "text-color": "#061019",
+            "text-halo-color": "#eef5fb",
+            "text-halo-width": 0.65
+          }
+        });
+
+        map.addLayer({
+          id: trackClusterSelectedHaloLayerId,
+          type: "circle",
+          source: trackClusterSourceId,
+          filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "selected"], true]],
+          paint: {
+            "circle-color": ["get", "symbolColor"],
+            "circle-opacity": 0.16,
+            "circle-radius": 18,
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-opacity": 0.86,
+            "circle-stroke-width": 2
+          }
+        });
+
+        map.addLayer({
+          id: trackClusterSymbolLayerId,
+          type: "symbol",
+          source: trackClusterSourceId,
+          filter: ["!", ["has", "point_count"]],
+          layout: {
+            "icon-image": ["get", "symbolKey"],
+            "icon-size": 0.46,
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true
+          }
+        });
+
+        map.addLayer({
+          id: trackClusterLabelLayerId,
+          type: "symbol",
+          source: trackClusterSourceId,
+          filter: ["!", ["has", "point_count"]],
+          layout: {
+            "text-field": ["get", "label"],
+            "text-font": ["Open Sans Semibold"],
+            "text-size": 11,
+            "text-offset": [0, 1.45],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "text-color": ["get", "symbolColor"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.7,
+            "text-halo-blur": 0.4
+          }
+        });
+
+        map.addLayer({
           id: trackSymbolLayerId,
           type: "symbol",
           source: trackSourceId,
@@ -450,8 +567,17 @@ export function CopMap({
           }
         });
 
+        setTrackClusterVisibility(map, clusterTracks);
+
+        const handleClusterClick = (event: MapLayerMouseEvent) => {
+          void zoomToCluster(map, event, setClusterInfo);
+        };
         map.on("click", trackSymbolLayerId, handleClick);
         map.on("click", trackLabelLayerId, handleClick);
+        map.on("click", trackClusterSymbolLayerId, handleClick);
+        map.on("click", trackClusterLabelLayerId, handleClick);
+        map.on("click", trackClusterCircleLayerId, handleClusterClick);
+        map.on("click", trackClusterCountLayerId, handleClusterClick);
         const handleUserMapInteraction = (event: maplibregl.MapLibreEvent) => {
           if (event.originalEvent) {
             onAutoFitChangeRef.current(false);
@@ -477,10 +603,34 @@ export function CopMap({
         map.on("mouseenter", trackLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", trackClusterCircleLayerId, () => {
+          map.getCanvas().style.cursor = "zoom-in";
+        });
+        map.on("mouseenter", trackClusterCountLayerId, () => {
+          map.getCanvas().style.cursor = "zoom-in";
+        });
+        map.on("mouseenter", trackClusterSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", trackClusterLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseleave", trackSymbolLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", trackLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", trackClusterCircleLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", trackClusterCountLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", trackClusterSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", trackClusterLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         setMapReady(true);
@@ -578,7 +728,22 @@ export function CopMap({
     if (mapReady && source && "setData" in source) {
       (source as GeoJSONSource).setData(featureCollection as Parameters<GeoJSONSource["setData"]>[0]);
     }
+    const clusterSource = mapRef.current?.getSource(trackClusterSourceId);
+    if (mapReady && clusterSource && "setData" in clusterSource) {
+      (clusterSource as GeoJSONSource).setData(featureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
   }, [featureCollection, mapReady]);
+
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) {
+      return;
+    }
+    setTrackClusterVisibility(map, clusterTracks);
+    if (!clusterTracks) {
+      setClusterInfo(null);
+    }
+  }, [clusterTracks, mapReady]);
 
   React.useEffect(() => {
     const source = mapRef.current?.getSource(trackHistorySourceId);
@@ -655,7 +820,9 @@ export function CopMap({
         {showProximityAlertRadius && userLocation ? <RadiusLegendItem active={hasProximityAlerts} label="Výstražný perimetr" /> : null}
         {aoiRuleFeatureCollection.features.length > 0 ? <RadiusLegendItem active={false} label="AOI" /> : null}
         {alertAreaFeatureCollection.features.length > 0 ? <RadiusLegendItem active label="Alert vrstva" /> : null}
+        {clusterTracks ? <ClusterLegendItem label="Shluky" /> : null}
       </div>
+      {clusterInfo ? <ClusterPanel cluster={clusterInfo} onClose={() => setClusterInfo(null)} /> : null}
       {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}
       {mapError ? <div className="map-notice error">Mapový podklad: {mapError}</div> : null}
       {objects.length === 0 ? <div className="map-empty">{emptyMessage}</div> : null}
@@ -682,6 +849,81 @@ function enableMapInteractions(map: maplibregl.Map): void {
 
 function stopMapToolbarEvent(event: React.SyntheticEvent<HTMLElement>): void {
   event.stopPropagation();
+}
+
+function setTrackClusterVisibility(map: maplibregl.Map, clusterTracks: boolean): void {
+  const normalLayerIds = [trackSelectedHaloLayerId, trackSymbolLayerId, trackLabelLayerId];
+  const clusterLayerIds = [
+    trackClusterCircleLayerId,
+    trackClusterCountLayerId,
+    trackClusterSelectedHaloLayerId,
+    trackClusterSymbolLayerId,
+    trackClusterLabelLayerId
+  ];
+
+  normalLayerIds.forEach((layerId) => setLayerVisibility(map, layerId, !clusterTracks));
+  clusterLayerIds.forEach((layerId) => setLayerVisibility(map, layerId, clusterTracks));
+}
+
+function setLayerVisibility(map: maplibregl.Map, layerId: string, visible: boolean): void {
+  if (map.getLayer(layerId)) {
+    map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+  }
+}
+
+async function zoomToCluster(
+  map: maplibregl.Map,
+  event: MapLayerMouseEvent,
+  setClusterInfo: React.Dispatch<React.SetStateAction<ClusterInfo | null>>
+): Promise<void> {
+  const feature = event.features?.[0];
+  const clusterId = Number(feature?.properties?.cluster_id);
+  const pointCount = Number(feature?.properties?.point_count);
+  const center = extractPointCoordinates(feature);
+  const source = map.getSource(trackClusterSourceId);
+  if (!Number.isFinite(clusterId) || !Number.isFinite(pointCount) || !center || !source || !("getClusterExpansionZoom" in source)) {
+    return;
+  }
+
+  const clusterSource = source as GeoJSONSource;
+  const [zoom, leaves] = await Promise.all([
+    clusterSource.getClusterExpansionZoom(clusterId),
+    clusterSource.getClusterLeaves(clusterId, Math.min(pointCount, 12), 0).catch(() => [])
+  ]);
+  setClusterInfo({
+    center,
+    count: pointCount,
+    leaves: leaves.map(clusterLeafToInfo).filter((leaf): leaf is ClusterInfo["leaves"][number] => leaf !== null),
+    zoom
+  });
+  map.easeTo({
+    center,
+    duration: 650,
+    zoom: Math.min(17, Math.max(map.getZoom() + 1, zoom + 0.35))
+  });
+}
+
+function extractPointCoordinates(feature: NonNullable<MapLayerMouseEvent["features"]>[number] | undefined): [number, number] | null {
+  const coordinates = (feature?.geometry as { coordinates?: unknown } | undefined)?.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length < 2) {
+    return null;
+  }
+  const lon = Number(coordinates[0]);
+  const lat = Number(coordinates[1]);
+  return Number.isFinite(lon) && Number.isFinite(lat) ? [lon, lat] : null;
+}
+
+function clusterLeafToInfo(feature: unknown): ClusterInfo["leaves"][number] | null {
+  const properties = isRecord((feature as { properties?: unknown })?.properties) ? (feature as { properties: Record<string, unknown> }).properties : null;
+  if (!properties) {
+    return null;
+  }
+  return {
+    affiliation: stringProperty(properties.affiliation) ?? "UNKNOWN",
+    label: stringProperty(properties.label) ?? stringProperty(properties.objectId) ?? "track",
+    objectType: stringProperty(properties.objectType) ?? "UNKNOWN",
+    status: stringProperty(properties.status) ?? "n/a"
+  };
 }
 
 export function alertAreasToFeatureCollection(alerts: CopAlert[]): AlertAreaFeatureCollection {
@@ -756,13 +998,53 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
           selected: object.objectId === selectedObjectId,
           symbolCode: symbol.symbolCode,
           symbolKey: getNatoIconKey(object.objectType, object.affiliation),
-          label: object.objectId,
+          label: formatTrackLabel(object),
           symbolColor: affiliation.color,
           symbolDisposition: affiliation.disposition
         }
       };
     })
   };
+}
+
+export function formatTrackLabel(object: CopObject): string {
+  const flightData = object.attributes?.flightData;
+  const callsign = cleanTrackLabel(flightData?.callsign);
+  if (callsign) {
+    return callsign;
+  }
+
+  const registration = cleanTrackLabel(flightData?.registration);
+  if (registration) {
+    return registration;
+  }
+
+  const icao24 = cleanTrackLabel(flightData?.icao24);
+  if (icao24) {
+    return icao24.toUpperCase();
+  }
+
+  return object.objectId;
+}
+
+function cleanTrackLabel(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringProperty(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 export function objectsToHistoryFeatureCollection(
@@ -1117,6 +1399,50 @@ function RadiusLegendItem({ active, label }: { active: boolean; label: string })
         }}
       />
       {label}
+    </div>
+  );
+}
+
+function ClusterLegendItem({ label }: { label: string }) {
+  return (
+    <div className="legend-item">
+      <span className="legend-cluster">12</span>
+      {label}
+    </div>
+  );
+}
+
+function ClusterPanel({ cluster, onClose }: { cluster: ClusterInfo; onClose: () => void }) {
+  return (
+    <div
+      className="map-cluster-panel"
+      onClick={stopMapToolbarEvent}
+      onDoubleClick={stopMapToolbarEvent}
+      onPointerDown={stopMapToolbarEvent}
+      onWheel={stopMapToolbarEvent}
+    >
+      <div className="map-cluster-panel-header">
+        <span>Shluk objektů</span>
+        <button aria-label="Zavřít detail shluku" onClick={onClose} type="button">
+          ×
+        </button>
+      </div>
+      <strong>{cluster.count} objektů</strong>
+      <small>
+        {cluster.center[1].toFixed(4)}, {cluster.center[0].toFixed(4)} · zoom {cluster.zoom.toFixed(1)}
+      </small>
+      {cluster.leaves.length > 0 ? (
+        <ul>
+          {cluster.leaves.slice(0, 6).map((leaf, index) => (
+            <li key={`${leaf.label}-${index}`}>
+              <span>{leaf.label}</span>
+              <em>{leaf.objectType} · {leaf.affiliation} · {leaf.status}</em>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>Detail shluku bude dostupný po přiblížení.</p>
+      )}
     </div>
   );
 }

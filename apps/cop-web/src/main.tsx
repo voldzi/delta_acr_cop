@@ -219,6 +219,8 @@ export function App() {
   const [showPrediction, setShowPrediction] = React.useState(() =>
     readInitialMapToggle("prediction", initialPreferences.showPrediction ?? false)
   );
+  const [mapClusterEnabled, setMapClusterEnabled] = React.useState(initialPreferences.mapClusterEnabled ?? true);
+  const [showAlertAreas, setShowAlertAreas] = React.useState(initialPreferences.showAlertAreas ?? false);
   const [predictionMinutes, setPredictionMinutes] = React.useState(() => clamp(initialPreferences.predictionMinutes ?? 10, 2, 20));
   const [predictionMode, setPredictionMode] = React.useState<PredictionMode>(() => readInitialPredictionMode(initialPreferences.predictionMode));
   const [trackHistoryLimit, setTrackHistoryLimit] = React.useState(() => readInitialHistoryLimit(initialPreferences.trackHistoryLimit));
@@ -603,6 +605,12 @@ export function App() {
     if (settings.showPrediction !== undefined) {
       setShowPrediction(settings.showPrediction);
     }
+    if (settings.mapClusterEnabled !== undefined) {
+      setMapClusterEnabled(settings.mapClusterEnabled);
+    }
+    if (settings.showAlertAreas !== undefined) {
+      setShowAlertAreas(settings.showAlertAreas);
+    }
     if (settings.predictionMinutes !== undefined) {
       setPredictionMinutes(clamp(settings.predictionMinutes, 2, 20));
     }
@@ -645,6 +653,7 @@ export function App() {
     autoRefresh,
     domainScope,
     includeSynthetic,
+    mapClusterEnabled,
     mapView,
     minConfidence,
     predictionMinutes,
@@ -652,6 +661,7 @@ export function App() {
     proximityAlertEnabled,
     refreshSeconds,
     selectedLayer,
+    showAlertAreas,
     showHistory,
     showPrediction,
     trackHistoryLimit,
@@ -664,6 +674,7 @@ export function App() {
     autoRefresh,
     domainScope,
     includeSynthetic,
+    mapClusterEnabled,
     mapView,
     minConfidence,
     predictionMinutes,
@@ -671,6 +682,7 @@ export function App() {
     proximityAlertEnabled,
     refreshSeconds,
     selectedLayer,
+    showAlertAreas,
     showHistory,
     showPrediction,
     trackHistoryLimit,
@@ -1010,6 +1022,7 @@ export function App() {
         autoRefresh,
         domainScope,
         includeSynthetic,
+        mapClusterEnabled,
         mapView,
         minConfidence,
         predictionMinutes,
@@ -1017,6 +1030,7 @@ export function App() {
         proximityAlertEnabled,
         refreshSeconds,
         selectedLayer,
+        showAlertAreas,
         showHistory,
         showPrediction,
         trackHistoryLimit,
@@ -1165,7 +1179,7 @@ export function App() {
               <PanelTitle icon={<AlertTriangle size={17} />} title="Alert Center" />
               <ReadinessRow label="Serverové alerty" value={String(serverAlerts.length)} tone={serverAlerts.length > 0 ? "warn" : "ok"} />
               <ReadinessRow label="Critical" value={String(alertSummary.critical)} tone={alertSummary.critical > 0 ? "warn" : "ok"} />
-              <ReadinessRow label="Vrstva na mapě" value={proximityAlertEnabled ? "aktivní" : "vypnuto"} tone={proximityAlertEnabled ? "ok" : "neutral"} />
+              <ReadinessRow label="Vrstva na mapě" value={showAlertAreas || proximityAlertEnabled ? "aktivní" : "vypnuto"} tone={showAlertAreas || proximityAlertEnabled ? "ok" : "neutral"} />
               <ReadinessRow label="AOI pravidla" value={String(aoiRules.filter((rule) => rule.enabled).length)} tone={aoiRules.some((rule) => rule.enabled) ? "ok" : "neutral"} />
               <ReadinessRow label="Poloměr" value={`${alertRadiusKm} km`} tone="neutral" />
               <ReadinessRow label="Moje poloha" value={String(proximityAlerts.length)} tone={proximityAlerts.length > 0 ? "warn" : "ok"} />
@@ -1227,6 +1241,7 @@ export function App() {
             <CopMap
               alerts={mapAlerts}
               aoiRules={aoiRules}
+              clusterTracks={mapClusterEnabled}
               objects={visibleObjects}
               emptyMessage={mapEmptyMessage}
               selectedLayer={selectedLayer}
@@ -1247,6 +1262,7 @@ export function App() {
               onAutoFitChange={setAutoFit}
               onRequestUserLocation={locateUser}
               onViewChange={setMapView}
+              showAlertAreas={showAlertAreas}
               showProximityAlertRadius={proximityAlertEnabled}
               userLocation={userLocation}
             />
@@ -1357,6 +1373,8 @@ export function App() {
             {streamTelemetry.lastError ? <ReadinessRow label="Stream error" value={streamTelemetry.lastError} tone="warn" /> : null}
             <ReadinessRow label="User profile" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
             <ReadinessRow label="Fallback sync" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
+            <ReadinessRow label="Map clusters" value={mapClusterEnabled ? "enabled" : "off"} tone={mapClusterEnabled ? "ok" : "neutral"} />
+            <ReadinessRow label="Alert map areas" value={showAlertAreas ? "enabled" : "off"} tone={showAlertAreas ? "warn" : "neutral"} />
             <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
             <ReadinessRow label="Replay" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
             <ReadinessRow label="Alert Center" value={`${alertSummary.server} server · ${alertSummary.local} local`} tone={alertSummary.total > 0 ? "warn" : "ok"} />
@@ -1408,6 +1426,8 @@ export function App() {
           proximityAlertEnabled={proximityAlertEnabled}
           refreshSeconds={refreshSeconds}
           serverProfileUpdatedAt={serverProfileUpdatedAt}
+          mapClusterEnabled={mapClusterEnabled}
+          showAlertAreas={showAlertAreas}
           showHistory={showHistory}
           showPrediction={showPrediction}
           trackHistoryLimit={trackHistoryLimit}
@@ -1423,10 +1443,12 @@ export function App() {
           onClose={() => setSettingsOpen(false)}
           onIncludeSyntheticChange={setIncludeSynthetic}
           onMinConfidenceChange={setMinConfidence}
+          onMapClusterEnabledChange={setMapClusterEnabled}
           onPredictionMinutesChange={setPredictionMinutes}
           onPredictionModeChange={setPredictionMode}
           onProximityAlertEnabledChange={(value) => void handleProximityAlertToggle(value)}
           onRefreshSecondsChange={setRefreshSeconds}
+          onShowAlertAreasChange={setShowAlertAreas}
           onShowHistoryChange={setShowHistory}
           onShowPredictionChange={setShowPrediction}
           onTabChange={setSettingsTab}
@@ -1966,6 +1988,7 @@ function SettingsDrawer({
   authSession,
   autoRefresh,
   includeSynthetic,
+  mapClusterEnabled,
   minConfidence,
   predictionMinutes,
   predictionMode,
@@ -1974,6 +1997,7 @@ function SettingsDrawer({
   proximityAlertEnabled,
   refreshSeconds,
   serverProfileUpdatedAt,
+  showAlertAreas,
   showHistory,
   showPrediction,
   trackHistoryLimit,
@@ -1988,11 +2012,13 @@ function SettingsDrawer({
   onAutoRefreshChange,
   onClose,
   onIncludeSyntheticChange,
+  onMapClusterEnabledChange,
   onMinConfidenceChange,
   onPredictionMinutesChange,
   onPredictionModeChange,
   onProximityAlertEnabledChange,
   onRefreshSecondsChange,
+  onShowAlertAreasChange,
   onShowHistoryChange,
   onShowPredictionChange,
   onTabChange,
@@ -2008,6 +2034,7 @@ function SettingsDrawer({
   authSession: AuthSession;
   autoRefresh: boolean;
   includeSynthetic: boolean;
+  mapClusterEnabled: boolean;
   minConfidence: number;
   predictionMinutes: number;
   predictionMode: PredictionMode;
@@ -2016,6 +2043,7 @@ function SettingsDrawer({
   proximityAlertEnabled: boolean;
   refreshSeconds: RefreshSeconds;
   serverProfileUpdatedAt: string | null;
+  showAlertAreas: boolean;
   showHistory: boolean;
   showPrediction: boolean;
   trackHistoryLimit: number;
@@ -2030,11 +2058,13 @@ function SettingsDrawer({
   onAutoRefreshChange: (value: boolean) => void;
   onClose: () => void;
   onIncludeSyntheticChange: (value: boolean) => void;
+  onMapClusterEnabledChange: (value: boolean) => void;
   onMinConfidenceChange: (value: number) => void;
   onPredictionMinutesChange: (value: number) => void;
   onPredictionModeChange: (value: PredictionMode) => void;
   onProximityAlertEnabledChange: (value: boolean) => void;
   onRefreshSecondsChange: (value: RefreshSeconds) => void;
+  onShowAlertAreasChange: (value: boolean) => void;
   onShowHistoryChange: (value: boolean) => void;
   onShowPredictionChange: (value: boolean) => void;
   onTabChange: (value: SettingsTab) => void;
@@ -2078,6 +2108,12 @@ function SettingsDrawer({
         <div className="settings-content">
           {activeTab === "map" ? (
             <section className="settings-section">
+              <PanelTitle icon={<Layers size={17} />} title="Zobrazení mapy" />
+              <label className="toggle-row">
+                <input type="checkbox" checked={mapClusterEnabled} onChange={(event) => onMapClusterEnabledChange(event.target.checked)} />
+                Shlukovat objekty při oddálení
+              </label>
+              <p className="settings-help">Kliknutí na shluk mapu přiblíží a ukáže náhled objektů uvnitř. Po dalším přiblížení se shluky rozpadají do menších skupin a jednotlivých stop.</p>
               <PanelTitle icon={<History size={17} />} title="Historie a predikce" />
               <label className="toggle-row">
                 <input type="checkbox" checked={showHistory} onChange={(event) => onShowHistoryChange(event.target.checked)} />
@@ -2158,6 +2194,11 @@ function SettingsDrawer({
                 <input type="checkbox" checked={proximityAlertEnabled} onChange={(event) => onProximityAlertEnabledChange(event.target.checked)} />
                 Výstraha při přiblížení cizího cíle
               </label>
+              <label className="toggle-row">
+                <input type="checkbox" checked={showAlertAreas} onChange={(event) => onShowAlertAreasChange(event.target.checked)} />
+                Serverové výstražné kruhy v mapě
+              </label>
+              <p className="settings-help">Žluté kruhy kolem flight-data stop jsou mapové oblasti aktivních serverových výstrah, typicky AOI, stale nebo nízká confidence. Vypnutím zůstane seznam výstrah dostupný bez zahlcení mapy.</p>
               <label className="range-label">
                 Poloměr výstrahy
                 <input
