@@ -76,7 +76,7 @@ COP_OIDC_ISSUER=https://login.zeleznalady.cz/realms/cop
 COP_OIDC_CLIENT_ID=cop-web
 COP_OIDC_ALLOWED_CLIENTS=cop-web
 COP_OIDC_REQUIRED_ROLE=cop_operator
-COP_OIDC_SCOPE=openid profile email
+COP_OIDC_SCOPE="openid profile email"
 COP_USER_PROFILE_STORE=auto
 ```
 
