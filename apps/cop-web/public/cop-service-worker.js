@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260519-1";
+const COP_SW_VERSION = "cop-pwa-offline-20260520-1";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -63,6 +63,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.origin === self.location.origin) {
+    if (isAppAssetRequest(request, url)) {
+      event.respondWith(networkFirstRuntime(request, RUNTIME_CACHE, MAX_RUNTIME_ENTRIES));
+      return;
+    }
     event.respondWith(staleWhileRevalidate(request, RUNTIME_CACHE, MAX_RUNTIME_ENTRIES));
   }
 });
@@ -95,6 +99,20 @@ async function staleWhileRevalidate(request, cacheName, maxEntries) {
   return cached || (await refresh) || Response.error();
 }
 
+async function networkFirstRuntime(request, cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
+  try {
+    const response = await fetch(request, { cache: "no-cache" });
+    if (response && (response.ok || response.type === "opaque")) {
+      await cache.put(request, response.clone());
+      await trimCache(cache, maxEntries);
+    }
+    return response;
+  } catch {
+    return (await cache.match(request)) || Response.error();
+  }
+}
+
 async function cacheFirst(request, cacheName, maxEntries) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
@@ -123,4 +141,14 @@ function isMapTileRequest(request, url) {
     return true;
   }
   return url.hostname === "tile.openstreetmap.org";
+}
+
+function isAppAssetRequest(request, url) {
+  if (url.pathname === "/cop-service-worker.js" || url.pathname === "/site.webmanifest") {
+    return true;
+  }
+  if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/icons/")) {
+    return true;
+  }
+  return ["script", "style", "worker", "manifest", "font"].includes(request.destination);
 }

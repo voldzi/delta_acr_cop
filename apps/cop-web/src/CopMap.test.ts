@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   alertAreasToFeatureCollection,
   aoiRulesToFeatureCollection,
+  fitMapToObjects,
   objectsToHistoryFeatureCollection,
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
@@ -53,6 +54,57 @@ describe("COP map data helpers", () => {
   it("parses map center from longitude and latitude env value", () => {
     expect(parseMapCenter("15.1,50.2")).toEqual([15.1, 50.2]);
     expect(parseMapCenter("invalid")).toEqual([14.42, 50.08]);
+  });
+
+  it("fits the map to one or more positioned tracks", () => {
+    const singleMap = {
+      easeTo: vi.fn(),
+      fitBounds: vi.fn(),
+      getZoom: vi.fn(() => 8)
+    };
+    const multiMap = {
+      easeTo: vi.fn(),
+      fitBounds: vi.fn(),
+      getZoom: vi.fn(() => 8)
+    };
+    const objects = [
+      {
+        objectId: "AIR_SIM_UAV-0001",
+        objectType: "UAV",
+        affiliation: "HOSTILE",
+        domain: "AIR",
+        status: "ACTIVE",
+        confidence: 0.94,
+        synthetic: true,
+        position: { lat: 50, lon: 14 }
+      },
+      {
+        objectId: "AIR_SIM_UAV-0002",
+        objectType: "UAV",
+        affiliation: "FRIEND",
+        domain: "AIR",
+        status: "ACTIVE",
+        confidence: 0.92,
+        synthetic: true,
+        position: { lat: 50.2, lon: 14.4 }
+      }
+    ] satisfies CopObject[];
+
+    expect(fitMapToObjects(singleMap as never, [objects[0]!])).toBe(true);
+    expect(singleMap.easeTo).toHaveBeenCalledWith({
+      center: [14, 50],
+      duration: 650,
+      zoom: 10
+    });
+
+    expect(fitMapToObjects(multiMap as never, objects)).toBe(true);
+    expect(multiMap.fitBounds).toHaveBeenCalledWith(expect.anything(), {
+      duration: 750,
+      maxZoom: 12,
+      padding: { top: 86, right: 72, bottom: 72, left: 72 }
+    });
+    expect(fitMapToObjects(null, objects)).toBe(false);
+    expect(fitMapToObjects(multiMap as never, [{ ...objects[0]!, position: undefined }])).toBe(false);
   });
 
   it("builds route history and prediction line features", () => {

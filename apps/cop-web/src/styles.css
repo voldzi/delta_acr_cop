@@ -999,16 +999,26 @@ h1 {
   min-height: 0;
   overflow: hidden;
   background: #0c151d;
+  touch-action: none;
 }
 
 .map-canvas {
   position: absolute;
   inset: 0;
   z-index: 0;
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .map-canvas canvas {
   outline: none;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.map-canvas .maplibregl-canvas-container {
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .map-toolbar,
@@ -1032,6 +1042,11 @@ h1 {
   max-width: calc(100% - 92px);
   padding: 8px;
   pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.map-toolbar * {
+  touch-action: manipulation;
 }
 
 .map-toolbar div {

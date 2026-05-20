@@ -170,6 +170,7 @@ export function CopMap({
   const onAutoFitChangeRef = React.useRef(onAutoFitChange);
   const onViewChangeRef = React.useRef(onViewChange);
   const lastFitSignatureRef = React.useRef("");
+  const handledFocusViewRequestRef = React.useRef(0);
   const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
   const [mapReady, setMapReady] = React.useState(false);
   const [mapError, setMapError] = React.useState<string | null>(null);
@@ -559,9 +560,10 @@ export function CopMap({
   }, [focusUserLocationRequest, mapReady, userLocation]);
 
   React.useEffect(() => {
-    if (!mapReady || !focusView || focusViewRequest === 0) {
+    if (!mapReady || !focusView || focusViewRequest === 0 || handledFocusViewRequestRef.current === focusViewRequest) {
       return;
     }
+    handledFocusViewRequestRef.current = focusViewRequest;
     mapRef.current?.easeTo({
       bearing: focusView.bearing ?? 0,
       center: focusView.center,
@@ -597,16 +599,14 @@ export function CopMap({
       return;
     }
 
-    const signature = positionedObjects
-      .map((object) => object.objectId)
-      .sort()
-      .join("|");
+    const signature = buildFitSignature(positionedObjects);
     if (lastFitSignatureRef.current === signature) {
       return;
     }
 
-    fitMapToObjects(mapRef.current, positionedObjects);
-    lastFitSignatureRef.current = signature;
+    if (fitMapToObjects(mapRef.current, positionedObjects)) {
+      lastFitSignatureRef.current = signature;
+    }
   }, [autoFit, mapReady, positionedObjects]);
 
   const missingPositionCount = objects.length - positionedObjects.length;
@@ -614,7 +614,13 @@ export function CopMap({
   return (
     <div className="map-container">
       <div className="map-canvas" ref={containerRef} aria-label="COP georeferenced map" />
-      <div className="map-toolbar" onPointerDown={stopMapToolbarEvent}>
+      <div
+        className="map-toolbar"
+        onClick={stopMapToolbarEvent}
+        onDoubleClick={stopMapToolbarEvent}
+        onPointerDown={stopMapToolbarEvent}
+        onWheel={stopMapToolbarEvent}
+      >
         <div>
           <span>Map layer</span>
           <strong>{selectedLayer}</strong>
@@ -622,9 +628,10 @@ export function CopMap({
         <button
           className={`map-action ${autoFit ? "active" : ""}`}
           onClick={() => {
-            onAutoFitChange(!autoFit);
-            if (!autoFit) {
-              fitMapToObjects(mapRef.current, positionedObjects);
+            const nextAutoFit = !autoFit;
+            onAutoFitChange(nextAutoFit);
+            if (nextAutoFit && fitMapToObjects(mapRef.current, positionedObjects)) {
+              lastFitSignatureRef.current = buildFitSignature(positionedObjects);
             }
           }}
           type="button"
@@ -664,9 +671,16 @@ function enableMapInteractions(map: maplibregl.Map): void {
   map.keyboard.enable();
   map.doubleClickZoom.enable();
   map.touchZoomRotate.enable();
+
+  const canvas = map.getCanvas();
+  const canvasContainer = map.getCanvasContainer();
+  canvas.style.pointerEvents = "auto";
+  canvas.style.touchAction = "none";
+  canvasContainer.style.pointerEvents = "auto";
+  canvasContainer.style.touchAction = "none";
 }
 
-function stopMapToolbarEvent(event: React.PointerEvent<HTMLDivElement>): void {
+function stopMapToolbarEvent(event: React.SyntheticEvent<HTMLElement>): void {
   event.stopPropagation();
 }
 
@@ -970,10 +984,10 @@ function createRasterStyle(tiles: string, attribution: string): StyleSpecificati
   };
 }
 
-function fitMapToObjects(map: maplibregl.Map | null, objects: CopObject[]) {
+export function fitMapToObjects(map: maplibregl.Map | null, objects: CopObject[]): boolean {
   const positionedObjects = objects.filter(hasPosition);
   if (!map || positionedObjects.length === 0) {
-    return;
+    return false;
   }
 
   const bounds = new maplibregl.LngLatBounds();
@@ -987,7 +1001,7 @@ function fitMapToObjects(map: maplibregl.Map | null, objects: CopObject[]) {
       zoom: Math.max(map.getZoom(), 10),
       duration: 650
     });
-    return;
+    return true;
   }
 
   map.fitBounds(bounds, {
@@ -995,6 +1009,15 @@ function fitMapToObjects(map: maplibregl.Map | null, objects: CopObject[]) {
     maxZoom: 12,
     duration: 750
   });
+  return true;
+}
+
+function buildFitSignature(objects: CopObject[]): string {
+  return objects
+    .filter(hasPosition)
+    .map((object) => object.objectId)
+    .sort()
+    .join("|");
 }
 
 function hasPosition(object: CopObject): object is CopObject & { position: NonNullable<CopObject["position"]> } {
