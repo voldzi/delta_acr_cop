@@ -1392,6 +1392,10 @@ export function App() {
     void beginLogin(authConfig);
   }
 
+  function openLoginPrompt() {
+    openSettings("account");
+  }
+
   function logoutOperator() {
     endSession(authConfig, authSession);
     setAuthSession(createInitialAuthSession(authConfig));
@@ -1403,6 +1407,11 @@ export function App() {
   }
 
   function saveCurrentViewProfile() {
+    if (!profileAccessReady) {
+      setProfileSyncError("Uložení profilu pohledu je dostupné po přihlášení přes Keycloak.");
+      openSettings("account");
+      return;
+    }
     const now = new Date();
     const name = `Pohled ${workspaceLabel(activeWorkspace)} ${now.toLocaleTimeString("cs-CZ", {
       hour: "2-digit",
@@ -1595,9 +1604,11 @@ export function App() {
             <>
               <ViewProfilesPanel
                 activeProfileName={lastProfileName}
+                canSave={profileAccessReady}
                 profiles={viewProfiles}
                 userScope={userStorageScope}
                 onApply={applyViewProfile}
+                onLogin={openLoginPrompt}
                 onSave={saveCurrentViewProfile}
               />
 
@@ -1816,7 +1827,9 @@ export function App() {
             <section className="operations-deck alert-operations-deck">
               <AlertCenterBoard
                 alerts={serverAlerts}
+                canAcknowledge={profileAccessReady}
                 onAcknowledge={(alertId) => void acknowledgeServerAlert(alertId)}
+                onLogin={openLoginPrompt}
                 onSelectObject={(objectId) => {
                   setSelectedObjectId(objectId);
                   setSelectedSituationFeatureId(null);
@@ -1946,30 +1959,46 @@ export function App() {
           ) : null}
 
           {activeWorkspace === "map" || activeWorkspace === "alerts" ? (
-          <div className="personal-awareness-box">
-            <PanelTitle icon={<MapPin size={17} />} title="Moje poloha" />
-            <button className="primary-button secondary" disabled={isLocating} onClick={locateUser} type="button">
-              <MapPin size={16} />
-              {isLocating ? "Zaměřuji polohu" : "Centrovat na mou polohu"}
-            </button>
-            <p>{locationStatus}</p>
-            <ReadinessRow label="Výstraha" value={proximityAlertEnabled ? `${alertRadiusKm} km` : "vypnuto"} tone={proximityAlertEnabled ? "ok" : "neutral"} />
-            <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
-              <Settings size={14} />
-              Nastavení výstrah
-            </button>
-            <ProximityAlertList alerts={proximityAlerts} />
-          </div>
+            <>
+              <AccountAccessBox
+                authenticated={profileAccessReady}
+                profileSyncStatus={profileSyncStatus}
+                publicReadEnabled={authConfig.publicReadEnabled}
+                session={authSession}
+                onLogin={openLoginPrompt}
+              />
+              <div className="personal-awareness-box">
+                <PanelTitle icon={<MapPin size={17} />} title="Moje poloha" />
+                <button className="primary-button secondary" disabled={isLocating} onClick={locateUser} type="button">
+                  <MapPin size={16} />
+                  {isLocating ? "Zaměřuji polohu" : "Centrovat na mou polohu"}
+                </button>
+                <p>{locationStatus}</p>
+                <ReadinessRow label="Výstraha" value={proximityAlertEnabled ? `${alertRadiusKm} km` : "vypnuto"} tone={proximityAlertEnabled ? "ok" : "neutral"} />
+                <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
+                  <Settings size={14} />
+                  Nastavení výstrah
+                </button>
+                <ProximityAlertList alerts={proximityAlerts} />
+              </div>
+            </>
           ) : null}
 
           {activeWorkspace === "data" ? (
           <div className="ai-box">
             <PanelTitle icon={<Bot size={17} />} title="AI assistant" />
-            <p>{aiResult}</p>
-            <button className="primary-button" onClick={askAi}>
-              <Sparkles size={16} />
-              Zkontrolovat kvalitu dat
-            </button>
+            <p>{profileAccessReady ? aiResult : "AI asistent je přihlášená funkce. Veřejný režim zobrazuje data bez účtu, ale neposílá osobní ani provozní dotazy."}</p>
+            {profileAccessReady ? (
+              <button className="primary-button" onClick={askAi}>
+                <Sparkles size={16} />
+                Zkontrolovat kvalitu dat
+              </button>
+            ) : (
+              <button className="primary-button secondary" onClick={openLoginPrompt} type="button">
+                <LogIn size={16} />
+                Přihlásit pro AI
+              </button>
+            )}
           </div>
           ) : null}
         </aside>
@@ -2058,11 +2087,15 @@ function ProximityAlertList({ alerts }: { alerts: ProximityAlert[] }) {
 
 function AlertCenterBoard({
   alerts,
+  canAcknowledge,
   onAcknowledge,
+  onLogin,
   onSelectObject
 }: {
   alerts: CopAlert[];
+  canAcknowledge: boolean;
   onAcknowledge: (alertId: string) => void;
+  onLogin: () => void;
   onSelectObject: (objectId: string) => void;
 }) {
   const summary = summarizeAlerts(alerts, []);
@@ -2094,12 +2127,51 @@ function AlertCenterBoard({
                 <span>{alertTypeLabel(alert.type)}</span>
               </div>
             </div>
-            <button className="mini-button" onClick={() => onAcknowledge(alert.alertId)} type="button">
-              Potvrdit
-            </button>
+            {canAcknowledge ? (
+              <button className="mini-button" onClick={() => onAcknowledge(alert.alertId)} type="button">
+                Potvrdit
+              </button>
+            ) : (
+              <button className="mini-button" onClick={onLogin} type="button">
+                Přihlásit
+              </button>
+            )}
           </article>
         ))}
       </div>
+    </div>
+  );
+}
+
+function AccountAccessBox({
+  authenticated,
+  profileSyncStatus,
+  publicReadEnabled,
+  session,
+  onLogin
+}: {
+  authenticated: boolean;
+  profileSyncStatus: ProfileSyncStatus;
+  publicReadEnabled: boolean;
+  session: AuthSession;
+  onLogin: () => void;
+}) {
+  return (
+    <div className="account-access-box">
+      <PanelTitle icon={<UserCircle size={17} />} title="Režim účtu" />
+      <ReadinessRow label="Mapa a veřejná data" value={publicReadEnabled ? "dostupné bez účtu" : "vyžaduje účet"} tone={publicReadEnabled ? "ok" : "warn"} />
+      <ReadinessRow label="Přihlášení" value={authenticated ? session.profile?.name ?? "aktivní" : "bez přihlášení"} tone={authenticated ? "ok" : "neutral"} />
+      <ReadinessRow label="Serverový profil" value={authenticated ? profileSyncLabel(profileSyncStatus) : "zamčeno"} tone={authenticated ? profileSyncTone(profileSyncStatus) : "neutral"} />
+      <ReadinessRow label="Přispívání" value={authenticated ? "účet připraven" : "vyžaduje účet"} tone={authenticated ? "ok" : "neutral"} />
+      {!authenticated ? (
+        <>
+          <p>Bez přihlášení zůstává aplikace read-only. Přihlášení odemkne ukládání profilu, potvrzování výstrah a komunitní hlášení.</p>
+          <button className="primary-button secondary" onClick={onLogin} type="button">
+            <LogIn size={16} />
+            Přihlásit přes Keycloak
+          </button>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -2293,15 +2365,19 @@ function WorkspaceNavigator({
 
 function ViewProfilesPanel({
   activeProfileName,
+  canSave,
   profiles,
   userScope,
   onApply,
+  onLogin,
   onSave
 }: {
   activeProfileName: string | null;
+  canSave: boolean;
   profiles: ViewProfile[];
   userScope: string;
   onApply: (profile: ViewProfile) => void;
+  onLogin: () => void;
   onSave: () => void;
   }) {
   return (
@@ -2324,10 +2400,20 @@ function ViewProfilesPanel({
           </button>
         ))}
       </div>
-      <button className="mini-button wide save-profile-button" onClick={onSave} type="button">
-        <Settings size={14} />
-        Uložit aktuální pohled
-      </button>
+      {canSave ? (
+        <button className="mini-button wide save-profile-button" onClick={onSave} type="button">
+          <Settings size={14} />
+          Uložit aktuální pohled
+        </button>
+      ) : (
+        <div className="profile-login-gate">
+          <span>Ukládání vlastních profilů je dostupné po přihlášení.</span>
+          <button className="mini-button wide save-profile-button" onClick={onLogin} type="button">
+            <LogIn size={14} />
+            Přihlásit pro uložení
+          </button>
+        </div>
+      )}
       {activeProfileName ? <div className="profile-applied-note">Aktivní: {activeProfileName}</div> : null}
     </div>
   );

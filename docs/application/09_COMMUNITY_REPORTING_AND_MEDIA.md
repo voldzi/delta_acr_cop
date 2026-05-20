@@ -140,6 +140,17 @@ Navržené role:
 - `cop_moderator`: validuje reporty, skrývá závadný obsah;
 - `cop_admin`: správa konfigurace.
 
+## Web režimy
+
+Veřejný web má dva zřetelné režimy:
+
+- anonymní read-only režim: mapa, veřejné zdroje, situační vrstvy, bezpečnostní vrstvy, tracky, historie a publikovaná komunitní hlášení;
+- přihlášený režim: serverový profil pohledu, potvrzování výstrah, AI asistent a připravený účet pro navazující tvorbu komunitních hlášení a upload médií.
+
+Anonymní uživatel nesmí dostat lab token ve web bundle. `COP_PUBLIC_LAB_VALUE` proto zůstává pro veřejné nasazení prázdné. Serverový `COP_LAB_TOKEN` může zůstat jen pro interní pilotní zdroje.
+
+UI nyní zobrazuje panel režimu účtu a zamyká ukládání vlastních profilů pohledu, potvrzování serverových výstrah a AI akce za přihlášení přes Keycloak. Lokální mapové čtení zůstává dostupné bez účtu.
+
 ## AI
 
 AI nesmí být nutná pro základní provoz. Doporučený model:
