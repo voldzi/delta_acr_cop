@@ -5,6 +5,7 @@ export interface AuthConfig {
   clientId: string;
   issuer: string;
   mode: AuthMode;
+  publicReadEnabled: boolean;
   scope: string;
 }
 
@@ -50,6 +51,7 @@ export function readAuthConfig(): AuthConfig {
     clientId: import.meta.env.VITE_COP_OIDC_CLIENT_ID ?? "cop-web",
     issuer: normalizeIssuer(import.meta.env.VITE_COP_OIDC_ISSUER ?? ""),
     mode: readAuthMode(import.meta.env.VITE_COP_AUTH_MODE),
+    publicReadEnabled: readBoolean(import.meta.env.VITE_COP_PUBLIC_READ_ENABLED),
     scope: import.meta.env.VITE_COP_OIDC_SCOPE ?? "openid profile email"
   };
 }
@@ -101,8 +103,11 @@ export async function initializeAuth(config: AuthConfig): Promise<AuthSession> {
   return { status: "anonymous" };
 }
 
-export function getAuthorizationToken(session: AuthSession, labToken: string): string {
-  return session.accessToken ?? labToken;
+export function getAuthorizationToken(session: AuthSession, labToken: string): string | undefined {
+  if (session.accessToken) {
+    return session.accessToken;
+  }
+  return session.status === "lab" ? labToken : undefined;
 }
 
 export async function beginLogin(config: AuthConfig): Promise<void> {
@@ -157,6 +162,10 @@ export function decodeJwtPayload(token: string): Record<string, unknown> {
 
 function readAuthMode(value: unknown): AuthMode {
   return value === "oidc" || value === "hybrid" ? value : "lab";
+}
+
+function readBoolean(value: unknown): boolean {
+  return value === true || value === "true" || value === "1" || value === "yes" || value === "on";
 }
 
 async function exchangeAuthorizationCode(config: AuthConfig, code: string, state: string): Promise<AuthSession> {

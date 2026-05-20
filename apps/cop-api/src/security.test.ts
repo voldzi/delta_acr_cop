@@ -46,6 +46,70 @@ describe("COP API authentication", () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it("allows configured public read endpoints without a bearer token", async () => {
+    process.env.COP_AUTH_MODE = "oidc";
+    process.env.COP_PUBLIC_READ_ENABLED = "true";
+    const app = buildServer();
+
+    const tracksResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/cop/tracks"
+    });
+    const sourcesResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/sources"
+    });
+    const writeResponse = await app.inject({
+      method: "POST",
+      payload: {
+        category: "fire"
+      },
+      url: "/api/v1/community/reports"
+    });
+    const profileResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/me/preferences"
+    });
+
+    expect(tracksResponse.statusCode).toBe(200);
+    expect(sourcesResponse.statusCode).toBe(200);
+    expect(writeResponse.statusCode).toBe(401);
+    expect(profileResponse.statusCode).toBe(401);
+
+    await app.close();
+  });
+
+  it("still rejects invalid bearer tokens on public read endpoints", async () => {
+    process.env.COP_AUTH_MODE = "oidc";
+    process.env.COP_PUBLIC_READ_ENABLED = "true";
+    const app = buildServer();
+
+    const response = await app.inject({
+      headers: {
+        authorization: "Bearer not-a-valid-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/tracks"
+    });
+
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("requires a bearer token for read endpoints when public read is disabled", async () => {
+    process.env.COP_AUTH_MODE = "oidc";
+    process.env.COP_PUBLIC_READ_ENABLED = "false";
+    const app = buildServer();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/cop/tracks"
+    });
+
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
   it("accepts a valid Keycloak-style OIDC token in oidc mode", async () => {
     const issuer = "https://login.zeleznalady.cz/realms/cop";
     const keyId = "cop-test-key";

@@ -70,15 +70,19 @@ Prechodovy rezim, kdy funguje Keycloak i lab token pro SIM/pilot:
 COP_AUTH_MODE=hybrid
 COP_WEB_AUTH_MODE=hybrid
 COP_ALLOW_LAB_TOKEN=true
+COP_PUBLIC_READ_ENABLED=true
+COP_WEB_PUBLIC_READ_ENABLED=true
 COP_LAB_TOKEN=<soucasny-lab-token>
 COP_PUBLIC_LAB_VALUE=<soucasny-lab-token>
 COP_OIDC_ISSUER=https://login.zeleznalady.cz/realms/cop
 COP_OIDC_CLIENT_ID=cop-web
 COP_OIDC_ALLOWED_CLIENTS=cop-web
-COP_OIDC_REQUIRED_ROLE=cop_operator
+COP_OIDC_REQUIRED_ROLE=
 COP_OIDC_SCOPE="openid profile email"
 COP_USER_PROFILE_STORE=auto
 ```
+
+`COP_PUBLIC_READ_ENABLED=true` povoli anonymni cteni verejne mapy a verejnych vrstev. Bez prihlaseni jsou dostupne pouze GET endpointy pro situacni obraz, zdroje, stream, historii tracku a odeslana komunitni hlaseni. Zapisove operace, uzivatelsky profil, potvrzovani vystrah, AI asistent, registrace mobilniho zarizeni a upload priloh stale vyzaduji platny bearer token.
 
 Striktni rezim bez lab tokenu:
 
@@ -86,12 +90,16 @@ Striktni rezim bez lab tokenu:
 COP_AUTH_MODE=oidc
 COP_WEB_AUTH_MODE=oidc
 COP_ALLOW_LAB_TOKEN=false
+COP_PUBLIC_READ_ENABLED=true
+COP_WEB_PUBLIC_READ_ENABLED=true
 COP_OIDC_ISSUER=https://login.zeleznalady.cz/realms/cop
 COP_OIDC_CLIENT_ID=cop-web
 COP_OIDC_ALLOWED_CLIENTS=cop-web
-COP_OIDC_REQUIRED_ROLE=cop_operator
+COP_OIDC_REQUIRED_ROLE=
 COP_USER_PROFILE_STORE=auto
 ```
+
+Pro komunitni provoz s registraci pres overeny e-mail je vhodne mit vlastni realm `cop`, zapnutou registraci uzivatelu a overeni e-mailu. Pokud ma byt zapis do COP dostupny vsem overenym uzivatelum tohoto realmu, nech `COP_OIDC_REQUIRED_ROLE` prazdne. Pokud chces role vynucovat, nastav treba `COP_OIDC_REQUIRED_ROLE=cop_user` a pridej `cop_user` jako default realm roli pro nove uzivatele.
 
 Po zmene buildu webu je potreba rebuild:
 
@@ -127,6 +135,32 @@ set -a; . ./.env; set +a
 curl -fsS -H "Authorization: Bearer ${COP_PUBLIC_LAB_VALUE:-$COP_LAB_TOKEN}" \
   http://docker.home.cz:4310/health/dependencies
 ```
+
+Anonymni kontrola verejne mapy:
+
+```bash
+curl -fsS http://docker.home.cz:4310/api/v1/cop/tracks >/dev/null
+curl -fsS http://docker.home.cz:4310/api/v1/situation/layers >/dev/null
+curl -i -X POST http://docker.home.cz:4310/api/v1/community/reports \
+  -H 'Content-Type: application/json' \
+  -d '{"category":"fire"}'
+```
+
+Prvni dva prikazy maji vratit HTTP 200. Posledni prikaz ma bez bearer tokenu vratit HTTP 401.
+
+## Registrace a e-mail
+
+V Keycloaku pro realm `cop`:
+
+```bash
+/opt/keycloak/bin/kcadm.sh update realms/cop \
+  -s registrationAllowed=true \
+  -s verifyEmail=true \
+  -s loginWithEmailAllowed=true \
+  -s duplicateEmailsAllowed=false
+```
+
+SMTP nastav v admin UI realmu `cop` podle pouziteho mail serveru. Bez SMTP se uzivatel sice muze zalozit, ale overeni e-mailu nebude provozne dokoncene.
 
 Ocekavany radek: `user-profile-store` se stavem `ok`.
 

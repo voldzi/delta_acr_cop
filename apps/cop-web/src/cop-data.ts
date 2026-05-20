@@ -577,17 +577,19 @@ export const copLayerIds: CopLayer[] = ["air-situation", "uav", "friendly", "for
 
 export async function fetchCopDashboardData(
   apiBase: string,
-  token = "dev-lab-token",
+  token: string | undefined,
   historyOptions?: CopHistoryOptions
 ): Promise<CopDashboardData> {
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = authHeaders(token);
   const [health, sources, sourceHealth, streamHealth, tracks, alerts, history] = await Promise.all([
     fetchJson<HealthStatus>(`${apiBase}/health/ready`),
     fetchJson<{ items?: SourceSystem[] }>(`${apiBase}/api/v1/sources`, { headers }),
     fetchOptionalJson<{ items?: SourceHealthItem[] }>(`${apiBase}/api/v1/sources/health`, { headers }),
     fetchOptionalJson<CopStreamHealth>(`${apiBase}/api/v1/stream/cop/health`, { headers }),
     fetchJson<{ items?: CopObject[] }>(`${apiBase}/api/v1/cop/tracks?includeSynthetic=true`, { headers }),
-    fetchOptionalJson<{ items?: CopAlert[] }>(`${apiBase}/api/v1/cop/alerts`, { headers }),
+    token
+      ? fetchOptionalJson<{ items?: CopAlert[] }>(`${apiBase}/api/v1/cop/alerts`, { headers })
+      : Promise.resolve(undefined),
     historyOptions
       ? fetchOptionalJson<{ items?: Array<{ objectId: string; points: ServerTrackHistoryPoint[] }> }>(
           `${apiBase}/api/v1/cop/track-history?seconds=${historyOptions.seconds}&limit=${historyOptions.limit}`,
@@ -607,27 +609,30 @@ export async function fetchCopDashboardData(
   };
 }
 
-export async function fetchCopAlerts(apiBase: string, token = "dev-lab-token"): Promise<CopAlert[]> {
-  const headers = { Authorization: `Bearer ${token}` };
+export async function fetchCopAlerts(apiBase: string, token: string | undefined): Promise<CopAlert[]> {
+  if (!token) {
+    return [];
+  }
+  const headers = authHeaders(token);
   const response = await fetchOptionalJson<{ items?: CopAlert[] }>(`${apiBase}/api/v1/cop/alerts`, { headers });
   return response?.items ?? [];
 }
 
-export async function fetchSituationLayers(apiBase: string, token = "dev-lab-token"): Promise<SituationLayersResponse> {
+export async function fetchSituationLayers(apiBase: string, token: string | undefined): Promise<SituationLayersResponse> {
   return fetchJson<SituationLayersResponse>(`${apiBase}/api/v1/situation/layers`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: authHeaders(token)
   });
 }
 
-export async function fetchSituationSources(apiBase: string, token = "dev-lab-token"): Promise<SituationSourcesResponse> {
+export async function fetchSituationSources(apiBase: string, token: string | undefined): Promise<SituationSourcesResponse> {
   return fetchJson<SituationSourcesResponse>(`${apiBase}/api/v1/situation/sources`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: authHeaders(token)
   });
 }
 
 export async function fetchSituationFeatures(
   apiBase: string,
-  token = "dev-lab-token",
+  token: string | undefined,
   options: SituationFeatureOptions
 ): Promise<SituationFeatureCollectionResponse> {
   const query = new URLSearchParams();
@@ -638,31 +643,31 @@ export async function fetchSituationFeatures(
     query.set("source", options.sources.join(","));
   }
   return fetchJson<SituationFeatureCollectionResponse>(`${apiBase}/api/v1/situation/features?${query.toString()}`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: authHeaders(token)
   });
 }
 
-export async function fetchSafetyLayers(apiBase: string, token = "dev-lab-token"): Promise<SafetyLayersResponse> {
+export async function fetchSafetyLayers(apiBase: string, token: string | undefined): Promise<SafetyLayersResponse> {
   return fetchJson<SafetyLayersResponse>(`${apiBase}/api/v1/safety/layers`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: authHeaders(token)
   });
 }
 
-export async function fetchSafetySources(apiBase: string, token = "dev-lab-token"): Promise<SafetySourcesResponse> {
+export async function fetchSafetySources(apiBase: string, token: string | undefined): Promise<SafetySourcesResponse> {
   return fetchJson<SafetySourcesResponse>(`${apiBase}/api/v1/safety/sources`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: authHeaders(token)
   });
 }
 
-export async function fetchSafetyConfig(apiBase: string, token = "dev-lab-token"): Promise<SafetyConfigResponse> {
+export async function fetchSafetyConfig(apiBase: string, token: string | undefined): Promise<SafetyConfigResponse> {
   return fetchJson<SafetyConfigResponse>(`${apiBase}/api/v1/safety/config`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: authHeaders(token)
   });
 }
 
 export async function fetchSafetyFeatures(
   apiBase: string,
-  token = "dev-lab-token",
+  token: string | undefined,
   options: SafetyFeatureOptions
 ): Promise<SafetyFeatureCollectionResponse> {
   const query = new URLSearchParams();
@@ -670,7 +675,7 @@ export async function fetchSafetyFeatures(
   query.set("layers", options.layers.join(","));
   query.set("limit", String(options.limit ?? 250));
   return fetchJson<SafetyFeatureCollectionResponse>(`${apiBase}/api/v1/safety/features?${query.toString()}`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: authHeaders(token)
   });
 }
 
@@ -708,7 +713,7 @@ export async function acknowledgeCopAlert(apiBase: string, token: string, alertI
   });
 }
 
-export function connectCopStream(apiBase: string, token: string, handlers: CopStreamHandlers): CopStreamConnection | null {
+export function connectCopStream(apiBase: string, token: string | undefined, handlers: CopStreamHandlers): CopStreamConnection | null {
   if (typeof ReadableStream === "undefined") {
     return null;
   }
@@ -808,11 +813,11 @@ async function fetchOptionalJson<T>(url: string, init?: RequestInit): Promise<T 
   }
 }
 
-async function readCopStream(apiBase: string, token: string, signal: AbortSignal, handlers: CopStreamHandlers): Promise<void> {
+async function readCopStream(apiBase: string, token: string | undefined, signal: AbortSignal, handlers: CopStreamHandlers): Promise<void> {
   const response = await fetch(joinApiPath(apiBase, "/api/v1/stream/cop/live"), {
     headers: {
       Accept: "text/event-stream",
-      Authorization: `Bearer ${token}`
+      ...authHeaders(token)
     },
     signal
   });
@@ -844,6 +849,10 @@ async function readCopStream(apiBase: string, token: string, signal: AbortSignal
       handlers.onMessage(JSON.parse(data) as CopStreamMessage);
     }
   }
+}
+
+function authHeaders(token: string | undefined): Record<string, string> | undefined {
+  return token ? { Authorization: `Bearer ${token}` } : undefined;
 }
 
 function readSseData(block: string): string | null {

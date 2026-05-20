@@ -9,6 +9,7 @@ describe("web auth helpers", () => {
       clientId: "cop-web",
       issuer: "",
       mode: "lab",
+      publicReadEnabled: false,
       scope: "openid profile email"
     };
 
@@ -21,7 +22,8 @@ describe("web auth helpers", () => {
 
   it("prefers an OIDC access token over the public lab token", () => {
     expect(getAuthorizationToken({ accessToken: "oidc-token", status: "authenticated" }, "lab-token")).toBe("oidc-token");
-    expect(getAuthorizationToken({ status: "anonymous" }, "lab-token")).toBe("lab-token");
+    expect(getAuthorizationToken({ status: "lab" }, "lab-token")).toBe("lab-token");
+    expect(getAuthorizationToken({ status: "anonymous" }, "lab-token")).toBeUndefined();
   });
 
   it("decodes JWT payloads for operator display data", () => {

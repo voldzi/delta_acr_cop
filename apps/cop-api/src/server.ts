@@ -948,13 +948,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   });
 
   app.get("/api/v1/community/reports", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
+    const actor = actorFromRequest(request);
     const requestNow = now();
     const query = parseCommunityReportQuery(request.query as Record<string, unknown>, actor);
-    const items = await listCommunityReports(query);
+    const items = (await listCommunityReports(query)).filter((report) => canReadCommunityReport(report, actor));
     return {
       featureCollection: communityReportsFeatureCollection(items, requestNow),
       items,
@@ -990,10 +987,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   });
 
   app.get("/api/v1/community/reports/:reportId", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
+    const actor = actorFromRequest(request);
     const params = request.params as { reportId: string };
     const report = await readCommunityReport(params.reportId);
     if (!report || !canReadCommunityReport(report, actor)) {
@@ -2162,18 +2156,18 @@ function alertSeverityRank(severity: CopAlert["severity"]): number {
   return 1;
 }
 
-function parseCommunityReportQuery(query: Record<string, unknown>, actor: AuthenticatedActor): CommunityReportQuery {
+function parseCommunityReportQuery(query: Record<string, unknown>, actor: AuthenticatedActor | null): CommunityReportQuery {
   return {
     ...(parseBboxQuery(query.bbox) ? { bbox: parseBboxQuery(query.bbox) } : {}),
     ...(parseCommunityCategories(query.category ?? query.categories).length > 0
       ? { categories: parseCommunityCategories(query.category ?? query.categories) }
       : {}),
-    includeOwnDrafts: query.includeOwnDrafts === "true" || query.includeOwnDrafts === true,
+    includeOwnDrafts: Boolean(actor) && (query.includeOwnDrafts === "true" || query.includeOwnDrafts === true),
     limit: optionalFiniteNumber(query.limit, 1, 500) ?? 100,
     ...(parseCommunityStatuses(query.status ?? query.statuses).length > 0
       ? { statuses: parseCommunityStatuses(query.status ?? query.statuses) }
       : {}),
-    subjectId: actor.subjectId
+    ...(actor ? { subjectId: actor.subjectId } : {})
   };
 }
 
@@ -2238,8 +2232,8 @@ function normalizeCommunityAttachmentRequest(value: unknown): {
   };
 }
 
-function canReadCommunityReport(report: CommunityReportRecord, actor: AuthenticatedActor): boolean {
-  if (report.createdBy.subjectId === actor.subjectId) {
+function canReadCommunityReport(report: CommunityReportRecord, actor: AuthenticatedActor | null): boolean {
+  if (actor && report.createdBy.subjectId === actor.subjectId) {
     return true;
   }
   if (report.visibility === "private") {

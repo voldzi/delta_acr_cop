@@ -59,15 +59,23 @@ export async function requireBearerToken(request: FastifyRequest, reply: Fastify
   }
 
   const token = readBearerToken(request.headers.authorization);
-  if (!token) {
+  if (token) {
+    if (isLabTokenAllowed(token)) {
+      return;
+    }
+
+    if (isOidcMode() && await verifyOidcToken(token)) {
+      return;
+    }
+
     return unauthorized(request, reply);
   }
 
-  if (isLabTokenAllowed(token)) {
-    return;
+  if (request.headers.authorization) {
+    return unauthorized(request, reply);
   }
 
-  if (isOidcMode() && await verifyOidcToken(token)) {
+  if (isPublicReadRequest(request)) {
     return;
   }
 
@@ -171,6 +179,36 @@ function isOidcMode(): boolean {
 function readAuthMode(): AuthMode {
   const value = process.env.COP_AUTH_MODE;
   return value === "oidc" || value === "hybrid" ? value : "lab";
+}
+
+function isPublicReadRequest(request: FastifyRequest): boolean {
+  if (!readBoolean(process.env.COP_PUBLIC_READ_ENABLED)) {
+    return false;
+  }
+
+  const method = request.method.toUpperCase();
+  if (method !== "GET" && method !== "HEAD") {
+    return false;
+  }
+
+  const path = request.url.split("?")[0] ?? request.url;
+  return path === "/api/v1/sources"
+    || path.startsWith("/api/v1/sources/")
+    || path === "/api/v1/sources/health"
+    || path === "/api/v1/flight-data/airports"
+    || path.startsWith("/api/v1/situation/")
+    || path.startsWith("/api/v1/safety/")
+    || path === "/api/v1/cop/tracks"
+    || path === "/api/v1/cop/conflicts"
+    || path === "/api/v1/cop/track-history"
+    || path === "/api/v1/stream/cop/health"
+    || path.startsWith("/api/v1/stream/cop/")
+    || path === "/api/v1/community/reports"
+    || path.startsWith("/api/v1/community/reports/");
+}
+
+function readBoolean(value: string | undefined): boolean {
+  return value === "true" || value === "1" || value === "yes" || value === "on";
 }
 
 export function readBearerToken(authorization: string | undefined): string | null {

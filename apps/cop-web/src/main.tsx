@@ -305,7 +305,8 @@ export function App() {
   const skipNextPreferenceWriteRef = React.useRef(false);
   const notifiedProximityAlertsRef = React.useRef<Set<string>>(new Set());
   const authToken = getAuthorizationToken(authSession, labToken);
-  const dataAccessReady = authConfig.mode !== "oidc" || Boolean(authSession.accessToken);
+  const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken);
+  const profileAccessReady = Boolean(authToken);
 
   const applyDashboardData = React.useCallback((data: CopDashboardData, observedAt: Date) => {
     setHealth(data.health);
@@ -353,7 +354,7 @@ export function App() {
 
   const load = React.useCallback(async () => {
     if (!dataAccessReady) {
-      setLoadError("Pro načtení situačních dat je potřeba přihlášení.");
+      setLoadError("Pro načtení situačních dat je potřeba přihlášení nebo zapnutý veřejný režim čtení.");
       return;
     }
     if (loadInFlightRef.current) {
@@ -396,7 +397,7 @@ export function App() {
   }, [applyDashboardData, authToken, browserOnline, dataAccessReady, persistOfflineSnapshot, trackHistoryLimit, trackHistoryWindowSeconds, userStorageScope]);
 
   const loadAlerts = React.useCallback(async () => {
-    if (!dataAccessReady) {
+    if (!authToken) {
       return;
     }
     try {
@@ -404,7 +405,7 @@ export function App() {
     } catch {
       // Main data loading already reports API errors; alert refresh should not obscure the current situation view.
     }
-  }, [authToken, dataAccessReady]);
+  }, [authToken]);
 
   React.useEffect(() => {
     void load();
@@ -517,19 +518,19 @@ export function App() {
   }, [autoRefresh, load, refreshSeconds, streamStatus]);
 
   React.useEffect(() => {
-    if (!dataAccessReady) {
+    if (!authToken) {
       return;
     }
     const timer = window.setInterval(() => {
       void loadAlerts();
     }, Math.max(refreshSeconds, 5) * 1000);
     return () => window.clearInterval(timer);
-  }, [dataAccessReady, loadAlerts, refreshSeconds]);
+  }, [authToken, loadAlerts, refreshSeconds]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
       setSituationStatus("disabled");
-      setSituationWarnings(["Pro načtení situačních vrstev je potřeba přihlášení."]);
+      setSituationWarnings(["Pro načtení situačních vrstev je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
       return;
     }
 
@@ -579,7 +580,7 @@ export function App() {
   React.useEffect(() => {
     if (!dataAccessReady) {
       setSafetyStatus("disabled");
-      setSafetyWarnings(["Pro načtení bezpečnostních vrstev je potřeba přihlášení."]);
+      setSafetyWarnings(["Pro načtení bezpečnostních vrstev je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
       return;
     }
 
@@ -1006,11 +1007,11 @@ export function App() {
     setLastProfileName(null);
     setServerProfileUpdatedAt(null);
     setProfileSyncError(null);
-    setProfileSyncStatus(dataAccessReady ? "loading" : "disabled");
-  }, [applyPreferenceSettings, dataAccessReady, userStorageScope]);
+    setProfileSyncStatus(profileAccessReady ? "loading" : "disabled");
+  }, [applyPreferenceSettings, profileAccessReady, userStorageScope]);
 
   React.useEffect(() => {
-    if (!dataAccessReady) {
+    if (!profileAccessReady || !authToken) {
       profileHydratedRef.current = false;
       setProfileSyncStatus("disabled");
       return;
@@ -1071,7 +1072,7 @@ export function App() {
     authSession.status,
     authToken,
     currentPreferences,
-    dataAccessReady,
+    profileAccessReady,
     userStorageScope
   ]);
 
@@ -1087,7 +1088,7 @@ export function App() {
       return;
     }
     writeUserPreferences(currentPreferences, userStorageScope);
-    if (!dataAccessReady || !profileHydratedRef.current) {
+    if (!profileAccessReady || !authToken || !profileHydratedRef.current) {
       return;
     }
     if (profileSaveTimerRef.current !== undefined) {
@@ -1113,7 +1114,7 @@ export function App() {
     alertPreferences,
     authToken,
     currentPreferences,
-    dataAccessReady,
+    profileAccessReady,
     userStorageScope
   ]);
 
@@ -1156,6 +1157,10 @@ export function App() {
   }, [proximityAlertEnabled, proximityAlerts]);
 
   async function askAi() {
+    if (!authToken) {
+      setAiResult("AI asistent je dostupný po přihlášení přes Keycloak.");
+      return;
+    }
     const response = await fetch(`${apiBase}/api/v1/ai/cop-assistant/query`, {
       method: "POST",
       headers: {
@@ -1321,6 +1326,10 @@ export function App() {
   }
 
   async function acknowledgeServerAlert(alertId: string) {
+    if (!authToken) {
+      setLoadError("Potvrzení serverové výstrahy je dostupné po přihlášení přes Keycloak.");
+      return;
+    }
     try {
       await acknowledgeCopAlert(apiBase, authToken, alertId);
       setServerAlerts((current) => current.filter((alert) => alert.alertId !== alertId));
@@ -2939,8 +2948,12 @@ function SettingsDrawer({
               <ReadinessRow label="Profil" value={authSession.profile?.name ?? "nepřihlášen"} tone="neutral" />
               <ReadinessRow label="Provider" value={isOidcEnabled(authConfig) ? "Keycloak" : "lab token"} tone="neutral" />
               <ReadinessRow label="Realm" value={authConfig.issuer ? authConfig.issuer.split("/").pop() ?? "n/a" : "n/a"} tone="neutral" />
+              <ReadinessRow label="Veřejné čtení" value={authConfig.publicReadEnabled ? "zapnuto" : "vypnuto"} tone={authConfig.publicReadEnabled ? "ok" : "neutral"} />
               <ReadinessRow label="Serverový profil" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
               <ReadinessRow label="Uloženo" value={formatProfileUpdatedAt(serverProfileUpdatedAt)} tone="neutral" />
+              {authConfig.publicReadEnabled && authSession.status !== "authenticated" ? (
+                <div className="empty-mini">Mapa a veřejné vrstvy jsou dostupné bez přihlášení. Uživatelský profil, hlášení, potvrzení výstrah a AI asistent vyžadují účet.</div>
+              ) : null}
               {isOidcEnabled(authConfig) ? (
                 authSession.status === "authenticated" ? (
                   <button className="primary-button secondary" onClick={onLogout} type="button">

@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { buildServer } from "./server.js";
 import type { MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
 
 describe("community report routes", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
   it("creates, submits and lists community reports as map features", async () => {
     const app = buildServer({
       mediaStorage: new FakeMediaStorage(),
@@ -115,6 +121,58 @@ describe("community report routes", () => {
         summary: {
           featureCount: 1,
           uploadedAttachmentCount: 1
+        }
+      },
+      items: [
+        {
+          reportId: report.reportId,
+          status: "submitted"
+        }
+      ]
+    });
+
+    await app.close();
+  });
+
+  it("lists submitted community reports for anonymous public map reads", async () => {
+    process.env.COP_PUBLIC_READ_ENABLED = "true";
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        category: "flood",
+        location: {
+          lat: 50.075,
+          lon: 14.438,
+          source: "device"
+        },
+        title: "Zaplavený podjezd",
+        visibility: "community"
+      },
+      url: "/api/v1/community/reports"
+    });
+    const report = createResponse.json() as { reportId: string };
+    await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: `/api/v1/community/reports/${report.reportId}/submit`
+    });
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/community/reports?bbox=14.0,49.8,14.8,50.3"
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json()).toMatchObject({
+      featureCollection: {
+        summary: {
+          featureCount: 1
         }
       },
       items: [
