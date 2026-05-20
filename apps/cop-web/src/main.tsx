@@ -46,7 +46,9 @@ import {
   filterObjectsByLayer,
   filterVisibleObjects,
   getDataQualityCount,
+  getPublicFlightCount,
   getUavCount,
+  isPublicFlightObject,
   saveUserProfile,
   type CopDashboardData,
   type AoiRule,
@@ -58,6 +60,7 @@ import {
   type CopLayer,
   type CopObject,
   type CopStreamHealth,
+  type FlightDataAttributes,
   type HealthStatus,
   type ObjectProvenance,
   type SourceHealthItem,
@@ -156,6 +159,7 @@ interface DashboardMetrics {
   foreignCount: number;
   friendlyCount: number;
   lowConfidenceCount: number;
+  publicFlightCount: number;
   syntheticCount: number;
   warningCount: number;
 }
@@ -1112,6 +1116,7 @@ export function App() {
               <LayerButton active={selectedLayer === "uav"} onClick={() => setSelectedLayer("uav")} label="UAV" count={getUavCount(scopedObjects)} />
               <LayerButton active={selectedLayer === "friendly"} onClick={() => setSelectedLayer("friendly")} label="Vlastní" count={metrics.friendlyCount} />
               <LayerButton active={selectedLayer === "foreign"} onClick={() => setSelectedLayer("foreign")} label="Cizí" count={metrics.foreignCount} />
+              <LayerButton active={selectedLayer === "public-flights"} onClick={() => setSelectedLayer("public-flights")} label="Public flights" count={metrics.publicFlightCount} />
               <LayerButton active={selectedLayer === "data-quality"} onClick={() => setSelectedLayer("data-quality")} label="Data quality" count={getDataQualityCount(scopedObjects)} />
 
               <div className="control-block">
@@ -1342,6 +1347,7 @@ export function App() {
             <ReadinessRow label="Offline snapshot" value={formatOfflineSnapshotState(offlineSnapshotState)} tone={offlineSnapshotTone(offlineSnapshotState)} />
             <ReadinessRow label="SIM data visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
             <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
+            <ReadinessRow label="Public flights" value={String(metrics.publicFlightCount)} tone={metrics.publicFlightCount > 0 ? "ok" : "neutral"} />
             <ReadinessRow label="Stream mode" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
             <ReadinessRow label="Stream latency" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
             <ReadinessRow label="Last heartbeat" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
@@ -1923,6 +1929,13 @@ function SourceHealthCenter({ items }: { items: SourceHealthItem[] }) {
                 {item.lowConfidenceTracks > 0 ? <span>{item.lowConfidenceTracks} low confidence</span> : null}
               </div>
             ) : null}
+            {item.detail || item.lastError || item.warnings?.length ? (
+              <div className="source-health-warnings">
+                {item.detail ? <span>{item.detail}</span> : null}
+                {item.lastError ? <span>{item.lastError}</span> : null}
+                {item.warnings?.slice(0, 2).map((warning) => <span key={warning}>{warning}</span>)}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -2376,6 +2389,7 @@ function ObjectDetail({
     () => buildObjectDetailModel({ historyPoints, object, sourceHealth }),
     [historyPoints, object, sourceHealth]
   );
+  const flightData = object.attributes?.flightData;
 
   return (
     <div className="object-detail">
@@ -2432,6 +2446,23 @@ function ObjectDetail({
         />
       </ObjectDetailSection>
 
+      {flightData ? (
+        <ObjectDetailSection title="Flight data">
+          <DetailGrid
+            rows={[
+              ["ICAO24", flightData.icao24 ?? "n/a"],
+              ["Callsign", flightData.callsign ?? "n/a"],
+              ["Registration", flightData.registration ?? "n/a"],
+              ["Aircraft", formatFlightAircraft(flightData)],
+              ["Origin", flightData.originCountry ?? "n/a"],
+              ["Providers", formatFlightProviders(flightData)],
+              ["License", formatFlightLicenses(flightData)],
+              ["Quality", formatFlightQuality(flightData)]
+            ]}
+          />
+        </ObjectDetailSection>
+      ) : null}
+
       <ObjectDetailSection title="Confidence">
         <ConfidenceFactorList factors={model.confidenceFactors} />
       </ObjectDetailSection>
@@ -2450,6 +2481,9 @@ function ObjectDetail({
 
       <div className="object-flags">
         {object.synthetic ? <span className="synthetic-badge">SIM</span> : null}
+        {isPublicFlightObject(object) ? <span className="public-flight-badge">PUBLIC FLIGHT</span> : null}
+        {isMockFlightObject(object) ? <span className="warning-badge">MOCK</span> : null}
+        {object.status === "STALE" || flightData?.quality?.stale ? <span className="warning-badge">STALE</span> : null}
         {(object.confidence ?? 0) < 0.5 ? <span className="warning-badge">LOW CONFIDENCE</span> : null}
         {model.conflicts.some((conflict) => conflict.severity === "warn") ? <span className="warning-badge">DATA CONFLICT</span> : null}
       </div>
@@ -2477,6 +2511,51 @@ function DetailGrid({ rows }: { rows: Array<[string, React.ReactNode]> }) {
       ))}
     </dl>
   );
+}
+
+function formatFlightAircraft(flightData: FlightDataAttributes): string {
+  const designator = recordString(flightData.aircraft, "typeDesignator") ?? recordString(flightData.aircraft, "designator");
+  const manufacturer = recordString(flightData.aircraft, "manufacturer");
+  const model = recordString(flightData.aircraft, "model");
+  return [designator, manufacturer, model].filter(Boolean).join(" / ") || "n/a";
+}
+
+function formatFlightProviders(flightData: FlightDataAttributes): string {
+  const providers = flightData.providers ?? [];
+  if (providers.length > 0) {
+    return providers.map((provider) => provider.label ?? provider.sourceId ?? "unknown").join(", ");
+  }
+  const sourceIds = flightData.sources?.map((source) => source.sourceId).filter(Boolean) ?? [];
+  return sourceIds.length > 0 ? sourceIds.join(", ") : "n/a";
+}
+
+function formatFlightLicenses(flightData: FlightDataAttributes): string {
+  const providerLicenseNames = flightData.providers?.map((provider) => provider.licenseName).filter(Boolean) ?? [];
+  if (providerLicenseNames.length > 0) {
+    return providerLicenseNames.join(", ");
+  }
+  const licenseNames = flightData.providerLicenses?.map((license) => recordString(license, "name")).filter(Boolean) ?? [];
+  return licenseNames.length > 0 ? licenseNames.join(", ") : "n/a";
+}
+
+function formatFlightQuality(flightData: FlightDataAttributes): string {
+  const confidence = typeof flightData.quality?.confidence === "number" ? `${Math.round(flightData.quality.confidence * 100)} %` : "n/a";
+  const stale = flightData.quality?.stale ? "stale" : "fresh";
+  const age = typeof flightData.quality?.positionAgeSeconds === "number" ? `${flightData.quality.positionAgeSeconds}s` : "age n/a";
+  return `${confidence} / ${stale} / ${age}`;
+}
+
+function isMockFlightObject(object: CopObject): boolean {
+  const flightData = object.attributes?.flightData;
+  return Boolean(
+    flightData?.providers?.some((provider) => provider.sourceId === "mock" || provider.mode === "mock")
+    || flightData?.sources?.some((source) => source.sourceId === "mock")
+  );
+}
+
+function recordString(value: Record<string, unknown> | undefined, key: string): string | undefined {
+  const item = value?.[key];
+  return typeof item === "string" && item.trim() !== "" ? item : undefined;
 }
 
 function ConfidenceFactorList({ factors }: { factors: ConfidenceFactor[] }) {
@@ -2593,6 +2672,7 @@ function buildMetrics(objects: CopObject[], sources: SourceSystem[]): DashboardM
     foreignCount,
     friendlyCount,
     lowConfidenceCount,
+    publicFlightCount: getPublicFlightCount(objects),
     syntheticCount: objects.filter((object) => object.synthetic).length,
     warningCount: lowConfidenceCount + objects.filter((object) => object.status === "LOST" || object.status === "STALE").length
   };
@@ -2666,10 +2746,12 @@ function buildEventStream(objects: CopObject[]) {
 
 function sourceHealthLabel(status: SourceHealthItem["health"]): string {
   const labels: Record<SourceHealthItem["health"], string> = {
+    DEGRADED: "degraded",
     DISABLED: "disabled",
     ONLINE: "online",
     QUIET: "quiet",
     STALE: "stale",
+    UNAVAILABLE: "unavailable",
     WAITING: "waiting"
   };
   return labels[status];
@@ -2960,7 +3042,7 @@ function readInitialRefreshSeconds(fallback: RefreshSeconds): RefreshSeconds {
 }
 
 function readInitialLayer(value: string | undefined): CopLayer {
-  return ["air-situation", "uav", "friendly", "foreign", "data-quality"].includes(value ?? "")
+  return ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"].includes(value ?? "")
     ? (value as CopLayer)
     : "air-situation";
 }

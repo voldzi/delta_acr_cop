@@ -80,6 +80,27 @@ export const builtInViewProfiles: ViewProfile[] = [
   },
   {
     builtIn: true,
+    description: "Samostatná vrstva veřejných letových dat s licenční atribucí a kratší historií.",
+    id: "builtin-public-flights",
+    name: "Public flights",
+    settings: {
+      activeWorkspace: "sources",
+      affiliationScope: "all",
+      autoFit: true,
+      autoRefresh: true,
+      domainScope: "AIR",
+      includeSynthetic: true,
+      minConfidence: 0,
+      refreshSeconds: 5,
+      selectedLayer: "public-flights",
+      showHistory: true,
+      showPrediction: true,
+      trackHistoryLimit: 120,
+      trackHistoryWindowSeconds: 180
+    }
+  },
+  {
+    builtIn: true,
     description: "Kontrola kvality dat, nízké confidence a stáří stop.",
     id: "builtin-data-quality",
     name: "Data quality",
@@ -198,7 +219,7 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
 }
 
 function normalizeLayer(value: unknown): CopLayer | undefined {
-  return value === "air-situation" || value === "uav" || value === "friendly" || value === "foreign" || value === "data-quality"
+  return value === "air-situation" || value === "uav" || value === "friendly" || value === "foreign" || value === "public-flights" || value === "data-quality"
     ? value
     : undefined;
 }

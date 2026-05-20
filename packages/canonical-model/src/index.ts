@@ -122,6 +122,7 @@ export interface SourceSystem {
   sourceType:
     | "SIMULATOR"
     | "AIR_SYSTEM"
+    | "PUBLIC_FLIGHT_AGGREGATE"
     | "GROUND_SYSTEM"
     | "UAV_SYSTEM"
     | "RESCUE_SYSTEM"
@@ -133,6 +134,7 @@ export interface SourceSystem {
   classificationLimit: ClassificationLevel;
   synthetic: boolean;
   status?: "REGISTERED" | "ACTIVE" | "SUSPENDED" | "REVOKED";
+  attributes?: Record<string, unknown>;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -149,6 +151,24 @@ export function createSimSourceSystem(): SourceSystem {
     trustProfile: "LAB_SYNTHETIC",
     classificationLimit: "UNCLASSIFIED",
     synthetic: true,
+    status: "ACTIVE",
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+export function createPublicFlightAggregateSourceSystem(): SourceSystem {
+  const now = new Date().toISOString();
+  return {
+    sourceSystemId: "flight-data-api",
+    displayName: "Public Flight Data Aggregate",
+    sourceType: "PUBLIC_FLIGHT_AGGREGATE",
+    owner: "SIM flight-data-api",
+    allowedEventTypes: ["track.created", "track.updated", "track.lost", "track.restored"],
+    allowedObjectTypes: ["AIRCRAFT", "UAV", "UNKNOWN"],
+    trustProfile: "UNKNOWN",
+    classificationLimit: "UNCLASSIFIED",
+    synthetic: false,
     status: "ACTIVE",
     createdAt: now,
     updatedAt: now

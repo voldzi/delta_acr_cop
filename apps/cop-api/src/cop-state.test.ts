@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Affiliation, CanonicalEventEnvelope, ObjectStatus, ObservedObject } from "@cop/canonical-model";
+import { createPublicFlightAggregateSourceSystem, type Affiliation, type CanonicalEventEnvelope, type ObjectStatus, type ObservedObject } from "@cop/canonical-model";
+import type { FlightDataSource } from "./flight-data-source.js";
 import { buildServer } from "./server.js";
 import type { TrackHistoryStore } from "./track-history-store.js";
 import type { TrackHistoryQuery } from "./temporal-history.js";
@@ -182,6 +183,97 @@ describe("COP state temporal history", () => {
         }
       ]
     });
+  });
+
+  it("polls the public flight data source into current tracks, history, and source health", async () => {
+    const flightSource = new FakeFlightDataSource();
+    const app = buildServer({
+      flightDataSource: flightSource,
+      now: () => new Date("2026-05-20T10:00:05Z")
+    });
+
+    const tracksResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/tracks"
+    });
+
+    expect(tracksResponse.statusCode).toBe(200);
+    expect(flightSource.pollCalls).toBe(1);
+    expect(tracksResponse.json()).toMatchObject({
+      items: [
+        {
+          affiliation: "NEUTRAL",
+          attributes: {
+            flightData: {
+              icao24: "4d2216",
+              providers: [
+                {
+                  mode: "mock",
+                  sourceId: "mock"
+                }
+              ]
+            },
+            provenance: {
+              adapterId: "flight-data-source-adapter",
+              sourceDeviceId: "mock",
+              sourceSystemId: "flight-data-api"
+            }
+          },
+          objectId: "flight:icao24:4d2216",
+          objectType: "AIRCRAFT",
+          synthetic: false
+        }
+      ]
+    });
+
+    const historyResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/track-history?objectIds=flight:icao24:4d2216&seconds=60"
+    });
+
+    expect(historyResponse.statusCode).toBe(200);
+    expect(historyResponse.json()).toMatchObject({
+      items: [
+        {
+          objectId: "flight:icao24:4d2216",
+          points: [
+            {
+              lat: 50.1174,
+              lon: 14.5121,
+              sourceSystemId: "flight-data-api"
+            }
+          ]
+        }
+      ]
+    });
+
+    const healthResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/sources/health"
+    });
+
+    expect(healthResponse.statusCode).toBe(200);
+    expect((healthResponse.json() as { items: unknown[] }).items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        acceptedEvents: 1,
+        currentTracks: 1,
+        health: "ONLINE",
+        sourceSystemId: "flight-data-api",
+        sourceType: "PUBLIC_FLIGHT_AGGREGATE",
+        totalTracks: 1
+      })
+    ]));
+
+    await app.close();
   });
 
   it("returns server-side conflict evidence and decorates current tracks", async () => {
@@ -518,6 +610,137 @@ class FakeTrackHistoryStore implements TrackHistoryStore {
   }
 
   async close(): Promise<void> {}
+}
+
+class FakeFlightDataSource implements FlightDataSource {
+  readonly config = {
+    baseUrl: "https://sim.zeleznalady.cz/flight-data",
+    enabled: true,
+    includeStale: true,
+    limit: 500,
+    pollMs: 0,
+    source: "mock",
+    timeoutMs: 6000
+  };
+
+  readonly sourceSystem = createPublicFlightAggregateSourceSystem();
+
+  pollCalls = 0;
+
+  async poll(pollNow: Date) {
+    this.pollCalls += 1;
+    const event: CanonicalEventEnvelope = {
+      classification: {
+        handlingCaveats: ["PUBLIC_FLIGHT_AGGREGATE"],
+        level: "UNCLASSIFIED",
+        releasability: ["CZ"]
+      },
+      contractVersion: "cop-ingest-v1",
+      correlationId: "70000000-0000-5000-8000-000000000001",
+      eventId: "70000000-0000-5000-8000-000000000002",
+      eventType: "track.updated",
+      geo: {
+        altitudeM: 2743,
+        lat: 50.1174,
+        lon: 14.5121
+      },
+      ingestTimestamp: pollNow.toISOString(),
+      payload: {
+        affiliation: "NEUTRAL",
+        attributes: {
+          dataOrigin: "PUBLIC_FLIGHT_AGGREGATE",
+          flightData: {
+            icao24: "4d2216",
+            providers: [
+              {
+                enabled: true,
+                label: "Synthetic local flight feed",
+                licenseName: "Synthetic internal test data",
+                mode: "mock",
+                sourceId: "mock"
+              }
+            ],
+            quality: {
+              confidence: 0.84,
+              positionAgeSeconds: 0,
+              stale: false
+            },
+            registration: "OK-TSR",
+            sources: [
+              {
+                sourceId: "mock",
+                sourceRecordId: "mock:4d2216:adsb"
+              }
+            ]
+          }
+        },
+        confidence: 0.84,
+        domain: "AIR",
+        headingDeg: 268,
+        objectId: "flight:icao24:4d2216",
+        objectType: "AIRCRAFT",
+        position: {
+          altitudeM: 2743,
+          lat: 50.1174,
+          lon: 14.5121
+        },
+        speedMps: 138,
+        status: "ACTIVE",
+        synthetic: false
+      },
+      producerTimestamp: "2026-05-20T10:00:00Z",
+      quality: {
+        confidence: 0.84,
+        informationCredibility: "3",
+        sourceReliability: "C"
+      },
+      source: {
+        adapterId: "flight-data-source-adapter",
+        adapterVersion: "0.1.0",
+        sourceDeviceId: "mock",
+        sourceSystemId: "flight-data-api"
+      }
+    };
+    return {
+      events: [event],
+      health: {
+        detail: "tracks 1, stale 0",
+        evaluatedAt: pollNow.toISOString(),
+        generatedAt: "2026-05-20T10:00:00Z",
+        health: "ONLINE" as const,
+        lastPollAt: pollNow.toISOString(),
+        lastSuccessAt: pollNow.toISOString(),
+        summary: {
+          deduplicatedTrackCount: 1,
+          staleTrackCount: 0
+        },
+        warnings: []
+      },
+      response: {
+        contractVersion: "cop-flight-source-v1" as const,
+        source: {
+          generatedAt: "2026-05-20T10:00:00Z",
+          sourceId: "flight-data-api",
+          sourceType: "PUBLIC_FLIGHT_AGGREGATE" as const
+        },
+        sources: [
+          {
+            enabled: true,
+            label: "Synthetic local flight feed",
+            mode: "mock",
+            sourceId: "mock"
+          }
+        ],
+        summary: {
+          deduplicatedTrackCount: 1,
+          rawObservationCount: 1,
+          staleTrackCount: 0
+        },
+        tracks: [],
+        warnings: []
+      }
+    };
+  }
 }
 
 async function ingestTrack(

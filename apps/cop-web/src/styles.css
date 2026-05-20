@@ -919,13 +919,15 @@ h1 {
 }
 
 .health-chip.quiet,
+.health-chip.degraded,
 .health-chip.waiting {
   border-color: rgba(250, 204, 21, 0.5);
   color: var(--yellow);
 }
 
 .health-chip.stale,
-.health-chip.disabled {
+.health-chip.disabled,
+.health-chip.unavailable {
   border-color: rgba(239, 68, 68, 0.56);
   color: #fca5a5;
 }
@@ -1584,6 +1586,7 @@ h1 {
 
 .object-header em,
 .synthetic-badge,
+.public-flight-badge,
 .warning-badge {
   display: inline-flex;
   align-items: center;
@@ -1599,6 +1602,10 @@ h1 {
 .object-header em,
 .synthetic-badge {
   background: var(--lime);
+}
+
+.public-flight-badge {
+  background: #7dd3fc;
 }
 
 .warning-badge {

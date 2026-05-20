@@ -9,6 +9,7 @@ export interface SourceSystem {
   sourceType: string;
   status?: string;
   synthetic: boolean;
+  attributes?: Record<string, unknown>;
 }
 
 export interface CopObject {
@@ -35,9 +36,39 @@ export interface CopObject {
   verticalRateMps?: number | null;
   attributes?: {
     conflictEvidence?: ObjectConflictEvidence;
+    flightData?: FlightDataAttributes;
     provenance?: ObjectProvenance;
     [key: string]: unknown;
   };
+}
+
+export interface FlightDataAttributes {
+  aircraft?: Record<string, unknown>;
+  callsign?: string;
+  deduplication?: Record<string, unknown>;
+  icao24?: string;
+  metadata?: Record<string, unknown>;
+  originCountry?: string;
+  providerLicenses?: Array<Record<string, unknown>>;
+  providers?: Array<{
+    enabled?: boolean;
+    label?: string;
+    licenseName?: string;
+    mode?: string;
+    sourceId?: string;
+  }>;
+  quality?: {
+    confidence?: number;
+    positionAgeSeconds?: number;
+    stale?: boolean;
+  };
+  registration?: string;
+  sources?: Array<{
+    fetchedAt?: string;
+    seenAt?: string;
+    sourceId?: string;
+    sourceRecordId?: string;
+  }>;
 }
 
 export interface ObjectProvenance {
@@ -106,7 +137,9 @@ export interface SourceHealthItem {
   displayName: string;
   eventTypeCounts?: Record<string, number>;
   expiredTracks: number;
-  health: "DISABLED" | "ONLINE" | "QUIET" | "STALE" | "WAITING";
+  health: "DEGRADED" | "DISABLED" | "ONLINE" | "QUIET" | "STALE" | "UNAVAILABLE" | "WAITING";
+  detail?: string;
+  lastError?: string;
   lastEventAt?: string;
   lastLatencyMs?: number;
   lastObservationAgeSeconds?: number;
@@ -118,6 +151,7 @@ export interface SourceHealthItem {
   status?: string;
   synthetic: boolean;
   totalTracks: number;
+  warnings?: string[];
 }
 
 export type CopAlertSeverity = "critical" | "info" | "warning";
@@ -267,7 +301,7 @@ export interface CopDashboardFilters {
   minConfidence: number;
 }
 
-export type CopLayer = "air-situation" | "uav" | "friendly" | "foreign" | "data-quality";
+export type CopLayer = "air-situation" | "uav" | "friendly" | "foreign" | "public-flights" | "data-quality";
 
 export async function fetchCopDashboardData(
   apiBase: string,
@@ -386,6 +420,9 @@ export function filterObjectsByLayer(objects: CopObject[], layer: CopLayer): Cop
   if (layer === "data-quality") {
     return objects.filter((object) => (object.confidence ?? 0) < 0.5);
   }
+  if (layer === "public-flights") {
+    return objects.filter(isPublicFlightObject);
+  }
   return objects;
 }
 
@@ -395,6 +432,14 @@ export function getDataQualityCount(objects: CopObject[]): number {
 
 export function getUavCount(objects: CopObject[]): number {
   return objects.filter((object) => object.objectType === "UAV").length;
+}
+
+export function getPublicFlightCount(objects: CopObject[]): number {
+  return objects.filter(isPublicFlightObject).length;
+}
+
+export function isPublicFlightObject(object: CopObject): boolean {
+  return object.attributes?.flightData !== undefined || object.attributes?.dataOrigin === "PUBLIC_FLIGHT_AGGREGATE";
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {

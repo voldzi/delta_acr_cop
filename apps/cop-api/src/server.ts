@@ -12,6 +12,7 @@ import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAle
 import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
+import { createFlightDataSourceFromEnv, unavailableFlightDataHealth, type FlightDataSource } from "./flight-data-source.js";
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems } from "./source-health.js";
@@ -19,7 +20,7 @@ import { appendAudit, createInitialState } from "./state.js";
 import { createTrackHistoryStoreFromEnv, type TrackHistoryStore } from "./track-history-store.js";
 import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory, type TrackHistoryQuery } from "./temporal-history.js";
 import { createTrackLifecycleConfig, selectCurrentTracks, type TrackLifecycleConfig } from "./track-lifecycle.js";
-import type { AlertAcknowledgement, CopState, TrackHistoryPoint } from "./types.js";
+import type { AlertAcknowledgement, CopState, SourceHealthOverride, TrackHistoryPoint } from "./types.js";
 import {
   createUserProfileStoreFromEnv,
   InMemoryUserProfileStore,
@@ -29,6 +30,7 @@ import {
 } from "./user-profile-store.js";
 
 export interface BuildServerOptions {
+  flightDataSource?: FlightDataSource;
   state?: CopState;
   logger?: boolean;
   now?: () => Date;
@@ -74,35 +76,43 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const streamBroadcaster = options.streamBroadcaster ?? createStreamBroadcasterFromEnv();
   const userProfileStore = options.userProfileStore ?? createUserProfileStoreFromEnv();
   const userProfileFallbackStore = new InMemoryUserProfileStore("memory-fallback");
+  const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
   const mobileDeviceRegistrations = new Map<string, MobileDeviceRegistration>();
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
   let userProfileStoreStatus: DependencyStatus = "degraded";
   let userProfileStoreDetail = `${userProfileStore.name}: initializing`;
   let restoredCurrentTrackCount = 0;
+  let flightDataPollTimer: ReturnType<typeof setInterval> | undefined;
 
   app.decorate("copState", state);
+  if (flightDataSource) {
+    state.sources.set(flightDataSource.sourceSystem.sourceSystemId, flightDataSource.sourceSystem);
+  }
   void app.register(cors, { origin: true });
   void app.register(sensible);
   void app.register(websocket);
   app.addHook("preHandler", requireBearerToken);
   app.addHook("onReady", async () => {
     await initializeUserProfileStore();
-    if (!trackHistoryStore) {
-      return;
+    if (trackHistoryStore) {
+      try {
+        await trackHistoryStore.init();
+        restoredCurrentTrackCount = await restoreCurrentState();
+        trackHistoryStoreStatus = "ok";
+        trackHistoryStoreDetail = `${trackHistoryStore.name}: ready; restored ${restoredCurrentTrackCount} current tracks`;
+      } catch (error) {
+        trackHistoryStoreStatus = "degraded";
+        trackHistoryStoreDetail = `${trackHistoryStore.name}: ${errorMessage(error)}`;
+        app.log.error({ error }, "Track history store initialization failed; using in-memory fallback.");
+      }
     }
-    try {
-      await trackHistoryStore.init();
-      restoredCurrentTrackCount = await restoreCurrentState();
-      trackHistoryStoreStatus = "ok";
-      trackHistoryStoreDetail = `${trackHistoryStore.name}: ready; restored ${restoredCurrentTrackCount} current tracks`;
-    } catch (error) {
-      trackHistoryStoreStatus = "degraded";
-      trackHistoryStoreDetail = `${trackHistoryStore.name}: ${errorMessage(error)}`;
-      app.log.error({ error }, "Track history store initialization failed; using in-memory fallback.");
-    }
+    await initializeFlightDataSource();
   });
   app.addHook("onClose", async () => {
+    if (flightDataPollTimer) {
+      clearInterval(flightDataPollTimer);
+    }
     await trackHistoryStore?.close();
     await userProfileStore.close();
     await userProfileFallbackStore.close();
@@ -125,6 +135,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "in-memory-cop-state", status: "ok" },
       { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
       { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
+      ...(flightDataSource ? [flightDataDependency()] : []),
       { name: "ai-gateway", status: "degraded", detail: "mock provider only" }
     ]
   }));
@@ -253,6 +264,80 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   function activeUserProfileStore(): UserProfileStore {
     return userProfileStoreStatus === "ok" ? userProfileStore : userProfileFallbackStore;
+  }
+
+  async function initializeFlightDataSource(): Promise<void> {
+    if (!flightDataSource) {
+      return;
+    }
+    await refreshFlightDataSource("startup");
+    if (flightDataSource.config.pollMs > 0) {
+      flightDataPollTimer = setInterval(() => {
+        void refreshFlightDataSource("interval");
+      }, flightDataSource.config.pollMs);
+      flightDataPollTimer.unref?.();
+    }
+  }
+
+  async function refreshFlightDataSource(trigger: "interval" | "startup"): Promise<void> {
+    if (!flightDataSource) {
+      return;
+    }
+    const requestNow = now();
+    try {
+      const result = await flightDataSource.poll(requestNow);
+      state.sources.set(flightDataSource.sourceSystem.sourceSystemId, withFlightDataHealth(activeFlightDataSourceSystem(), result.health));
+      const acceptedObjects: ObservedObject[] = [];
+      for (const event of result.events) {
+        if (state.events.has(event.eventId)) {
+          continue;
+        }
+        const accepted = acceptEvent(state, event);
+        await persistCurrentTrack(accepted.object, accepted.accepted);
+        await persistTrackHistoryPoint(accepted.historyPoint);
+        acceptedObjects.push(accepted.object);
+      }
+      if (acceptedObjects.length > 0) {
+        await publishCurrentTracks(acceptedObjects);
+      }
+      appendAudit(state, "FLIGHT_DATA_POLL_OK", {
+        acceptedEvents: acceptedObjects.length,
+        sourceSystemId: flightDataSource.sourceSystem.sourceSystemId,
+        trigger,
+        warnings: result.response.warnings
+      });
+    } catch (error) {
+      const health = unavailableFlightDataHealth(error, requestNow);
+      state.sources.set(flightDataSource.sourceSystem.sourceSystemId, withFlightDataHealth(activeFlightDataSourceSystem(), health));
+      appendAudit(state, "FLIGHT_DATA_POLL_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: flightDataSource.sourceSystem.sourceSystemId,
+        trigger
+      });
+      app.log.warn({ error }, "Flight data source poll failed.");
+    }
+  }
+
+  function flightDataDependency(): { detail: string; name: string; status: DependencyStatus } {
+    if (!flightDataSource) {
+      return { detail: "disabled", name: "flight-data-source", status: "disabled" };
+    }
+    const health = readFlightDataHealth(state.sources.get(flightDataSource.sourceSystem.sourceSystemId));
+    if (!health) {
+      return { detail: "waiting for first poll", name: "flight-data-source", status: "degraded" };
+    }
+    return {
+      detail: health.detail ?? health.lastError ?? health.health.toLowerCase(),
+      name: "flight-data-source",
+      status: health.health === "ONLINE" ? "ok" : "degraded"
+    };
+  }
+
+  function activeFlightDataSourceSystem(): SourceSystem {
+    if (!flightDataSource) {
+      throw new Error("Flight data source is not enabled.");
+    }
+    return state.sources.get(flightDataSource.sourceSystem.sourceSystemId) ?? flightDataSource.sourceSystem;
   }
 
   async function readUserProfile(actor: AuthenticatedActor): Promise<UserProfileRecord | null> {
@@ -1084,6 +1169,39 @@ function acceptEvent(
   return { accepted, historyPoint, object };
 }
 
+function withFlightDataHealth(source: SourceSystem, health: SourceHealthOverride): SourceSystem {
+  return {
+    ...source,
+    attributes: {
+      ...source.attributes,
+      flightDataHealth: health
+    },
+    updatedAt: health.evaluatedAt
+  };
+}
+
+function readFlightDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
+  const value = source?.attributes?.flightDataHealth;
+  if (!isRecord(value) || !isFlightDataHealth(value.health)) {
+    return undefined;
+  }
+  return {
+    detail: typeof value.detail === "string" ? value.detail : undefined,
+    evaluatedAt: typeof value.evaluatedAt === "string" ? value.evaluatedAt : new Date().toISOString(),
+    generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : undefined,
+    health: value.health,
+    lastError: typeof value.lastError === "string" ? value.lastError : undefined,
+    lastPollAt: typeof value.lastPollAt === "string" ? value.lastPollAt : undefined,
+    lastSuccessAt: typeof value.lastSuccessAt === "string" ? value.lastSuccessAt : undefined,
+    summary: isRecord(value.summary) ? value.summary : undefined,
+    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
+  };
+}
+
+function isFlightDataHealth(value: unknown): value is SourceHealthOverride["health"] {
+  return value === "DEGRADED" || value === "ONLINE" || value === "STALE" || value === "UNAVAILABLE" || value === "WAITING";
+}
+
 function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
   return canReadBySyntheticFlag(subject, point.synthetic);
 }
@@ -1301,7 +1419,7 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     predictionMode: optionalString(value.predictionMode, ["adaptive", "telemetry", "history", "maneuver"]),
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
     refreshSeconds: optionalFiniteNumber(value.refreshSeconds, 1, 60),
-    selectedLayer: optionalString(value.selectedLayer, ["air-situation", "uav", "friendly", "foreign", "data-quality"]),
+    selectedLayer: optionalString(value.selectedLayer, ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),

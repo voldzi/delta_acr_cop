@@ -19,6 +19,20 @@ export interface CopState {
   auditEvents: Array<Record<string, unknown>>;
 }
 
+export type SourceHealthOverrideStatus = "DEGRADED" | "ONLINE" | "STALE" | "UNAVAILABLE" | "WAITING";
+
+export interface SourceHealthOverride {
+  detail?: string;
+  evaluatedAt: string;
+  generatedAt?: string;
+  health: SourceHealthOverrideStatus;
+  lastError?: string;
+  lastPollAt?: string;
+  lastSuccessAt?: string;
+  summary?: Record<string, unknown>;
+  warnings?: string[];
+}
+
 export interface AlertAcknowledgement {
   acknowledgedAt: string;
   alertId: string;

@@ -1,9 +1,9 @@
 import type { CanonicalEventEnvelope, EventType, ObservedObject, SourceSystem } from "@cop/canonical-model";
 import { readObjectProvenance } from "./provenance.js";
 import { resolveTrackLifecycle, selectCurrentTracks, type TrackLifecycleConfig } from "./track-lifecycle.js";
-import type { CopState } from "./types.js";
+import type { CopState, SourceHealthOverride } from "./types.js";
 
-export type SourceHealthStatus = "DISABLED" | "ONLINE" | "QUIET" | "STALE" | "WAITING";
+export type SourceHealthStatus = "DEGRADED" | "DISABLED" | "ONLINE" | "QUIET" | "STALE" | "UNAVAILABLE" | "WAITING";
 
 export interface SourceHealthItem {
   acceptedEvents: number;
@@ -14,10 +14,13 @@ export interface SourceHealthItem {
   eventTypeCounts: Partial<Record<EventType, number>>;
   expiredTracks: number;
   health: SourceHealthStatus;
+  detail?: string;
   lastEventAt?: string;
+  lastError?: string;
   lastLatencyMs?: number;
   lastObservationAgeSeconds?: number;
   lastObservationAt?: string;
+  warnings?: string[];
   lowConfidenceTracks: number;
   sourceSystemId: string;
   sourceType: SourceSystem["sourceType"];
@@ -39,7 +42,8 @@ function buildSourceHealthItem(source: SourceSystem, state: CopState, now: Date,
   const latencies = events.map(eventLatencyMs).filter((value): value is number => value !== undefined);
   const lastEvent = latestEvent(events);
   const lastEventAt = lastEvent ? eventTimestamp(lastEvent) : undefined;
-  const lastObservationAt = latestIso([lastEventAt, ...sourceObjects.map((object) => object.lastUpdatedAt)]);
+  const override = readSourceHealthOverride(source);
+  const lastObservationAt = latestIso([override?.lastSuccessAt, override?.generatedAt, lastEventAt, ...sourceObjects.map((object) => object.lastUpdatedAt)]);
   const lastObservationAgeSeconds = lastObservationAt
     ? Math.max(0, Math.round((now.getTime() - Date.parse(lastObservationAt)) / 1000))
     : undefined;
@@ -48,13 +52,15 @@ function buildSourceHealthItem(source: SourceSystem, state: CopState, now: Date,
   return {
     acceptedEvents: events.length,
     ...(confidences.length > 0 ? { avgConfidence: average(confidences) } : {}),
+    ...(override?.detail ? { detail: override.detail } : {}),
     ...(latencies.length > 0 ? { avgLatencyMs: Math.round(average(latencies)) } : {}),
     currentTracks,
     displayName: source.displayName,
     eventTypeCounts: eventCounts(events),
     expiredTracks: lifecycleStates.filter((track) => track.expired).length,
-    health: resolveSourceHealth(source, lastObservationAgeSeconds, lifecycle),
+    health: override?.health ?? resolveSourceHealth(source, lastObservationAgeSeconds, lifecycle),
     ...(lastEventAt ? { lastEventAt } : {}),
+    ...(override?.lastError ? { lastError: override.lastError } : {}),
     ...(lastEvent ? latencyField(lastEvent) : {}),
     ...(lastObservationAgeSeconds === undefined ? {} : { lastObservationAgeSeconds }),
     ...(lastObservationAt ? { lastObservationAt } : {}),
@@ -64,7 +70,8 @@ function buildSourceHealthItem(source: SourceSystem, state: CopState, now: Date,
     staleTracks: lifecycleStates.filter((track) => track.stale && !track.expired).length,
     status: source.status,
     synthetic: source.synthetic,
-    totalTracks: sourceObjects.length
+    totalTracks: sourceObjects.length,
+    ...(override?.warnings && override.warnings.length > 0 ? { warnings: override.warnings } : {})
   };
 }
 
@@ -96,6 +103,40 @@ function resolveSourceHealth(
     return "QUIET";
   }
   return "STALE";
+}
+
+function readSourceHealthOverride(source: SourceSystem): SourceHealthOverride | undefined {
+  const value = source.attributes?.flightDataHealth;
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const health = value.health;
+  if (!isSourceHealthOverrideStatus(health)) {
+    return undefined;
+  }
+  return {
+    detail: optionalString(value.detail),
+    evaluatedAt: optionalString(value.evaluatedAt) ?? new Date().toISOString(),
+    generatedAt: optionalString(value.generatedAt),
+    health,
+    lastError: optionalString(value.lastError),
+    lastPollAt: optionalString(value.lastPollAt),
+    lastSuccessAt: optionalString(value.lastSuccessAt),
+    summary: isRecord(value.summary) ? value.summary : undefined,
+    warnings: Array.isArray(value.warnings) ? value.warnings.filter((item): item is string => typeof item === "string") : undefined
+  };
+}
+
+function isSourceHealthOverrideStatus(value: unknown): value is SourceHealthOverride["health"] {
+  return value === "DEGRADED" || value === "ONLINE" || value === "STALE" || value === "UNAVAILABLE" || value === "WAITING";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
 function latestEvent(events: CanonicalEventEnvelope[]): CanonicalEventEnvelope | undefined {

@@ -7,7 +7,7 @@ Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplik
 | Oblast | Stav | Poznámka |
 | --- | --- | --- |
 | Profesionální mapové COP UI | Dokončeno v pilotu | Mapová plocha, vrstvy, detail objektu, refresh, historie/predikce, per-user nastavení, PWA metadata, offline shell, responzivní tablet/telefon režim a veřejné publikování. |
-| SIM integrace | Dokončeno v pilotu | COP přijímá a zobrazuje cíle ze SIM projektu přes ingest kontrakt. |
+| SIM integrace | Dokončeno v pilotu | COP přijímá a zobrazuje cíle ze SIM projektu přes ingest kontrakt a samostatný agregovaný `flight-data-api` zdroj. |
 | NATO symbologie | Dokončeno v pilotu | Vlastní prvky jsou modré, cizí prvky červené, symboly jsou řešené přes renderer a UI metadata. |
 | Lifecycle objektů | Dokončeno v pilotu | Aktivní/stale/lost stav chrání mapu před trvalým zobrazováním zastavených simulovaných dat. |
 | Proximity awareness | Dokončeno v pilotu | Uživatel může zobrazit vlastní polohu a průsvitnou varovnou vrstvu přiblížení cizích objektů. |
@@ -99,3 +99,4 @@ Status: pilotně hotovo, serverová evidence konfliktů a Alert Center v1 dopln�
 | 2026-05-19 | AOI alerting v1 | Přidán typ alertu `AOI_ENTRY`, uložení AOI pravidla v serverovém profilu, výpočet vstupu objektu do oblasti zájmu a samostatná velmi průsvitná AOI vrstva v mapě. |
 | 2026-05-19 | PWA offline/degraded mode v1 | Přidán service worker pro offline shell, lokální cache posledního COP snapshotu per operátorský scope a jasné UI `ONLINE` / `DEGRADED` / `OFFLINE` s read-only fallbackem. |
 | 2026-05-19 | Native iOS/iPadOS API baseline | Přidány endpointy `/api/v1/mobile/bootstrap`, `/api/v1/mobile/offline-snapshot`, `/api/v1/mobile/devices` a realizační dokument pro nativní mobilní aplikaci. |
+| 2026-05-20 | Public flight data source v1 | Přidán server-side pull adapter pro SIM `flight-data-api`, canonical mapping `PUBLIC_FLIGHT_AGGREGATE`, Source Health override, vrstva `Public flights`, detail licencí/providerů a provozní env konfigurace. |

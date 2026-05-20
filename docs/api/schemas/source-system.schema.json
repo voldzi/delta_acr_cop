@@ -29,6 +29,7 @@
       "enum": [
         "SIMULATOR",
         "AIR_SYSTEM",
+        "PUBLIC_FLIGHT_AGGREGATE",
         "GROUND_SYSTEM",
         "UAV_SYSTEM",
         "RESCUE_SYSTEM",
@@ -90,6 +91,10 @@
     "updatedAt": {
       "type": "string",
       "format": "date-time"
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": true
     }
   }
 }

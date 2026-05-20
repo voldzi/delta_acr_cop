@@ -1094,7 +1094,7 @@ components:
           maximum: 60
         selectedLayer:
           type: string
-          enum: [air-situation, uav, friendly, foreign, data-quality]
+          enum: [air-situation, uav, friendly, foreign, public-flights, data-quality]
         showHistory:
           type: boolean
         showPrediction:
@@ -1811,7 +1811,15 @@ components:
           type: boolean
         health:
           type: string
-          enum: [ONLINE, QUIET, STALE, WAITING, DISABLED]
+          enum: [ONLINE, QUIET, STALE, WAITING, DISABLED, DEGRADED, UNAVAILABLE]
+        detail:
+          type: string
+        lastError:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
         lastEventAt:
           type: string
           format: date-time
