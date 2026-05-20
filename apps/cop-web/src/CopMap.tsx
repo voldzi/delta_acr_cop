@@ -40,6 +40,7 @@ const situationLineLayerId = "cop-situation-line";
 const situationPointSelectedLayerId = "cop-situation-point-selected";
 const situationWeatherPointLayerId = "cop-situation-weather-point";
 const situationWeatherLabelLayerId = "cop-situation-weather-label";
+const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
 const situationPointLayerId = "cop-situation-point";
 const situationLabelLayerId = "cop-situation-label";
 const userLocationAccuracyLayerId = "cop-user-location-accuracy";
@@ -58,6 +59,9 @@ const tileAttribution = import.meta.env.VITE_COP_TILE_ATTRIBUTION ?? "&copy; Ope
 const defaultCenter = parseMapCenter(import.meta.env.VITE_COP_MAP_CENTER);
 const defaultZoom = parseFiniteNumber(import.meta.env.VITE_COP_MAP_ZOOM, 8);
 const earthRadiusKm = 6371.0088;
+const mobileNetworkIconPrefix = "cop-mobile-network";
+const mobileNetworkIconTones = ["info", "advisory", "warning", "critical", "unknown"] as const;
+type MobileNetworkIconTone = (typeof mobileNetworkIconTones)[number];
 
 export interface TrackFeatureProperties {
   objectId: string;
@@ -141,6 +145,8 @@ export interface SituationContextFeatureCollection {
       situationStatusColor?: string;
       situationStatusLabel?: string;
       situationStatusTone?: string;
+      mobileNetworkLabel?: string;
+      mobileSymbolKey?: string;
     };
   }>;
 }
@@ -358,6 +364,7 @@ export function CopMap({
           data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
         });
         await registerNatoSymbolImages(map);
+        await registerSituationSymbolImages(map);
         if (mapRef.current !== map) {
           return;
         }
@@ -526,39 +533,19 @@ export function CopMap({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "layer"], "mobile"]],
           paint: {
             "circle-color": [
               "case",
-              ["==", ["get", "layer"], "mobile"],
-              ["coalesce", ["get", "situationStatusColor"], "#a78bfa"],
-              [
-                "match",
-                ["get", "layer"],
-                "weather",
-                "#38bdf8",
-                "ground",
-                "#22c55e",
-                "traffic",
-                "#facc15",
-                "#8cb6d8"
-              ]
+              ["get", "stale"],
+              "#facc15",
+              ["match", ["get", "layer"], "ground", "#22c55e", "traffic", "#facc15", "#8cb6d8"]
             ],
             "circle-opacity": ["case", ["get", "stale"], 0.52, 0.88],
-            "circle-radius": [
-              "case",
-              ["==", ["get", "layer"], "mobile"],
-              ["interpolate", ["linear"], ["zoom"], 7, 7, 12, 10, 16, 15],
-              ["interpolate", ["linear"], ["zoom"], 7, 5, 12, 7, 16, 10]
-            ],
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 5, 12, 7, 16, 10],
             "circle-stroke-color": "#061019",
             "circle-stroke-opacity": 0.9,
-            "circle-stroke-width": [
-              "case",
-              ["==", ["get", "layer"], "mobile"],
-              ["match", ["get", "situationStatusTone"], "critical", 3, "warning", 2.5, "advisory", 2, 1.6],
-              ["case", ["get", "stale"], 1, 1.6]
-            ]
+            "circle-stroke-width": ["case", ["get", "stale"], 1, 1.6]
           }
         });
 
@@ -566,14 +553,9 @@ export function CopMap({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "layer"], "mobile"]],
           layout: {
-            "text-field": [
-              "case",
-              ["==", ["get", "layer"], "mobile"],
-              ["concat", ["get", "label"], "\n", ["get", "situationStatusLabel"]],
-              ["get", "label"]
-            ],
+            "text-field": ["get", "label"],
             "text-font": ["Open Sans Semibold"],
             "text-size": ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 10, 14, 12],
             "text-offset": [0, 1.25],
@@ -586,6 +568,34 @@ export function CopMap({
             "text-halo-color": "#061019",
             "text-halo-width": 1.5,
             "text-halo-blur": 0.4
+          }
+        });
+
+        map.addLayer({
+          id: situationMobileSymbolLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "mobile"]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "mobileSymbolKey"], getMobileNetworkIconKey("unknown")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.26, 11, 0.34, 15, 0.48],
+            "icon-anchor": "center",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+            "text-field": ["coalesce", ["get", "mobileNetworkLabel"], "MOBILE"],
+            "text-font": ["Open Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 7, 9, 11, 11, 15, 13],
+            "text-offset": [0, -2.2],
+            "text-anchor": "bottom",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.74, 0.96],
+            "text-color": ["coalesce", ["get", "situationStatusColor"], "#dff8ff"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.7,
+            "text-halo-blur": 0.35
           }
         });
 
@@ -848,6 +858,7 @@ export function CopMap({
         map.on("click", trackClusterLabelLayerId, handleClick);
         map.on("click", situationPointLayerId, handleSituationClick);
         map.on("click", situationLabelLayerId, handleSituationClick);
+        map.on("click", situationMobileSymbolLayerId, handleSituationClick);
         map.on("click", situationWeatherPointLayerId, handleSituationClick);
         map.on("click", situationWeatherLabelLayerId, handleSituationClick);
         map.on("click", situationLineLayerId, handleSituationClick);
@@ -889,6 +900,9 @@ export function CopMap({
         map.on("mouseenter", situationLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationMobileSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationWeatherPointLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -923,6 +937,9 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationMobileSymbolLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherPointLayerId, () => {
@@ -1358,6 +1375,15 @@ export function situationFeaturesToFeatureCollection(
 
 function buildSituationRenderProperties(feature: SituationFeature): Partial<SituationContextFeatureCollection["features"][number]["properties"]> {
   const status = situationFeatureStatus(feature);
+  if (feature.properties.layer === "mobile") {
+    return {
+      mobileNetworkLabel: formatMobileNetworkLabel(feature),
+      mobileSymbolKey: getMobileNetworkIconKey(status.tone),
+      situationStatusColor: status.color,
+      situationStatusLabel: status.label,
+      situationStatusTone: status.tone
+    };
+  }
   if (feature.properties.layer !== "weather") {
     return {
       situationStatusColor: status.color,
@@ -1410,6 +1436,78 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
     return { color: "#22c55e", label: "OK", tone: "info" };
   }
   return { color: "#a78bfa", label: raw.toUpperCase(), tone: "unknown" };
+}
+
+function formatMobileNetworkLabel(feature: SituationFeature): string {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const raw = stringProperty(tags.accessTechnology)
+    ?? stringProperty(tags.catTechnology)
+    ?? stringProperty(tags.networkType)
+    ?? stringProperty(tags.networkGeneration)
+    ?? stringProperty(tags.technology)
+    ?? stringProperty(tags.radioAccessTechnology)
+    ?? stringProperty(tags.rat)
+    ?? stringProperty(tags.standard)
+    ?? stringProperty(tags.type)
+    ?? stringProperty(metrics.accessTechnology)
+    ?? stringProperty(metrics.catTechnology)
+    ?? stringProperty(metrics.networkType)
+    ?? stringProperty(metrics.networkGeneration)
+    ?? stringProperty(metrics.technology)
+    ?? stringProperty(metrics.radioAccessTechnology)
+    ?? stringProperty(metrics.rat)
+    ?? stringProperty(metrics.standard)
+    ?? stringProperty(metrics.type)
+    ?? stringProperty(feature.properties.category);
+
+  return normalizeMobileNetworkLabel(raw) ?? "MOBILE";
+}
+
+function normalizeMobileNetworkLabel(raw: string | undefined): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const normalized = raw.toLowerCase().replace(/[_\s.-]+/g, "");
+  if ((normalized.includes("5g") || normalized.includes("nr")) && (normalized.includes("4g") || normalized.includes("lte"))) {
+    return "4G/5G";
+  }
+  if (normalized.includes("5g") || normalized.includes("nr")) {
+    return "5G";
+  }
+  if (normalized.includes("4g") || normalized.includes("lte")) {
+    return "4G";
+  }
+  if (normalized.includes("3g") || normalized.includes("umts") || normalized.includes("wcdma") || normalized.includes("hspa")) {
+    return "3G";
+  }
+  if (normalized.includes("2g") || normalized.includes("gsm") || normalized.includes("gprs") || normalized.includes("edge")) {
+    return "2G";
+  }
+  if (normalized.includes("mobile") || normalized.includes("cellular") || normalized.includes("network")) {
+    return "MOBILE";
+  }
+  const compact = raw.trim().replace(/\s+/g, " ").toUpperCase();
+  return compact.length > 0 ? compact.slice(0, 10) : undefined;
+}
+
+function getMobileNetworkIconKey(tone: string | undefined): string {
+  return `${mobileNetworkIconPrefix}-${normalizeMobileNetworkIconTone(tone)}`;
+}
+
+function normalizeMobileNetworkIconTone(tone: string | undefined): MobileNetworkIconTone {
+  return mobileNetworkIconTones.includes(tone as MobileNetworkIconTone) ? tone as MobileNetworkIconTone : "unknown";
+}
+
+function mobileNetworkIconColor(tone: MobileNetworkIconTone): string {
+  const colors: Record<MobileNetworkIconTone, string> = {
+    advisory: "#fb923c",
+    critical: "#ef4444",
+    info: "#22c55e",
+    unknown: "#a78bfa",
+    warning: "#facc15"
+  };
+  return colors[tone];
 }
 
 function formatWeatherMapLabel(temperatureC: number | undefined, windSpeedMps: number | undefined, precipitationMm: number | undefined): string {
@@ -1803,6 +1901,17 @@ async function registerNatoSymbolImages(map: maplibregl.Map) {
   );
 }
 
+async function registerSituationSymbolImages(map: maplibregl.Map) {
+  mobileNetworkIconTones.forEach((tone) => {
+    const key = getMobileNetworkIconKey(tone);
+    if (!map.hasImage(key)) {
+      map.addImage(key, createMobileNetworkSymbolImage(tone), {
+        pixelRatio: window.devicePixelRatio || 1
+      });
+    }
+  });
+}
+
 async function createNatoSymbolImage(objectType: string, affiliation: string): Promise<ImageData> {
   const canvas = document.createElement("canvas");
   const size = 96;
@@ -1819,6 +1928,75 @@ async function createNatoSymbolImage(objectType: string, affiliation: string): P
   const width = image.width * scale;
   const height = image.height * scale;
   context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+
+  return context.getImageData(0, 0, size, size);
+}
+
+function createMobileNetworkSymbolImage(tone: MobileNetworkIconTone): ImageData {
+  const canvas = document.createElement("canvas");
+  const size = 128;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+
+  const waveColor = mobileNetworkIconColor(tone);
+  context.clearRect(0, 0, size, size);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  const drawWaves = (strokeStyle: string, lineWidth: number, alpha = 1) => {
+    context.save();
+    context.globalAlpha = alpha;
+    context.strokeStyle = strokeStyle;
+    context.lineWidth = lineWidth;
+    [24, 38, 52].forEach((radius) => {
+      context.beginPath();
+      context.arc(64, 44, radius, -0.86, 0.86);
+      context.stroke();
+      context.beginPath();
+      context.arc(64, 44, radius, Math.PI - 0.86, Math.PI + 0.86);
+      context.stroke();
+    });
+    context.restore();
+  };
+
+  const drawTower = (strokeStyle: string, lineWidth: number, alpha = 1) => {
+    context.save();
+    context.globalAlpha = alpha;
+    context.strokeStyle = strokeStyle;
+    context.lineWidth = lineWidth;
+    context.beginPath();
+    context.moveTo(64, 42);
+    context.lineTo(36, 110);
+    context.moveTo(64, 42);
+    context.lineTo(92, 110);
+    context.moveTo(64, 42);
+    context.lineTo(64, 112);
+    context.moveTo(42, 110);
+    context.lineTo(86, 110);
+    context.moveTo(50, 72);
+    context.lineTo(78, 88);
+    context.moveTo(78, 72);
+    context.lineTo(50, 88);
+    context.moveTo(45, 94);
+    context.lineTo(83, 94);
+    context.moveTo(57, 56);
+    context.lineTo(71, 56);
+    context.stroke();
+    context.fillStyle = strokeStyle;
+    context.beginPath();
+    context.arc(64, 42, lineWidth >= 8 ? 9 : 5, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+  };
+
+  drawWaves("rgba(248, 250, 252, 0.92)", 13, 0.9);
+  drawWaves(waveColor, 7, 0.96);
+  drawTower("rgba(248, 250, 252, 0.96)", 10, 0.95);
+  drawTower("#061019", 5, 0.96);
 
   return context.getImageData(0, 0, size, size);
 }

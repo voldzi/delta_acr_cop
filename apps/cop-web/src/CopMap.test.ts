@@ -156,6 +156,64 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("adds mobile network tower render metadata from status and radio technology", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.48, 50.09], type: "Point" },
+          properties: {
+            category: "mobile.network",
+            confidence: 0.86,
+            featureId: "mobile:cell-001",
+            label: "Mobile network node",
+            layer: "mobile",
+            metrics: {
+              latencyMs: 95,
+              networkStatus: "degraded"
+            },
+            observedAt: "2026-05-20T10:00:00Z",
+            sourceId: "mobile_monitor",
+            stale: false,
+            tags: {
+              technology: "NR 5G"
+            }
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-20T10:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["mobile"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 1
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      featureId: "mobile:cell-001",
+      layer: "mobile",
+      mobileNetworkLabel: "5G",
+      mobileSymbolKey: "cop-mobile-network-warning",
+      situationStatusColor: "#facc15",
+      situationStatusLabel: "ZHORŠENÝ",
+      situationStatusTone: "warning"
+    });
+  });
+
   it("parses map center from longitude and latitude env value", () => {
     expect(parseMapCenter("15.1,50.2")).toEqual([15.1, 50.2]);
     expect(parseMapCenter("invalid")).toEqual([14.42, 50.08]);
