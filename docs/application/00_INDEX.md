@@ -8,3 +8,4 @@
 - [06 COP Distribution](06_COP_DISTRIBUTION.md)
 - [07 Source Registry](07_SOURCE_REGISTRY.md)
 - [08 Audit and Observability](08_AUDIT_AND_OBSERVABILITY.md)
+- [09 Community Reporting and Media](09_COMMUNITY_REPORTING_AND_MEDIA.md)

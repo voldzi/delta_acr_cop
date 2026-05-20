@@ -16,13 +16,13 @@ Součástí v1:
 - moje poloha a lokální proximity výstraha jako mapová vrstva,
 - historie stop v sekundách a read-only replay,
 - lokální šifrovaný offline snapshot,
+- offline outbox pro uživatelská hlášení s fotkou a polohou,
 - jasný režim `ONLINE`, `DEGRADED`, `OFFLINE`,
 - auditovatelná registrace zařízení pro budoucí APNS/MDM policy.
 
 Mimo v1:
 
 - editace nebo zadávání taktických úkolů,
-- manuální hlášení z offline outboxu,
 - push notifikace přes APNS,
 - certifikace interoperability,
 - AI mimo informační shrnutí a datovou kvalitu.
@@ -88,6 +88,11 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `GET /api/v1/cop/alerts` pro serverové alerty,
 - `POST /api/v1/cop/alerts/{alertId}/acknowledge` pro potvrzení alertu,
 - `GET/PUT /api/v1/me/preferences` pro serverové preference,
+- `GET /api/v1/community/reports` pro komunitní mapovou vrstvu,
+- `POST /api/v1/community/reports` pro vytvoření hlášení,
+- `POST /api/v1/community/reports/{reportId}/attachments` pro presigned upload fotky/videa/dokumentu,
+- `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete` pro potvrzení uploadu,
+- `POST /api/v1/community/reports/{reportId}/submit` pro odeslání hlášení ke sdílení,
 - `GET /api/v1/sources` a `/api/v1/sources/health`,
 - `POST /api/v1/ai/cop-assistant/query` pouze pro povolené informační dotazy.
 
@@ -103,6 +108,7 @@ Navržené moduly:
 - `CopStreamClient`: SSE parser nad `URLSession` streamem.
 - `CopStore`: aktuální in-memory stav, merge snapshot/delta, stale/lost vyhodnocení.
 - `OfflineStore`: šifrovaný lokální snapshot, metadata stáří, read-only fallback.
+- `CommunityOutbox`: lokální šifrovaná fronta hlášení a příloh čekajících na upload.
 - `MapWorkspace`: MapLibre render, vrstvy, symboly, AOI/proximity kruhy.
 - `AlertCenter`: serverové alerty, lokální proximity výstrahy, ack flow.
 - `Settings/Profile`: vrstvy, historie, predikce, refresh/degraded preference.
@@ -168,12 +174,14 @@ MDM/MAM příprava:
 3. Pokud je token platný, volat `/api/v1/mobile/bootstrap`.
 4. Zobrazit bootstrap snapshot a uložit ho do `OfflineStore`.
 5. Načíst volitelné kontextové vrstvy přes `/api/v1/situation/layers` a `/api/v1/situation/features` podle aktuálního bbox mapy.
-6. Otevřít SSE `/api/v1/stream/cop/live`.
-7. `snapshot` zprávou nahradit current state.
-8. `delta` zprávy mergovat podle `objectId`.
-9. Při výpadku streamu přepnout na `DEGRADED` a volat `/api/v1/mobile/offline-snapshot`.
-10. Při výpadku API přepnout na `OFFLINE` a držet read-only snapshot.
-11. Po obnově spojení znovu zavolat bootstrap/offline snapshot a přepnout stav podle streamu.
+6. Načíst komunitní hlášení přes `/api/v1/community/reports` podle aktuálního bbox mapy.
+7. Otevřít SSE `/api/v1/stream/cop/live`.
+8. `snapshot` zprávou nahradit current state.
+9. `delta` zprávy mergovat podle `objectId`.
+10. Při výpadku streamu přepnout na `DEGRADED` a volat `/api/v1/mobile/offline-snapshot`.
+11. Při výpadku API přepnout na `OFFLINE` a držet read-only snapshot.
+12. Po obnově spojení znovu zavolat bootstrap/offline snapshot a přepnout stav podle streamu.
+13. Pokud `CommunityOutbox` obsahuje čekající hlášení, odeslat je v pořadí: report, upload slot, upload média, complete, submit.
 
 ## Generování klienta
 
@@ -183,6 +191,9 @@ Modely, které musí být stabilní:
 
 - `MobileBootstrap`,
 - `MobileOfflineSnapshot`,
+- `CommunityReport`,
+- `CommunityReportAttachment`,
+- `CommunityUploadSlot`,
 - `ObservedObject`,
 - `TrackHistoryPoint`,
 - `CopAlert`,
@@ -218,6 +229,8 @@ Distribuce:
 - Po obnovení sítě se obnoví snapshot a stream.
 - Historie v sekundách se zobrazuje pro vybrané objekty.
 - Serverové alerty lze potvrdit.
+- Uživatel vytvoří report s povinnou polohou, přidá fotku a aplikace ho odešle přes presigned upload.
+- Při ztrátě sítě report zůstane v šifrovaném outboxu a odešle se později.
 - Proximity alert se zobrazuje jako průsvitný kruh na mapě.
 - Device registration API vrací policy a nezobrazuje raw APNS token.
 - iPhone i iPad layout neobsahuje překryvy, které blokují mapu.
@@ -228,7 +241,6 @@ Distribuce:
 - APNS notifikace pro informační alerty,
 - persistentní serverová evidence mobilních zařízení,
 - MDM policy a device trust,
-- offline outbox pro manuální neakční hlášení,
 - vector tile/offline map pack management,
 - audit AI dotazů v mobilním klientovi,
 - contract tests proti vygenerovanému Swift klientovi.

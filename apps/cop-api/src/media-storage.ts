@@ -1,0 +1,216 @@
+import { createHash, createHmac } from "node:crypto";
+
+export interface MediaUploadRequest {
+  attachmentId: string;
+  byteSize: number;
+  contentType: string;
+  fileName?: string;
+  reportId: string;
+}
+
+export interface MediaUploadSlot {
+  bucket: string;
+  expiresAt: string;
+  headers: Record<string, string>;
+  method: "PUT";
+  objectKey: string;
+  uploadUrl: string;
+}
+
+export interface MediaStorage {
+  readonly name: string;
+  close(): Promise<void>;
+  diagnostics?(): string | undefined;
+  init(): Promise<void>;
+  createUploadSlot(request: MediaUploadRequest, now: Date): Promise<MediaUploadSlot>;
+}
+
+interface S3MediaStorageConfig {
+  accessKeyId: string;
+  bucket: string;
+  endpoint: string;
+  publicEndpoint: string;
+  region: string;
+  secretAccessKey: string;
+  uploadExpiresSeconds: number;
+}
+
+export function createMediaStorageFromEnv(env: Record<string, string | undefined> = process.env): MediaStorage | undefined {
+  const mode = (env.COP_MEDIA_STORE ?? "disabled").trim().toLowerCase();
+  if (mode === "disabled" || mode === "none" || mode === "off") {
+    return undefined;
+  }
+  if (mode !== "s3" && mode !== "seaweedfs") {
+    throw new Error(`Unsupported COP_MEDIA_STORE value: ${mode}`);
+  }
+
+  const endpoint = requiredEnv(env, "COP_MEDIA_S3_ENDPOINT");
+  const publicEndpoint = env.COP_MEDIA_S3_PUBLIC_ENDPOINT?.trim() || endpoint;
+  return new S3PresignedMediaStorage({
+    accessKeyId: requiredEnv(env, "COP_MEDIA_S3_ACCESS_KEY_ID"),
+    bucket: requiredEnv(env, "COP_MEDIA_S3_BUCKET"),
+    endpoint,
+    publicEndpoint,
+    region: env.COP_MEDIA_S3_REGION?.trim() || "us-east-1",
+    secretAccessKey: requiredEnv(env, "COP_MEDIA_S3_SECRET_ACCESS_KEY"),
+    uploadExpiresSeconds: readPositiveInteger(env.COP_MEDIA_UPLOAD_EXPIRES_SECONDS, 900)
+  });
+}
+
+export class S3PresignedMediaStorage implements MediaStorage {
+  readonly name = "s3-presigned";
+
+  constructor(private readonly config: S3MediaStorageConfig) {}
+
+  async init(): Promise<void> {
+    new URL(this.config.endpoint);
+    new URL(this.config.publicEndpoint);
+  }
+
+  async close(): Promise<void> {}
+
+  async createUploadSlot(request: MediaUploadRequest, now: Date): Promise<MediaUploadSlot> {
+    const objectKey = communityObjectKey(request);
+    const expiresAt = new Date(now.getTime() + this.config.uploadExpiresSeconds * 1000).toISOString();
+    return {
+      bucket: this.config.bucket,
+      expiresAt,
+      headers: {
+        "content-type": request.contentType
+      },
+      method: "PUT",
+      objectKey,
+      uploadUrl: presignPutUrl({
+        accessKeyId: this.config.accessKeyId,
+        bucket: this.config.bucket,
+        contentType: request.contentType,
+        endpoint: this.config.publicEndpoint,
+        expiresSeconds: this.config.uploadExpiresSeconds,
+        objectKey,
+        region: this.config.region,
+        secretAccessKey: this.config.secretAccessKey,
+        timestamp: now
+      })
+    };
+  }
+}
+
+interface PresignPutUrlInput {
+  accessKeyId: string;
+  bucket: string;
+  contentType: string;
+  endpoint: string;
+  expiresSeconds: number;
+  objectKey: string;
+  region: string;
+  secretAccessKey: string;
+  timestamp: Date;
+}
+
+function presignPutUrl(input: PresignPutUrlInput): string {
+  const endpoint = new URL(input.endpoint);
+  const amzDate = formatAmzDate(input.timestamp);
+  const dateScope = amzDate.slice(0, 8);
+  const credentialScope = `${dateScope}/${input.region}/s3/aws4_request`;
+  const urlPath = joinUrlPath(endpoint.pathname, input.bucket, input.objectKey);
+  const signedHeaders = "host";
+  const query: Record<string, string> = {
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": `${input.accessKeyId}/${credentialScope}`,
+    "X-Amz-Date": amzDate,
+    "X-Amz-Expires": String(input.expiresSeconds),
+    "X-Amz-SignedHeaders": signedHeaders
+  };
+  const canonicalQuery = canonicalQueryString(query);
+  const canonicalRequest = [
+    "PUT",
+    urlPath,
+    canonicalQuery,
+    `host:${endpoint.host}\n`,
+    signedHeaders,
+    "UNSIGNED-PAYLOAD"
+  ].join("\n");
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest)
+  ].join("\n");
+  const signature = hmacHex(signingKey(input.secretAccessKey, dateScope, input.region), stringToSign);
+  return `${endpoint.origin}${urlPath}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+}
+
+function communityObjectKey(request: MediaUploadRequest): string {
+  const fileName = safeFileName(request.fileName ?? `${request.attachmentId}.bin`);
+  return `community-reports/${request.reportId}/${request.attachmentId}/${fileName}`;
+}
+
+function safeFileName(value: string): string {
+  const normalized = value
+    .normalize("NFKD")
+    .replace(/[^\w.-]+/gu, "-")
+    .replace(/-+/gu, "-")
+    .replace(/^[-.]+|[-.]+$/gu, "")
+    .slice(0, 96);
+  return normalized || "attachment.bin";
+}
+
+function joinUrlPath(...parts: string[]): string {
+  const segments = parts
+    .flatMap((part) => part.split("/"))
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map(encodePathSegment);
+  return `/${segments.join("/")}`;
+}
+
+function encodePathSegment(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/gu, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function canonicalQueryString(query: Record<string, string>): string {
+  return Object.entries(query)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${awsEncode(key)}=${awsEncode(value)}`)
+    .join("&");
+}
+
+function awsEncode(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/gu, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function formatAmzDate(value: Date): string {
+  return value.toISOString().replace(/[:-]|\.\d{3}/gu, "");
+}
+
+function signingKey(secretAccessKey: string, dateScope: string, region: string): Buffer {
+  const kDate = hmacBuffer(`AWS4${secretAccessKey}`, dateScope);
+  const kRegion = hmacBuffer(kDate, region);
+  const kService = hmacBuffer(kRegion, "s3");
+  return hmacBuffer(kService, "aws4_request");
+}
+
+function hmacBuffer(key: string | Buffer, value: string): Buffer {
+  return createHmac("sha256", key).update(value).digest();
+}
+
+function hmacHex(key: string | Buffer, value: string): string {
+  return createHmac("sha256", key).update(value).digest("hex");
+}
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function requiredEnv(env: Record<string, string | undefined>, key: string): string {
+  const value = env[key]?.trim();
+  if (!value) {
+    throw new Error(`${key} is required when COP_MEDIA_STORE=s3.`);
+  }
+  return value;
+}
+
+function readPositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}

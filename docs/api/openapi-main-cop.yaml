@@ -21,6 +21,8 @@ tags:
     description: Authenticated operator profile and user-scoped preferences.
   - name: Mobile
     description: Native iPhone/iPad bootstrap, offline snapshot and device registration endpoints.
+  - name: Community Reports
+    description: User-created civil reports with location and media upload slots.
   - name: Ingest
     description: Event and batch ingest endpoints for registered external sources.
   - name: Situation State
@@ -172,6 +174,181 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/community/reports:
+    get:
+      tags: [Community Reports]
+      summary: List community reports for a map viewport.
+      operationId: listCommunityReports
+      parameters:
+        - name: bbox
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
+          description: "west,south,east,north"
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated community report categories.
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated statuses. Defaults to submitted,published plus own drafts when requested.
+        - name: includeOwnDrafts
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Community reports and map FeatureCollection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReportListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Community Reports]
+      summary: Create a draft community report.
+      operationId: createCommunityReport
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunityReportCreateRequest"
+      responses:
+        "201":
+          description: Draft report created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/community/reports/{reportId}:
+    get:
+      tags: [Community Reports]
+      summary: Read one community report.
+      operationId: getCommunityReport
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+      responses:
+        "200":
+          description: Community report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/community/reports/{reportId}/submit:
+    post:
+      tags: [Community Reports]
+      summary: Submit an owned draft report for sharing/moderation.
+      operationId: submitCommunityReport
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      responses:
+        "200":
+          description: Submitted report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/community/reports/{reportId}/attachments:
+    post:
+      tags: [Community Reports]
+      summary: Create a media upload slot for an owned report.
+      operationId: createCommunityReportAttachmentUpload
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunityAttachmentUploadRequest"
+      responses:
+        "201":
+          description: Attachment metadata and presigned upload URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityAttachmentUploadResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete:
+    post:
+      tags: [Community Reports]
+      summary: Mark an uploaded community report attachment as complete.
+      operationId: completeCommunityReportAttachmentUpload
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                byteSize:
+                  type: integer
+                  minimum: 1
+                checksumSha256:
+                  type: string
+                  pattern: "^[0-9a-fA-F]{64}$"
+      responses:
+        "200":
+          description: Completed attachment metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReportAttachment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/ingest/events:
     post:
       tags: [Ingest]
@@ -1047,6 +1224,13 @@ components:
       required: true
       schema:
         type: string
+    CommunityReportIdPath:
+      name: reportId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     HistorySecondsQuery:
       name: seconds
       in: query
@@ -1377,6 +1561,226 @@ components:
                 enum: [QUEUED, REJECTED]
               errorCode:
                 type: string
+    CommunityReportCreateRequest:
+      type: object
+      required: [category, location]
+      properties:
+        category:
+          $ref: "#/components/schemas/CommunityReportCategory"
+        title:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        location:
+          $ref: "#/components/schemas/CommunityReportLocation"
+        observedAt:
+          type: string
+          format: date-time
+        visibility:
+          $ref: "#/components/schemas/CommunityReportVisibility"
+        properties:
+          type: object
+          additionalProperties: true
+    CommunityReportListResponse:
+      type: object
+      required: [featureCollection, items, nextCursor, serverTimestamp]
+      properties:
+        featureCollection:
+          type: object
+          additionalProperties: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunityReport"
+        nextCursor:
+          type:
+            - string
+            - "null"
+        serverTimestamp:
+          type: string
+          format: date-time
+    CommunityReport:
+      type: object
+      required: [attachments, category, createdAt, createdBy, location, observedAt, properties, reportId, status, title, updatedAt, visibility]
+      properties:
+        reportId:
+          type: string
+          format: uuid
+        category:
+          $ref: "#/components/schemas/CommunityReportCategory"
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/CommunityReportStatus"
+        visibility:
+          $ref: "#/components/schemas/CommunityReportVisibility"
+        location:
+          $ref: "#/components/schemas/CommunityReportLocation"
+        observedAt:
+          type: string
+          format: date-time
+        submittedAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: object
+          required: [displayName, subjectId, username]
+          properties:
+            displayName:
+              type: string
+            subjectId:
+              type: string
+            username:
+              type: string
+        properties:
+          type: object
+          additionalProperties: true
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunityReportAttachment"
+    CommunityReportAttachment:
+      type: object
+      required: [attachmentId, bucket, byteSize, contentType, createdAt, kind, metadata, objectKey, reportId, status, subjectId, uploadExpiresAt]
+      properties:
+        attachmentId:
+          type: string
+          format: uuid
+        reportId:
+          type: string
+          format: uuid
+        subjectId:
+          type: string
+        kind:
+          type: string
+          enum: [photo, video, document]
+        status:
+          type: string
+          enum: [pending_upload, uploaded, failed, removed]
+        bucket:
+          type: string
+        objectKey:
+          type: string
+        contentType:
+          type: string
+        byteSize:
+          type: integer
+          minimum: 1
+        checksumSha256:
+          type: string
+        fileName:
+          type: string
+        capturedAt:
+          type: string
+          format: date-time
+        captureLocation:
+          $ref: "#/components/schemas/CommunityReportLocation"
+        uploadExpiresAt:
+          type: string
+          format: date-time
+        uploadedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    CommunityAttachmentUploadRequest:
+      type: object
+      required: [contentType, byteSize]
+      properties:
+        kind:
+          type: string
+          enum: [photo, video, document]
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp, image/heic, image/heif, video/mp4, video/quicktime, application/pdf]
+        byteSize:
+          type: integer
+          minimum: 1
+        fileName:
+          type: string
+          maxLength: 160
+        checksumSha256:
+          type: string
+          pattern: "^[0-9a-fA-F]{64}$"
+        capturedAt:
+          type: string
+          format: date-time
+        captureLocation:
+          $ref: "#/components/schemas/CommunityReportLocation"
+        metadata:
+          type: object
+          additionalProperties: true
+    CommunityAttachmentUploadResponse:
+      type: object
+      required: [attachment, upload]
+      properties:
+        attachment:
+          $ref: "#/components/schemas/CommunityReportAttachment"
+        upload:
+          type: object
+          required: [bucket, expiresAt, headers, method, objectKey, uploadUrl]
+          properties:
+            bucket:
+              type: string
+            expiresAt:
+              type: string
+              format: date-time
+            headers:
+              type: object
+              additionalProperties:
+                type: string
+            method:
+              type: string
+              enum: [PUT]
+            objectKey:
+              type: string
+            uploadUrl:
+              type: string
+              format: uri
+    CommunityReportLocation:
+      type: object
+      required: [lat, lon, source]
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+        accuracyM:
+          type: number
+          minimum: 0
+        source:
+          type: string
+          enum: [device, manual, photo_exif, unknown]
+    CommunityReportCategory:
+      type: string
+      enum: [fire, flood, bridge_damage, road_blockage, infrastructure_damage, medical, utility_outage, hazard, other]
+    CommunityReportStatus:
+      type: string
+      enum: [draft, submitted, published, hidden, rejected]
+    CommunityReportVisibility:
+      type: string
+      enum: [private, community, public]
     MobileBootstrap:
       type: object
       required: [actor, auth, capabilities, endpoints, map, policy, profile, snapshot, serverTimestamp]
@@ -1434,6 +1838,8 @@ components:
         - alertAcknowledgement
         - aoiAlerts
         - bootstrap
+        - communityReportUploads
+        - communityReports
         - deviceRegistration
         - offlineSnapshot
         - pushNotifications
@@ -1446,6 +1852,10 @@ components:
         aoiAlerts:
           type: boolean
         bootstrap:
+          type: boolean
+        communityReportUploads:
+          type: boolean
+        communityReports:
           type: boolean
         deviceRegistration:
           type: boolean

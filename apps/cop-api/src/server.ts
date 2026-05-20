@@ -9,10 +9,24 @@ import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
 import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAlert } from "./alerts.js";
+import {
+  createCommunityReportStoreFromEnv,
+  InMemoryCommunityReportStore,
+  type CommunityAttachmentKind,
+  type CommunityLocationSource,
+  type CommunityReportCategory,
+  type CommunityReportLocation,
+  type CommunityReportQuery,
+  type CommunityReportRecord,
+  type CommunityReportStatus,
+  type CommunityReportStore,
+  type CommunityReportVisibility
+} from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
 import { createFlightDataSourceFromEnv, unavailableFlightDataHealth, type FlightAirportQuery, type FlightDataSource } from "./flight-data-source.js";
+import { createMediaStorageFromEnv, type MediaStorage } from "./media-storage.js";
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems } from "./source-health.js";
@@ -51,6 +65,8 @@ import {
 
 export interface BuildServerOptions {
   flightDataSource?: FlightDataSource;
+  communityReportStore?: CommunityReportStore;
+  mediaStorage?: MediaStorage;
   safetyDataSource?: SafetyDataSource;
   situationDataSource?: SituationDataSource;
   state?: CopState;
@@ -98,6 +114,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const streamBroadcaster = options.streamBroadcaster ?? createStreamBroadcasterFromEnv();
   const userProfileStore = options.userProfileStore ?? createUserProfileStoreFromEnv();
   const userProfileFallbackStore = new InMemoryUserProfileStore("memory-fallback");
+  const communityReportStore = options.communityReportStore ?? createCommunityReportStoreFromEnv();
+  const communityReportFallbackStore = new InMemoryCommunityReportStore("memory-fallback");
+  const mediaStorage = options.mediaStorage ?? createMediaStorageFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
   const safetyDataSource = options.safetyDataSource ?? createSafetyDataSourceFromEnv();
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
@@ -106,6 +125,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
   let userProfileStoreStatus: DependencyStatus = "degraded";
   let userProfileStoreDetail = `${userProfileStore.name}: initializing`;
+  let communityReportStoreStatus: DependencyStatus = communityReportStore ? "degraded" : "disabled";
+  let communityReportStoreDetail = communityReportStore ? `${communityReportStore.name}: initializing` : "disabled";
+  let mediaStorageStatus: DependencyStatus = mediaStorage ? "degraded" : "disabled";
+  let mediaStorageDetail = mediaStorage ? `${mediaStorage.name}: initializing` : "disabled";
   let restoredCurrentTrackCount = 0;
   let flightDataPollTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -125,6 +148,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.addHook("preHandler", requireBearerToken);
   app.addHook("onReady", async () => {
     await initializeUserProfileStore();
+    await initializeCommunityReportStore();
+    await initializeMediaStorage();
     if (trackHistoryStore) {
       try {
         await trackHistoryStore.init();
@@ -146,6 +171,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await trackHistoryStore?.close();
     await userProfileStore.close();
     await userProfileFallbackStore.close();
+    await communityReportStore?.close();
+    await communityReportFallbackStore.close();
+    await mediaStorage?.close();
   });
 
   app.get("/health/live", async () => ({
@@ -165,6 +193,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "in-memory-cop-state", status: "ok" },
       { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
       { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
+      { name: "community-report-store", status: communityReportStoreStatus, detail: communityReportStoreDependencyDetail() },
+      { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
       ...(flightDataSource ? [flightDataDependency()] : []),
       ...(situationDataSource ? [situationDataDependency()] : []),
       ...(safetyDataSource ? [safetyDataDependency()] : []),
@@ -238,6 +268,38 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function initializeCommunityReportStore(): Promise<void> {
+    if (!communityReportStore) {
+      await communityReportFallbackStore.init();
+      return;
+    }
+    try {
+      await communityReportStore.init();
+      communityReportStoreStatus = "ok";
+      communityReportStoreDetail = `${communityReportStore.name}: ready`;
+    } catch (error) {
+      communityReportStoreStatus = "degraded";
+      communityReportStoreDetail = `${communityReportStore.name}: ${errorMessage(error)}`;
+      await communityReportFallbackStore.init();
+      app.log.error({ error }, "Community report store initialization failed; using in-memory fallback.");
+    }
+  }
+
+  async function initializeMediaStorage(): Promise<void> {
+    if (!mediaStorage) {
+      return;
+    }
+    try {
+      await mediaStorage.init();
+      mediaStorageStatus = "ok";
+      mediaStorageDetail = `${mediaStorage.name}: ready`;
+    } catch (error) {
+      mediaStorageStatus = "degraded";
+      mediaStorageDetail = `${mediaStorage.name}: ${errorMessage(error)}`;
+      app.log.error({ error }, "Media storage initialization failed; attachment uploads are unavailable.");
+    }
+  }
+
   async function countTrackHistoryPoints(): Promise<number> {
     if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
       try {
@@ -296,8 +358,31 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return diagnostics ? `${userProfileStoreDetail}; ${diagnostics}` : userProfileStoreDetail;
   }
 
+  function markCommunityReportStoreDegraded(error: unknown): void {
+    if (!communityReportStore) {
+      return;
+    }
+    communityReportStoreStatus = "degraded";
+    communityReportStoreDetail = `${communityReportStore.name}: ${errorMessage(error)}`;
+    app.log.error({ error }, "Community report store failed; using in-memory fallback.");
+  }
+
+  function communityReportStoreDependencyDetail(): string {
+    const diagnostics = communityReportStore?.diagnostics?.();
+    return diagnostics ? `${communityReportStoreDetail}; ${diagnostics}` : communityReportStoreDetail;
+  }
+
+  function mediaStorageDependencyDetail(): string {
+    const diagnostics = mediaStorage?.diagnostics?.();
+    return diagnostics ? `${mediaStorageDetail}; ${diagnostics}` : mediaStorageDetail;
+  }
+
   function activeUserProfileStore(): UserProfileStore {
     return userProfileStoreStatus === "ok" ? userProfileStore : userProfileFallbackStore;
+  }
+
+  function activeCommunityReportStore(): CommunityReportStore {
+    return communityReportStore && communityReportStoreStatus === "ok" ? communityReportStore : communityReportFallbackStore;
   }
 
   async function initializeFlightDataSource(): Promise<void> {
@@ -511,6 +596,60 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     } catch (error) {
       markUserProfileStoreDegraded(error);
       await userProfileFallbackStore.acknowledgeAlert(actor.subjectId, acknowledgement);
+    }
+  }
+
+  async function createCommunityReport(input: Parameters<CommunityReportStore["createReport"]>[0], requestNow: Date): Promise<CommunityReportRecord> {
+    try {
+      return await activeCommunityReportStore().createReport(input, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.createReport(input, requestNow);
+    }
+  }
+
+  async function readCommunityReport(reportId: string): Promise<CommunityReportRecord | null> {
+    try {
+      return await activeCommunityReportStore().getReport(reportId);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.getReport(reportId);
+    }
+  }
+
+  async function listCommunityReports(query: CommunityReportQuery): Promise<CommunityReportRecord[]> {
+    try {
+      return await activeCommunityReportStore().listReports(query);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.listReports(query);
+    }
+  }
+
+  async function submitCommunityReport(reportId: string, actor: AuthenticatedActor, requestNow: Date): Promise<CommunityReportRecord | null> {
+    try {
+      return await activeCommunityReportStore().submitReport(reportId, actor.subjectId, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.submitReport(reportId, actor.subjectId, requestNow);
+    }
+  }
+
+  async function createCommunityAttachment(input: Parameters<CommunityReportStore["createAttachment"]>[0]) {
+    try {
+      return await activeCommunityReportStore().createAttachment(input);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.createAttachment(input);
+    }
+  }
+
+  async function completeCommunityAttachment(input: Parameters<CommunityReportStore["completeAttachment"]>[0]) {
+    try {
+      return await activeCommunityReportStore().completeAttachment(input);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.completeAttachment(input);
     }
   }
 
@@ -806,6 +945,178 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       policy: mobileNativePolicy(),
       serverTimestamp: registration.registeredAt
     });
+  });
+
+  app.get("/api/v1/community/reports", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const requestNow = now();
+    const query = parseCommunityReportQuery(request.query as Record<string, unknown>, actor);
+    const items = await listCommunityReports(query);
+    return {
+      featureCollection: communityReportsFeatureCollection(items, requestNow),
+      items,
+      nextCursor: null,
+      serverTimestamp: requestNow.toISOString()
+    };
+  });
+
+  app.post("/api/v1/community/reports", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const requestNow = now();
+    const input = normalizeCreateCommunityReport(request.body, actor, requestNow);
+    if (!input) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Community report requires category and location {lat, lon}.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const report = await createCommunityReport(input, requestNow);
+    appendAudit(state, "COMMUNITY_REPORT_CREATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      category: report.category,
+      reportId: report.reportId
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return reply.code(201).send(report);
+  });
+
+  app.get("/api/v1/community/reports/:reportId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { reportId: string };
+    const report = await readCommunityReport(params.reportId);
+    if (!report || !canReadCommunityReport(report, actor)) {
+      return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+    }
+    return report;
+  });
+
+  app.post("/api/v1/community/reports/:reportId/submit", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { reportId: string };
+    const requestNow = now();
+    const report = await submitCommunityReport(params.reportId, actor, requestNow);
+    if (!report) {
+      return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+    }
+    appendAudit(state, "COMMUNITY_REPORT_SUBMITTED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      attachmentCount: report.attachments.length,
+      category: report.category,
+      reportId: report.reportId
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return report;
+  });
+
+  app.post("/api/v1/community/reports/:reportId/attachments", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    if (!mediaStorage || mediaStorageStatus !== "ok") {
+      return sendError(
+        reply,
+        503,
+        "MEDIA_STORAGE_UNAVAILABLE",
+        "Community media storage is not configured.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const params = request.params as { reportId: string };
+    const report = await readCommunityReport(params.reportId);
+    if (!report || report.createdBy.subjectId !== actor.subjectId) {
+      return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+    }
+    const attachmentRequest = normalizeCommunityAttachmentRequest(request.body);
+    if (!attachmentRequest) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Attachment requires kind, contentType and byteSize.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const requestNow = now();
+    const attachmentId = crypto.randomUUID();
+    const upload = await mediaStorage.createUploadSlot({
+      attachmentId,
+      byteSize: attachmentRequest.byteSize,
+      contentType: attachmentRequest.contentType,
+      fileName: attachmentRequest.fileName,
+      reportId: report.reportId
+    }, requestNow);
+    const attachment = await createCommunityAttachment({
+      attachmentId,
+      bucket: upload.bucket,
+      byteSize: attachmentRequest.byteSize,
+      capturedAt: attachmentRequest.capturedAt,
+      captureLocation: attachmentRequest.captureLocation,
+      checksumSha256: attachmentRequest.checksumSha256,
+      contentType: attachmentRequest.contentType,
+      fileName: attachmentRequest.fileName,
+      kind: attachmentRequest.kind,
+      metadata: attachmentRequest.metadata,
+      objectKey: upload.objectKey,
+      reportId: report.reportId,
+      subjectId: actor.subjectId,
+      uploadExpiresAt: upload.expiresAt
+    });
+    appendAudit(state, "COMMUNITY_ATTACHMENT_UPLOAD_CREATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      attachmentId,
+      byteSize: attachment.byteSize,
+      contentType: attachment.contentType,
+      kind: attachment.kind,
+      reportId: report.reportId
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return reply.code(201).send({
+      attachment,
+      upload
+    });
+  });
+
+  app.post("/api/v1/community/reports/:reportId/attachments/:attachmentId/complete", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { attachmentId: string; reportId: string };
+    const body = isRecord(request.body) ? request.body : {};
+    const attachment = await completeCommunityAttachment({
+      attachmentId: params.attachmentId,
+      byteSize: optionalFiniteNumber(body.byteSize, 1, readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024)),
+      checksumSha256: optionalChecksumSha256(body.checksumSha256),
+      completedAt: now().toISOString(),
+      reportId: params.reportId,
+      subjectId: actor.subjectId
+    });
+    if (!attachment) {
+      return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
+    }
+    appendAudit(state, "COMMUNITY_ATTACHMENT_UPLOAD_COMPLETED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      attachmentId: attachment.attachmentId,
+      reportId: attachment.reportId
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return attachment;
   });
 
   app.get("/api/v1/sources", async () => ({
@@ -1851,6 +2162,285 @@ function alertSeverityRank(severity: CopAlert["severity"]): number {
   return 1;
 }
 
+function parseCommunityReportQuery(query: Record<string, unknown>, actor: AuthenticatedActor): CommunityReportQuery {
+  return {
+    ...(parseBboxQuery(query.bbox) ? { bbox: parseBboxQuery(query.bbox) } : {}),
+    ...(parseCommunityCategories(query.category ?? query.categories).length > 0
+      ? { categories: parseCommunityCategories(query.category ?? query.categories) }
+      : {}),
+    includeOwnDrafts: query.includeOwnDrafts === "true" || query.includeOwnDrafts === true,
+    limit: optionalFiniteNumber(query.limit, 1, 500) ?? 100,
+    ...(parseCommunityStatuses(query.status ?? query.statuses).length > 0
+      ? { statuses: parseCommunityStatuses(query.status ?? query.statuses) }
+      : {}),
+    subjectId: actor.subjectId
+  };
+}
+
+function normalizeCreateCommunityReport(
+  value: unknown,
+  actor: AuthenticatedActor,
+  requestNow: Date
+): Parameters<CommunityReportStore["createReport"]>[0] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const category = isCommunityReportCategory(value.category) ? value.category : undefined;
+  const location = normalizeCommunityLocation(value.location, "device");
+  if (!category || !location) {
+    return null;
+  }
+  const title = optionalTrimmedString(value.title, 120) ?? communityCategoryLabel(category);
+  return {
+    category,
+    createdBy: {
+      displayName: actor.displayName,
+      subjectId: actor.subjectId,
+      username: actor.username
+    },
+    ...(optionalTrimmedString(value.description, 2000) ? { description: optionalTrimmedString(value.description, 2000) } : {}),
+    location,
+    observedAt: optionalIsoTimestamp(value.observedAt, requestNow) ?? requestNow.toISOString(),
+    properties: normalizedJsonRecord(value.properties, 8000),
+    title,
+    visibility: isCommunityVisibility(value.visibility) ? value.visibility : "community"
+  };
+}
+
+function normalizeCommunityAttachmentRequest(value: unknown): {
+  byteSize: number;
+  capturedAt?: string;
+  captureLocation?: CommunityReportLocation;
+  checksumSha256?: string;
+  contentType: string;
+  fileName?: string;
+  kind: CommunityAttachmentKind;
+  metadata: Record<string, unknown>;
+} | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const contentType = optionalTrimmedString(value.contentType, 120)?.toLowerCase();
+  const byteSize = optionalFiniteNumber(value.byteSize, 1, readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024));
+  const kind = isCommunityAttachmentKind(value.kind) ? value.kind : contentType ? kindFromContentType(contentType) : undefined;
+  if (!contentType || byteSize === undefined || !kind || !isAllowedCommunityContentType(contentType, kind)) {
+    return null;
+  }
+  return {
+    byteSize,
+    ...(optionalIsoTimestamp(value.capturedAt) ? { capturedAt: optionalIsoTimestamp(value.capturedAt) } : {}),
+    ...(normalizeCommunityLocation(value.captureLocation, "photo_exif") ? { captureLocation: normalizeCommunityLocation(value.captureLocation, "photo_exif") } : {}),
+    ...(optionalChecksumSha256(value.checksumSha256) ? { checksumSha256: optionalChecksumSha256(value.checksumSha256) } : {}),
+    contentType,
+    ...(optionalTrimmedString(value.fileName, 160) ? { fileName: optionalTrimmedString(value.fileName, 160) } : {}),
+    kind,
+    metadata: normalizedJsonRecord(value.metadata, 4000)
+  };
+}
+
+function canReadCommunityReport(report: CommunityReportRecord, actor: AuthenticatedActor): boolean {
+  if (report.createdBy.subjectId === actor.subjectId) {
+    return true;
+  }
+  if (report.visibility === "private") {
+    return false;
+  }
+  return report.status === "submitted" || report.status === "published";
+}
+
+function communityReportsFeatureCollection(reports: CommunityReportRecord[], requestNow: Date) {
+  return {
+    features: reports.map((report) => ({
+      geometry: {
+        coordinates: [report.location.lon, report.location.lat],
+        type: "Point" as const
+      },
+      id: report.reportId,
+      properties: {
+        attachmentCount: report.attachments.length,
+        category: report.category,
+        confidence: report.location.accuracyM ? Math.max(0.35, Math.min(0.95, 1 - report.location.accuracyM / 1000)) : 0.7,
+        featureId: `community:${report.reportId}`,
+        label: report.title,
+        layer: "community",
+        locationAccuracyM: report.location.accuracyM ?? null,
+        observedAt: report.observedAt,
+        photoCount: report.attachments.filter((attachment) => attachment.kind === "photo" && attachment.status === "uploaded").length,
+        reportId: report.reportId,
+        severity: communitySeverity(report.category),
+        sourceId: "community_reports",
+        status: report.status,
+        stale: false,
+        visibility: report.visibility
+      },
+      type: "Feature" as const
+    })),
+    generatedAt: requestNow.toISOString(),
+    source: {
+      generatedAt: requestNow.toISOString(),
+      sourceId: "community_reports",
+      sourceType: "COMMUNITY_REPORTS"
+    },
+    summary: {
+      featureCount: reports.length,
+      submittedCount: reports.filter((report) => report.status === "submitted").length,
+      uploadedAttachmentCount: reports.reduce(
+        (sum, report) => sum + report.attachments.filter((attachment) => attachment.status === "uploaded").length,
+        0
+      )
+    },
+    type: "FeatureCollection" as const
+  };
+}
+
+function parseBboxQuery(value: unknown): CommunityReportQuery["bbox"] | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parts = value.split(",").map(Number);
+  if (parts.length !== 4 || !parts.every(Number.isFinite)) {
+    return undefined;
+  }
+  const [west, south, east, north] = parts as [number, number, number, number];
+  if (west >= east || south >= north) {
+    return undefined;
+  }
+  return {
+    east: clampNumber(east, -180, 180),
+    north: clampNumber(north, -90, 90),
+    south: clampNumber(south, -90, 90),
+    west: clampNumber(west, -180, 180)
+  };
+}
+
+function parseCommunityCategories(value: unknown): CommunityReportCategory[] {
+  return normalizeCsv(value).filter(isCommunityReportCategory);
+}
+
+function parseCommunityStatuses(value: unknown): CommunityReportStatus[] {
+  return normalizeCsv(value).filter(isCommunityReportStatus);
+}
+
+function normalizeCsv(value: unknown): string[] {
+  const items = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  return Array.from(new Set(items.flatMap((item) => typeof item === "string" ? [item.trim()] : []).filter(Boolean)));
+}
+
+function normalizeCommunityLocation(value: unknown, fallbackSource: CommunityLocationSource): CommunityReportLocation | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const lat = optionalFiniteNumber(value.lat, -90, 90);
+  const lon = optionalFiniteNumber(value.lon, -180, 180);
+  if (lat === undefined || lon === undefined) {
+    return undefined;
+  }
+  return {
+    ...(optionalFiniteNumber(value.accuracyM, 0, 100000) !== undefined ? { accuracyM: optionalFiniteNumber(value.accuracyM, 0, 100000) } : {}),
+    lat,
+    lon,
+    source: isCommunityLocationSource(value.source) ? value.source : fallbackSource
+  };
+}
+
+function normalizedJsonRecord(value: unknown, maxJsonLength: number): Record<string, unknown> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  const json = JSON.stringify(value);
+  if (json.length > maxJsonLength) {
+    return {};
+  }
+  return value;
+}
+
+function optionalIsoTimestamp(value: unknown, fallback?: Date): string | undefined {
+  if (typeof value !== "string" || !value.trim()) {
+    return fallback?.toISOString();
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : fallback?.toISOString();
+}
+
+function optionalChecksumSha256(value: unknown): string | undefined {
+  return typeof value === "string" && /^[0-9a-f]{64}$/iu.test(value.trim()) ? value.trim().toLowerCase() : undefined;
+}
+
+function kindFromContentType(contentType: string): CommunityAttachmentKind | undefined {
+  if (contentType.startsWith("image/")) {
+    return "photo";
+  }
+  if (contentType.startsWith("video/")) {
+    return "video";
+  }
+  if (contentType === "application/pdf") {
+    return "document";
+  }
+  return undefined;
+}
+
+function isAllowedCommunityContentType(contentType: string, kind: CommunityAttachmentKind): boolean {
+  const allowedByKind: Record<CommunityAttachmentKind, string[]> = {
+    document: ["application/pdf"],
+    photo: ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
+    video: ["video/mp4", "video/quicktime"]
+  };
+  return allowedByKind[kind].includes(contentType);
+}
+
+function communitySeverity(category: CommunityReportCategory): "advisory" | "warning" | "critical" {
+  if (category === "fire" || category === "flood" || category === "medical") {
+    return "critical";
+  }
+  if (category === "bridge_damage" || category === "road_blockage" || category === "infrastructure_damage" || category === "hazard") {
+    return "warning";
+  }
+  return "advisory";
+}
+
+function communityCategoryLabel(category: CommunityReportCategory): string {
+  const labels: Record<CommunityReportCategory, string> = {
+    bridge_damage: "Poškozený most",
+    fire: "Požár",
+    flood: "Povodeň",
+    hazard: "Riziko v okolí",
+    infrastructure_damage: "Poškozená infrastruktura",
+    medical: "Zdravotní událost",
+    other: "Hlášení",
+    road_blockage: "Neprůjezdná komunikace",
+    utility_outage: "Výpadek služby"
+  };
+  return labels[category];
+}
+
+function isCommunityReportCategory(value: unknown): value is CommunityReportCategory {
+  return value === "fire"
+    || value === "flood"
+    || value === "bridge_damage"
+    || value === "road_blockage"
+    || value === "infrastructure_damage"
+    || value === "medical"
+    || value === "utility_outage"
+    || value === "hazard"
+    || value === "other";
+}
+
+function isCommunityReportStatus(value: unknown): value is CommunityReportStatus {
+  return value === "draft" || value === "submitted" || value === "published" || value === "hidden" || value === "rejected";
+}
+
+function isCommunityVisibility(value: unknown): value is CommunityReportVisibility {
+  return value === "private" || value === "community" || value === "public";
+}
+
+function isCommunityLocationSource(value: unknown): value is CommunityLocationSource {
+  return value === "device" || value === "manual" || value === "photo_exif" || value === "unknown";
+}
+
+function isCommunityAttachmentKind(value: unknown): value is CommunityAttachmentKind {
+  return value === "photo" || value === "video" || value === "document";
+}
+
 function parseMobileSnapshotQuery(query: Record<string, unknown>): MobileSnapshotQuery {
   const historyQuery = parseTrackHistoryQuery(query);
   return {
@@ -1924,6 +2514,8 @@ function mobileCapabilities() {
     alertAcknowledgement: true,
     aoiAlerts: true,
     bootstrap: true,
+    communityReports: true,
+    communityReportUploads: true,
     deviceRegistration: true,
     offlineSnapshot: true,
     pushNotifications: false,
@@ -1940,6 +2532,11 @@ function mobileEndpoints() {
     acknowledgeAlert: "/api/v1/cop/alerts/{alertId}/acknowledge",
     alerts: "/api/v1/cop/alerts",
     bootstrap: "/api/v1/mobile/bootstrap",
+    communityReportAttachmentComplete: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete",
+    communityReportAttachmentUpload: "/api/v1/community/reports/{reportId}/attachments",
+    communityReportDetail: "/api/v1/community/reports/{reportId}",
+    communityReportSubmit: "/api/v1/community/reports/{reportId}/submit",
+    communityReports: "/api/v1/community/reports",
     deviceRegistration: "/api/v1/mobile/devices",
     offlineSnapshot: "/api/v1/mobile/offline-snapshot",
     preferences: "/api/v1/me/preferences",
