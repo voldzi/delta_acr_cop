@@ -73,7 +73,7 @@ COP_ALLOW_LAB_TOKEN=true
 COP_PUBLIC_READ_ENABLED=true
 COP_WEB_PUBLIC_READ_ENABLED=true
 COP_LAB_TOKEN=<soucasny-lab-token>
-COP_PUBLIC_LAB_VALUE=<soucasny-lab-token>
+COP_PUBLIC_LAB_VALUE=
 COP_OIDC_ISSUER=https://login.zeleznalady.cz/realms/cop
 COP_OIDC_CLIENT_ID=cop-web
 COP_OIDC_ALLOWED_CLIENTS=cop-web
@@ -83,6 +83,8 @@ COP_USER_PROFILE_STORE=auto
 ```
 
 `COP_PUBLIC_READ_ENABLED=true` povoli anonymni cteni verejne mapy a verejnych vrstev. Bez prihlaseni jsou dostupne pouze GET endpointy pro situacni obraz, zdroje, stream, historii tracku a odeslana komunitni hlaseni. Zapisove operace, uzivatelsky profil, potvrzovani vystrah, AI asistent, registrace mobilniho zarizeni a upload priloh stale vyzaduji platny bearer token.
+
+`COP_PUBLIC_LAB_VALUE` nech v internetovem buildu prazdne. Serverovy `COP_LAB_TOKEN` muze zustat pro interni pilotni zdroje, ale nesmi byt zabudovany do verejneho web bundle.
 
 Striktni rezim bez lab tokenu:
 

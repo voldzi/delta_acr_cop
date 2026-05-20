@@ -147,11 +147,7 @@ import {
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
-const labToken =
-  import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ??
-  import.meta.env.VITE_COP_AUTH_VALUE ??
-  import.meta.env.VITE_COP_LAB_TOKEN ??
-  "dev-lab-token";
+const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? (import.meta.env.DEV ? "dev-lab-token" : "");
 const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_COP_REFRESH_MS ?? "5000");
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
