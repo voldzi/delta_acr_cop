@@ -5,7 +5,7 @@ import maplibregl, {
   type StyleSpecification
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { AoiRule, CopAlert, CopLayer, CopObject } from "./cop-data";
+import type { AoiRule, CopAlert, CopLayer, CopObject, MapBounds, SituationFeature, SituationFeatureCollectionResponse } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
 import type { MapViewState } from "./user-preferences";
@@ -25,6 +25,7 @@ const userLocationSourceId = "cop-user-location";
 const userAlertRadiusSourceId = "cop-user-alert-radius";
 const aoiRuleSourceId = "cop-aoi-rules";
 const alertAreaSourceId = "cop-alert-areas";
+const situationSourceId = "cop-situation-context";
 const trackHistoryLayerId = "cop-track-history-line";
 const trackPredictionLayerId = "cop-track-prediction-line";
 const userAlertRadiusFillLayerId = "cop-user-alert-radius-fill";
@@ -33,6 +34,11 @@ const aoiRuleFillLayerId = "cop-aoi-rule-fill";
 const aoiRuleLineLayerId = "cop-aoi-rule-line";
 const alertAreaFillLayerId = "cop-alert-area-fill";
 const alertAreaLineLayerId = "cop-alert-area-line";
+const situationFillLayerId = "cop-situation-fill";
+const situationLineLayerId = "cop-situation-line";
+const situationPointSelectedLayerId = "cop-situation-point-selected";
+const situationPointLayerId = "cop-situation-point";
+const situationLabelLayerId = "cop-situation-label";
 const userLocationAccuracyLayerId = "cop-user-location-accuracy";
 const userLocationLayerId = "cop-user-location-point";
 const trackSelectedHaloLayerId = "cop-live-track-selected-halo";
@@ -116,12 +122,24 @@ export interface AoiRuleFeatureCollection {
   }>;
 }
 
+export interface SituationContextFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: SituationFeature["geometry"];
+    properties: SituationFeature["properties"] & {
+      selected: boolean;
+    };
+  }>;
+}
+
 interface CopMapProps {
   alerts: CopAlert[];
   aoiRules: AoiRule[];
   clusterTracks: boolean;
   objects: CopObject[];
   emptyMessage: string;
+  selectedSituationFeatureId?: string;
   selectedLayer: CopLayer;
   selectedObjectId?: string;
   showHistory: boolean;
@@ -136,7 +154,10 @@ interface CopMapProps {
   focusUserLocationRequest: number;
   hasProximityAlerts: boolean;
   initialView?: MapViewState;
+  situationFeatures: SituationFeatureCollectionResponse | null;
+  onBoundsChange: (bounds: MapBounds) => void;
   onSelectObject: (object: CopObject) => void;
+  onSelectSituationFeature: (feature: SituationFeature) => void;
   onAutoFitChange: (value: boolean) => void;
   onRequestUserLocation: () => void;
   onViewChange: (view: MapViewState) => void;
@@ -163,6 +184,7 @@ export function CopMap({
   clusterTracks,
   objects,
   emptyMessage,
+  selectedSituationFeatureId,
   selectedLayer,
   selectedObjectId,
   showHistory,
@@ -177,7 +199,10 @@ export function CopMap({
   focusUserLocationRequest,
   hasProximityAlerts,
   initialView,
+  situationFeatures,
+  onBoundsChange,
   onSelectObject,
+  onSelectSituationFeature,
   onAutoFitChange,
   onRequestUserLocation,
   onViewChange,
@@ -188,7 +213,10 @@ export function CopMap({
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const objectsRef = React.useRef(objects);
+  const situationFeaturesRef = React.useRef<SituationFeature[]>([]);
+  const onBoundsChangeRef = React.useRef(onBoundsChange);
   const onSelectObjectRef = React.useRef(onSelectObject);
+  const onSelectSituationFeatureRef = React.useRef(onSelectSituationFeature);
   const onAutoFitChangeRef = React.useRef(onAutoFitChange);
   const onViewChangeRef = React.useRef(onViewChange);
   const lastFitSignatureRef = React.useRef("");
@@ -224,9 +252,16 @@ export function CopMap({
     () => (showAlertAreas ? alertAreasToFeatureCollection(alerts) : emptyPolygonFeatureCollection()),
     [alerts, showAlertAreas]
   );
+  const situationFeatureCollection = React.useMemo(
+    () => situationFeaturesToFeatureCollection(situationFeatures, selectedSituationFeatureId),
+    [selectedSituationFeatureId, situationFeatures]
+  );
 
   objectsRef.current = objects;
+  situationFeaturesRef.current = situationFeatures?.features ?? [];
+  onBoundsChangeRef.current = onBoundsChange;
   onSelectObjectRef.current = onSelectObject;
+  onSelectSituationFeatureRef.current = onSelectSituationFeature;
   onAutoFitChangeRef.current = onAutoFitChange;
   onViewChangeRef.current = onViewChange;
 
@@ -255,6 +290,14 @@ export function CopMap({
       const object = objectsRef.current.find((candidate) => candidate.objectId === objectId);
       if (object) {
         onSelectObjectRef.current(object);
+      }
+    };
+
+    const handleSituationClick = (event: MapLayerMouseEvent) => {
+      const featureId = event.features?.[0]?.properties?.featureId as string | undefined;
+      const feature = situationFeaturesRef.current.find((candidate) => candidate.properties.featureId === featureId);
+      if (feature) {
+        onSelectSituationFeatureRef.current(feature);
       }
     };
 
@@ -294,6 +337,10 @@ export function CopMap({
         map.addSource(alertAreaSourceId, {
           type: "geojson",
           data: emptyPolygonFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(situationSourceId, {
+          type: "geojson",
+          data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
         });
         await registerNatoSymbolImages(map);
         if (mapRef.current !== map) {
@@ -375,6 +422,134 @@ export function CopMap({
             "line-dasharray": [1.5, 1.1],
             "line-opacity": 0.72,
             "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1, 12, 1.8, 16, 2.6]
+          }
+        });
+
+        map.addLayer({
+          id: situationFillLayerId,
+          type: "fill",
+          source: situationSourceId,
+          filter: ["==", ["geometry-type"], "Polygon"],
+          paint: {
+            "fill-color": [
+              "match",
+              ["get", "layer"],
+              "weather",
+              "#38bdf8",
+              "ground",
+              "#22c55e",
+              "mobile",
+              "#a78bfa",
+              "traffic",
+              "#facc15",
+              "#8cb6d8"
+            ],
+            "fill-opacity": ["case", ["get", "stale"], 0.06, 0.1]
+          }
+        });
+
+        map.addLayer({
+          id: situationLineLayerId,
+          type: "line",
+          source: situationSourceId,
+          filter: ["in", ["geometry-type"], ["literal", ["LineString", "Polygon"]]],
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": [
+              "match",
+              ["get", "layer"],
+              "weather",
+              "#38bdf8",
+              "ground",
+              "#22c55e",
+              "mobile",
+              "#a78bfa",
+              "traffic",
+              "#facc15",
+              "#8cb6d8"
+            ],
+            "line-dasharray": ["case", ["get", "stale"], ["literal", [2, 1.2]], ["literal", [1, 0]]],
+            "line-opacity": ["case", ["get", "stale"], 0.48, 0.76],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1.1, 12, 1.8, 16, 2.6]
+          }
+        });
+
+        map.addLayer({
+          id: situationPointSelectedLayerId,
+          type: "circle",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "selected"], true]],
+          paint: {
+            "circle-color": [
+              "match",
+              ["get", "layer"],
+              "weather",
+              "#38bdf8",
+              "ground",
+              "#22c55e",
+              "mobile",
+              "#a78bfa",
+              "traffic",
+              "#facc15",
+              "#8cb6d8"
+            ],
+            "circle-opacity": 0.18,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 14, 12, 22, 16, 30],
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-opacity": 0.86,
+            "circle-stroke-width": 2
+          }
+        });
+
+        map.addLayer({
+          id: situationPointLayerId,
+          type: "circle",
+          source: situationSourceId,
+          filter: ["==", ["geometry-type"], "Point"],
+          paint: {
+            "circle-color": [
+              "match",
+              ["get", "layer"],
+              "weather",
+              "#38bdf8",
+              "ground",
+              "#22c55e",
+              "mobile",
+              "#a78bfa",
+              "traffic",
+              "#facc15",
+              "#8cb6d8"
+            ],
+            "circle-opacity": ["case", ["get", "stale"], 0.52, 0.88],
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 5, 12, 7, 16, 10],
+            "circle-stroke-color": "#061019",
+            "circle-stroke-opacity": 0.9,
+            "circle-stroke-width": ["case", ["get", "stale"], 1, 1.6]
+          }
+        });
+
+        map.addLayer({
+          id: situationLabelLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["==", ["geometry-type"], "Point"],
+          layout: {
+            "text-field": ["get", "label"],
+            "text-font": ["Open Sans Semibold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 10, 14, 12],
+            "text-offset": [0, 1.25],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "text-color": ["case", ["get", "stale"], "#facc15", "#dff8ff"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.5,
+            "text-halo-blur": 0.4
           }
         });
 
@@ -576,6 +751,10 @@ export function CopMap({
         map.on("click", trackLabelLayerId, handleClick);
         map.on("click", trackClusterSymbolLayerId, handleClick);
         map.on("click", trackClusterLabelLayerId, handleClick);
+        map.on("click", situationPointLayerId, handleSituationClick);
+        map.on("click", situationLabelLayerId, handleSituationClick);
+        map.on("click", situationLineLayerId, handleSituationClick);
+        map.on("click", situationFillLayerId, handleSituationClick);
         map.on("click", trackClusterCircleLayerId, handleClusterClick);
         map.on("click", trackClusterCountLayerId, handleClusterClick);
         const handleUserMapInteraction = (event: maplibregl.MapLibreEvent) => {
@@ -588,15 +767,7 @@ export function CopMap({
         map.on("pitchstart", handleUserMapInteraction);
         map.on("rotatestart", handleUserMapInteraction);
         map.on("zoomstart", handleUserMapInteraction);
-        map.on("moveend", () => {
-          const center = map.getCenter();
-          onViewChangeRef.current({
-            center: [roundCoordinate(center.lng), roundCoordinate(center.lat)],
-            zoom: roundZoom(map.getZoom()),
-            bearing: roundZoom(map.getBearing()),
-            pitch: roundZoom(map.getPitch())
-          });
-        });
+        map.on("moveend", () => emitMapViewport(map, onViewChangeRef, onBoundsChangeRef));
         map.on("mouseenter", trackSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -613,6 +784,18 @@ export function CopMap({
           map.getCanvas().style.cursor = "pointer";
         });
         map.on("mouseenter", trackClusterLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationPointLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationLineLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationFillLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
         map.on("mouseleave", trackSymbolLayerId, () => {
@@ -633,8 +816,21 @@ export function CopMap({
         map.on("mouseleave", trackClusterLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
+        map.on("mouseleave", situationPointLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationLineLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationFillLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
         setMapReady(true);
         map.resize();
+        emitMapViewport(map, onViewChangeRef, onBoundsChangeRef);
       })().catch((error: unknown) => {
         setMapError(error instanceof Error ? error.message : "NATO symboly nejsou dostupné.");
       });
@@ -693,6 +889,13 @@ export function CopMap({
       (source as GeoJSONSource).setData(alertAreaFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
     }
   }, [alertAreaFeatureCollection, mapReady]);
+
+  React.useEffect(() => {
+    const source = mapRef.current?.getSource(situationSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(situationFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [mapReady, situationFeatureCollection]);
 
   React.useEffect(() => {
     if (!mapReady || !userLocation || focusUserLocationRequest === 0) {
@@ -820,6 +1023,7 @@ export function CopMap({
         {showProximityAlertRadius && userLocation ? <RadiusLegendItem active={hasProximityAlerts} label="Výstražný perimetr" /> : null}
         {aoiRuleFeatureCollection.features.length > 0 ? <RadiusLegendItem active={false} label="AOI" /> : null}
         {alertAreaFeatureCollection.features.length > 0 ? <RadiusLegendItem active label="Alert vrstva" /> : null}
+        {situationFeatureCollection.features.length > 0 ? <SituationLegendItem label="Situační kontext" /> : null}
         {clusterTracks ? <ClusterLegendItem label="Shluky" /> : null}
       </div>
       {clusterInfo ? <ClusterPanel cluster={clusterInfo} onClose={() => setClusterInfo(null)} /> : null}
@@ -849,6 +1053,27 @@ function enableMapInteractions(map: maplibregl.Map): void {
 
 function stopMapToolbarEvent(event: React.SyntheticEvent<HTMLElement>): void {
   event.stopPropagation();
+}
+
+function emitMapViewport(
+  map: maplibregl.Map,
+  onViewChangeRef: React.MutableRefObject<(view: MapViewState) => void>,
+  onBoundsChangeRef: React.MutableRefObject<(bounds: MapBounds) => void>
+): void {
+  const center = map.getCenter();
+  const bounds = map.getBounds();
+  onViewChangeRef.current({
+    center: [roundCoordinate(center.lng), roundCoordinate(center.lat)],
+    zoom: roundZoom(map.getZoom()),
+    bearing: roundZoom(map.getBearing()),
+    pitch: roundZoom(map.getPitch())
+  });
+  onBoundsChangeRef.current({
+    east: roundCoordinate(bounds.getEast()),
+    north: roundCoordinate(bounds.getNorth()),
+    south: roundCoordinate(bounds.getSouth()),
+    west: roundCoordinate(bounds.getWest())
+  });
 }
 
 function setTrackClusterVisibility(map: maplibregl.Map, clusterTracks: boolean): void {
@@ -973,6 +1198,23 @@ export function aoiRulesToFeatureCollection(aoiRules: AoiRule[]): AoiRuleFeature
         }
       ];
     })
+  };
+}
+
+export function situationFeaturesToFeatureCollection(
+  collection: SituationFeatureCollectionResponse | null,
+  selectedFeatureId?: string
+): SituationContextFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: (collection?.features ?? []).map((feature) => ({
+      geometry: feature.geometry,
+      properties: {
+        ...feature.properties,
+        selected: feature.properties.featureId === selectedFeatureId
+      },
+      type: "Feature"
+    }))
   };
 }
 
@@ -1178,6 +1420,13 @@ export function userAlertRadiusToFeatureCollection(
 }
 
 function emptyLineFeatureCollection(): TrackLineFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: []
+  };
+}
+
+function emptySituationContextFeatureCollection(): SituationContextFeatureCollection {
   return {
     type: "FeatureCollection",
     features: []
@@ -1407,6 +1656,15 @@ function ClusterLegendItem({ label }: { label: string }) {
   return (
     <div className="legend-item">
       <span className="legend-cluster">12</span>
+      {label}
+    </div>
+  );
+}
+
+function SituationLegendItem({ label }: { label: string }) {
+  return (
+    <div className="legend-item">
+      <span className="legend-situation" />
       {label}
     </div>
   );

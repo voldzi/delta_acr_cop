@@ -16,6 +16,15 @@ import { createFlightDataSourceFromEnv, unavailableFlightDataHealth, type Flight
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems } from "./source-health.js";
+import {
+  buildSituationDataHealth,
+  createSituationDataSourceFromEnv,
+  emptySituationFeatureCollection,
+  parseSituationFeatureQuery,
+  unavailableSituationDataHealth,
+  type SituationDataSource,
+  type SituationFeatureQuery
+} from "./situation-data-source.js";
 import { appendAudit, createInitialState } from "./state.js";
 import { createTrackHistoryStoreFromEnv, type TrackHistoryStore } from "./track-history-store.js";
 import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory, type TrackHistoryQuery } from "./temporal-history.js";
@@ -31,6 +40,7 @@ import {
 
 export interface BuildServerOptions {
   flightDataSource?: FlightDataSource;
+  situationDataSource?: SituationDataSource;
   state?: CopState;
   logger?: boolean;
   now?: () => Date;
@@ -77,6 +87,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const userProfileStore = options.userProfileStore ?? createUserProfileStoreFromEnv();
   const userProfileFallbackStore = new InMemoryUserProfileStore("memory-fallback");
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
+  const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
   const mobileDeviceRegistrations = new Map<string, MobileDeviceRegistration>();
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
@@ -88,6 +99,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.decorate("copState", state);
   if (flightDataSource) {
     state.sources.set(flightDataSource.sourceSystem.sourceSystemId, flightDataSource.sourceSystem);
+  }
+  if (situationDataSource) {
+    state.sources.set(situationDataSource.sourceSystem.sourceSystemId, situationDataSource.sourceSystem);
   }
   void app.register(cors, { origin: true });
   void app.register(sensible);
@@ -136,6 +150,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
       { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
       ...(flightDataSource ? [flightDataDependency()] : []),
+      ...(situationDataSource ? [situationDataDependency()] : []),
       { name: "ai-gateway", status: "degraded", detail: "mock provider only" }
     ]
   }));
@@ -338,6 +353,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       throw new Error("Flight data source is not enabled.");
     }
     return state.sources.get(flightDataSource.sourceSystem.sourceSystemId) ?? flightDataSource.sourceSystem;
+  }
+
+  function situationDataDependency(): { detail: string; name: string; status: DependencyStatus } {
+    if (!situationDataSource) {
+      return { detail: "disabled", name: "situation-data-source", status: "disabled" };
+    }
+    const health = readSituationDataHealth(state.sources.get(situationDataSource.sourceSystem.sourceSystemId));
+    if (!health) {
+      return { detail: "waiting for first request", name: "situation-data-source", status: "degraded" };
+    }
+    return {
+      detail: health.detail ?? health.lastError ?? health.health.toLowerCase(),
+      name: "situation-data-source",
+      status: health.health === "ONLINE" ? "ok" : "degraded"
+    };
+  }
+
+  function activeSituationDataSourceSystem(): SourceSystem {
+    if (!situationDataSource) {
+      throw new Error("Situation data source is not enabled.");
+    }
+    return state.sources.get(situationDataSource.sourceSystem.sourceSystemId) ?? situationDataSource.sourceSystem;
   }
 
   async function readUserProfile(actor: AuthenticatedActor): Promise<UserProfileRecord | null> {
@@ -680,6 +717,88 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       items: buildSourceHealthItems(state, requestNow, trackLifecycle),
       serverTimestamp: requestNow.toISOString()
     };
+  });
+
+  app.get("/api/v1/situation/layers", async () => {
+    const requestNow = now();
+    if (!situationDataSource) {
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceStatus: "disabled",
+        warnings: ["Situation data source is disabled."]
+      };
+    }
+
+    try {
+      const items = await situationDataSource.fetchLayers(requestNow);
+      const health = buildSituationDataHealth(items, requestNow);
+      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      return {
+        items,
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health
+      };
+    } catch (error) {
+      const health = unavailableSituationDataHealth(error, requestNow);
+      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      appendAudit(state, "SITUATION_DATA_LAYERS_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Situation data layers request failed.");
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health,
+        warnings: [health.lastError ?? "Situation data layers are unavailable."]
+      };
+    }
+  });
+
+  app.get("/api/v1/situation/features", async (request, reply) => {
+    const requestNow = now();
+    if (!situationDataSource) {
+      const fallbackQuery = defaultSituationFeatureQuery();
+      return {
+        ...emptySituationFeatureCollection(fallbackQuery, requestNow, ["Situation data source is disabled."]),
+        sourceHealth: {
+          detail: "disabled",
+          evaluatedAt: requestNow.toISOString(),
+          health: "WAITING" as const,
+          lastPollAt: requestNow.toISOString()
+        }
+      };
+    }
+
+    const query = parseSituationFeatureQuery(request.query as Record<string, unknown>, situationDataSource.config);
+    if (!query) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Situation feature query requires bbox=west,south,east,north.", crypto.randomUUID());
+    }
+
+    try {
+      const collection = await situationDataSource.fetchFeatures(query, requestNow);
+      const health = buildSituationDataHealth(collection, requestNow);
+      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      return {
+        ...collection,
+        sourceHealth: health
+      };
+    } catch (error) {
+      const health = unavailableSituationDataHealth(error, requestNow);
+      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      appendAudit(state, "SITUATION_DATA_FEATURES_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Situation data features request failed.");
+      return {
+        ...emptySituationFeatureCollection(query, requestNow, [health.lastError ?? "Situation data features are unavailable."]),
+        sourceHealth: health
+      };
+    }
   });
 
   app.post("/api/v1/sources", async (request, reply) => {
@@ -1174,15 +1293,35 @@ function withFlightDataHealth(source: SourceSystem, health: SourceHealthOverride
     ...source,
     attributes: {
       ...source.attributes,
+      sourceHealth: health,
       flightDataHealth: health
     },
     updatedAt: health.evaluatedAt
   };
 }
 
+function withSituationDataHealth(source: SourceSystem, health: SourceHealthOverride): SourceSystem {
+  return {
+    ...source,
+    attributes: {
+      ...source.attributes,
+      sourceHealth: health,
+      situationDataHealth: health
+    },
+    updatedAt: health.evaluatedAt
+  };
+}
+
 function readFlightDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
-  const value = source?.attributes?.flightDataHealth;
-  if (!isRecord(value) || !isFlightDataHealth(value.health)) {
+  return readSourceHealthFromAttributes(source?.attributes?.flightDataHealth);
+}
+
+function readSituationDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
+  return readSourceHealthFromAttributes(source?.attributes?.situationDataHealth ?? source?.attributes?.sourceHealth);
+}
+
+function readSourceHealthFromAttributes(value: unknown): SourceHealthOverride | undefined {
+  if (!isRecord(value) || !isSourceHealthOverride(value.health)) {
     return undefined;
   }
   return {
@@ -1198,8 +1337,21 @@ function readFlightDataHealth(source: SourceSystem | undefined): SourceHealthOve
   };
 }
 
-function isFlightDataHealth(value: unknown): value is SourceHealthOverride["health"] {
+function isSourceHealthOverride(value: unknown): value is SourceHealthOverride["health"] {
   return value === "DEGRADED" || value === "ONLINE" || value === "STALE" || value === "UNAVAILABLE" || value === "WAITING";
+}
+
+function defaultSituationFeatureQuery(): SituationFeatureQuery {
+  return {
+    bbox: {
+      east: 15.35,
+      north: 50.45,
+      south: 49.65,
+      west: 13.85
+    },
+    layers: ["weather"],
+    limit: 250
+  };
 }
 
 function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
@@ -1328,6 +1480,7 @@ function mobileCapabilities() {
     offlineSnapshot: true,
     pushNotifications: false,
     serverUserProfile: true,
+    situationContext: true,
     sseStream: true,
     trackHistory: true
   };
@@ -1343,6 +1496,8 @@ function mobileEndpoints() {
     preferences: "/api/v1/me/preferences",
     sourceHealth: "/api/v1/sources/health",
     sources: "/api/v1/sources",
+    situationFeatures: "/api/v1/situation/features",
+    situationLayers: "/api/v1/situation/layers",
     stream: "/api/v1/stream/cop/live",
     trackHistory: "/api/v1/cop/track-history",
     tracks: "/api/v1/cop/tracks"
@@ -1424,6 +1579,7 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
+    situationLayerIds: optionalStringArray(value.situationLayerIds, ["weather", "ground", "mobile", "traffic"]),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600)
   });
@@ -1503,6 +1659,15 @@ function optionalFiniteNumber(value: unknown, min: number, max: number): number 
 
 function optionalString(value: unknown, allowedValues: string[]): string | undefined {
   return typeof value === "string" && allowedValues.includes(value) ? value : undefined;
+}
+
+function optionalStringArray(value: unknown, allowedValues: string[]): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const allowed = new Set(allowedValues);
+  const normalized = value.filter((item): item is string => typeof item === "string" && allowed.has(item));
+  return Array.from(new Set(normalized));
 }
 
 function optionalTrimmedString(value: unknown, maxLength: number): string | undefined {

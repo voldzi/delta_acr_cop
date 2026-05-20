@@ -129,6 +129,116 @@ export interface CopDashboardData {
   trackHistory?: Record<string, ServerTrackHistoryPoint[]>;
 }
 
+export type SituationLayerId = "ground" | "mobile" | "traffic" | "weather";
+
+export interface MapBounds {
+  east: number;
+  north: number;
+  south: number;
+  west: number;
+}
+
+export interface SituationLayer {
+  defaultVisible: boolean;
+  description?: string;
+  expectedCadenceSeconds?: number;
+  geometryTypes?: string[];
+  label: string;
+  layerId: SituationLayerId;
+}
+
+export interface SituationFeatureCollectionResponse {
+  contractVersion: "cop-situation-source-v1";
+  features: SituationFeature[];
+  generatedAt: string;
+  query: {
+    bbox: MapBounds;
+    layers: SituationLayerId[];
+    limit: number;
+    sources?: string[];
+  };
+  source: {
+    generatedAt?: string;
+    sourceId: "situation-data-api";
+    sourceType: "PUBLIC_SITUATION_AGGREGATE";
+  };
+  sourceHealth?: SourceHealthOverride;
+  sources: SituationSourceDescriptor[];
+  summary: {
+    featureCount: number;
+    sourceCount: number;
+    staleFeatureCount: number;
+    warningCount: number;
+  };
+  type: "FeatureCollection";
+  warnings: string[];
+}
+
+export interface SourceHealthOverride {
+  detail?: string;
+  evaluatedAt: string;
+  generatedAt?: string;
+  health: "DEGRADED" | "ONLINE" | "STALE" | "UNAVAILABLE" | "WAITING";
+  lastError?: string;
+  lastPollAt?: string;
+  lastSuccessAt?: string;
+  summary?: Record<string, unknown>;
+  warnings?: string[];
+}
+
+export interface SituationFeature {
+  geometry: SituationGeometry;
+  id?: string | number;
+  properties: SituationFeatureProperties;
+  type: "Feature";
+}
+
+export type SituationGeometry =
+  | { coordinates: [number, number]; type: "Point" }
+  | { coordinates: Array<[number, number]>; type: "LineString" }
+  | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
+
+export interface SituationFeatureProperties {
+  category: string;
+  confidence?: number;
+  featureId: string;
+  label: string;
+  layer: SituationLayerId;
+  license?: Record<string, unknown>;
+  metrics?: Record<string, unknown>;
+  observedAt?: string;
+  severity?: string;
+  sourceId: string;
+  stale?: boolean;
+  tags?: Record<string, unknown>;
+}
+
+export interface SituationSourceDescriptor {
+  baseUrl?: string;
+  enabled?: boolean;
+  label?: string;
+  layers?: SituationLayerId[];
+  license?: Record<string, unknown>;
+  mode?: string;
+  priority?: number;
+  sourceId: string;
+  updateCadenceSeconds?: number;
+}
+
+export interface SituationLayersResponse {
+  items: SituationLayer[];
+  serverTimestamp?: string;
+  sourceHealth?: SourceHealthOverride;
+  sourceStatus?: string;
+  warnings?: string[];
+}
+
+export interface SituationFeatureOptions {
+  bbox: MapBounds;
+  layers: SituationLayerId[];
+  limit?: number;
+}
+
 export interface SourceHealthItem {
   acceptedEvents: number;
   avgConfidence?: number;
@@ -339,6 +449,26 @@ export async function fetchCopAlerts(apiBase: string, token = "dev-lab-token"): 
   const headers = { Authorization: `Bearer ${token}` };
   const response = await fetchOptionalJson<{ items?: CopAlert[] }>(`${apiBase}/api/v1/cop/alerts`, { headers });
   return response?.items ?? [];
+}
+
+export async function fetchSituationLayers(apiBase: string, token = "dev-lab-token"): Promise<SituationLayersResponse> {
+  return fetchJson<SituationLayersResponse>(`${apiBase}/api/v1/situation/layers`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+export async function fetchSituationFeatures(
+  apiBase: string,
+  token = "dev-lab-token",
+  options: SituationFeatureOptions
+): Promise<SituationFeatureCollectionResponse> {
+  const query = new URLSearchParams();
+  query.set("bbox", `${options.bbox.west},${options.bbox.south},${options.bbox.east},${options.bbox.north}`);
+  query.set("layers", options.layers.join(","));
+  query.set("limit", String(options.limit ?? 250));
+  return fetchJson<SituationFeatureCollectionResponse>(`${apiBase}/api/v1/situation/features?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
 }
 
 export async function fetchUserProfile(apiBase: string, token: string): Promise<ServerUserProfile> {

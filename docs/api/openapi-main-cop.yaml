@@ -31,6 +31,8 @@ tags:
     description: NATO symbol resolution endpoints owned by the main COP system.
   - name: Sources
     description: Source Registry lifecycle endpoints.
+  - name: Situation Context
+    description: Context-only public situation layers proxied from SIM situation-data-api.
   - name: Audit
     description: Audit and provenance query endpoints.
   - name: AI
@@ -659,6 +661,72 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/situation/layers:
+    get:
+      tags: [Situation Context]
+      summary: List available context-only situation layers.
+      operationId: listSituationLayers
+      description: >
+        Proxies SIM situation-data-api layer metadata. These layers are
+        contextual map overlays only and are not persisted as COP tracks,
+        history, tasking or weapon workflow state.
+      responses:
+        "200":
+          description: Situation layer descriptors and source health.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SituationLayersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/situation/features:
+    get:
+      tags: [Situation Context]
+      summary: Read context-only situation features for the current map bbox.
+      operationId: listSituationFeatures
+      description: >
+        Returns GeoJSON features from SIM situation-data-api for display as
+        context layers. The COP API does not forward the operator bearer token
+        to SIM and returns an empty degraded FeatureCollection instead of
+        crashing the map when the upstream source is unavailable.
+      parameters:
+        - name: bbox
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
+          description: "west,south,east,north"
+        - name: layers
+          in: query
+          required: false
+          schema:
+            type: string
+            default: weather
+          description: "Comma-separated layer IDs: weather, ground, mobile, traffic."
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 250
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection with normalized context properties.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SituationFeatureCollection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/sources/{sourceSystemId}:
     get:
       tags: [Sources]
@@ -1103,6 +1171,11 @@ components:
           type: boolean
         showPrediction:
           type: boolean
+        situationLayerIds:
+          type: array
+          items:
+            type: string
+            enum: [weather, ground, mobile, traffic]
         trackHistoryLimit:
           type: number
           minimum: 1
@@ -1866,6 +1939,292 @@ components:
           additionalProperties:
             type: integer
             minimum: 0
+    SituationLayersResponse:
+      type: object
+      required: [items, serverTimestamp]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SituationLayer"
+        serverTimestamp:
+          type: string
+          format: date-time
+        sourceHealth:
+          $ref: "#/components/schemas/SourceHealthOverride"
+        sourceStatus:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+    SituationLayer:
+      type: object
+      required: [defaultVisible, label, layerId]
+      properties:
+        layerId:
+          type: string
+          enum: [weather, ground, mobile, traffic]
+        label:
+          type: string
+        description:
+          type: string
+        defaultVisible:
+          type: boolean
+        expectedCadenceSeconds:
+          type: integer
+          minimum: 1
+        geometryTypes:
+          type: array
+          items:
+            type: string
+            enum: [Point, LineString, Polygon]
+    SituationFeatureCollection:
+      type: object
+      required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
+      properties:
+        contractVersion:
+          type: string
+          const: cop-situation-source-v1
+        type:
+          type: string
+          const: FeatureCollection
+        generatedAt:
+          type: string
+          format: date-time
+        query:
+          $ref: "#/components/schemas/SituationFeatureQuery"
+        source:
+          $ref: "#/components/schemas/SituationRootSource"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SituationSourceDescriptor"
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/SituationFeature"
+        summary:
+          $ref: "#/components/schemas/SituationSummary"
+        sourceHealth:
+          $ref: "#/components/schemas/SourceHealthOverride"
+        warnings:
+          type: array
+          items:
+            type: string
+    SituationFeatureQuery:
+      type: object
+      required: [bbox, layers, limit]
+      properties:
+        bbox:
+          $ref: "#/components/schemas/SituationBbox"
+        layers:
+          type: array
+          items:
+            type: string
+            enum: [weather, ground, mobile, traffic]
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        sources:
+          type: array
+          items:
+            type: string
+    SituationBbox:
+      type: object
+      required: [east, north, south, west]
+      properties:
+        east:
+          type: number
+        north:
+          type: number
+        south:
+          type: number
+        west:
+          type: number
+    SituationRootSource:
+      type: object
+      required: [sourceId, sourceType]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        sourceId:
+          type: string
+          const: situation-data-api
+        sourceType:
+          type: string
+          const: PUBLIC_SITUATION_AGGREGATE
+    SituationSourceDescriptor:
+      type: object
+      required: [sourceId]
+      properties:
+        sourceId:
+          type: string
+        label:
+          type: string
+        enabled:
+          type: boolean
+        mode:
+          type: string
+        priority:
+          type: number
+        baseUrl:
+          type: string
+          format: uri
+        updateCadenceSeconds:
+          type: integer
+          minimum: 1
+        layers:
+          type: array
+          items:
+            type: string
+            enum: [weather, ground, mobile, traffic]
+        license:
+          type: object
+          additionalProperties: true
+    SituationFeature:
+      type: object
+      required: [geometry, properties, type]
+      properties:
+        type:
+          type: string
+          const: Feature
+        id:
+          oneOf:
+            - type: string
+            - type: number
+        geometry:
+          oneOf:
+            - $ref: "#/components/schemas/GeoJsonPoint"
+            - $ref: "#/components/schemas/GeoJsonLineString"
+            - $ref: "#/components/schemas/GeoJsonPolygon"
+        properties:
+          $ref: "#/components/schemas/SituationFeatureProperties"
+    GeoJsonPoint:
+      type: object
+      required: [coordinates, type]
+      properties:
+        type:
+          type: string
+          const: Point
+        coordinates:
+          $ref: "#/components/schemas/Coordinate"
+    GeoJsonLineString:
+      type: object
+      required: [coordinates, type]
+      properties:
+        type:
+          type: string
+          const: LineString
+        coordinates:
+          type: array
+          minItems: 2
+          items:
+            $ref: "#/components/schemas/Coordinate"
+    GeoJsonPolygon:
+      type: object
+      required: [coordinates, type]
+      properties:
+        type:
+          type: string
+          const: Polygon
+        coordinates:
+          type: array
+          minItems: 1
+          items:
+            type: array
+            minItems: 4
+            items:
+              $ref: "#/components/schemas/Coordinate"
+    Coordinate:
+      type: array
+      minItems: 2
+      maxItems: 2
+      items:
+        type: number
+    SituationFeatureProperties:
+      type: object
+      required: [category, featureId, label, layer, sourceId]
+      properties:
+        featureId:
+          type: string
+        layer:
+          type: string
+          enum: [weather, ground, mobile, traffic]
+        label:
+          type: string
+        category:
+          type: string
+        sourceId:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        stale:
+          type: boolean
+        severity:
+          type: string
+        license:
+          type: object
+          additionalProperties: true
+        metrics:
+          type: object
+          additionalProperties: true
+        tags:
+          type: object
+          additionalProperties: true
+    SituationSummary:
+      type: object
+      required: [featureCount, sourceCount, staleFeatureCount, warningCount]
+      properties:
+        featureCount:
+          type: integer
+          minimum: 0
+        sourceCount:
+          type: integer
+          minimum: 0
+        staleFeatureCount:
+          type: integer
+          minimum: 0
+        warningCount:
+          type: integer
+          minimum: 0
+    SourceHealthOverride:
+      type: object
+      required: [evaluatedAt, health]
+      properties:
+        health:
+          type: string
+          enum: [DEGRADED, ONLINE, STALE, UNAVAILABLE, WAITING]
+        evaluatedAt:
+          type: string
+          format: date-time
+        generatedAt:
+          type: string
+          format: date-time
+        lastPollAt:
+          type: string
+          format: date-time
+        lastSuccessAt:
+          type: string
+          format: date-time
+        detail:
+          type: string
+        lastError:
+          type: string
+        summary:
+          type: object
+          additionalProperties: true
+        warnings:
+          type: array
+          items:
+            type: string
     SourceLifecycleResult:
       type: object
       required: [sourceSystemId, status, changedAt]

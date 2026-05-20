@@ -8,6 +8,7 @@ import {
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
   parseMapCenter,
+  situationFeaturesToFeatureCollection,
   userAlertRadiusToFeatureCollection,
   userLocationToFeatureCollection
 } from "./CopMap";
@@ -87,6 +88,60 @@ describe("COP map data helpers", () => {
     expect(formatTrackLabel(publicFlight)).toBe("CSA42");
     expect(formatTrackLabel(fallbackFlight)).toBe("49F008");
     expect(objectsToTrackFeatureCollection([publicFlight]).features[0]?.properties.label).toBe("CSA42");
+  });
+
+  it("builds context-only situation features without converting them to COP tracks", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.42, 50.08], type: "Point" },
+          properties: {
+            category: "weather.current",
+            confidence: 0.9,
+            featureId: "weather:prague",
+            label: "Praha weather",
+            layer: "weather",
+            observedAt: "2026-05-20T10:00:00Z",
+            sourceId: "open_meteo",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-20T10:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["weather"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    }, "weather:prague");
+
+    expect(collection).toMatchObject({
+      features: [
+        {
+          geometry: { coordinates: [14.42, 50.08] },
+          properties: {
+            featureId: "weather:prague",
+            layer: "weather",
+            selected: true
+          }
+        }
+      ]
+    });
   });
 
   it("parses map center from longitude and latitude env value", () => {

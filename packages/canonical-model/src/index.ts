@@ -123,6 +123,7 @@ export interface SourceSystem {
     | "SIMULATOR"
     | "AIR_SYSTEM"
     | "PUBLIC_FLIGHT_AGGREGATE"
+    | "PUBLIC_SITUATION_AGGREGATE"
     | "GROUND_SYSTEM"
     | "UAV_SYSTEM"
     | "RESCUE_SYSTEM"
@@ -170,6 +171,28 @@ export function createPublicFlightAggregateSourceSystem(): SourceSystem {
     classificationLimit: "UNCLASSIFIED",
     synthetic: false,
     status: "ACTIVE",
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+export function createPublicSituationAggregateSourceSystem(): SourceSystem {
+  const now = new Date().toISOString();
+  return {
+    sourceSystemId: "situation-data-api",
+    displayName: "SIM Situation Data",
+    sourceType: "PUBLIC_SITUATION_AGGREGATE",
+    owner: "SIM situation-data-api",
+    allowedEventTypes: [],
+    allowedObjectTypes: ["INCIDENT", "REPORT", "GROUND_UNIT", "UNKNOWN"],
+    trustProfile: "UNKNOWN",
+    classificationLimit: "UNCLASSIFIED",
+    synthetic: false,
+    status: "ACTIVE",
+    attributes: {
+      contextOnly: true,
+      contractVersion: "cop-situation-source-v1"
+    },
     createdAt: now,
     updatedAt: now
   };

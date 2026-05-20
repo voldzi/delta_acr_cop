@@ -26,6 +26,7 @@ export interface UserPreferences {
   showAlertAreas?: boolean;
   showHistory?: boolean;
   showPrediction?: boolean;
+  situationLayerIds?: string[];
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
 }
@@ -104,6 +105,7 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
+    situationLayerIds: optionalStringArray(value.situationLayerIds),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds)
   };
@@ -124,6 +126,10 @@ function optionalFiniteNumber(value: unknown): number | undefined {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function optionalStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
 }
 
 function scopedStorageKey(baseKey: string, scope: string | undefined): string {

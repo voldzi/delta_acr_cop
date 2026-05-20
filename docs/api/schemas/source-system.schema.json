@@ -30,6 +30,7 @@
         "SIMULATOR",
         "AIR_SYSTEM",
         "PUBLIC_FLIGHT_AGGREGATE",
+        "PUBLIC_SITUATION_AGGREGATE",
         "GROUND_SYSTEM",
         "UAV_SYSTEM",
         "RESCUE_SYSTEM",

@@ -25,6 +25,7 @@ export interface ViewProfileSettings {
   showAlertAreas?: boolean;
   showHistory?: boolean;
   showPrediction?: boolean;
+  situationLayerIds?: string[];
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
 }
@@ -57,6 +58,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
+      situationLayerIds: ["weather"],
       trackHistoryLimit: 120,
       trackHistoryWindowSeconds: 180
     }
@@ -80,6 +82,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
+      situationLayerIds: ["weather"],
       trackHistoryLimit: 72,
       trackHistoryWindowSeconds: 60
     }
@@ -103,6 +106,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
+      situationLayerIds: ["weather", "traffic"],
       trackHistoryLimit: 120,
       trackHistoryWindowSeconds: 180
     }
@@ -124,7 +128,8 @@ export const builtInViewProfiles: ViewProfile[] = [
       selectedLayer: "data-quality",
       showAlertAreas: true,
       showHistory: false,
-      showPrediction: false
+      showPrediction: false,
+      situationLayerIds: ["weather", "mobile"]
     }
   },
   {
@@ -144,6 +149,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: true,
       showHistory: true,
       showPrediction: false,
+      situationLayerIds: ["weather", "ground", "traffic"],
       trackHistoryLimit: 240,
       trackHistoryWindowSeconds: 600
     }
@@ -227,6 +233,7 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
+    situationLayerIds: optionalStringArray(value.situationLayerIds),
     trackHistoryLimit: optionalNumber(value.trackHistoryLimit),
     trackHistoryWindowSeconds: optionalNumber(value.trackHistoryWindowSeconds)
   };
@@ -261,6 +268,10 @@ function optionalNumber(value: unknown): number | undefined {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function optionalStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
 }
 
 function scopedStorageKey(baseKey: string, scope: string | undefined): string {

@@ -167,12 +167,13 @@ MDM/MAM příprava:
 2. Načíst lokální snapshot pro `subjectId`, pokud existuje.
 3. Pokud je token platný, volat `/api/v1/mobile/bootstrap`.
 4. Zobrazit bootstrap snapshot a uložit ho do `OfflineStore`.
-5. Otevřít SSE `/api/v1/stream/cop/live`.
-6. `snapshot` zprávou nahradit current state.
-7. `delta` zprávy mergovat podle `objectId`.
-8. Při výpadku streamu přepnout na `DEGRADED` a volat `/api/v1/mobile/offline-snapshot`.
-9. Při výpadku API přepnout na `OFFLINE` a držet read-only snapshot.
-10. Po obnově spojení znovu zavolat bootstrap/offline snapshot a přepnout stav podle streamu.
+5. Načíst volitelné kontextové vrstvy přes `/api/v1/situation/layers` a `/api/v1/situation/features` podle aktuálního bbox mapy.
+6. Otevřít SSE `/api/v1/stream/cop/live`.
+7. `snapshot` zprávou nahradit current state.
+8. `delta` zprávy mergovat podle `objectId`.
+9. Při výpadku streamu přepnout na `DEGRADED` a volat `/api/v1/mobile/offline-snapshot`.
+10. Při výpadku API přepnout na `OFFLINE` a držet read-only snapshot.
+11. Po obnově spojení znovu zavolat bootstrap/offline snapshot a přepnout stav podle streamu.
 
 ## Generování klienta
 
@@ -186,6 +187,8 @@ Modely, které musí být stabilní:
 - `TrackHistoryPoint`,
 - `CopAlert`,
 - `SourceHealthItem`,
+- `SituationLayer`,
+- `SituationFeatureCollection`,
 - `UserPreferenceProfile`.
 
 ## Build a distribuce
