@@ -51,7 +51,7 @@ export function readAuthConfig(): AuthConfig {
     clientId: import.meta.env.VITE_COP_OIDC_CLIENT_ID ?? "cop-web",
     issuer: normalizeIssuer(import.meta.env.VITE_COP_OIDC_ISSUER ?? ""),
     mode: readAuthMode(import.meta.env.VITE_COP_AUTH_MODE),
-    publicReadEnabled: readBoolean(import.meta.env.VITE_COP_PUBLIC_READ_ENABLED),
+    publicReadEnabled: readBoolean(import.meta.env.VITE_COP_PUBLIC_READ_ENABLED ?? "true"),
     scope: import.meta.env.VITE_COP_OIDC_SCOPE ?? "openid profile email"
   };
 }
