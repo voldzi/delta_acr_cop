@@ -20,7 +20,7 @@ describe("S3PresignedMediaStorage", () => {
     expect(calls[0]?.url).toBe("http://seaweed.test:8333/cop-community-media");
     expect(calls[0]?.init?.method).toBe("HEAD");
     expect(calls[0]?.init?.headers).toMatchObject({
-      "x-amz-content-sha256": "UNSIGNED-PAYLOAD"
+      "x-amz-content-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     });
     expect(String((calls[0]?.init?.headers as Record<string, string>).authorization)).toContain("Credential=cop-access/");
     expect(storage.diagnostics()).toBe("bucket=cop-community-media; endpoint=http://seaweed.test:8333");

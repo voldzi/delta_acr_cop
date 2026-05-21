@@ -161,8 +161,9 @@ async function signedS3Request(input: SignedS3RequestInput): Promise<Response> {
   const dateScope = amzDate.slice(0, 8);
   const credentialScope = `${dateScope}/${input.region}/s3/aws4_request`;
   const urlPath = joinUrlPath(endpoint.pathname, input.bucket);
+  const payloadHash = sha256Hex("");
   const headers: Record<string, string> = {
-    "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+    "x-amz-content-sha256": payloadHash,
     "x-amz-date": amzDate
   };
   const { canonicalHeaders, signedHeaders } = canonicalHeaderBlock({
@@ -175,7 +176,7 @@ async function signedS3Request(input: SignedS3RequestInput): Promise<Response> {
     "",
     canonicalHeaders,
     signedHeaders,
-    "UNSIGNED-PAYLOAD"
+    payloadHash
   ].join("\n");
   const stringToSign = [
     "AWS4-HMAC-SHA256",
