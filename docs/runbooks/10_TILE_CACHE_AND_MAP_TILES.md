@@ -90,6 +90,7 @@ server {
         proxy_ssl_name tile.openstreetmap.org;
         proxy_set_header Referer $http_referer;
         proxy_set_header User-Agent "CivilniSituacniMapaTileCache/0.1 (+https://cop.zeleznalady.cz)";
+        proxy_hide_header Access-Control-Allow-Origin;
         proxy_cache cop_tiles;
         proxy_cache_revalidate on;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
@@ -105,6 +106,7 @@ server {
         proxy_set_header Host demotiles.maplibre.org;
         proxy_ssl_server_name on;
         proxy_ssl_name demotiles.maplibre.org;
+        proxy_hide_header Access-Control-Allow-Origin;
         proxy_cache cop_tiles;
         proxy_cache_revalidate on;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
@@ -173,6 +175,7 @@ server {
         proxy_ssl_name tile.openstreetmap.org;
         proxy_set_header Referer $http_referer;
         proxy_set_header User-Agent "CivilniSituacniMapaTileCache/0.1 (+https://cop.zeleznalady.cz)";
+        proxy_hide_header Access-Control-Allow-Origin;
         proxy_cache cop_tiles;
         proxy_cache_revalidate on;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
@@ -190,6 +193,7 @@ server {
         proxy_set_header Host demotiles.maplibre.org;
         proxy_ssl_server_name on;
         proxy_ssl_name demotiles.maplibre.org;
+        proxy_hide_header Access-Control-Allow-Origin;
         proxy_cache cop_tiles;
         proxy_cache_revalidate on;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
