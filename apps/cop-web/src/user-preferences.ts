@@ -24,6 +24,7 @@ export interface UserPreferences {
   refreshSeconds?: number;
   safetyLayerIds?: string[];
   selectedLayer?: string;
+  situationCoverageTechnology?: string;
   showAlertAreas?: boolean;
   showHistory?: boolean;
   showPrediction?: boolean;
@@ -107,6 +108,7 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     refreshSeconds: optionalFiniteNumber(value.refreshSeconds),
     safetyLayerIds: optionalStringArray(value.safetyLayerIds),
     selectedLayer: optionalString(value.selectedLayer),
+    situationCoverageTechnology: optionalString(value.situationCoverageTechnology),
     showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),

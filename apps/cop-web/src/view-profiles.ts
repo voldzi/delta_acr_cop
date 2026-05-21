@@ -23,6 +23,7 @@ export interface ViewProfileSettings {
   refreshSeconds?: number;
   safetyLayerIds?: string[];
   selectedLayer?: CopLayer;
+  situationCoverageTechnology?: string;
   showAlertAreas?: boolean;
   showHistory?: boolean;
   showPrediction?: boolean;

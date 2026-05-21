@@ -1,7 +1,7 @@
 import { createPublicSituationAggregateSourceSystem, type SourceSystem } from "@cop/canonical-model";
 import type { SourceHealthOverride } from "./types.js";
 
-export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "traffic" | "warnings" | "weather";
+export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "mobile_coverage" | "traffic" | "warnings" | "weather";
 
 type SituationCacheStatus = "coalesced" | "hit" | "miss" | "stale";
 
@@ -34,6 +34,7 @@ export interface SituationFeatureQuery {
   layers: SituationLayerId[];
   limit: number;
   sources?: string[];
+  technology?: string;
 }
 
 export interface SituationBbox {
@@ -61,6 +62,7 @@ export interface SituationFeatureCollection {
     layers: SituationLayerId[];
     limit: number;
     sources?: string[];
+    technology?: string;
   };
   source: {
     generatedAt?: string;
@@ -99,16 +101,26 @@ export type SituationGeometry =
 export interface SituationFeatureProperties {
   category: string;
   confidence?: number;
+  assumptions?: Record<string, unknown>;
+  demSource?: string;
+  disclaimer?: string;
+  estimatedSignalDbm?: number;
   featureId: string;
+  generatedAt?: string;
   label: string;
   layer: SituationLayerId;
   license?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
+  modelVersion?: string;
   observedAt?: string;
+  operator?: string;
+  quality?: string;
+  resolutionM?: number;
   severity?: "advisory" | "critical" | "info" | "warning" | string;
   sourceId: string;
   stale?: boolean;
   tags?: Record<string, unknown>;
+  technology?: string;
   validUntil?: string;
 }
 
@@ -143,6 +155,7 @@ const defaultConfig: SituationDataSourceConfig = {
     flood: 5 * 60 * 1000,
     ground: 6 * 60 * 60 * 1000,
     mobile: 15 * 60 * 1000,
+    mobile_coverage: 10 * 60 * 1000,
     traffic: 20 * 1000,
     warnings: 5 * 60 * 1000,
     weather: 5 * 60 * 1000
@@ -151,13 +164,14 @@ const defaultConfig: SituationDataSourceConfig = {
   sourceCacheTtlMs: {
     ardos_partner: 10 * 1000,
     aviation_weather: 120 * 1000,
+    mobile_coverage_model: 10 * 60 * 1000,
     osm_postgis: 6 * 60 * 60 * 1000
   },
   staleIfErrorMs: 10 * 60 * 1000,
   timeoutMs: 7000
 };
 
-const allowedLayerIds: SituationLayerId[] = ["weather", "ground", "mobile", "traffic", "warnings", "flood", "air_quality"];
+const allowedLayerIds: SituationLayerId[] = ["weather", "ground", "mobile", "mobile_coverage", "traffic", "warnings", "flood", "air_quality"];
 
 export function createSituationDataSourceConfigFromEnv(env: Record<string, string | undefined> = process.env): SituationDataSourceConfig {
   const cacheTtlMs = readInteger(env.COP_SITUATION_DATA_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 300000);
@@ -171,6 +185,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       flood: readInteger(env.COP_SITUATION_DATA_FLOOD_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       ground: readInteger(env.COP_SITUATION_DATA_GROUND_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile: readInteger(env.COP_SITUATION_DATA_MOBILE_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      mobile_coverage: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       traffic: readInteger(env.COP_SITUATION_DATA_TRAFFIC_CACHE_TTL_MS, cacheTtlMs, 1000, 5 * 60 * 1000),
       warnings: readInteger(env.COP_SITUATION_DATA_WARNINGS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
@@ -179,6 +194,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
     sourceCacheTtlMs: {
       ardos_partner: readInteger(env.COP_SITUATION_DATA_ARDOS_CACHE_TTL_MS, 10 * 1000, 1000, 5 * 60 * 1000),
       aviation_weather: readInteger(env.COP_SITUATION_DATA_AVIATION_WEATHER_CACHE_TTL_MS, 120 * 1000, 1000, 24 * 60 * 60 * 1000),
+      mobile_coverage_model: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       osm_postgis: readInteger(env.COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
     },
     staleIfErrorMs: readInteger(env.COP_SITUATION_DATA_STALE_IF_ERROR_MS, defaultConfig.staleIfErrorMs ?? 600000, 0, 24 * 60 * 60 * 1000),
@@ -435,7 +451,8 @@ export function parseSituationFeatureQuery(rawQuery: Record<string, unknown>, co
     bbox,
     layers: parseSituationLayers(typeof rawQuery.layers === "string" ? rawQuery.layers : undefined),
     limit: optionalNumber(rawQuery.limit) ?? config.maxLimit,
-    sources: parseSituationSources(rawQuery)
+    sources: parseSituationSources(rawQuery),
+    technology: parseCoverageTechnology(rawQuery.technology)
   }, config);
 }
 
@@ -451,7 +468,8 @@ export function normalizeSituationFeatureQuery(query: SituationFeatureQuery, con
       ? uniqueLayers(query.layers.filter(isSituationLayerId))
       : ["weather"],
     limit: Math.round(clampNumber(query.limit, 1, config.maxLimit)),
-    ...(query.sources && query.sources.length > 0 ? { sources: uniqueStrings(query.sources) } : {})
+    ...(query.sources && query.sources.length > 0 ? { sources: uniqueStrings(query.sources) } : {}),
+    ...(query.technology ? { technology: normalizeCoverageTechnology(query.technology) } : {})
   };
 }
 
@@ -469,7 +487,8 @@ function canonicalizeSituationFeatureQuery(query: SituationFeatureQuery): Situat
     bbox: snapBboxToGrid(paddedBbox, gridSizeDegrees),
     layers: query.layers,
     limit: query.limit,
-    ...(query.sources && query.sources.length > 0 ? { sources: query.sources } : {})
+    ...(query.sources && query.sources.length > 0 ? { sources: query.sources } : {}),
+    ...(query.technology ? { technology: query.technology } : {})
   };
 }
 
@@ -481,6 +500,7 @@ function projectSituationFeatureCollection(
   const features = collection.features.filter((feature) =>
     requestQuery.layers.includes(feature.properties.layer)
     && (!requestQuery.sources || requestQuery.sources.includes(feature.properties.sourceId))
+    && (!requestQuery.technology || feature.properties.layer !== "mobile_coverage" || feature.properties.technology === requestQuery.technology)
     && isFeatureInBbox(feature, requestQuery.bbox)
   );
   const sources = collection.sources.filter((source) => !requestQuery.sources || requestQuery.sources.includes(source.sourceId));
@@ -501,7 +521,8 @@ function projectSituationFeatureCollection(
       bbox: requestQuery.bbox,
       layers: requestQuery.layers,
       limit: requestQuery.limit,
-      sources: requestQuery.sources ?? collection.query.sources
+      sources: requestQuery.sources ?? collection.query.sources,
+      technology: requestQuery.technology ?? collection.query.technology
     },
     sources,
     summary: {
@@ -537,6 +558,9 @@ async function fetchSituationFeatures(config: SituationDataSourceConfig, query: 
   url.searchParams.set("limit", String(query.limit));
   if (query.sources && query.sources.length > 0) {
     url.searchParams.set("source", query.sources.join(","));
+  }
+  if (query.technology) {
+    url.searchParams.set("technology", query.technology);
   }
   return normalizeSituationFeatureCollection(await fetchJson(url, config, requestNow), query);
 }
@@ -632,18 +656,28 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     return null;
   }
   return {
+    assumptions: isRecord(value.assumptions) ? value.assumptions : undefined,
     category,
     confidence: optionalFinite(value.confidence),
+    demSource: optionalString(value.demSource),
+    disclaimer: optionalString(value.disclaimer),
+    estimatedSignalDbm: optionalNumber(value.estimatedSignalDbm),
     featureId,
+    generatedAt: optionalString(value.generatedAt),
     label,
     layer: value.layer,
     license: isRecord(value.license) ? value.license : undefined,
     metrics: isRecord(value.metrics) ? value.metrics : undefined,
+    modelVersion: optionalString(value.modelVersion),
     observedAt: optionalString(value.observedAt),
+    operator: optionalString(value.operator),
+    quality: optionalString(value.quality),
+    resolutionM: optionalNumber(value.resolutionM),
     severity: optionalString(value.severity),
     sourceId,
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
     tags: isRecord(value.tags) ? value.tags : undefined,
+    technology: normalizeCoverageTechnology(value.technology),
     validUntil: optionalString(value.validUntil)
   };
 }
@@ -690,7 +724,8 @@ function normalizeResponseQuery(value: unknown, fallback: SituationFeatureQuery)
     },
     layers: Array.isArray(value.layers) ? value.layers.filter(isSituationLayerId) : fallback.layers,
     limit: optionalNumber(value.limit) ?? fallback.limit,
-    sources: Array.isArray(value.sources) ? value.sources.filter((source): source is string => typeof source === "string") : fallback.sources
+    sources: Array.isArray(value.sources) ? value.sources.filter((source): source is string => typeof source === "string") : fallback.sources,
+    technology: normalizeCoverageTechnology(value.technology) ?? fallback.technology
   };
 }
 
@@ -764,6 +799,18 @@ function parseSituationSources(rawQuery: Record<string, unknown>): string[] | un
   return sources.length > 0 ? uniqueStrings(sources) : undefined;
 }
 
+function parseCoverageTechnology(value: unknown): string | undefined {
+  return normalizeCoverageTechnology(optionalString(value));
+}
+
+function normalizeCoverageTechnology(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toUpperCase();
+  return normalized === "2G" || normalized === "4G" || normalized === "5G" ? normalized : undefined;
+}
+
 function situationFeatureCacheKey(query: SituationFeatureQuery): string {
   return [
     query.bbox.west.toFixed(4),
@@ -772,7 +819,8 @@ function situationFeatureCacheKey(query: SituationFeatureQuery): string {
     query.bbox.north.toFixed(4),
     query.layers.join(","),
     query.limit,
-    query.sources?.join(",") ?? "*"
+    query.sources?.join(",") ?? "*",
+    query.technology ?? "*"
   ].join("|");
 }
 

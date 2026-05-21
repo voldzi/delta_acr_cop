@@ -169,9 +169,11 @@ type PreferenceSettings = ViewProfileSettings | UserPreferences;
 type SettingsTab = "map" | "data" | "awareness" | "account";
 type ProfileSyncStatus = "disabled" | "error" | "loading" | "saving" | "synced";
 type SituationLayerStatus = "disabled" | "loading" | "online" | "degraded" | "zoom";
+type CoverageTechnology = "2G" | "4G" | "5G";
 
 const historyLimitOptions = [36, 72, 120, 240, 600] as const;
 const historyWindowOptions = [30, 60, 120, 180, 300, 600] as const;
+const coverageTechnologyOptions: CoverageTechnology[] = ["2G", "4G", "5G"];
 const defaultSituationLayerIds: SituationLayerId[] = ["weather"];
 const defaultSafetyLayerIds: SafetyLayerId[] = ["warnings"];
 const defaultTakLayerIds: TakLayerId[] = [];
@@ -276,6 +278,9 @@ export function App() {
   );
   const [visibleSituationSourceIds, setVisibleSituationSourceIds] = React.useState<string[]>(() =>
     normalizeSourceIds(initialPreferences.situationSourceIds)
+  );
+  const [coverageTechnology, setCoverageTechnology] = React.useState<CoverageTechnology>(() =>
+    normalizeCoverageTechnology(initialPreferences.situationCoverageTechnology)
   );
   const [situationFeatures, setSituationFeatures] = React.useState<SituationFeatureCollectionResponse | null>(null);
   const [situationStatus, setSituationStatus] = React.useState<SituationLayerStatus>("loading");
@@ -732,6 +737,7 @@ export function App() {
   const visibleSituationSourceKey = visibleSituationSourceIds.join(",");
   const visibleSafetyLayerKey = visibleSafetyLayerIds.join(",");
   const visibleTakLayerKey = visibleTakLayerIds.join(",");
+  const situationCoverageEnabled = visibleSituationLayerIds.includes("mobile_coverage");
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -760,7 +766,8 @@ export function App() {
         bbox: mapBounds,
         layers: visibleSituationLayerIds,
         limit: 250,
-        sources: visibleSituationSourceIds.length > 0 ? visibleSituationSourceIds : undefined
+        sources: visibleSituationSourceIds.length > 0 ? visibleSituationSourceIds : undefined,
+        technology: situationCoverageEnabled ? coverageTechnology : undefined
       })
         .then((collection) => {
           if (cancelled) {
@@ -783,7 +790,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, dataAccessReady, mapBounds, mapView?.zoom, visibleSituationLayerIds, visibleSituationLayerKey, visibleSituationSourceIds, visibleSituationSourceKey]);
+  }, [authToken, coverageTechnology, dataAccessReady, mapBounds, mapView?.zoom, situationCoverageEnabled, visibleSituationLayerIds, visibleSituationLayerKey, visibleSituationSourceIds, visibleSituationSourceKey]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -1061,6 +1068,9 @@ export function App() {
     if (settings.situationSourceIds !== undefined) {
       setVisibleSituationSourceIds(normalizeSourceIds(settings.situationSourceIds));
     }
+    if (settings.situationCoverageTechnology !== undefined) {
+      setCoverageTechnology(normalizeCoverageTechnology(settings.situationCoverageTechnology));
+    }
     if (settings.safetyLayerIds !== undefined) {
       setVisibleSafetyLayerIds(normalizeSafetyLayerIds(settings.safetyLayerIds));
     }
@@ -1118,6 +1128,7 @@ export function App() {
     refreshSeconds,
     safetyLayerIds: visibleSafetyLayerIds,
     selectedLayer,
+    situationCoverageTechnology: coverageTechnology,
     showAlertAreas,
     showHistory,
     showPrediction,
@@ -1144,6 +1155,7 @@ export function App() {
     refreshSeconds,
     visibleSafetyLayerIds,
     selectedLayer,
+    coverageTechnology,
     showAlertAreas,
     showHistory,
     showPrediction,
@@ -1726,11 +1738,13 @@ export function App() {
                   layers={situationLayers}
                   sources={situationSources}
                   status={situationStatus}
+                  coverageTechnology={coverageTechnology}
                   visibleLayerIds={visibleSituationLayerIds}
                   visibleSourceIds={visibleSituationSourceIds}
                   warnings={situationWarnings}
                   onToggle={toggleSituationLayer}
                   onToggleSource={toggleSituationSource}
+                  onCoverageTechnologyChange={setCoverageTechnology}
                 />
 
                 <SafetyLayerControls
@@ -2502,9 +2516,23 @@ function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
   return (
     <ObjectDetailSection title="Vybraný situační prvek">
       <DetailGrid rows={rows} />
+      {feature.properties.layer === "mobile_coverage" ? <MobileCoverageSummary feature={feature} /> : null}
       {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
     </ObjectDetailSection>
+  );
+}
+
+function MobileCoverageSummary({ feature }: { feature: SituationFeature }) {
+  const properties = feature.properties;
+  const quality = mobileCoverageQualityModel(properties.quality);
+  return (
+    <div className="mobile-status-summary">
+      <DataMetric label="Kvalita" value={quality.label} tone={quality.tone} />
+      <DataMetric label="Technologie" value={properties.technology ?? "n/a"} tone="neutral" />
+      <DataMetric label="Signál" value={formatOptionalNumber(properties.estimatedSignalDbm, " dBm")} tone={mobileMetricTone(properties.estimatedSignalDbm, -95, -110, true)} />
+      <DataMetric label="Model" value={properties.modelVersion ?? "n/a"} tone="neutral" />
+    </div>
   );
 }
 
@@ -3393,6 +3421,7 @@ function SourceLayerToggle({
 }
 
 function SituationLayerControls({
+  coverageTechnology,
   featureCount,
   layers,
   sources,
@@ -3400,9 +3429,11 @@ function SituationLayerControls({
   visibleLayerIds,
   visibleSourceIds,
   warnings,
+  onCoverageTechnologyChange,
   onToggle,
   onToggleSource
 }: {
+  coverageTechnology: CoverageTechnology;
   featureCount: number;
   layers: SituationLayer[];
   sources: SituationSourceDescriptor[];
@@ -3410,11 +3441,13 @@ function SituationLayerControls({
   visibleLayerIds: SituationLayerId[];
   visibleSourceIds: string[];
   warnings: string[];
+  onCoverageTechnologyChange: (technology: CoverageTechnology) => void;
   onToggle: (layerId: SituationLayerId) => void;
   onToggleSource: (sourceId: string) => void;
 }) {
   const layerItems = layers.length > 0 ? layers : defaultSituationLayers();
   const sourceItems = sources.filter((source) => !isSafetyOnlySituationSource(source));
+  const coverageEnabled = visibleLayerIds.includes("mobile_coverage");
   return (
     <div className="situation-layer-box">
       <div className="situation-layer-header">
@@ -3436,6 +3469,23 @@ function SituationLayerControls({
           </label>
         ))}
       </div>
+      {coverageEnabled ? (
+        <div className="coverage-technology-control" aria-label="Technologie modelu mobilního pokrytí">
+          <span>Pokrytí</span>
+          <div>
+            {coverageTechnologyOptions.map((technology) => (
+              <button
+                className={coverageTechnology === technology ? "active" : ""}
+                key={technology}
+                onClick={() => onCoverageTechnologyChange(technology)}
+                type="button"
+              >
+                {technology}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {sourceItems.length > 0 ? (
         <div className="situation-source-list">
           {sourceItems.map((source) => {
@@ -3897,6 +3947,25 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
         />
       </ObjectDetailSection>
 
+      {properties.layer === "mobile_coverage" ? (
+        <ObjectDetailSection title="Mobilní pokrytí">
+          <DetailGrid
+            rows={[
+              ["Kvalita", mobileCoverageQualityModel(properties.quality).label],
+              ["Technologie", properties.technology ?? "n/a"],
+              ["Operátor", properties.operator ?? "n/a"],
+              ["Odhad signálu", formatOptionalNumber(properties.estimatedSignalDbm, " dBm")],
+              ["Confidence", formatOptionalPercent(properties.confidence)],
+              ["Model", properties.modelVersion ?? "n/a"],
+              ["Vygenerováno", formatShortDateTime(properties.generatedAt)],
+              ["Rozlišení", formatOptionalNumber(properties.resolutionM, " m")],
+              ["DEM", properties.demSource ?? "n/a"],
+              ["Poznámka", properties.disclaimer ?? "n/a"]
+            ]}
+          />
+        </ObjectDetailSection>
+      ) : null}
+
       {properties.layer === "mobile" ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {properties.description || properties.recommendedAction ? (
@@ -3925,6 +3994,7 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
             ["License", formatSituationRecord(properties.license)],
             ["Metrics", formatSituationRecord(properties.metrics)],
             ["Tags", formatSituationRecord(properties.tags)],
+            ["Assumptions", formatSituationRecord(properties.assumptions)],
             ["Affected areas", formatStringList(properties.affectedAreas)],
             ["Geocodes", formatGeocodes(properties.geocodes)]
           ]}
@@ -4432,6 +4502,14 @@ function defaultSituationLayers(): SituationLayer[] {
     },
     {
       defaultVisible: false,
+      description: "Modelový odhad mobilního pokrytí ze SIM.",
+      expectedCadenceSeconds: 600,
+      geometryTypes: ["Polygon"],
+      label: "Mobilní pokrytí",
+      layerId: "mobile_coverage"
+    },
+    {
+      defaultVisible: false,
       description: "Dopravní kontext.",
       geometryTypes: ["Point", "LineString"],
       label: "Traffic",
@@ -4529,13 +4607,14 @@ function takLayerHint(layer: TakLayer): string {
 
 function situationLayerLabel(layerId: SituationLayerId): string {
   const labels: Record<SituationLayerId, string> = {
-    air_quality: "Air quality",
-    flood: "Flood",
-    ground: "Ground",
-    mobile: "Mobile",
-    traffic: "Traffic",
-    warnings: "Warnings",
-    weather: "Weather"
+    air_quality: "Kvalita vzduchu",
+    flood: "Povodně",
+    ground: "Terén",
+    mobile: "Mobilní síť",
+    mobile_coverage: "Mobilní pokrytí",
+    traffic: "Doprava",
+    warnings: "Výstrahy",
+    weather: "Počasí"
   };
   return labels[layerId];
 }
@@ -4682,6 +4761,10 @@ function formatGeocodes(value: Array<{ scheme: string; value: string }> | undefi
 }
 
 function situationFeatureStatusModel(feature: SituationFeature): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } {
+  if (feature.properties.layer === "mobile_coverage") {
+    const coverage = mobileCoverageQualityModel(feature.properties.quality);
+    return feature.properties.stale && coverage.tone === "ok" ? { label: `${coverage.label} · STALE`, tone: "warn" } : coverage;
+  }
   if (feature.properties.stale) {
     return { label: "STALE", tone: "warn" };
   }
@@ -4711,6 +4794,23 @@ function situationFeatureStatusModel(feature: SituationFeature): { label: string
     return { label: "OK", tone: "ok" };
   }
   return { label: raw.toUpperCase(), tone: "neutral" };
+}
+
+function mobileCoverageQualityModel(quality: string | undefined): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } {
+  const normalized = quality?.trim().toLowerCase();
+  if (normalized === "good") {
+    return { label: "DOBRÉ", tone: "ok" };
+  }
+  if (normalized === "fair") {
+    return { label: "SLUŠNÉ", tone: "warn" };
+  }
+  if (normalized === "weak") {
+    return { label: "SLABÉ", tone: "warn" };
+  }
+  if (normalized === "none") {
+    return { label: "BEZ SIGNÁLU", tone: "critical" };
+  }
+  return { label: "NEZNÁMÉ", tone: "neutral" };
 }
 
 function isAviationWeatherFeature(feature: SituationFeature): boolean {
@@ -5129,8 +5229,16 @@ function isSituationLayerId(value: string): value is SituationLayerId {
   return value === "weather"
     || value === "ground"
     || value === "mobile"
+    || value === "mobile_coverage"
     || value === "traffic"
+    || value === "warnings"
+    || value === "flood"
     || value === "air_quality";
+}
+
+function normalizeCoverageTechnology(value: string | undefined): CoverageTechnology {
+  const normalized = value?.trim().toUpperCase();
+  return normalized === "2G" || normalized === "5G" ? normalized : "4G";
 }
 
 function normalizeSafetyLayerIds(value: string[] | undefined): SafetyLayerId[] {

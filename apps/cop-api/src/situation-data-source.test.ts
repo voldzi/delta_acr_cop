@@ -162,6 +162,48 @@ describe("SituationDataSourceAdapter", () => {
     expect(features.cache?.ttlMs).toBe(6 * 60 * 60 * 1000);
   });
 
+  it("proxies mobile coverage technology and preserves coverage model properties", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleCoverageFeatureCollection()), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SituationDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/situation-data/api/v1",
+      cacheTtlMs: 20000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const features = await adapter.fetchFeatures({
+      bbox: { east: 14.6, north: 50.2, south: 49.95, west: 14.2 },
+      layers: ["weather", "mobile_coverage"],
+      limit: 20,
+      sources: ["mobile_coverage_model"],
+      technology: "4g"
+    }, new Date("2026-05-21T14:10:00Z"));
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=weather%2Cmobile_coverage&limit=20&source=mobile_coverage_model&technology=4G"
+    );
+    expect(features.cache?.ttlMs).toBe(10 * 60 * 1000);
+    expect(features.query.technology).toBe("4G");
+    expect(features.features).toMatchObject([
+      {
+        properties: {
+          demSource: "not-used-phase-1",
+          estimatedSignalDbm: -111,
+          featureId: "coverage:mobile:4g:6-4",
+          layer: "mobile_coverage",
+          modelVersion: "coverage-v1",
+          quality: "weak",
+          resolutionM: 4554,
+          sourceId: "mobile_coverage_model",
+          technology: "4G"
+        }
+      }
+    ]);
+  });
+
   it("falls back to layer ttl when an explicit source has no source-specific ttl", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -197,6 +239,116 @@ function sampleLayersResponse() {
         layerId: "weather"
       }
     ]
+  };
+}
+
+function sampleCoverageFeatureCollection() {
+  return {
+    contractVersion: "cop-situation-source-v1",
+    features: [
+      {
+        geometry: {
+          coordinates: [[
+            [14.2, 49.95],
+            [14.3, 49.95],
+            [14.3, 50.05],
+            [14.2, 50.05],
+            [14.2, 49.95]
+          ]],
+          type: "Polygon"
+        },
+        id: "coverage:mobile:4g:6-4",
+        properties: {
+          assumptions: {
+            antennaHeightM: 30,
+            terrainAware: false
+          },
+          category: "mobile_coverage",
+          confidence: 0.63,
+          demSource: "not-used-phase-1",
+          disclaimer: "Coverage is an estimate, not guaranteed service availability.",
+          estimatedSignalDbm: -111,
+          featureId: "coverage:mobile:4g:6-4",
+          generatedAt: "2026-05-21T13:44:09.575Z",
+          label: "4G coverage estimate",
+          layer: "mobile_coverage",
+          license: {
+            attribution: "OpenStreetMap contributors",
+            name: "Estimated mobile coverage model"
+          },
+          metrics: {
+            distanceToNearestTowerM: 2686
+          },
+          modelVersion: "coverage-v1",
+          observedAt: "2026-05-21T13:44:09.575Z",
+          operator: "unknown",
+          quality: "weak",
+          resolutionM: 4554,
+          severity: "warning",
+          sourceId: "mobile_coverage_model",
+          stale: true,
+          tags: {
+            nearestTowerId: "node:13736867519"
+          },
+          technology: "4G"
+        },
+        type: "Feature"
+      },
+      {
+        geometry: {
+          coordinates: [[
+            [14.35, 49.95],
+            [14.45, 49.95],
+            [14.45, 50.05],
+            [14.35, 50.05],
+            [14.35, 49.95]
+          ]],
+          type: "Polygon"
+        },
+        id: "coverage:mobile:5g:6-5",
+        properties: {
+          category: "mobile_coverage",
+          confidence: 0.7,
+          featureId: "coverage:mobile:5g:6-5",
+          label: "5G coverage estimate",
+          layer: "mobile_coverage",
+          observedAt: "2026-05-21T13:44:09.575Z",
+          quality: "good",
+          sourceId: "mobile_coverage_model",
+          technology: "5G"
+        },
+        type: "Feature"
+      }
+    ],
+    generatedAt: "2026-05-21T14:08:41.075Z",
+    query: {
+      bbox: { east: 14.6, north: 50.2, south: 49.95, west: 14.2 },
+      layers: ["mobile_coverage"],
+      limit: 20,
+      sources: ["mobile_coverage_model"],
+      technology: "4G"
+    },
+    source: {
+      generatedAt: "2026-05-21T14:08:41.075Z",
+      sourceId: "situation-data-api",
+      sourceType: "PUBLIC_SITUATION_AGGREGATE"
+    },
+    sources: [
+      {
+        enabled: true,
+        label: "Mobile coverage estimate model",
+        layers: ["mobile_coverage"],
+        sourceId: "mobile_coverage_model"
+      }
+    ],
+    summary: {
+      featureCount: 2,
+      sourceCount: 1,
+      staleFeatureCount: 1,
+      warningCount: 0
+    },
+    type: "FeatureCollection",
+    warnings: []
   };
 }
 

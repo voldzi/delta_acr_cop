@@ -150,6 +150,10 @@ export interface SituationContextFeatureCollection {
       weatherTemperatureC?: number;
       weatherWindDirectionDeg?: number;
       weatherWindSpeedMps?: number;
+      coverageColor?: string;
+      coverageLabel?: string;
+      coverageQuality?: string;
+      coverageTechnology?: string;
       situationStatusColor?: string;
       situationStatusLabel?: string;
       situationStatusTone?: string;
@@ -326,6 +330,10 @@ export function CopMap({
   const situationFeatureCollection = React.useMemo(
     () => situationFeaturesToFeatureCollection(situationFeatures, selectedSituationFeatureId),
     [selectedSituationFeatureId, situationFeatures]
+  );
+  const hasMobileCoverageFeatures = React.useMemo(
+    () => situationFeatureCollection.features.some((feature) => feature.properties.layer === "mobile_coverage"),
+    [situationFeatureCollection]
   );
 
   objectsRef.current = objects;
@@ -518,6 +526,8 @@ export function CopMap({
                 "#22c55e",
                 "mobile",
                 "#a78bfa",
+                "mobile_coverage",
+                "#22c55e",
                 "traffic",
                 "#facc15",
                 "warnings",
@@ -529,7 +539,14 @@ export function CopMap({
                 "#8cb6d8"
               ]
             ],
-            "fill-opacity": ["case", ["get", "stale"], 0.06, 0.1]
+            "fill-opacity": [
+              "case",
+              ["==", ["get", "layer"], "mobile_coverage"],
+              ["case", ["get", "stale"], 0.1, 0.2],
+              ["get", "stale"],
+              0.06,
+              0.1
+            ]
           }
         });
 
@@ -555,6 +572,8 @@ export function CopMap({
                 "#22c55e",
                 "mobile",
                 "#a78bfa",
+                "mobile_coverage",
+                "#22c55e",
                 "traffic",
                 "#facc15",
                 "warnings",
@@ -567,7 +586,14 @@ export function CopMap({
               ]
             ],
             "line-dasharray": ["case", ["get", "stale"], ["literal", [2, 1.2]], ["literal", [1, 0]]],
-            "line-opacity": ["case", ["get", "stale"], 0.48, 0.76],
+            "line-opacity": [
+              "case",
+              ["==", ["get", "layer"], "mobile_coverage"],
+              ["case", ["get", "stale"], 0.42, 0.62],
+              ["get", "stale"],
+              0.48,
+              0.76
+            ],
             "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1.1, 12, 1.8, 16, 2.6]
           }
         });
@@ -1375,6 +1401,7 @@ export function CopMap({
         {aoiRuleFeatureCollection.features.length > 0 ? <RadiusLegendItem active={false} label="Uživatelská zóna" /> : null}
         {alertAreaFeatureCollection.features.length > 0 ? <RadiusLegendItem active label="Alert vrstva" /> : null}
         {situationFeatureCollection.features.length > 0 ? <SituationLegendItem label="Situační kontext" /> : null}
+        {hasMobileCoverageFeatures ? <CoverageLegendItem /> : null}
         {clusterTracks ? <ClusterLegendItem label="Shluky" /> : null}
       </div>
       {clusterInfo ? <ClusterPanel cluster={clusterInfo} onClose={() => setClusterInfo(null)} /> : null}
@@ -1602,6 +1629,17 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
       situationStatusTone: status.tone
     };
   }
+  if (feature.properties.layer === "mobile_coverage") {
+    return {
+      coverageColor: status.color,
+      coverageLabel: formatCoverageLabel(feature),
+      coverageQuality: normalizeCoverageQuality(feature.properties.quality),
+      coverageTechnology: feature.properties.technology,
+      situationStatusColor: status.color,
+      situationStatusLabel: status.label,
+      situationStatusTone: status.tone
+    };
+  }
   if (feature.properties.layer === "mobile") {
     return {
       mobileNetworkLabel: formatMobileNetworkLabel(feature),
@@ -1643,6 +1681,10 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
 }
 
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
+  if (feature.properties.layer === "mobile_coverage") {
+    const coverage = mobileCoverageStatus(feature.properties.quality);
+    return feature.properties.stale ? { ...coverage, label: `${coverage.label} · STALE`, tone: coverage.tone === "info" ? "warning" : coverage.tone } : coverage;
+  }
   if (feature.properties.stale) {
     return { color: "#facc15", label: "STALE", tone: "warning" };
   }
@@ -1685,6 +1727,34 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
     return { color: "#22c55e", label: "OK", tone: "info" };
   }
   return { color: "#a78bfa", label: raw.toUpperCase(), tone: "unknown" };
+}
+
+function mobileCoverageStatus(quality: string | undefined): { color: string; label: string; tone: string } {
+  switch (normalizeCoverageQuality(quality)) {
+    case "good":
+      return { color: "#22c55e", label: "DOBRÉ", tone: "info" };
+    case "fair":
+      return { color: "#facc15", label: "SLUŠNÉ", tone: "warning" };
+    case "weak":
+      return { color: "#fb923c", label: "SLABÉ", tone: "advisory" };
+    case "none":
+      return { color: "#ef4444", label: "BEZ SIGNÁLU", tone: "critical" };
+    default:
+      return { color: "#64748b", label: "NEZNÁMÉ", tone: "unknown" };
+  }
+}
+
+function normalizeCoverageQuality(quality: string | undefined): string {
+  const normalized = quality?.trim().toLowerCase();
+  return normalized === "good" || normalized === "fair" || normalized === "weak" || normalized === "none" || normalized === "unknown"
+    ? normalized
+    : "unknown";
+}
+
+function formatCoverageLabel(feature: SituationFeature): string {
+  const technology = feature.properties.technology ?? "MOBILE";
+  const status = mobileCoverageStatus(feature.properties.quality);
+  return `${technology} ${status.label}`;
 }
 
 function aviationFlightCategory(feature: SituationFeature): { color: string; label: string; tone: string } | null {
@@ -1902,6 +1972,15 @@ function formatSituationFeatureTitle(feature: SituationFeature): string {
 
 function formatSituationFeatureSubtitle(feature: SituationFeature): string {
   const status = situationFeatureStatus(feature);
+  if (feature.properties.layer === "mobile_coverage") {
+    return [
+      "Mobilní pokrytí",
+      feature.properties.technology,
+      status.label,
+      typeof feature.properties.estimatedSignalDbm === "number" ? `${Math.round(feature.properties.estimatedSignalDbm)} dBm` : undefined,
+      typeof feature.properties.confidence === "number" ? `${Math.round(feature.properties.confidence * 100)} %` : undefined
+    ].filter(Boolean).join(" · ");
+  }
   return [
     situationLayerDisplayName(feature),
     feature.properties.category,
@@ -1920,6 +1999,7 @@ function situationLayerDisplayName(feature: SituationFeature): string {
     flood: "Povodně",
     ground: "Terén",
     mobile: "Mobilní síť",
+    mobile_coverage: "Mobilní pokrytí",
     traffic: "Doprava",
     warnings: "Výstrahy",
     weather: "Počasí"
@@ -2638,6 +2718,18 @@ function SituationLegendItem({ label }: { label: string }) {
     <div className="legend-item">
       <span className="legend-situation" />
       {label}
+    </div>
+  );
+}
+
+function CoverageLegendItem() {
+  return (
+    <div className="legend-item coverage-legend-item" title="Modelový odhad, ne garantované pokrytí operátora.">
+      <span className="legend-coverage-swatch good" />
+      <span className="legend-coverage-swatch fair" />
+      <span className="legend-coverage-swatch weak" />
+      <span className="legend-coverage-swatch none" />
+      Mobilní pokrytí
     </div>
   );
 }

@@ -129,7 +129,7 @@ export interface CopDashboardData {
   trackHistory?: Record<string, ServerTrackHistoryPoint[]>;
 }
 
-export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "traffic" | "warnings" | "weather";
+export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "mobile_coverage" | "traffic" | "warnings" | "weather";
 export type SafetyLayerId = "flood" | "warnings";
 export type TakLayerId = "ground" | "mobile" | "traffic";
 export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "mock";
@@ -159,6 +159,7 @@ export interface SituationFeatureCollectionResponse {
     layers: SituationLayerId[];
     limit: number;
     sources?: string[];
+    technology?: string;
   };
   source: {
     generatedAt?: string;
@@ -213,23 +214,33 @@ export interface SituationFeatureProperties {
   category: string;
   certainty?: string;
   confidence?: number;
+  assumptions?: Record<string, unknown>;
+  demSource?: string;
   description?: string;
   effectiveAt?: string;
+  disclaimer?: string;
+  estimatedSignalDbm?: number;
   expiresAt?: string;
   featureId: string;
+  generatedAt?: string;
   geocodes?: Array<{ scheme: string; value: string }>;
   headline?: string;
   label: string;
   layer: SituationLayerId;
   license?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
+  modelVersion?: string;
   observedAt?: string;
+  operator?: string;
+  quality?: string;
   receivedAt?: string;
   recommendedAction?: string;
+  resolutionM?: number;
   severity?: string;
   sourceId: string;
   stale?: boolean;
   tags?: Record<string, unknown>;
+  technology?: string;
   urgency?: string;
   validUntil?: string;
 }
@@ -267,6 +278,7 @@ export interface SituationFeatureOptions {
   layers: SituationLayerId[];
   limit?: number;
   sources?: string[];
+  technology?: string;
 }
 
 export interface SafetyLayer {
@@ -750,6 +762,9 @@ export async function fetchSituationFeatures(
   query.set("limit", String(options.limit ?? 250));
   if (options.sources && options.sources.length > 0) {
     query.set("source", options.sources.join(","));
+  }
+  if (options.technology) {
+    query.set("technology", options.technology);
   }
   return fetchJson<SituationFeatureCollectionResponse>(`${apiBase}/api/v1/situation/features?${query.toString()}`, {
     headers: authHeaders(token)
