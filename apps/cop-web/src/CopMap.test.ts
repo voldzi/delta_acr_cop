@@ -283,6 +283,81 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("suppresses synthetic warning points from map marker rendering", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [15.3, 50.725], type: "Point" },
+          properties: {
+            category: "weather_warning",
+            confidence: 0.45,
+            featureId: "warnings:chmi_alerts:6bmq06",
+            headline: "Dotok",
+            label: "Dotok",
+            layer: "warnings",
+            observedAt: "2026-05-21T08:11:11Z",
+            severity: "advisory",
+            sourceId: "chmi_alerts",
+            stale: false
+          },
+          type: "Feature"
+        },
+        {
+          geometry: {
+            coordinates: [[
+              [15.2, 50.7],
+              [15.4, 50.7],
+              [15.4, 50.8],
+              [15.2, 50.8],
+              [15.2, 50.7]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            category: "weather_warning",
+            confidence: 0.7,
+            featureId: "warnings:chmi_alerts:polygon",
+            headline: "Výstražná oblast",
+            label: "Výstražná oblast",
+            layer: "warnings",
+            observedAt: "2026-05-21T08:11:11Z",
+            severity: "warning",
+            sourceId: "chmi_alerts",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-21T10:00:00Z",
+      query: {
+        bbox: { east: 15.6, north: 50.9, south: 50.5, west: 15.0 },
+        layers: ["warnings"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 2,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 2
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      featureId: "warnings:chmi_alerts:6bmq06",
+      mapPointSuppressed: true,
+      situationStatusLabel: "OMEZENÝ"
+    });
+    expect(collection.features[1]?.properties.mapPointSuppressed).toBeUndefined();
+  });
+
   it("parses map center from longitude and latitude env value", () => {
     expect(parseMapCenter("15.1,50.2")).toEqual([15.1, 50.2]);
     expect(parseMapCenter("invalid")).toEqual([14.42, 50.08]);

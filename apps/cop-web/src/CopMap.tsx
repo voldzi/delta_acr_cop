@@ -154,6 +154,7 @@ export interface SituationContextFeatureCollection {
       coverageLabel?: string;
       coverageQuality?: string;
       coverageTechnology?: string;
+      mapPointSuppressed?: boolean;
       situationStatusColor?: string;
       situationStatusLabel?: string;
       situationStatusTone?: string;
@@ -602,7 +603,7 @@ export function CopMap({
           id: situationPointSelectedLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "selected"], true]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "selected"], true], ["!=", ["get", "mapPointSuppressed"], true]],
           paint: {
             "circle-color": [
               "coalesce",
@@ -637,7 +638,7 @@ export function CopMap({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           paint: {
             "circle-color": [
               "case",
@@ -703,7 +704,7 @@ export function CopMap({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           layout: {
             "text-field": ["get", "label"],
             "text-font": ["Noto Sans Regular"],
@@ -1649,6 +1650,14 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
       situationStatusTone: status.tone
     };
   }
+  if (isSyntheticWarningPoint(feature)) {
+    return {
+      mapPointSuppressed: true,
+      situationStatusColor: status.color,
+      situationStatusLabel: status.label,
+      situationStatusTone: status.tone
+    };
+  }
   if (feature.properties.layer !== "weather") {
     return {
       situationStatusColor: status.color,
@@ -1678,6 +1687,10 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
     situationStatusLabel: status.label,
     situationStatusTone: status.tone
   };
+}
+
+function isSyntheticWarningPoint(feature: SituationFeature): boolean {
+  return feature.geometry.type === "Point" && feature.properties.layer === "warnings";
 }
 
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
