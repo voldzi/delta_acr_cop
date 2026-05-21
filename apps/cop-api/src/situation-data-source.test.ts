@@ -136,6 +136,53 @@ describe("SituationDataSourceAdapter", () => {
       refreshes: 1
     });
   });
+
+  it("uses source-specific cache ttl for explicit OSM PostGIS queries", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SituationDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/situation-data/api/v1",
+      cacheTtlMs: 20000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const features = await adapter.fetchFeatures({
+      bbox: { east: 14.6, north: 50.2, south: 49.95, west: 14.2 },
+      layers: ["mobile"],
+      limit: 20,
+      sources: ["osm_postgis"]
+    }, new Date("2026-05-20T10:00:06Z"));
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=mobile&limit=20&source=osm_postgis"
+    );
+    expect(features.cache?.ttlMs).toBe(6 * 60 * 60 * 1000);
+  });
+
+  it("falls back to layer ttl when an explicit source has no source-specific ttl", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SituationDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/situation-data/api/v1",
+      cacheTtlMs: 20000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const features = await adapter.fetchFeatures({
+      bbox: { east: 14.6, north: 50.2, south: 49.95, west: 14.2 },
+      layers: ["mobile"],
+      limit: 20,
+      sources: ["osm_postgis", "ctu_nettest"]
+    }, new Date("2026-05-20T10:00:06Z"));
+
+    expect(features.cache?.ttlMs).toBe(15 * 60 * 1000);
+  });
 });
 
 function sampleLayersResponse() {

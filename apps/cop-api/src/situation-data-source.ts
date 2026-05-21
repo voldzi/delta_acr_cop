@@ -150,7 +150,8 @@ const defaultConfig: SituationDataSourceConfig = {
   maxLimit: 250,
   sourceCacheTtlMs: {
     ardos_partner: 10 * 1000,
-    aviation_weather: 120 * 1000
+    aviation_weather: 120 * 1000,
+    osm_postgis: 6 * 60 * 60 * 1000
   },
   staleIfErrorMs: 10 * 60 * 1000,
   timeoutMs: 7000
@@ -177,7 +178,8 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
     maxLimit: readInteger(env.COP_SITUATION_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 1000),
     sourceCacheTtlMs: {
       ardos_partner: readInteger(env.COP_SITUATION_DATA_ARDOS_CACHE_TTL_MS, 10 * 1000, 1000, 5 * 60 * 1000),
-      aviation_weather: readInteger(env.COP_SITUATION_DATA_AVIATION_WEATHER_CACHE_TTL_MS, 120 * 1000, 1000, 24 * 60 * 60 * 1000)
+      aviation_weather: readInteger(env.COP_SITUATION_DATA_AVIATION_WEATHER_CACHE_TTL_MS, 120 * 1000, 1000, 24 * 60 * 60 * 1000),
+      osm_postgis: readInteger(env.COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
     },
     staleIfErrorMs: readInteger(env.COP_SITUATION_DATA_STALE_IF_ERROR_MS, defaultConfig.staleIfErrorMs ?? 600000, 0, 24 * 60 * 60 * 1000),
     timeoutMs: readInteger(env.COP_SITUATION_DATA_TIMEOUT_MS, defaultConfig.timeoutMs, 1000, 60000)
@@ -235,10 +237,8 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     const normalizedQuery = normalizeSituationFeatureQuery(query, this.config);
     const upstreamQuery = canonicalizeSituationFeatureQuery(normalizedQuery);
     const cacheKey = situationFeatureCacheKey(upstreamQuery);
-    const ttlMs = Math.min(
-      cacheTtlMsForLayers(normalizedQuery.layers, this.config),
-      cacheTtlMsForSources(normalizedQuery.sources, this.config) ?? Number.POSITIVE_INFINITY
-    );
+    const ttlMs = cacheTtlMsForSources(normalizedQuery.sources, this.config)
+      ?? cacheTtlMsForLayers(normalizedQuery.layers, this.config);
     const cached = await this.featureCache.getOrLoad(cacheKey, ttlMs, () => fetchSituationFeatures(this.config, upstreamQuery, requestNow));
     return projectSituationFeatureCollection(cached.value, normalizedQuery, {
       cacheKey,
@@ -787,6 +787,9 @@ function cacheTtlMsForSources(sources: string[] | undefined, config: SituationDa
   const ttlValues = sources
     .map((source) => config.sourceCacheTtlMs?.[source] ?? defaultConfig.sourceCacheTtlMs?.[source])
     .filter((ttl): ttl is number => typeof ttl === "number" && Number.isFinite(ttl));
+  if (ttlValues.length !== sources.length) {
+    return undefined;
+  }
   return ttlValues.length > 0 ? Math.min(...ttlValues.map((ttl) => Math.max(1000, Math.trunc(ttl)))) : undefined;
 }
 

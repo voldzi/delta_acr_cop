@@ -40,6 +40,7 @@ const situationLineLayerId = "cop-situation-line";
 const situationPointSelectedLayerId = "cop-situation-point-selected";
 const situationWeatherPointLayerId = "cop-situation-weather-point";
 const situationWeatherLabelLayerId = "cop-situation-weather-label";
+const situationOsmSymbolLayerId = "cop-situation-osm-symbol";
 const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
 const situationPointLayerId = "cop-situation-point";
 const situationLabelLayerId = "cop-situation-label";
@@ -62,6 +63,9 @@ const earthRadiusKm = 6371.0088;
 const mobileNetworkIconPrefix = "cop-mobile-network";
 const mobileNetworkIconTones = ["info", "advisory", "warning", "critical", "unknown"] as const;
 type MobileNetworkIconTone = (typeof mobileNetworkIconTones)[number];
+const osmCategoryIconPrefix = "cop-osm-category";
+const osmCategoryIconIds = ["hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "other"] as const;
+type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
 
 export interface TrackFeatureProperties {
   objectId: string;
@@ -150,6 +154,9 @@ export interface SituationContextFeatureCollection {
       takGateway?: boolean;
       mobileNetworkLabel?: string;
       mobileSymbolKey?: string;
+      osmCategoryLabel?: string;
+      osmPoi?: boolean;
+      osmSymbolKey?: string;
     };
   }>;
 }
@@ -569,7 +576,7 @@ export function CopMap({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           paint: {
             "circle-color": [
               "case",
@@ -604,10 +611,38 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationOsmSymbolLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "osmPoi"], true]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "osmSymbolKey"], getOsmCategoryIconKey("other")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.26, 11, 0.34, 15, 0.48],
+            "icon-anchor": "center",
+            "icon-allow-overlap": false,
+            "icon-ignore-placement": false,
+            "text-field": ["get", "label"],
+            "text-font": ["Open Sans Semibold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 7, 0, 12, 0, 13, 10, 16, 12],
+            "text-offset": [0, 1.35],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.68, 0.94],
+            "text-color": ["case", ["get", "stale"], "#facc15", "#dff8ff"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.5,
+            "text-halo-blur": 0.4
+          }
+        });
+
+        map.addLayer({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           layout: {
             "text-field": ["get", "label"],
             "text-font": ["Open Sans Semibold"],
@@ -629,7 +664,7 @@ export function CopMap({
           id: situationMobileSymbolLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "mobile"], ["!=", ["get", "takGateway"], true]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "mobile"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "takGateway"], true]],
           layout: {
             "icon-image": ["coalesce", ["get", "mobileSymbolKey"], getMobileNetworkIconKey("unknown")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.26, 11, 0.34, 15, 0.48],
@@ -1460,6 +1495,17 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
       takGateway: true
     };
   }
+  const osmCategory = resolveOsmCategoryPresentation(feature);
+  if (osmCategory) {
+    return {
+      osmCategoryLabel: osmCategory.label,
+      osmPoi: true,
+      osmSymbolKey: getOsmCategoryIconKey(osmCategory.iconId),
+      situationStatusColor: status.color,
+      situationStatusLabel: status.label,
+      situationStatusTone: status.tone
+    };
+  }
   if (feature.properties.layer === "mobile") {
     return {
       mobileNetworkLabel: formatMobileNetworkLabel(feature),
@@ -1619,8 +1665,41 @@ function normalizeMobileNetworkLabel(raw: string | undefined): string | undefine
   return compact.length > 0 ? compact.slice(0, 10) : undefined;
 }
 
+function resolveOsmCategoryPresentation(feature: SituationFeature): { iconId: OsmCategoryIconId; label: string } | null {
+  if (feature.properties.sourceId !== "osm_postgis") {
+    return null;
+  }
+  const normalized = feature.properties.category.toLowerCase().replace(/[\s.-]+/g, "_");
+  if (["hospital", "clinic", "doctors", "healthcare_hospital", "healthcare_clinic", "healthcare_doctor", "ambulance_station"].includes(normalized)) {
+    return { iconId: "hospital", label: "Nemocnice" };
+  }
+  if (["fire_station", "fire_hydrant"].includes(normalized)) {
+    return { iconId: "fire_station", label: "Hasiči" };
+  }
+  if (normalized === "police") {
+    return { iconId: "police", label: "Policie" };
+  }
+  if (["pharmacy", "healthcare_pharmacy", "defibrillator"].includes(normalized)) {
+    return { iconId: "pharmacy", label: "Lékárna" };
+  }
+  if (["shelter", "assembly_point", "community_centre"].includes(normalized)) {
+    return { iconId: "shelter", label: "Kryt" };
+  }
+  if (normalized === "townhall") {
+    return { iconId: "townhall", label: "Úřad" };
+  }
+  if (normalized === "communications_tower") {
+    return { iconId: "communications_tower", label: "Komunikační věž" };
+  }
+  return { iconId: "other", label: "OSM" };
+}
+
 function getMobileNetworkIconKey(tone: string | undefined): string {
   return `${mobileNetworkIconPrefix}-${normalizeMobileNetworkIconTone(tone)}`;
+}
+
+function getOsmCategoryIconKey(iconId: OsmCategoryIconId): string {
+  return `${osmCategoryIconPrefix}-${iconId}`;
 }
 
 function normalizeMobileNetworkIconTone(tone: string | undefined): MobileNetworkIconTone {
@@ -2052,6 +2131,14 @@ async function registerSituationSymbolImages(map: maplibregl.Map) {
       });
     }
   });
+  osmCategoryIconIds.forEach((iconId) => {
+    const key = getOsmCategoryIconKey(iconId);
+    if (!map.hasImage(key)) {
+      map.addImage(key, createOsmCategorySymbolImage(iconId), {
+        pixelRatio: window.devicePixelRatio || 1
+      });
+    }
+  });
 }
 
 async function createNatoSymbolImage(objectType: string, affiliation: string): Promise<ImageData> {
@@ -2141,6 +2228,193 @@ function createMobileNetworkSymbolImage(tone: MobileNetworkIconTone): ImageData 
   drawTower("#061019", 5, 0.96);
 
   return context.getImageData(0, 0, size, size);
+}
+
+function createOsmCategorySymbolImage(iconId: OsmCategoryIconId): ImageData {
+  const canvas = document.createElement("canvas");
+  const size = 112;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+
+  const color = osmCategoryIconColor(iconId);
+  context.clearRect(0, 0, size, size);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  drawRoundedRect(context, 17, 17, 78, 78, 17);
+  context.fillStyle = "rgba(6, 16, 25, 0.94)";
+  context.fill();
+  context.strokeStyle = "rgba(248, 250, 252, 0.9)";
+  context.lineWidth = 7;
+  context.stroke();
+  context.strokeStyle = color;
+  context.lineWidth = 4;
+  context.stroke();
+
+  context.save();
+  context.translate(56, 56);
+  context.strokeStyle = color;
+  context.fillStyle = color;
+  context.lineWidth = 7;
+
+  switch (iconId) {
+    case "hospital":
+      context.fillRect(-8, -28, 16, 56);
+      context.fillRect(-28, -8, 56, 16);
+      break;
+    case "fire_station":
+      context.beginPath();
+      context.moveTo(0, -32);
+      context.bezierCurveTo(20, -10, 18, 2, 8, 11);
+      context.bezierCurveTo(18, 0, 3, -12, 2, -21);
+      context.bezierCurveTo(-13, -8, -22, 3, -18, 17);
+      context.bezierCurveTo(-14, 31, 14, 31, 20, 12);
+      context.bezierCurveTo(24, 28, 9, 39, -8, 34);
+      context.bezierCurveTo(-30, 28, -35, 2, -15, -17);
+      context.bezierCurveTo(-6, -25, -4, -29, 0, -32);
+      context.fill();
+      break;
+    case "police":
+      context.beginPath();
+      context.moveTo(0, -34);
+      context.lineTo(26, -22);
+      context.lineTo(21, 11);
+      context.quadraticCurveTo(16, 27, 0, 35);
+      context.quadraticCurveTo(-16, 27, -21, 11);
+      context.lineTo(-26, -22);
+      context.closePath();
+      context.stroke();
+      context.beginPath();
+      context.arc(0, -2, 8, 0, Math.PI * 2);
+      context.fill();
+      break;
+    case "pharmacy":
+      context.strokeStyle = color;
+      context.lineWidth = 8;
+      context.beginPath();
+      context.moveTo(-8, -30);
+      context.lineTo(8, -30);
+      context.lineTo(8, -12);
+      context.lineTo(27, -12);
+      context.lineTo(27, 4);
+      context.lineTo(8, 4);
+      context.lineTo(8, 30);
+      context.lineTo(-8, 30);
+      context.lineTo(-8, 4);
+      context.lineTo(-27, 4);
+      context.lineTo(-27, -12);
+      context.lineTo(-8, -12);
+      context.closePath();
+      context.stroke();
+      break;
+    case "shelter":
+      context.beginPath();
+      context.moveTo(-31, -4);
+      context.lineTo(0, -31);
+      context.lineTo(31, -4);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(-22, -4);
+      context.lineTo(-22, 30);
+      context.lineTo(22, 30);
+      context.lineTo(22, -4);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(-8, 30);
+      context.lineTo(-8, 10);
+      context.lineTo(8, 10);
+      context.lineTo(8, 30);
+      context.stroke();
+      break;
+    case "townhall":
+      context.beginPath();
+      context.moveTo(-31, -17);
+      context.lineTo(0, -32);
+      context.lineTo(31, -17);
+      context.closePath();
+      context.fill();
+      context.fillRect(-30, 27, 60, 8);
+      [-20, 0, 20].forEach((x) => {
+        context.fillRect(x - 5, -12, 10, 34);
+      });
+      break;
+    case "communications_tower":
+      context.beginPath();
+      context.moveTo(0, -24);
+      context.lineTo(-21, 32);
+      context.moveTo(0, -24);
+      context.lineTo(21, 32);
+      context.moveTo(0, -24);
+      context.lineTo(0, 34);
+      context.moveTo(-13, 5);
+      context.lineTo(13, 18);
+      context.moveTo(13, 5);
+      context.lineTo(-13, 18);
+      context.moveTo(-25, 34);
+      context.lineTo(25, 34);
+      context.stroke();
+      context.beginPath();
+      context.arc(0, -24, 5, 0, Math.PI * 2);
+      context.fill();
+      context.beginPath();
+      context.arc(0, -24, 18, -0.72, 0.72);
+      context.stroke();
+      context.beginPath();
+      context.arc(0, -24, 18, Math.PI - 0.72, Math.PI + 0.72);
+      context.stroke();
+      break;
+    case "other":
+      context.beginPath();
+      context.arc(0, 0, 22, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = "rgba(6, 16, 25, 0.94)";
+      context.beginPath();
+      context.arc(0, 0, 8, 0, Math.PI * 2);
+      context.fill();
+      break;
+  }
+  context.restore();
+
+  return context.getImageData(0, 0, size, size);
+}
+
+function drawRoundedRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.lineTo(x + width - radius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + radius);
+  context.lineTo(x + width, y + height - radius);
+  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  context.lineTo(x + radius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - radius);
+  context.lineTo(x, y + radius);
+  context.quadraticCurveTo(x, y, x + radius, y);
+  context.closePath();
+}
+
+function osmCategoryIconColor(iconId: OsmCategoryIconId): string {
+  switch (iconId) {
+    case "hospital":
+      return "#ef4444";
+    case "fire_station":
+      return "#fb923c";
+    case "police":
+      return "#38bdf8";
+    case "pharmacy":
+      return "#22c55e";
+    case "shelter":
+      return "#facc15";
+    case "townhall":
+      return "#c4b5fd";
+    case "communications_tower":
+      return "#8cb6d8";
+    case "other":
+      return "#dff8ff";
+  }
 }
 
 function loadSvgImage(svg: string): Promise<HTMLImageElement> {
