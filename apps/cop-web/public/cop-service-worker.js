@@ -1,7 +1,8 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260520-1";
+const COP_SW_VERSION = "cop-pwa-offline-20260521-1";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
+const MAP_RESOURCE_HOSTS = new Set(["tile.openstreetmap.org", "tiles.zeleznalady.cz", "demotiles.maplibre.org"]);
 const APP_SHELL_URLS = [
   "/",
   "/index.html",
@@ -15,7 +16,7 @@ const APP_SHELL_URLS = [
 ];
 const API_PATH_PREFIXES = ["/api/", "/health", "/metrics"];
 const MAX_RUNTIME_ENTRIES = 120;
-const MAX_TILE_ENTRIES = 320;
+const MAX_TILE_ENTRIES = 1200;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -137,10 +138,16 @@ async function trimCache(cache, maxEntries) {
 }
 
 function isMapTileRequest(request, url) {
+  if (MAP_RESOURCE_HOSTS.has(url.hostname)) {
+    return true;
+  }
+  if (url.pathname.startsWith("/osm/") || url.pathname.startsWith("/tiles/") || url.pathname.startsWith("/fonts/")) {
+    return true;
+  }
   if (request.destination === "image" && /tile|tiles|map/u.test(url.hostname + url.pathname)) {
     return true;
   }
-  return url.hostname === "tile.openstreetmap.org";
+  return request.destination === "font" && /font|glyph/u.test(url.hostname + url.pathname);
 }
 
 function isAppAssetRequest(request, url) {

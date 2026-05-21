@@ -9,3 +9,4 @@
 - [07 DMZ Publication for cop.zeleznalady.cz](07_DMZ_PUBLICATION_COP_ZELEZNALADY.md)
 - [08 Keycloak for COP](08_KEYCLOAK_COP.md)
 - [09 PostgreSQL Patroni COP Store](09_POSTGRES_PATRONI_TEMPORAL_STORE.md)
+- [10 Tile Cache and Map Tiles](10_TILE_CACHE_AND_MAP_TILES.md)

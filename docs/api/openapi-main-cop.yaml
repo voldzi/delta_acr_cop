@@ -1957,7 +1957,7 @@ components:
         type: string
     MobileMapConfig:
       type: object
-      required: [attribution, defaultCenter, defaultZoom, tileTemplateUrl]
+      required: [attribution, defaultCenter, defaultZoom, glyphsTemplateUrl, tileTemplateUrl]
       properties:
         attribution:
           type: string
@@ -1974,6 +1974,11 @@ components:
           maxItems: 2
         defaultZoom:
           type: number
+        glyphsTemplateUrl:
+          type: string
+        styleUrl:
+          type: string
+          description: Optional MapLibre style URL. When present, clients should prefer it over the raster tile template.
         tileTemplateUrl:
           type: string
     MobileNativePolicy:

@@ -14,6 +14,7 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 - user profile persistence (`COP_USER_PROFILE_STORE`, volitelně stejný `COP_DATABASE_URL` jako temporal store),
 - community report persistence (`COP_COMMUNITY_REPORT_STORE`, vyžaduje PostGIS při PostgreSQL backendu),
 - stream distribution limits (`COP_STREAM_BACKPRESSURE_CLIENTS`, `COP_STREAM_RETRY_MS`),
+- mapový podklad (`COP_MAP_STYLE_URL`, `COP_TILE_URL`, `COP_TILE_GLYPHS_URL`, `COP_TILE_ATTRIBUTION`),
 - server-side veřejný letový zdroj ze SIM (`COP_FLIGHT_DATA_ENABLED`, `COP_FLIGHT_DATA_BASE_URL`, `COP_FLIGHT_DATA_SOURCE`, `COP_FLIGHT_DATA_POLL_MS`),
 - kontextové situační vrstvy ze SIM (`COP_SITUATION_DATA_ENABLED`, `COP_SITUATION_DATA_BASE_URL`, `COP_SITUATION_DATA_CACHE_TTL_MS`),
 - bezpečnostní veřejné vrstvy ze SIM (`COP_SAFETY_DATA_ENABLED`, `COP_SAFETY_DATA_BASE_URL`, `COP_SAFETY_DATA_CACHE_TTL_MS`),
@@ -99,3 +100,18 @@ COP_DATABASE_SSL=false
 ```
 
 Store při inicializaci vytvoří/aktualizuje tabulky `cop_community_reports` a `cop_community_report_attachments`, doplní `geometry(Point,4326)` sloupce a GiST indexy. Binární média se neukládají do PostgreSQL; metadata příloh odkazují na SeaweedFS/S3 objekt přes `bucket` a `objectKey`.
+
+## Map Tiles
+
+Web i nativní klienti musí mapový podklad číst z konfigurace, ne z pevně zadrátované URL. Produkce má po zřízení `tiles.zeleznalady.cz` používat first-party tile/cache endpoint.
+
+```env
+COP_MAP_STYLE_URL=
+COP_TILE_URL=https://tiles.zeleznalady.cz/osm/{z}/{x}/{y}.png
+COP_TILE_GLYPHS_URL=https://tiles.zeleznalady.cz/fonts/{fontstack}/{range}.pbf
+COP_TILE_ATTRIBUTION=&copy; OpenStreetMap contributors
+```
+
+Pokud je vyplněné `COP_MAP_STYLE_URL`, web použije přímo MapLibre style URL a `COP_TILE_URL` slouží jen jako fallback pro klienty bez podpory style endpointu. Pokud je `COP_MAP_STYLE_URL` prázdné, web si vytvoří raster style z `COP_TILE_URL`.
+
+Detailní postup pro `dmz.home.cz`, nginx cache a následný vlastní tile server je v [10 Tile Cache and Map Tiles](10_TILE_CACHE_AND_MAP_TILES.md).

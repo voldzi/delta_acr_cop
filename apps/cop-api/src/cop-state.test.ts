@@ -486,6 +486,11 @@ describe("COP state temporal history", () => {
         offlineSnapshot: "/api/v1/mobile/offline-snapshot",
         stream: "/api/v1/stream/cop/live"
       },
+      map: {
+        glyphsTemplateUrl: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+        styleUrl: "",
+        tileTemplateUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+      },
       policy: {
         offlineCacheTtlSeconds: 900
       },

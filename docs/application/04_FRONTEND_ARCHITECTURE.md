@@ -13,3 +13,14 @@ Webový klient je operační konzument COP state. Jeho účelem je rychlá orien
 ## Zásady
 
 UI musí jasně odlišit syntetická data, stale objekty, konflikty zdrojů a degraded režim. UI nesmí obsahovat targeting, navádění ani workflow použití síly.
+
+## Mapový podklad
+
+Frontend používá MapLibre. Mapový styl je konfigurovatelný:
+
+- `VITE_COP_MAP_STYLE_URL` má přednost a umožňuje přepnout na vlastní vector/raster tile server bez změny klientského kódu,
+- pokud style URL není nastavené, klient vytvoří raster style z `VITE_COP_TILE_URL`,
+- glyph endpoint je samostatně řízený přes `VITE_COP_TILE_GLYPHS_URL`,
+- PWA service worker cacheuje mapové dlaždice a glyph assets pro opakované zobrazení, ale neprefetchuje mapy mimo aktuální viewport.
+
+Produkční provoz nemá směřovat tisíce klientů přímo na veřejný OSM tile server. Přechodný a cílový postup je popsaný v runbooku [10 Tile Cache and Map Tiles](../runbooks/10_TILE_CACHE_AND_MAP_TILES.md).

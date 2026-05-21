@@ -45,6 +45,8 @@ Query parametry:
 
 Klient používá odpověď pro první render a uloží `snapshot` do lokálního šifrovaného úložiště.
 
+`map.styleUrl`, `map.tileTemplateUrl` a `map.glyphsTemplateUrl` jsou konfigurační hodnoty pro mapový podklad. Pokud je `styleUrl` vyplněné, klient ho použije jako MapLibre style. Jinak použije raster tile template. Produkční klient nesmí mít natvrdo zadrátovaný veřejný tile server; musí používat hodnoty z bootstrapu, aby šlo přepnout na `tiles.zeleznalady.cz` bez nové verze aplikace.
+
 ### `GET /api/v1/mobile/offline-snapshot`
 
 Lehčí endpoint pro pravidelnou obnovu offline cache. Vrací pouze policy-filtered snapshot: health, objects, source health, sources, stream health, alerts a track history.

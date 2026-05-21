@@ -55,7 +55,9 @@ const trackClusterSelectedHaloLayerId = "cop-live-track-cluster-selected-halo";
 const trackClusterSymbolLayerId = "cop-live-track-cluster-symbol";
 const trackClusterLabelLayerId = "cop-live-track-cluster-label";
 
+const mapStyleUrl = import.meta.env.VITE_COP_MAP_STYLE_URL ?? "";
 const tileUrl = import.meta.env.VITE_COP_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const tileGlyphsUrl = import.meta.env.VITE_COP_TILE_GLYPHS_URL ?? "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf";
 const tileAttribution = import.meta.env.VITE_COP_TILE_ATTRIBUTION ?? "&copy; OpenStreetMap contributors";
 const defaultCenter = parseMapCenter(import.meta.env.VITE_COP_MAP_CENTER);
 const defaultZoom = parseFiniteNumber(import.meta.env.VITE_COP_MAP_ZOOM, 8);
@@ -311,7 +313,7 @@ export function CopMap({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: createRasterStyle(tileUrl, tileAttribution),
+      style: resolveMapStyle(mapStyleUrl, tileUrl, tileAttribution, tileGlyphsUrl),
       center: initialView?.center ?? defaultCenter,
       zoom: initialView?.zoom ?? defaultZoom,
       bearing: initialView?.bearing ?? 0,
@@ -2023,10 +2025,18 @@ export function parseMapCenter(value: string | undefined): [number, number] {
   return [lon, lat];
 }
 
-function createRasterStyle(tiles: string, attribution: string): StyleSpecification {
+function resolveMapStyle(styleUrl: string, tiles: string, attribution: string, glyphs: string): string | StyleSpecification {
+  const normalizedStyleUrl = styleUrl.trim();
+  if (normalizedStyleUrl) {
+    return normalizedStyleUrl;
+  }
+  return createRasterStyle(tiles, attribution, glyphs);
+}
+
+function createRasterStyle(tiles: string, attribution: string, glyphs: string): StyleSpecification {
   return {
     version: 8,
-    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+    glyphs,
     sources: {
       "osm-raster": {
         type: "raster",

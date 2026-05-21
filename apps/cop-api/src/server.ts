@@ -2784,6 +2784,8 @@ function mobileMapConfig(env: Record<string, string | undefined> = process.env) 
     attribution: env.COP_TILE_ATTRIBUTION ?? "&copy; OpenStreetMap contributors",
     defaultCenter: parseCoordinatePair(env.COP_MAP_CENTER, [14.42, 50.08]),
     defaultZoom: readPositiveNumber(env.COP_MAP_ZOOM, 8),
+    glyphsTemplateUrl: env.COP_TILE_GLYPHS_URL ?? "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+    styleUrl: env.COP_MAP_STYLE_URL ?? "",
     tileTemplateUrl: env.COP_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
   };
 }

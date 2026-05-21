@@ -2,6 +2,17 @@
 
 Mapový model je složený z vrstev, filtrů, policy a rendereru.
 
+## Mapový podklad
+
+Mapový podklad je samostatná vrstva pod situačními daty, bezpečnostními vrstvami, uživatelskými zónami a COP tracky. Produkční konfigurace má používat first-party endpoint `tiles.zeleznalady.cz`, aby opakované zobrazení mapy obsloužila cache a aby se externí tile zdroje volaly jen v nezbytné míře.
+
+Klient podporuje dva režimy:
+
+- MapLibre style URL pro vlastní vector/raster tile server,
+- raster tile template jako fallback.
+
+PWA cache zlepšuje opakované zobrazení na zařízení uživatele, ale nenahrazuje serverovou tile cache ani vlastní tile server.
+
 ## Vrstvy MVP
 
 - air situation,
