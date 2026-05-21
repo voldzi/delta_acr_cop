@@ -624,7 +624,7 @@ export function CopMap({
             "icon-allow-overlap": false,
             "icon-ignore-placement": false,
             "text-field": ["get", "label"],
-            "text-font": ["Open Sans Semibold"],
+            "text-font": ["Noto Sans Regular"],
             "text-size": ["interpolate", ["linear"], ["zoom"], 7, 0, 12, 0, 13, 10, 16, 12],
             "text-offset": [0, 1.35],
             "text-anchor": "top",
@@ -647,7 +647,7 @@ export function CopMap({
           filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           layout: {
             "text-field": ["get", "label"],
-            "text-font": ["Open Sans Semibold"],
+            "text-font": ["Noto Sans Regular"],
             "text-size": ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 10, 14, 12],
             "text-offset": [0, 1.25],
             "text-anchor": "top",
@@ -674,7 +674,7 @@ export function CopMap({
             "icon-allow-overlap": true,
             "icon-ignore-placement": true,
             "text-field": ["coalesce", ["get", "mobileNetworkLabel"], "MOBILE"],
-            "text-font": ["Open Sans Bold"],
+            "text-font": ["Noto Sans Bold"],
             "text-size": ["interpolate", ["linear"], ["zoom"], 7, 9, 11, 11, 15, 13],
             "text-offset": [0, -2.2],
             "text-anchor": "bottom",
@@ -738,7 +738,7 @@ export function CopMap({
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "weather"]],
           layout: {
             "text-field": ["get", "weatherLabel"],
-            "text-font": ["Open Sans Bold"],
+            "text-font": ["Noto Sans Bold"],
             "text-size": ["interpolate", ["linear"], ["zoom"], 6, 10, 11, 12, 15, 14],
             "text-allow-overlap": true,
             "text-ignore-placement": true,
@@ -847,7 +847,7 @@ export function CopMap({
           filter: ["has", "point_count"],
           layout: {
             "text-field": ["get", "point_count_abbreviated"],
-            "text-font": ["Open Sans Bold"],
+            "text-font": ["Noto Sans Bold"],
             "text-size": ["step", ["get", "point_count"], 12, 8, 13, 22, 14],
             "text-allow-overlap": true,
             "text-ignore-placement": true
@@ -894,7 +894,7 @@ export function CopMap({
           filter: ["!", ["has", "point_count"]],
           layout: {
             "text-field": ["get", "label"],
-            "text-font": ["Open Sans Semibold"],
+            "text-font": ["Noto Sans Regular"],
             "text-size": 11,
             "text-offset": [0, 1.45],
             "text-anchor": "top",
@@ -927,7 +927,7 @@ export function CopMap({
           source: trackSourceId,
           layout: {
             "text-field": ["get", "label"],
-            "text-font": ["Open Sans Semibold"],
+            "text-font": ["Noto Sans Regular"],
             "text-size": 11,
             "text-offset": [0, 1.45],
             "text-anchor": "top",

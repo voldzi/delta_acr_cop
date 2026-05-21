@@ -23,6 +23,8 @@ COP_TILE_GLYPHS_URL=https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf
 COP_TILE_ATTRIBUTION=&copy; OpenStreetMap contributors
 ```
 
+Mapové popisky v COP používají font stack `Noto Sans Regular` a `Noto Sans Bold`, protože tyto glyph sady jsou dostupné na výchozím MapLibre demo endpointu i přes připravenou `/fonts/` cache. `Open Sans Regular` není vhodný kontrolní request pro tuto konfiguraci.
+
 Produkční cílové hodnoty po zřízení `tiles.zeleznalady.cz`:
 
 ```env
@@ -84,6 +86,8 @@ server {
         proxy_pass https://tile.openstreetmap.org/;
         proxy_http_version 1.1;
         proxy_set_header Host tile.openstreetmap.org;
+        proxy_ssl_server_name on;
+        proxy_ssl_name tile.openstreetmap.org;
         proxy_set_header Referer $http_referer;
         proxy_set_header User-Agent "CivilniSituacniMapaTileCache/0.1 (+https://cop.zeleznalady.cz)";
         proxy_cache cop_tiles;
@@ -99,6 +103,8 @@ server {
         proxy_pass https://demotiles.maplibre.org/font/;
         proxy_http_version 1.1;
         proxy_set_header Host demotiles.maplibre.org;
+        proxy_ssl_server_name on;
+        proxy_ssl_name demotiles.maplibre.org;
         proxy_cache cop_tiles;
         proxy_cache_revalidate on;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
@@ -119,7 +125,8 @@ Ověření HTTP:
 
 ```bash
 curl -I http://tiles.zeleznalady.cz/osm/8/138/88.png
-curl -I http://tiles.zeleznalady.cz/fonts/Open%20Sans%20Regular/0-255.pbf
+curl -I http://tiles.zeleznalady.cz/fonts/Noto%20Sans%20Regular/0-255.pbf
+curl -I http://tiles.zeleznalady.cz/fonts/Noto%20Sans%20Bold/0-255.pbf
 ```
 
 ## Fáze 2: Let's Encrypt a HTTPS
@@ -162,6 +169,8 @@ server {
         proxy_pass https://tile.openstreetmap.org/;
         proxy_http_version 1.1;
         proxy_set_header Host tile.openstreetmap.org;
+        proxy_ssl_server_name on;
+        proxy_ssl_name tile.openstreetmap.org;
         proxy_set_header Referer $http_referer;
         proxy_set_header User-Agent "CivilniSituacniMapaTileCache/0.1 (+https://cop.zeleznalady.cz)";
         proxy_cache cop_tiles;
@@ -179,6 +188,8 @@ server {
         proxy_pass https://demotiles.maplibre.org/font/;
         proxy_http_version 1.1;
         proxy_set_header Host demotiles.maplibre.org;
+        proxy_ssl_server_name on;
+        proxy_ssl_name demotiles.maplibre.org;
         proxy_cache cop_tiles;
         proxy_cache_revalidate on;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
@@ -201,7 +212,8 @@ Ověření HTTPS a cache hit:
 ```bash
 curl -I https://tiles.zeleznalady.cz/osm/8/138/88.png
 curl -I https://tiles.zeleznalady.cz/osm/8/138/88.png
-curl -I https://tiles.zeleznalady.cz/fonts/Open%20Sans%20Regular/0-255.pbf
+curl -I https://tiles.zeleznalady.cz/fonts/Noto%20Sans%20Regular/0-255.pbf
+curl -I https://tiles.zeleznalady.cz/fonts/Noto%20Sans%20Bold/0-255.pbf
 ```
 
 Druhé volání stejné dlaždice má ideálně vrátit `X-Cache-Status: HIT`.
