@@ -125,6 +125,7 @@ export interface SourceSystem {
     | "PUBLIC_FLIGHT_AGGREGATE"
     | "PUBLIC_SAFETY_AGGREGATE"
     | "PUBLIC_SITUATION_AGGREGATE"
+    | "TAK_COT_GATEWAY"
     | "GROUND_SYSTEM"
     | "UAV_SYSTEM"
     | "RESCUE_SYSTEM"
@@ -215,6 +216,29 @@ export function createPublicSafetyAggregateSourceSystem(): SourceSystem {
     attributes: {
       contextOnly: true,
       contractVersion: "cop-safety-source-v1"
+    },
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+export function createTakGatewaySourceSystem(): SourceSystem {
+  const now = new Date().toISOString();
+  return {
+    sourceSystemId: "tak-gateway-api",
+    displayName: "TAK Gateway",
+    sourceType: "TAK_COT_GATEWAY",
+    owner: "SIM tak-gateway-api",
+    allowedEventTypes: [],
+    allowedObjectTypes: ["GROUND_UNIT", "RESCUE_ASSET", "UNKNOWN"],
+    trustProfile: "PARTNER",
+    classificationLimit: "RESTRICTED",
+    synthetic: false,
+    status: "ACTIVE",
+    attributes: {
+      contextOnly: true,
+      contractVersion: "cop-tak-source-v1",
+      partnerData: true
     },
     createdAt: now,
     updatedAt: now

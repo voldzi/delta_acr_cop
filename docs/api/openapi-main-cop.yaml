@@ -37,6 +37,8 @@ tags:
     description: Context-only public situation layers proxied from SIM situation-data-api.
   - name: Safety Data
     description: Context-only public safety layers proxied from SIM safety-data-api.
+  - name: TAK Gateway
+    description: Authenticated server-side partner TAK/CoT context proxied from SIM tak-gateway-api.
   - name: Audit
     description: Audit and provenance query endpoints.
   - name: AI
@@ -998,6 +1000,86 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SafetyFeatureCollection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/tak/layers:
+    get:
+      tags: [TAK Gateway]
+      summary: List authenticated TAK Gateway context layers.
+      operationId: listTakGatewayLayers
+      description: >
+        Proxies SIM tak-gateway-api layer metadata. This is a server-side
+        partner source; the SIM read token is never exposed to the browser.
+      responses:
+        "200":
+          description: TAK Gateway layer descriptors and source health.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TakGatewayLayersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/tak/sources:
+    get:
+      tags: [TAK Gateway]
+      summary: List TAK Gateway upstream source descriptors.
+      operationId: listTakGatewaySources
+      responses:
+        "200":
+          description: TAK Gateway source descriptors and source health.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TakGatewaySourcesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/tak/features:
+    get:
+      tags: [TAK Gateway]
+      summary: Read authenticated TAK Gateway features for the current map bbox.
+      operationId: listTakGatewayFeatures
+      description: >
+        Returns GeoJSON features from SIM tak-gateway-api as display-only
+        partner context. COP does not use affiliation for targeting or action
+        workflows and does not expose raw CoT data.
+      parameters:
+        - name: bbox
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
+          description: "west,south,east,north"
+        - name: layers
+          in: query
+          required: false
+          schema:
+            type: string
+            default: mobile,ground,traffic
+          description: "Comma-separated layer IDs: mobile, ground, traffic."
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 250
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection with normalized TAK Gateway properties.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TakGatewayFeatureCollection"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -2715,6 +2797,248 @@ components:
         warningCount:
           type: integer
           minimum: 0
+    TakGatewayLayersResponse:
+      type: object
+      required: [items, serverTimestamp]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TakGatewayLayer"
+        serverTimestamp:
+          type: string
+          format: date-time
+        sourceHealth:
+          $ref: "#/components/schemas/SourceHealthOverride"
+        sourceStatus:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+    TakGatewaySourcesResponse:
+      type: object
+      required: [items, serverTimestamp]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TakGatewaySourceDescriptor"
+        serverTimestamp:
+          type: string
+          format: date-time
+        sourceHealth:
+          $ref: "#/components/schemas/SourceHealthOverride"
+        sourceStatus:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+    TakGatewayLayer:
+      type: object
+      required: [defaultVisible, label, layerId]
+      properties:
+        layerId:
+          type: string
+          enum: [mobile, ground, traffic]
+        label:
+          type: string
+        description:
+          type: string
+        defaultVisible:
+          type: boolean
+        expectedCadenceSeconds:
+          type: integer
+          minimum: 1
+        geometryTypes:
+          type: array
+          items:
+            type: string
+            enum: [Point, LineString, Polygon]
+    TakGatewayFeatureCollection:
+      type: object
+      required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
+      properties:
+        contractVersion:
+          type: string
+          const: cop-tak-source-v1
+        type:
+          type: string
+          const: FeatureCollection
+        generatedAt:
+          type: string
+          format: date-time
+        query:
+          $ref: "#/components/schemas/TakGatewayFeatureQuery"
+        source:
+          $ref: "#/components/schemas/TakGatewayRootSource"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/TakGatewaySourceDescriptor"
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/TakGatewayFeature"
+        summary:
+          $ref: "#/components/schemas/TakGatewaySummary"
+        sourceHealth:
+          $ref: "#/components/schemas/SourceHealthOverride"
+        warnings:
+          type: array
+          items:
+            type: string
+    TakGatewayFeatureQuery:
+      type: object
+      required: [bbox, layers, limit]
+      properties:
+        bbox:
+          $ref: "#/components/schemas/SituationBbox"
+        layers:
+          type: array
+          items:
+            type: string
+            enum: [mobile, ground, traffic]
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+    TakGatewayRootSource:
+      type: object
+      required: [sourceId, sourceType]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        sourceId:
+          type: string
+          const: tak-gateway-api
+        sourceType:
+          type: string
+          const: TAK_COT_GATEWAY
+    TakGatewaySourceDescriptor:
+      type: object
+      required: [sourceId]
+      properties:
+        sourceId:
+          type: string
+        label:
+          type: string
+        enabled:
+          type: boolean
+        mode:
+          type: string
+        priority:
+          type: number
+        baseUrl:
+          type: string
+          format: uri
+        updateCadenceSeconds:
+          type: integer
+          minimum: 1
+        layers:
+          type: array
+          items:
+            type: string
+            enum: [mobile, ground, traffic]
+        license:
+          type: object
+          additionalProperties: true
+    TakGatewayFeature:
+      type: object
+      required: [geometry, properties, type]
+      properties:
+        type:
+          type: string
+          const: Feature
+        id:
+          oneOf:
+            - type: string
+            - type: number
+        geometry:
+          oneOf:
+            - $ref: "#/components/schemas/GeoJsonPoint"
+            - $ref: "#/components/schemas/GeoJsonLineString"
+            - $ref: "#/components/schemas/GeoJsonPolygon"
+        properties:
+          $ref: "#/components/schemas/TakGatewayFeatureProperties"
+    TakGatewayFeatureProperties:
+      type: object
+      required: [category, featureId, label, layer, sourceId]
+      properties:
+        featureId:
+          type: string
+        layer:
+          type: string
+          enum: [mobile, ground, traffic]
+        label:
+          type: string
+        category:
+          type: string
+        sourceId:
+          type: string
+        affiliation:
+          type: string
+          enum: [friend, hostile, neutral, unknown]
+        observedAt:
+          type: string
+          format: date-time
+        receivedAt:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        stale:
+          type: boolean
+        license:
+          type: object
+          additionalProperties: true
+        metrics:
+          type: object
+          additionalProperties: true
+        tags:
+          type: object
+          additionalProperties: true
+    TakGatewaySummary:
+      type: object
+      required: [eventCount, featureCount, sourceCount, staleFeatureCount, warningCount]
+      properties:
+        eventCount:
+          type: integer
+          minimum: 0
+        featureCount:
+          type: integer
+          minimum: 0
+        sourceCount:
+          type: integer
+          minimum: 0
+        staleFeatureCount:
+          type: integer
+          minimum: 0
+        warningCount:
+          type: integer
+          minimum: 0
+        affiliationCounts:
+          type: object
+          properties:
+            friend:
+              type: integer
+              minimum: 0
+            hostile:
+              type: integer
+              minimum: 0
+            neutral:
+              type: integer
+              minimum: 0
+            unknown:
+              type: integer
+              minimum: 0
     SafetyLayersResponse:
       type: object
       required: [items, serverTimestamp]

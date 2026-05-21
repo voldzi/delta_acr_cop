@@ -52,6 +52,9 @@ import {
   fetchSituationFeatures,
   fetchSituationLayers,
   fetchSituationSources,
+  fetchTakFeatures,
+  fetchTakLayers,
+  fetchTakSources,
   fetchUserProfile,
   filterObjectsByLayers,
   filterVisibleObjects,
@@ -86,7 +89,12 @@ import {
   type SituationFeatureCollectionResponse,
   type SituationLayer,
   type SituationLayerId,
-  type SituationSourceDescriptor
+  type SituationSourceDescriptor,
+  type TakFeature,
+  type TakFeatureCollectionResponse,
+  type TakLayer,
+  type TakLayerId,
+  type TakSourceDescriptor
 } from "./cop-data";
 import { CopMap } from "./CopMap";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
@@ -166,6 +174,7 @@ const historyLimitOptions = [36, 72, 120, 240, 600] as const;
 const historyWindowOptions = [30, 60, 120, 180, 300, 600] as const;
 const defaultSituationLayerIds: SituationLayerId[] = ["weather"];
 const defaultSafetyLayerIds: SafetyLayerId[] = ["warnings"];
+const defaultTakLayerIds: TakLayerId[] = [];
 const zoneColorOptions = ["#8cb6d8", "#c8f08d", "#facc15", "#fb923c", "#ef4444", "#a78bfa"] as const;
 const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["adaptive", "Adaptivní"],
@@ -280,6 +289,12 @@ export function App() {
   const [safetyWarnings, setSafetyWarnings] = React.useState<string[]>([]);
   const [safetySources, setSafetySources] = React.useState<SafetySourceDescriptor[]>([]);
   const [safetyConfig, setSafetyConfig] = React.useState<SafetyConfigResponse | null>(null);
+  const [takLayers, setTakLayers] = React.useState<TakLayer[]>([]);
+  const [visibleTakLayerIds, setVisibleTakLayerIds] = React.useState<TakLayerId[]>(() => normalizeTakLayerIds(initialPreferences.takLayerIds));
+  const [takFeatures, setTakFeatures] = React.useState<TakFeatureCollectionResponse | null>(null);
+  const [takStatus, setTakStatus] = React.useState<SituationLayerStatus>("disabled");
+  const [takWarnings, setTakWarnings] = React.useState<string[]>([]);
+  const [takSources, setTakSources] = React.useState<TakSourceDescriptor[]>([]);
   const [selectedSituationFeatureId, setSelectedSituationFeatureId] = React.useState<string | null>(null);
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
@@ -625,9 +640,53 @@ export function App() {
     };
   }, [authToken, dataAccessReady, initialPreferences.safetyLayerIds]);
 
+  React.useEffect(() => {
+    if (!authToken) {
+      setTakLayers([]);
+      setTakSources([]);
+      setTakStatus("disabled");
+      setTakWarnings(["TAK Gateway je neveřejný zdroj a vyžaduje přihlášení."]);
+      return;
+    }
+
+    let cancelled = false;
+    setTakStatus("loading");
+    Promise.all([
+      fetchTakLayers(apiBase, authToken),
+      fetchTakSources(apiBase, authToken)
+    ])
+      .then(([layersResponse, sourcesResponse]) => {
+        if (cancelled) {
+          return;
+        }
+        setTakLayers(layersResponse.items);
+        setTakSources(sourcesResponse.items);
+        setTakWarnings([
+          ...(layersResponse.warnings ?? []),
+          ...(layersResponse.sourceHealth?.warnings ?? []),
+          ...(sourcesResponse.warnings ?? []),
+          ...(sourcesResponse.sourceHealth?.warnings ?? [])
+        ]);
+        setTakStatus(situationStatusFromHealth(layersResponse.sourceHealth?.health, layersResponse.sourceStatus));
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setTakLayers([]);
+          setTakSources([]);
+          setTakStatus("degraded");
+          setTakWarnings([error instanceof Error ? error.message : "TAK Gateway vrstvy nejsou dostupné."]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken]);
+
   const visibleSituationLayerKey = visibleSituationLayerIds.join(",");
   const visibleSituationSourceKey = visibleSituationSourceIds.join(",");
   const visibleSafetyLayerKey = visibleSafetyLayerIds.join(",");
+  const visibleTakLayerKey = visibleTakLayerIds.join(",");
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -733,6 +792,58 @@ export function App() {
   }, [authToken, dataAccessReady, mapBounds, mapView?.zoom, visibleSafetyLayerIds, visibleSafetyLayerKey]);
 
   React.useEffect(() => {
+    if (!authToken) {
+      setTakFeatures(null);
+      return;
+    }
+    if (visibleTakLayerIds.length === 0) {
+      setTakFeatures(null);
+      setTakStatus("disabled");
+      setTakWarnings([]);
+      return;
+    }
+    if (!mapBounds) {
+      return;
+    }
+    if (shouldSkipSituationFeatureLoad(mapBounds, mapView?.zoom)) {
+      setTakFeatures(null);
+      setTakStatus("zoom");
+      setTakWarnings(["TAK Gateway se načítá až po přiblížení mapy na rozumný výřez."]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setTakStatus((current) => current === "online" ? "online" : "loading");
+      fetchTakFeatures(apiBase, authToken, {
+        bbox: mapBounds,
+        layers: visibleTakLayerIds,
+        limit: 250
+      })
+        .then((collection) => {
+          if (cancelled) {
+            return;
+          }
+          setTakFeatures(collection);
+          setTakWarnings([...(collection.warnings ?? []), ...(collection.sourceHealth?.warnings ?? [])]);
+          setTakStatus(situationStatusFromHealth(collection.sourceHealth?.health));
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setTakFeatures(null);
+            setTakStatus("degraded");
+            setTakWarnings([error instanceof Error ? error.message : "TAK Gateway data nejsou dostupná."]);
+          }
+        });
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [authToken, mapBounds, mapView?.zoom, visibleTakLayerIds, visibleTakLayerKey]);
+
+  React.useEffect(() => {
     if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
       return;
     }
@@ -810,13 +921,13 @@ export function App() {
     [scopedObjects, visibleTrackLayerIds]
   );
   const combinedSituationFeatures = React.useMemo(
-    () => mergeSituationAndSafetyFeatures(situationFeatures, safetyFeatures),
-    [safetyFeatures, situationFeatures]
+    () => mergeSituationSafetyAndTakFeatures(situationFeatures, safetyFeatures, takFeatures),
+    [safetyFeatures, situationFeatures, takFeatures]
   );
-  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0 || visibleSafetyLayerIds.length > 0;
+  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0 || visibleSafetyLayerIds.length > 0 || visibleTakLayerIds.length > 0;
   const mapLayerLabel = React.useMemo(
-    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds),
-    [visibleSafetyLayerIds, visibleSituationLayerIds, visibleTrackLayerIds]
+    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds),
+    [visibleSafetyLayerIds, visibleSituationLayerIds, visibleTakLayerIds, visibleTrackLayerIds]
   );
   const mapEmptyMessage = React.useMemo(
     () =>
@@ -907,6 +1018,9 @@ export function App() {
     if (settings.safetyLayerIds !== undefined) {
       setVisibleSafetyLayerIds(normalizeSafetyLayerIds(settings.safetyLayerIds));
     }
+    if (settings.takLayerIds !== undefined) {
+      setVisibleTakLayerIds(normalizeTakLayerIds(settings.takLayerIds));
+    }
     if (settings.predictionMinutes !== undefined) {
       setPredictionMinutes(clamp(settings.predictionMinutes, 2, 20));
     }
@@ -963,6 +1077,7 @@ export function App() {
     showPrediction,
     situationLayerIds: visibleSituationLayerIds,
     situationSourceIds: visibleSituationSourceIds,
+    takLayerIds: visibleTakLayerIds,
     trackLayerIds: visibleTrackLayerIds,
     trackHistoryLimit,
     trackHistoryWindowSeconds
@@ -988,6 +1103,7 @@ export function App() {
     showPrediction,
     visibleSituationLayerIds,
     visibleSituationSourceIds,
+    visibleTakLayerIds,
     visibleTrackLayerIds,
     trackHistoryLimit,
     trackHistoryWindowSeconds
@@ -1303,6 +1419,15 @@ export function App() {
     });
   }
 
+  function toggleTakLayer(layerId: TakLayerId) {
+    setVisibleTakLayerIds((current) => {
+      if (current.includes(layerId)) {
+        return current.filter((item) => item !== layerId);
+      }
+      return normalizeTakLayerIds([...current, layerId]);
+    });
+  }
+
   function toggleTrackLayer(layerId: CopLayer) {
     setVisibleTrackLayerIds((current) => {
       if (layerId === "air-situation") {
@@ -1444,6 +1569,7 @@ export function App() {
         showPrediction,
         situationLayerIds: visibleSituationLayerIds,
         situationSourceIds: visibleSituationSourceIds,
+        takLayerIds: visibleTakLayerIds,
         trackLayerIds: visibleTrackLayerIds,
         trackHistoryLimit,
         trackHistoryWindowSeconds
@@ -1553,6 +1679,16 @@ export function App() {
                   visibleLayerIds={visibleSafetyLayerIds}
                   warnings={safetyWarnings}
                   onToggle={toggleSafetyLayer}
+                />
+
+                <TakGatewayLayerControls
+                  featureCount={takFeatures?.summary.featureCount ?? 0}
+                  layers={takLayers}
+                  sources={takSources}
+                  status={takStatus}
+                  visibleLayerIds={visibleTakLayerIds}
+                  warnings={takWarnings}
+                  onToggle={toggleTakLayer}
                 />
 
                 <UserZoneLayerControls
@@ -2280,19 +2416,25 @@ function SelectedObjectDataCard({ object }: { object: CopObject }) {
 
 function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
   const status = situationFeatureStatusModel(feature);
+  const rows: Array<[string, React.ReactNode]> = [
+    ["Název", feature.properties.headline ?? feature.properties.label],
+    ["Vrstva", situationDisplayLayerLabel(feature)],
+    ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
+    ["Kategorie", feature.properties.category],
+    ["Zdroj", feature.properties.sourceId],
+    ["Aktualizace", formatShortDateTime(feature.properties.observedAt)]
+  ];
+  if (isTakGatewayFeature(feature)) {
+    rows.push(
+      ["Affiliation", formatTakAffiliation(feature.properties.affiliation)],
+      ["Přijato", formatShortDateTime(feature.properties.receivedAt)],
+      ["Platné do", formatShortDateTime(feature.properties.validUntil)]
+    );
+  }
   return (
     <ObjectDetailSection title="Vybraný situační prvek">
-      <DetailGrid
-        rows={[
-          ["Název", feature.properties.headline ?? feature.properties.label],
-          ["Vrstva", situationLayerLabel(feature.properties.layer)],
-          ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
-          ["Kategorie", feature.properties.category],
-          ["Zdroj", feature.properties.sourceId],
-          ["Aktualizace", formatShortDateTime(feature.properties.observedAt)]
-        ]}
-      />
-      {feature.properties.layer === "mobile" ? <MobileNetworkStatusSummary feature={feature} /> : null}
+      <DetailGrid rows={rows} />
+      {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
     </ObjectDetailSection>
   );
@@ -3265,6 +3407,55 @@ function SafetyLayerControls({
   );
 }
 
+function TakGatewayLayerControls({
+  featureCount,
+  layers,
+  sources,
+  status,
+  visibleLayerIds,
+  warnings,
+  onToggle
+}: {
+  featureCount: number;
+  layers: TakLayer[];
+  sources: TakSourceDescriptor[];
+  status: SituationLayerStatus;
+  visibleLayerIds: TakLayerId[];
+  warnings: string[];
+  onToggle: (layerId: TakLayerId) => void;
+}) {
+  const layerItems = layers.length > 0 ? layers : defaultTakLayers();
+  const sourceState = sources.some((source) => source.enabled !== false) ? "ok" : "neutral";
+  return (
+    <div className="situation-layer-box tak-layer-box">
+      <div className="situation-layer-header">
+        <PanelTitle icon={<RadioTower size={17} />} title="TAK Gateway" />
+        <span className={`situation-status ${status}`}>{situationStatusLabel(status)}</span>
+      </div>
+      <div className="situation-layer-grid">
+        {layerItems.map((layer) => (
+          <label className="situation-layer-toggle" key={layer.layerId} title={layer.description ?? layer.label}>
+            <input
+              checked={visibleLayerIds.includes(layer.layerId)}
+              onChange={() => onToggle(layer.layerId)}
+              type="checkbox"
+            />
+            <span>
+              <strong>{takLayerLabel(layer.layerId)}</strong>
+              <small>{takLayerHint(layer)}</small>
+            </span>
+          </label>
+        ))}
+      </div>
+      <ReadinessRow label="Prvky" value={String(featureCount)} tone={featureCount > 0 ? "ok" : "neutral"} />
+      <ReadinessRow label="Zdroje" value={formatTakSources(sources)} tone={sourceState} />
+      {warnings.slice(0, 2).map((warning) => (
+        <div className="situation-warning" key={warning}>{warning}</div>
+      ))}
+    </div>
+  );
+}
+
 function UserZoneLayerControls({
   creationMode,
   zones,
@@ -3853,47 +4044,55 @@ function summarizeAlerts(serverAlerts: CopAlert[], proximityAlerts: ProximityAle
   };
 }
 
-function mergeSituationAndSafetyFeatures(
+function mergeSituationSafetyAndTakFeatures(
   situation: SituationFeatureCollectionResponse | null,
-  safety: SafetyFeatureCollectionResponse | null
+  safety: SafetyFeatureCollectionResponse | null,
+  tak: TakFeatureCollectionResponse | null
 ): SituationFeatureCollectionResponse | null {
-  if (!situation && !safety) {
+  if (!situation && !safety && !tak) {
     return null;
   }
   const situationFeatures = situation?.features ?? [];
   const safetyFeatures = safety?.features.map(safetyFeatureToSituationFeature) ?? [];
-  const features = [...situationFeatures, ...safetyFeatures];
-  const warnings = [...(situation?.warnings ?? []), ...(safety?.warnings ?? [])];
+  const takGatewayFeatures = tak?.features.map(takFeatureToSituationFeature) ?? [];
+  const features = [...situationFeatures, ...safetyFeatures, ...takGatewayFeatures];
+  const warnings = [...(situation?.warnings ?? []), ...(safety?.warnings ?? []), ...(tak?.warnings ?? [])];
   return {
     contractVersion: "cop-situation-source-v1",
     features,
-    generatedAt: latestTimestamp([situation?.generatedAt, safety?.generatedAt]) ?? new Date().toISOString(),
+    generatedAt: latestTimestamp([situation?.generatedAt, safety?.generatedAt, tak?.generatedAt]) ?? new Date().toISOString(),
     query: {
-      bbox: situation?.query.bbox ?? safety?.query.bbox ?? { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
+      bbox: situation?.query.bbox ?? safety?.query.bbox ?? tak?.query.bbox ?? { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: [
         ...(situation?.query.layers ?? []),
-        ...((safety?.query.layers ?? []) as SituationLayerId[])
+        ...((safety?.query.layers ?? []) as SituationLayerId[]),
+        ...((tak?.query.layers ?? []) as SituationLayerId[])
       ],
-      limit: Math.max(situation?.query.limit ?? 0, safety?.query.limit ?? 0, 250)
+      limit: Math.max(situation?.query.limit ?? 0, safety?.query.limit ?? 0, tak?.query.limit ?? 0, 250)
     },
     source: {
-      generatedAt: latestTimestamp([situation?.source.generatedAt, safety?.source.generatedAt]),
+      generatedAt: latestTimestamp([situation?.source.generatedAt, safety?.source.generatedAt, tak?.source.generatedAt]),
       sourceId: "situation-data-api",
       sourceType: "PUBLIC_SITUATION_AGGREGATE"
     },
-    sourceHealth: situation?.sourceHealth ?? safety?.sourceHealth,
+    sourceHealth: situation?.sourceHealth ?? safety?.sourceHealth ?? tak?.sourceHealth,
     sources: [
       ...(situation?.sources ?? []),
       ...((safety?.sources ?? []).map((source) => ({
         ...source,
         layers: source.layers as SituationLayerId[]
+      }))),
+      ...((tak?.sources ?? []).map((source) => ({
+        ...source,
+        label: source.label ? `TAK Gateway > ${source.label}` : "TAK Gateway",
+        layers: source.layers as SituationLayerId[]
       })))
     ],
     summary: {
       featureCount: features.length,
-      sourceCount: (situation?.summary.sourceCount ?? 0) + (safety?.summary.sourceCount ?? 0),
+      sourceCount: (situation?.summary.sourceCount ?? 0) + (safety?.summary.sourceCount ?? 0) + (tak?.summary.sourceCount ?? 0),
       staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
-      warningCount: (situation?.summary.warningCount ?? 0) + (safety?.summary.warningCount ?? 0) + (safety?.summary.criticalCount ?? 0)
+      warningCount: (situation?.summary.warningCount ?? 0) + (safety?.summary.warningCount ?? 0) + (safety?.summary.criticalCount ?? 0) + (tak?.summary.warningCount ?? 0)
     },
     type: "FeatureCollection",
     warnings
@@ -3910,6 +4109,22 @@ function safetyFeatureToSituationFeature(feature: SafetyFeature): SituationFeatu
       tags: {
         ...(isRecord(feature.properties.tags) ? feature.properties.tags : {}),
         dataSource: "safety-data"
+      }
+    },
+    type: "Feature"
+  };
+}
+
+function takFeatureToSituationFeature(feature: TakFeature): SituationFeature {
+  return {
+    geometry: feature.geometry,
+    id: feature.id,
+    properties: {
+      ...feature.properties,
+      tags: {
+        ...(isRecord(feature.properties.tags) ? feature.properties.tags : {}),
+        dataSource: "tak-gateway",
+        takLayer: feature.properties.layer
       }
     },
     type: "Feature"
@@ -4149,6 +4364,35 @@ function defaultSafetyLayers(): SafetyLayer[] {
   ];
 }
 
+function defaultTakLayers(): TakLayer[] {
+  return [
+    {
+      defaultVisible: false,
+      description: "Partnerské mobilní jednotky z TAK/CoT gateway.",
+      expectedCadenceSeconds: 15,
+      geometryTypes: ["Point"],
+      label: "Mobile units",
+      layerId: "mobile"
+    },
+    {
+      defaultVisible: false,
+      description: "Partnerské pozemní značky a body z TAK/CoT gateway.",
+      expectedCadenceSeconds: 15,
+      geometryTypes: ["Point"],
+      label: "Ground markers",
+      layerId: "ground"
+    },
+    {
+      defaultVisible: false,
+      description: "TAK Gateway transportní, vzdušné nebo vozidlové tracky; nejde o veřejnou dopravní vrstvu.",
+      expectedCadenceSeconds: 15,
+      geometryTypes: ["Point", "LineString"],
+      label: "Traffic tracks",
+      layerId: "traffic"
+    }
+  ];
+}
+
 function situationLayerHint(layer: SituationLayer): string {
   const cadence = layer.expectedCadenceSeconds ? `${layer.expectedCadenceSeconds}s` : "cadence n/a";
   const geometry = layer.geometryTypes?.join("/") ?? "geo";
@@ -4173,6 +4417,12 @@ function safetyLayerHint(layer: SafetyLayer): string {
   return `${geometry} · ${cadence}`;
 }
 
+function takLayerHint(layer: TakLayer): string {
+  const cadence = layer.expectedCadenceSeconds ? `${layer.expectedCadenceSeconds}s` : "cadence n/a";
+  const geometry = layer.geometryTypes?.join("/") ?? "geo";
+  return `${geometry} · ${cadence}`;
+}
+
 function situationLayerLabel(layerId: SituationLayerId): string {
   const labels: Record<SituationLayerId, string> = {
     air_quality: "Air quality",
@@ -4186,8 +4436,24 @@ function situationLayerLabel(layerId: SituationLayerId): string {
   return labels[layerId];
 }
 
+function situationDisplayLayerLabel(feature: SituationFeature): string {
+  if (isTakGatewayFeature(feature)) {
+    return `TAK Gateway > ${takLayerLabel(feature.properties.layer as TakLayerId)}`;
+  }
+  return situationLayerLabel(feature.properties.layer);
+}
+
 function safetyLayerLabel(layerId: SafetyLayerId): string {
   return layerId === "flood" ? "Povodně a voda" : "Veřejné výstrahy";
+}
+
+function takLayerLabel(layerId: TakLayerId): string {
+  const labels: Record<TakLayerId, string> = {
+    ground: "Ground markers",
+    mobile: "Mobile units",
+    traffic: "Traffic tracks"
+  };
+  return labels[layerId];
 }
 
 function formatSafetySources(sources: SafetySourceDescriptor[], config: SafetyConfigResponse | null): string {
@@ -4197,6 +4463,31 @@ function formatSafetySources(sources: SafetySourceDescriptor[], config: SafetyCo
     return "čekám";
   }
   return `${enabled}/${total}`;
+}
+
+function formatTakSources(sources: TakSourceDescriptor[]): string {
+  if (sources.length === 0) {
+    return "čekám";
+  }
+  return `${sources.filter((source) => source.enabled !== false).length}/${sources.length}`;
+}
+
+function isTakGatewayFeature(feature: SituationFeature): boolean {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return stringProperty(tags.dataSource) === "tak-gateway";
+}
+
+function formatTakAffiliation(value: string | undefined): string {
+  if (value === "friend") {
+    return "vlastní/partner";
+  }
+  if (value === "hostile") {
+    return "rizikový";
+  }
+  if (value === "neutral") {
+    return "neutrální";
+  }
+  return value ?? "neznámé";
 }
 
 function situationStatusFromHealth(health: string | undefined, sourceStatus?: string): SituationLayerStatus {
@@ -4668,7 +4959,7 @@ function isCopLayer(value: string): value is CopLayer {
   return copLayerIds.includes(value as CopLayer);
 }
 
-function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[]): string {
+function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[], takLayerIds: TakLayerId[]): string {
   const parts: string[] = [];
   if (trackLayerIds.length > 0) {
     parts.push(`${trackLayerIds.length} air`);
@@ -4678,6 +4969,9 @@ function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: Situat
   }
   if (safetyLayerIds.length > 0) {
     parts.push(`${safetyLayerIds.length} safety`);
+  }
+  if (takLayerIds.length > 0) {
+    parts.push(`${takLayerIds.length} TAK`);
   }
   return parts.length > 0 ? parts.join(" + ") : "žádná vrstva";
 }
@@ -4743,6 +5037,15 @@ function normalizeSafetyLayerIds(value: string[] | undefined): SafetyLayerId[] {
 
 function isSafetyLayerId(value: string): value is SafetyLayerId {
   return value === "warnings" || value === "flood";
+}
+
+function normalizeTakLayerIds(value: string[] | undefined): TakLayerId[] {
+  const layers = (value ?? defaultTakLayerIds).filter(isTakLayerId);
+  return Array.from(new Set(layers));
+}
+
+function isTakLayerId(value: string): value is TakLayerId {
+  return value === "mobile" || value === "ground" || value === "traffic";
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {

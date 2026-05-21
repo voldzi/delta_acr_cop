@@ -131,6 +131,7 @@ export interface CopDashboardData {
 
 export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "traffic" | "warnings" | "weather";
 export type SafetyLayerId = "flood" | "warnings";
+export type TakLayerId = "ground" | "mobile" | "traffic";
 export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "mock";
 
 export interface MapBounds {
@@ -208,6 +209,7 @@ export type SituationGeometry =
 
 export interface SituationFeatureProperties {
   affectedAreas?: string[];
+  affiliation?: string;
   category: string;
   certainty?: string;
   confidence?: number;
@@ -222,6 +224,7 @@ export interface SituationFeatureProperties {
   license?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
   observedAt?: string;
+  receivedAt?: string;
   recommendedAction?: string;
   severity?: string;
   sourceId: string;
@@ -395,6 +398,112 @@ export interface SafetyConfigResponse {
 export interface SafetyFeatureOptions {
   bbox: MapBounds;
   layers: SafetyLayerId[];
+  limit?: number;
+}
+
+export interface TakLayer {
+  defaultVisible: boolean;
+  description?: string;
+  expectedCadenceSeconds?: number;
+  geometryTypes?: string[];
+  label: string;
+  layerId: TakLayerId;
+}
+
+export interface TakSourceDescriptor {
+  baseUrl?: string;
+  enabled?: boolean;
+  label?: string;
+  layers?: TakLayerId[];
+  license?: Record<string, unknown>;
+  mode?: string;
+  priority?: number;
+  sourceId: string;
+  updateCadenceSeconds?: number;
+}
+
+export type TakGeometry =
+  | { coordinates: [number, number]; type: "Point" }
+  | { coordinates: Array<[number, number]>; type: "LineString" }
+  | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
+
+export interface TakFeatureProperties {
+  affiliation?: string;
+  category: string;
+  confidence?: number;
+  featureId: string;
+  label: string;
+  layer: TakLayerId;
+  license?: Record<string, unknown>;
+  metrics?: Record<string, unknown>;
+  observedAt?: string;
+  receivedAt?: string;
+  sourceId: string;
+  stale?: boolean;
+  tags?: Record<string, unknown>;
+  validUntil?: string;
+}
+
+export interface TakFeature {
+  geometry: TakGeometry;
+  id?: string | number;
+  properties: TakFeatureProperties;
+  type: "Feature";
+}
+
+export interface TakFeatureCollectionResponse {
+  contractVersion: "cop-tak-source-v1";
+  cache?: {
+    key: string;
+    status: "coalesced" | "hit" | "miss" | "stale";
+    ttlMs: number;
+    upstreamBbox: MapBounds;
+  };
+  features: TakFeature[];
+  generatedAt: string;
+  query: {
+    bbox: MapBounds;
+    layers: TakLayerId[];
+    limit: number;
+  };
+  source: {
+    generatedAt?: string;
+    sourceId: "tak-gateway-api";
+    sourceType: "TAK_COT_GATEWAY";
+  };
+  sourceHealth?: SourceHealthOverride;
+  sources: TakSourceDescriptor[];
+  summary: {
+    affiliationCounts?: Record<string, number>;
+    eventCount?: number;
+    featureCount: number;
+    sourceCount: number;
+    staleFeatureCount: number;
+    warningCount: number;
+  };
+  type: "FeatureCollection";
+  warnings: string[];
+}
+
+export interface TakLayersResponse {
+  items: TakLayer[];
+  serverTimestamp?: string;
+  sourceHealth?: SourceHealthOverride;
+  sourceStatus?: string;
+  warnings?: string[];
+}
+
+export interface TakSourcesResponse {
+  items: TakSourceDescriptor[];
+  serverTimestamp?: string;
+  sourceHealth?: SourceHealthOverride;
+  sourceStatus?: string;
+  warnings?: string[];
+}
+
+export interface TakFeatureOptions {
+  bbox: MapBounds;
+  layers: TakLayerId[];
   limit?: number;
 }
 
@@ -675,6 +784,32 @@ export async function fetchSafetyFeatures(
   query.set("layers", options.layers.join(","));
   query.set("limit", String(options.limit ?? 250));
   return fetchJson<SafetyFeatureCollectionResponse>(`${apiBase}/api/v1/safety/features?${query.toString()}`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function fetchTakLayers(apiBase: string, token: string | undefined): Promise<TakLayersResponse> {
+  return fetchJson<TakLayersResponse>(`${apiBase}/api/v1/tak/layers`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function fetchTakSources(apiBase: string, token: string | undefined): Promise<TakSourcesResponse> {
+  return fetchJson<TakSourcesResponse>(`${apiBase}/api/v1/tak/sources`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function fetchTakFeatures(
+  apiBase: string,
+  token: string | undefined,
+  options: TakFeatureOptions
+): Promise<TakFeatureCollectionResponse> {
+  const query = new URLSearchParams();
+  query.set("bbox", `${options.bbox.west},${options.bbox.south},${options.bbox.east},${options.bbox.north}`);
+  query.set("layers", options.layers.join(","));
+  query.set("limit", String(options.limit ?? 250));
+  return fetchJson<TakFeatureCollectionResponse>(`${apiBase}/api/v1/tak/features?${query.toString()}`, {
     headers: authHeaders(token)
   });
 }

@@ -147,6 +147,7 @@ export interface SituationContextFeatureCollection {
       situationStatusColor?: string;
       situationStatusLabel?: string;
       situationStatusTone?: string;
+      takGateway?: boolean;
       mobileNetworkLabel?: string;
       mobileSymbolKey?: string;
     };
@@ -568,7 +569,7 @@ export function CopMap({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "layer"], "mobile"]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           paint: {
             "circle-color": [
               "case",
@@ -606,7 +607,7 @@ export function CopMap({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "layer"], "mobile"]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "layer"], "weather"], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           layout: {
             "text-field": ["get", "label"],
             "text-font": ["Open Sans Semibold"],
@@ -628,7 +629,7 @@ export function CopMap({
           id: situationMobileSymbolLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "mobile"]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "mobile"], ["!=", ["get", "takGateway"], true]],
           layout: {
             "icon-image": ["coalesce", ["get", "mobileSymbolKey"], getMobileNetworkIconKey("unknown")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.26, 11, 0.34, 15, 0.48],
@@ -1451,6 +1452,14 @@ export function situationFeaturesToFeatureCollection(
 
 function buildSituationRenderProperties(feature: SituationFeature): Partial<SituationContextFeatureCollection["features"][number]["properties"]> {
   const status = situationFeatureStatus(feature);
+  if (isTakGatewayFeature(feature)) {
+    return {
+      situationStatusColor: status.color,
+      situationStatusLabel: status.label,
+      situationStatusTone: status.tone,
+      takGateway: true
+    };
+  }
   if (feature.properties.layer === "mobile") {
     return {
       mobileNetworkLabel: formatMobileNetworkLabel(feature),
@@ -1494,6 +1503,19 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
   if (feature.properties.stale) {
     return { color: "#facc15", label: "STALE", tone: "warning" };
+  }
+  if (isTakGatewayFeature(feature)) {
+    const affiliation = normalizeTakAffiliation(feature.properties.affiliation);
+    if (affiliation === "friend") {
+      return { color: "#38bdf8", label: "VLASTNÍ", tone: "info" };
+    }
+    if (affiliation === "hostile") {
+      return { color: "#ef4444", label: "RIZIKO", tone: "critical" };
+    }
+    if (affiliation === "neutral") {
+      return { color: "#22c55e", label: "NEUTRÁLNÍ", tone: "info" };
+    }
+    return { color: "#a78bfa", label: "NEZNÁMÉ", tone: "unknown" };
   }
   const aviationCategory = aviationFlightCategory(feature);
   if (aviationCategory) {
@@ -1708,6 +1730,16 @@ function stringProperty(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isTakGatewayFeature(feature: SituationFeature): boolean {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return stringProperty(tags.dataSource) === "tak-gateway";
+}
+
+function normalizeTakAffiliation(value: unknown): "friend" | "hostile" | "neutral" | "unknown" {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return normalized === "friend" || normalized === "hostile" || normalized === "neutral" ? normalized : "unknown";
 }
 
 export function objectsToHistoryFeatureCollection(

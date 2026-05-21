@@ -28,6 +28,7 @@ export interface ViewProfileSettings {
   showPrediction?: boolean;
   situationLayerIds?: string[];
   situationSourceIds?: string[];
+  takLayerIds?: string[];
   trackLayerIds?: CopLayer[];
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
@@ -63,8 +64,9 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
-      situationLayerIds: ["weather"],
-      trackHistoryLimit: 120,
+    situationLayerIds: ["weather"],
+    takLayerIds: [],
+    trackHistoryLimit: 120,
       trackHistoryWindowSeconds: 180
     }
   },
@@ -89,8 +91,9 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
-      situationLayerIds: ["weather"],
-      trackHistoryLimit: 72,
+    situationLayerIds: ["weather"],
+    takLayerIds: [],
+    trackHistoryLimit: 72,
       trackHistoryWindowSeconds: 60
     }
   },
@@ -115,8 +118,9 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
-      situationLayerIds: ["weather", "traffic"],
-      trackHistoryLimit: 120,
+    situationLayerIds: ["weather", "traffic"],
+    takLayerIds: [],
+    trackHistoryLimit: 120,
       trackHistoryWindowSeconds: 180
     }
   },
@@ -140,7 +144,8 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: true,
       showHistory: false,
       showPrediction: false,
-      situationLayerIds: ["weather", "mobile"]
+      situationLayerIds: ["weather", "mobile"],
+      takLayerIds: []
     }
   },
   {
@@ -163,6 +168,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       showHistory: true,
       showPrediction: false,
       situationLayerIds: ["weather", "ground", "traffic"],
+      takLayerIds: [],
       trackHistoryLimit: 240,
       trackHistoryWindowSeconds: 600
     }
@@ -249,6 +255,7 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     showPrediction: optionalBoolean(value.showPrediction),
     situationLayerIds: optionalStringArray(value.situationLayerIds),
     situationSourceIds: optionalStringArray(value.situationSourceIds),
+    takLayerIds: optionalStringArray(value.takLayerIds),
     trackLayerIds: optionalLayerArray(value.trackLayerIds),
     trackHistoryLimit: optionalNumber(value.trackHistoryLimit),
     trackHistoryWindowSeconds: optionalNumber(value.trackHistoryWindowSeconds)

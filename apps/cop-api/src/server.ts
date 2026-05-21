@@ -50,6 +50,15 @@ import {
   type SafetyDataSource,
   type SafetyFeatureQuery
 } from "./safety-data-source.js";
+import {
+  buildTakGatewayHealth,
+  createTakGatewaySourceFromEnv,
+  emptyTakGatewayFeatureCollection,
+  parseTakGatewayFeatureQuery,
+  unavailableTakGatewayHealth,
+  type TakGatewayFeatureQuery,
+  type TakGatewaySource
+} from "./tak-gateway-source.js";
 import { appendAudit, createInitialState } from "./state.js";
 import { createTrackHistoryStoreFromEnv, type TrackHistoryStore } from "./track-history-store.js";
 import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory, type TrackHistoryQuery } from "./temporal-history.js";
@@ -69,6 +78,7 @@ export interface BuildServerOptions {
   mediaStorage?: MediaStorage;
   safetyDataSource?: SafetyDataSource;
   situationDataSource?: SituationDataSource;
+  takGatewaySource?: TakGatewaySource;
   state?: CopState;
   logger?: boolean;
   now?: () => Date;
@@ -120,6 +130,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
   const safetyDataSource = options.safetyDataSource ?? createSafetyDataSourceFromEnv();
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
+  const takGatewaySource = options.takGatewaySource ?? createTakGatewaySourceFromEnv();
   const mobileDeviceRegistrations = new Map<string, MobileDeviceRegistration>();
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
@@ -141,6 +152,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
   if (safetyDataSource) {
     state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, safetyDataSource.sourceSystem);
+  }
+  if (takGatewaySource) {
+    state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, takGatewaySource.sourceSystem);
   }
   void app.register(cors, { origin: true });
   void app.register(sensible);
@@ -198,6 +212,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ...(flightDataSource ? [flightDataDependency()] : []),
       ...(situationDataSource ? [situationDataDependency()] : []),
       ...(safetyDataSource ? [safetyDataDependency()] : []),
+      ...(takGatewaySource ? [takGatewayDependency()] : []),
       { name: "ai-gateway", status: "degraded", detail: "mock provider only" }
     ]
   }));
@@ -250,7 +265,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       `cop_stream_last_message_timestamp_seconds{type="backpressure"} ${timestampSeconds(streamMetrics.lastBackpressureAt)}`,
       `cop_stream_last_message_timestamp_seconds{type="write_error"} ${timestampSeconds(streamMetrics.lastWriteErrorAt)}`,
       ...situationDataCacheMetricLines(),
-      ...safetyDataCacheMetricLines()
+      ...safetyDataCacheMetricLines(),
+      ...takGatewayCacheMetricLines()
     ];
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
@@ -561,6 +577,58 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       throw new Error("Safety data source is not enabled.");
     }
     return state.sources.get(safetyDataSource.sourceSystem.sourceSystemId) ?? safetyDataSource.sourceSystem;
+  }
+
+  function takGatewayDependency(): { detail: string; name: string; status: DependencyStatus } {
+    if (!takGatewaySource) {
+      return { detail: "disabled", name: "tak-gateway-source", status: "disabled" };
+    }
+    const health = readTakGatewayHealth(state.sources.get(takGatewaySource.sourceSystem.sourceSystemId));
+    if (!health) {
+      return { detail: "waiting for first request", name: "tak-gateway-source", status: "degraded" };
+    }
+    return {
+      detail: health.detail ?? health.lastError ?? health.health.toLowerCase(),
+      name: "tak-gateway-source",
+      status: health.health === "ONLINE" ? "ok" : "degraded"
+    };
+  }
+
+  function takGatewayCacheMetricLines(): string[] {
+    const cache = takGatewaySource?.cacheStats?.();
+    if (!cache) {
+      return [];
+    }
+    return [
+      "# HELP cop_tak_gateway_cache_entries Cached TAK Gateway viewport entries.",
+      "# TYPE cop_tak_gateway_cache_entries gauge",
+      `cop_tak_gateway_cache_entries ${cache.entries}`,
+      "# HELP cop_tak_gateway_cache_inflight In-flight TAK Gateway cache refreshes.",
+      "# TYPE cop_tak_gateway_cache_inflight gauge",
+      `cop_tak_gateway_cache_inflight ${cache.inflight}`,
+      "# HELP cop_tak_gateway_cache_requests_total TAK Gateway cache requests by result.",
+      "# TYPE cop_tak_gateway_cache_requests_total counter",
+      `cop_tak_gateway_cache_requests_total{result="hit"} ${cache.hits}`,
+      `cop_tak_gateway_cache_requests_total{result="miss"} ${cache.misses}`,
+      `cop_tak_gateway_cache_requests_total{result="coalesced"} ${cache.coalescedHits}`,
+      `cop_tak_gateway_cache_requests_total{result="stale"} ${cache.staleHits}`,
+      "# HELP cop_tak_gateway_cache_refreshes_total TAK Gateway upstream refreshes completed by COP.",
+      "# TYPE cop_tak_gateway_cache_refreshes_total counter",
+      `cop_tak_gateway_cache_refreshes_total ${cache.refreshes}`,
+      "# HELP cop_tak_gateway_cache_errors_total TAK Gateway upstream refresh errors observed by COP.",
+      "# TYPE cop_tak_gateway_cache_errors_total counter",
+      `cop_tak_gateway_cache_errors_total ${cache.errors}`,
+      "# HELP cop_tak_gateway_cache_evictions_total TAK Gateway cache evictions.",
+      "# TYPE cop_tak_gateway_cache_evictions_total counter",
+      `cop_tak_gateway_cache_evictions_total ${cache.evictions}`
+    ];
+  }
+
+  function activeTakGatewaySourceSystem(): SourceSystem {
+    if (!takGatewaySource) {
+      throw new Error("TAK Gateway source is not enabled.");
+    }
+    return state.sources.get(takGatewaySource.sourceSystem.sourceSystemId) ?? takGatewaySource.sourceSystem;
   }
 
   async function readUserProfile(actor: AuthenticatedActor): Promise<UserProfileRecord | null> {
@@ -1449,6 +1517,136 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  app.get("/api/v1/tak/layers", async (request, reply) => {
+    const requestNow = now();
+    if (!actorFromRequest(request)) {
+      return sendError(reply, 401, "UNAUTHORIZED", "TAK Gateway layers require an authenticated COP session.", crypto.randomUUID());
+    }
+    if (!takGatewaySource) {
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceStatus: "disabled",
+        warnings: ["TAK Gateway source is disabled."]
+      };
+    }
+
+    try {
+      const items = await takGatewaySource.fetchLayers(requestNow);
+      const health = buildTakGatewayHealth(items, requestNow);
+      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      return {
+        items,
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health
+      };
+    } catch (error) {
+      const health = unavailableTakGatewayHealth(error, requestNow);
+      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      appendAudit(state, "TAK_GATEWAY_LAYERS_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: takGatewaySource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "TAK Gateway layers request failed.");
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health,
+        warnings: [health.lastError ?? "TAK Gateway layers are unavailable."]
+      };
+    }
+  });
+
+  app.get("/api/v1/tak/sources", async (request, reply) => {
+    const requestNow = now();
+    if (!actorFromRequest(request)) {
+      return sendError(reply, 401, "UNAUTHORIZED", "TAK Gateway sources require an authenticated COP session.", crypto.randomUUID());
+    }
+    if (!takGatewaySource) {
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceStatus: "disabled",
+        warnings: ["TAK Gateway source is disabled."]
+      };
+    }
+
+    try {
+      const items = await takGatewaySource.fetchSources(requestNow);
+      const health = buildTakGatewayHealth(items, requestNow);
+      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      return {
+        items,
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health
+      };
+    } catch (error) {
+      const health = unavailableTakGatewayHealth(error, requestNow);
+      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      appendAudit(state, "TAK_GATEWAY_SOURCES_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: takGatewaySource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "TAK Gateway sources request failed.");
+      return {
+        items: [],
+        serverTimestamp: requestNow.toISOString(),
+        sourceHealth: health,
+        sourceStatus: health.health,
+        warnings: [health.lastError ?? "TAK Gateway sources are unavailable."]
+      };
+    }
+  });
+
+  app.get("/api/v1/tak/features", async (request, reply) => {
+    const requestNow = now();
+    if (!actorFromRequest(request)) {
+      return sendError(reply, 401, "UNAUTHORIZED", "TAK Gateway features require an authenticated COP session.", crypto.randomUUID());
+    }
+    if (!takGatewaySource) {
+      const fallbackQuery = defaultTakGatewayFeatureQuery();
+      return {
+        ...emptyTakGatewayFeatureCollection(fallbackQuery, requestNow, ["TAK Gateway source is disabled."]),
+        sourceHealth: {
+          detail: "disabled",
+          evaluatedAt: requestNow.toISOString(),
+          health: "WAITING" as const,
+          lastPollAt: requestNow.toISOString()
+        }
+      };
+    }
+
+    const query = parseTakGatewayFeatureQuery(request.query as Record<string, unknown>, takGatewaySource.config);
+    if (!query) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "TAK Gateway feature query requires bbox=west,south,east,north and optional layers=mobile,ground,traffic.", crypto.randomUUID());
+    }
+
+    try {
+      const collection = await takGatewaySource.fetchFeatures(query, requestNow);
+      const health = buildTakGatewayHealth(collection, requestNow);
+      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      return {
+        ...collection,
+        sourceHealth: health
+      };
+    } catch (error) {
+      const health = unavailableTakGatewayHealth(error, requestNow);
+      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      appendAudit(state, "TAK_GATEWAY_FEATURES_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: takGatewaySource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "TAK Gateway features request failed.");
+      return {
+        ...emptyTakGatewayFeatureCollection(query, requestNow, [health.lastError ?? "TAK Gateway features are unavailable."]),
+        sourceHealth: health
+      };
+    }
+  });
+
   app.post("/api/v1/sources", async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const validation = validators.validateSourceSystem(request.body);
@@ -1972,6 +2170,18 @@ function withSafetyDataHealth(source: SourceSystem, health: SourceHealthOverride
   };
 }
 
+function withTakGatewayHealth(source: SourceSystem, health: SourceHealthOverride): SourceSystem {
+  return {
+    ...source,
+    attributes: {
+      ...source.attributes,
+      sourceHealth: health,
+      takGatewayHealth: health
+    },
+    updatedAt: health.evaluatedAt
+  };
+}
+
 function readFlightDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
   return readSourceHealthFromAttributes(source?.attributes?.flightDataHealth);
 }
@@ -1982,6 +2192,10 @@ function readSituationDataHealth(source: SourceSystem | undefined): SourceHealth
 
 function readSafetyDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
   return readSourceHealthFromAttributes(source?.attributes?.safetyDataHealth ?? source?.attributes?.sourceHealth);
+}
+
+function readTakGatewayHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
+  return readSourceHealthFromAttributes(source?.attributes?.takGatewayHealth ?? source?.attributes?.sourceHealth);
 }
 
 function readSourceHealthFromAttributes(value: unknown): SourceHealthOverride | undefined {
@@ -2014,6 +2228,19 @@ function defaultSituationFeatureQuery(): SituationFeatureQuery {
       west: 13.85
     },
     layers: ["weather"],
+    limit: 250
+  };
+}
+
+function defaultTakGatewayFeatureQuery(): TakGatewayFeatureQuery {
+  return {
+    bbox: {
+      east: 15.35,
+      north: 50.45,
+      south: 49.65,
+      west: 13.85
+    },
+    layers: ["mobile", "ground", "traffic"],
     limit: 250
   };
 }
@@ -2517,6 +2744,7 @@ function mobileCapabilities() {
     serverUserProfile: true,
     situationContext: true,
     sseStream: true,
+    takGatewayContext: true,
     trackHistory: true
   };
 }
@@ -2542,6 +2770,9 @@ function mobileEndpoints() {
     safetySources: "/api/v1/safety/sources",
     situationFeatures: "/api/v1/situation/features",
     situationLayers: "/api/v1/situation/layers",
+    takGatewayFeatures: "/api/v1/tak/features",
+    takGatewayLayers: "/api/v1/tak/layers",
+    takGatewaySources: "/api/v1/tak/sources",
     stream: "/api/v1/stream/cop/live",
     trackHistory: "/api/v1/cop/track-history",
     tracks: "/api/v1/cop/tracks"
@@ -2626,6 +2857,7 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     safetyLayerIds: optionalStringArray(value.safetyLayerIds, ["warnings", "flood"]),
     situationLayerIds: optionalStringArray(value.situationLayerIds, ["weather", "ground", "mobile", "traffic", "air_quality"]),
     situationSourceIds: normalizeStringList(value.situationSourceIds, 32, 80),
+    takLayerIds: optionalStringArray(value.takLayerIds, ["mobile", "ground", "traffic"]),
     trackLayerIds: optionalStringArray(value.trackLayerIds, ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600)

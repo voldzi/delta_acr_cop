@@ -16,6 +16,7 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 - server-side veřejný letový zdroj ze SIM (`COP_FLIGHT_DATA_ENABLED`, `COP_FLIGHT_DATA_BASE_URL`, `COP_FLIGHT_DATA_SOURCE`, `COP_FLIGHT_DATA_POLL_MS`),
 - kontextové situační vrstvy ze SIM (`COP_SITUATION_DATA_ENABLED`, `COP_SITUATION_DATA_BASE_URL`, `COP_SITUATION_DATA_CACHE_TTL_MS`),
 - bezpečnostní veřejné vrstvy ze SIM (`COP_SAFETY_DATA_ENABLED`, `COP_SAFETY_DATA_BASE_URL`, `COP_SAFETY_DATA_CACHE_TTL_MS`),
+- partnerský neveřejný TAK/CoT gateway zdroj ze SIM (`COP_TAK_GATEWAY_ENABLED`, `COP_TAK_GATEWAY_BASE_URL`, `COP_TAK_GATEWAY_READ_TOKEN`),
 - classification policy,
 - audit retention,
 - metrics/exporter nastavení,
@@ -68,3 +69,19 @@ COP_SAFETY_DATA_TIMEOUT_MS=15000
 ```
 
 Web klient volá pouze COP API (`/api/v1/safety/layers`, `/api/v1/safety/sources`, `/api/v1/safety/config`, `/api/v1/safety/features`). COP API při volání SIM nepřeposílá bearer token operátora, slučuje malé posuny mapy do kanonického bbox cache klíče a při výpadku vrací prázdný degraded `FeatureCollection`.
+
+## TAK Gateway Source
+
+COP čte neveřejná partnerská TAK/CoT data ze SIM kontraktu `cop-tak-source-v1` pouze server-side. Token zůstává v procesu `cop-api`; web klient volá jen `/api/v1/tak/*` a v prohlížeči nikdy nemá `COP_TAK_GATEWAY_READ_TOKEN`.
+
+```env
+COP_TAK_GATEWAY_ENABLED=false
+COP_TAK_GATEWAY_BASE_URL=https://sim.zeleznalady.cz/tak-gateway/api/v1
+COP_TAK_GATEWAY_READ_TOKEN=<tajny-token-ze-SIM>
+COP_TAK_GATEWAY_CACHE_TTL_MS=5000
+COP_TAK_GATEWAY_STALE_IF_ERROR_MS=60000
+COP_TAK_GATEWAY_MAX_LIMIT=250
+COP_TAK_GATEWAY_TIMEOUT_MS=7000
+```
+
+TAK Gateway je defaultně vypnutý a jeho COP endpointy vyžadují přihlášenou relaci. Vrstva `traffic` je záměrně zobrazena jako `TAK Gateway > Traffic tracks`, aby se nepletla s veřejnou dopravní vrstvou ze `situation-data`.
