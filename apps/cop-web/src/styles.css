@@ -107,6 +107,10 @@ h1 {
   font-size: 13px;
 }
 
+.brand-title-compact {
+  display: none;
+}
+
 .mission-strip {
   display: grid;
   grid-template-columns: auto auto;
@@ -2719,14 +2723,14 @@ dd {
   }
 
   .topbar {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 7px;
     min-height: 0;
-    padding: 8px;
+    padding: 7px;
   }
 
   .brand {
-    gap: 8px;
+    gap: 7px;
   }
 
   .brand p {
@@ -2734,37 +2738,58 @@ dd {
   }
 
   .brand-mark {
-    width: 38px;
-    height: 38px;
-    flex-basis: 38px;
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
   }
 
   .brand-mark img {
-    width: 38px;
-    height: 38px;
+    width: 32px;
+    height: 32px;
   }
 
   h1 {
-    font-size: 15px;
+    font-size: 19px;
+    line-height: 1;
+  }
+
+  .brand-title-full {
+    display: none;
+  }
+
+  .brand-title-compact {
+    display: inline;
   }
 
   .mission-strip {
-    grid-column: 1 / -1;
-    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-column: auto;
+    grid-template-columns: auto minmax(0, auto);
     align-items: center;
+    justify-self: stretch;
     min-width: 0;
     min-height: 32px;
-    padding: 6px 8px;
+    padding: 5px 7px;
   }
 
   .status-strip {
     display: none;
   }
 
+  .mission-strip > span {
+    display: none;
+  }
+
+  .mission-strip strong {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
   .mission-strip small {
     grid-column: auto;
     justify-self: end;
+    max-width: 112px;
     overflow: hidden;
+    font-size: 9px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -2800,25 +2825,16 @@ dd {
   }
 
   .operator-button {
-    width: 42px;
-    min-width: 42px;
-    min-height: 42px;
-    padding: 0;
-    place-content: center;
-  }
-
-  .operator-button span,
-  .operator-button svg:last-child {
     display: none;
   }
 
   .center-column {
-    grid-template-rows: minmax(460px, calc(100svh - 166px)) auto;
+    grid-template-rows: minmax(460px, calc(100svh - 124px)) auto;
     gap: 8px;
   }
 
   .center-column-map {
-    grid-template-rows: minmax(500px, calc(100svh - 166px));
+    grid-template-rows: minmax(500px, calc(100svh - 124px));
   }
 
   .workspace-tab,

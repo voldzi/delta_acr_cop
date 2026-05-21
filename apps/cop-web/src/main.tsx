@@ -1601,7 +1601,10 @@ export function App() {
             <img src="/icons/cop-icon.svg" alt="" />
           </div>
           <div>
-            <h1>Civilní situační mapa</h1>
+            <h1>
+              <span className="brand-title-full">Civilní situační mapa</span>
+              <span className="brand-title-compact">CSM</span>
+            </h1>
             <p>Rizika v okolí, výstrahy a sdílené informace</p>
           </div>
         </div>
