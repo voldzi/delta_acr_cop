@@ -1567,6 +1567,17 @@ export function App() {
     openSettings("account");
   }
 
+  function startCommunityReportCapture() {
+    locateUser();
+    if (!profileAccessReady) {
+      setProfileSyncError("Sběr hlášení s fotkou, popisem a polohou bude dostupný po přihlášení přes Keycloak.");
+      openSettings("account");
+      return;
+    }
+    setLocationStatus("Sběr hlášení: poloha se připravuje pro nový report, formulář s fotkou a popisem bude další krok.");
+    openSettings("awareness");
+  }
+
   function logoutOperator() {
     endSession(authConfig, authSession);
     setAuthSession(createInitialAuthSession(authConfig));
@@ -1949,9 +1960,10 @@ export function App() {
                 setSelectedSituationFeatureId(null);
               }}
               onSelectSituationFeature={(feature) => {
-                setSelectedSituationFeatureId(feature.properties.featureId);
+                setSelectedSituationFeatureId((current) => current === feature.properties.featureId ? null : feature.properties.featureId);
                 setSelectedObjectId(null);
               }}
+              onStartReport={startCommunityReportCapture}
               onAutoFitChange={setAutoFit}
               onClearSelection={() => {
                 setSelectedObjectId(null);

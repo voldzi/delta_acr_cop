@@ -1361,9 +1361,21 @@ h1 {
   touch-action: none;
 }
 
+.map-overlay-stack {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
+  display: grid;
+  gap: 8px;
+  width: min(520px, calc(100% - 92px));
+  pointer-events: none;
+}
+
 .map-toolbar,
 .map-legend,
 .map-selection-card,
+.map-report-button,
 .map-cluster-panel,
 .map-notice,
 .map-empty {
@@ -1374,8 +1386,6 @@ h1 {
 }
 
 .map-toolbar {
-  top: 12px;
-  left: 12px;
   z-index: 5;
   display: flex;
   flex-wrap: wrap;
@@ -1385,6 +1395,14 @@ h1 {
   padding: 8px;
   pointer-events: auto;
   touch-action: manipulation;
+}
+
+.map-overlay-stack .map-toolbar,
+.map-overlay-stack .map-selection-card {
+  position: static;
+  top: auto;
+  left: auto;
+  max-width: 100%;
 }
 
 .map-toolbar * {
@@ -1439,8 +1457,6 @@ h1 {
 }
 
 .map-selection-card {
-  top: 66px;
-  left: 12px;
   z-index: 5;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1450,6 +1466,10 @@ h1 {
   padding: 9px 10px;
   pointer-events: auto;
   touch-action: manipulation;
+}
+
+.map-overlay-stack .map-selection-card {
+  width: min(360px, 100%);
 }
 
 .map-selection-card span {
@@ -1491,6 +1511,35 @@ h1 {
   background: rgba(22, 32, 43, 0.82);
   color: #dbe7f2;
   cursor: pointer;
+}
+
+.map-report-button {
+  right: 12px;
+  bottom: 82px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 13px;
+  border-color: rgba(200, 240, 141, 0.46);
+  background: rgba(19, 31, 28, 0.9);
+  color: #e8eef5;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.map-report-button svg {
+  color: var(--lime);
+}
+
+.map-report-button:hover {
+  border-color: rgba(200, 240, 141, 0.86);
+  background: rgba(151, 199, 104, 0.16);
 }
 
 .map-legend {
@@ -2723,14 +2772,16 @@ dd {
   }
 
   .topbar {
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: 7px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0;
     min-height: 0;
     padding: 7px;
   }
 
   .brand {
     gap: 7px;
+    min-width: 0;
+    padding-right: 9px;
   }
 
   .brand p {
@@ -2768,7 +2819,7 @@ dd {
     justify-self: stretch;
     min-width: 0;
     min-height: 32px;
-    padding: 5px 7px;
+    padding: 5px 0 5px 10px;
   }
 
   .status-strip {
@@ -2843,10 +2894,16 @@ dd {
     padding: 0 9px;
   }
 
-  .map-toolbar {
+  .map-overlay-stack {
     top: 10px;
     left: 10px;
-    max-width: calc(100% - 64px);
+    width: auto;
+    right: 64px;
+    gap: 6px;
+  }
+
+  .map-toolbar {
+    max-width: 100%;
     flex-wrap: nowrap;
     gap: 5px;
     padding: 6px;
@@ -2887,10 +2944,12 @@ dd {
   }
 
   .map-selection-card {
-    top: 54px;
-    left: 10px;
     width: min(330px, calc(100% - 64px));
     padding: 7px 8px;
+  }
+
+  .map-overlay-stack .map-selection-card {
+    width: min(330px, 100%);
   }
 
   .map-selection-card strong {
@@ -2907,6 +2966,14 @@ dd {
     bottom: 10px;
     gap: 7px;
     padding: 7px 8px;
+    font-size: 11px;
+  }
+
+  .map-report-button {
+    right: 14px;
+    bottom: 92px;
+    min-height: 42px;
+    padding: 0 11px;
     font-size: 11px;
   }
 

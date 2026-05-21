@@ -1,5 +1,5 @@
 import React from "react";
-import { Maximize2, Minimize2, X } from "lucide-react";
+import { Camera, Maximize2, Minimize2, X } from "lucide-react";
 import maplibregl, {
   type GeoJSONSource,
   type MapLayerMouseEvent,
@@ -189,6 +189,7 @@ interface CopMapProps {
   onBoundsChange: (bounds: MapBounds) => void;
   onSelectObject: (object: CopObject) => void;
   onSelectSituationFeature: (feature: SituationFeature) => void;
+  onStartReport?: () => void;
   onAutoFitChange: (value: boolean) => void;
   onClearSelection?: () => void;
   onRequestUserLocation: () => void;
@@ -238,6 +239,7 @@ export function CopMap({
   onBoundsChange,
   onSelectObject,
   onSelectSituationFeature,
+  onStartReport,
   onAutoFitChange,
   onClearSelection,
   onCreateZoneAt,
@@ -272,6 +274,29 @@ export function CopMap({
   const selectedObject = React.useMemo(
     () => selectedObjectId ? objects.find((object) => object.objectId === selectedObjectId) ?? null : null,
     [objects, selectedObjectId]
+  );
+  const selectedSituationFeature = React.useMemo(
+    () =>
+      selectedSituationFeatureId
+        ? (situationFeatures?.features ?? []).find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null
+        : null,
+    [selectedSituationFeatureId, situationFeatures]
+  );
+  const selectionCard = React.useMemo(
+    () => selectedObject
+      ? {
+          eyebrow: "Vybraný objekt",
+          subtitle: formatTrackSelectionSubtitle(selectedObject),
+          title: formatTrackLabel(selectedObject)
+        }
+      : selectedSituationFeature
+        ? {
+            eyebrow: "Vybraný prvek",
+            subtitle: formatSituationFeatureSubtitle(selectedSituationFeature),
+            title: formatSituationFeatureTitle(selectedSituationFeature)
+          }
+        : null,
+    [selectedObject, selectedSituationFeature]
   );
   const positionedObjects = React.useMemo(() => objects.filter(hasPosition), [objects]);
   const featureCollection = React.useMemo(
@@ -1262,66 +1287,82 @@ export function CopMap({
     <div className={`map-container ${mapFullscreen ? "fullscreen" : ""}`}>
       <div className="map-canvas" ref={containerRef} aria-label="Georeferencovaná situační mapa" />
       {zoneCreationActive ? <div className="map-zone-create-hint">Kliknutím do mapy vytvoříte novou uživatelskou zónu</div> : null}
-      <div
-        className="map-toolbar"
-        onClick={stopMapToolbarEvent}
-        onDoubleClick={stopMapToolbarEvent}
-        onPointerDown={stopMapToolbarEvent}
-        onWheel={stopMapToolbarEvent}
-      >
-        <div>
-          <span>Map layer</span>
-          <strong>{mapLayerLabel}</strong>
-        </div>
-        <button
-          className={`map-action ${autoFit ? "active" : ""}`}
-          aria-pressed={autoFit}
-          onClick={() => {
-            const nextAutoFit = !autoFit;
-            onAutoFitChange(nextAutoFit);
-            if (nextAutoFit && fitMapToObjects(mapRef.current, positionedObjects)) {
-              lastFitSignatureRef.current = buildFitSignature(positionedObjects);
-            }
-          }}
-          title="Zapnout nebo vypnout automatické přizpůsobení mapy objektům"
-          type="button"
-        >
-          Fit
-        </button>
-        <button className="map-action" onClick={onRequestUserLocation} type="button">
-          Poloha
-        </button>
-        <button
-          aria-pressed={mapFullscreen}
-          className={`map-action icon-map-action ${mapFullscreen ? "active" : ""}`}
-          onClick={() => setMapFullscreen((current) => !current)}
-          title={mapFullscreen ? "Ukončit celou obrazovku" : "Zobrazit mapu přes celou obrazovku"}
-          type="button"
-        >
-          {mapFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          <span>{mapFullscreen ? "Zmenšit" : "Mapa"}</span>
-        </button>
-      </div>
-      {selectedObject ? (
+      <div className="map-overlay-stack">
         <div
-          className="map-selection-card"
+          className="map-toolbar"
           onClick={stopMapToolbarEvent}
           onDoubleClick={stopMapToolbarEvent}
           onPointerDown={stopMapToolbarEvent}
           onWheel={stopMapToolbarEvent}
         >
           <div>
-            <span>Vybraný objekt</span>
-            <strong>{formatTrackLabel(selectedObject)}</strong>
-            <small>
-              {selectedObject.objectType} · {formatMapAffiliation(selectedObject.affiliation)} · {selectedObject.status}
-              {typeof selectedObject.confidence === "number" ? ` · ${Math.round(selectedObject.confidence * 100)} %` : ""}
-            </small>
+            <span>Map layer</span>
+            <strong>{mapLayerLabel}</strong>
           </div>
-          <button aria-label="Zrušit výběr objektu" onClick={onClearSelection} title="Zrušit výběr objektu" type="button">
-            <X size={15} />
+          <button
+            className={`map-action ${autoFit ? "active" : ""}`}
+            aria-pressed={autoFit}
+            onClick={() => {
+              const nextAutoFit = !autoFit;
+              onAutoFitChange(nextAutoFit);
+              if (nextAutoFit && fitMapToObjects(mapRef.current, positionedObjects)) {
+                lastFitSignatureRef.current = buildFitSignature(positionedObjects);
+              }
+            }}
+            title="Zapnout nebo vypnout automatické přizpůsobení mapy objektům"
+            type="button"
+          >
+            Fit
+          </button>
+          <button className="map-action" onClick={onRequestUserLocation} type="button">
+            Poloha
+          </button>
+          <button
+            aria-pressed={mapFullscreen}
+            className={`map-action icon-map-action ${mapFullscreen ? "active" : ""}`}
+            onClick={() => setMapFullscreen((current) => !current)}
+            title={mapFullscreen ? "Ukončit celou obrazovku" : "Zobrazit mapu přes celou obrazovku"}
+            type="button"
+          >
+            {mapFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            <span>{mapFullscreen ? "Zmenšit" : "Mapa"}</span>
           </button>
         </div>
+        {selectionCard ? (
+          <div
+            className="map-selection-card"
+            onClick={stopMapToolbarEvent}
+            onDoubleClick={stopMapToolbarEvent}
+            onPointerDown={stopMapToolbarEvent}
+            onWheel={stopMapToolbarEvent}
+          >
+            <div>
+              <span>{selectionCard.eyebrow}</span>
+              <strong>{selectionCard.title}</strong>
+              <small>{selectionCard.subtitle}</small>
+            </div>
+            <button aria-label="Zrušit výběr" onClick={onClearSelection} title="Zrušit výběr" type="button">
+              <X size={15} />
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {onStartReport ? (
+        <button
+          className="map-report-button"
+          onClick={(event) => {
+            stopMapToolbarEvent(event);
+            onStartReport();
+          }}
+          onDoubleClick={stopMapToolbarEvent}
+          onPointerDown={stopMapToolbarEvent}
+          onWheel={stopMapToolbarEvent}
+          title="Přidat komunitní hlášení s polohou, popisem a fotkou"
+          type="button"
+        >
+          <Camera size={18} />
+          <span>Nahlásit</span>
+        </button>
       ) : null}
       <div className="map-legend">
         <LegendItem disposition="friend" color="#3b82f6" label="Vlastní" />
@@ -1844,6 +1885,46 @@ export function formatTrackLabel(object: CopObject): string {
   }
 
   return object.objectId;
+}
+
+function formatTrackSelectionSubtitle(object: CopObject): string {
+  return [
+    object.objectType,
+    formatMapAffiliation(object.affiliation),
+    object.status,
+    typeof object.confidence === "number" ? `${Math.round(object.confidence * 100)} %` : undefined
+  ].filter(Boolean).join(" · ");
+}
+
+function formatSituationFeatureTitle(feature: SituationFeature): string {
+  return feature.properties.headline ?? feature.properties.label;
+}
+
+function formatSituationFeatureSubtitle(feature: SituationFeature): string {
+  const status = situationFeatureStatus(feature);
+  return [
+    situationLayerDisplayName(feature),
+    feature.properties.category,
+    status.label,
+    typeof feature.properties.confidence === "number" ? `${Math.round(feature.properties.confidence * 100)} %` : undefined,
+    feature.properties.sourceId
+  ].filter(Boolean).join(" · ");
+}
+
+function situationLayerDisplayName(feature: SituationFeature): string {
+  if (isTakGatewayFeature(feature)) {
+    return `TAK ${feature.properties.layer}`;
+  }
+  const labels: Record<string, string> = {
+    air_quality: "Kvalita vzduchu",
+    flood: "Povodně",
+    ground: "Terén",
+    mobile: "Mobilní síť",
+    traffic: "Doprava",
+    warnings: "Výstrahy",
+    weather: "Počasí"
+  };
+  return labels[feature.properties.layer] ?? feature.properties.layer;
 }
 
 function formatMapAffiliation(value: string): string {
