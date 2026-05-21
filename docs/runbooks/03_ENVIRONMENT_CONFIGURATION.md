@@ -12,6 +12,7 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 - track lifecycle thresholds (`COP_TRACK_STALE_AFTER_MS`, `COP_TRACK_EXPIRE_AFTER_MS`),
 - temporal history persistence (`COP_TRACK_HISTORY_STORE`, `COP_DATABASE_URL`, `COP_DATABASE_SSL`),
 - user profile persistence (`COP_USER_PROFILE_STORE`, volitelně stejný `COP_DATABASE_URL` jako temporal store),
+- community report persistence (`COP_COMMUNITY_REPORT_STORE`, vyžaduje PostGIS při PostgreSQL backendu),
 - stream distribution limits (`COP_STREAM_BACKPRESSURE_CLIENTS`, `COP_STREAM_RETRY_MS`),
 - server-side veřejný letový zdroj ze SIM (`COP_FLIGHT_DATA_ENABLED`, `COP_FLIGHT_DATA_BASE_URL`, `COP_FLIGHT_DATA_SOURCE`, `COP_FLIGHT_DATA_POLL_MS`),
 - kontextové situační vrstvy ze SIM (`COP_SITUATION_DATA_ENABLED`, `COP_SITUATION_DATA_BASE_URL`, `COP_SITUATION_DATA_CACHE_TTL_MS`),
@@ -86,3 +87,15 @@ COP_TAK_GATEWAY_TIMEOUT_MS=7000
 ```
 
 TAK Gateway je defaultně vypnutý a jeho COP endpointy vyžadují přihlášenou relaci. Vrstva `traffic` je záměrně zobrazena jako `TAK Gateway > Traffic tracks`, aby se nepletla s veřejnou dopravní vrstvou ze `situation-data`.
+
+## Community Report Store
+
+Komunitní hlášení patří do COP, nikoli do SIM. Produkční režim používá stejný HA PostgreSQL/Patroni endpoint jako track history a user profile store. Databáze musí mít dostupné a vytvořené rozšíření PostGIS.
+
+```env
+COP_COMMUNITY_REPORT_STORE=postgres
+COP_DATABASE_URL=postgresql://cop_app:<password>@haproxy.home.cz:5000/cop
+COP_DATABASE_SSL=false
+```
+
+Store při inicializaci vytvoří/aktualizuje tabulky `cop_community_reports` a `cop_community_report_attachments`, doplní `geometry(Point,4326)` sloupce a GiST indexy. Binární média se neukládají do PostgreSQL; metadata příloh odkazují na SeaweedFS/S3 objekt přes `bucket` a `objectKey`.

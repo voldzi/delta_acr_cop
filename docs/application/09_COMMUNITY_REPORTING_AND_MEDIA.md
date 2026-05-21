@@ -21,6 +21,16 @@ SeaweedFS/S3 ukládá:
 
 PostgreSQL neukládá binární fotky. Obsahuje pouze `bucket`, `objectKey`, typ souboru, velikost, stav uploadu a volitelnou polohu pořízení.
 
+## PostGIS spatial model
+
+Produkční COP databáze používá PostGIS pro vlastní prostorová data aplikace:
+
+- `cop_community_reports.location_geom geometry(Point, 4326)` pro polohu události,
+- `cop_community_report_attachments.capture_geom geometry(Point, 4326)` pro volitelnou polohu pořízení přílohy,
+- GiST indexy nad oběma geometriemi.
+
+Sloupce `lat/lon` zůstávají zachované kvůli API kompatibilitě a čitelnosti. Při startu PostgreSQL store provede idempotentní migraci, doplní geometrii pro existující řádky a následné bbox dotazy `GET /api/v1/community/reports?bbox=...` používají PostGIS envelope nad `location_geom`.
+
 ## API
 
 Nové endpointy:

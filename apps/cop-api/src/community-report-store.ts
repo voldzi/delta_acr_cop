@@ -300,13 +300,16 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
         lon,
         location_accuracy_m,
         location_source,
+        location_geom,
         observed_at,
         properties,
         created_at,
         updated_at
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6, $7, 'draft', $8, $9, $10, $11, $12, $13::timestamptz, $14::jsonb, $15::timestamptz, $15::timestamptz
+        $1, $2, $3, $4, $5, $6, $7, 'draft', $8, $9, $10, $11, $12,
+        ST_SetSRID(ST_MakePoint($10::double precision, $9::double precision), 4326),
+        $13::timestamptz, $14::jsonb, $15::timestamptz, $15::timestamptz
       )
       RETURNING *`,
       [
@@ -397,11 +400,17 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
         capture_lon,
         capture_accuracy_m,
         capture_location_source,
+        capture_geom,
         upload_expires_at,
         metadata
       )
       VALUES (
-        $1, $2, $3, $4, 'pending_upload', $5, $6, $7, $8, $9, $10, $11::timestamptz, $12, $13, $14, $15, $16::timestamptz, $17::jsonb
+        $1, $2, $3, $4, 'pending_upload', $5, $6, $7, $8, $9, $10, $11::timestamptz, $12, $13, $14, $15,
+        CASE
+          WHEN $12::double precision IS NULL OR $13::double precision IS NULL THEN NULL
+          ELSE ST_SetSRID(ST_MakePoint($13::double precision, $12::double precision), 4326)
+        END,
+        $16::timestamptz, $17::jsonb
       )
       RETURNING *`,
       [
@@ -522,6 +531,8 @@ interface CommunityAttachmentRow extends QueryResultRow {
 }
 
 const createCommunityReportTablesSql = `
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 CREATE TABLE IF NOT EXISTS cop_community_reports (
   report_id uuid PRIMARY KEY,
   subject_id text NOT NULL,
@@ -544,6 +555,13 @@ CREATE TABLE IF NOT EXISTS cop_community_reports (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE cop_community_reports
+  ADD COLUMN IF NOT EXISTS location_geom geometry(Point, 4326);
+
+UPDATE cop_community_reports
+SET location_geom = ST_SetSRID(ST_MakePoint(lon, lat), 4326)
+WHERE location_geom IS NULL;
+
 CREATE INDEX IF NOT EXISTS cop_community_reports_status_observed_idx
   ON cop_community_reports (status, observed_at DESC);
 
@@ -552,6 +570,9 @@ CREATE INDEX IF NOT EXISTS cop_community_reports_subject_updated_idx
 
 CREATE INDEX IF NOT EXISTS cop_community_reports_location_idx
   ON cop_community_reports (lat, lon);
+
+CREATE INDEX IF NOT EXISTS cop_community_reports_location_gix
+  ON cop_community_reports USING gist (location_geom);
 
 CREATE TABLE IF NOT EXISTS cop_community_report_attachments (
   attachment_id uuid PRIMARY KEY,
@@ -576,8 +597,21 @@ CREATE TABLE IF NOT EXISTS cop_community_report_attachments (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE cop_community_report_attachments
+  ADD COLUMN IF NOT EXISTS capture_geom geometry(Point, 4326);
+
+UPDATE cop_community_report_attachments
+SET capture_geom = ST_SetSRID(ST_MakePoint(capture_lon, capture_lat), 4326)
+WHERE capture_geom IS NULL
+  AND capture_lon IS NOT NULL
+  AND capture_lat IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS cop_community_attachments_report_idx
   ON cop_community_report_attachments (report_id, created_at ASC);
+
+CREATE INDEX IF NOT EXISTS cop_community_attachments_capture_gix
+  ON cop_community_report_attachments USING gist (capture_geom)
+  WHERE capture_geom IS NOT NULL;
 `;
 
 function reportFromRow(row: CommunityReportRow, attachments: CommunityReportAttachmentRecord[]): CommunityReportRecord {
@@ -659,10 +693,13 @@ function buildCommunityQueryClauses(query: CommunityReportQuery, params: unknown
     clauses.push(`category = ANY(${addParam(params, query.categories)}::text[])`);
   }
   if (query.bbox) {
-    clauses.push(`lon >= ${addParam(params, query.bbox.west)}`);
-    clauses.push(`lat >= ${addParam(params, query.bbox.south)}`);
-    clauses.push(`lon <= ${addParam(params, query.bbox.east)}`);
-    clauses.push(`lat <= ${addParam(params, query.bbox.north)}`);
+    const westParam = addParam(params, query.bbox.west);
+    const southParam = addParam(params, query.bbox.south);
+    const eastParam = addParam(params, query.bbox.east);
+    const northParam = addParam(params, query.bbox.north);
+    clauses.push(
+      `location_geom && ST_MakeEnvelope(${westParam}, ${southParam}, ${eastParam}, ${northParam}, 4326)`
+    );
   }
   return clauses;
 }
