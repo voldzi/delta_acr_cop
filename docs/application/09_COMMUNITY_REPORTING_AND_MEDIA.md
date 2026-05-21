@@ -100,6 +100,9 @@ COP_MEDIA_MAX_ATTACHMENT_BYTES=26214400
 ```
 
 Pro produkci doporučuji samostatný bucket `cop-community-media` a samostatné S3 credentials jen pro COP.
+API při startu ověří dostupnost bucketu a při HTTP 404 se ho pokusí založit. Stav je vidět v `/health/dependencies` jako `media-storage`.
+
+Poznámka k veřejnému provozu: `COP_MEDIA_S3_PUBLIC_ENDPOINT` musí být dosažitelný z klienta, který přílohu nahrává. Pro web na `https://cop.zeleznalady.cz` má být cílový endpoint také HTTPS, typicky samostatný reverse proxy vhost `https://media.zeleznalady.cz` na SeaweedFS S3 endpoint `http://docker.home.cz:8333`. Do doby zřízení veřejného media vhostu je `http://docker.home.cz:8333` použitelné hlavně z interní sítě a pro backendové ověření.
 
 ## iOS tok
 

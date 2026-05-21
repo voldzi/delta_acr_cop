@@ -292,7 +292,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       await mediaStorage.init();
       mediaStorageStatus = "ok";
-      mediaStorageDetail = `${mediaStorage.name}: ready`;
+      const diagnostics = mediaStorage.diagnostics?.();
+      mediaStorageDetail = `${mediaStorage.name}: ready${diagnostics ? `; ${diagnostics}` : ""}`;
     } catch (error) {
       mediaStorageStatus = "degraded";
       mediaStorageDetail = `${mediaStorage.name}: ${errorMessage(error)}`;
