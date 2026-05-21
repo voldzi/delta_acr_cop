@@ -454,6 +454,8 @@ export function App() {
 
     let active = true;
     let reconnectTimer: number | undefined;
+    let streamFlushTimer: number | undefined;
+    const pendingStreamMessages: CopStreamMessage[] = [];
     const scheduleReconnect = () => {
       reconnectTimer = window.setTimeout(() => {
         if (active) {
@@ -461,10 +463,54 @@ export function App() {
         }
       }, 5000);
     };
+    const clearStreamFlushTimer = () => {
+      if (streamFlushTimer !== undefined) {
+        window.clearTimeout(streamFlushTimer);
+        streamFlushTimer = undefined;
+      }
+    };
+    const flushStreamMessages = () => {
+      if (!active || pendingStreamMessages.length === 0) {
+        clearStreamFlushTimer();
+        return;
+      }
+      const messages = pendingStreamMessages.splice(0);
+      clearStreamFlushTimer();
+      setStreamTelemetry((current) =>
+        messages.reduce((telemetry, message) => updateStreamTelemetryForMessage(telemetry, message), current)
+      );
+      applyCopStreamMessages(messages, {
+        setLastLoadedAt,
+        setLastStreamAt,
+        setObjects,
+        setStreamStatus,
+        setTrackHistory,
+        trackHistoryLimit,
+        trackHistoryWindowSeconds
+      });
+    };
+    const scheduleStreamFlush = (mode: "deferred" | "immediate" = "deferred") => {
+      if (mode === "immediate") {
+        flushStreamMessages();
+        return;
+      }
+      if (streamFlushTimer !== undefined) {
+        return;
+      }
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      streamFlushTimer = window.setTimeout(flushStreamMessages, hidden ? 2500 : 750);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        flushStreamMessages();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     setStreamStatus("connecting");
     const connection = connectCopStream(apiBase, authToken, {
       onError: (error) => {
         if (active) {
+          flushStreamMessages();
           setStreamTelemetry((current) => updateStreamTelemetryForError(current, error));
           setStreamStatus(browserOnline ? "degraded" : "offline");
           scheduleReconnect();
@@ -474,21 +520,14 @@ export function App() {
         if (!active) {
           return;
         }
-        setStreamTelemetry((current) => updateStreamTelemetryForMessage(current, message));
+        pendingStreamMessages.push(message);
         if (message.type === "reconnect_required") {
+          scheduleStreamFlush("immediate");
           setStreamStatus("degraded");
           setStreamReconnectAttempt((current) => current + 1);
           return;
         }
-        applyCopStreamMessage(message, {
-          setLastLoadedAt,
-          setLastStreamAt,
-          setObjects,
-          setStreamStatus,
-          setTrackHistory,
-          trackHistoryLimit,
-          trackHistoryWindowSeconds
-        });
+        scheduleStreamFlush(message.type === "snapshot" || message.type === "backpressure" ? "immediate" : "deferred");
       },
       onOpen: () => {
         if (active) {
@@ -503,6 +542,9 @@ export function App() {
       scheduleReconnect();
       return () => {
         active = false;
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        clearStreamFlushTimer();
+        pendingStreamMessages.length = 0;
         if (reconnectTimer !== undefined) {
           window.clearTimeout(reconnectTimer);
         }
@@ -511,6 +553,9 @@ export function App() {
 
     return () => {
       active = false;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearStreamFlushTimer();
+      pendingStreamMessages.length = 0;
       if (reconnectTimer !== undefined) {
         window.clearTimeout(reconnectTimer);
       }
@@ -2600,8 +2645,8 @@ function OfflineSnapshotNotice({ mode, state }: { mode: OperatingMode; state: Of
   );
 }
 
-function applyCopStreamMessage(
-  message: CopStreamMessage,
+function applyCopStreamMessages(
+  messages: CopStreamMessage[],
   context: {
     setLastLoadedAt: React.Dispatch<React.SetStateAction<string | null>>;
     setLastStreamAt: React.Dispatch<React.SetStateAction<string | null>>;
@@ -2612,20 +2657,56 @@ function applyCopStreamMessage(
     trackHistoryWindowSeconds: number;
   }
 ): void {
-  const observedAt = message.serverTimestamp || new Date().toISOString();
-  const observedAtLabel = formatStreamTime(observedAt);
-  context.setLastStreamAt(observedAtLabel);
-  context.setStreamStatus("live");
-
-  if (message.type === "heartbeat" || message.type === "backpressure" || message.type === "reconnect_required") {
+  const latestMessage = messages.at(-1);
+  if (!latestMessage) {
     return;
   }
 
-  const changedObjects = message.changes.map((change) => change.object);
-  context.setLastLoadedAt(observedAtLabel);
-  context.setObjects((current) => message.type === "snapshot" ? changedObjects : upsertObjects(current, changedObjects));
+  const observedAt = latestMessage.serverTimestamp || new Date().toISOString();
+  const observedAtLabel = formatStreamTime(observedAt);
+  context.setLastStreamAt(observedAtLabel);
+  context.setStreamStatus(latestMessage.type === "reconnect_required" ? "degraded" : "live");
+
+  const dataMessages = messages.filter((message) => message.type === "snapshot" || message.type === "delta");
+  if (dataMessages.length === 0) {
+    return;
+  }
+
+  const latestDataMessage = dataMessages.at(-1);
+  if (latestDataMessage) {
+    context.setLastLoadedAt(formatStreamTime(latestDataMessage.serverTimestamp || observedAt));
+  }
+
+  let lastSnapshotIndex = -1;
+  dataMessages.forEach((message, index) => {
+    if (message.type === "snapshot") {
+      lastSnapshotIndex = index;
+    }
+  });
+
+  if (lastSnapshotIndex >= 0) {
+    const snapshotObjects = dataMessages[lastSnapshotIndex]!.changes.map((change) => change.object);
+    const deltaObjects = dataMessages
+      .slice(lastSnapshotIndex + 1)
+      .flatMap((message) => message.changes.map((change) => change.object));
+    context.setObjects(upsertObjects(snapshotObjects, deltaObjects));
+  } else {
+    const deltaObjects = dataMessages.flatMap((message) => message.changes.map((change) => change.object));
+    context.setObjects((current) => upsertObjects(current, deltaObjects));
+  }
+
   context.setTrackHistory((current) =>
-    mergeTrackHistory(current, changedObjects, observedAt, context.trackHistoryLimit, context.trackHistoryWindowSeconds)
+    dataMessages.reduce(
+      (history, message) =>
+        mergeTrackHistory(
+          history,
+          message.changes.map((change) => change.object),
+          message.serverTimestamp || observedAt,
+          context.trackHistoryLimit,
+          context.trackHistoryWindowSeconds
+        ),
+      current
+    )
   );
 }
 

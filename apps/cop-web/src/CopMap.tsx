@@ -1188,11 +1188,15 @@ export function CopMap({
     if (mapReady && source && "setData" in source) {
       (source as GeoJSONSource).setData(featureCollection as Parameters<GeoJSONSource["setData"]>[0]);
     }
+  }, [featureCollection, mapReady]);
+
+  React.useEffect(() => {
     const clusterSource = mapRef.current?.getSource(trackClusterSourceId);
     if (mapReady && clusterSource && "setData" in clusterSource) {
-      (clusterSource as GeoJSONSource).setData(featureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+      const clusterData = clusterTracks ? featureCollection : emptyTrackFeatureCollection();
+      (clusterSource as GeoJSONSource).setData(clusterData as Parameters<GeoJSONSource["setData"]>[0]);
     }
-  }, [featureCollection, mapReady]);
+  }, [clusterTracks, featureCollection, mapReady]);
 
   React.useEffect(() => {
     const map = mapRef.current;
@@ -2017,6 +2021,13 @@ export function userAlertRadiusToFeatureCollection(
 }
 
 function emptyLineFeatureCollection(): TrackLineFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: []
+  };
+}
+
+function emptyTrackFeatureCollection(): TrackFeatureCollection {
   return {
     type: "FeatureCollection",
     features: []
