@@ -737,7 +737,7 @@ export function App() {
   const visibleSituationSourceKey = visibleSituationSourceIds.join(",");
   const visibleSafetyLayerKey = visibleSafetyLayerIds.join(",");
   const visibleTakLayerKey = visibleTakLayerIds.join(",");
-  const situationCoverageEnabled = visibleSituationLayerIds.includes("mobile_coverage");
+  const situationCoverageEnabled = visibleSituationLayerIds.includes("mobile_coverage") || visibleSituationLayerIds.includes("mobile_network");
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -2516,7 +2516,7 @@ function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
   return (
     <ObjectDetailSection title="Vybraný situační prvek">
       <DetailGrid rows={rows} />
-      {feature.properties.layer === "mobile_coverage" ? <MobileCoverageSummary feature={feature} /> : null}
+      {feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network" ? <MobileCoverageSummary feature={feature} /> : null}
       {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
     </ObjectDetailSection>
@@ -2529,6 +2529,7 @@ function MobileCoverageSummary({ feature }: { feature: SituationFeature }) {
   return (
     <div className="mobile-status-summary">
       <DataMetric label="Kvalita" value={quality.label} tone={quality.tone} />
+      <DataMetric label="Stav" value={formatMobileNetworkStatus(properties.status)} tone="neutral" />
       <DataMetric label="Technologie" value={properties.technology ?? "n/a"} tone="neutral" />
       <DataMetric label="Signál" value={formatOptionalNumber(properties.estimatedSignalDbm, " dBm")} tone={mobileMetricTone(properties.estimatedSignalDbm, -95, -110, true)} />
       <DataMetric label="Model" value={properties.modelVersion ?? "n/a"} tone="neutral" />
@@ -3447,7 +3448,7 @@ function SituationLayerControls({
 }) {
   const layerItems = layers.length > 0 ? layers : defaultSituationLayers();
   const sourceItems = sources.filter((source) => !isSafetyOnlySituationSource(source));
-  const coverageEnabled = visibleLayerIds.includes("mobile_coverage");
+  const coverageEnabled = visibleLayerIds.includes("mobile_coverage") || visibleLayerIds.includes("mobile_network");
   return (
     <div className="situation-layer-box">
       <div className="situation-layer-header">
@@ -3463,15 +3464,15 @@ function SituationLayerControls({
               type="checkbox"
             />
             <span>
-              <strong>{layer.label}</strong>
+              <strong>{situationLayerLabel(layer.layerId)}</strong>
               <small>{situationLayerHint(layer)}</small>
             </span>
           </label>
         ))}
       </div>
       {coverageEnabled ? (
-        <div className="coverage-technology-control" aria-label="Technologie modelu mobilního pokrytí">
-          <span>Pokrytí</span>
+        <div className="coverage-technology-control" aria-label="Technologie modelu mobilní sítě">
+          <span>Mobilní síť</span>
           <div>
             {coverageTechnologyOptions.map((technology) => (
               <button
@@ -3947,15 +3948,19 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
         />
       </ObjectDetailSection>
 
-      {properties.layer === "mobile_coverage" ? (
-        <ObjectDetailSection title="Mobilní pokrytí">
+      {properties.layer === "mobile_coverage" || properties.layer === "mobile_network" ? (
+        <ObjectDetailSection title={properties.layer === "mobile_network" ? "Mobilní síť" : "Mobilní pokrytí"}>
           <DetailGrid
             rows={[
               ["Kvalita", mobileCoverageQualityModel(properties.quality).label],
+              ["Stav", formatMobileNetworkStatus(properties.status)],
               ["Technologie", properties.technology ?? "n/a"],
               ["Operátor", properties.operator ?? "n/a"],
               ["Odhad signálu", formatOptionalNumber(properties.estimatedSignalDbm, " dBm")],
               ["Confidence", formatOptionalPercent(properties.confidence)],
+              ["Shrnutí", properties.summary ?? "n/a"],
+              ["Vysvětlení dat", formatStringList(properties.basis)],
+              ["Poznámky", formatStringList(properties.notices)],
               ["Model", properties.modelVersion ?? "n/a"],
               ["Vygenerováno", formatShortDateTime(properties.generatedAt)],
               ["Rozlišení", formatOptionalNumber(properties.resolutionM, " m")],
@@ -4502,10 +4507,18 @@ function defaultSituationLayers(): SituationLayer[] {
     },
     {
       defaultVisible: false,
-      description: "Modelový odhad mobilního pokrytí ze SIM.",
+      description: "Sjednocené občanské hodnocení mobilní sítě ze SIM.",
       expectedCadenceSeconds: 600,
       geometryTypes: ["Polygon"],
-      label: "Mobilní pokrytí",
+      label: "Mobilní síť",
+      layerId: "mobile_network"
+    },
+    {
+      defaultVisible: false,
+      description: "Technický modelový odhad pokrytí ze SIM.",
+      expectedCadenceSeconds: 600,
+      geometryTypes: ["Polygon"],
+      label: "Technické pokrytí",
       layerId: "mobile_coverage"
     },
     {
@@ -4611,7 +4624,8 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     flood: "Povodně",
     ground: "Terén",
     mobile: "Mobilní síť",
-    mobile_coverage: "Mobilní pokrytí",
+    mobile_coverage: "Technické pokrytí",
+    mobile_network: "Mobilní síť",
     traffic: "Doprava",
     warnings: "Výstrahy",
     weather: "Počasí"
@@ -4761,7 +4775,7 @@ function formatGeocodes(value: Array<{ scheme: string; value: string }> | undefi
 }
 
 function situationFeatureStatusModel(feature: SituationFeature): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } {
-  if (feature.properties.layer === "mobile_coverage") {
+  if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     const coverage = mobileCoverageQualityModel(feature.properties.quality);
     return feature.properties.stale && coverage.tone === "ok" ? { label: `${coverage.label} · STALE`, tone: "warn" } : coverage;
   }
@@ -4811,6 +4825,26 @@ function mobileCoverageQualityModel(quality: string | undefined): { label: strin
     return { label: "BEZ SIGNÁLU", tone: "critical" };
   }
   return { label: "NEZNÁMÉ", tone: "neutral" };
+}
+
+function formatMobileNetworkStatus(status: string | undefined): string {
+  const normalized = status?.trim().toLowerCase();
+  if (normalized === "weak_signal") {
+    return "Slabý signál";
+  }
+  if (normalized === "degraded_possible") {
+    return "Možná degradace";
+  }
+  if (normalized === "outage_reported") {
+    return "Hlášený výpadek";
+  }
+  if (normalized === "ok") {
+    return "OK";
+  }
+  if (normalized === "unknown") {
+    return "Nedostatek dat";
+  }
+  return status ?? "n/a";
 }
 
 function isAviationWeatherFeature(feature: SituationFeature): boolean {
@@ -5230,6 +5264,7 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "ground"
     || value === "mobile"
     || value === "mobile_coverage"
+    || value === "mobile_network"
     || value === "traffic"
     || value === "warnings"
     || value === "flood"

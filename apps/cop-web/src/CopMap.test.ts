@@ -283,6 +283,74 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("adds unified mobile network polygon render metadata from SIM quality", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [14.2, 49.95],
+              [14.3, 49.95],
+              [14.3, 50.05],
+              [14.2, 50.05],
+              [14.2, 49.95]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            basis: ["CTU_NETTEST_MEASUREMENT", "INFERRED_COVERAGE"],
+            category: "mobile_network",
+            confidence: 0.62,
+            featureId: "mobile_network:aggregate:4g:6-4",
+            label: "4G mobile network assessment",
+            layer: "mobile_network",
+            observedAt: "2026-05-21T16:08:56.211Z",
+            quality: "fair",
+            sourceId: "mobile_network_model",
+            status: "degraded_possible",
+            stale: false,
+            summary: "Mobilní síť je použitelná s omezením.",
+            technology: "4G"
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-21T16:08:56.211Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["mobile_network"],
+        limit: 250,
+        sources: ["mobile_network_model"],
+        technology: "4G"
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      coverageColor: "#facc15",
+      coverageLabel: "4G SLUŠNÉ",
+      coverageQuality: "fair",
+      coverageTechnology: "4G",
+      featureId: "mobile_network:aggregate:4g:6-4",
+      layer: "mobile_network",
+      situationStatusLabel: "SLUŠNÉ",
+      situationStatusTone: "warning"
+    });
+  });
+
   it("suppresses synthetic warning points from map marker rendering", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",

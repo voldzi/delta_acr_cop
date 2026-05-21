@@ -333,7 +333,7 @@ export function CopMap({
     [selectedSituationFeatureId, situationFeatures]
   );
   const hasMobileCoverageFeatures = React.useMemo(
-    () => situationFeatureCollection.features.some((feature) => feature.properties.layer === "mobile_coverage"),
+    () => situationFeatureCollection.features.some((feature) => feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network"),
     [situationFeatureCollection]
   );
 
@@ -529,6 +529,8 @@ export function CopMap({
                 "#a78bfa",
                 "mobile_coverage",
                 "#22c55e",
+                "mobile_network",
+                "#22c55e",
                 "traffic",
                 "#facc15",
                 "warnings",
@@ -543,6 +545,8 @@ export function CopMap({
             "fill-opacity": [
               "case",
               ["==", ["get", "layer"], "mobile_coverage"],
+              ["case", ["get", "stale"], 0.1, 0.2],
+              ["==", ["get", "layer"], "mobile_network"],
               ["case", ["get", "stale"], 0.1, 0.2],
               ["get", "stale"],
               0.06,
@@ -575,6 +579,8 @@ export function CopMap({
                 "#a78bfa",
                 "mobile_coverage",
                 "#22c55e",
+                "mobile_network",
+                "#22c55e",
                 "traffic",
                 "#facc15",
                 "warnings",
@@ -590,6 +596,8 @@ export function CopMap({
             "line-opacity": [
               "case",
               ["==", ["get", "layer"], "mobile_coverage"],
+              ["case", ["get", "stale"], 0.42, 0.62],
+              ["==", ["get", "layer"], "mobile_network"],
               ["case", ["get", "stale"], 0.42, 0.62],
               ["get", "stale"],
               0.48,
@@ -1630,7 +1638,7 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
       situationStatusTone: status.tone
     };
   }
-  if (feature.properties.layer === "mobile_coverage") {
+  if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     return {
       coverageColor: status.color,
       coverageLabel: formatCoverageLabel(feature),
@@ -1694,7 +1702,7 @@ function isSyntheticWarningPoint(feature: SituationFeature): boolean {
 }
 
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
-  if (feature.properties.layer === "mobile_coverage") {
+  if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     const coverage = mobileCoverageStatus(feature.properties.quality);
     return feature.properties.stale ? { ...coverage, label: `${coverage.label} · STALE`, tone: coverage.tone === "info" ? "warning" : coverage.tone } : coverage;
   }
@@ -1985,9 +1993,9 @@ function formatSituationFeatureTitle(feature: SituationFeature): string {
 
 function formatSituationFeatureSubtitle(feature: SituationFeature): string {
   const status = situationFeatureStatus(feature);
-  if (feature.properties.layer === "mobile_coverage") {
+  if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     return [
-      "Mobilní pokrytí",
+      feature.properties.layer === "mobile_network" ? "Mobilní síť" : "Technické pokrytí",
       feature.properties.technology,
       status.label,
       typeof feature.properties.estimatedSignalDbm === "number" ? `${Math.round(feature.properties.estimatedSignalDbm)} dBm` : undefined,
@@ -2012,7 +2020,8 @@ function situationLayerDisplayName(feature: SituationFeature): string {
     flood: "Povodně",
     ground: "Terén",
     mobile: "Mobilní síť",
-    mobile_coverage: "Mobilní pokrytí",
+    mobile_coverage: "Technické pokrytí",
+    mobile_network: "Mobilní síť",
     traffic: "Doprava",
     warnings: "Výstrahy",
     weather: "Počasí"
@@ -2740,12 +2749,12 @@ function SituationLegendItem({ label }: { label: string }) {
 
 function CoverageLegendItem() {
   return (
-    <div className="legend-item coverage-legend-item" title="Modelový odhad, ne garantované pokrytí operátora.">
+    <div className="legend-item coverage-legend-item" title="Modelové hodnocení, ne garantované pokrytí ani potvrzený výpadek operátora.">
       <span className="legend-coverage-swatch good" />
       <span className="legend-coverage-swatch fair" />
       <span className="legend-coverage-swatch weak" />
       <span className="legend-coverage-swatch none" />
-      Mobilní pokrytí
+      Mobilní síť
     </div>
   );
 }

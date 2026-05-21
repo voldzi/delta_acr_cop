@@ -2857,7 +2857,7 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
     safetyLayerIds: optionalStringArray(value.safetyLayerIds, ["warnings", "flood"]),
-    situationLayerIds: optionalStringArray(value.situationLayerIds, ["weather", "ground", "mobile", "traffic", "air_quality"]),
+    situationLayerIds: optionalStringArray(value.situationLayerIds, ["weather", "ground", "mobile", "mobile_network", "mobile_coverage", "traffic", "air_quality"]),
     situationSourceIds: normalizeStringList(value.situationSourceIds, 32, 80),
     takLayerIds: optionalStringArray(value.takLayerIds, ["mobile", "ground", "traffic"]),
     trackLayerIds: optionalStringArray(value.trackLayerIds, ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"]),

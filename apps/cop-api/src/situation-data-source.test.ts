@@ -204,6 +204,49 @@ describe("SituationDataSourceAdapter", () => {
     ]);
   });
 
+  it("proxies unified mobile network layer and preserves assessment metadata", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleMobileNetworkFeatureCollection()), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SituationDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/situation-data/api/v1",
+      cacheTtlMs: 20000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const features = await adapter.fetchFeatures({
+      bbox: { east: 14.6, north: 50.2, south: 49.95, west: 14.2 },
+      layers: ["mobile_network"],
+      limit: 20,
+      sources: ["mobile_network_model"],
+      technology: "4g"
+    }, new Date("2026-05-21T16:20:00Z"));
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=mobile_network&limit=20&source=mobile_network_model&technology=4G"
+    );
+    expect(features.cache?.ttlMs).toBe(10 * 60 * 1000);
+    expect(features.features).toMatchObject([
+      {
+        properties: {
+          basis: ["CTU_NETTEST_MEASUREMENT", "INFERRED_COVERAGE"],
+          disclaimer: "Inferred assessment, not guaranteed service availability.",
+          featureId: "mobile_network:aggregate:4g:6-4",
+          layer: "mobile_network",
+          notices: ["No operator BTS status feed."],
+          operator: "aggregate",
+          quality: "fair",
+          sourceId: "mobile_network_model",
+          status: "degraded_possible",
+          summary: "Mobilní síť je použitelná s omezením.",
+          technology: "4G"
+        }
+      }
+    ]);
+  });
+
   it("falls back to layer ttl when an explicit source has no source-specific ttl", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -345,6 +388,81 @@ function sampleCoverageFeatureCollection() {
       featureCount: 2,
       sourceCount: 1,
       staleFeatureCount: 1,
+      warningCount: 0
+    },
+    type: "FeatureCollection",
+    warnings: []
+  };
+}
+
+function sampleMobileNetworkFeatureCollection() {
+  return {
+    contractVersion: "cop-situation-source-v1",
+    features: [
+      {
+        geometry: {
+          coordinates: [[
+            [14.2, 49.95],
+            [14.3, 49.95],
+            [14.3, 50.05],
+            [14.2, 50.05],
+            [14.2, 49.95]
+          ]],
+          type: "Polygon"
+        },
+        id: "mobile_network:aggregate:4g:6-4",
+        properties: {
+          basis: ["CTU_NETTEST_MEASUREMENT", "INFERRED_COVERAGE"],
+          category: "mobile_network",
+          confidence: 0.62,
+          demSource: "not-used-phase-1",
+          disclaimer: "Inferred assessment, not guaranteed service availability.",
+          estimatedSignalDbm: -98,
+          featureId: "mobile_network:aggregate:4g:6-4",
+          generatedAt: "2026-05-21T16:08:56.211Z",
+          label: "4G mobile network assessment",
+          layer: "mobile_network",
+          modelVersion: "mobile-network-v1",
+          notices: ["No operator BTS status feed."],
+          observedAt: "2026-05-21T16:08:56.211Z",
+          operator: "aggregate",
+          quality: "fair",
+          resolutionM: 1000,
+          severity: "warning",
+          sourceId: "mobile_network_model",
+          stale: false,
+          status: "degraded_possible",
+          summary: "Mobilní síť je použitelná s omezením.",
+          technology: "4G"
+        },
+        type: "Feature"
+      }
+    ],
+    generatedAt: "2026-05-21T16:08:56.211Z",
+    query: {
+      bbox: { east: 14.6, north: 50.2, south: 49.95, west: 14.2 },
+      layers: ["mobile_network"],
+      limit: 20,
+      sources: ["mobile_network_model"],
+      technology: "4G"
+    },
+    source: {
+      generatedAt: "2026-05-21T16:08:56.211Z",
+      sourceId: "situation-data-api",
+      sourceType: "PUBLIC_SITUATION_AGGREGATE"
+    },
+    sources: [
+      {
+        enabled: true,
+        label: "Unified mobile network assessment",
+        layers: ["mobile_network"],
+        sourceId: "mobile_network_model"
+      }
+    ],
+    summary: {
+      featureCount: 1,
+      sourceCount: 1,
+      staleFeatureCount: 0,
       warningCount: 0
     },
     type: "FeatureCollection",

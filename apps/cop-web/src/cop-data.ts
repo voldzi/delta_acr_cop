@@ -129,7 +129,7 @@ export interface CopDashboardData {
   trackHistory?: Record<string, ServerTrackHistoryPoint[]>;
 }
 
-export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "mobile_coverage" | "traffic" | "warnings" | "weather";
+export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "mobile_coverage" | "mobile_network" | "traffic" | "warnings" | "weather";
 export type SafetyLayerId = "flood" | "warnings";
 export type TakLayerId = "ground" | "mobile" | "traffic";
 export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "mock";
@@ -230,6 +230,8 @@ export interface SituationFeatureProperties {
   license?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
   modelVersion?: string;
+  basis?: string[];
+  notices?: string[];
   observedAt?: string;
   operator?: string;
   quality?: string;
@@ -239,6 +241,8 @@ export interface SituationFeatureProperties {
   severity?: string;
   sourceId: string;
   stale?: boolean;
+  status?: string;
+  summary?: string;
   tags?: Record<string, unknown>;
   technology?: string;
   urgency?: string;

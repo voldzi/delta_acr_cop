@@ -1,7 +1,7 @@
 import { createPublicSituationAggregateSourceSystem, type SourceSystem } from "@cop/canonical-model";
 import type { SourceHealthOverride } from "./types.js";
 
-export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "mobile_coverage" | "traffic" | "warnings" | "weather";
+export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "mobile_coverage" | "mobile_network" | "traffic" | "warnings" | "weather";
 
 type SituationCacheStatus = "coalesced" | "hit" | "miss" | "stale";
 
@@ -115,10 +115,14 @@ export interface SituationFeatureProperties {
   observedAt?: string;
   operator?: string;
   quality?: string;
+  basis?: string[];
+  notices?: string[];
   resolutionM?: number;
   severity?: "advisory" | "critical" | "info" | "warning" | string;
   sourceId: string;
   stale?: boolean;
+  status?: string;
+  summary?: string;
   tags?: Record<string, unknown>;
   technology?: string;
   validUntil?: string;
@@ -156,6 +160,7 @@ const defaultConfig: SituationDataSourceConfig = {
     ground: 6 * 60 * 60 * 1000,
     mobile: 15 * 60 * 1000,
     mobile_coverage: 10 * 60 * 1000,
+    mobile_network: 10 * 60 * 1000,
     traffic: 20 * 1000,
     warnings: 5 * 60 * 1000,
     weather: 5 * 60 * 1000
@@ -165,13 +170,14 @@ const defaultConfig: SituationDataSourceConfig = {
     ardos_partner: 10 * 1000,
     aviation_weather: 120 * 1000,
     mobile_coverage_model: 10 * 60 * 1000,
+    mobile_network_model: 10 * 60 * 1000,
     osm_postgis: 6 * 60 * 60 * 1000
   },
   staleIfErrorMs: 10 * 60 * 1000,
   timeoutMs: 7000
 };
 
-const allowedLayerIds: SituationLayerId[] = ["weather", "ground", "mobile", "mobile_coverage", "traffic", "warnings", "flood", "air_quality"];
+const allowedLayerIds: SituationLayerId[] = ["weather", "ground", "mobile", "mobile_network", "mobile_coverage", "traffic", "warnings", "flood", "air_quality"];
 
 export function createSituationDataSourceConfigFromEnv(env: Record<string, string | undefined> = process.env): SituationDataSourceConfig {
   const cacheTtlMs = readInteger(env.COP_SITUATION_DATA_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 300000);
@@ -186,6 +192,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       ground: readInteger(env.COP_SITUATION_DATA_GROUND_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile: readInteger(env.COP_SITUATION_DATA_MOBILE_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_coverage: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      mobile_network: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       traffic: readInteger(env.COP_SITUATION_DATA_TRAFFIC_CACHE_TTL_MS, cacheTtlMs, 1000, 5 * 60 * 1000),
       warnings: readInteger(env.COP_SITUATION_DATA_WARNINGS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
@@ -195,6 +202,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       ardos_partner: readInteger(env.COP_SITUATION_DATA_ARDOS_CACHE_TTL_MS, 10 * 1000, 1000, 5 * 60 * 1000),
       aviation_weather: readInteger(env.COP_SITUATION_DATA_AVIATION_WEATHER_CACHE_TTL_MS, 120 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_coverage_model: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      mobile_network_model: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       osm_postgis: readInteger(env.COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
     },
     staleIfErrorMs: readInteger(env.COP_SITUATION_DATA_STALE_IF_ERROR_MS, defaultConfig.staleIfErrorMs ?? 600000, 0, 24 * 60 * 60 * 1000),
@@ -452,7 +460,7 @@ export function parseSituationFeatureQuery(rawQuery: Record<string, unknown>, co
     layers: parseSituationLayers(typeof rawQuery.layers === "string" ? rawQuery.layers : undefined),
     limit: optionalNumber(rawQuery.limit) ?? config.maxLimit,
     sources: parseSituationSources(rawQuery),
-    technology: parseCoverageTechnology(rawQuery.technology)
+    technology: parseCoverageTechnology(rawQuery.technology ?? rawQuery.technologies)
   }, config);
 }
 
@@ -500,7 +508,7 @@ function projectSituationFeatureCollection(
   const features = collection.features.filter((feature) =>
     requestQuery.layers.includes(feature.properties.layer)
     && (!requestQuery.sources || requestQuery.sources.includes(feature.properties.sourceId))
-    && (!requestQuery.technology || feature.properties.layer !== "mobile_coverage" || feature.properties.technology === requestQuery.technology)
+    && (!requestQuery.technology || !isTechnologyFilteredLayer(feature.properties.layer) || feature.properties.technology === requestQuery.technology)
     && isFeatureInBbox(feature, requestQuery.bbox)
   );
   const sources = collection.sources.filter((source) => !requestQuery.sources || requestQuery.sources.includes(source.sourceId));
@@ -659,6 +667,7 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     assumptions: isRecord(value.assumptions) ? value.assumptions : undefined,
     category,
     confidence: optionalFinite(value.confidence),
+    basis: optionalStringArray(value.basis),
     demSource: optionalString(value.demSource),
     disclaimer: optionalString(value.disclaimer),
     estimatedSignalDbm: optionalNumber(value.estimatedSignalDbm),
@@ -671,11 +680,14 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     modelVersion: optionalString(value.modelVersion),
     observedAt: optionalString(value.observedAt),
     operator: optionalString(value.operator),
+    notices: optionalStringArray(value.notices),
     quality: optionalString(value.quality),
     resolutionM: optionalNumber(value.resolutionM),
     severity: optionalString(value.severity),
     sourceId,
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
+    status: optionalString(value.status),
+    summary: optionalString(value.summary),
     tags: isRecord(value.tags) ? value.tags : undefined,
     technology: normalizeCoverageTechnology(value.technology),
     validUntil: optionalString(value.validUntil)
@@ -800,7 +812,12 @@ function parseSituationSources(rawQuery: Record<string, unknown>): string[] | un
 }
 
 function parseCoverageTechnology(value: unknown): string | undefined {
-  return normalizeCoverageTechnology(optionalString(value));
+  const normalized = optionalString(value);
+  return normalizeCoverageTechnology(normalized?.split(",")[0]);
+}
+
+function isTechnologyFilteredLayer(layer: SituationLayerId): boolean {
+  return layer === "mobile_coverage" || layer === "mobile_network";
 }
 
 function normalizeCoverageTechnology(value: unknown): string | undefined {
@@ -972,6 +989,17 @@ function optionalFinite(value: unknown): number | undefined {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function optionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items = value.flatMap((item) => {
+    const normalized = optionalString(item);
+    return normalized ? [normalized] : [];
+  });
+  return items.length > 0 ? items : undefined;
 }
 
 function clampNumber(value: number, min: number, max: number): number {
