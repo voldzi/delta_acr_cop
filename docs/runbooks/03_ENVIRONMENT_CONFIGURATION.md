@@ -109,7 +109,7 @@ Web i nativní klienti musí mapový podklad číst z konfigurace, ne z pevně z
 COP_MAP_STYLE_URL=
 COP_TILE_URL=https://tiles.zeleznalady.cz/osm/{z}/{x}/{y}.png
 COP_TILE_GLYPHS_URL=https://tiles.zeleznalady.cz/fonts/{fontstack}/{range}.pbf
-COP_TILE_ATTRIBUTION=&copy; OpenStreetMap contributors
+COP_TILE_ATTRIBUTION="&copy; OpenStreetMap contributors"
 ```
 
 Pokud je vyplněné `COP_MAP_STYLE_URL`, web použije přímo MapLibre style URL a `COP_TILE_URL` slouží jen jako fallback pro klienty bez podpory style endpointu. Pokud je `COP_MAP_STYLE_URL` prázdné, web si vytvoří raster style z `COP_TILE_URL`.

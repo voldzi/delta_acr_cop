@@ -20,7 +20,7 @@ COP podporuje tyto proměnné:
 COP_MAP_STYLE_URL=
 COP_TILE_URL=https://tile.openstreetmap.org/{z}/{x}/{y}.png
 COP_TILE_GLYPHS_URL=https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf
-COP_TILE_ATTRIBUTION=&copy; OpenStreetMap contributors
+COP_TILE_ATTRIBUTION="&copy; OpenStreetMap contributors"
 ```
 
 Mapové popisky v COP používají font stack `Noto Sans Regular` a `Noto Sans Bold`, protože tyto glyph sady jsou dostupné na výchozím MapLibre demo endpointu i přes připravenou `/fonts/` cache. `Open Sans Regular` není vhodný kontrolní request pro tuto konfiguraci.
@@ -31,7 +31,7 @@ Produkční cílové hodnoty po zřízení `tiles.zeleznalady.cz`:
 COP_MAP_STYLE_URL=
 COP_TILE_URL=https://tiles.zeleznalady.cz/osm/{z}/{x}/{y}.png
 COP_TILE_GLYPHS_URL=https://tiles.zeleznalady.cz/fonts/{fontstack}/{range}.pbf
-COP_TILE_ATTRIBUTION=&copy; OpenStreetMap contributors
+COP_TILE_ATTRIBUTION="&copy; OpenStreetMap contributors"
 ```
 
 Pro budoucí vector-tile režim:
@@ -239,7 +239,7 @@ cat >> .env <<'EOF'
 COP_MAP_STYLE_URL=
 COP_TILE_URL=https://tiles.zeleznalady.cz/osm/{z}/{x}/{y}.png
 COP_TILE_GLYPHS_URL=https://tiles.zeleznalady.cz/fonts/{fontstack}/{range}.pbf
-COP_TILE_ATTRIBUTION=&copy; OpenStreetMap contributors
+COP_TILE_ATTRIBUTION="&copy; OpenStreetMap contributors"
 EOF
 
 docker compose up -d --build
