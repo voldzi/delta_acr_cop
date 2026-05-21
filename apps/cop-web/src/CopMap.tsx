@@ -729,7 +729,7 @@ export function CopMap({
           layout: {
             "icon-image": ["coalesce", ["get", "mobileSymbolKey"], getMobileNetworkIconKey("unknown")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.26, 11, 0.34, 15, 0.48],
-            "icon-anchor": "center",
+            "icon-anchor": "bottom",
             "icon-allow-overlap": true,
             "icon-ignore-placement": true,
             "text-field": ["coalesce", ["get", "mobileNetworkLabel"], "MOBILE"],
@@ -2417,6 +2417,9 @@ function createMobileNetworkSymbolImage(tone: MobileNetworkIconTone): ImageData 
   }
 
   const waveColor = mobileNetworkIconColor(tone);
+  const centerX = 64;
+  const antennaY = 50;
+  const baseY = 124;
   context.clearRect(0, 0, size, size);
   context.lineCap = "round";
   context.lineJoin = "round";
@@ -2428,10 +2431,10 @@ function createMobileNetworkSymbolImage(tone: MobileNetworkIconTone): ImageData 
     context.lineWidth = lineWidth;
     [24, 38, 52].forEach((radius) => {
       context.beginPath();
-      context.arc(64, 44, radius, -0.86, 0.86);
+      context.arc(centerX, antennaY, radius, -0.86, 0.86);
       context.stroke();
       context.beginPath();
-      context.arc(64, 44, radius, Math.PI - 0.86, Math.PI + 0.86);
+      context.arc(centerX, antennaY, radius, Math.PI - 0.86, Math.PI + 0.86);
       context.stroke();
     });
     context.restore();
@@ -2443,26 +2446,26 @@ function createMobileNetworkSymbolImage(tone: MobileNetworkIconTone): ImageData 
     context.strokeStyle = strokeStyle;
     context.lineWidth = lineWidth;
     context.beginPath();
-    context.moveTo(64, 42);
-    context.lineTo(36, 110);
-    context.moveTo(64, 42);
-    context.lineTo(92, 110);
-    context.moveTo(64, 42);
-    context.lineTo(64, 112);
-    context.moveTo(42, 110);
-    context.lineTo(86, 110);
-    context.moveTo(50, 72);
-    context.lineTo(78, 88);
-    context.moveTo(78, 72);
-    context.lineTo(50, 88);
-    context.moveTo(45, 94);
-    context.lineTo(83, 94);
-    context.moveTo(57, 56);
-    context.lineTo(71, 56);
+    context.moveTo(centerX, antennaY);
+    context.lineTo(34, baseY);
+    context.moveTo(centerX, antennaY);
+    context.lineTo(94, baseY);
+    context.moveTo(centerX, antennaY);
+    context.lineTo(centerX, baseY);
+    context.moveTo(38, baseY);
+    context.lineTo(90, baseY);
+    context.moveTo(49, 80);
+    context.lineTo(79, 96);
+    context.moveTo(79, 80);
+    context.lineTo(49, 96);
+    context.moveTo(45, 108);
+    context.lineTo(83, 108);
+    context.moveTo(57, 64);
+    context.lineTo(71, 64);
     context.stroke();
     context.fillStyle = strokeStyle;
     context.beginPath();
-    context.arc(64, 42, lineWidth >= 8 ? 9 : 5, 0, Math.PI * 2);
+    context.arc(centerX, antennaY, lineWidth >= 8 ? 9 : 5, 0, Math.PI * 2);
     context.fill();
     context.restore();
   };
