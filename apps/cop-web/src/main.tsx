@@ -942,7 +942,8 @@ export function App() {
       }),
     [loadError, objectsForDisplay, replayActive, scopedObjects, sources, visibleObjects, visibleSituationContextEnabled]
   );
-  const selectedObject = visibleObjects.find((object) => object.objectId === selectedObjectId) ?? visibleObjects[0];
+  const explicitlySelectedObject = selectedObjectId ? visibleObjects.find((object) => object.objectId === selectedObjectId) ?? null : null;
+  const selectedObject = explicitlySelectedObject ?? visibleObjects[0] ?? null;
   const selectedSituationFeature = combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
   const metrics = React.useMemo(() => buildMetrics(scopedObjects, sources), [scopedObjects, sources]);
   const eventStream = React.useMemo(() => buildEventStream(visibleObjects), [visibleObjects]);
@@ -1607,7 +1608,10 @@ export function App() {
         <div className="mission-strip" aria-label="Civil situation map operating context">
           <span>LAB</span>
           <strong>{missionModeLabel(operatingMode, offlineSnapshotState)}</strong>
-          <small>OpenStreetMap + situační vrstvy</small>
+          <small>
+            <span className="mission-detail-full">OpenStreetMap + situační vrstvy</span>
+            <span className="mission-detail-compact">Zdroje {sources.length} · Obj. {visibleObjects.length}</span>
+          </small>
         </div>
         <div className="status-strip">
           <StatusItem icon={<Wifi size={16} />} label="Mode" value={operatingMode} tone={operatingModeTone(operatingMode)} />
@@ -1875,7 +1879,7 @@ export function App() {
               objects={visibleObjects}
               emptyMessage={mapEmptyMessage}
               selectedSituationFeatureId={selectedSituationFeatureId ?? undefined}
-              selectedObjectId={selectedObject?.objectId}
+              selectedObjectId={explicitlySelectedObject?.objectId}
               showHistory={showHistory}
               showPrediction={showPrediction}
               trackHistory={replayTrackHistory}
@@ -1893,7 +1897,7 @@ export function App() {
               situationFeatures={combinedSituationFeatures}
               onBoundsChange={setMapBounds}
               onSelectObject={(object) => {
-                setSelectedObjectId(object.objectId);
+                setSelectedObjectId((current) => current === object.objectId ? null : object.objectId);
                 setSelectedSituationFeatureId(null);
               }}
               onSelectSituationFeature={(feature) => {
@@ -1901,6 +1905,10 @@ export function App() {
                 setSelectedObjectId(null);
               }}
               onAutoFitChange={setAutoFit}
+              onClearSelection={() => {
+                setSelectedObjectId(null);
+                setSelectedSituationFeatureId(null);
+              }}
               onCreateZoneAt={handleCreateAoiRuleFromMapClick}
               onRequestUserLocation={locateUser}
               onViewChange={setMapView}
@@ -1920,9 +1928,9 @@ export function App() {
                 </div>
                 <TrackTable
                   objects={visibleObjects}
-                  selectedObjectId={selectedObject?.objectId}
+                  selectedObjectId={explicitlySelectedObject?.objectId}
                   onSelect={(objectId) => {
-                    setSelectedObjectId(objectId);
+                    setSelectedObjectId((current) => current === objectId ? null : objectId);
                     setSelectedSituationFeatureId(null);
                   }}
                 />
@@ -1967,7 +1975,7 @@ export function App() {
                 onAcknowledge={(alertId) => void acknowledgeServerAlert(alertId)}
                 onLogin={openLoginPrompt}
                 onSelectObject={(objectId) => {
-                  setSelectedObjectId(objectId);
+                  setSelectedObjectId((current) => current === objectId ? null : objectId);
                   setSelectedSituationFeatureId(null);
                 }}
               />
@@ -1987,9 +1995,9 @@ export function App() {
                 </div>
                 <TrackTable
                   objects={visibleObjects}
-                  selectedObjectId={selectedObject?.objectId}
+                  selectedObjectId={explicitlySelectedObject?.objectId}
                   onSelect={(objectId) => {
-                    setSelectedObjectId(objectId);
+                    setSelectedObjectId((current) => current === objectId ? null : objectId);
                     setSelectedSituationFeatureId(null);
                   }}
                 />

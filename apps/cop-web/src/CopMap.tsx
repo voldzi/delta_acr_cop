@@ -1,5 +1,5 @@
 import React from "react";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, X } from "lucide-react";
 import maplibregl, {
   type GeoJSONSource,
   type MapLayerMouseEvent,
@@ -190,6 +190,7 @@ interface CopMapProps {
   onSelectObject: (object: CopObject) => void;
   onSelectSituationFeature: (feature: SituationFeature) => void;
   onAutoFitChange: (value: boolean) => void;
+  onClearSelection?: () => void;
   onRequestUserLocation: () => void;
   onViewChange: (view: MapViewState) => void;
   showAlertAreas: boolean;
@@ -238,6 +239,7 @@ export function CopMap({
   onSelectObject,
   onSelectSituationFeature,
   onAutoFitChange,
+  onClearSelection,
   onCreateZoneAt,
   onRequestUserLocation,
   onViewChange,
@@ -254,6 +256,7 @@ export function CopMap({
   const onSelectObjectRef = React.useRef(onSelectObject);
   const onSelectSituationFeatureRef = React.useRef(onSelectSituationFeature);
   const onAutoFitChangeRef = React.useRef(onAutoFitChange);
+  const onClearSelectionRef = React.useRef(onClearSelection);
   const onCreateZoneAtRef = React.useRef(onCreateZoneAt);
   const onViewChangeRef = React.useRef(onViewChange);
   const zoneCreationActiveRef = React.useRef(zoneCreationActive);
@@ -265,7 +268,11 @@ export function CopMap({
   const [clusterInfo, setClusterInfo] = React.useState<ClusterInfo | null>(null);
   const [mapFullscreen, setMapFullscreen] = React.useState(false);
 
-  const selectedId = selectedObjectId ?? objects[0]?.objectId;
+  const selectedId = selectedObjectId;
+  const selectedObject = React.useMemo(
+    () => selectedObjectId ? objects.find((object) => object.objectId === selectedObjectId) ?? null : null,
+    [objects, selectedObjectId]
+  );
   const positionedObjects = React.useMemo(() => objects.filter(hasPosition), [objects]);
   const featureCollection = React.useMemo(
     () => objectsToTrackFeatureCollection(objects, selectedId),
@@ -302,6 +309,7 @@ export function CopMap({
   onSelectObjectRef.current = onSelectObject;
   onSelectSituationFeatureRef.current = onSelectSituationFeature;
   onAutoFitChangeRef.current = onAutoFitChange;
+  onClearSelectionRef.current = onClearSelection;
   onCreateZoneAtRef.current = onCreateZoneAt;
   onViewChangeRef.current = onViewChange;
   zoneCreationActiveRef.current = zoneCreationActive;
@@ -346,11 +354,11 @@ export function CopMap({
       void (async () => {
         map.addSource(trackSourceId, {
           type: "geojson",
-          data: objectsToTrackFeatureCollection(objectsRef.current, objectsRef.current[0]?.objectId) as Parameters<GeoJSONSource["setData"]>[0]
+          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId) as Parameters<GeoJSONSource["setData"]>[0]
         });
         map.addSource(trackClusterSourceId, {
           type: "geojson",
-          data: objectsToTrackFeatureCollection(objectsRef.current, objectsRef.current[0]?.objectId) as Parameters<GeoJSONSource["setData"]>[0],
+          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId) as Parameters<GeoJSONSource["setData"]>[0],
           cluster: true,
           clusterMaxZoom: 14,
           clusterRadius: 52
@@ -966,10 +974,31 @@ export function CopMap({
           }
         };
         const handleMapClick = (event: maplibregl.MapMouseEvent) => {
-          if (!zoneCreationActiveRef.current || !onCreateZoneAtRef.current) {
+          const clickedFeatures = map.queryRenderedFeatures(event.point, {
+            layers: [
+              trackSymbolLayerId,
+              trackLabelLayerId,
+              trackClusterSymbolLayerId,
+              trackClusterLabelLayerId,
+              trackClusterCircleLayerId,
+              trackClusterCountLayerId,
+              situationPointLayerId,
+              situationLabelLayerId,
+              situationMobileSymbolLayerId,
+              situationWeatherPointLayerId,
+              situationWeatherLabelLayerId,
+              situationLineLayerId,
+              situationFillLayerId
+            ]
+          });
+          if (clickedFeatures.length > 0) {
             return;
           }
-          onCreateZoneAtRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
+          if (zoneCreationActiveRef.current && onCreateZoneAtRef.current) {
+            onCreateZoneAtRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
+            return;
+          }
+          onClearSelectionRef.current?.();
         };
         map.on("dragstart", handleUserMapInteraction);
         map.on("movestart", handleUserMapInteraction);
@@ -1242,6 +1271,7 @@ export function CopMap({
         </div>
         <button
           className={`map-action ${autoFit ? "active" : ""}`}
+          aria-pressed={autoFit}
           onClick={() => {
             const nextAutoFit = !autoFit;
             onAutoFitChange(nextAutoFit);
@@ -1249,15 +1279,13 @@ export function CopMap({
               lastFitSignatureRef.current = buildFitSignature(positionedObjects);
             }
           }}
+          title="Zapnout nebo vypnout automatické přizpůsobení mapy objektům"
           type="button"
         >
-          Auto fit
-        </button>
-        <button className="map-action" onClick={() => fitMapToObjects(mapRef.current, positionedObjects)} type="button">
-          Fit tracks
+          Fit
         </button>
         <button className="map-action" onClick={onRequestUserLocation} type="button">
-          Moje poloha
+          Poloha
         </button>
         <button
           aria-pressed={mapFullscreen}
@@ -1267,9 +1295,30 @@ export function CopMap({
           type="button"
         >
           {mapFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          <span>{mapFullscreen ? "Zmenšit" : "Celá mapa"}</span>
+          <span>{mapFullscreen ? "Zmenšit" : "Mapa"}</span>
         </button>
       </div>
+      {selectedObject ? (
+        <div
+          className="map-selection-card"
+          onClick={stopMapToolbarEvent}
+          onDoubleClick={stopMapToolbarEvent}
+          onPointerDown={stopMapToolbarEvent}
+          onWheel={stopMapToolbarEvent}
+        >
+          <div>
+            <span>Vybraný objekt</span>
+            <strong>{formatTrackLabel(selectedObject)}</strong>
+            <small>
+              {selectedObject.objectType} · {formatMapAffiliation(selectedObject.affiliation)} · {selectedObject.status}
+              {typeof selectedObject.confidence === "number" ? ` · ${Math.round(selectedObject.confidence * 100)} %` : ""}
+            </small>
+          </div>
+          <button aria-label="Zrušit výběr objektu" onClick={onClearSelection} title="Zrušit výběr objektu" type="button">
+            <X size={15} />
+          </button>
+        </div>
+      ) : null}
       <div className="map-legend">
         <LegendItem disposition="friend" color="#3b82f6" label="Vlastní" />
         <LegendItem disposition="hostile" color="#ef4444" label="Rizikové" />
@@ -1791,6 +1840,20 @@ export function formatTrackLabel(object: CopObject): string {
   }
 
   return object.objectId;
+}
+
+function formatMapAffiliation(value: string): string {
+  const normalized = value.toUpperCase();
+  if (normalized === "FRIEND" || normalized === "FRIENDLY") {
+    return "vlastní";
+  }
+  if (normalized === "HOSTILE" || normalized === "SUSPECT" || normalized === "FOREIGN") {
+    return "rizikové";
+  }
+  if (normalized === "NEUTRAL") {
+    return "neutrální";
+  }
+  return "neznámé";
 }
 
 function cleanTrackLabel(value: unknown): string | null {

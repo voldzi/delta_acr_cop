@@ -133,6 +133,10 @@ h1 {
   grid-column: 1 / -1;
 }
 
+.mission-detail-compact {
+  display: none;
+}
+
 .status-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(88px, 1fr));
@@ -1355,6 +1359,7 @@ h1 {
 
 .map-toolbar,
 .map-legend,
+.map-selection-card,
 .map-cluster-panel,
 .map-notice,
 .map-empty {
@@ -1427,6 +1432,61 @@ h1 {
 
 .icon-map-action svg {
   flex: 0 0 auto;
+}
+
+.map-selection-card {
+  top: 66px;
+  left: 12px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: min(360px, calc(100% - 92px));
+  padding: 9px 10px;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.map-selection-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.map-selection-card strong {
+  display: block;
+  margin-top: 1px;
+  overflow: hidden;
+  color: #f4f7fb;
+  font-size: 14px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-selection-card small {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-selection-card button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(142, 157, 170, 0.28);
+  background: rgba(22, 32, 43, 0.82);
+  color: #dbe7f2;
+  cursor: pointer;
 }
 
 .map-legend {
@@ -2690,15 +2750,31 @@ dd {
 
   .mission-strip {
     grid-column: 1 / -1;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    align-items: center;
     min-width: 0;
-    min-height: 34px;
-    padding: 7px 9px;
+    min-height: 32px;
+    padding: 6px 8px;
   }
 
   .status-strip {
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4px;
+    display: none;
+  }
+
+  .mission-strip small {
+    grid-column: auto;
+    justify-self: end;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mission-detail-full {
+    display: none;
+  }
+
+  .mission-detail-compact {
+    display: inline;
   }
 
   .status-item {
@@ -2737,12 +2813,12 @@ dd {
   }
 
   .center-column {
-    grid-template-rows: minmax(430px, calc(100svh - 238px)) auto;
+    grid-template-rows: minmax(460px, calc(100svh - 166px)) auto;
     gap: 8px;
   }
 
   .center-column-map {
-    grid-template-rows: minmax(430px, calc(100svh - 238px));
+    grid-template-rows: minmax(500px, calc(100svh - 166px));
   }
 
   .workspace-tab,
@@ -2755,17 +2831,58 @@ dd {
     top: 10px;
     left: 10px;
     max-width: calc(100% - 64px);
-    gap: 6px;
-    padding: 8px;
+    flex-wrap: nowrap;
+    gap: 5px;
+    padding: 6px;
   }
 
   .map-toolbar div {
-    min-width: 84px;
+    min-width: 0;
+    max-width: 122px;
+    padding-right: 0;
+  }
+
+  .map-toolbar span {
+    display: none;
+  }
+
+  .map-toolbar strong {
+    margin-top: 0;
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .map-action {
     min-height: 30px;
-    padding: 0 8px;
+    padding: 0 7px;
+    font-size: 11px;
+  }
+
+  .icon-map-action {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .icon-map-action span {
+    display: none;
+  }
+
+  .map-selection-card {
+    top: 54px;
+    left: 10px;
+    width: min(330px, calc(100% - 64px));
+    padding: 7px 8px;
+  }
+
+  .map-selection-card strong {
+    font-size: 13px;
+  }
+
+  .map-selection-card small {
+    font-size: 10px;
   }
 
   .map-legend {
