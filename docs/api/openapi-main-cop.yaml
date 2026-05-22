@@ -21,6 +21,8 @@ tags:
     description: Authenticated operator profile and user-scoped preferences.
   - name: Mobile
     description: Native iPhone/iPad bootstrap, offline snapshot and device registration endpoints.
+  - name: Map Catalog
+    description: Source-neutral map layer catalog used by web and native clients.
   - name: Community Reports
     description: User-created civil reports with location and media upload slots.
   - name: Ingest
@@ -145,6 +147,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MobileOfflineSnapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/map/catalog:
+    get:
+      tags: [Map Catalog]
+      summary: Read source-neutral map catalog.
+      operationId: getMapCatalog
+      description: >
+        Returns the authoritative COP map catalog. The catalog groups user-facing
+        layers independently from provider internals, separates technical inputs
+        from citizen-visible layers, and preserves provider/source provenance for
+        diagnostics and future providers.
+      parameters:
+        - name: includeDiagnostics
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include diagnostic layers and source inputs. Ignored for unauthenticated public-read requests.
+        - name: includePartner
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include partner/private layers such as TAK Gateway. Ignored for unauthenticated public-read requests.
+        - name: locale
+          in: query
+          required: false
+          schema:
+            type: string
+            default: cs-CZ
+          description: Preferred label locale.
+      responses:
+        "200":
+          description: Source-neutral map catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MapCatalog"
         "401":
           $ref: "#/components/responses/Unauthorized"
   /api/v1/mobile/devices:
@@ -1882,6 +1925,208 @@ components:
     CommunityReportVisibility:
       type: string
       enum: [private, community, public]
+    MapCatalog:
+      type: object
+      required: [catalogVersion, generatedAt, groups, layers, locale, providers, sources, warnings]
+      properties:
+        catalogVersion:
+          type: string
+          const: map-catalog-v1
+        generatedAt:
+          type: string
+          format: date-time
+        locale:
+          type: string
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapCatalogProvider"
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapCatalogGroup"
+        layers:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapCatalogLayer"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapCatalogSource"
+        warnings:
+          type: array
+          items:
+            type: string
+    MapCatalogProvider:
+      type: object
+      required: [label, providerId, status]
+      properties:
+        label:
+          type: string
+        providerId:
+          type: string
+        sourceCatalogUrl:
+          type: string
+        status:
+          type: string
+          enum: [disabled, online, unavailable]
+    MapCatalogGroup:
+      type: object
+      required: [groupId, label, order]
+      properties:
+        groupId:
+          type: string
+        label:
+          type: string
+        order:
+          type: integer
+        parentGroupId:
+          type: string
+    MapCatalogLayer:
+      type: object
+      required: [audience, defaultVisible, groupId, kind, label, layerId, query, role, selectable, styleProfile]
+      properties:
+        audience:
+          type: string
+          enum: [admin, authenticated, diagnostic, partner, public]
+        cacheTtlSeconds:
+          type: integer
+          minimum: 0
+        defaultVisible:
+          type: boolean
+        description:
+          type: string
+        filters:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapCatalogFilter"
+        geometryTypes:
+          type: array
+          items:
+            type: string
+        groupId:
+          type: string
+        kind:
+          type: string
+          enum: [aggregate, mvt_tiles, raster_tiles, static_reference, track_stream, user_objects, vector_features]
+        label:
+          type: string
+        layerId:
+          type: string
+        legal:
+          type: object
+          properties:
+            attribution:
+              type: string
+            notes:
+              type: array
+              items:
+                type: string
+        maxZoom:
+          type: integer
+        minZoom:
+          type: integer
+        provenance:
+          type: object
+          properties:
+            sourceIds:
+              type: array
+              items:
+                type: string
+            technicalInputs:
+              type: array
+              items:
+                type: string
+        query:
+          $ref: "#/components/schemas/MapCatalogQuery"
+        refreshSeconds:
+          type: integer
+          minimum: 0
+        role:
+          type: string
+          enum: [diagnostic, overlay, partner, primary, reference, user]
+        selectable:
+          type: boolean
+        styleProfile:
+          type: string
+    MapCatalogFilter:
+      type: object
+      required: [filterId, label, type]
+      properties:
+        defaultValue: {}
+        filterId:
+          type: string
+        label:
+          type: string
+        type:
+          type: string
+          enum: [multi_select, select, toggle]
+        values:
+          type: array
+          items:
+            type: string
+    MapCatalogQuery:
+      type: object
+      required: [mode, providerId, streamId]
+      properties:
+        categoryIds:
+          type: array
+          items:
+            type: string
+        maxFeatures:
+          type: integer
+          minimum: 1
+        mode:
+          type: string
+          enum: [bbox, internal, stream, tile]
+        providerId:
+          type: string
+        providerLayerIds:
+          type: array
+          items:
+            type: string
+        providerSourceIds:
+          type: array
+          items:
+            type: string
+        streamId:
+          type: string
+    MapCatalogSource:
+      type: object
+      required: [audience, enabled, label, providerId, selectableInMap, sourceId, sourceRole, visibleInDiagnostics]
+      properties:
+        audience:
+          type: string
+          enum: [admin, authenticated, diagnostic, partner, public]
+        cacheTtlSeconds:
+          type: integer
+          minimum: 0
+        enabled:
+          type: boolean
+        feedsCatalogLayerIds:
+          type: array
+          items:
+            type: string
+        label:
+          type: string
+        providerId:
+          type: string
+        selectableInMap:
+          type: boolean
+        sourceId:
+          type: string
+        sourceRole:
+          type: string
+          enum: [aggregate, diagnostic, final, input, mock, projection, reference]
+        updateCadenceSeconds:
+          type: integer
+          minimum: 0
+        usedByCatalogLayerIds:
+          type: array
+          items:
+            type: string
+        visibleInDiagnostics:
+          type: boolean
     MobileBootstrap:
       type: object
       required: [actor, auth, capabilities, endpoints, map, policy, profile, snapshot, serverTimestamp]

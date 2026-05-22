@@ -196,6 +196,7 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
     || path.startsWith("/api/v1/sources/")
     || path === "/api/v1/sources/health"
     || path === "/api/v1/flight-data/airports"
+    || path === "/api/v1/map/catalog"
     || path.startsWith("/api/v1/situation/")
     || path.startsWith("/api/v1/safety/")
     || path === "/api/v1/cop/tracks"

@@ -26,6 +26,7 @@ import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
 import { createFlightDataSourceFromEnv, unavailableFlightDataHealth, type FlightAirportQuery, type FlightDataSource } from "./flight-data-source.js";
+import { buildMapCatalog } from "./map-catalog.js";
 import { createMediaStorageFromEnv, type MediaStorage } from "./media-storage.js";
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
@@ -1214,6 +1215,32 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  app.get("/api/v1/map/catalog", async (request) => {
+    const requestNow = now();
+    const actor = actorFromRequest(request);
+    const query = request.query as Record<string, unknown>;
+    const includeDiagnostics = Boolean(actor) && parseBooleanQuery(query.includeDiagnostics);
+    const includePartner = Boolean(actor) && parseBooleanQuery(query.includePartner);
+    const locale = typeof query.locale === "string" && query.locale.trim() ? query.locale.trim() : "cs-CZ";
+
+    const situation = await readSituationCatalogProvider(requestNow, actor);
+    const safety = await readSafetyCatalogProvider(requestNow);
+    const tak = includePartner ? await readTakCatalogProvider(requestNow) : undefined;
+
+    return buildMapCatalog({
+      flight: {
+        status: flightDataSource ? "online" : "disabled"
+      },
+      generatedAt: requestNow,
+      includeDiagnostics,
+      includePartner,
+      locale,
+      safety,
+      situation,
+      tak
+    });
+  });
+
   app.get("/api/v1/situation/layers", async () => {
     const requestNow = now();
     if (!situationDataSource) {
@@ -2039,6 +2066,124 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return response;
   });
 
+  async function readSituationCatalogProvider(requestNow: Date, actor: AuthenticatedActor | null) {
+    if (!situationDataSource) {
+      return {
+        layers: [],
+        sources: [],
+        status: "disabled" as const,
+        warning: "Situation data source is disabled."
+      };
+    }
+
+    try {
+      const [layers, rawSources] = await Promise.all([
+        situationDataSource.fetchLayers(requestNow),
+        situationDataSource.fetchSources(requestNow)
+      ]);
+      const sources = filterSituationSourcesForActor(rawSources, actor);
+      const health = buildSituationDataHealth(layers, requestNow);
+      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      return {
+        layers,
+        sources,
+        status: "online" as const
+      };
+    } catch (error) {
+      const health = unavailableSituationDataHealth(error, requestNow);
+      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      appendAudit(state, "MAP_CATALOG_SITUATION_PROVIDER_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Situation data catalog provider request failed.");
+      return {
+        layers: [],
+        sources: [],
+        status: "unavailable" as const,
+        warning: health.lastError ?? "Situation data catalog provider is unavailable."
+      };
+    }
+  }
+
+  async function readSafetyCatalogProvider(requestNow: Date) {
+    if (!safetyDataSource) {
+      return {
+        layers: [],
+        sources: [],
+        status: "disabled" as const,
+        warning: "Safety data source is disabled."
+      };
+    }
+
+    try {
+      const [layers, sources] = await Promise.all([
+        safetyDataSource.fetchLayers(requestNow),
+        safetyDataSource.fetchSources(requestNow)
+      ]);
+      const health = buildSafetyDataHealth(layers, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      return {
+        layers,
+        sources,
+        status: "online" as const
+      };
+    } catch (error) {
+      const health = unavailableSafetyDataHealth(error, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      appendAudit(state, "MAP_CATALOG_SAFETY_PROVIDER_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Safety data catalog provider request failed.");
+      return {
+        layers: [],
+        sources: [],
+        status: "unavailable" as const,
+        warning: health.lastError ?? "Safety data catalog provider is unavailable."
+      };
+    }
+  }
+
+  async function readTakCatalogProvider(requestNow: Date) {
+    if (!takGatewaySource) {
+      return {
+        layers: [],
+        sources: [],
+        status: "disabled" as const,
+        warning: "TAK Gateway source is disabled."
+      };
+    }
+
+    try {
+      const [layers, sources] = await Promise.all([
+        takGatewaySource.fetchLayers(requestNow),
+        takGatewaySource.fetchSources(requestNow)
+      ]);
+      const health = buildTakGatewayHealth(layers, requestNow);
+      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      return {
+        layers,
+        sources,
+        status: "online" as const
+      };
+    } catch (error) {
+      const health = unavailableTakGatewayHealth(error, requestNow);
+      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      appendAudit(state, "MAP_CATALOG_TAK_PROVIDER_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: takGatewaySource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "TAK Gateway catalog provider request failed.");
+      return {
+        layers: [],
+        sources: [],
+        status: "unavailable" as const,
+        warning: health.lastError ?? "TAK Gateway catalog provider is unavailable."
+      };
+    }
+  }
+
   async function readableCurrentTracks(subject: ReturnType<typeof defaultSystemSubject>, requestNow: Date): Promise<ObservedObject[]> {
     const objects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle).filter((object) => canReadObject(subject, object));
     return decorateObjectsWithConflictEvidence(objects, requestNow);
@@ -2762,6 +2907,7 @@ function mobileEndpoints() {
     deviceRegistration: "/api/v1/mobile/devices",
     offlineSnapshot: "/api/v1/mobile/offline-snapshot",
     preferences: "/api/v1/me/preferences",
+    mapCatalog: "/api/v1/map/catalog",
     sourceHealth: "/api/v1/sources/health",
     sources: "/api/v1/sources",
     safetyConfig: "/api/v1/safety/config",
@@ -3080,6 +3226,16 @@ function readBoolean(value: string | undefined, fallback: boolean): boolean {
     return fallback;
   }
   return value === "true" || value === "1";
+}
+
+function parseBooleanQuery(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return false;
+  }
+  return value === "true" || value === "1" || value === "yes" || value === "on";
 }
 
 function timestampSeconds(value: string | undefined): number {

@@ -123,11 +123,12 @@ GET /api/v1/map/catalog
 Optional query parameters:
 
 ```text
-audience=public|authenticated|partner|admin|diagnostic
 locale=cs-CZ
 includeDiagnostics=false
-capabilities=geojson,mvt,offline
+includePartner=false
 ```
+
+`includeDiagnostics` and `includePartner` are honored only for authenticated requests. Public-read clients receive the public catalog without diagnostic and partner layers.
 
 Response:
 

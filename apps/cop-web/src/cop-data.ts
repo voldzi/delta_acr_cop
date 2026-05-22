@@ -523,6 +523,103 @@ export interface TakFeatureOptions {
   limit?: number;
 }
 
+export type MapCatalogAudience = "admin" | "authenticated" | "diagnostic" | "partner" | "public";
+export type MapCatalogLayerKind = "aggregate" | "mvt_tiles" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features";
+export type MapCatalogLayerRole = "diagnostic" | "overlay" | "partner" | "primary" | "reference" | "user";
+export type MapCatalogSourceRole = "aggregate" | "diagnostic" | "final" | "input" | "mock" | "projection" | "reference";
+
+export interface MapCatalogProvider {
+  label: string;
+  providerId: string;
+  sourceCatalogUrl?: string;
+  status: "disabled" | "online" | "unavailable";
+}
+
+export interface MapCatalogGroup {
+  groupId: string;
+  label: string;
+  order: number;
+  parentGroupId?: string;
+}
+
+export interface MapCatalogFilter {
+  defaultValue?: unknown;
+  filterId: string;
+  label: string;
+  type: "multi_select" | "select" | "toggle";
+  values?: string[];
+}
+
+export interface MapCatalogQuery {
+  categoryIds?: string[];
+  maxFeatures?: number;
+  mode: "bbox" | "internal" | "stream" | "tile";
+  providerId: string;
+  providerLayerIds?: string[];
+  providerSourceIds?: string[];
+  streamId: string;
+}
+
+export interface MapCatalogLayer {
+  audience: MapCatalogAudience;
+  cacheTtlSeconds?: number;
+  defaultVisible: boolean;
+  description?: string;
+  filters?: MapCatalogFilter[];
+  geometryTypes?: string[];
+  groupId: string;
+  kind: MapCatalogLayerKind;
+  label: string;
+  layerId: string;
+  legal?: {
+    attribution?: string;
+    notes?: string[];
+  };
+  maxZoom?: number;
+  minZoom?: number;
+  provenance?: {
+    sourceIds: string[];
+    technicalInputs?: string[];
+  };
+  query: MapCatalogQuery;
+  refreshSeconds?: number;
+  role: MapCatalogLayerRole;
+  selectable: boolean;
+  styleProfile: string;
+}
+
+export interface MapCatalogSource {
+  audience: MapCatalogAudience;
+  cacheTtlSeconds?: number;
+  enabled: boolean;
+  feedsCatalogLayerIds?: string[];
+  label: string;
+  providerId: string;
+  selectableInMap: boolean;
+  sourceId: string;
+  sourceRole: MapCatalogSourceRole;
+  updateCadenceSeconds?: number;
+  usedByCatalogLayerIds?: string[];
+  visibleInDiagnostics: boolean;
+}
+
+export interface MapCatalogResponse {
+  catalogVersion: "map-catalog-v1";
+  generatedAt: string;
+  groups: MapCatalogGroup[];
+  layers: MapCatalogLayer[];
+  locale: string;
+  providers: MapCatalogProvider[];
+  sources: MapCatalogSource[];
+  warnings: string[];
+}
+
+export interface MapCatalogOptions {
+  includeDiagnostics?: boolean;
+  includePartner?: boolean;
+  locale?: string;
+}
+
 export interface SourceHealthItem {
   acceptedEvents: number;
   avgConfidence?: number;
@@ -741,6 +838,24 @@ export async function fetchCopAlerts(apiBase: string, token: string | undefined)
   const headers = authHeaders(token);
   const response = await fetchOptionalJson<{ items?: CopAlert[] }>(`${apiBase}/api/v1/cop/alerts`, { headers });
   return response?.items ?? [];
+}
+
+export async function fetchMapCatalog(apiBase: string, token: string | undefined, options: MapCatalogOptions = {}): Promise<MapCatalogResponse> {
+  const query = new URLSearchParams();
+  if (options.includeDiagnostics) {
+    query.set("includeDiagnostics", "true");
+  }
+  if (options.includePartner) {
+    query.set("includePartner", "true");
+  }
+  if (options.locale) {
+    query.set("locale", options.locale);
+  }
+  const encodedQuery = query.toString();
+  const suffix = encodedQuery ? `?${encodedQuery}` : "";
+  return fetchJson<MapCatalogResponse>(`${apiBase}/api/v1/map/catalog${suffix}`, {
+    headers: authHeaders(token)
+  });
 }
 
 export async function fetchSituationLayers(apiBase: string, token: string | undefined): Promise<SituationLayersResponse> {
