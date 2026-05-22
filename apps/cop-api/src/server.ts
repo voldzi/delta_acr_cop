@@ -26,7 +26,7 @@ import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
 import { createFlightDataSourceFromEnv, unavailableFlightDataHealth, type FlightAirportQuery, type FlightDataSource } from "./flight-data-source.js";
-import { buildMapCatalog } from "./map-catalog.js";
+import { buildMapCatalog, type MapCatalogLayer } from "./map-catalog.js";
 import { createMediaStorageFromEnv, type MediaStorage } from "./media-storage.js";
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
@@ -35,29 +35,29 @@ import {
   buildSituationDataHealth,
   createSituationDataSourceFromEnv,
   emptySituationFeatureCollection,
-  parseSituationFeatureQuery,
   unavailableSituationDataHealth,
   type SituationDataSource,
   type SituationFeatureCollection,
   type SituationFeatureQuery,
+  type SituationLayerId,
   type SituationSourceDescriptor
 } from "./situation-data-source.js";
 import {
   buildSafetyDataHealth,
   createSafetyDataSourceFromEnv,
   emptySafetyFeatureCollection,
-  parseSafetyFeatureQuery,
   unavailableSafetyDataHealth,
   type SafetyDataSource,
-  type SafetyFeatureQuery
+  type SafetyFeatureQuery,
+  type SafetyLayerId
 } from "./safety-data-source.js";
 import {
   buildTakGatewayHealth,
   createTakGatewaySourceFromEnv,
   emptyTakGatewayFeatureCollection,
-  parseTakGatewayFeatureQuery,
   unavailableTakGatewayHealth,
   type TakGatewayFeatureQuery,
+  type TakGatewayLayerId,
   type TakGatewaySource
 } from "./tak-gateway-source.js";
 import { appendAudit, createInitialState } from "./state.js";
@@ -1241,437 +1241,66 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
-  app.get("/api/v1/situation/layers", async () => {
-    const requestNow = now();
-    if (!situationDataSource) {
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceStatus: "disabled",
-        warnings: ["Situation data source is disabled."]
-      };
-    }
-
-    try {
-      const items = await situationDataSource.fetchLayers(requestNow);
-      const health = buildSituationDataHealth(items, requestNow);
-      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
-      return {
-        items,
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health
-      };
-    } catch (error) {
-      const health = unavailableSituationDataHealth(error, requestNow);
-      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
-      appendAudit(state, "SITUATION_DATA_LAYERS_FAILED", {
-        error: errorMessage(error),
-        sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
-      });
-      app.log.warn({ error }, "Situation data layers request failed.");
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health,
-        warnings: [health.lastError ?? "Situation data layers are unavailable."]
-      };
-    }
-  });
-
-  app.get("/api/v1/situation/sources", async (request) => {
+  app.post("/api/v1/map/query", async (request, reply) => {
     const requestNow = now();
     const actor = actorFromRequest(request);
-    if (!situationDataSource) {
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceStatus: "disabled",
-        warnings: ["Situation data source is disabled."]
-      };
-    }
-
-    try {
-      const items = filterSituationSourcesForActor(await situationDataSource.fetchSources(requestNow), actor);
-      const health = buildSituationDataHealth(items.map((source) => ({
-        defaultVisible: source.enabled === true,
-        label: source.label ?? source.sourceId,
-        layerId: source.layers?.[0] ?? "weather"
-      })), requestNow);
-      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
-      return {
-        items,
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health
-      };
-    } catch (error) {
-      const health = unavailableSituationDataHealth(error, requestNow);
-      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
-      appendAudit(state, "SITUATION_DATA_SOURCES_FAILED", {
-        error: errorMessage(error),
-        sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
-      });
-      app.log.warn({ error }, "Situation data sources request failed.");
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health,
-        warnings: [health.lastError ?? "Situation data sources are unavailable."]
-      };
-    }
-  });
-
-  app.get("/api/v1/situation/features", async (request, reply) => {
-    const requestNow = now();
-    const actor = actorFromRequest(request);
-    if (!situationDataSource) {
-      const fallbackQuery = defaultSituationFeatureQuery();
-      return {
-        ...emptySituationFeatureCollection(fallbackQuery, requestNow, ["Situation data source is disabled."]),
-        sourceHealth: {
-          detail: "disabled",
-          evaluatedAt: requestNow.toISOString(),
-          health: "WAITING" as const,
-          lastPollAt: requestNow.toISOString()
-        }
-      };
-    }
-
-    const query = parseSituationFeatureQuery(request.query as Record<string, unknown>, situationDataSource.config);
+    const query = parseMapQueryRequest(request.body);
     if (!query) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Situation feature query requires bbox=west,south,east,north.", crypto.randomUUID());
-    }
-    const sanitized = sanitizeSituationQueryForActor(query, actor);
-    const sourceWarnings = sanitized.warnings;
-    if (sanitized.blocked) {
-      const collection = emptySituationFeatureCollection(sanitized.query, requestNow, sourceWarnings);
-      const health = buildSituationDataHealth(collection, requestNow);
-      return {
-        ...collection,
-        sourceHealth: health
-      };
+      return sendError(reply, 400, "VALIDATION_ERROR", "Map query requires bbox=[west,south,east,north] and layerIds[].", crypto.randomUUID());
     }
 
-    try {
-      const collection = filterSituationCollectionForActor(await situationDataSource.fetchFeatures(sanitized.query, requestNow), actor, sourceWarnings);
-      const health = buildSituationDataHealth(collection, requestNow);
-      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
-      return {
-        ...collection,
-        sourceHealth: health
-      };
-    } catch (error) {
-      const health = unavailableSituationDataHealth(error, requestNow);
-      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
-      appendAudit(state, "SITUATION_DATA_FEATURES_FAILED", {
-        error: errorMessage(error),
-        sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
-      });
-      app.log.warn({ error }, "Situation data features request failed.");
-      return {
-        ...emptySituationFeatureCollection(sanitized.query, requestNow, [health.lastError ?? "Situation data features are unavailable."]),
-        sourceHealth: health
-      };
-    }
-  });
+    const includeDiagnostics = Boolean(actor) && query.includeDiagnostics;
+    const includePartner = Boolean(actor) && query.includePartner;
+    const situation = await readSituationCatalogProvider(requestNow, actor);
+    const safety = await readSafetyCatalogProvider(requestNow);
+    const tak = includePartner ? await readTakCatalogProvider(requestNow) : undefined;
+    const catalog = buildMapCatalog({
+      flight: {
+        status: flightDataSource ? "online" : "disabled"
+      },
+      generatedAt: requestNow,
+      includeDiagnostics,
+      includePartner,
+      locale: "cs-CZ",
+      safety,
+      situation,
+      tak
+    });
+    const selectedLayers = catalog.layers.filter((layer) => query.layerIds.includes(layer.layerId));
+    const unknownLayerIds = query.layerIds.filter((layerId) => !catalog.layers.some((layer) => layer.layerId === layerId));
+    const providerQueries = buildProviderFeatureQueries(selectedLayers, query);
+    const warnings = [
+      ...catalog.warnings,
+      ...(unknownLayerIds.length > 0 ? [`Unknown or unauthorized map layers ignored: ${unknownLayerIds.join(", ")}.`] : [])
+    ];
 
-  app.get("/api/v1/safety/layers", async () => {
-    const requestNow = now();
-    if (!safetyDataSource) {
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceStatus: "disabled",
-        warnings: ["Safety data source is disabled."]
-      };
-    }
+    const [situationCollection, safetyCollection, takCollection] = await Promise.all([
+      readSituationMapQuery(providerQueries.situation, requestNow, actor),
+      readSafetyMapQuery(providerQueries.safety, requestNow),
+      includePartner ? readTakMapQuery(providerQueries.tak, requestNow) : Promise.resolve(undefined)
+    ]);
 
-    try {
-      const items = await safetyDataSource.fetchLayers(requestNow);
-      const health = buildSafetyDataHealth(items, requestNow);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
-      return {
-        items,
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health
-      };
-    } catch (error) {
-      const health = unavailableSafetyDataHealth(error, requestNow);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
-      appendAudit(state, "SAFETY_DATA_LAYERS_FAILED", {
-        error: errorMessage(error),
-        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
-      });
-      app.log.warn({ error }, "Safety data layers request failed.");
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health,
-        warnings: [health.lastError ?? "Safety data layers are unavailable."]
-      };
-    }
-  });
-
-  app.get("/api/v1/safety/sources", async () => {
-    const requestNow = now();
-    if (!safetyDataSource) {
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceStatus: "disabled",
-        warnings: ["Safety data source is disabled."]
-      };
-    }
-
-    try {
-      const items = await safetyDataSource.fetchSources(requestNow);
-      const health = buildSafetyDataHealth(items, requestNow);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
-      return {
-        items,
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health
-      };
-    } catch (error) {
-      const health = unavailableSafetyDataHealth(error, requestNow);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
-      appendAudit(state, "SAFETY_DATA_SOURCES_FAILED", {
-        error: errorMessage(error),
-        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
-      });
-      app.log.warn({ error }, "Safety data sources request failed.");
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health,
-        warnings: [health.lastError ?? "Safety data sources are unavailable."]
-      };
-    }
-  });
-
-  app.get("/api/v1/safety/config", async () => {
-    const requestNow = now();
-    if (!safetyDataSource) {
-      return {
-        config: {},
-        serverTimestamp: requestNow.toISOString(),
-        sourceStatus: "disabled",
-        warnings: ["Safety data source is disabled."]
-      };
-    }
-
-    try {
-      const config = await safetyDataSource.fetchConfig(requestNow);
-      const health: SourceHealthOverride = {
-        detail: "config available",
-        evaluatedAt: requestNow.toISOString(),
-        health: "ONLINE",
-        lastPollAt: requestNow.toISOString(),
-        lastSuccessAt: requestNow.toISOString()
-      };
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
-      return {
-        config,
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health
-      };
-    } catch (error) {
-      const health = unavailableSafetyDataHealth(error, requestNow);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
-      appendAudit(state, "SAFETY_DATA_CONFIG_FAILED", {
-        error: errorMessage(error),
-        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
-      });
-      app.log.warn({ error }, "Safety data config request failed.");
-      return {
-        config: {},
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health,
-        warnings: [health.lastError ?? "Safety data config is unavailable."]
-      };
-    }
-  });
-
-  app.get("/api/v1/safety/features", async (request, reply) => {
-    const requestNow = now();
-    if (!safetyDataSource) {
-      const fallbackQuery = defaultSafetyFeatureQuery();
-      return {
-        ...emptySafetyFeatureCollection(fallbackQuery, requestNow, ["Safety data source is disabled."]),
-        sourceHealth: {
-          detail: "disabled",
-          evaluatedAt: requestNow.toISOString(),
-          health: "WAITING" as const,
-          lastPollAt: requestNow.toISOString()
-        }
-      };
-    }
-
-    const query = parseSafetyFeatureQuery(request.query as Record<string, unknown>, safetyDataSource.config);
-    if (!query) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Safety feature query requires bbox=west,south,east,north.", crypto.randomUUID());
-    }
-
-    try {
-      const collection = await safetyDataSource.fetchFeatures(query, requestNow);
-      const health = buildSafetyDataHealth(collection, requestNow);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
-      return {
-        ...collection,
-        sourceHealth: health
-      };
-    } catch (error) {
-      const health = unavailableSafetyDataHealth(error, requestNow);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
-      appendAudit(state, "SAFETY_DATA_FEATURES_FAILED", {
-        error: errorMessage(error),
-        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
-      });
-      app.log.warn({ error }, "Safety data features request failed.");
-      return {
-        ...emptySafetyFeatureCollection(query, requestNow, [health.lastError ?? "Safety data features are unavailable."]),
-        sourceHealth: health
-      };
-    }
-  });
-
-  app.get("/api/v1/tak/layers", async (request, reply) => {
-    const requestNow = now();
-    if (!actorFromRequest(request)) {
-      return sendError(reply, 401, "UNAUTHORIZED", "TAK Gateway layers require an authenticated COP session.", crypto.randomUUID());
-    }
-    if (!takGatewaySource) {
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceStatus: "disabled",
-        warnings: ["TAK Gateway source is disabled."]
-      };
-    }
-
-    try {
-      const items = await takGatewaySource.fetchLayers(requestNow);
-      const health = buildTakGatewayHealth(items, requestNow);
-      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
-      return {
-        items,
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health
-      };
-    } catch (error) {
-      const health = unavailableTakGatewayHealth(error, requestNow);
-      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
-      appendAudit(state, "TAK_GATEWAY_LAYERS_FAILED", {
-        error: errorMessage(error),
-        sourceSystemId: takGatewaySource.sourceSystem.sourceSystemId
-      });
-      app.log.warn({ error }, "TAK Gateway layers request failed.");
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health,
-        warnings: [health.lastError ?? "TAK Gateway layers are unavailable."]
-      };
-    }
-  });
-
-  app.get("/api/v1/tak/sources", async (request, reply) => {
-    const requestNow = now();
-    if (!actorFromRequest(request)) {
-      return sendError(reply, 401, "UNAUTHORIZED", "TAK Gateway sources require an authenticated COP session.", crypto.randomUUID());
-    }
-    if (!takGatewaySource) {
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceStatus: "disabled",
-        warnings: ["TAK Gateway source is disabled."]
-      };
-    }
-
-    try {
-      const items = await takGatewaySource.fetchSources(requestNow);
-      const health = buildTakGatewayHealth(items, requestNow);
-      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
-      return {
-        items,
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health
-      };
-    } catch (error) {
-      const health = unavailableTakGatewayHealth(error, requestNow);
-      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
-      appendAudit(state, "TAK_GATEWAY_SOURCES_FAILED", {
-        error: errorMessage(error),
-        sourceSystemId: takGatewaySource.sourceSystem.sourceSystemId
-      });
-      app.log.warn({ error }, "TAK Gateway sources request failed.");
-      return {
-        items: [],
-        serverTimestamp: requestNow.toISOString(),
-        sourceHealth: health,
-        sourceStatus: health.health,
-        warnings: [health.lastError ?? "TAK Gateway sources are unavailable."]
-      };
-    }
-  });
-
-  app.get("/api/v1/tak/features", async (request, reply) => {
-    const requestNow = now();
-    if (!actorFromRequest(request)) {
-      return sendError(reply, 401, "UNAUTHORIZED", "TAK Gateway features require an authenticated COP session.", crypto.randomUUID());
-    }
-    if (!takGatewaySource) {
-      const fallbackQuery = defaultTakGatewayFeatureQuery();
-      return {
-        ...emptyTakGatewayFeatureCollection(fallbackQuery, requestNow, ["TAK Gateway source is disabled."]),
-        sourceHealth: {
-          detail: "disabled",
-          evaluatedAt: requestNow.toISOString(),
-          health: "WAITING" as const,
-          lastPollAt: requestNow.toISOString()
-        }
-      };
-    }
-
-    const query = parseTakGatewayFeatureQuery(request.query as Record<string, unknown>, takGatewaySource.config);
-    if (!query) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "TAK Gateway feature query requires bbox=west,south,east,north and optional layers=mobile,ground,traffic.", crypto.randomUUID());
-    }
-
-    try {
-      const collection = await takGatewaySource.fetchFeatures(query, requestNow);
-      const health = buildTakGatewayHealth(collection, requestNow);
-      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
-      return {
-        ...collection,
-        sourceHealth: health
-      };
-    } catch (error) {
-      const health = unavailableTakGatewayHealth(error, requestNow);
-      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
-      appendAudit(state, "TAK_GATEWAY_FEATURES_FAILED", {
-        error: errorMessage(error),
-        sourceSystemId: takGatewaySource.sourceSystem.sourceSystemId
-      });
-      app.log.warn({ error }, "TAK Gateway features request failed.");
-      return {
-        ...emptyTakGatewayFeatureCollection(query, requestNow, [health.lastError ?? "TAK Gateway features are unavailable."]),
-        sourceHealth: health
-      };
-    }
+    const featureCount = (situationCollection?.summary.featureCount ?? 0)
+      + (safetyCollection?.summary.featureCount ?? 0)
+      + (takCollection?.summary.featureCount ?? 0);
+    return {
+      contractVersion: "cop-map-query-v1",
+      generatedAt: requestNow.toISOString(),
+      query: {
+        bbox: query.bbox,
+        layerIds: selectedLayers.map((layer) => layer.layerId),
+        limit: query.limit
+      },
+      safety: safetyCollection,
+      situation: situationCollection,
+      summary: {
+        featureCount,
+        layerCount: selectedLayers.length,
+        warningCount: warnings.length
+      },
+      tak: takCollection,
+      warnings
+    };
   });
 
   app.post("/api/v1/sources", async (request, reply) => {
@@ -2184,6 +1813,132 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function readSituationMapQuery(query: SituationFeatureQuery | undefined, requestNow: Date, actor: AuthenticatedActor | null) {
+    if (!query) {
+      return undefined;
+    }
+    if (!situationDataSource) {
+      return {
+        ...emptySituationFeatureCollection(query, requestNow, ["Situation data source is disabled."]),
+        sourceHealth: {
+          detail: "disabled",
+          evaluatedAt: requestNow.toISOString(),
+          health: "WAITING" as const,
+          lastPollAt: requestNow.toISOString()
+        }
+      };
+    }
+
+    const sanitized = sanitizeSituationQueryForActor(query, actor);
+    if (sanitized.blocked) {
+      const collection = emptySituationFeatureCollection(sanitized.query, requestNow, sanitized.warnings);
+      return {
+        ...collection,
+        sourceHealth: buildSituationDataHealth(collection, requestNow)
+      };
+    }
+
+    try {
+      const collection = filterSituationCollectionForActor(await situationDataSource.fetchFeatures(sanitized.query, requestNow), actor, sanitized.warnings);
+      const health = buildSituationDataHealth(collection, requestNow);
+      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      return {
+        ...collection,
+        sourceHealth: health
+      };
+    } catch (error) {
+      const health = unavailableSituationDataHealth(error, requestNow);
+      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      appendAudit(state, "MAP_QUERY_SITUATION_PROVIDER_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Situation data map query failed.");
+      return {
+        ...emptySituationFeatureCollection(sanitized.query, requestNow, [health.lastError ?? "Situation data features are unavailable."]),
+        sourceHealth: health
+      };
+    }
+  }
+
+  async function readSafetyMapQuery(query: SafetyFeatureQuery | undefined, requestNow: Date) {
+    if (!query) {
+      return undefined;
+    }
+    if (!safetyDataSource) {
+      return {
+        ...emptySafetyFeatureCollection(query, requestNow, ["Safety data source is disabled."]),
+        sourceHealth: {
+          detail: "disabled",
+          evaluatedAt: requestNow.toISOString(),
+          health: "WAITING" as const,
+          lastPollAt: requestNow.toISOString()
+        }
+      };
+    }
+
+    try {
+      const collection = await safetyDataSource.fetchFeatures(query, requestNow);
+      const health = buildSafetyDataHealth(collection, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      return {
+        ...collection,
+        sourceHealth: health
+      };
+    } catch (error) {
+      const health = unavailableSafetyDataHealth(error, requestNow);
+      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      appendAudit(state, "MAP_QUERY_SAFETY_PROVIDER_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Safety data map query failed.");
+      return {
+        ...emptySafetyFeatureCollection(query, requestNow, [health.lastError ?? "Safety data features are unavailable."]),
+        sourceHealth: health
+      };
+    }
+  }
+
+  async function readTakMapQuery(query: TakGatewayFeatureQuery | undefined, requestNow: Date) {
+    if (!query) {
+      return undefined;
+    }
+    if (!takGatewaySource) {
+      return {
+        ...emptyTakGatewayFeatureCollection(query, requestNow, ["TAK Gateway source is disabled."]),
+        sourceHealth: {
+          detail: "disabled",
+          evaluatedAt: requestNow.toISOString(),
+          health: "WAITING" as const,
+          lastPollAt: requestNow.toISOString()
+        }
+      };
+    }
+
+    try {
+      const collection = await takGatewaySource.fetchFeatures(query, requestNow);
+      const health = buildTakGatewayHealth(collection, requestNow);
+      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      return {
+        ...collection,
+        sourceHealth: health
+      };
+    } catch (error) {
+      const health = unavailableTakGatewayHealth(error, requestNow);
+      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      appendAudit(state, "MAP_QUERY_TAK_PROVIDER_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: takGatewaySource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "TAK Gateway map query failed.");
+      return {
+        ...emptyTakGatewayFeatureCollection(query, requestNow, [health.lastError ?? "TAK Gateway features are unavailable."]),
+        sourceHealth: health
+      };
+    }
+  }
+
   async function readableCurrentTracks(subject: ReturnType<typeof defaultSystemSubject>, requestNow: Date): Promise<ObservedObject[]> {
     const objects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle).filter((object) => canReadObject(subject, object));
     return decorateObjectsWithConflictEvidence(objects, requestNow);
@@ -2364,30 +2119,179 @@ function isSourceHealthOverride(value: unknown): value is SourceHealthOverride["
   return value === "DEGRADED" || value === "ONLINE" || value === "STALE" || value === "UNAVAILABLE" || value === "WAITING";
 }
 
-function defaultSituationFeatureQuery(): SituationFeatureQuery {
+interface MapFeatureQueryRequest {
+  bbox: SituationFeatureQuery["bbox"];
+  filters: Record<string, Record<string, unknown>>;
+  includeDiagnostics: boolean;
+  includePartner: boolean;
+  layerIds: string[];
+  limit: number;
+}
+
+interface ProviderFeatureQueries {
+  safety?: SafetyFeatureQuery;
+  situation?: SituationFeatureQuery;
+  tak?: TakGatewayFeatureQuery;
+}
+
+function parseMapQueryRequest(body: unknown): MapFeatureQueryRequest | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  const bbox = parseMapQueryBbox(body.bbox);
+  const layerIds = normalizeMapQueryStringList(body.layerIds ?? body.layers);
+  if (!bbox || layerIds.length === 0) {
+    return null;
+  }
   return {
-    bbox: {
-      east: 15.35,
-      north: 50.45,
-      south: 49.65,
-      west: 13.85
-    },
-    layers: ["weather"],
-    limit: 250
+    bbox,
+    filters: normalizeMapQueryFilters(body.filters),
+    includeDiagnostics: parseBooleanQuery(body.includeDiagnostics),
+    includePartner: parseBooleanQuery(body.includePartner),
+    layerIds,
+    limit: optionalFiniteNumber(body.limit, 1, 1000) ?? 250
   };
 }
 
-function defaultTakGatewayFeatureQuery(): TakGatewayFeatureQuery {
+function parseMapQueryBbox(value: unknown): SituationFeatureQuery["bbox"] | null {
+  const parts = Array.isArray(value)
+    ? value.map(Number)
+    : typeof value === "string"
+      ? value.split(",").map(Number)
+      : isRecord(value)
+        ? [value.west, value.south, value.east, value.north].map(Number)
+        : [];
+  if (parts.length !== 4 || !parts.every(Number.isFinite)) {
+    return null;
+  }
+  const [west, south, east, north] = parts as [number, number, number, number];
+  if (west >= east || south >= north) {
+    return null;
+  }
   return {
-    bbox: {
-      east: 15.35,
-      north: 50.45,
-      south: 49.65,
-      west: 13.85
-    },
-    layers: ["mobile", "ground", "traffic"],
-    limit: 250
+    east: clampNumber(east, -180, 180),
+    north: clampNumber(north, -90, 90),
+    south: clampNumber(south, -90, 90),
+    west: clampNumber(west, -180, 180)
   };
+}
+
+function normalizeMapQueryStringList(value: unknown): string[] {
+  const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  return Array.from(new Set(raw.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : []))).slice(0, 128);
+}
+
+function normalizeMapQueryFilters(value: unknown): Record<string, Record<string, unknown>> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => {
+    if (!key.trim() || !isRecord(entry)) {
+      return [];
+    }
+    return [[key.trim(), entry]];
+  }));
+}
+
+function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeatureQueryRequest): ProviderFeatureQueries {
+  const situationLayers = new Set<SituationLayerId>();
+  const situationSources = new Set<string>();
+  const safetyLayers = new Set<SafetyLayerId>();
+  const takLayers = new Set<TakGatewayLayerId>();
+  let situationTechnology: string | undefined;
+
+  for (const layer of layers) {
+    if (layer.query.mode !== "bbox") {
+      continue;
+    }
+    if (layer.query.providerId === "sim.situation-data") {
+      for (const layerId of layer.query.providerLayerIds ?? []) {
+        if (isSituationLayerId(layerId)) {
+          situationLayers.add(layerId);
+        }
+      }
+      for (const sourceId of layer.query.providerSourceIds ?? []) {
+        situationSources.add(sourceId);
+      }
+      situationTechnology = situationTechnology ?? readMapQueryTechnology(request.filters[layer.layerId]);
+    } else if (layer.query.providerId === "sim.safety-data") {
+      for (const layerId of layer.query.providerLayerIds ?? []) {
+        if (isSafetyLayerId(layerId)) {
+          safetyLayers.add(layerId);
+        }
+      }
+    } else if (layer.query.providerId === "sim.tak-gateway") {
+      for (const layerId of layer.query.providerLayerIds ?? []) {
+        if (isTakGatewayLayerId(layerId)) {
+          takLayers.add(layerId);
+        }
+      }
+    }
+  }
+
+  return {
+    ...(safetyLayers.size > 0
+      ? {
+          safety: {
+            bbox: request.bbox,
+            layers: Array.from(safetyLayers),
+            limit: request.limit
+          }
+        }
+      : {}),
+    ...(situationLayers.size > 0
+      ? {
+          situation: {
+            bbox: request.bbox,
+            layers: Array.from(situationLayers),
+            limit: request.limit,
+            ...(situationSources.size > 0 ? { sources: Array.from(situationSources) } : {}),
+            ...(situationTechnology ? { technology: situationTechnology } : {})
+          }
+        }
+      : {}),
+    ...(takLayers.size > 0
+      ? {
+          tak: {
+            bbox: request.bbox,
+            layers: Array.from(takLayers),
+            limit: request.limit
+          }
+        }
+      : {})
+  };
+}
+
+function readMapQueryTechnology(value: Record<string, unknown> | undefined): string | undefined {
+  const raw = value?.technology;
+  if (Array.isArray(raw)) {
+    return raw.find((item): item is string => isCoverageTechnology(item));
+  }
+  return isCoverageTechnology(raw) ? raw : undefined;
+}
+
+function isCoverageTechnology(value: unknown): value is string {
+  return value === "2G" || value === "4G" || value === "5G";
+}
+
+function isSituationLayerId(value: string): value is SituationLayerId {
+  return value === "air_quality"
+    || value === "flood"
+    || value === "ground"
+    || value === "mobile"
+    || value === "mobile_coverage"
+    || value === "mobile_network"
+    || value === "traffic"
+    || value === "warnings"
+    || value === "weather";
+}
+
+function isSafetyLayerId(value: string): value is SafetyLayerId {
+  return value === "flood" || value === "warnings";
+}
+
+function isTakGatewayLayerId(value: string): value is TakGatewayLayerId {
+  return value === "ground" || value === "mobile" || value === "traffic";
 }
 
 function parseFlightAirportQuery(value: Record<string, unknown>): FlightAirportQuery {
@@ -2464,19 +2368,6 @@ function canReadSituationSource(sourceId: string, actor: AuthenticatedActor | nu
   }
   const requiredRole = process.env.COP_ARDOS_REQUIRED_ROLE?.trim();
   return requiredRole ? Boolean(actor.roles?.includes(requiredRole)) : true;
-}
-
-function defaultSafetyFeatureQuery(): SafetyFeatureQuery {
-  return {
-    bbox: {
-      east: 15.35,
-      north: 50.45,
-      south: 49.65,
-      west: 13.85
-    },
-    layers: ["warnings", "flood"],
-    limit: 250
-  };
 }
 
 function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
@@ -2905,20 +2796,12 @@ function mobileEndpoints() {
     communityReportSubmit: "/api/v1/community/reports/{reportId}/submit",
     communityReports: "/api/v1/community/reports",
     deviceRegistration: "/api/v1/mobile/devices",
+    mapQuery: "/api/v1/map/query",
     offlineSnapshot: "/api/v1/mobile/offline-snapshot",
     preferences: "/api/v1/me/preferences",
     mapCatalog: "/api/v1/map/catalog",
     sourceHealth: "/api/v1/sources/health",
     sources: "/api/v1/sources",
-    safetyConfig: "/api/v1/safety/config",
-    safetyFeatures: "/api/v1/safety/features",
-    safetyLayers: "/api/v1/safety/layers",
-    safetySources: "/api/v1/safety/sources",
-    situationFeatures: "/api/v1/situation/features",
-    situationLayers: "/api/v1/situation/layers",
-    takGatewayFeatures: "/api/v1/tak/features",
-    takGatewayLayers: "/api/v1/tak/layers",
-    takGatewaySources: "/api/v1/tak/sources",
     stream: "/api/v1/stream/cop/live",
     trackHistory: "/api/v1/cop/track-history",
     tracks: "/api/v1/cop/tracks"

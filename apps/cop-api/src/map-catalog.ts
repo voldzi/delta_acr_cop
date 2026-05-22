@@ -10,7 +10,6 @@ export type MapCatalogSourceRole = "aggregate" | "diagnostic" | "final" | "input
 export interface MapCatalogProvider {
   label: string;
   providerId: string;
-  sourceCatalogUrl?: string;
   status: "disabled" | "online" | "unavailable";
 }
 
@@ -158,19 +157,16 @@ function buildProviders(input: BuildMapCatalogInput): MapCatalogProvider[] {
     {
       label: "SIM safety data",
       providerId: "sim.safety-data",
-      sourceCatalogUrl: "/api/v1/safety/sources",
       status: input.safety?.status ?? "disabled"
     },
     {
       label: "SIM situation data",
       providerId: "sim.situation-data",
-      sourceCatalogUrl: "/api/v1/situation/sources",
       status: input.situation?.status ?? "disabled"
     },
     {
       label: "SIM flight data",
       providerId: "sim.flight-data",
-      sourceCatalogUrl: "/api/v1/flight-data/airports",
       status: input.flight?.status ?? "disabled"
     },
     {
@@ -193,7 +189,6 @@ function buildProviders(input: BuildMapCatalogInput): MapCatalogProvider[] {
           {
             label: "SIM TAK Gateway",
             providerId: "sim.tak-gateway",
-            sourceCatalogUrl: "/api/v1/tak/sources",
             status: input.tak?.status ?? "disabled"
           }
         ]

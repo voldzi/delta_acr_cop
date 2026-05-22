@@ -142,7 +142,7 @@ Anonymni kontrola verejne mapy:
 
 ```bash
 curl -fsS http://docker.home.cz:4310/api/v1/cop/tracks >/dev/null
-curl -fsS http://docker.home.cz:4310/api/v1/situation/layers >/dev/null
+curl -fsS http://docker.home.cz:4310/api/v1/map/catalog >/dev/null
 curl -i -X POST http://docker.home.cz:4310/api/v1/community/reports \
   -H 'Content-Type: application/json' \
   -d '{"category":"fire"}'

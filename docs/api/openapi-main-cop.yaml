@@ -190,6 +190,35 @@ paths:
                 $ref: "#/components/schemas/MapCatalog"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/map/query:
+    post:
+      tags: [Map Catalog]
+      summary: Query source-neutral map features.
+      operationId: queryMapFeatures
+      description: >
+        Single public COP feature query endpoint. Clients select catalog layer
+        IDs from /api/v1/map/catalog; COP translates those layer IDs to internal
+        provider queries server-side. Provider-specific SIM endpoints are not
+        part of the COP public API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MapFeatureQueryRequest"
+      responses:
+        "200":
+          description: Aggregated source-neutral map feature result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MapFeatureQueryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/mobile/devices:
     post:
       tags: [Mobile]
@@ -739,11 +768,11 @@ paths:
   /api/v1/stream/cop/{subscriptionId}:
     get:
       tags: [Streaming]
-      summary: Read legacy COP snapshot for a subscription.
+      summary: Read COP snapshot for a subscription.
       operationId: streamCopSubscription
       description: >
-        Compatibility endpoint returning the current subscription snapshot.
-        The live browser stream is exposed at /api/v1/stream/cop/live.
+        Returns the current subscription snapshot. The live browser stream is
+        exposed at /api/v1/stream/cop/live.
       parameters:
         - name: subscriptionId
           in: path
@@ -881,269 +910,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SourceHealthList"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/situation/layers:
-    get:
-      tags: [Situation Context]
-      summary: List available context-only situation layers.
-      operationId: listSituationLayers
-      description: >
-        Proxies SIM situation-data-api layer metadata. These layers are
-        contextual map overlays only and are not persisted as COP tracks,
-        history, tasking or weapon workflow state.
-      responses:
-        "200":
-          description: Situation layer descriptors and source health.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SituationLayersResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/situation/features:
-    get:
-      tags: [Situation Context]
-      summary: Read context-only situation features for the current map bbox.
-      operationId: listSituationFeatures
-      description: >
-        Returns GeoJSON features from SIM situation-data-api for display as
-        context layers. The COP API does not forward the operator bearer token
-        to SIM and returns an empty degraded FeatureCollection instead of
-        crashing the map when the upstream source is unavailable.
-      parameters:
-        - name: bbox
-          in: query
-          required: true
-          schema:
-            type: string
-            pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
-          description: "west,south,east,north"
-        - name: layers
-          in: query
-          required: false
-          schema:
-            type: string
-            default: weather
-          description: "Comma-separated layer IDs: weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality."
-        - name: source
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Optional comma-separated SIM situation source IDs.
-        - name: technology
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [2G, 4G, 5G]
-          description: Optional technology filter for the mobile_network and mobile_coverage layers.
-        - name: technologies
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Compatibility alias for technology; COP currently applies the first valid value.
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 1000
-            default: 250
-      responses:
-        "200":
-          description: GeoJSON FeatureCollection with normalized context properties.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SituationFeatureCollection"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/safety/layers:
-    get:
-      tags: [Safety Data]
-      summary: List available context-only public safety layers.
-      operationId: listSafetyLayers
-      description: >
-        Proxies SIM safety-data-api layer metadata. These layers are contextual
-        public safety overlays only and are not persisted as COP tracks,
-        history, tasking or action workflow state.
-      responses:
-        "200":
-          description: Safety layer descriptors and source health.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SafetyLayersResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/safety/sources:
-    get:
-      tags: [Safety Data]
-      summary: List upstream public safety sources.
-      operationId: listSafetySources
-      responses:
-        "200":
-          description: Safety source descriptors and source health.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SafetySourcesResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/safety/config:
-    get:
-      tags: [Safety Data]
-      summary: Read public safety source runtime configuration.
-      operationId: getSafetyConfig
-      responses:
-        "200":
-          description: Safety data public configuration and source health.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SafetyConfigResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/safety/features:
-    get:
-      tags: [Safety Data]
-      summary: Read context-only public safety features for the current map bbox.
-      operationId: listSafetyFeatures
-      description: >
-        Returns GeoJSON features from SIM safety-data-api for display as map
-        overlays. The COP API does not forward the operator bearer token to SIM
-        and returns an empty degraded FeatureCollection when the upstream source
-        is unavailable.
-      parameters:
-        - name: bbox
-          in: query
-          required: true
-          schema:
-            type: string
-            pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
-          description: "west,south,east,north"
-        - name: layers
-          in: query
-          required: false
-          schema:
-            type: string
-            default: warnings,flood
-          description: "Comma-separated layer IDs: warnings, flood."
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 1000
-            default: 250
-      responses:
-        "200":
-          description: GeoJSON FeatureCollection with normalized public safety properties.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SafetyFeatureCollection"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/tak/layers:
-    get:
-      tags: [TAK Gateway]
-      summary: List authenticated TAK Gateway context layers.
-      operationId: listTakGatewayLayers
-      description: >
-        Proxies SIM tak-gateway-api layer metadata. This is a server-side
-        partner source; the SIM read token is never exposed to the browser.
-      responses:
-        "200":
-          description: TAK Gateway layer descriptors and source health.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TakGatewayLayersResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/tak/sources:
-    get:
-      tags: [TAK Gateway]
-      summary: List TAK Gateway upstream source descriptors.
-      operationId: listTakGatewaySources
-      responses:
-        "200":
-          description: TAK Gateway source descriptors and source health.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TakGatewaySourcesResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/tak/features:
-    get:
-      tags: [TAK Gateway]
-      summary: Read authenticated TAK Gateway features for the current map bbox.
-      operationId: listTakGatewayFeatures
-      description: >
-        Returns GeoJSON features from SIM tak-gateway-api as display-only
-        partner context. COP does not use affiliation for targeting or action
-        workflows and does not expose raw CoT data.
-      parameters:
-        - name: bbox
-          in: query
-          required: true
-          schema:
-            type: string
-            pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
-          description: "west,south,east,north"
-        - name: layers
-          in: query
-          required: false
-          schema:
-            type: string
-            default: mobile,ground,traffic
-          description: "Comma-separated layer IDs: mobile, ground, traffic."
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 1000
-            default: 250
-      responses:
-        "200":
-          description: GeoJSON FeatureCollection with normalized TAK Gateway properties.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TakGatewayFeatureCollection"
-        "400":
-          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1965,8 +1731,6 @@ components:
           type: string
         providerId:
           type: string
-        sourceCatalogUrl:
-          type: string
         status:
           type: string
           enum: [disabled, online, unavailable]
@@ -2127,6 +1891,81 @@ components:
             type: string
         visibleInDiagnostics:
           type: boolean
+    MapFeatureQueryRequest:
+      type: object
+      required: [bbox, layerIds]
+      properties:
+        bbox:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: number
+          description: "[west, south, east, north]"
+        filters:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+        includeDiagnostics:
+          type: boolean
+          default: false
+        includePartner:
+          type: boolean
+          default: false
+        layerIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Source-neutral catalog layer IDs from /api/v1/map/catalog.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 250
+    MapFeatureQueryResponse:
+      type: object
+      required: [contractVersion, generatedAt, query, summary, warnings]
+      properties:
+        contractVersion:
+          type: string
+          const: cop-map-query-v1
+        generatedAt:
+          type: string
+          format: date-time
+        query:
+          type: object
+          required: [bbox, layerIds, limit]
+          properties:
+            bbox:
+              $ref: "#/components/schemas/SituationBbox"
+            layerIds:
+              type: array
+              items:
+                type: string
+            limit:
+              type: integer
+        safety:
+          $ref: "#/components/schemas/SafetyFeatureCollection"
+        situation:
+          $ref: "#/components/schemas/SituationFeatureCollection"
+        summary:
+          type: object
+          required: [featureCount, layerCount, warningCount]
+          properties:
+            featureCount:
+              type: integer
+            layerCount:
+              type: integer
+            warningCount:
+              type: integer
+        tak:
+          $ref: "#/components/schemas/TakGatewayFeatureCollection"
+        warnings:
+          type: array
+          items:
+            type: string
     MobileBootstrap:
       type: object
       required: [actor, auth, capabilities, endpoints, map, policy, profile, snapshot, serverTimestamp]
@@ -2810,46 +2649,6 @@ components:
           additionalProperties:
             type: integer
             minimum: 0
-    SituationLayersResponse:
-      type: object
-      required: [items, serverTimestamp]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/SituationLayer"
-        serverTimestamp:
-          type: string
-          format: date-time
-        sourceHealth:
-          $ref: "#/components/schemas/SourceHealthOverride"
-        sourceStatus:
-          type: string
-        warnings:
-          type: array
-          items:
-            type: string
-    SituationLayer:
-      type: object
-      required: [defaultVisible, label, layerId]
-      properties:
-        layerId:
-          type: string
-          enum: [weather, ground, mobile, traffic]
-        label:
-          type: string
-        description:
-          type: string
-        defaultVisible:
-          type: boolean
-        expectedCadenceSeconds:
-          type: integer
-          minimum: 1
-        geometryTypes:
-          type: array
-          items:
-            type: string
-            enum: [Point, LineString, Polygon]
     SituationFeatureCollection:
       type: object
       required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
@@ -3104,65 +2903,6 @@ components:
         warningCount:
           type: integer
           minimum: 0
-    TakGatewayLayersResponse:
-      type: object
-      required: [items, serverTimestamp]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/TakGatewayLayer"
-        serverTimestamp:
-          type: string
-          format: date-time
-        sourceHealth:
-          $ref: "#/components/schemas/SourceHealthOverride"
-        sourceStatus:
-          type: string
-        warnings:
-          type: array
-          items:
-            type: string
-    TakGatewaySourcesResponse:
-      type: object
-      required: [items, serverTimestamp]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/TakGatewaySourceDescriptor"
-        serverTimestamp:
-          type: string
-          format: date-time
-        sourceHealth:
-          $ref: "#/components/schemas/SourceHealthOverride"
-        sourceStatus:
-          type: string
-        warnings:
-          type: array
-          items:
-            type: string
-    TakGatewayLayer:
-      type: object
-      required: [defaultVisible, label, layerId]
-      properties:
-        layerId:
-          type: string
-          enum: [mobile, ground, traffic]
-        label:
-          type: string
-        description:
-          type: string
-        defaultVisible:
-          type: boolean
-        expectedCadenceSeconds:
-          type: integer
-          minimum: 1
-        geometryTypes:
-          type: array
-          items:
-            type: string
-            enum: [Point, LineString, Polygon]
     TakGatewayFeatureCollection:
       type: object
       required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
@@ -3346,82 +3086,6 @@ components:
             unknown:
               type: integer
               minimum: 0
-    SafetyLayersResponse:
-      type: object
-      required: [items, serverTimestamp]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/SafetyLayer"
-        serverTimestamp:
-          type: string
-          format: date-time
-        sourceHealth:
-          $ref: "#/components/schemas/SourceHealthOverride"
-        sourceStatus:
-          type: string
-        warnings:
-          type: array
-          items:
-            type: string
-    SafetySourcesResponse:
-      type: object
-      required: [items, serverTimestamp]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/SafetySourceDescriptor"
-        serverTimestamp:
-          type: string
-          format: date-time
-        sourceHealth:
-          $ref: "#/components/schemas/SourceHealthOverride"
-        sourceStatus:
-          type: string
-        warnings:
-          type: array
-          items:
-            type: string
-    SafetyConfigResponse:
-      type: object
-      required: [config, serverTimestamp]
-      properties:
-        config:
-          $ref: "#/components/schemas/SafetyPublicConfig"
-        serverTimestamp:
-          type: string
-          format: date-time
-        sourceHealth:
-          $ref: "#/components/schemas/SourceHealthOverride"
-        sourceStatus:
-          type: string
-        warnings:
-          type: array
-          items:
-            type: string
-    SafetyLayer:
-      type: object
-      required: [defaultVisible, label, layerId]
-      properties:
-        layerId:
-          type: string
-          enum: [warnings, flood]
-        label:
-          type: string
-        description:
-          type: string
-        defaultVisible:
-          type: boolean
-        expectedCadenceSeconds:
-          type: integer
-          minimum: 1
-        geometryTypes:
-          type: array
-          items:
-            type: string
-            enum: [Point, Polygon]
     SafetyFeatureCollection:
       type: object
       required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
@@ -3620,48 +3284,6 @@ components:
         warningCount:
           type: integer
           minimum: 0
-    SafetyPublicConfig:
-      type: object
-      properties:
-        cacheMaxEntries:
-          type: integer
-          minimum: 1
-        cacheTtlSeconds:
-          type: integer
-          minimum: 1
-        staleAfterSeconds:
-          type: integer
-          minimum: 1
-        staleIfErrorSeconds:
-          type: integer
-          minimum: 0
-        requestTimeoutMs:
-          type: integer
-          minimum: 1
-        hydroMaxStations:
-          type: integer
-          minimum: 1
-        defaultBbox:
-          $ref: "#/components/schemas/SituationBbox"
-        enabledSources:
-          type: array
-          items:
-            type: string
-            enum: [chmi_alerts, chmi_hydro, mock]
-        providers:
-          type: array
-          items:
-            type: object
-            required: [sourceId]
-            properties:
-              sourceId:
-                type: string
-                enum: [chmi_alerts, chmi_hydro, mock]
-              authConfigured:
-                type: boolean
-              baseUrl:
-                type: string
-                format: uri
     SourceHealthOverride:
       type: object
       required: [evaluatedAt, health]

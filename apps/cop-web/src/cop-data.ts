@@ -531,7 +531,6 @@ export type MapCatalogSourceRole = "aggregate" | "diagnostic" | "final" | "input
 export interface MapCatalogProvider {
   label: string;
   providerId: string;
-  sourceCatalogUrl?: string;
   status: "disabled" | "online" | "unavailable";
 }
 
@@ -618,6 +617,34 @@ export interface MapCatalogOptions {
   includeDiagnostics?: boolean;
   includePartner?: boolean;
   locale?: string;
+}
+
+export interface MapFeatureQueryOptions {
+  bbox: MapBounds;
+  filters?: Record<string, Record<string, unknown>>;
+  includeDiagnostics?: boolean;
+  includePartner?: boolean;
+  layerIds: string[];
+  limit?: number;
+}
+
+export interface MapFeatureQueryResponse {
+  contractVersion: "cop-map-query-v1";
+  generatedAt: string;
+  query: {
+    bbox: MapBounds;
+    layerIds: string[];
+    limit: number;
+  };
+  safety?: SafetyFeatureCollectionResponse;
+  situation?: SituationFeatureCollectionResponse;
+  summary: {
+    featureCount: number;
+    layerCount: number;
+    warningCount: number;
+  };
+  tak?: TakFeatureCollectionResponse;
+  warnings: string[];
 }
 
 export interface SourceHealthItem {
@@ -858,93 +885,25 @@ export async function fetchMapCatalog(apiBase: string, token: string | undefined
   });
 }
 
-export async function fetchSituationLayers(apiBase: string, token: string | undefined): Promise<SituationLayersResponse> {
-  return fetchJson<SituationLayersResponse>(`${apiBase}/api/v1/situation/layers`, {
-    headers: authHeaders(token)
-  });
-}
-
-export async function fetchSituationSources(apiBase: string, token: string | undefined): Promise<SituationSourcesResponse> {
-  return fetchJson<SituationSourcesResponse>(`${apiBase}/api/v1/situation/sources`, {
-    headers: authHeaders(token)
-  });
-}
-
-export async function fetchSituationFeatures(
+export async function fetchMapFeatures(
   apiBase: string,
   token: string | undefined,
-  options: SituationFeatureOptions
-): Promise<SituationFeatureCollectionResponse> {
-  const query = new URLSearchParams();
-  query.set("bbox", `${options.bbox.west},${options.bbox.south},${options.bbox.east},${options.bbox.north}`);
-  query.set("layers", options.layers.join(","));
-  query.set("limit", String(options.limit ?? 250));
-  if (options.sources && options.sources.length > 0) {
-    query.set("source", options.sources.join(","));
-  }
-  if (options.technology) {
-    query.set("technology", options.technology);
-  }
-  return fetchJson<SituationFeatureCollectionResponse>(`${apiBase}/api/v1/situation/features?${query.toString()}`, {
-    headers: authHeaders(token)
-  });
-}
-
-export async function fetchSafetyLayers(apiBase: string, token: string | undefined): Promise<SafetyLayersResponse> {
-  return fetchJson<SafetyLayersResponse>(`${apiBase}/api/v1/safety/layers`, {
-    headers: authHeaders(token)
-  });
-}
-
-export async function fetchSafetySources(apiBase: string, token: string | undefined): Promise<SafetySourcesResponse> {
-  return fetchJson<SafetySourcesResponse>(`${apiBase}/api/v1/safety/sources`, {
-    headers: authHeaders(token)
-  });
-}
-
-export async function fetchSafetyConfig(apiBase: string, token: string | undefined): Promise<SafetyConfigResponse> {
-  return fetchJson<SafetyConfigResponse>(`${apiBase}/api/v1/safety/config`, {
-    headers: authHeaders(token)
-  });
-}
-
-export async function fetchSafetyFeatures(
-  apiBase: string,
-  token: string | undefined,
-  options: SafetyFeatureOptions
-): Promise<SafetyFeatureCollectionResponse> {
-  const query = new URLSearchParams();
-  query.set("bbox", `${options.bbox.west},${options.bbox.south},${options.bbox.east},${options.bbox.north}`);
-  query.set("layers", options.layers.join(","));
-  query.set("limit", String(options.limit ?? 250));
-  return fetchJson<SafetyFeatureCollectionResponse>(`${apiBase}/api/v1/safety/features?${query.toString()}`, {
-    headers: authHeaders(token)
-  });
-}
-
-export async function fetchTakLayers(apiBase: string, token: string | undefined): Promise<TakLayersResponse> {
-  return fetchJson<TakLayersResponse>(`${apiBase}/api/v1/tak/layers`, {
-    headers: authHeaders(token)
-  });
-}
-
-export async function fetchTakSources(apiBase: string, token: string | undefined): Promise<TakSourcesResponse> {
-  return fetchJson<TakSourcesResponse>(`${apiBase}/api/v1/tak/sources`, {
-    headers: authHeaders(token)
-  });
-}
-
-export async function fetchTakFeatures(
-  apiBase: string,
-  token: string | undefined,
-  options: TakFeatureOptions
-): Promise<TakFeatureCollectionResponse> {
-  const query = new URLSearchParams();
-  query.set("bbox", `${options.bbox.west},${options.bbox.south},${options.bbox.east},${options.bbox.north}`);
-  query.set("layers", options.layers.join(","));
-  query.set("limit", String(options.limit ?? 250));
-  return fetchJson<TakFeatureCollectionResponse>(`${apiBase}/api/v1/tak/features?${query.toString()}`, {
-    headers: authHeaders(token)
+  options: MapFeatureQueryOptions
+): Promise<MapFeatureQueryResponse> {
+  return fetchJson<MapFeatureQueryResponse>(`${apiBase}/api/v1/map/query`, {
+    body: JSON.stringify({
+      bbox: [options.bbox.west, options.bbox.south, options.bbox.east, options.bbox.north],
+      filters: options.filters ?? {},
+      includeDiagnostics: options.includeDiagnostics === true,
+      includePartner: options.includePartner === true,
+      layerIds: options.layerIds,
+      limit: options.limit ?? 250
+    }),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
   });
 }
 

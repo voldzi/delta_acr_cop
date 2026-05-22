@@ -39,15 +39,3 @@ export function sanitizeCitizenSituationSourceIds(sourceIds: string[]): string[]
   return Array.from(new Set(sourceIds.map((item) => item.trim()).filter(Boolean).filter((sourceId) => !isTechnicalSituationSourceId(sourceId)))).slice(0, 32);
 }
 
-export function resolveSituationSourcesForFetch(layerIds: SituationLayerId[], selectedSourceIds: string[]): string[] | undefined {
-  const citizenLayerIds = normalizeCitizenSituationLayerIds(layerIds);
-  const citizenSelectedSourceIds = sanitizeCitizenSituationSourceIds(selectedSourceIds);
-  if (citizenSelectedSourceIds.length > 0) {
-    return citizenSelectedSourceIds;
-  }
-  if (citizenLayerIds.length === 1 && citizenLayerIds[0] === "mobile_network") {
-    return ["mobile_network_model"];
-  }
-  return undefined;
-}
-

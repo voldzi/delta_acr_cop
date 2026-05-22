@@ -141,9 +141,7 @@ Response:
     {
       "providerId": "sim.situation-data",
       "label": "SIM situation data",
-      "status": "online",
-      "healthUrl": "/api/v1/providers/sim.situation-data/health",
-      "sourceCatalogUrl": "/api/v1/providers/sim.situation-data/sources"
+      "status": "online"
     }
   ],
   "groups": [
@@ -294,29 +292,39 @@ Response:
 
 ```json
 {
-  "catalogVersion": "map-catalog-v1",
+  "contractVersion": "cop-map-query-v1",
   "generatedAt": "2026-05-22T08:00:00.000Z",
-  "layers": [
-    {
-      "layerId": "public.mobile.network",
-      "status": "degraded",
-      "features": {
-        "type": "FeatureCollection",
-        "features": []
-      },
-      "warnings": [
-        "SIM mobile_network_model returned stale features."
-      ],
-      "cache": {
-        "status": "hit",
-        "ttlSeconds": 600
-      }
-    }
-  ]
+  "query": {
+    "bbox": { "west": 13.85, "south": 49.65, "east": 15.35, "north": 50.45 },
+    "layerIds": ["public.mobile.network", "public.safety.warnings"],
+    "limit": 250
+  },
+  "situation": {
+    "contractVersion": "cop-situation-source-v1",
+    "type": "FeatureCollection",
+    "features": [],
+    "warnings": []
+  },
+  "safety": {
+    "contractVersion": "cop-safety-source-v1",
+    "type": "FeatureCollection",
+    "features": [],
+    "warnings": []
+  },
+  "summary": {
+    "featureCount": 0,
+    "layerCount": 2,
+    "warningCount": 0
+  },
+  "warnings": []
 }
 ```
 
 COP may internally fan out to SIM, TAK, COP database, tile services or partner APIs. Clients should not need to know those provider details for normal map rendering.
+
+Provider-specific endpoints such as SIM `/layers`, `/sources` or `/cop/features`
+are internal adapter details. COP web and native clients must not call them
+directly and must not store them in user preferences.
 
 ## Feature Requirements
 
@@ -406,7 +414,10 @@ Minimum provider source metadata:
 - technical inputs,
 - superseded/replaced-by relation.
 
-SIM can keep existing `/layers` and `/sources`, but should add these fields or expose a new `/catalog` endpoint.
+Providers should expose a provider catalog endpoint such as `/catalog` and keep
+feature delivery behind the provider contract. COP translates provider metadata
+into this source-neutral catalog and keeps provider-specific contracts behind the
+server boundary.
 
 ## Migration Rules
 

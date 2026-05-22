@@ -187,18 +187,19 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
   }
 
   const method = request.method.toUpperCase();
+  const path = request.url.split("?")[0] ?? request.url;
+  if (path === "/api/v1/map/query" && method === "POST") {
+    return true;
+  }
   if (method !== "GET" && method !== "HEAD") {
     return false;
   }
 
-  const path = request.url.split("?")[0] ?? request.url;
   return path === "/api/v1/sources"
     || path.startsWith("/api/v1/sources/")
     || path === "/api/v1/sources/health"
     || path === "/api/v1/flight-data/airports"
     || path === "/api/v1/map/catalog"
-    || path.startsWith("/api/v1/situation/")
-    || path.startsWith("/api/v1/safety/")
     || path === "/api/v1/cop/tracks"
     || path === "/api/v1/cop/conflicts"
     || path === "/api/v1/cop/track-history"

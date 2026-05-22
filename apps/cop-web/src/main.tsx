@@ -45,16 +45,8 @@ import {
   connectCopStream,
   fetchCopDashboardData,
   fetchCopAlerts,
-  fetchSafetyConfig,
-  fetchSafetyFeatures,
-  fetchSafetyLayers,
-  fetchSafetySources,
-  fetchSituationFeatures,
-  fetchSituationLayers,
-  fetchSituationSources,
-  fetchTakFeatures,
-  fetchTakLayers,
-  fetchTakSources,
+  fetchMapCatalog,
+  fetchMapFeatures,
   fetchUserProfile,
   filterObjectsByLayers,
   filterVisibleObjects,
@@ -75,10 +67,14 @@ import {
   type CopStreamHealth,
   type FlightDataAttributes,
   type HealthStatus,
+  type MapCatalogLayer,
+  type MapCatalogResponse,
+  type MapCatalogSource,
   type MapBounds,
   type ObjectProvenance,
   type SourceHealthItem,
   type SourceSystem,
+  type SafetyDataSourceId,
   type SafetyConfigResponse,
   type SafetyFeature,
   type SafetyFeatureCollectionResponse,
@@ -157,7 +153,6 @@ import {
   filterCitizenSituationSources,
   filterTechnicalSituationSources,
   normalizeCitizenSituationLayerIds,
-  resolveSituationSourcesForFetch,
   sanitizeCitizenSituationSourceIds
 } from "./situation-source-policy";
 import "./styles.css";
@@ -279,6 +274,7 @@ export function App() {
   const [mapView, setMapView] = React.useState<MapViewState | undefined>(() => normalizeMapView(initialPreferences.mapView));
   const [mapBounds, setMapBounds] = React.useState<MapBounds | undefined>();
   const [focusViewRequest, setFocusViewRequest] = React.useState(0);
+  const [mapCatalog, setMapCatalog] = React.useState<MapCatalogResponse | null>(null);
   const [situationLayers, setSituationLayers] = React.useState<SituationLayer[]>([]);
   const [situationSources, setSituationSources] = React.useState<SituationSourceDescriptor[]>([]);
   const [visibleSituationLayerIds, setVisibleSituationLayerIds] = React.useState<SituationLayerId[]>(() =>
@@ -600,82 +596,51 @@ export function App() {
     if (!dataAccessReady) {
       setSituationStatus("disabled");
       setSituationWarnings(["Pro načtení situačních vrstev je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
+      setSafetyStatus("disabled");
+      setSafetyWarnings(["Pro načtení bezpečnostních vrstev je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
+      setTakLayers([]);
+      setTakSources([]);
+      setTakStatus("disabled");
+      setTakWarnings(["Partnerské vrstvy vyžadují přihlášení."]);
       return;
     }
 
     let cancelled = false;
     setSituationStatus("loading");
-    Promise.all([
-      fetchSituationLayers(apiBase, authToken),
-      fetchSituationSources(apiBase, authToken)
-    ])
-      .then(([response, sourcesResponse]) => {
+    setSafetyStatus("loading");
+    setTakStatus(authToken ? "loading" : "disabled");
+    fetchMapCatalog(apiBase, authToken, { includePartner: Boolean(authToken) })
+      .then((catalog) => {
         if (cancelled) {
           return;
         }
-        const citizenLayers = filterCitizenSituationLayers(response.items.filter((layer) => !isSafetyLayerId(layer.layerId)));
-        setSituationLayers(citizenLayers);
-        setSituationSources(sourcesResponse.items);
-        setSituationWarnings([
-          ...(response.warnings ?? []),
-          ...(response.sourceHealth?.warnings ?? []),
-          ...(sourcesResponse.warnings ?? []),
-          ...(sourcesResponse.sourceHealth?.warnings ?? [])
-        ]);
-        setSituationStatus(situationStatusFromHealth(response.sourceHealth?.health, response.sourceStatus));
+        setMapCatalog(catalog);
+        const nextSituationLayers = mapCatalogToSituationLayers(catalog);
+        const nextSafetyLayers = mapCatalogToSafetyLayers(catalog);
+        const nextTakLayers = mapCatalogToTakLayers(catalog);
+        setSituationLayers(nextSituationLayers);
+        setSituationSources(mapCatalogToSituationSources(catalog));
+        setSafetyLayers(nextSafetyLayers);
+        setSafetySources(mapCatalogToSafetySources(catalog));
+        setSafetyConfig(null);
+        setTakLayers(nextTakLayers);
+        setTakSources(mapCatalogToTakSources(catalog));
+        setSituationWarnings(catalog.warnings);
+        setSafetyWarnings(catalog.warnings);
+        setTakWarnings(authToken ? catalog.warnings : ["Partnerské vrstvy vyžadují přihlášení."]);
+        setSituationStatus(providerStatusFromCatalog(catalog, "sim.situation-data"));
+        setSafetyStatus(providerStatusFromCatalog(catalog, "sim.safety-data"));
+        setTakStatus(authToken ? providerStatusFromCatalog(catalog, "sim.tak-gateway") : "disabled");
         if (initialPreferences.situationLayerIds === undefined) {
-          const defaultLayers = citizenLayers
+          const defaultLayers = nextSituationLayers
             .filter((layer) => layer.defaultVisible)
             .map((layer) => layer.layerId);
           if (defaultLayers.length > 0) {
             setVisibleSituationLayerIds(normalizeSituationLayerIds(defaultLayers));
           }
         }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setSituationLayers([]);
-          setSituationSources([]);
-          setSituationStatus("degraded");
-          setSituationWarnings([error instanceof Error ? error.message : "Situační vrstvy nejsou dostupné."]);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authToken, dataAccessReady, initialPreferences.situationLayerIds]);
-
-  React.useEffect(() => {
-    if (!dataAccessReady) {
-      setSafetyStatus("disabled");
-      setSafetyWarnings(["Pro načtení bezpečnostních vrstev je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
-      return;
-    }
-
-    let cancelled = false;
-    setSafetyStatus("loading");
-    Promise.all([
-      fetchSafetyLayers(apiBase, authToken),
-      fetchSafetySources(apiBase, authToken),
-      fetchSafetyConfig(apiBase, authToken)
-    ])
-      .then(([layersResponse, sourcesResponse, configResponse]) => {
-        if (cancelled) {
-          return;
-        }
-        setSafetyLayers(layersResponse.items);
-        setSafetySources(sourcesResponse.items);
-        setSafetyConfig(configResponse);
-        setSafetyWarnings([
-          ...(layersResponse.warnings ?? []),
-          ...(layersResponse.sourceHealth?.warnings ?? []),
-          ...(sourcesResponse.warnings ?? []),
-          ...(configResponse.warnings ?? [])
-        ]);
-        setSafetyStatus(situationStatusFromHealth(layersResponse.sourceHealth?.health, layersResponse.sourceStatus));
         if (initialPreferences.safetyLayerIds === undefined) {
-          const defaultLayers = layersResponse.items
+          const defaultLayers = nextSafetyLayers
             .filter((layer) => layer.defaultVisible)
             .map((layer) => layer.layerId);
           if (defaultLayers.length > 0) {
@@ -685,61 +650,28 @@ export function App() {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
+          setMapCatalog(null);
+          setSituationLayers([]);
+          setSituationSources([]);
           setSafetyLayers([]);
           setSafetySources([]);
           setSafetyConfig(null);
-          setSafetyStatus("degraded");
-          setSafetyWarnings([error instanceof Error ? error.message : "Bezpečnostní vrstvy nejsou dostupné."]);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authToken, dataAccessReady, initialPreferences.safetyLayerIds]);
-
-  React.useEffect(() => {
-    if (!authToken) {
-      setTakLayers([]);
-      setTakSources([]);
-      setTakStatus("disabled");
-      setTakWarnings(["TAK Gateway je neveřejný zdroj a vyžaduje přihlášení."]);
-      return;
-    }
-
-    let cancelled = false;
-    setTakStatus("loading");
-    Promise.all([
-      fetchTakLayers(apiBase, authToken),
-      fetchTakSources(apiBase, authToken)
-    ])
-      .then(([layersResponse, sourcesResponse]) => {
-        if (cancelled) {
-          return;
-        }
-        setTakLayers(layersResponse.items);
-        setTakSources(sourcesResponse.items);
-        setTakWarnings([
-          ...(layersResponse.warnings ?? []),
-          ...(layersResponse.sourceHealth?.warnings ?? []),
-          ...(sourcesResponse.warnings ?? []),
-          ...(sourcesResponse.sourceHealth?.warnings ?? [])
-        ]);
-        setTakStatus(situationStatusFromHealth(layersResponse.sourceHealth?.health, layersResponse.sourceStatus));
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
           setTakLayers([]);
           setTakSources([]);
+          setSituationStatus("degraded");
+          setSafetyStatus("degraded");
           setTakStatus("degraded");
-          setTakWarnings([error instanceof Error ? error.message : "TAK Gateway vrstvy nejsou dostupné."]);
+          const message = error instanceof Error ? error.message : "Katalog mapových vrstev není dostupný.";
+          setSituationWarnings([message]);
+          setSafetyWarnings([message]);
+          setTakWarnings([message]);
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [authToken]);
+  }, [apiBase, authToken, dataAccessReady, initialPreferences.safetyLayerIds, initialPreferences.situationLayerIds]);
 
   const visibleSituationLayerKey = visibleSituationLayerIds.join(",");
   const visibleSituationSourceKey = visibleSituationSourceIds.join(",");
@@ -769,21 +701,40 @@ export function App() {
 
     let cancelled = false;
     const timer = window.setTimeout(() => {
+      if (!mapCatalog) {
+        return;
+      }
+      const catalogLayerIds = mapCatalogLayerIdsForProviderSelection(
+        mapCatalog,
+        "sim.situation-data",
+        visibleSituationLayerIds,
+        visibleSituationSourceIds
+      );
+      if (catalogLayerIds.length === 0) {
+        setSituationFeatures(null);
+        setSituationStatus("disabled");
+        setSituationWarnings([]);
+        return;
+      }
       setSituationStatus((current) => current === "online" ? "online" : "loading");
-      fetchSituationFeatures(apiBase, authToken, {
+      fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
-        layers: visibleSituationLayerIds,
+        filters: buildCatalogFeatureFilters(catalogLayerIds, situationCoverageEnabled ? coverageTechnology : undefined),
+        layerIds: catalogLayerIds,
         limit: 250,
-        sources: resolveSituationSourcesForFetch(visibleSituationLayerIds, visibleSituationSourceIds),
-        technology: situationCoverageEnabled ? coverageTechnology : undefined
       })
-        .then((collection) => {
+        .then((response) => {
           if (cancelled) {
             return;
           }
+          const collection = response.situation ?? null;
           setSituationFeatures(collection);
-          setSituationWarnings([...(collection.warnings ?? []), ...(collection.sourceHealth?.warnings ?? [])]);
-          setSituationStatus(situationStatusFromHealth(collection.sourceHealth?.health));
+          setSituationWarnings([
+            ...response.warnings,
+            ...(collection?.warnings ?? []),
+            ...(collection?.sourceHealth?.warnings ?? [])
+          ]);
+          setSituationStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
           if (!cancelled) {
@@ -798,7 +749,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, coverageTechnology, dataAccessReady, mapBounds, mapView?.zoom, situationCoverageEnabled, visibleSituationLayerIds, visibleSituationLayerKey, visibleSituationSourceIds, visibleSituationSourceKey]);
+  }, [authToken, coverageTechnology, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, situationCoverageEnabled, visibleSituationLayerIds, visibleSituationLayerKey, visibleSituationSourceIds, visibleSituationSourceKey]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -822,19 +773,34 @@ export function App() {
 
     let cancelled = false;
     const timer = window.setTimeout(() => {
+      if (!mapCatalog) {
+        return;
+      }
+      const catalogLayerIds = mapCatalogLayerIdsForProviderSelection(mapCatalog, "sim.safety-data", visibleSafetyLayerIds);
+      if (catalogLayerIds.length === 0) {
+        setSafetyFeatures(null);
+        setSafetyStatus("disabled");
+        setSafetyWarnings([]);
+        return;
+      }
       setSafetyStatus((current) => current === "online" ? "online" : "loading");
-      fetchSafetyFeatures(apiBase, authToken, {
+      fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
-        layers: visibleSafetyLayerIds,
+        layerIds: catalogLayerIds,
         limit: 250
       })
-        .then((collection) => {
+        .then((response) => {
           if (cancelled) {
             return;
           }
+          const collection = response.safety ?? null;
           setSafetyFeatures(collection);
-          setSafetyWarnings([...(collection.warnings ?? []), ...(collection.sourceHealth?.warnings ?? [])]);
-          setSafetyStatus(situationStatusFromHealth(collection.sourceHealth?.health));
+          setSafetyWarnings([
+            ...response.warnings,
+            ...(collection?.warnings ?? []),
+            ...(collection?.sourceHealth?.warnings ?? [])
+          ]);
+          setSafetyStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
           if (!cancelled) {
@@ -849,7 +815,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, dataAccessReady, mapBounds, mapView?.zoom, visibleSafetyLayerIds, visibleSafetyLayerKey]);
+  }, [authToken, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleSafetyLayerIds, visibleSafetyLayerKey]);
 
   React.useEffect(() => {
     if (!authToken) {
@@ -874,19 +840,35 @@ export function App() {
 
     let cancelled = false;
     const timer = window.setTimeout(() => {
+      if (!mapCatalog) {
+        return;
+      }
+      const catalogLayerIds = mapCatalogLayerIdsForProviderSelection(mapCatalog, "sim.tak-gateway", visibleTakLayerIds);
+      if (catalogLayerIds.length === 0) {
+        setTakFeatures(null);
+        setTakStatus("disabled");
+        setTakWarnings([]);
+        return;
+      }
       setTakStatus((current) => current === "online" ? "online" : "loading");
-      fetchTakFeatures(apiBase, authToken, {
+      fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
-        layers: visibleTakLayerIds,
+        includePartner: true,
+        layerIds: catalogLayerIds,
         limit: 250
       })
-        .then((collection) => {
+        .then((response) => {
           if (cancelled) {
             return;
           }
+          const collection = response.tak ?? null;
           setTakFeatures(collection);
-          setTakWarnings([...(collection.warnings ?? []), ...(collection.sourceHealth?.warnings ?? [])]);
-          setTakStatus(situationStatusFromHealth(collection.sourceHealth?.health));
+          setTakWarnings([
+            ...response.warnings,
+            ...(collection?.warnings ?? []),
+            ...(collection?.sourceHealth?.warnings ?? [])
+          ]);
+          setTakStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
           if (!cancelled) {
@@ -901,7 +883,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, mapBounds, mapView?.zoom, visibleTakLayerIds, visibleTakLayerKey]);
+  }, [authToken, mapBounds, mapCatalog, mapView?.zoom, visibleTakLayerIds, visibleTakLayerKey]);
 
   React.useEffect(() => {
     if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
@@ -5230,6 +5212,183 @@ function readInitialAffiliationScope(value: string | undefined): AffiliationScop
   return ["all", "friend", "hostile", "neutral", "unknown"].includes(value ?? "")
     ? (value as AffiliationScope)
     : "all";
+}
+
+type CatalogProviderId = "sim.safety-data" | "sim.situation-data" | "sim.tak-gateway";
+
+function providerStatusFromCatalog(catalog: MapCatalogResponse, providerId: CatalogProviderId): SituationLayerStatus {
+  const status = catalog.providers.find((provider) => provider.providerId === providerId)?.status;
+  if (status === "online") {
+    return "online";
+  }
+  if (status === "disabled") {
+    return "disabled";
+  }
+  return "degraded";
+}
+
+function mapCatalogToSituationLayers(catalog: MapCatalogResponse): SituationLayer[] {
+  const layers = new Map<SituationLayerId, SituationLayer>();
+  for (const catalogLayer of catalog.layers) {
+    if (catalogLayer.query.providerId !== "sim.situation-data" || !catalogLayer.selectable) {
+      continue;
+    }
+    for (const providerLayerId of catalogLayer.query.providerLayerIds ?? []) {
+      if (!isSituationLayerId(providerLayerId) || providerLayerId === "mobile" || providerLayerId === "mobile_coverage") {
+        continue;
+      }
+      const current = layers.get(providerLayerId);
+      layers.set(providerLayerId, mergeSituationLayer(current, providerLayerId, catalogLayer));
+    }
+  }
+  return layers.size > 0 ? Array.from(layers.values()) : defaultSituationLayers();
+}
+
+function mergeSituationLayer(current: SituationLayer | undefined, layerId: SituationLayerId, catalogLayer: MapCatalogLayer): SituationLayer {
+  return {
+    defaultVisible: (current?.defaultVisible ?? false) || catalogLayer.defaultVisible,
+    description: current?.description ?? catalogLayer.description,
+    expectedCadenceSeconds: minCadenceSeconds(current?.expectedCadenceSeconds, catalogLayer.refreshSeconds),
+    geometryTypes: mergeGeometryTypes(current?.geometryTypes, catalogLayer.geometryTypes),
+    label: current?.label ?? catalogLayer.label,
+    layerId
+  };
+}
+
+function mapCatalogToSafetyLayers(catalog: MapCatalogResponse): SafetyLayer[] {
+  const layers = new Map<SafetyLayerId, SafetyLayer>();
+  for (const catalogLayer of catalog.layers) {
+    if (catalogLayer.query.providerId !== "sim.safety-data" || !catalogLayer.selectable) {
+      continue;
+    }
+    for (const providerLayerId of catalogLayer.query.providerLayerIds ?? []) {
+      if (!isSafetyLayerId(providerLayerId)) {
+        continue;
+      }
+      const current = layers.get(providerLayerId);
+      layers.set(providerLayerId, {
+        defaultVisible: (current?.defaultVisible ?? false) || catalogLayer.defaultVisible,
+        description: current?.description ?? catalogLayer.description,
+        expectedCadenceSeconds: minCadenceSeconds(current?.expectedCadenceSeconds, catalogLayer.refreshSeconds),
+        geometryTypes: mergeGeometryTypes(current?.geometryTypes, catalogLayer.geometryTypes),
+        label: current?.label ?? catalogLayer.label,
+        layerId: providerLayerId
+      });
+    }
+  }
+  return layers.size > 0 ? Array.from(layers.values()) : defaultSafetyLayers();
+}
+
+function mapCatalogToTakLayers(catalog: MapCatalogResponse): TakLayer[] {
+  const layers = new Map<TakLayerId, TakLayer>();
+  for (const catalogLayer of catalog.layers) {
+    if (catalogLayer.query.providerId !== "sim.tak-gateway" || !catalogLayer.selectable) {
+      continue;
+    }
+    for (const providerLayerId of catalogLayer.query.providerLayerIds ?? []) {
+      if (!isTakLayerId(providerLayerId)) {
+        continue;
+      }
+      const current = layers.get(providerLayerId);
+      layers.set(providerLayerId, {
+        defaultVisible: (current?.defaultVisible ?? false) || catalogLayer.defaultVisible,
+        description: current?.description ?? catalogLayer.description,
+        expectedCadenceSeconds: minCadenceSeconds(current?.expectedCadenceSeconds, catalogLayer.refreshSeconds),
+        geometryTypes: mergeGeometryTypes(current?.geometryTypes, catalogLayer.geometryTypes),
+        label: current?.label ?? catalogLayer.label,
+        layerId: providerLayerId
+      });
+    }
+  }
+  return layers.size > 0 ? Array.from(layers.values()) : defaultTakLayers();
+}
+
+function mapCatalogToSituationSources(catalog: MapCatalogResponse): SituationSourceDescriptor[] {
+  return catalog.sources
+    .filter((source) => source.providerId === "sim.situation-data" && source.selectableInMap)
+    .map((source) => ({
+      enabled: source.enabled,
+      label: source.label,
+      layers: providerLayerIdsForCatalogSource(catalog, source).filter(isSituationLayerId),
+      sourceId: source.sourceId,
+      updateCadenceSeconds: source.updateCadenceSeconds
+    }))
+    .filter((source) => source.layers && source.layers.length > 0);
+}
+
+function mapCatalogToSafetySources(catalog: MapCatalogResponse): SafetySourceDescriptor[] {
+  return catalog.sources
+    .flatMap((source): SafetySourceDescriptor[] => {
+      if (source.providerId !== "sim.safety-data" || !source.selectableInMap || !isSafetySourceId(source.sourceId)) {
+        return [];
+      }
+      return [{
+        enabled: source.enabled,
+        label: source.label,
+        layers: providerLayerIdsForCatalogSource(catalog, source).filter(isSafetyLayerId),
+        sourceId: source.sourceId,
+        updateCadenceSeconds: source.updateCadenceSeconds
+      }];
+    });
+}
+
+function mapCatalogToTakSources(catalog: MapCatalogResponse): TakSourceDescriptor[] {
+  return catalog.sources
+    .filter((source) => source.providerId === "sim.tak-gateway" && source.selectableInMap)
+    .map((source) => ({
+      enabled: source.enabled,
+      label: source.label,
+      layers: providerLayerIdsForCatalogSource(catalog, source).filter(isTakLayerId),
+      sourceId: source.sourceId,
+      updateCadenceSeconds: source.updateCadenceSeconds
+    }));
+}
+
+function providerLayerIdsForCatalogSource(catalog: MapCatalogResponse, source: MapCatalogSource): string[] {
+  const catalogLayerIds = new Set([...(source.feedsCatalogLayerIds ?? []), ...(source.usedByCatalogLayerIds ?? [])]);
+  return Array.from(new Set(catalog.layers
+    .filter((layer) => catalogLayerIds.has(layer.layerId))
+    .flatMap((layer) => layer.query.providerLayerIds ?? [])));
+}
+
+function mapCatalogLayerIdsForProviderSelection(
+  catalog: MapCatalogResponse,
+  providerId: CatalogProviderId,
+  providerLayerIds: string[],
+  selectedSourceIds: string[] = []
+): string[] {
+  const selectedLayers = new Set(providerLayerIds);
+  const selectedSources = new Set(selectedSourceIds);
+  return catalog.layers
+    .filter((layer) => layer.selectable && layer.query.mode === "bbox" && layer.query.providerId === providerId)
+    .filter((layer) => (layer.query.providerLayerIds ?? []).some((layerId) => selectedLayers.has(layerId)))
+    .filter((layer) => selectedSources.size === 0 || (layer.query.providerSourceIds ?? []).some((sourceId) => selectedSources.has(sourceId)))
+    .map((layer) => layer.layerId);
+}
+
+function buildCatalogFeatureFilters(layerIds: string[], technology: CoverageTechnology | undefined): Record<string, Record<string, unknown>> {
+  if (!technology) {
+    return {};
+  }
+  return Object.fromEntries(
+    layerIds
+      .filter((layerId) => layerId.includes("mobile"))
+      .map((layerId) => [layerId, { technology: [technology] }])
+  );
+}
+
+function mergeGeometryTypes(current: string[] | undefined, next: string[] | undefined): string[] | undefined {
+  const merged = Array.from(new Set([...(current ?? []), ...(next ?? [])]));
+  return merged.length > 0 ? merged : undefined;
+}
+
+function minCadenceSeconds(current: number | undefined, next: number | undefined): number | undefined {
+  const values = [current, next].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return values.length > 0 ? Math.min(...values) : undefined;
+}
+
+function isSafetySourceId(value: string): value is SafetyDataSourceId {
+  return value === "chmi_alerts" || value === "chmi_hydro" || value === "mock";
 }
 
 function readInitialDomainScope(value: string | undefined): DomainScope {

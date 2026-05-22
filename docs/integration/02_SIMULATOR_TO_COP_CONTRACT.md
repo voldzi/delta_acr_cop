@@ -29,8 +29,9 @@ SIM posílá canonical event envelope, nikoli interní COP state nebo symboly. C
 
 Vedle ingestu tracků může COP číst kontextové vrstvy připravené SIM projektem:
 
-- `GET https://sim.zeleznalady.cz/situation-data/api/v1/layers`,
-- `GET https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=west,south,east,north&layers=weather,ground,mobile,traffic&limit=250`.
+- veřejný COP klient čte pouze `GET /api/v1/map/catalog`,
+- veřejný COP klient načítá mapová data přes `POST /api/v1/map/query`,
+- COP server může interně volat provider kontrakty SIM podle katalogu a svého adapteru.
 
 Kontrakt je `cop-situation-source-v1` a vrací GeoJSON `FeatureCollection` s normalizovanými properties (`featureId`, `layer`, `label`, `category`, `sourceId`, `observedAt`, `confidence`, `stale`, `license`, `metrics`, `tags`).
 

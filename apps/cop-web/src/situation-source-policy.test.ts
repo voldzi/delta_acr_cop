@@ -4,13 +4,12 @@ import {
   filterCitizenSituationSources,
   filterTechnicalSituationSources,
   normalizeCitizenSituationLayerIds,
-  resolveSituationSourcesForFetch,
   sanitizeCitizenSituationSourceIds
 } from "./situation-source-policy";
 import type { SituationLayer, SituationSourceDescriptor } from "./cop-data";
 
 describe("situation source policy", () => {
-  it("maps legacy technical mobile layers to the citizen mobile network layer", () => {
+  it("maps technical mobile inputs to the citizen mobile network layer", () => {
     expect(normalizeCitizenSituationLayerIds(["weather", "mobile", "mobile_coverage"])).toEqual(["weather", "mobile_network"]);
   });
 
@@ -41,13 +40,4 @@ describe("situation source policy", () => {
   it("removes stale technical source preferences", () => {
     expect(sanitizeCitizenSituationSourceIds(["mobile_coverage_model", "mobile_network_model", "ctu_nettest", "mobile_network_model"])).toEqual(["mobile_network_model"]);
   });
-
-  it("uses the unified mobile model when only the citizen mobile network layer is requested", () => {
-    expect(resolveSituationSourcesForFetch(["mobile_network"], [])).toEqual(["mobile_network_model"]);
-  });
-
-  it("does not globally constrain mixed layer requests", () => {
-    expect(resolveSituationSourcesForFetch(["weather", "mobile_network"], [])).toBeUndefined();
-  });
 });
-

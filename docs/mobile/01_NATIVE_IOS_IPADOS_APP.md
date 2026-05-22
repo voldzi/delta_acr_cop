@@ -175,7 +175,7 @@ MDM/MAM příprava:
 2. Načíst lokální snapshot pro `subjectId`, pokud existuje.
 3. Pokud je token platný, volat `/api/v1/mobile/bootstrap`.
 4. Zobrazit bootstrap snapshot a uložit ho do `OfflineStore`.
-5. Načíst volitelné kontextové vrstvy přes `/api/v1/situation/layers` a `/api/v1/situation/features` podle aktuálního bbox mapy.
+5. Načíst katalog mapových vrstev přes `/api/v1/map/catalog` a podle aktuálního bbox mapy volat `/api/v1/map/query` s vybranými katalogovými `layerIds`.
 6. Načíst komunitní hlášení přes `/api/v1/community/reports` podle aktuálního bbox mapy.
 7. Otevřít SSE `/api/v1/stream/cop/live`.
 8. `snapshot` zprávou nahradit current state.

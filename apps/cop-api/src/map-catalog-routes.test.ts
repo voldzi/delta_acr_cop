@@ -129,6 +129,77 @@ describe("map catalog route", () => {
     ]));
     expect(body.providers.map((provider) => provider.providerId)).toContain("sim.tak-gateway");
   });
+
+  it("queries public map features through the source-neutral contract", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      safetyDataSource: new FakeSafetyDataSource(),
+      situationDataSource: new FakeSituationDataSource(),
+      takGatewaySource: new FakeTakGatewaySource()
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [13.85, 49.65, 15.35, 50.45],
+        filters: {
+          "public.mobile.network": {
+            technology: ["4G"]
+          }
+        },
+        includePartner: true,
+        layerIds: ["public.mobile.network", "public.safety.warnings", "partner.tak.mobile"],
+        limit: 20
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      query: { layerIds: string[] };
+      safety?: SafetyFeatureCollection;
+      situation?: SituationFeatureCollection;
+      tak?: TakGatewayFeatureCollection;
+      warnings: string[];
+    };
+    expect(body.query.layerIds).toEqual(expect.arrayContaining(["public.mobile.network", "public.safety.warnings"]));
+    expect(body.query.layerIds).toHaveLength(2);
+    expect(body.situation?.query).toMatchObject({
+      layers: ["mobile_network"],
+      sources: ["mobile_network_model"],
+      technology: "4G"
+    });
+    expect(body.safety?.query.layers).toEqual(["warnings"]);
+    expect(body.tak).toBeUndefined();
+    expect(body.warnings.join(" ")).toContain("partner.tak.mobile");
+  });
+
+  it("allows authenticated map feature queries to include partner layers", async () => {
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      safetyDataSource: new FakeSafetyDataSource(),
+      situationDataSource: new FakeSituationDataSource(),
+      takGatewaySource: new FakeTakGatewaySource()
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [13.85, 49.65, 15.35, 50.45],
+        includePartner: true,
+        layerIds: ["partner.tak.mobile"],
+        limit: 20
+      },
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { query: { layerIds: string[] }; tak?: TakGatewayFeatureCollection };
+    expect(body.query.layerIds).toEqual(["partner.tak.mobile"]);
+    expect(body.tak?.query.layers).toEqual(["mobile"]);
+  });
 });
 
 class FakeSituationDataSource implements SituationDataSource {

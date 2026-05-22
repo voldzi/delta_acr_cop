@@ -57,7 +57,7 @@ COP_SITUATION_DATA_MOBILE_NETWORK_CACHE_TTL_MS=600000
 COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS=600000
 ```
 
-Web klient volá pouze COP API (`/api/v1/situation/layers`, `/api/v1/situation/features`). COP API při volání SIM nepřeposílá bearer token operátora. Při výpadku SIM endpointu vrací prázdný degraded `FeatureCollection`, aby mapa zůstala použitelná. Timeout je vyšší než běžná obnovovací kadence mapy, protože kombinované veřejné vrstvy mohou po studeném startu trvat několik sekund.
+Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora. Při výpadku SIM endpointu vrací prázdný degraded `FeatureCollection`, aby mapa zůstala použitelná. Timeout je vyšší než běžná obnovovací kadence mapy, protože kombinované veřejné vrstvy mohou po studeném startu trvat několik sekund.
 
 ## Safety Data Source
 
@@ -73,11 +73,11 @@ COP_SAFETY_DATA_MAX_LIMIT=250
 COP_SAFETY_DATA_TIMEOUT_MS=15000
 ```
 
-Web klient volá pouze COP API (`/api/v1/safety/layers`, `/api/v1/safety/sources`, `/api/v1/safety/config`, `/api/v1/safety/features`). COP API při volání SIM nepřeposílá bearer token operátora, slučuje malé posuny mapy do kanonického bbox cache klíče a při výpadku vrací prázdný degraded `FeatureCollection`.
+Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora, slučuje malé posuny mapy do kanonického bbox cache klíče a při výpadku vrací prázdný degraded `FeatureCollection`.
 
 ## TAK Gateway Source
 
-COP čte neveřejná partnerská TAK/CoT data ze SIM kontraktu `cop-tak-source-v1` pouze server-side. Token zůstává v procesu `cop-api`; web klient volá jen `/api/v1/tak/*` a v prohlížeči nikdy nemá `COP_TAK_GATEWAY_READ_TOKEN`.
+COP čte neveřejná partnerská TAK/CoT data ze SIM kontraktu `cop-tak-source-v1` pouze server-side. Token zůstává v procesu `cop-api`; web klient volá jen `/api/v1/map/catalog` a `/api/v1/map/query` a v prohlížeči nikdy nemá `COP_TAK_GATEWAY_READ_TOKEN`.
 
 ```env
 COP_TAK_GATEWAY_ENABLED=false
