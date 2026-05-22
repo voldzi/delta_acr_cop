@@ -6,6 +6,7 @@ export interface MessagingProviderConfig {
   enabled: boolean;
   publicUrl?: string;
   timeoutMs: number;
+  token?: string;
 }
 
 export interface MessagingProviderStatus {
@@ -57,7 +58,8 @@ export function createMessagingProviderFromEnv(env: Record<string, string | unde
     cacheTtlMs: readInteger(env.COP_CSM_MESSAGING_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 300000),
     enabled: readBoolean(env.COP_CSM_MESSAGING_ENABLED, defaultConfig.enabled),
     ...(optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL) ? { publicUrl: optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL) } : {}),
-    timeoutMs: readInteger(env.COP_CSM_MESSAGING_TIMEOUT_MS, defaultConfig.timeoutMs, 1000, 60000)
+    timeoutMs: readInteger(env.COP_CSM_MESSAGING_TIMEOUT_MS, defaultConfig.timeoutMs, 1000, 60000),
+    ...(optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) ? { token: optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) } : {})
   });
 }
 
@@ -108,7 +110,7 @@ export class CsmMessagingProvider implements MessagingProvider {
         ...healthCheckWarnings(health),
         ...(capabilities.security?.readFromBrowser === true ? ["Messaging provider unexpectedly allows direct browser reads. COP will still use server-side integration only."] : []),
         ...(capabilities.architecture?.plaintextOnServer === true ? ["Messaging provider reports plaintext server handling; chat UI remains disabled."] : []),
-        "Chat messages are not enabled yet. Current CSM Messaging contract exposes capabilities and health only."
+        "Messaging metadata API is available server-side. End-to-end chat remains disabled until client-safe Matrix token bootstrap is ready."
       ];
       const providerOk = capabilitiesResult.ok && isOperationalStatus(capabilities.status);
       const healthOk = healthResult.ok && isOperationalStatus(health?.status);
@@ -169,11 +171,15 @@ async function fetchJsonWithStatus(url: URL, config: MessagingProviderConfig, re
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "X-COP-Request-At": requestNow.toISOString()
+    };
+    if (config.token) {
+      headers.Authorization = `Bearer ${config.token}`;
+    }
     const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "X-COP-Request-At": requestNow.toISOString()
-      },
+      headers,
       signal: controller.signal
     });
     const text = await response.text();

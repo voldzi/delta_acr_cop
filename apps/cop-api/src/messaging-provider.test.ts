@@ -76,7 +76,50 @@ describe("CsmMessagingProvider", () => {
       serviceName: "CSM Messaging",
       status: "online"
     });
-    expect(status.warnings).toContain("Chat messages are not enabled yet. Current CSM Messaging contract exposes capabilities and health only.");
+    expect(status.warnings).toContain("Messaging metadata API is available server-side. End-to-end chat remains disabled until client-safe Matrix token bootstrap is ready.");
+  });
+
+  it("sends the configured server token only to the messaging provider", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({ Authorization: "Bearer server-token-123" });
+      const url = String(input);
+      if (url.endsWith("/api/v1/capabilities")) {
+        return new Response(JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          providerId: "csm.messaging",
+          security: {
+            authMode: "csm-server-token",
+            authRequired: true,
+            readFromBrowser: false,
+            serverSideIntegrationOnly: true
+          },
+          serviceName: "CSM Messaging",
+          status: "online"
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "server-token-123"
+    });
+
+    const status = await provider.fetchStatus(new Date("2026-05-22T12:00:00Z"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(status).toMatchObject({
+      providerId: "csm.messaging",
+      security: {
+        authRequired: true
+      },
+      status: "online"
+    });
+    expect(JSON.stringify(status)).not.toContain("server-token-123");
   });
 
   it("exposes messaging status through the COP API public read boundary", async () => {
