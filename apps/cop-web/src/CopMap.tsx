@@ -1884,17 +1884,63 @@ function formatMobileNetworkLabel(feature: SituationFeature): string {
 }
 
 function formatCommunicationTowerLabel(feature: SituationFeature): string {
-  const label = feature.properties.label?.trim();
-  if (label && !["communications_tower", "communication tower"].includes(label.toLowerCase())) {
-    return label.length > 12 ? `${label.slice(0, 11)}…` : label;
-  }
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const towerType = stringProperty(tags.towerType) ?? stringProperty(tags.communication);
-  if (towerType) {
-    const normalized = towerType.replace(/[_-]+/g, " ").trim();
-    return normalized.length > 0 ? normalized.toUpperCase().slice(0, 12) : "BTS";
+  const label = abbreviateCommunicationTowerLabel(feature.properties.label);
+  if (label) {
+    return label;
   }
-  return "BTS";
+  const towerType = stringProperty(tags.towerType) ?? stringProperty(tags.communication);
+  return abbreviateCommunicationTowerLabel(towerType) ?? "BTS";
+}
+
+function abbreviateCommunicationTowerLabel(raw: string | undefined): string | undefined {
+  const label = raw?.trim();
+  if (!label) {
+    return undefined;
+  }
+  const normalized = normalizeCompactAscii(label);
+  if (!normalized || genericCommunicationTowerLabels.has(normalized)) {
+    return undefined;
+  }
+  if (normalized.includes("gsmr")) {
+    return "GSM-R";
+  }
+  if ((normalized.includes("5g") || normalized.includes("nr")) && (normalized.includes("4g") || normalized.includes("lte"))) {
+    return "4G/5G";
+  }
+  if (normalized.includes("5g") || normalized.includes("nr")) {
+    return "5G";
+  }
+  if (normalized.includes("4g") || normalized.includes("lte")) {
+    return "4G";
+  }
+  if (normalized.includes("gsm")) {
+    return "GSM";
+  }
+  if (normalized.includes("ceskeradiokomunikace")) {
+    return "CRA";
+  }
+  if (normalized.includes("mobilephone") || normalized.includes("cellular") || normalized.includes("basestation") || normalized.includes("bts")) {
+    return "BTS";
+  }
+  if (normalized.includes("television") || normalized === "tv") {
+    return "TV";
+  }
+  if (normalized.includes("microwave")) {
+    return "MW";
+  }
+  if (normalized.includes("radio")) {
+    return "RAD";
+  }
+  const words = label.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (words.length >= 2) {
+    const acronym = words.slice(0, 4).map((word) => word[0]?.toUpperCase()).join("");
+    if (acronym.length >= 2 && acronym.length <= 5) {
+      return acronym;
+    }
+  }
+  const compact = label.replace(/\s+/g, " ").toUpperCase();
+  return compact.length > 0 ? (compact.length > 8 ? `${compact.slice(0, 7)}…` : compact) : undefined;
 }
 
 function normalizeMobileNetworkLabel(raw: string | undefined): string | undefined {
@@ -1922,6 +1968,30 @@ function normalizeMobileNetworkLabel(raw: string | undefined): string | undefine
   }
   const compact = raw.trim().replace(/\s+/g, " ").toUpperCase();
   return compact.length > 0 ? compact.slice(0, 10) : undefined;
+}
+
+const genericCommunicationTowerLabels = new Set([
+  "communication",
+  "communications",
+  "communicationtower",
+  "communicationstower",
+  "communicationstowers",
+  "communicationmast",
+  "communicationmasts",
+  "telecommunication",
+  "telecommunications",
+  "telecom",
+  "tower",
+  "mast",
+  "yes"
+]);
+
+function normalizeCompactAscii(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[_\s./-]+/g, "");
 }
 
 function resolveOsmCategoryPresentation(feature: SituationFeature): { iconId: OsmCategoryIconId; label: string } | null {

@@ -272,6 +272,67 @@ describe("COP map data helpers", () => {
     expect(collection.features[0]?.properties.osmPoi).toBeUndefined();
   });
 
+  it("keeps communication tower map labels compact", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.9, 50.2], type: "Point" },
+          properties: {
+            category: "communications_tower",
+            confidence: 0.9,
+            featureId: "osm:node:generic",
+            label: "communication",
+            layer: "mobile",
+            observedAt: "2026-05-22T10:00:00Z",
+            sourceId: "osm_postgis",
+            stale: false,
+            tags: {
+              towerType: "communication"
+            }
+          },
+          type: "Feature"
+        },
+        {
+          geometry: { coordinates: [14.91, 50.21], type: "Point" },
+          properties: {
+            category: "communications_tower",
+            confidence: 0.9,
+            featureId: "osm:node:cra",
+            label: "České radiokomunikace",
+            layer: "mobile",
+            observedAt: "2026-05-22T10:00:00Z",
+            sourceId: "osm_postgis",
+            stale: false,
+            tags: {}
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-22T10:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["mobile"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 2,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features.map((feature) => feature.properties.mobileNetworkLabel)).toEqual(["BTS", "CRA"]);
+  });
+
   it("adds mobile coverage polygon render metadata from SIM quality", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",
