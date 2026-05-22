@@ -2,6 +2,8 @@
 
 Mapový model je složený z vrstev, filtrů, policy a rendereru.
 
+Autoritativní integrační model vrstev je definovaný v [Map Catalog v1](../integration/08_MAP_CATALOG_V1.md). Frontend nemá dlouhodobě držet pevný seznam všech vrstev v kódu; má renderovat strom, filtry, legendu a chování podle katalogu.
+
 ## Mapový podklad
 
 Mapový podklad je samostatná vrstva pod situačními daty, bezpečnostními vrstvami, uživatelskými zónami a COP tracky. Produkční konfigurace má používat first-party endpoint `tiles.zeleznalady.cz`, aby opakované zobrazení mapy obsloužila cache a aby se externí tile zdroje volaly jen v nezbytné míře.
