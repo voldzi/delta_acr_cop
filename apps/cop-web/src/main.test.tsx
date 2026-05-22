@@ -335,7 +335,7 @@ function testMapCatalogResponse(): unknown {
           providerId: "sim.situation-data",
           providerLayerIds: ["weather"],
           providerSourceIds: ["open_meteo"],
-          streamId: "cop.features"
+          streamId: "features"
         },
         refreshSeconds: 600,
         role: "primary",

@@ -1225,12 +1225,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     const situation = await readSituationCatalogProvider(requestNow, actor);
     const safety = await readSafetyCatalogProvider(requestNow);
+    const flight = await readFlightCatalogProvider(requestNow);
     const tak = includePartner ? await readTakCatalogProvider(requestNow) : undefined;
 
     return buildMapCatalog({
-      flight: {
-        status: flightDataSource ? "online" : "disabled"
-      },
+      flight,
       generatedAt: requestNow,
       includeDiagnostics,
       includePartner,
@@ -1253,11 +1252,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const includePartner = Boolean(actor) && query.includePartner;
     const situation = await readSituationCatalogProvider(requestNow, actor);
     const safety = await readSafetyCatalogProvider(requestNow);
+    const flight = await readFlightCatalogProvider(requestNow);
     const tak = includePartner ? await readTakCatalogProvider(requestNow) : undefined;
     const catalog = buildMapCatalog({
-      flight: {
-        status: flightDataSource ? "online" : "disabled"
-      },
+      flight,
       generatedAt: requestNow,
       includeDiagnostics,
       includePartner,
@@ -1695,6 +1693,32 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return response;
   });
 
+  async function readFlightCatalogProvider(requestNow: Date) {
+    if (!flightDataSource) {
+      return {
+        status: "disabled" as const,
+        warning: "Flight data source is disabled."
+      };
+    }
+    try {
+      const catalog = flightDataSource.fetchCatalog ? await flightDataSource.fetchCatalog(requestNow) : undefined;
+      return {
+        catalog,
+        status: "online" as const
+      };
+    } catch (error) {
+      appendAudit(state, "MAP_CATALOG_FLIGHT_PROVIDER_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: flightDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Flight data catalog provider request failed.");
+      return {
+        status: "unavailable" as const,
+        warning: errorMessage(error)
+      };
+    }
+  }
+
   async function readSituationCatalogProvider(requestNow: Date, actor: AuthenticatedActor | null) {
     if (!situationDataSource) {
       return {
@@ -1706,7 +1730,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     try {
-      const [layers, rawSources] = await Promise.all([
+      const [catalog, layers, rawSources] = await Promise.all([
+        situationDataSource.fetchCatalog ? situationDataSource.fetchCatalog(requestNow) : Promise.resolve(undefined),
         situationDataSource.fetchLayers(requestNow),
         situationDataSource.fetchSources(requestNow)
       ]);
@@ -1714,6 +1739,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const health = buildSituationDataHealth(layers, requestNow);
       state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
       return {
+        catalog,
         layers,
         sources,
         status: "online" as const
@@ -1746,13 +1772,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     try {
-      const [layers, sources] = await Promise.all([
+      const [catalog, layers, sources] = await Promise.all([
+        safetyDataSource.fetchCatalog ? safetyDataSource.fetchCatalog(requestNow) : Promise.resolve(undefined),
         safetyDataSource.fetchLayers(requestNow),
         safetyDataSource.fetchSources(requestNow)
       ]);
       const health = buildSafetyDataHealth(layers, requestNow);
       state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
       return {
+        catalog,
         layers,
         sources,
         status: "online" as const
@@ -1785,13 +1813,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     try {
-      const [layers, sources] = await Promise.all([
+      const [catalog, layers, sources] = await Promise.all([
+        takGatewaySource.fetchCatalog ? takGatewaySource.fetchCatalog(requestNow) : Promise.resolve(undefined),
         takGatewaySource.fetchLayers(requestNow),
         takGatewaySource.fetchSources(requestNow)
       ]);
       const health = buildTakGatewayHealth(layers, requestNow);
       state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
       return {
+        catalog,
         layers,
         sources,
         status: "online" as const

@@ -10,11 +10,8 @@ describe("SafetyDataSourceAdapter", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       expect(init?.headers).not.toMatchObject({ Authorization: expect.any(String) });
-      if (url.endsWith("/layers")) {
-        return new Response(JSON.stringify(sampleLayersResponse()), { status: 200 });
-      }
-      if (url.endsWith("/sources")) {
-        return new Response(JSON.stringify(sampleSourcesResponse()), { status: 200 });
+      if (url.endsWith("/catalog")) {
+        return new Response(JSON.stringify(sampleCatalogResponse()), { status: 200 });
       }
       if (url.endsWith("/config")) {
         return new Response(JSON.stringify(sampleConfigResponse()), { status: 200 });
@@ -41,11 +38,10 @@ describe("SafetyDataSourceAdapter", () => {
       limit: 20
     }, new Date("2026-05-20T10:00:06Z"));
 
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/layers");
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/sources");
-    expect(String(fetchMock.mock.calls[2]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/config");
-    expect(String(fetchMock.mock.calls[3]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/safety-data/api/v1/cop/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=warnings%2Cflood&limit=20"
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/catalog");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/config");
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
+      "https://sim.zeleznalady.cz/safety-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=warnings%2Cflood&limit=20"
     );
     expect(layers).toMatchObject([
       {
@@ -118,28 +114,44 @@ describe("SafetyDataSourceAdapter", () => {
   });
 });
 
-function sampleLayersResponse() {
+function sampleCatalogResponse() {
   return {
-    items: [
+    contractVersion: "provider-map-catalog-v1",
+    providerId: "sim.safety-data",
+    status: "online",
+    layers: [
       {
+        audience: "public",
+        cacheTtlSeconds: 300,
         defaultVisible: true,
         description: "Official warning context.",
-        expectedCadenceSeconds: 300,
         geometryTypes: ["Point", "Polygon"],
+        kind: "vector_features",
         label: "Official warnings",
-        layerId: "warnings"
+        providerLayerId: "safety.warnings",
+        query: {
+          mode: "bbox",
+          providerId: "sim.safety-data",
+          providerLayerIds: ["warnings"],
+          providerSourceIds: ["chmi_alerts"],
+          streamId: "features"
+        },
+        recommendedCatalogLayerId: "public.safety.warnings",
+        refreshSeconds: 300,
+        role: "overlay",
+        selectable: true,
+        sourceIds: ["chmi_alerts"],
+        styleProfile: "safety-warning-v1"
       }
-    ]
-  };
-}
-
-function sampleSourcesResponse() {
-  return {
-    items: [
+    ],
+    sources: [
       {
+        audience: "public",
         enabled: true,
         label: "CHMI Alerts",
         layers: ["warnings"],
+        selectableInMap: false,
+        sourceRole: "final",
         sourceId: "chmi_alerts"
       }
     ]

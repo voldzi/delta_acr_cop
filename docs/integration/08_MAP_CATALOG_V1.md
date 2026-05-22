@@ -180,7 +180,7 @@ Response:
       "query": {
         "mode": "bbox",
         "providerId": "sim.situation-data",
-        "streamId": "cop.features",
+        "streamId": "features",
         "providerLayerIds": ["mobile_network"],
         "providerSourceIds": ["mobile_network_model"],
         "maxFeatures": 250
@@ -325,9 +325,12 @@ Response:
 
 COP may internally fan out to SIM, TAK, COP database, tile services or partner APIs. Clients should not need to know those provider details for normal map rendering.
 
-Provider-specific endpoints such as SIM `/layers`, `/sources` or `/cop/features`
-are internal adapter details. COP web and native clients must not call them
-directly and must not store them in user preferences.
+Provider-specific metadata endpoints such as SIM `/layers` and `/sources` are
+legacy adapter details and must not be used by new COP integrations. Provider
+catalogs are read from `/catalog`; feature queries use the provider's current
+source-neutral `/features` endpoint. Deprecated compatibility aliases such as
+SIM `/cop/features` must not be called by COP web, native clients or new server
+adapters, and must not be stored in user preferences.
 
 ## Feature Requirements
 
@@ -373,7 +376,7 @@ Provider-native fields may be preserved under:
 | `public.traffic.transit` | Doprava | `sim.situation-data` layer `traffic`, source `pid_gtfs_rt` |
 | `reference.infrastructure.healthcare` | Zdravotnictví | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `hospital`, `clinic`, `doctors`, `pharmacy` |
 | `reference.infrastructure.emergency` | Záchranná infrastruktura | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `fire_station`, `police`, `ambulance_station`, `shelter` |
-| `reference.infrastructure.communications` | Komunikační infrastruktura | `sim.situation-data` layer `mobile`, source `osm_postgis`, category `communications_tower` |
+| `reference.infrastructure.communications` | BTS / komunikační stožáry | `sim.situation-data` layer `mobile`, source `osm_postgis`, category `communications_tower` |
 | `flight.public.tracks` | Veřejné lety | `sim.flight-data` tracks |
 | `flight.reference.airports` | Letiště | `sim.flight-data` airports |
 | `partner.tak.mobile` | Partnerské jednotky | `sim.tak-gateway` layer `mobile` |

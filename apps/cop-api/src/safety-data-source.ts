@@ -1,4 +1,5 @@
 import { createPublicSafetyAggregateSourceSystem, type SourceSystem } from "@cop/canonical-model";
+import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
 
 export type SafetyLayerId = "flood" | "warnings";
@@ -147,6 +148,7 @@ export interface SafetyDataSource {
   readonly config: SafetyDataSourceConfig;
   readonly sourceSystem: SourceSystem;
   cacheStats?(): SafetyDataCacheStats;
+  fetchCatalog?(requestNow: Date): Promise<ProviderMapCatalog>;
   fetchConfig(requestNow: Date): Promise<SafetyDataPublicConfig>;
   fetchFeatures(query: SafetyFeatureQuery, requestNow: Date): Promise<SafetyFeatureCollection>;
   fetchLayers(requestNow: Date): Promise<SafetyLayerDescriptor[]>;
@@ -194,6 +196,8 @@ export function createSafetyDataSourceFromEnv(env: Record<string, string | undef
 export class SafetyDataSourceAdapter implements SafetyDataSource {
   readonly sourceSystem: SourceSystem;
   private readonly featureCache: ManagedSafetyCache<SafetyFeatureCollection>;
+  private catalogCache: { expiresAtMs: number; value: ProviderMapCatalog } | null = null;
+  private catalogInflight: Promise<ProviderMapCatalog> | null = null;
   private configCache: { expiresAtMs: number; value: SafetyDataPublicConfig } | null = null;
   private layerCache: { expiresAtMs: number; value: SafetyLayerDescriptor[] } | null = null;
   private sourceCache: { expiresAtMs: number; value: SafetySourceDescriptor[] } | null = null;
@@ -208,6 +212,26 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
 
   cacheStats(): SafetyDataCacheStats {
     return this.featureCache.stats();
+  }
+
+  async fetchCatalog(requestNow: Date): Promise<ProviderMapCatalog> {
+    if (this.catalogCache && this.catalogCache.expiresAtMs > requestNow.getTime()) {
+      return this.catalogCache.value;
+    }
+    if (this.catalogInflight) {
+      return this.catalogInflight;
+    }
+    this.catalogInflight = fetchSafetyCatalog(this.config, requestNow);
+    try {
+      const value = await this.catalogInflight;
+      this.catalogCache = {
+        expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
+        value
+      };
+      return value;
+    } finally {
+      this.catalogInflight = null;
+    }
   }
 
   async fetchConfig(requestNow: Date): Promise<SafetyDataPublicConfig> {
@@ -226,11 +250,7 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
     if (this.layerCache && this.layerCache.expiresAtMs > requestNow.getTime()) {
       return this.layerCache.value;
     }
-    const response = await fetchJson(new URL(`${trimTrailingSlash(this.config.baseUrl)}/layers`), this.config, requestNow);
-    if (!isRecord(response) || !Array.isArray(response.items)) {
-      throw new Error("Safety layers response is incomplete.");
-    }
-    const value = response.items.flatMap(normalizeSafetyLayer);
+    const value = safetyLayersFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.layerCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
       value
@@ -242,11 +262,7 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
     if (this.sourceCache && this.sourceCache.expiresAtMs > requestNow.getTime()) {
       return this.sourceCache.value;
     }
-    const response = await fetchJson(new URL(`${trimTrailingSlash(this.config.baseUrl)}/sources`), this.config, requestNow);
-    if (!isRecord(response) || !Array.isArray(response.items)) {
-      throw new Error("Safety sources response is incomplete.");
-    }
-    const value = response.items.flatMap(normalizeSafetySourceDescriptor);
+    const value = safetySourcesFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.sourceCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
       value
@@ -532,11 +548,57 @@ function projectSafetyFeatureCollection(
 }
 
 async function fetchSafetyFeatures(config: SafetyDataSourceConfig, query: SafetyFeatureQuery, requestNow: Date): Promise<SafetyFeatureCollection> {
-  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/cop/features`);
+  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/features`);
   url.searchParams.set("bbox", `${query.bbox.west},${query.bbox.south},${query.bbox.east},${query.bbox.north}`);
   url.searchParams.set("layers", query.layers.join(","));
   url.searchParams.set("limit", String(query.limit));
   return normalizeSafetyFeatureCollection(await fetchJson(url, config, requestNow), query);
+}
+
+async function fetchSafetyCatalog(config: SafetyDataSourceConfig, requestNow: Date): Promise<ProviderMapCatalog> {
+  return normalizeProviderMapCatalog(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/catalog`), config, requestNow), "sim.safety-data");
+}
+
+function safetyLayersFromProviderCatalog(catalog: ProviderMapCatalog): SafetyLayerDescriptor[] {
+  const layers = new Map<SafetyLayerId, SafetyLayerDescriptor>();
+  for (const catalogLayer of catalog.layers) {
+    for (const providerLayerId of catalogLayer.query?.providerLayerIds ?? []) {
+      if (!isSafetyLayerId(providerLayerId)) {
+        continue;
+      }
+      const current = layers.get(providerLayerId);
+      layers.set(providerLayerId, {
+        defaultVisible: (current?.defaultVisible ?? false) || catalogLayer.defaultVisible === true,
+        description: current?.description ?? catalogLayer.description,
+        expectedCadenceSeconds: minOptionalNumber(current?.expectedCadenceSeconds, catalogLayer.refreshSeconds),
+        geometryTypes: mergeStringLists(current?.geometryTypes, catalogLayer.geometryTypes),
+        label: current?.label ?? catalogLayer.label,
+        layerId: providerLayerId
+      });
+    }
+  }
+  return Array.from(layers.values());
+}
+
+function safetySourcesFromProviderCatalog(catalog: ProviderMapCatalog): SafetySourceDescriptor[] {
+  return catalog.sources.flatMap((source): SafetySourceDescriptor[] => {
+    if (!isSafetyDataSourceId(source.sourceId)) {
+      return [];
+    }
+    return [
+      {
+        enabled: source.enabled,
+        label: source.label,
+        layers: source.layers?.filter(isSafetyLayerId) ?? catalog.layers
+          .filter((layer) => layer.query?.providerSourceIds?.includes(source.sourceId))
+          .flatMap((layer) => layer.query?.providerLayerIds ?? [])
+          .filter(isSafetyLayerId),
+        mode: source.sourceRole,
+        sourceId: source.sourceId,
+        updateCadenceSeconds: source.updateCadenceSeconds
+      }
+    ];
+  });
 }
 
 async function fetchJson(url: URL, config: SafetyDataSourceConfig, requestNow: Date): Promise<unknown> {
@@ -906,6 +968,25 @@ function normalizeGeocodes(value: unknown): Array<{ scheme: string; value: strin
 
 function uniqueLayers(layers: SafetyLayerId[]): SafetyLayerId[] {
   return allowedLayerIds.filter((layer) => layers.includes(layer));
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function mergeStringLists(a: string[] | undefined, b: string[] | undefined): string[] | undefined {
+  const merged = uniqueStrings([...(a ?? []), ...(b ?? [])]);
+  return merged.length > 0 ? merged : undefined;
+}
+
+function minOptionalNumber(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) {
+    return b;
+  }
+  if (b === undefined) {
+    return a;
+  }
+  return Math.min(a, b);
 }
 
 function isSafetyLayerId(value: unknown): value is SafetyLayerId {

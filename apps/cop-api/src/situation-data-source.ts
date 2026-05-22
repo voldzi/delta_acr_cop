@@ -1,4 +1,5 @@
 import { createPublicSituationAggregateSourceSystem, type SourceSystem } from "@cop/canonical-model";
+import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
 
 export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "mobile_coverage" | "mobile_network" | "traffic" | "warnings" | "weather";
@@ -144,6 +145,7 @@ export interface SituationDataSource {
   readonly config: SituationDataSourceConfig;
   readonly sourceSystem: SourceSystem;
   cacheStats?(): SituationDataCacheStats;
+  fetchCatalog?(requestNow: Date): Promise<ProviderMapCatalog>;
   fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection>;
   fetchLayers(requestNow: Date): Promise<SituationLayerDescriptor[]>;
   fetchSources(requestNow: Date): Promise<SituationSourceDescriptor[]>;
@@ -218,6 +220,8 @@ export function createSituationDataSourceFromEnv(env: Record<string, string | un
 export class SituationDataSourceAdapter implements SituationDataSource {
   readonly sourceSystem: SourceSystem;
   private readonly featureCache: ManagedSituationCache<SituationFeatureCollection>;
+  private catalogCache: { expiresAtMs: number; value: ProviderMapCatalog } | null = null;
+  private catalogInflight: Promise<ProviderMapCatalog> | null = null;
   private layerCache: { expiresAtMs: number; value: SituationLayerDescriptor[] } | null = null;
   private sourceCache: { expiresAtMs: number; value: SituationSourceDescriptor[] } | null = null;
 
@@ -233,11 +237,31 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     return this.featureCache.stats();
   }
 
+  async fetchCatalog(requestNow: Date): Promise<ProviderMapCatalog> {
+    if (this.catalogCache && this.catalogCache.expiresAtMs > requestNow.getTime()) {
+      return this.catalogCache.value;
+    }
+    if (this.catalogInflight) {
+      return this.catalogInflight;
+    }
+    this.catalogInflight = fetchSituationCatalog(this.config, requestNow);
+    try {
+      const value = await this.catalogInflight;
+      this.catalogCache = {
+        expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
+        value
+      };
+      return value;
+    } finally {
+      this.catalogInflight = null;
+    }
+  }
+
   async fetchLayers(requestNow: Date): Promise<SituationLayerDescriptor[]> {
     if (this.layerCache && this.layerCache.expiresAtMs > requestNow.getTime()) {
       return this.layerCache.value;
     }
-    const layers = await fetchSituationLayers(this.config, requestNow);
+    const layers = situationLayersFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.layerCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
       value: layers
@@ -249,7 +273,7 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     if (this.sourceCache && this.sourceCache.expiresAtMs > requestNow.getTime()) {
       return this.sourceCache.value;
     }
-    const sources = await fetchSituationSources(this.config, requestNow);
+    const sources = situationSourcesFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.sourceCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
       value: sources
@@ -543,24 +567,47 @@ function projectSituationFeatureCollection(
   };
 }
 
-async function fetchSituationLayers(config: SituationDataSourceConfig, requestNow: Date): Promise<SituationLayerDescriptor[]> {
-  const response = await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/layers`), config, requestNow);
-  if (!isRecord(response) || !Array.isArray(response.items)) {
-    throw new Error("Situation layers response is incomplete.");
-  }
-  return response.items.flatMap(normalizeSituationLayer);
+async function fetchSituationCatalog(config: SituationDataSourceConfig, requestNow: Date): Promise<ProviderMapCatalog> {
+  return normalizeProviderMapCatalog(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/catalog`), config, requestNow), "sim.situation-data");
 }
 
-async function fetchSituationSources(config: SituationDataSourceConfig, requestNow: Date): Promise<SituationSourceDescriptor[]> {
-  const response = await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/sources`), config, requestNow);
-  if (!isRecord(response) || !Array.isArray(response.items)) {
-    throw new Error("Situation sources response is incomplete.");
+function situationLayersFromProviderCatalog(catalog: ProviderMapCatalog): SituationLayerDescriptor[] {
+  const layers = new Map<SituationLayerId, SituationLayerDescriptor>();
+  for (const catalogLayer of catalog.layers) {
+    for (const providerLayerId of catalogLayer.query?.providerLayerIds ?? []) {
+      if (!isSituationLayerId(providerLayerId)) {
+        continue;
+      }
+      const current = layers.get(providerLayerId);
+      layers.set(providerLayerId, {
+        defaultVisible: (current?.defaultVisible ?? false) || catalogLayer.defaultVisible === true,
+        description: current?.description ?? catalogLayer.description,
+        expectedCadenceSeconds: minOptionalNumber(current?.expectedCadenceSeconds, catalogLayer.refreshSeconds),
+        geometryTypes: mergeStringLists(current?.geometryTypes, catalogLayer.geometryTypes),
+        label: current?.label ?? situationLayerLabelFromCatalog(providerLayerId, catalogLayer.label),
+        layerId: providerLayerId
+      });
+    }
   }
-  return response.items.flatMap(normalizeSituationSourceDescriptor);
+  return Array.from(layers.values());
+}
+
+function situationSourcesFromProviderCatalog(catalog: ProviderMapCatalog): SituationSourceDescriptor[] {
+  return catalog.sources.map((source) => ({
+    enabled: source.enabled,
+    label: source.label,
+    layers: source.layers?.filter(isSituationLayerId) ?? catalog.layers
+      .filter((layer) => layer.query?.providerSourceIds?.includes(source.sourceId))
+      .flatMap((layer) => layer.query?.providerLayerIds ?? [])
+      .filter(isSituationLayerId),
+    mode: source.sourceRole,
+    sourceId: source.sourceId,
+    updateCadenceSeconds: source.updateCadenceSeconds
+  }));
 }
 
 async function fetchSituationFeatures(config: SituationDataSourceConfig, query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
-  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/cop/features`);
+  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/features`);
   url.searchParams.set("bbox", `${query.bbox.west},${query.bbox.south},${query.bbox.east},${query.bbox.north}`);
   url.searchParams.set("layers", query.layers.join(","));
   url.searchParams.set("limit", String(query.limit));
@@ -956,6 +1003,28 @@ function uniqueLayers(layers: SituationLayerId[]): SituationLayerId[] {
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function mergeStringLists(a: string[] | undefined, b: string[] | undefined): string[] | undefined {
+  const merged = uniqueStrings([...(a ?? []), ...(b ?? [])]);
+  return merged.length > 0 ? merged : undefined;
+}
+
+function minOptionalNumber(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) {
+    return b;
+  }
+  if (b === undefined) {
+    return a;
+  }
+  return Math.min(a, b);
+}
+
+function situationLayerLabelFromCatalog(layerId: SituationLayerId, label: string): string {
+  if (layerId === "mobile" && label.toLowerCase().includes("komunika")) {
+    return "BTS / komunikační stožáry";
+  }
+  return label;
 }
 
 function isSituationLayerId(value: unknown): value is SituationLayerId {

@@ -1,6 +1,7 @@
 import type { SafetyLayerDescriptor, SafetySourceDescriptor } from "./safety-data-source.js";
 import type { SituationLayerDescriptor, SituationSourceDescriptor } from "./situation-data-source.js";
 import type { TakGatewayLayerDescriptor, TakGatewaySourceDescriptor } from "./tak-gateway-source.js";
+import type { ProviderCatalogLayer, ProviderCatalogSource, ProviderMapCatalog } from "./provider-map-catalog.js";
 
 export type MapCatalogAudience = "admin" | "authenticated" | "diagnostic" | "partner" | "public";
 export type MapCatalogLayerKind = "aggregate" | "mvt_tiles" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features";
@@ -99,22 +100,26 @@ export interface BuildMapCatalogInput {
   includePartner?: boolean;
   locale?: string;
   flight?: {
+    catalog?: ProviderMapCatalog;
     status?: MapCatalogProvider["status"];
     warning?: string;
   };
   safety?: {
+    catalog?: ProviderMapCatalog;
     layers: SafetyLayerDescriptor[];
     sources: SafetySourceDescriptor[];
     status?: MapCatalogProvider["status"];
     warning?: string;
   };
   situation?: {
+    catalog?: ProviderMapCatalog;
     layers: SituationLayerDescriptor[];
     sources: SituationSourceDescriptor[];
     status?: MapCatalogProvider["status"];
     warning?: string;
   };
   tak?: {
+    catalog?: ProviderMapCatalog;
     layers: TakGatewayLayerDescriptor[];
     sources: TakGatewaySourceDescriptor[];
     status?: MapCatalogProvider["status"];
@@ -128,15 +133,17 @@ export function buildMapCatalog(input: BuildMapCatalogInput): MapCatalogResponse
   const providers = buildProviders(input);
   const sources = [
     ...buildCopSources(),
-    ...buildSafetySources(input.safety?.sources ?? []),
-    ...buildSituationSources(input.situation?.sources ?? []),
-    ...(includePartner ? buildTakSources(input.tak?.sources ?? []) : [])
+    ...(input.safety?.catalog ? buildProviderCatalogSources(input.safety.catalog, includeDiagnostics, includePartner) : buildSafetySources(input.safety?.sources ?? [])),
+    ...(input.situation?.catalog ? buildProviderCatalogSources(input.situation.catalog, includeDiagnostics, includePartner) : buildSituationSources(input.situation?.sources ?? [])),
+    ...(input.flight?.catalog ? buildProviderCatalogSources(input.flight.catalog, includeDiagnostics, includePartner) : []),
+    ...(includePartner ? (input.tak?.catalog ? buildProviderCatalogSources(input.tak.catalog, includeDiagnostics, includePartner) : buildTakSources(input.tak?.sources ?? [])) : [])
   ];
   const allLayers = [
-    ...buildSafetyLayers(input.safety?.layers ?? [], input.safety?.sources ?? []),
-    ...buildSituationLayers(input.situation?.layers ?? [], input.situation?.sources ?? []),
+    ...(input.safety?.catalog ? buildProviderCatalogLayers(input.safety.catalog, includeDiagnostics, includePartner) : buildSafetyLayers(input.safety?.layers ?? [], input.safety?.sources ?? [])),
+    ...(input.situation?.catalog ? buildProviderCatalogLayers(input.situation.catalog, includeDiagnostics, includePartner) : buildSituationLayers(input.situation?.layers ?? [], input.situation?.sources ?? [])),
     ...buildCopOwnedLayers(),
-    ...(includePartner ? buildTakLayers(input.tak?.layers ?? [], input.tak?.sources ?? []) : []),
+    ...(input.flight?.catalog ? buildProviderCatalogLayers(input.flight.catalog, includeDiagnostics, includePartner) : []),
+    ...(includePartner ? (input.tak?.catalog ? buildProviderCatalogLayers(input.tak.catalog, includeDiagnostics, includePartner) : buildTakLayers(input.tak?.layers ?? [], input.tak?.sources ?? [])) : []),
     ...(includeDiagnostics ? buildDiagnosticLayers(input.situation?.layers ?? [], input.situation?.sources ?? []) : [])
   ];
   const warnings = [input.flight?.warning, input.safety?.warning, input.situation?.warning, input.tak?.warning].filter((warning): warning is string => Boolean(warning));
@@ -148,7 +155,7 @@ export function buildMapCatalog(input: BuildMapCatalogInput): MapCatalogResponse
     layers: dedupeLayers(allLayers),
     locale: input.locale ?? "cs-CZ",
     providers,
-    sources,
+    sources: dedupeSources(sources),
     warnings
   };
 }
@@ -210,6 +217,226 @@ function defaultGroups(includeDiagnostics: boolean, includePartner: boolean): Ma
   ];
 }
 
+function buildProviderCatalogLayers(catalog: ProviderMapCatalog, includeDiagnostics: boolean, includePartner: boolean): MapCatalogLayer[] {
+  return catalog.layers
+    .filter((layer) => shouldIncludeCatalogAudience(layer.audience, includeDiagnostics, includePartner))
+    .flatMap((layer) => providerCatalogLayerToMapLayer(catalog.providerId, layer));
+}
+
+function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatalogLayer): MapCatalogLayer[] {
+  const mode = normalizeQueryMode(layer.query?.mode);
+  const role = normalizeLayerRole(layer.role);
+  const audience = normalizeAudience(layer.audience);
+  const kind = normalizeLayerKind(layer.kind);
+  const providerLayerIds = layer.query?.providerLayerIds?.filter(Boolean) ?? [];
+  const providerSourceIds = layer.query?.providerSourceIds?.filter(Boolean) ?? layer.sourceIds?.filter(Boolean) ?? [];
+  const categoryIds = uniqueStrings([
+    ...(layer.query?.categoryIds ?? []),
+    ...(layer.query?.categoryFilter ?? []),
+    ...(legacyCategoryIdsForProviderLayer(layer.recommendedCatalogLayerId, providerLayerIds, providerSourceIds))
+  ]);
+  return [
+    {
+      audience,
+      cacheTtlSeconds: layer.cacheTtlSeconds,
+      defaultVisible: layer.defaultVisible === true,
+      description: layer.description,
+      filters: normalizeProviderFilters(layer.filters),
+      geometryTypes: nonEmpty(layer.geometryTypes),
+      groupId: groupIdForCatalogLayer(layer),
+      kind,
+      label: labelForCatalogLayer(layer),
+      layerId: layer.recommendedCatalogLayerId,
+      legal: layer.legal,
+      maxZoom: layer.maxZoom,
+      minZoom: layer.minZoom,
+      provenance: {
+        sourceIds: uniqueStrings((layer.sourceIds ?? providerSourceIds).map((sourceId) => `${providerId}:${sourceId}`)),
+        ...(layer.technicalInputs && layer.technicalInputs.length > 0 ? { technicalInputs: layer.technicalInputs.map((sourceId) => `${providerId}:${sourceId}`) } : {})
+      },
+      query: {
+        ...(categoryIds.length > 0 ? { categoryIds } : {}),
+        maxFeatures: layer.query?.maxFeatures,
+        mode,
+        providerId: layer.query?.providerId ?? providerId,
+        ...(providerLayerIds.length > 0 ? { providerLayerIds } : {}),
+        ...(providerSourceIds.length > 0 ? { providerSourceIds } : {}),
+        streamId: streamIdForCatalogLayer(layer.query?.streamId)
+      },
+      refreshSeconds: layer.refreshSeconds,
+      role,
+      selectable: selectableForCatalogLayer(layer),
+      styleProfile: layer.styleProfile ?? styleProfileForCatalogLayer(layer)
+    }
+  ];
+}
+
+function buildProviderCatalogSources(catalog: ProviderMapCatalog, includeDiagnostics: boolean, includePartner: boolean): MapCatalogSource[] {
+  return catalog.sources
+    .filter((source) => shouldIncludeCatalogAudience(source.audience, includeDiagnostics, includePartner))
+    .flatMap((source) => providerCatalogSourceToMapSource(catalog.providerId, source));
+}
+
+function providerCatalogSourceToMapSource(providerId: string, source: ProviderCatalogSource): MapCatalogSource[] {
+  return [
+    {
+      audience: normalizeAudience(source.audience),
+      cacheTtlSeconds: source.cacheTtlSeconds,
+      enabled: source.enabled === true,
+      feedsCatalogLayerIds: nonEmpty(source.feedsCatalogLayerIds) ?? nonEmpty(source.feedsLayerIds),
+      label: source.label ?? source.sourceId,
+      providerId,
+      selectableInMap: source.selectableInMap === true,
+      sourceId: source.sourceId,
+      sourceRole: normalizeSourceRole(source.sourceRole),
+      updateCadenceSeconds: source.updateCadenceSeconds,
+      usedByCatalogLayerIds: nonEmpty(source.usedByCatalogLayerIds),
+      visibleInDiagnostics: source.visibleInDiagnostics === true || normalizeAudience(source.audience) === "diagnostic"
+    }
+  ];
+}
+
+function normalizeProviderFilters(filters: ProviderCatalogLayer["filters"]): MapCatalogFilter[] | undefined {
+  const normalized = (filters ?? []).flatMap((filter): MapCatalogFilter[] => {
+    const type = filter.type === "select" || filter.type === "toggle" || filter.type === "multi_select" ? filter.type : undefined;
+    if (!type) {
+      return [];
+    }
+    return [
+      {
+        defaultValue: filter.defaultValue,
+        filterId: filter.filterId,
+        label: filter.label,
+        type,
+        values: nonEmpty(filter.values)
+      }
+    ];
+  });
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function shouldIncludeCatalogAudience(value: string | undefined, includeDiagnostics: boolean, includePartner: boolean): boolean {
+  const audience = normalizeAudience(value);
+  if (audience === "diagnostic" || audience === "admin") {
+    return includeDiagnostics;
+  }
+  if (audience === "partner") {
+    return includePartner;
+  }
+  return true;
+}
+
+function selectableForCatalogLayer(layer: ProviderCatalogLayer): boolean {
+  if (layer.recommendedCatalogLayerId === "reference.infrastructure.communications") {
+    return true;
+  }
+  return layer.selectable === true;
+}
+
+function labelForCatalogLayer(layer: ProviderCatalogLayer): string {
+  if (layer.recommendedCatalogLayerId === "reference.infrastructure.communications") {
+    return "BTS / komunikační stožáry";
+  }
+  if (layer.recommendedCatalogLayerId === "flight.public.tracks") {
+    return "Veřejné lety";
+  }
+  return layer.label;
+}
+
+function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
+  const layerId = layer.recommendedCatalogLayerId;
+  if (layerId.startsWith("public.safety.")) {
+    return "risks";
+  }
+  if (layerId.startsWith("public.weather.")) {
+    return "risks.weather";
+  }
+  if (layerId.startsWith("public.mobile.") || layerId.startsWith("public.traffic.") || layerId === "reference.infrastructure.communications") {
+    return "communications";
+  }
+  if (layerId.startsWith("reference.infrastructure.")) {
+    return "infrastructure";
+  }
+  if (layerId.startsWith("flight.")) {
+    return "flight";
+  }
+  if (layerId.startsWith("user.")) {
+    return "user";
+  }
+  if (layerId.startsWith("partner.")) {
+    return "partner";
+  }
+  if (layerId.startsWith("diagnostic.")) {
+    return "diagnostic";
+  }
+  const firstCategory = layer.categoryPath?.[0];
+  if (firstCategory === "weather") {
+    return "risks.weather";
+  }
+  if (firstCategory === "safety") {
+    return "risks";
+  }
+  if (firstCategory === "communications" || firstCategory === "traffic") {
+    return "communications";
+  }
+  if (firstCategory === "reference") {
+    return "infrastructure";
+  }
+  return "infrastructure";
+}
+
+function legacyCategoryIdsForProviderLayer(layerId: string, providerLayerIds: string[], providerSourceIds: string[]): string[] {
+  if (layerId === "reference.infrastructure.healthcare") {
+    return ["hospital", "clinic", "doctors", "pharmacy"];
+  }
+  if (layerId === "reference.infrastructure.emergency") {
+    return ["fire_station", "police", "ambulance_station", "shelter", "defibrillator", "siren", "assembly_point"];
+  }
+  if (layerId === "reference.infrastructure.communications" || (providerLayerIds.includes("mobile") && providerSourceIds.includes("osm_postgis"))) {
+    return ["communications_tower"];
+  }
+  if (layerId === "reference.infrastructure.civic") {
+    return ["townhall"];
+  }
+  if (layerId === "public.weather.aviation") {
+    return ["aviation_weather_station"];
+  }
+  return [];
+}
+
+function normalizeQueryMode(value: string | undefined): MapCatalogQuery["mode"] {
+  return value === "internal" || value === "stream" || value === "tile" || value === "bbox" ? value : "bbox";
+}
+
+function normalizeLayerRole(value: string | undefined): MapCatalogLayerRole {
+  return value === "diagnostic" || value === "overlay" || value === "partner" || value === "primary" || value === "reference" || value === "user" ? value : "reference";
+}
+
+function normalizeAudience(value: string | undefined): MapCatalogAudience {
+  return value === "admin" || value === "authenticated" || value === "diagnostic" || value === "partner" || value === "public" ? value : "public";
+}
+
+function normalizeLayerKind(value: string | undefined): MapCatalogLayerKind {
+  return value === "aggregate" || value === "mvt_tiles" || value === "raster_tiles" || value === "static_reference" || value === "track_stream" || value === "user_objects" || value === "vector_features"
+    ? value
+    : "vector_features";
+}
+
+function normalizeSourceRole(value: string | undefined): MapCatalogSourceRole {
+  return value === "aggregate" || value === "diagnostic" || value === "final" || value === "input" || value === "mock" || value === "projection" || value === "reference" ? value : "reference";
+}
+
+function streamIdForCatalogLayer(value: string | undefined): string {
+  return value === "cop.features" ? "features" : (value ?? "features");
+}
+
+function styleProfileForCatalogLayer(layer: ProviderCatalogLayer): string {
+  if (layer.recommendedCatalogLayerId === "reference.infrastructure.communications") {
+    return "infrastructure-communications-v1";
+  }
+  return `${layer.recommendedCatalogLayerId.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-v1`;
+}
+
 function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourceDescriptor[]): MapCatalogLayer[] {
   const warningLayer = findLayer(layers, "warnings");
   const floodLayer = findLayer(layers, "flood");
@@ -236,7 +463,7 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
         providerId: "sim.safety-data",
         providerLayerIds: ["warnings"],
         providerSourceIds: ["chmi_alerts"],
-        streamId: "cop.features"
+        streamId: "features"
       },
       refreshSeconds: warningLayer?.expectedCadenceSeconds ?? 300,
       role: "primary",
@@ -265,7 +492,7 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
         providerId: "sim.safety-data",
         providerLayerIds: ["flood"],
         providerSourceIds: ["chmi_hydro"],
-        streamId: "cop.features"
+        streamId: "features"
       },
       refreshSeconds: floodLayer?.expectedCadenceSeconds ?? 600,
       role: "primary",
@@ -303,7 +530,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         providerId: "sim.situation-data",
         providerLayerIds: ["weather"],
         providerSourceIds: ["open_meteo"],
-        streamId: "cop.features"
+        streamId: "features"
       },
       refreshSeconds: findSource(sources, "open_meteo")?.updateCadenceSeconds ?? weatherLayer?.expectedCadenceSeconds ?? 600,
       role: "primary",
@@ -333,7 +560,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         providerId: "sim.situation-data",
         providerLayerIds: ["weather"],
         providerSourceIds: ["aviation_weather"],
-        streamId: "cop.features"
+        streamId: "features"
       },
       refreshSeconds: findSource(sources, "aviation_weather")?.updateCadenceSeconds ?? 600,
       role: "reference",
@@ -372,7 +599,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         providerId: "sim.situation-data",
         providerLayerIds: ["mobile_network"],
         providerSourceIds: ["mobile_network_model"],
-        streamId: "cop.features"
+        streamId: "features"
       },
       refreshSeconds: findSource(sources, "mobile_network_model")?.updateCadenceSeconds ?? mobileLayer?.expectedCadenceSeconds ?? 600,
       role: "overlay",
@@ -401,7 +628,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         providerId: "sim.situation-data",
         providerLayerIds: ["traffic"],
         providerSourceIds: ["pid_gtfs_rt"],
-        streamId: "cop.features"
+        streamId: "features"
       },
       refreshSeconds: findSource(sources, "pid_gtfs_rt")?.updateCadenceSeconds ?? trafficLayer?.expectedCadenceSeconds ?? 60,
       role: "reference",
@@ -473,7 +700,7 @@ function infrastructureQuery(categoryIds: string[]): MapCatalogQuery {
     providerId: "sim.situation-data",
     providerLayerIds: ["ground"],
     providerSourceIds: ["osm_postgis"],
-    streamId: "cop.features"
+    streamId: "features"
   };
 }
 
@@ -512,7 +739,7 @@ function buildDiagnosticLayers(layers: SituationLayerDescriptor[], sources: Situ
         providerId: "sim.situation-data",
         providerLayerIds: ["mobile_coverage"],
         providerSourceIds: ["mobile_coverage_model"],
-        streamId: "cop.features"
+        streamId: "features"
       },
       refreshSeconds: findSource(sources, "mobile_coverage_model")?.updateCadenceSeconds ?? coverageLayer?.expectedCadenceSeconds ?? 21600,
       role: "diagnostic",
@@ -541,7 +768,7 @@ function buildDiagnosticLayers(layers: SituationLayerDescriptor[], sources: Situ
         providerId: "sim.situation-data",
         providerLayerIds: ["mobile"],
         providerSourceIds: ["ctu_nettest"],
-        streamId: "cop.features"
+        streamId: "features"
       },
       refreshSeconds: findSource(sources, "ctu_nettest")?.updateCadenceSeconds ?? mobileLayer?.expectedCadenceSeconds ?? 3600,
       role: "diagnostic",
@@ -581,7 +808,7 @@ function buildTakLayers(layers: TakGatewayLayerDescriptor[], sources: TakGateway
         providerId: "sim.tak-gateway",
         providerLayerIds: [providerLayerId],
         providerSourceIds: ["tak_gateway"],
-        streamId: "cop.features"
+        streamId: "features"
       },
       refreshSeconds: layer?.expectedCadenceSeconds ?? source?.updateCadenceSeconds ?? 15,
       role: "partner" as const,
@@ -868,11 +1095,30 @@ function findSource<T extends { sourceId: string }>(sources: T[], sourceId: stri
   return sources.find((source) => source.sourceId === sourceId);
 }
 
+function nonEmpty<T>(value: T[] | undefined): T[] | undefined {
+  return value && value.length > 0 ? value : undefined;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
 function dedupeLayers(layers: MapCatalogLayer[]): MapCatalogLayer[] {
   const byId = new Map<string, MapCatalogLayer>();
   layers.forEach((layer) => {
     if (!byId.has(layer.layerId)) {
       byId.set(layer.layerId, layer);
+    }
+  });
+  return Array.from(byId.values());
+}
+
+function dedupeSources(sources: MapCatalogSource[]): MapCatalogSource[] {
+  const byId = new Map<string, MapCatalogSource>();
+  sources.forEach((source) => {
+    const key = `${source.providerId}:${source.sourceId}`;
+    if (!byId.has(key)) {
+      byId.set(key, source);
     }
   });
   return Array.from(byId.values());

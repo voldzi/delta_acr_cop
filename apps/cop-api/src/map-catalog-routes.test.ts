@@ -26,6 +26,7 @@ import type {
   TakGatewaySourceConfig,
   TakGatewaySourceDescriptor
 } from "./tak-gateway-source.js";
+import type { ProviderMapCatalog } from "./provider-map-catalog.js";
 
 describe("map catalog route", () => {
   afterEach(() => {
@@ -103,6 +104,48 @@ describe("map catalog route", () => {
         usedByCatalogLayerIds: ["public.mobile.network"]
       })
     ]));
+  });
+
+  it("translates provider catalogs into selectable public layers without exposing technical inputs", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource: new FakeProviderCatalogSituationDataSource()
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/map/catalog"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      layers: Array<{ groupId: string; label: string; layerId: string; query?: { categoryIds?: string[]; providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
+      sources: Array<{ feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
+    };
+    expect(body.layers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        groupId: "communications",
+        label: "BTS / komunikační stožáry",
+        layerId: "reference.infrastructure.communications",
+        query: expect.objectContaining({
+          categoryIds: ["communications_tower"],
+          providerLayerIds: ["mobile"],
+          providerSourceIds: ["osm_postgis"]
+        }),
+        selectable: true
+      })
+    ]));
+    expect(body.layers.map((layer) => layer.layerId)).not.toContain("diagnostic.mobile.coverage");
+    expect(body.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        feedsCatalogLayerIds: ["reference.infrastructure.communications"],
+        selectableInMap: false,
+        sourceId: "osm_postgis",
+        sourceRole: "reference"
+      })
+    ]));
+    expect(body.sources.map((source) => source.sourceId)).not.toContain("mobile_coverage_model");
   });
 
   it("adds diagnostic and partner groups only for authenticated catalog requests", async () => {
@@ -245,6 +288,129 @@ class FakeSituationDataSource implements SituationDataSource {
       sources: await this.fetchSources(requestNow),
       summary: { featureCount: 0, sourceCount: 0, staleFeatureCount: 0, warningCount: 0 },
       type: "FeatureCollection",
+      warnings: []
+    };
+  }
+}
+
+class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
+  async fetchCatalog(_requestNow: Date): Promise<ProviderMapCatalog> {
+    return {
+      contractVersion: "provider-map-catalog-v1",
+      layers: [
+        {
+          audience: "public",
+          cacheTtlSeconds: 3600,
+          defaultVisible: false,
+          geometryTypes: ["Polygon"],
+          kind: "vector_features",
+          label: "Mobilní síť",
+          providerLayerId: "mobile_network",
+          query: {
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.situation-data",
+            providerLayerIds: ["mobile_network"],
+            providerSourceIds: ["mobile_network_model"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "public.mobile.network",
+          refreshSeconds: 300,
+          role: "overlay",
+          selectable: true,
+          sourceIds: ["mobile_network_model"],
+          styleProfile: "mobile-network-quality-v1",
+          technicalInputs: ["mobile_coverage_model", "ctu_nettest", "osm_postgis"]
+        },
+        {
+          audience: "diagnostic",
+          cacheTtlSeconds: 21600,
+          defaultVisible: false,
+          geometryTypes: ["Polygon"],
+          kind: "vector_features",
+          label: "Technický odhad pokrytí",
+          providerLayerId: "mobile_coverage",
+          query: {
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.situation-data",
+            providerLayerIds: ["mobile_coverage"],
+            providerSourceIds: ["mobile_coverage_model"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "diagnostic.mobile.coverage",
+          refreshSeconds: 21600,
+          role: "diagnostic",
+          selectable: false,
+          sourceIds: ["mobile_coverage_model"],
+          styleProfile: "mobile-coverage-diagnostic-v1"
+        },
+        {
+          audience: "public",
+          cacheTtlSeconds: 21600,
+          categoryPath: ["reference", "infrastructure", "communications"],
+          defaultVisible: false,
+          geometryTypes: ["Point"],
+          kind: "vector_features",
+          label: "Komunikační infrastruktura",
+          providerLayerId: "mobile.osm_postgis.communications",
+          query: {
+            categoryFilter: ["communications_tower"],
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.situation-data",
+            providerLayerIds: ["mobile"],
+            providerSourceIds: ["osm_postgis"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "reference.infrastructure.communications",
+          refreshSeconds: 21600,
+          role: "reference",
+          selectable: false,
+          sourceIds: ["osm_postgis"],
+          styleProfile: "communications-infrastructure-v1"
+        }
+      ],
+      providerId: "sim.situation-data",
+      sources: [
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.mobile.network"],
+          label: "Unified mobile network assessment",
+          selectableInMap: true,
+          sourceId: "mobile_network_model",
+          sourceRole: "aggregate",
+          updateCadenceSeconds: 3600,
+          usedByCatalogLayerIds: ["public.mobile.network"],
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "diagnostic",
+          enabled: true,
+          feedsCatalogLayerIds: ["diagnostic.mobile.coverage"],
+          label: "Mobile coverage estimate model",
+          selectableInMap: false,
+          sourceId: "mobile_coverage_model",
+          sourceRole: "input",
+          updateCadenceSeconds: 21600,
+          usedByCatalogLayerIds: ["public.mobile.network"],
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["reference.infrastructure.communications"],
+          label: "Local OpenStreetMap PostGIS context",
+          selectableInMap: false,
+          sourceId: "osm_postgis",
+          sourceRole: "reference",
+          updateCadenceSeconds: 21600,
+          usedByCatalogLayerIds: ["public.mobile.network"],
+          visibleInDiagnostics: true
+        }
+      ],
+      status: "online",
       warnings: []
     };
   }

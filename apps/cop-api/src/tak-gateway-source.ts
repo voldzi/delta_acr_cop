@@ -1,4 +1,5 @@
 import { createTakGatewaySourceSystem, type SourceSystem } from "@cop/canonical-model";
+import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
 
 export type TakGatewayLayerId = "ground" | "mobile" | "traffic";
@@ -128,6 +129,7 @@ export interface TakGatewaySource {
   readonly config: TakGatewaySourceConfig;
   readonly sourceSystem: SourceSystem;
   cacheStats?(): TakGatewayCacheStats;
+  fetchCatalog?(requestNow: Date): Promise<ProviderMapCatalog>;
   fetchFeatures(query: TakGatewayFeatureQuery, requestNow: Date): Promise<TakGatewayFeatureCollection>;
   fetchLayers(requestNow: Date): Promise<TakGatewayLayerDescriptor[]>;
   fetchSources(requestNow: Date): Promise<TakGatewaySourceDescriptor[]>;
@@ -167,6 +169,8 @@ export function createTakGatewaySourceFromEnv(env: Record<string, string | undef
 export class TakGatewaySourceAdapter implements TakGatewaySource {
   readonly sourceSystem: SourceSystem;
   private readonly featureCache: ManagedTakGatewayCache<TakGatewayFeatureCollection>;
+  private catalogCache: { expiresAtMs: number; value: ProviderMapCatalog } | null = null;
+  private catalogInflight: Promise<ProviderMapCatalog> | null = null;
   private layerCache: { expiresAtMs: number; value: TakGatewayLayerDescriptor[] } | null = null;
   private sourceCache: { expiresAtMs: number; value: TakGatewaySourceDescriptor[] } | null = null;
 
@@ -182,13 +186,31 @@ export class TakGatewaySourceAdapter implements TakGatewaySource {
     return this.featureCache.stats();
   }
 
+  async fetchCatalog(requestNow: Date): Promise<ProviderMapCatalog> {
+    if (this.catalogCache && this.catalogCache.expiresAtMs > requestNow.getTime()) {
+      return this.catalogCache.value;
+    }
+    if (this.catalogInflight) {
+      return this.catalogInflight;
+    }
+    this.catalogInflight = fetchTakGatewayCatalog(this.config, requestNow);
+    try {
+      const value = await this.catalogInflight;
+      this.catalogCache = {
+        expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
+        value
+      };
+      return value;
+    } finally {
+      this.catalogInflight = null;
+    }
+  }
+
   async fetchLayers(requestNow: Date): Promise<TakGatewayLayerDescriptor[]> {
     if (this.layerCache && this.layerCache.expiresAtMs > requestNow.getTime()) {
       return this.layerCache.value;
     }
-    const response = await fetchJson(new URL(`${trimTrailingSlash(this.config.baseUrl)}/layers`), this.config, requestNow);
-    const rawItems = responseItems(response);
-    const value = rawItems.length > 0 ? rawItems.flatMap(normalizeTakGatewayLayer) : fallbackTakGatewayLayers();
+    const value = takGatewayLayersFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.layerCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
       value
@@ -200,9 +222,7 @@ export class TakGatewaySourceAdapter implements TakGatewaySource {
     if (this.sourceCache && this.sourceCache.expiresAtMs > requestNow.getTime()) {
       return this.sourceCache.value;
     }
-    const response = await fetchJson(new URL(`${trimTrailingSlash(this.config.baseUrl)}/sources`), this.config, requestNow);
-    const rawItems = responseItems(response);
-    const value = rawItems.length > 0 ? rawItems.flatMap(normalizeTakGatewaySourceDescriptor) : fallbackTakGatewaySources();
+    const value = takGatewaySourcesFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.sourceCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
       value
@@ -498,11 +518,51 @@ function projectTakGatewayFeatureCollection(
 }
 
 async function fetchTakGatewayFeatures(config: TakGatewaySourceConfig, query: TakGatewayFeatureQuery, requestNow: Date): Promise<TakGatewayFeatureCollection> {
-  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/cop/features`);
+  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/features`);
   url.searchParams.set("bbox", `${query.bbox.west},${query.bbox.south},${query.bbox.east},${query.bbox.north}`);
   url.searchParams.set("layers", query.layers.join(","));
   url.searchParams.set("limit", String(query.limit));
   return normalizeTakGatewayFeatureCollection(await fetchJson(url, config, requestNow), query);
+}
+
+async function fetchTakGatewayCatalog(config: TakGatewaySourceConfig, requestNow: Date): Promise<ProviderMapCatalog> {
+  return normalizeProviderMapCatalog(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/catalog`), config, requestNow), "sim.tak-gateway");
+}
+
+function takGatewayLayersFromProviderCatalog(catalog: ProviderMapCatalog): TakGatewayLayerDescriptor[] {
+  const layers = new Map<TakGatewayLayerId, TakGatewayLayerDescriptor>();
+  for (const catalogLayer of catalog.layers) {
+    for (const providerLayerId of catalogLayer.query?.providerLayerIds ?? []) {
+      if (!isTakGatewayLayerId(providerLayerId)) {
+        continue;
+      }
+      const current = layers.get(providerLayerId);
+      layers.set(providerLayerId, {
+        defaultVisible: (current?.defaultVisible ?? false) || catalogLayer.defaultVisible === true,
+        description: current?.description ?? catalogLayer.description,
+        expectedCadenceSeconds: minOptionalNumber(current?.expectedCadenceSeconds, catalogLayer.refreshSeconds),
+        geometryTypes: mergeStringLists(current?.geometryTypes, catalogLayer.geometryTypes),
+        label: current?.label ?? catalogLayer.label,
+        layerId: providerLayerId
+      });
+    }
+  }
+  return layers.size > 0 ? Array.from(layers.values()) : fallbackTakGatewayLayers();
+}
+
+function takGatewaySourcesFromProviderCatalog(catalog: ProviderMapCatalog): TakGatewaySourceDescriptor[] {
+  const sources = catalog.sources.map((source) => ({
+    enabled: source.enabled,
+    label: source.label,
+    layers: source.layers?.filter(isTakGatewayLayerId) ?? catalog.layers
+      .filter((layer) => layer.query?.providerSourceIds?.includes(source.sourceId))
+      .flatMap((layer) => layer.query?.providerLayerIds ?? [])
+      .filter(isTakGatewayLayerId),
+    mode: source.sourceRole,
+    sourceId: source.sourceId,
+    updateCadenceSeconds: source.updateCadenceSeconds
+  }));
+  return sources.length > 0 ? sources : fallbackTakGatewaySources();
 }
 
 async function fetchJson(url: URL, config: TakGatewaySourceConfig, requestNow: Date): Promise<unknown> {
@@ -923,6 +983,25 @@ function isTakGatewayLayerId(value: unknown): value is TakGatewayLayerId {
 
 function uniqueLayers<T extends string>(layers: T[]): T[] {
   return Array.from(new Set(layers));
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function mergeStringLists(a: string[] | undefined, b: string[] | undefined): string[] | undefined {
+  const merged = uniqueStrings([...(a ?? []), ...(b ?? [])]);
+  return merged.length > 0 ? merged : undefined;
+}
+
+function minOptionalNumber(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) {
+    return b;
+  }
+  if (b === undefined) {
+    return a;
+  }
+  return Math.min(a, b);
 }
 
 function optionalString(value: unknown): string | undefined {

@@ -31,7 +31,7 @@ describe("TakGatewaySourceAdapter", () => {
     }, new Date("2026-05-21T06:00:05Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/tak-gateway/api/v1/cop/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=mobile&limit=20"
+      "https://sim.zeleznalady.cz/tak-gateway/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=mobile&limit=20"
     );
     expect(features).toMatchObject({
       contractVersion: "cop-tak-source-v1",

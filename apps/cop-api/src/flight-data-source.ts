@@ -6,6 +6,7 @@ import {
   type ObjectType,
   type SourceSystem
 } from "@cop/canonical-model";
+import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
 
 export interface FlightDataSourceConfig {
@@ -29,6 +30,7 @@ export interface FlightDataPollResult {
 export interface FlightDataSource {
   readonly config: FlightDataSourceConfig;
   readonly sourceSystem: SourceSystem;
+  fetchCatalog?(requestNow: Date): Promise<ProviderMapCatalog>;
   fetchAirports?(query: FlightAirportQuery, requestNow: Date): Promise<FlightAirportCollection>;
   poll(pollNow: Date): Promise<FlightDataPollResult>;
 }
@@ -167,9 +169,31 @@ export function createFlightDataSourceFromEnv(env: Record<string, string | undef
 export class FlightDataSourceAdapter implements FlightDataSource {
   readonly sourceSystem: SourceSystem;
   private readonly airportCache = new Map<string, { expiresAtMs: number; value: FlightAirportCollection }>();
+  private catalogCache: { expiresAtMs: number; value: ProviderMapCatalog } | null = null;
+  private catalogInflight: Promise<ProviderMapCatalog> | null = null;
 
   constructor(readonly config: FlightDataSourceConfig) {
     this.sourceSystem = createPublicFlightAggregateSourceSystem();
+  }
+
+  async fetchCatalog(requestNow: Date): Promise<ProviderMapCatalog> {
+    if (this.catalogCache && this.catalogCache.expiresAtMs > requestNow.getTime()) {
+      return this.catalogCache.value;
+    }
+    if (this.catalogInflight) {
+      return this.catalogInflight;
+    }
+    this.catalogInflight = fetchFlightCatalog(this.config, requestNow);
+    try {
+      const value = await this.catalogInflight;
+      this.catalogCache = {
+        expiresAtMs: requestNow.getTime() + this.config.airportCacheTtlMs,
+        value
+      };
+      return value;
+    } finally {
+      this.catalogInflight = null;
+    }
   }
 
   async fetchAirports(query: FlightAirportQuery, requestNow: Date): Promise<FlightAirportCollection> {
@@ -221,6 +245,27 @@ async function fetchFlightAirports(config: FlightDataSourceConfig, query: Flight
       throw new Error(`${response.status} ${response.statusText || "Airport reference request failed"}`);
     }
     return normalizeFlightAirportCollection(await response.json());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchFlightCatalog(config: FlightDataSourceConfig, requestNow: Date): Promise<ProviderMapCatalog> {
+  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/api/v1/catalog`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "X-COP-Request-At": requestNow.toISOString()
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText || "Flight catalog request failed"}`);
+    }
+    return normalizeProviderMapCatalog(await response.json(), "sim.flight-data");
   } finally {
     clearTimeout(timeout);
   }

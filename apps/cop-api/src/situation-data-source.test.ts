@@ -10,8 +10,8 @@ describe("SituationDataSourceAdapter", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       expect(init?.headers).not.toMatchObject({ Authorization: expect.any(String) });
-      if (url.endsWith("/layers")) {
-        return new Response(JSON.stringify(sampleLayersResponse()), { status: 200 });
+      if (url.endsWith("/catalog")) {
+        return new Response(JSON.stringify(sampleCatalogResponse()), { status: 200 });
       }
       return new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 });
     });
@@ -33,17 +33,17 @@ describe("SituationDataSourceAdapter", () => {
       sources: ["aviation_weather"]
     }, new Date("2026-05-20T10:00:06Z"));
 
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/situation-data/api/v1/layers");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/situation-data/api/v1/catalog");
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=weather%2Ctraffic&limit=20&source=aviation_weather"
+      "https://sim.zeleznalady.cz/situation-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=weather%2Ctraffic&limit=20&source=aviation_weather"
     );
-    expect(layers).toMatchObject([
-      {
+    expect(layers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
         defaultVisible: true,
         label: "Weather",
         layerId: "weather"
-      }
-    ]);
+      })
+    ]));
     expect(features).toMatchObject({
       contractVersion: "cop-situation-source-v1",
       features: [
@@ -73,7 +73,7 @@ describe("SituationDataSourceAdapter", () => {
   });
 
   it("proxies SIM situation-data source descriptors", async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleSourcesResponse()), { status: 200 }));
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleCatalogResponse()), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const adapter = new SituationDataSourceAdapter({
@@ -86,7 +86,7 @@ describe("SituationDataSourceAdapter", () => {
 
     const sources = await adapter.fetchSources(new Date("2026-05-20T10:00:05Z"));
 
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/situation-data/api/v1/sources");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/situation-data/api/v1/catalog");
     expect(sources).toMatchObject([
       {
         enabled: true,
@@ -157,7 +157,7 @@ describe("SituationDataSourceAdapter", () => {
     }, new Date("2026-05-20T10:00:06Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=mobile&limit=20&source=osm_postgis"
+      "https://sim.zeleznalady.cz/situation-data/api/v1/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=mobile&limit=20&source=osm_postgis"
     );
     expect(features.cache?.ttlMs).toBe(6 * 60 * 60 * 1000);
   });
@@ -183,7 +183,7 @@ describe("SituationDataSourceAdapter", () => {
     }, new Date("2026-05-21T14:10:00Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=weather%2Cmobile_coverage&limit=20&source=mobile_coverage_model&technology=4G"
+      "https://sim.zeleznalady.cz/situation-data/api/v1/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=weather%2Cmobile_coverage&limit=20&source=mobile_coverage_model&technology=4G"
     );
     expect(features.cache?.ttlMs).toBe(10 * 60 * 1000);
     expect(features.query.technology).toBe("4G");
@@ -225,7 +225,7 @@ describe("SituationDataSourceAdapter", () => {
     }, new Date("2026-05-21T16:20:00Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/situation-data/api/v1/cop/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=mobile_network&limit=20&source=mobile_network_model&technology=4G"
+      "https://sim.zeleznalady.cz/situation-data/api/v1/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=mobile_network&limit=20&source=mobile_network_model&technology=4G"
     );
     expect(features.cache?.ttlMs).toBe(10 * 60 * 1000);
     expect(features.features).toMatchObject([
@@ -270,16 +270,96 @@ describe("SituationDataSourceAdapter", () => {
   });
 });
 
-function sampleLayersResponse() {
+function sampleCatalogResponse() {
   return {
-    items: [
+    contractVersion: "provider-map-catalog-v1",
+    providerId: "sim.situation-data",
+    status: "online",
+    layers: [
       {
+        audience: "public",
+        cacheTtlSeconds: 600,
         defaultVisible: true,
         description: "Weather context.",
-        expectedCadenceSeconds: 600,
         geometryTypes: ["Point"],
+        kind: "vector_features",
         label: "Weather",
-        layerId: "weather"
+        providerLayerId: "weather.open_meteo",
+        query: {
+          mode: "bbox",
+          providerId: "sim.situation-data",
+          providerLayerIds: ["weather"],
+          providerSourceIds: ["open_meteo"],
+          streamId: "features"
+        },
+        recommendedCatalogLayerId: "public.weather.current",
+        refreshSeconds: 600,
+        role: "primary",
+        selectable: true,
+        sourceIds: ["open_meteo"],
+        styleProfile: "current-weather-v1"
+      },
+      {
+        audience: "public",
+        cacheTtlSeconds: 600,
+        defaultVisible: false,
+        geometryTypes: ["Point"],
+        kind: "vector_features",
+        label: "Letištní počasí",
+        providerLayerId: "weather.aviation_weather",
+        query: {
+          mode: "bbox",
+          providerId: "sim.situation-data",
+          providerLayerIds: ["weather"],
+          providerSourceIds: ["aviation_weather"],
+          streamId: "features"
+        },
+        recommendedCatalogLayerId: "public.weather.aviation",
+        refreshSeconds: 600,
+        role: "reference",
+        selectable: true,
+        sourceIds: ["aviation_weather"],
+        styleProfile: "aviation-weather-v1"
+      },
+      {
+        audience: "diagnostic",
+        defaultVisible: false,
+        label: "ARDOS partner field operations",
+        providerLayerId: "ground.ardos_partner",
+        query: {
+          mode: "bbox",
+          providerId: "sim.situation-data",
+          providerLayerIds: ["ground", "mobile", "traffic"],
+          providerSourceIds: ["ardos_partner"],
+          streamId: "features"
+        },
+        recommendedCatalogLayerId: "diagnostic.ardos_partner",
+        role: "diagnostic",
+        selectable: false,
+        sourceIds: ["ardos_partner"],
+        styleProfile: "diagnostic-source-v1"
+      }
+    ],
+    sources: [
+      {
+        audience: "public",
+        enabled: true,
+        label: "NOAA AWC METAR/TAF aviation weather",
+        layers: ["weather"],
+        selectableInMap: true,
+        sourceId: "aviation_weather",
+        sourceRole: "final",
+        updateCadenceSeconds: 600
+      },
+      {
+        audience: "diagnostic",
+        enabled: false,
+        label: "ARDOS partner field operations",
+        layers: ["ground", "mobile", "traffic"],
+        selectableInMap: false,
+        sourceId: "ardos_partner",
+        sourceRole: "input",
+        updateCadenceSeconds: 15
       }
     ]
   };
