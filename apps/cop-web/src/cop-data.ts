@@ -129,7 +129,19 @@ export interface CopDashboardData {
   trackHistory?: Record<string, ServerTrackHistoryPoint[]>;
 }
 
-export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "mobile_coverage" | "mobile_network" | "traffic" | "warnings" | "weather";
+export type SituationLayerId =
+  | "air_quality"
+  | "community"
+  | "flight_airports"
+  | "flight_airspaces"
+  | "flood"
+  | "ground"
+  | "mobile"
+  | "mobile_coverage"
+  | "mobile_network"
+  | "traffic"
+  | "warnings"
+  | "weather";
 export type SafetyLayerId = "flood" | "warnings";
 export type TakLayerId = "ground" | "mobile" | "traffic";
 export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "mock";
@@ -234,6 +246,8 @@ export interface SituationFeatureProperties {
   notices?: string[];
   observedAt?: string;
   operator?: string;
+  providerId?: string;
+  providerLayerId?: string;
   quality?: string;
   receivedAt?: string;
   recommendedAction?: string;
@@ -501,6 +515,64 @@ export interface TakFeatureCollectionResponse {
   warnings: string[];
 }
 
+export interface FlightReferenceSourceDescriptor {
+  enabled?: boolean;
+  label?: string;
+  layers?: string[];
+  license?: Record<string, unknown>;
+  mode?: string;
+  sourceId: string;
+  updateCadenceSeconds?: number;
+}
+
+export interface FlightReferenceFeatureCollectionResponse {
+  contractVersion: "cop-flight-reference-v1";
+  features: SituationFeature[];
+  generatedAt: string;
+  query: {
+    bbox: MapBounds;
+    layers: string[];
+    limit: number;
+  };
+  source: {
+    generatedAt?: string;
+    sourceId: "flight-data-api";
+    sourceType: "PUBLIC_FLIGHT_REFERENCE";
+  };
+  sourceHealth?: SourceHealthOverride;
+  sources: FlightReferenceSourceDescriptor[];
+  summary: {
+    featureCount: number;
+    sourceCount: number;
+    staleFeatureCount: number;
+    warningCount: number;
+  };
+  type: "FeatureCollection";
+  warnings: string[];
+}
+
+export interface CommunityFeatureCollectionResponse {
+  features: SituationFeature[];
+  generatedAt: string;
+  query?: {
+    bbox: MapBounds;
+    layerIds: string[];
+    limit: number;
+  };
+  source: {
+    generatedAt?: string;
+    sourceId: "community_reports";
+    sourceType: "COMMUNITY_REPORTS";
+  };
+  summary: {
+    featureCount: number;
+    submittedCount?: number;
+    uploadedAttachmentCount?: number;
+  };
+  type: "FeatureCollection";
+  warnings?: string[];
+}
+
 export interface TakLayersResponse {
   items: TakLayer[];
   serverTimestamp?: string;
@@ -631,6 +703,8 @@ export interface MapFeatureQueryOptions {
 
 export interface MapFeatureQueryResponse {
   contractVersion: "cop-map-query-v1";
+  community?: CommunityFeatureCollectionResponse;
+  flight?: FlightReferenceFeatureCollectionResponse;
   generatedAt: string;
   query: {
     bbox: MapBounds;

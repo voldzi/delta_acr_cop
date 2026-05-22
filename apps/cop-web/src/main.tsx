@@ -68,7 +68,9 @@ import {
   type CopLayer,
   type CopObject,
   type CopStreamHealth,
+  type CommunityFeatureCollectionResponse,
   type FlightDataAttributes,
+  type FlightReferenceFeatureCollectionResponse,
   type HealthStatus,
   type MapCatalogLayer,
   type MapCatalogResponse,
@@ -309,6 +311,12 @@ export function App() {
   const [safetyWarnings, setSafetyWarnings] = React.useState<string[]>([]);
   const [safetySources, setSafetySources] = React.useState<SafetySourceDescriptor[]>([]);
   const [safetyConfig, setSafetyConfig] = React.useState<SafetyConfigResponse | null>(null);
+  const [flightFeatures, setFlightFeatures] = React.useState<FlightReferenceFeatureCollectionResponse | null>(null);
+  const [flightStatus, setFlightStatus] = React.useState<SituationLayerStatus>("disabled");
+  const [flightWarnings, setFlightWarnings] = React.useState<string[]>([]);
+  const [communityFeatures, setCommunityFeatures] = React.useState<CommunityFeatureCollectionResponse | null>(null);
+  const [communityStatus, setCommunityStatus] = React.useState<SituationLayerStatus>("online");
+  const [communityWarnings, setCommunityWarnings] = React.useState<string[]>([]);
   const [takLayers, setTakLayers] = React.useState<TakLayer[]>([]);
   const [visibleTakLayerIds, setVisibleTakLayerIds] = React.useState<TakLayerId[]>(() => normalizeTakLayerIds(initialPreferences.takLayerIds));
   const [takFeatures, setTakFeatures] = React.useState<TakFeatureCollectionResponse | null>(null);
@@ -610,6 +618,10 @@ export function App() {
       setSituationWarnings(["Pro načtení situačních vrstev je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
       setSafetyStatus("disabled");
       setSafetyWarnings(["Pro načtení bezpečnostních vrstev je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
+      setFlightStatus("disabled");
+      setFlightWarnings(["Pro načtení leteckých referencí je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
+      setCommunityStatus("disabled");
+      setCommunityWarnings(["Pro načtení komunitních hlášení je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
       setTakLayers([]);
       setTakSources([]);
       setTakStatus("disabled");
@@ -620,6 +632,8 @@ export function App() {
     let cancelled = false;
     setSituationStatus("loading");
     setSafetyStatus("loading");
+    setFlightStatus("loading");
+    setCommunityStatus("loading");
     setTakStatus(authToken ? "loading" : "disabled");
     fetchMapCatalog(apiBase, authToken, { includePartner: Boolean(authToken) })
       .then((catalog) => {
@@ -639,9 +653,13 @@ export function App() {
         setTakSources(mapCatalogToTakSources(catalog));
         setSituationWarnings(catalog.warnings);
         setSafetyWarnings(catalog.warnings);
+        setFlightWarnings(catalog.warnings);
+        setCommunityWarnings(catalog.warnings);
         setTakWarnings(authToken ? catalog.warnings : ["Partnerské vrstvy vyžadují přihlášení."]);
         setSituationStatus(providerStatusFromCatalog(catalog, "sim.situation-data"));
         setSafetyStatus(providerStatusFromCatalog(catalog, "sim.safety-data"));
+        setFlightStatus(providerStatusFromCatalog(catalog, "sim.flight-data"));
+        setCommunityStatus(providerStatusFromCatalog(catalog, "cop.community"));
         setTakStatus(authToken ? providerStatusFromCatalog(catalog, "sim.tak-gateway") : "disabled");
         setVisibleCatalogLayerIds((current) => {
           const availableLayerIds = new Set(selectableCatalogLayers(catalog).map((layer) => layer.layerId));
@@ -689,10 +707,14 @@ export function App() {
           setTakSources([]);
           setSituationStatus("degraded");
           setSafetyStatus("degraded");
+          setFlightStatus("degraded");
+          setCommunityStatus("degraded");
           setTakStatus("degraded");
           const message = error instanceof Error ? error.message : "Katalog mapových vrstev není dostupný.";
           setSituationWarnings([message]);
           setSafetyWarnings([message]);
+          setFlightWarnings([message]);
+          setCommunityWarnings([message]);
           setTakWarnings([message]);
         }
       });
@@ -851,6 +873,66 @@ export function App() {
   }, [authToken, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
 
   React.useEffect(() => {
+    if (!dataAccessReady) {
+      return;
+    }
+    if (!mapBounds) {
+      return;
+    }
+    if (shouldSkipSituationFeatureLoad(mapBounds, mapView?.zoom)) {
+      setFlightFeatures(null);
+      setFlightStatus("zoom");
+      setFlightWarnings(["Letecké reference se načítají až po přiblížení mapy na rozumný výřez."]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (!mapCatalog) {
+        return;
+      }
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.flight-data", visibleCatalogLayerIds);
+      if (catalogLayerIds.length === 0) {
+        setFlightFeatures(null);
+        setFlightStatus("disabled");
+        setFlightWarnings([]);
+        return;
+      }
+      setFlightStatus((current) => current === "online" ? "online" : "loading");
+      fetchMapFeatures(apiBase, authToken, {
+        bbox: mapBounds,
+        layerIds: catalogLayerIds,
+        limit: 250
+      })
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+          const collection = response.flight ?? null;
+          setFlightFeatures(collection);
+          setFlightWarnings([
+            ...response.warnings,
+            ...(collection?.warnings ?? []),
+            ...(collection?.sourceHealth?.warnings ?? [])
+          ]);
+          setFlightStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setFlightFeatures(null);
+            setFlightStatus("degraded");
+            setFlightWarnings([error instanceof Error ? error.message : "Letecké reference nejsou dostupné."]);
+          }
+        });
+    }, 2200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [apiBase, authToken, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
+
+  React.useEffect(() => {
     if (!authToken) {
       setTakFeatures(null);
       return;
@@ -917,6 +999,65 @@ export function App() {
       window.clearTimeout(timer);
     };
   }, [authToken, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
+
+  React.useEffect(() => {
+    if (!dataAccessReady) {
+      return;
+    }
+    if (!mapBounds) {
+      return;
+    }
+    if (shouldSkipSituationFeatureLoad(mapBounds, mapView?.zoom)) {
+      setCommunityFeatures(null);
+      setCommunityStatus("zoom");
+      setCommunityWarnings(["Komunitní hlášení se načítají až po přiblížení mapy na rozumný výřez."]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (!mapCatalog) {
+        return;
+      }
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "cop.community", visibleCatalogLayerIds);
+      if (catalogLayerIds.length === 0) {
+        setCommunityFeatures(null);
+        setCommunityStatus("disabled");
+        setCommunityWarnings([]);
+        return;
+      }
+      setCommunityStatus((current) => current === "online" ? "online" : "loading");
+      fetchMapFeatures(apiBase, authToken, {
+        bbox: mapBounds,
+        layerIds: catalogLayerIds,
+        limit: 250
+      })
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+          const collection = response.community ?? null;
+          setCommunityFeatures(collection);
+          setCommunityWarnings([
+            ...response.warnings,
+            ...(collection?.warnings ?? [])
+          ]);
+          setCommunityStatus("online");
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setCommunityFeatures(null);
+            setCommunityStatus("degraded");
+            setCommunityWarnings([error instanceof Error ? error.message : "Komunitní hlášení nejsou dostupná."]);
+          }
+        });
+    }, 1600);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [apiBase, authToken, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
 
   React.useEffect(() => {
     if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
@@ -996,13 +1137,15 @@ export function App() {
     [scopedObjects, visibleTrackLayerIds]
   );
   const combinedSituationFeatures = React.useMemo(
-    () => mergeSituationSafetyAndTakFeatures(situationFeatures, safetyFeatures, takFeatures),
-    [safetyFeatures, situationFeatures, takFeatures]
+    () => mergeSituationSafetyFlightCommunityAndTakFeatures(situationFeatures, safetyFeatures, flightFeatures, communityFeatures, takFeatures),
+    [communityFeatures, flightFeatures, safetyFeatures, situationFeatures, takFeatures]
   );
-  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0 || visibleSafetyLayerIds.length > 0 || visibleTakLayerIds.length > 0;
+  const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
+  const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
+  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0 || visibleSafetyLayerIds.length > 0 || visibleTakLayerIds.length > 0 || visibleFlightLayerCount > 0 || visibleCommunityLayerCount > 0;
   const mapLayerLabel = React.useMemo(
-    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds),
-    [visibleSafetyLayerIds, visibleSituationLayerIds, visibleTakLayerIds, visibleTrackLayerIds]
+    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds, visibleFlightLayerCount, visibleCommunityLayerCount),
+    [visibleCommunityLayerCount, visibleFlightLayerCount, visibleSafetyLayerIds, visibleSituationLayerIds, visibleTakLayerIds, visibleTrackLayerIds]
   );
   const mapEmptyMessage = React.useMemo(
     () =>
@@ -1584,6 +1727,16 @@ export function App() {
     if (layer.query.providerId === "sim.safety-data") {
       return (safetyFeatures?.features ?? []).filter((feature) => providerLayerIds.has(feature.properties.layer)).length;
     }
+    if (layer.query.providerId === "sim.flight-data") {
+      const streamLayer = flightReferenceLayerIdForStream(layer.query.streamId);
+      return (flightFeatures?.features ?? []).filter((feature) =>
+        (providerLayerIds.size > 0 && feature.properties.providerLayerId && providerLayerIds.has(feature.properties.providerLayerId))
+        || (streamLayer !== undefined && flightReferenceQueryLayersToSituationLayers([streamLayer]).includes(feature.properties.layer))
+      ).length;
+    }
+    if (layer.query.providerId === "cop.community") {
+      return communityFeatures?.summary.featureCount ?? 0;
+    }
     if (layer.query.providerId === "sim.tak-gateway") {
       return (takFeatures?.features ?? []).filter((feature) => providerLayerIds.has(feature.properties.layer)).length;
     }
@@ -1602,6 +1755,12 @@ export function App() {
     }
     if (layer.query.providerId === "sim.safety-data") {
       return safetyStatus;
+    }
+    if (layer.query.providerId === "sim.flight-data") {
+      return flightStatus;
+    }
+    if (layer.query.providerId === "cop.community") {
+      return communityStatus;
     }
     if (layer.query.providerId === "sim.tak-gateway") {
       return takStatus;
@@ -4471,44 +4630,61 @@ function summarizeAlerts(serverAlerts: CopAlert[], proximityAlerts: ProximityAle
   };
 }
 
-function mergeSituationSafetyAndTakFeatures(
+function mergeSituationSafetyFlightCommunityAndTakFeatures(
   situation: SituationFeatureCollectionResponse | null,
   safety: SafetyFeatureCollectionResponse | null,
+  flight: FlightReferenceFeatureCollectionResponse | null,
+  community: CommunityFeatureCollectionResponse | null,
   tak: TakFeatureCollectionResponse | null
 ): SituationFeatureCollectionResponse | null {
-  if (!situation && !safety && !tak) {
+  if (!situation && !safety && !flight && !community && !tak) {
     return null;
   }
   const situationFeatures = situation?.features ?? [];
   const safetyFeatures = safety?.features.map(safetyFeatureToSituationFeature) ?? [];
+  const flightReferenceFeatures = flight?.features ?? [];
+  const communityReportFeatures = community?.features ?? [];
   const takGatewayFeatures = tak?.features.map(takFeatureToSituationFeature) ?? [];
-  const features = [...situationFeatures, ...safetyFeatures, ...takGatewayFeatures];
-  const warnings = [...(situation?.warnings ?? []), ...(safety?.warnings ?? []), ...(tak?.warnings ?? [])];
+  const features = [...situationFeatures, ...safetyFeatures, ...flightReferenceFeatures, ...communityReportFeatures, ...takGatewayFeatures];
+  const warnings = [...(situation?.warnings ?? []), ...(safety?.warnings ?? []), ...(flight?.warnings ?? []), ...(community?.warnings ?? []), ...(tak?.warnings ?? [])];
   return {
     contractVersion: "cop-situation-source-v1",
     features,
-    generatedAt: latestTimestamp([situation?.generatedAt, safety?.generatedAt, tak?.generatedAt]) ?? new Date().toISOString(),
+    generatedAt: latestTimestamp([situation?.generatedAt, safety?.generatedAt, flight?.generatedAt, community?.generatedAt, tak?.generatedAt]) ?? new Date().toISOString(),
     query: {
-      bbox: situation?.query.bbox ?? safety?.query.bbox ?? tak?.query.bbox ?? { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
+      bbox: situation?.query.bbox ?? safety?.query.bbox ?? flight?.query.bbox ?? community?.query?.bbox ?? tak?.query.bbox ?? { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: [
         ...(situation?.query.layers ?? []),
         ...((safety?.query.layers ?? []) as SituationLayerId[]),
+        ...flightReferenceQueryLayersToSituationLayers(flight?.query.layers ?? []),
+        ...(community ? ["community" as SituationLayerId] : []),
         ...((tak?.query.layers ?? []) as SituationLayerId[])
       ],
-      limit: Math.max(situation?.query.limit ?? 0, safety?.query.limit ?? 0, tak?.query.limit ?? 0, 250)
+      limit: Math.max(situation?.query.limit ?? 0, safety?.query.limit ?? 0, flight?.query.limit ?? 0, community?.query?.limit ?? 0, tak?.query.limit ?? 0, 250)
     },
     source: {
-      generatedAt: latestTimestamp([situation?.source.generatedAt, safety?.source.generatedAt, tak?.source.generatedAt]),
+      generatedAt: latestTimestamp([situation?.source.generatedAt, safety?.source.generatedAt, flight?.source.generatedAt, community?.source.generatedAt, tak?.source.generatedAt]),
       sourceId: "situation-data-api",
       sourceType: "PUBLIC_SITUATION_AGGREGATE"
     },
-    sourceHealth: situation?.sourceHealth ?? safety?.sourceHealth ?? tak?.sourceHealth,
+    sourceHealth: situation?.sourceHealth ?? safety?.sourceHealth ?? flight?.sourceHealth ?? tak?.sourceHealth,
     sources: [
       ...(situation?.sources ?? []),
       ...((safety?.sources ?? []).map((source) => ({
         ...source,
         layers: source.layers as SituationLayerId[]
       }))),
+      ...((flight?.sources ?? []).map((source) => ({
+        ...source,
+        label: source.label ? `Flight data > ${source.label}` : "Flight data",
+        layers: flightReferenceQueryLayersToSituationLayers(source.layers ?? [])
+      }))),
+      ...(community ? [{
+        enabled: true,
+        label: "Komunitní hlášení",
+        layers: ["community" as SituationLayerId],
+        sourceId: "community_reports"
+      }] : []),
       ...((tak?.sources ?? []).map((source) => ({
         ...source,
         label: source.label ? `TAK Gateway > ${source.label}` : "TAK Gateway",
@@ -4517,9 +4693,9 @@ function mergeSituationSafetyAndTakFeatures(
     ],
     summary: {
       featureCount: features.length,
-      sourceCount: (situation?.summary.sourceCount ?? 0) + (safety?.summary.sourceCount ?? 0) + (tak?.summary.sourceCount ?? 0),
+      sourceCount: (situation?.summary.sourceCount ?? 0) + (safety?.summary.sourceCount ?? 0) + (flight?.summary.sourceCount ?? 0) + (community ? 1 : 0) + (tak?.summary.sourceCount ?? 0),
       staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
-      warningCount: (situation?.summary.warningCount ?? 0) + (safety?.summary.warningCount ?? 0) + (safety?.summary.criticalCount ?? 0) + (tak?.summary.warningCount ?? 0)
+      warningCount: (situation?.summary.warningCount ?? 0) + (safety?.summary.warningCount ?? 0) + (safety?.summary.criticalCount ?? 0) + (flight?.summary.warningCount ?? 0) + (community?.warnings?.length ?? 0) + (tak?.summary.warningCount ?? 0)
     },
     type: "FeatureCollection",
     warnings
@@ -4540,6 +4716,28 @@ function safetyFeatureToSituationFeature(feature: SafetyFeature): SituationFeatu
     },
     type: "Feature"
   };
+}
+
+function flightReferenceQueryLayersToSituationLayers(layers: string[]): SituationLayerId[] {
+  return layers.flatMap((layer): SituationLayerId[] => {
+    if (layer === "flight.airports" || layer === "flight_airports") {
+      return ["flight_airports"];
+    }
+    if (layer === "flight.airspaces" || layer === "flight_airspaces") {
+      return ["flight_airspaces"];
+    }
+    return [];
+  });
+}
+
+function flightReferenceLayerIdForStream(streamId: string | undefined): string | undefined {
+  if (streamId === "airports") {
+    return "flight.airports";
+  }
+  if (streamId === "airspaces") {
+    return "flight.airspaces";
+  }
+  return undefined;
 }
 
 function takFeatureToSituationFeature(feature: TakFeature): SituationFeature {
@@ -4854,6 +5052,9 @@ function takLayerHint(layer: TakLayer): string {
 function situationLayerLabel(layerId: SituationLayerId): string {
   const labels: Record<SituationLayerId, string> = {
     air_quality: "Kvalita vzduchu",
+    community: "Komunitní hlášení",
+    flight_airports: "Letiště",
+    flight_airspaces: "Letecké prostory",
     flood: "Povodně",
     ground: "Terén",
     mobile: "Mobilní síť",
@@ -5447,6 +5648,12 @@ function catalogLayerProviderLabel(layer: MapCatalogLayer): string {
   if (layer.query.providerId === "sim.safety-data") {
     return "Bezpečnost";
   }
+  if (layer.query.providerId === "sim.flight-data") {
+    return "Letecké reference";
+  }
+  if (layer.query.providerId === "cop.community") {
+    return "Komunitní data";
+  }
   if (layer.query.providerId === "sim.tak-gateway") {
     return "Partnerský feed";
   }
@@ -5501,10 +5708,16 @@ function isCopLayer(value: string): value is CopLayer {
   return copLayerIds.includes(value as CopLayer);
 }
 
-function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[], takLayerIds: TakLayerId[]): string {
+function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[], takLayerIds: TakLayerId[], flightLayerCount = 0, communityLayerCount = 0): string {
   const parts: string[] = [];
   if (trackLayerIds.length > 0) {
     parts.push(`${trackLayerIds.length} air`);
+  }
+  if (flightLayerCount > 0) {
+    parts.push(`${flightLayerCount} flight ref`);
+  }
+  if (communityLayerCount > 0) {
+    parts.push(`${communityLayerCount} reports`);
   }
   if (situationLayerIds.length > 0) {
     parts.push(`${situationLayerIds.length} context`);
@@ -5524,7 +5737,7 @@ function readInitialAffiliationScope(value: string | undefined): AffiliationScop
     : "all";
 }
 
-type CatalogProviderId = "sim.safety-data" | "sim.situation-data" | "sim.tak-gateway";
+type CatalogProviderId = "cop.community" | "sim.flight-data" | "sim.safety-data" | "sim.situation-data" | "sim.tak-gateway";
 
 function buildCatalogGroupViews(catalog: MapCatalogResponse | null): CatalogGroupView[] {
   if (!catalog) {
@@ -5570,7 +5783,9 @@ function catalogLayerSortKey(layer: MapCatalogLayer): number {
 
 function isImplementedCatalogLayer(layer: MapCatalogLayer): boolean {
   return (layer.query.mode === "bbox"
-    && (layer.query.providerId === "sim.situation-data"
+    && (layer.query.providerId === "cop.community"
+      || layer.query.providerId === "sim.flight-data"
+      || layer.query.providerId === "sim.situation-data"
       || layer.query.providerId === "sim.safety-data"
       || layer.query.providerId === "sim.tak-gateway"))
     || layer.layerId === "flight.public.tracks"
@@ -5603,6 +5818,32 @@ function catalogLayerIdsForProviderSelection(catalog: MapCatalogResponse, provid
 
 function hasMobileCatalogSelection(layerIds: string[]): boolean {
   return layerIds.some((layerId) => layerId.includes("mobile"));
+}
+
+function countVisibleFlightReferenceLayers(catalog: MapCatalogResponse | null, selectedLayerIds: string[]): number {
+  if (!catalog) {
+    return 0;
+  }
+  const selected = new Set(selectedLayerIds);
+  return catalog.layers.filter((layer) =>
+    selected.has(layer.layerId)
+    && isImplementedCatalogLayer(layer)
+    && layer.query.mode === "bbox"
+    && layer.query.providerId === "sim.flight-data"
+  ).length;
+}
+
+function countVisibleCommunityLayers(catalog: MapCatalogResponse | null, selectedLayerIds: string[]): number {
+  if (!catalog) {
+    return 0;
+  }
+  const selected = new Set(selectedLayerIds);
+  return catalog.layers.filter((layer) =>
+    selected.has(layer.layerId)
+    && isImplementedCatalogLayer(layer)
+    && layer.query.mode === "bbox"
+    && layer.query.providerId === "cop.community"
+  ).length;
 }
 
 function catalogLayerIdsFromLegacySelection(
@@ -5931,6 +6172,9 @@ function normalizeSourceIds(value: string[] | undefined): string[] {
 
 function isSituationLayerId(value: string): value is SituationLayerId {
   return value === "weather"
+    || value === "community"
+    || value === "flight_airports"
+    || value === "flight_airspaces"
     || value === "ground"
     || value === "mobile"
     || value === "mobile_coverage"

@@ -51,6 +51,7 @@ reference.infrastructure.emergency
 reference.infrastructure.communications
 flight.public.tracks
 flight.reference.airports
+flight.reference.airspaces
 user.zone.alerts
 user.community.reports
 partner.tak.mobile
@@ -314,6 +315,18 @@ Response:
     "features": [],
     "warnings": []
   },
+  "flight": {
+    "contractVersion": "cop-flight-reference-v1",
+    "type": "FeatureCollection",
+    "features": [],
+    "warnings": []
+  },
+  "community": {
+    "contractVersion": "cop-community-map-v1",
+    "type": "FeatureCollection",
+    "features": [],
+    "warnings": []
+  },
   "summary": {
     "featureCount": 0,
     "layerCount": 2,
@@ -324,6 +337,8 @@ Response:
 ```
 
 COP may internally fan out to SIM, TAK, COP database, tile services or partner APIs. Clients should not need to know those provider details for normal map rendering.
+
+The response may contain provider result buckets such as `situation`, `safety`, `flight`, `community` and `tak`. A bucket is present only when the requested catalog layers require that provider family. A public catalog layer with `query.kind=vector_features`, `static_reference`, `user_objects` or `aggregate` must be backed by `/api/v1/map/query`; it must not appear as selectable in the normal map menu if COP cannot fetch and render it.
 
 Provider-specific metadata endpoints such as SIM `/layers` and `/sources` are
 legacy adapter details and must not be used by new COP integrations. Provider
@@ -379,6 +394,7 @@ Provider-native fields may be preserved under:
 | `reference.infrastructure.communications` | BTS / komunikační stožáry | `sim.situation-data` layer `mobile`, source `osm_postgis`, category `communications_tower` |
 | `flight.public.tracks` | Veřejné lety | `sim.flight-data` tracks |
 | `flight.reference.airports` | Letiště | `sim.flight-data` airports |
+| `flight.reference.airspaces` | Letecké prostory | `sim.flight-data` airspaces |
 | `partner.tak.mobile` | Partnerské jednotky | `sim.tak-gateway` layer `mobile` |
 | `partner.tak.ground` | Partnerské body | `sim.tak-gateway` layer `ground` |
 | `partner.tak.traffic` | Partnerský provoz | `sim.tak-gateway` layer `traffic` |

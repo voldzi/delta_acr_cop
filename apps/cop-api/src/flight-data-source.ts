@@ -32,6 +32,7 @@ export interface FlightDataSource {
   readonly sourceSystem: SourceSystem;
   fetchCatalog?(requestNow: Date): Promise<ProviderMapCatalog>;
   fetchAirports?(query: FlightAirportQuery, requestNow: Date): Promise<FlightAirportCollection>;
+  fetchReferenceFeatures?(query: FlightReferenceFeatureQuery, requestNow: Date): Promise<FlightReferenceFeatureCollection>;
   poll(pollNow: Date): Promise<FlightDataPollResult>;
 }
 
@@ -65,6 +66,80 @@ export interface FlightAirportReference {
   municipality?: string;
   name: string;
   type: string;
+}
+
+export type FlightReferenceLayerId = "flight.airports" | "flight.airspaces";
+
+export interface FlightReferenceFeatureQuery {
+  bbox: {
+    east: number;
+    north: number;
+    south: number;
+    west: number;
+  };
+  layers: FlightReferenceLayerId[];
+  limit: number;
+}
+
+export interface FlightReferenceFeatureCollection {
+  contractVersion: "cop-flight-reference-v1";
+  features: FlightReferenceFeature[];
+  generatedAt: string;
+  query: FlightReferenceFeatureQuery;
+  source: {
+    generatedAt?: string;
+    sourceId: "flight-data-api";
+    sourceType: "PUBLIC_FLIGHT_REFERENCE";
+  };
+  sources: FlightReferenceSourceDescriptor[];
+  summary: {
+    featureCount: number;
+    sourceCount: number;
+    staleFeatureCount: number;
+    warningCount: number;
+  };
+  type: "FeatureCollection";
+  warnings: string[];
+}
+
+export interface FlightReferenceSourceDescriptor {
+  enabled?: boolean;
+  label?: string;
+  layers?: FlightReferenceLayerId[];
+  license?: Record<string, unknown>;
+  mode?: string;
+  sourceId: string;
+  updateCadenceSeconds?: number;
+}
+
+export interface FlightReferenceFeature {
+  geometry: FlightReferenceGeometry;
+  id?: string | number;
+  properties: FlightReferenceFeatureProperties;
+  type: "Feature";
+}
+
+export type FlightReferenceGeometry =
+  | { coordinates: [number, number]; type: "Point" }
+  | { coordinates: Array<[number, number]>; type: "LineString" }
+  | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
+
+export interface FlightReferenceFeatureProperties {
+  category: string;
+  confidence?: number;
+  description?: string;
+  featureId: string;
+  label: string;
+  layer: "flight_airports" | "flight_airspaces";
+  observedAt?: string;
+  providerId: "sim.flight-data";
+  providerLayerId: FlightReferenceLayerId;
+  severity?: string;
+  sourceId: string;
+  stale?: boolean;
+  status?: string;
+  summary?: string;
+  tags?: Record<string, unknown>;
 }
 
 interface FlightDataResponse {
@@ -169,6 +244,7 @@ export function createFlightDataSourceFromEnv(env: Record<string, string | undef
 export class FlightDataSourceAdapter implements FlightDataSource {
   readonly sourceSystem: SourceSystem;
   private readonly airportCache = new Map<string, { expiresAtMs: number; value: FlightAirportCollection }>();
+  private readonly airspaceCache = new Map<string, { expiresAtMs: number; value: FlightReferenceFeatureCollection }>();
   private catalogCache: { expiresAtMs: number; value: ProviderMapCatalog } | null = null;
   private catalogInflight: Promise<ProviderMapCatalog> | null = null;
 
@@ -211,6 +287,24 @@ export class FlightDataSourceAdapter implements FlightDataSource {
     return value;
   }
 
+  async fetchReferenceFeatures(query: FlightReferenceFeatureQuery, requestNow: Date): Promise<FlightReferenceFeatureCollection> {
+    const normalizedQuery = normalizeFlightReferenceFeatureQuery(query);
+    const collections = await Promise.all(normalizedQuery.layers.map(async (layer) => {
+      if (layer === "flight.airports") {
+        return flightAirportsToReferenceFeatureCollection(
+          await this.fetchAirports({
+            bbox: flightBboxToString(normalizedQuery.bbox),
+            limit: normalizedQuery.limit
+          }, requestNow),
+          normalizedQuery,
+          requestNow
+        );
+      }
+      return this.fetchAirspaceFeatures(normalizedQuery, requestNow);
+    }));
+    return mergeFlightReferenceCollections(collections, normalizedQuery, requestNow);
+  }
+
   async poll(pollNow: Date): Promise<FlightDataPollResult> {
     const response = await fetchFlightData(this.config, pollNow);
     return {
@@ -218,6 +312,20 @@ export class FlightDataSourceAdapter implements FlightDataSource {
       health: buildFlightDataHealth(response, pollNow),
       response
     };
+  }
+
+  private async fetchAirspaceFeatures(query: FlightReferenceFeatureQuery, requestNow: Date): Promise<FlightReferenceFeatureCollection> {
+    const cacheKey = flightReferenceCacheKey({ ...query, layers: ["flight.airspaces"] });
+    const cached = this.airspaceCache.get(cacheKey);
+    if (cached && cached.expiresAtMs > requestNow.getTime()) {
+      return cached.value;
+    }
+    const value = await fetchFlightAirspaces(this.config, query, requestNow);
+    this.airspaceCache.set(cacheKey, {
+      expiresAtMs: requestNow.getTime() + this.config.airportCacheTtlMs,
+      value
+    });
+    return value;
   }
 }
 
@@ -250,6 +358,30 @@ async function fetchFlightAirports(config: FlightDataSourceConfig, query: Flight
   }
 }
 
+async function fetchFlightAirspaces(config: FlightDataSourceConfig, query: FlightReferenceFeatureQuery, requestNow: Date): Promise<FlightReferenceFeatureCollection> {
+  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/api/v1/airspaces`);
+  url.searchParams.set("bbox", flightBboxToString(query.bbox));
+  url.searchParams.set("limit", String(query.limit));
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "X-COP-Request-At": requestNow.toISOString()
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText || "Airspace reference request failed"}`);
+    }
+    return normalizeFlightAirspaceCollection(await response.json(), query, requestNow);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchFlightCatalog(config: FlightDataSourceConfig, requestNow: Date): Promise<ProviderMapCatalog> {
   const url = new URL(`${trimTrailingSlash(config.baseUrl)}/api/v1/catalog`);
   const controller = new AbortController();
@@ -269,6 +401,33 @@ async function fetchFlightCatalog(config: FlightDataSourceConfig, requestNow: Da
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export function emptyFlightReferenceFeatureCollection(
+  query: FlightReferenceFeatureQuery,
+  requestNow: Date,
+  warnings: string[] = []
+): FlightReferenceFeatureCollection {
+  return {
+    contractVersion: "cop-flight-reference-v1",
+    features: [],
+    generatedAt: requestNow.toISOString(),
+    query,
+    source: {
+      generatedAt: requestNow.toISOString(),
+      sourceId: "flight-data-api",
+      sourceType: "PUBLIC_FLIGHT_REFERENCE"
+    },
+    sources: [],
+    summary: {
+      featureCount: 0,
+      sourceCount: 0,
+      staleFeatureCount: 0,
+      warningCount: warnings.length
+    },
+    type: "FeatureCollection",
+    warnings
+  };
 }
 
 export function unavailableFlightDataHealth(error: unknown, pollNow: Date): SourceHealthOverride {
@@ -492,8 +651,8 @@ function normalizeFlightAirport(value: unknown): FlightAirportReference[] {
   if (!isRecord(value) || typeof value.ident !== "string" || typeof value.name !== "string" || typeof value.type !== "string") {
     return [];
   }
-  const lat = optionalNumber(value.lat);
-  const lon = optionalNumber(value.lon);
+  const lat = optionalFinite(value.lat);
+  const lon = optionalFinite(value.lon);
   if (lat === undefined || lon === undefined) {
     return [];
   }
@@ -511,6 +670,304 @@ function normalizeFlightAirport(value: unknown): FlightAirportReference[] {
       type: value.type
     }
   ];
+}
+
+function flightAirportsToReferenceFeatureCollection(
+  collection: FlightAirportCollection,
+  query: FlightReferenceFeatureQuery,
+  requestNow: Date
+): FlightReferenceFeatureCollection {
+  const generatedAt = isValidDate(collection.source.loadedAt ?? "") ? collection.source.loadedAt! : requestNow.toISOString();
+  const source: FlightReferenceSourceDescriptor = {
+    enabled: true,
+    label: collection.source.label ?? "OurAirports airport reference",
+    layers: ["flight.airports"],
+    license: collection.source.license ? { name: collection.source.license } : undefined,
+    mode: "reference",
+    sourceId: "ourairports",
+    updateCadenceSeconds: Math.round(defaultConfig.airportCacheTtlMs / 1000)
+  };
+  const features: FlightReferenceFeature[] = collection.items.map((airport) => ({
+    geometry: {
+      coordinates: [airport.lon, airport.lat],
+      type: "Point" as const
+    },
+    id: `airport:${airport.ident}`,
+    properties: {
+      category: airport.type,
+      confidence: 0.95,
+      featureId: `flight:airport:${airport.ident}`,
+      label: airport.iata ?? airport.ident,
+      layer: "flight_airports",
+      observedAt: generatedAt,
+      providerId: "sim.flight-data",
+      providerLayerId: "flight.airports",
+      sourceId: "ourairports",
+      stale: false,
+      status: "reference",
+      summary: airport.name,
+      tags: compactRecord({
+        countryCode: airport.countryCode,
+        dataSource: airport.dataSource,
+        elevationFt: airport.elevationFt,
+        iata: airport.iata,
+        ident: airport.ident,
+        municipality: airport.municipality,
+        name: airport.name,
+        type: airport.type
+      })
+    },
+    type: "Feature" as const
+  }));
+  const warnings = [...collection.source.warnings];
+  return {
+    contractVersion: "cop-flight-reference-v1",
+    features,
+    generatedAt,
+    query: {
+      ...query,
+      layers: ["flight.airports"]
+    },
+    source: {
+      generatedAt,
+      sourceId: "flight-data-api",
+      sourceType: "PUBLIC_FLIGHT_REFERENCE"
+    },
+    sources: [source],
+    summary: {
+      featureCount: features.length,
+      sourceCount: 1,
+      staleFeatureCount: 0,
+      warningCount: warnings.length
+    },
+    type: "FeatureCollection",
+    warnings
+  };
+}
+
+function normalizeFlightAirspaceCollection(value: unknown, query: FlightReferenceFeatureQuery, requestNow: Date): FlightReferenceFeatureCollection {
+  if (!isRecord(value) || !Array.isArray(value.features)) {
+    throw new Error("Flight airspace response is incomplete.");
+  }
+  const source = isRecord(value.source) ? value.source : {};
+  const summary = isRecord(value.summary) ? value.summary : {};
+  const generatedAt = optionalString(value.generatedAt) ?? requestNow.toISOString();
+  const features = value.features.flatMap(normalizeFlightAirspaceFeature);
+  const warnings = [
+    ...(Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : []),
+    ...(Array.isArray(source.warnings) ? source.warnings.filter((warning): warning is string => typeof warning === "string") : [])
+  ];
+  return {
+    contractVersion: "cop-flight-reference-v1",
+    features,
+    generatedAt,
+    query: {
+      ...query,
+      layers: ["flight.airspaces"]
+    },
+    source: {
+      generatedAt,
+      sourceId: "flight-data-api",
+      sourceType: "PUBLIC_FLIGHT_REFERENCE"
+    },
+    sources: [
+      {
+        enabled: true,
+        label: optionalString(source.label) ?? "Czech AIP/eAIP airspace reference",
+        layers: ["flight.airspaces"],
+        license: isRecord(source.license) ? source.license : undefined,
+        mode: "reference",
+        sourceId: optionalString(source.sourceId) ?? "czech_aip_airspaces",
+        updateCadenceSeconds: Math.round(defaultConfig.airportCacheTtlMs / 1000)
+      }
+    ],
+    summary: {
+      featureCount: features.length,
+      sourceCount: 1,
+      staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
+      warningCount: warnings.length + (summary.notForNavigation === true ? 1 : 0)
+    },
+    type: "FeatureCollection",
+    warnings
+  };
+}
+
+function normalizeFlightAirspaceFeature(value: unknown): FlightReferenceFeature[] {
+  if (!isRecord(value) || value.type !== "Feature") {
+    return [];
+  }
+  const geometry = normalizeFlightReferenceGeometry(value.geometry);
+  if (!geometry) {
+    return [];
+  }
+  const properties = isRecord(value.properties) ? value.properties : {};
+  const featureId = optionalString(properties.airspaceId)
+    ?? optionalString(properties.featureId)
+    ?? (typeof value.id === "string" ? value.id : undefined);
+  const label = optionalString(properties.label)
+    ?? optionalString(properties.designator)
+    ?? optionalString(properties.name)
+    ?? featureId;
+  if (!featureId || !label) {
+    return [];
+  }
+  return [
+    {
+      geometry,
+      ...(typeof value.id === "string" || typeof value.id === "number" ? { id: value.id } : {}),
+      properties: {
+        category: optionalString(properties.category) ?? "airspace",
+        confidence: optionalFinite(properties.confidence),
+        description: optionalString(properties.description) ?? optionalString(properties.time),
+        featureId,
+        label,
+        layer: "flight_airspaces",
+        observedAt: optionalString(properties.observedAt),
+        providerId: "sim.flight-data",
+        providerLayerId: "flight.airspaces",
+        severity: optionalString(properties.severity),
+        sourceId: optionalString(properties.sourceId) ?? "czech_aip_airspaces",
+        stale: typeof properties.stale === "boolean" ? properties.stale : false,
+        status: optionalString(properties.airspaceType) ?? "reference",
+        summary: optionalString(properties.verticalLimitText) ?? optionalString(properties.summary),
+        tags: compactRecord({
+          airspaceId: optionalString(properties.airspaceId),
+          airspaceType: optionalString(properties.airspaceType),
+          designator: optionalString(properties.designator),
+          lowerLimit: optionalString(properties.lowerLimit),
+          name: optionalString(properties.name),
+          notForNavigation: typeof properties.notForNavigation === "boolean" ? properties.notForNavigation : undefined,
+          providerProperties: isRecord(properties.providerProperties) ? properties.providerProperties : undefined,
+          time: optionalString(properties.time),
+          upperLimit: optionalString(properties.upperLimit),
+          verticalLimitText: optionalString(properties.verticalLimitText)
+        })
+      },
+      type: "Feature"
+    }
+  ];
+}
+
+function normalizeFlightReferenceGeometry(value: unknown): FlightReferenceGeometry | null {
+  if (!isRecord(value) || typeof value.type !== "string") {
+    return null;
+  }
+  if (value.type === "Point") {
+    const coordinates = normalizePosition(value.coordinates);
+    return coordinates ? { coordinates, type: "Point" } : null;
+  }
+  if (value.type === "LineString") {
+    const coordinates = normalizeLineString(value.coordinates);
+    return coordinates.length >= 2 ? { coordinates, type: "LineString" } : null;
+  }
+  if (value.type === "Polygon") {
+    const coordinates = normalizePolygon(value.coordinates);
+    return coordinates.length > 0 ? { coordinates, type: "Polygon" } : null;
+  }
+  return null;
+}
+
+function normalizePosition(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length < 2) {
+    return null;
+  }
+  const lon = optionalFinite(value[0]);
+  const lat = optionalFinite(value[1]);
+  if (lon === undefined || lat === undefined || lon < -180 || lon > 180 || lat < -90 || lat > 90) {
+    return null;
+  }
+  return [lon, lat];
+}
+
+function normalizeLineString(value: unknown): Array<[number, number]> {
+  return Array.isArray(value)
+    ? value.flatMap((position): Array<[number, number]> => {
+        const normalized = normalizePosition(position);
+        return normalized ? [normalized] : [];
+      })
+    : [];
+}
+
+function normalizePolygon(value: unknown): Array<Array<[number, number]>> {
+  return Array.isArray(value)
+    ? value
+        .map(normalizeLineString)
+        .filter((ring) => ring.length >= 4)
+    : [];
+}
+
+function normalizeFlightReferenceFeatureQuery(query: FlightReferenceFeatureQuery): FlightReferenceFeatureQuery {
+  return {
+    bbox: {
+      east: clampNumber(query.bbox.east, -180, 180),
+      north: clampNumber(query.bbox.north, -90, 90),
+      south: clampNumber(query.bbox.south, -90, 90),
+      west: clampNumber(query.bbox.west, -180, 180)
+    },
+    layers: uniqueFlightReferenceLayers(query.layers),
+    limit: Math.round(clampNumber(query.limit, 1, 500))
+  };
+}
+
+function uniqueFlightReferenceLayers(layers: FlightReferenceLayerId[]): FlightReferenceLayerId[] {
+  return Array.from(new Set(layers.filter(isFlightReferenceLayerId)));
+}
+
+function isFlightReferenceLayerId(value: unknown): value is FlightReferenceLayerId {
+  return value === "flight.airports" || value === "flight.airspaces";
+}
+
+function flightBboxToString(bbox: FlightReferenceFeatureQuery["bbox"]): string {
+  return [bbox.west, bbox.south, bbox.east, bbox.north].map((value) => value.toFixed(6)).join(",");
+}
+
+function flightReferenceCacheKey(query: FlightReferenceFeatureQuery): string {
+  return [flightBboxToString(query.bbox), query.layers.join(","), query.limit].join("|");
+}
+
+function mergeFlightReferenceCollections(
+  collections: FlightReferenceFeatureCollection[],
+  query: FlightReferenceFeatureQuery,
+  requestNow: Date
+): FlightReferenceFeatureCollection {
+  if (collections.length === 0) {
+    return emptyFlightReferenceFeatureCollection(query, requestNow);
+  }
+  const features = collections.flatMap((collection) => collection.features);
+  const warnings = collections.flatMap((collection) => collection.warnings);
+  const generatedAt = latestIsoTimestamp(collections.map((collection) => collection.generatedAt)) ?? requestNow.toISOString();
+  const sourcesById = new Map<string, FlightReferenceSourceDescriptor>();
+  collections.flatMap((collection) => collection.sources).forEach((source) => {
+    if (!sourcesById.has(source.sourceId)) {
+      sourcesById.set(source.sourceId, source);
+    }
+  });
+  return {
+    contractVersion: "cop-flight-reference-v1",
+    features,
+    generatedAt,
+    query,
+    source: {
+      generatedAt,
+      sourceId: "flight-data-api",
+      sourceType: "PUBLIC_FLIGHT_REFERENCE"
+    },
+    sources: Array.from(sourcesById.values()),
+    summary: {
+      featureCount: features.length,
+      sourceCount: sourcesById.size,
+      staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
+      warningCount: warnings.length
+    },
+    type: "FeatureCollection",
+    warnings
+  };
+}
+
+function latestIsoTimestamp(values: Array<string | undefined>): string | undefined {
+  return values
+    .filter((value): value is string => typeof value === "string" && isValidDate(value))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
 }
 
 function normalizeAirportQuery(query: FlightAirportQuery): FlightAirportQuery {

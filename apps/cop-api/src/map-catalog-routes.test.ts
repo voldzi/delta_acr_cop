@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPublicSafetyAggregateSourceSystem, createPublicSituationAggregateSourceSystem, createTakGatewaySourceSystem } from "@cop/canonical-model";
+import { createPublicFlightAggregateSourceSystem, createPublicSafetyAggregateSourceSystem, createPublicSituationAggregateSourceSystem, createTakGatewaySourceSystem } from "@cop/canonical-model";
 import { buildServer } from "./server.js";
 import type {
   SafetyDataPublicConfig,
@@ -18,6 +18,13 @@ import type {
   SituationLayerDescriptor,
   SituationSourceDescriptor
 } from "./situation-data-source.js";
+import type {
+  FlightDataSource,
+  FlightDataSourceConfig,
+  FlightReferenceFeature,
+  FlightReferenceFeatureCollection,
+  FlightReferenceFeatureQuery
+} from "./flight-data-source.js";
 import type {
   TakGatewayFeatureCollection,
   TakGatewayFeatureQuery,
@@ -265,6 +272,31 @@ describe("map catalog route", () => {
     const body = response.json() as { situation?: SituationFeatureCollection };
     expect(body.situation?.features.map((feature) => feature.properties.category)).toEqual(["communications_tower"]);
     expect(body.situation?.summary.featureCount).toBe(1);
+  });
+
+  it("queries flight reference layers from the provider catalog", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      flightDataSource: new FakeFlightDataSource(),
+      now: () => new Date("2026-05-22T08:00:00Z")
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [13.85, 49.65, 15.35, 50.45],
+        layerIds: ["flight.reference.airports", "flight.reference.airspaces"],
+        limit: 20
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { flight?: FlightReferenceFeatureCollection; query: { layerIds: string[] }; summary: { featureCount: number } };
+    expect(body.query.layerIds).toEqual(["flight.reference.airports", "flight.reference.airspaces"]);
+    expect(body.flight?.query.layers).toEqual(["flight.airports", "flight.airspaces"]);
+    expect(body.flight?.features.map((feature) => feature.properties.layer)).toEqual(["flight_airports", "flight_airspaces"]);
+    expect(body.summary.featureCount).toBe(2);
   });
 
   it("allows authenticated map feature queries to include partner layers", async () => {
@@ -522,6 +554,167 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
       type: "FeatureCollection",
       warnings: []
     };
+  }
+}
+
+class FakeFlightDataSource implements FlightDataSource {
+  readonly config: FlightDataSourceConfig = {
+    airportCacheTtlMs: 3600000,
+    baseUrl: "https://sim.zeleznalady.cz/flight-data",
+    enabled: true,
+    includeStale: true,
+    limit: 500,
+    pollMs: 15000,
+    timeoutMs: 6000
+  };
+
+  readonly sourceSystem = createPublicFlightAggregateSourceSystem();
+
+  async fetchCatalog(_requestNow: Date): Promise<ProviderMapCatalog> {
+    return {
+      contractVersion: "provider-map-catalog-v1",
+      layers: [
+        {
+          audience: "public",
+          cacheTtlSeconds: 3600,
+          defaultVisible: false,
+          geometryTypes: ["Point"],
+          kind: "static_reference",
+          label: "Letiště",
+          providerLayerId: "flight.airports",
+          query: {
+            maxFeatures: 200,
+            mode: "bbox",
+            providerId: "sim.flight-data",
+            providerLayerIds: ["flight.airports"],
+            providerSourceIds: ["ourairports"],
+            streamId: "airports"
+          },
+          recommendedCatalogLayerId: "flight.reference.airports",
+          refreshSeconds: 3600,
+          role: "reference",
+          selectable: true,
+          sourceIds: ["ourairports"],
+          styleProfile: "airport-reference-v1"
+        },
+        {
+          audience: "public",
+          cacheTtlSeconds: 3600,
+          defaultVisible: false,
+          geometryTypes: ["Polygon"],
+          kind: "static_reference",
+          label: "Letecké prostory",
+          providerLayerId: "flight.airspaces",
+          query: {
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.flight-data",
+            providerLayerIds: ["flight.airspaces"],
+            providerSourceIds: ["czech_aip_airspaces"],
+            streamId: "airspaces"
+          },
+          recommendedCatalogLayerId: "flight.reference.airspaces",
+          refreshSeconds: 3600,
+          role: "reference",
+          selectable: true,
+          sourceIds: ["czech_aip_airspaces"],
+          styleProfile: "airspace-reference-v1"
+        }
+      ],
+      providerId: "sim.flight-data",
+      sources: [
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["flight.reference.airports"],
+          label: "OurAirports",
+          selectableInMap: false,
+          sourceId: "ourairports",
+          sourceRole: "reference",
+          updateCadenceSeconds: 3600,
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["flight.reference.airspaces"],
+          label: "Czech AIP/eAIP airspaces",
+          selectableInMap: false,
+          sourceId: "czech_aip_airspaces",
+          sourceRole: "reference",
+          updateCadenceSeconds: 3600,
+          visibleInDiagnostics: true
+        }
+      ],
+      status: "online",
+      warnings: []
+    };
+  }
+
+  async fetchReferenceFeatures(query: FlightReferenceFeatureQuery, requestNow: Date): Promise<FlightReferenceFeatureCollection> {
+    const features: FlightReferenceFeature[] = [
+      {
+        geometry: { coordinates: [14.259911, 50.100874], type: "Point" },
+        id: "airport:LKPR",
+        properties: {
+          category: "large_airport",
+          confidence: 0.95,
+          featureId: "flight:airport:LKPR",
+          label: "PRG",
+          layer: "flight_airports",
+          observedAt: requestNow.toISOString(),
+          providerId: "sim.flight-data",
+          providerLayerId: "flight.airports",
+          sourceId: "ourairports",
+          stale: false,
+          status: "reference"
+        },
+        type: "Feature"
+      },
+      {
+        geometry: { coordinates: [[[14.4, 50.1], [14.5, 50.1], [14.5, 50.2], [14.4, 50.1]]], type: "Polygon" },
+        id: "airspace:LKD1",
+        properties: {
+          category: "airspace_danger",
+          confidence: 0.9,
+          featureId: "airspace:LKD1",
+          label: "LKD1",
+          layer: "flight_airspaces",
+          observedAt: requestNow.toISOString(),
+          providerId: "sim.flight-data",
+          providerLayerId: "flight.airspaces",
+          severity: "warning",
+          sourceId: "czech_aip_airspaces",
+          stale: false,
+          status: "danger"
+        },
+        type: "Feature"
+      }
+    ];
+    const selectedFeatures = features.filter((feature) => query.layers.includes(feature.properties.providerLayerId));
+    return {
+      contractVersion: "cop-flight-reference-v1",
+      features: selectedFeatures,
+      generatedAt: requestNow.toISOString(),
+      query,
+      source: { generatedAt: requestNow.toISOString(), sourceId: "flight-data-api", sourceType: "PUBLIC_FLIGHT_REFERENCE" },
+      sources: [
+        { enabled: true, label: "OurAirports", layers: ["flight.airports"], sourceId: "ourairports", updateCadenceSeconds: 3600 },
+        { enabled: true, label: "Czech AIP/eAIP airspaces", layers: ["flight.airspaces"], sourceId: "czech_aip_airspaces", updateCadenceSeconds: 3600 }
+      ],
+      summary: {
+        featureCount: selectedFeatures.length,
+        sourceCount: 2,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    };
+  }
+
+  async poll(): Promise<never> {
+    throw new Error("not implemented");
   }
 }
 

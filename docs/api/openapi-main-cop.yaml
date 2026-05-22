@@ -1933,6 +1933,10 @@ components:
         contractVersion:
           type: string
           const: cop-map-query-v1
+        community:
+          $ref: "#/components/schemas/CommunityFeatureCollection"
+        flight:
+          $ref: "#/components/schemas/FlightReferenceFeatureCollection"
         generatedAt:
           type: string
           format: date-time
@@ -2651,6 +2655,115 @@ components:
           additionalProperties:
             type: integer
             minimum: 0
+    FlightReferenceFeatureCollection:
+      type: object
+      required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
+      properties:
+        contractVersion:
+          type: string
+          const: cop-flight-reference-v1
+        type:
+          type: string
+          const: FeatureCollection
+        generatedAt:
+          type: string
+          format: date-time
+        query:
+          type: object
+          required: [bbox, layers, limit]
+          properties:
+            bbox:
+              $ref: "#/components/schemas/SituationBbox"
+            layers:
+              type: array
+              items:
+                type: string
+                enum: [flight.airports, flight.airspaces]
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 500
+        source:
+          type: object
+          required: [sourceId, sourceType]
+          properties:
+            generatedAt:
+              type: string
+              format: date-time
+            sourceId:
+              type: string
+              const: flight-data-api
+            sourceType:
+              type: string
+              const: PUBLIC_FLIGHT_REFERENCE
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SituationSourceDescriptor"
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/SituationFeature"
+        summary:
+          $ref: "#/components/schemas/SituationSummary"
+        sourceHealth:
+          $ref: "#/components/schemas/SourceHealthOverride"
+        warnings:
+          type: array
+          items:
+            type: string
+    CommunityFeatureCollection:
+      type: object
+      required: [features, generatedAt, source, summary, type]
+      properties:
+        type:
+          type: string
+          const: FeatureCollection
+        generatedAt:
+          type: string
+          format: date-time
+        query:
+          type: object
+          properties:
+            bbox:
+              $ref: "#/components/schemas/SituationBbox"
+            layerIds:
+              type: array
+              items:
+                type: string
+            limit:
+              type: integer
+        source:
+          type: object
+          required: [sourceId, sourceType]
+          properties:
+            generatedAt:
+              type: string
+              format: date-time
+            sourceId:
+              type: string
+              const: community_reports
+            sourceType:
+              type: string
+              const: COMMUNITY_REPORTS
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/SituationFeature"
+        summary:
+          type: object
+          required: [featureCount]
+          properties:
+            featureCount:
+              type: integer
+            submittedCount:
+              type: integer
+            uploadedAttachmentCount:
+              type: integer
+        warnings:
+          type: array
+          items:
+            type: string
     SituationFeatureCollection:
       type: object
       required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
@@ -2694,7 +2807,7 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality]
+            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality, flight_airports, flight_airspaces, community]
         limit:
           type: integer
           minimum: 1
@@ -2755,7 +2868,7 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality]
+            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality, flight_airports, flight_airspaces, community]
         license:
           type: object
           additionalProperties: true
@@ -2827,12 +2940,16 @@ components:
           type: string
         layer:
           type: string
-          enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality]
+          enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality, flight_airports, flight_airspaces, community]
         label:
           type: string
         category:
           type: string
         sourceId:
+          type: string
+        providerId:
+          type: string
+        providerLayerId:
           type: string
         observedAt:
           type: string

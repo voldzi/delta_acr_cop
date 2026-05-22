@@ -25,7 +25,16 @@ import {
 import { correlationIdFrom, sendError } from "./errors.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
-import { createFlightDataSourceFromEnv, unavailableFlightDataHealth, type FlightAirportQuery, type FlightDataSource } from "./flight-data-source.js";
+import {
+  createFlightDataSourceFromEnv,
+  emptyFlightReferenceFeatureCollection,
+  unavailableFlightDataHealth,
+  type FlightAirportQuery,
+  type FlightDataSource,
+  type FlightReferenceFeatureCollection,
+  type FlightReferenceFeatureQuery,
+  type FlightReferenceLayerId
+} from "./flight-data-source.js";
 import { buildMapCatalog, type MapCatalogLayer } from "./map-catalog.js";
 import { createMediaStorageFromEnv, type MediaStorage } from "./media-storage.js";
 import { withEventProvenance } from "./provenance.js";
@@ -1273,17 +1282,23 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ...(unknownLayerIds.length > 0 ? [`Unknown or unauthorized map layers ignored: ${unknownLayerIds.join(", ")}.`] : [])
     ];
 
-    const [situationCollection, safetyCollection, takCollection] = await Promise.all([
+    const [situationCollection, safetyCollection, flightCollection, communityCollection, takCollection] = await Promise.all([
       readSituationMapQuery(providerQueries.situation, requestNow, actor, selectedLayers),
       readSafetyMapQuery(providerQueries.safety, requestNow),
+      readFlightReferenceMapQuery(providerQueries.flight, requestNow),
+      readCommunityMapQuery(providerQueries.community, requestNow, actor),
       includePartner ? readTakMapQuery(providerQueries.tak, requestNow) : Promise.resolve(undefined)
     ]);
 
     const featureCount = (situationCollection?.summary.featureCount ?? 0)
       + (safetyCollection?.summary.featureCount ?? 0)
+      + (flightCollection?.summary.featureCount ?? 0)
+      + (communityCollection?.summary.featureCount ?? 0)
       + (takCollection?.summary.featureCount ?? 0);
     return {
       contractVersion: "cop-map-query-v1",
+      community: communityCollection,
+      flight: flightCollection,
       generatedAt: requestNow.toISOString(),
       query: {
         bbox: query.bbox,
@@ -1937,6 +1952,86 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function readFlightReferenceMapQuery(query: FlightReferenceFeatureQuery | undefined, requestNow: Date): Promise<(FlightReferenceFeatureCollection & { sourceHealth?: SourceHealthOverride }) | undefined> {
+    if (!query) {
+      return undefined;
+    }
+    if (!flightDataSource?.fetchReferenceFeatures) {
+      return {
+        ...emptyFlightReferenceFeatureCollection(query, requestNow, ["Flight reference source is disabled."]),
+        sourceHealth: {
+          detail: "disabled",
+          evaluatedAt: requestNow.toISOString(),
+          health: "WAITING" as const,
+          lastPollAt: requestNow.toISOString()
+        }
+      };
+    }
+
+    try {
+      const collection = await flightDataSource.fetchReferenceFeatures(query, requestNow);
+      const health: SourceHealthOverride = {
+        detail: `reference features ${collection.summary.featureCount}`,
+        evaluatedAt: requestNow.toISOString(),
+        generatedAt: collection.generatedAt,
+        health: collection.warnings.length > 0 ? "DEGRADED" : "ONLINE",
+        lastPollAt: requestNow.toISOString(),
+        lastSuccessAt: requestNow.toISOString(),
+        summary: {
+          featureCount: collection.summary.featureCount,
+          sourceCount: collection.summary.sourceCount,
+          staleFeatureCount: collection.summary.staleFeatureCount
+        },
+        warnings: collection.warnings
+      };
+      state.sources.set(flightDataSource.sourceSystem.sourceSystemId, withFlightDataHealth(activeFlightDataSourceSystem(), health));
+      return {
+        ...collection,
+        sourceHealth: health
+      };
+    } catch (error) {
+      const health = unavailableFlightDataHealth(error, requestNow);
+      state.sources.set(flightDataSource.sourceSystem.sourceSystemId, withFlightDataHealth(activeFlightDataSourceSystem(), health));
+      appendAudit(state, "MAP_QUERY_FLIGHT_REFERENCE_PROVIDER_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: flightDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Flight reference map query failed.");
+      return {
+        ...emptyFlightReferenceFeatureCollection(query, requestNow, [health.lastError ?? "Flight reference features are unavailable."]),
+        sourceHealth: health
+      };
+    }
+  }
+
+  async function readCommunityMapQuery(query: CommunityMapFeatureQuery | undefined, requestNow: Date, actor: AuthenticatedActor | null) {
+    if (!query) {
+      return undefined;
+    }
+    try {
+      const reports = (await listCommunityReports({
+        bbox: query.bbox,
+        includeOwnDrafts: Boolean(actor),
+        limit: query.limit,
+        ...(actor ? { subjectId: actor.subjectId } : {})
+      })).filter((report) => canReadCommunityReport(report, actor));
+      return {
+        ...communityReportsFeatureCollection(reports, requestNow),
+        query
+      };
+    } catch (error) {
+      appendAudit(state, "MAP_QUERY_COMMUNITY_REPORTS_FAILED", {
+        error: errorMessage(error)
+      });
+      app.log.warn({ error }, "Community report map query failed.");
+      return {
+        ...communityReportsFeatureCollection([], requestNow),
+        query,
+        warnings: [errorMessage(error)]
+      };
+    }
+  }
+
   async function readTakMapQuery(query: TakGatewayFeatureQuery | undefined, requestNow: Date) {
     if (!query) {
       return undefined;
@@ -2166,9 +2261,17 @@ interface MapFeatureQueryRequest {
 }
 
 interface ProviderFeatureQueries {
+  community?: CommunityMapFeatureQuery;
+  flight?: FlightReferenceFeatureQuery;
   safety?: SafetyFeatureQuery;
   situation?: SituationFeatureQuery;
   tak?: TakGatewayFeatureQuery;
+}
+
+interface CommunityMapFeatureQuery {
+  bbox: CommunityReportQuery["bbox"];
+  layerIds: string[];
+  limit: number;
 }
 
 function parseMapQueryRequest(body: unknown): MapFeatureQueryRequest | null {
@@ -2234,7 +2337,9 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
   const situationLayers = new Set<SituationLayerId>();
   const situationSources = new Set<string>();
   const safetyLayers = new Set<SafetyLayerId>();
+  const flightLayers = new Set<FlightReferenceLayerId>();
   const takLayers = new Set<TakGatewayLayerId>();
+  const communityLayerIds = new Set<string>();
   let situationTechnology: string | undefined;
 
   for (const layer of layers) {
@@ -2257,6 +2362,21 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
           safetyLayers.add(layerId);
         }
       }
+    } else if (layer.query.providerId === "sim.flight-data") {
+      const providerLayerIds = layer.query.providerLayerIds ?? [];
+      for (const layerId of providerLayerIds) {
+        if (isFlightReferenceLayerId(layerId)) {
+          flightLayers.add(layerId);
+        }
+      }
+      if (providerLayerIds.length === 0) {
+        const streamLayer = flightReferenceLayerIdForStream(layer.query.streamId);
+        if (streamLayer) {
+          flightLayers.add(streamLayer);
+        }
+      }
+    } else if (layer.query.providerId === "cop.community") {
+      communityLayerIds.add(layer.layerId);
     } else if (layer.query.providerId === "sim.tak-gateway") {
       for (const layerId of layer.query.providerLayerIds ?? []) {
         if (isTakGatewayLayerId(layerId)) {
@@ -2272,6 +2392,24 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
           safety: {
             bbox: request.bbox,
             layers: Array.from(safetyLayers),
+            limit: request.limit
+          }
+        }
+      : {}),
+    ...(communityLayerIds.size > 0
+      ? {
+          community: {
+            bbox: request.bbox,
+            layerIds: Array.from(communityLayerIds),
+            limit: request.limit
+          }
+        }
+      : {}),
+    ...(flightLayers.size > 0
+      ? {
+          flight: {
+            bbox: request.bbox,
+            layers: Array.from(flightLayers),
             limit: request.limit
           }
         }
@@ -2334,6 +2472,20 @@ function isSituationLayerId(value: string): value is SituationLayerId {
 
 function isSafetyLayerId(value: string): value is SafetyLayerId {
   return value === "flood" || value === "warnings";
+}
+
+function isFlightReferenceLayerId(value: string): value is FlightReferenceLayerId {
+  return value === "flight.airports" || value === "flight.airspaces";
+}
+
+function flightReferenceLayerIdForStream(streamId: string | undefined): FlightReferenceLayerId | undefined {
+  if (streamId === "airports") {
+    return "flight.airports";
+  }
+  if (streamId === "airspaces") {
+    return "flight.airspaces";
+  }
+  return undefined;
 }
 
 function isTakGatewayLayerId(value: string): value is TakGatewayLayerId {

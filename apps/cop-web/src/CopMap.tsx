@@ -66,7 +66,7 @@ const mobileNetworkIconPrefix = "cop-mobile-network";
 const mobileNetworkIconTones = ["info", "advisory", "warning", "critical", "unknown"] as const;
 type MobileNetworkIconTone = (typeof mobileNetworkIconTones)[number];
 const osmCategoryIconPrefix = "cop-osm-category";
-const osmCategoryIconIds = ["hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "other"] as const;
+const osmCategoryIconIds = ["airport", "hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "other"] as const;
 type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
 
 export interface TrackFeatureProperties {
@@ -1646,6 +1646,16 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
       takGateway: true
     };
   }
+  if (feature.properties.layer === "flight_airports") {
+    return {
+      osmCategoryLabel: "Letiště",
+      osmPoi: true,
+      osmSymbolKey: getOsmCategoryIconKey("airport"),
+      situationStatusColor: status.color,
+      situationStatusLabel: status.label,
+      situationStatusTone: status.tone
+    };
+  }
   if (isCommunicationTowerFeature(feature)) {
     return {
       communicationTower: true,
@@ -1740,6 +1750,19 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     const coverage = mobileCoverageStatus(feature.properties.quality);
     return feature.properties.stale ? { ...coverage, label: `${coverage.label} · STALE`, tone: coverage.tone === "info" ? "warning" : coverage.tone } : coverage;
+  }
+  if (feature.properties.layer === "flight_airports") {
+    return { color: "#38bdf8", label: "REFERENČNÍ", tone: "info" };
+  }
+  if (feature.properties.layer === "flight_airspaces") {
+    const severity = feature.properties.severity?.trim().toLowerCase();
+    if (severity === "critical") {
+      return { color: "#ef4444", label: "KRITICKÝ", tone: "critical" };
+    }
+    if (severity === "warning") {
+      return { color: "#facc15", label: "OMEZENÍ", tone: "warning" };
+    }
+    return { color: "#38bdf8", label: "PROSTOR", tone: "info" };
   }
   if (feature.properties.stale) {
     return { color: "#facc15", label: "STALE", tone: "warning" };
@@ -2070,6 +2093,9 @@ function situationLayerDisplayName(feature: SituationFeature): string {
   }
   const labels: Record<string, string> = {
     air_quality: "Kvalita vzduchu",
+    community: "Komunitní hlášení",
+    flight_airports: "Letiště",
+    flight_airspaces: "Letecký prostor",
     flood: "Povodně",
     ground: "Terén",
     mobile: "Mobilní síť",
@@ -2585,6 +2611,22 @@ function createOsmCategorySymbolImage(iconId: OsmCategoryIconId): ImageData {
   context.lineWidth = 7;
 
   switch (iconId) {
+    case "airport":
+      context.beginPath();
+      context.moveTo(0, -34);
+      context.lineTo(0, 34);
+      context.moveTo(-28, -4);
+      context.lineTo(28, -4);
+      context.moveTo(-17, 20);
+      context.lineTo(17, 20);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(0, -39);
+      context.lineTo(8, -24);
+      context.lineTo(-8, -24);
+      context.closePath();
+      context.fill();
+      break;
     case "hospital":
       context.fillRect(-8, -28, 16, 56);
       context.fillRect(-28, -8, 56, 16);
@@ -2721,6 +2763,8 @@ function drawRoundedRect(context: CanvasRenderingContext2D, x: number, y: number
 
 function osmCategoryIconColor(iconId: OsmCategoryIconId): string {
   switch (iconId) {
+    case "airport":
+      return "#38bdf8";
     case "hospital":
       return "#ef4444";
     case "fire_station":
