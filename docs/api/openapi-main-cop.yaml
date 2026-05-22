@@ -2969,6 +2969,8 @@ components:
         layer:
           type: string
           enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality, flight_airports, flight_airspaces, community]
+        layerId:
+          type: string
         label:
           type: string
         category:
@@ -2979,6 +2981,9 @@ components:
           type: string
         providerLayerId:
           type: string
+        providerProperties:
+          type: object
+          additionalProperties: true
         observedAt:
           type: string
           format: date-time
@@ -2995,6 +3000,14 @@ components:
           enum: [good, fair, weak, none, unknown]
         status:
           type: string
+        dataQuality:
+          type: string
+        btsStatus:
+          type: string
+        btsStatusSource:
+          type: string
+        operatorStatusAvailable:
+          type: boolean
         summary:
           type: string
         basis:

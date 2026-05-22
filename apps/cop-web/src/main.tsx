@@ -2934,6 +2934,7 @@ function CommunicationTowerSummary({ feature }: { feature: SituationFeature }) {
       <DataMetric label="Typ" value={stringProperty(tags.towerType) ?? "communication"} tone="neutral" />
       <DataMetric label="OSM" value={formatOsmReference(tags)} tone="neutral" />
       <DataMetric label="Status" value={formatCommunicationTowerStatus(feature.properties.status)} tone="neutral" />
+      <DataMetric label="BTS" value={formatCommunicationTowerStatus(feature.properties.btsStatus)} tone="neutral" />
       <DataMetric label="Confidence" value={formatOptionalPercent(feature.properties.confidence)} tone="neutral" />
     </div>
   );
@@ -4590,6 +4591,8 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
               ["Typ", stringProperty(isRecord(properties.tags) ? properties.tags.towerType : undefined) ?? "communication"],
               ["OSM", formatOsmReference(isRecord(properties.tags) ? properties.tags : {})],
               ["Stav", formatCommunicationTowerStatus(properties.status)],
+              ["Stav BTS", formatCommunicationTowerStatus(properties.btsStatus)],
+              ["Operátorský stav", properties.operatorStatusAvailable ? "dostupný" : "není dostupný"],
               ["Poznámka", "Jde o referenční OSM infrastrukturu, ne potvrzený realtime stav operátora."]
             ]}
           />
@@ -5326,9 +5329,19 @@ function isTakGatewayFeature(feature: SituationFeature): boolean {
 }
 
 function isCommunicationTowerFeature(feature: SituationFeature): boolean {
-  return feature.properties.sourceId === "osm_postgis"
-    && feature.properties.layer === "mobile"
-    && feature.properties.category.toLowerCase().replace(/[\s.-]+/g, "_") === "communications_tower";
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
+  const providerLayerId = feature.properties.providerLayerId ?? stringProperty(providerProperties.providerLayerId);
+  return feature.properties.layer === "mobile"
+    && feature.properties.category.toLowerCase().replace(/[\s.-]+/g, "_") === "communications_tower"
+    && (
+      feature.properties.sourceId === "osm_postgis"
+      || feature.properties.layerId === "reference.infrastructure.communications"
+      || providerLayerId === "mobile.osm_postgis.communications"
+      || stringProperty(tags.referenceOnly) === "true"
+      || stringProperty(providerTags.referenceOnly) === "true"
+    );
 }
 
 function formatOsmReference(tags: Record<string, unknown>): string {
@@ -5442,6 +5455,9 @@ function situationFeatureStatusModel(feature: SituationFeature): { label: string
     const coverage = mobileCoverageQualityModel(feature.properties.quality);
     return feature.properties.stale && coverage.tone === "ok" ? { label: `${coverage.label} · STALE`, tone: "warn" } : coverage;
   }
+  if (isCommunicationTowerFeature(feature)) {
+    return { label: "REFERENČNÍ", tone: "neutral" };
+  }
   if (feature.properties.stale) {
     return { label: "STALE", tone: "warn" };
   }
@@ -5511,7 +5527,11 @@ function formatMobileNetworkStatus(status: string | undefined): string {
 }
 
 function formatCommunicationTowerStatus(status: string | undefined): string {
-  return status ? formatMobileNetworkStatus(status) : "Referenční bod";
+  const normalized = status?.trim().toLowerCase();
+  if (!normalized || normalized === "unknown") {
+    return "Stav operátora neznámý";
+  }
+  return formatMobileNetworkStatus(status);
 }
 
 function isAviationWeatherFeature(feature: SituationFeature): boolean {

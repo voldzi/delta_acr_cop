@@ -103,6 +103,9 @@ export interface SituationFeatureProperties {
   category: string;
   confidence?: number;
   assumptions?: Record<string, unknown>;
+  btsStatus?: string;
+  btsStatusSource?: string;
+  dataQuality?: string;
   demSource?: string;
   disclaimer?: string;
   estimatedSignalDbm?: number;
@@ -110,14 +113,19 @@ export interface SituationFeatureProperties {
   generatedAt?: string;
   label: string;
   layer: SituationLayerId;
+  layerId?: string;
   license?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
   modelVersion?: string;
   observedAt?: string;
   operator?: string;
+  operatorStatusAvailable?: boolean;
   quality?: string;
   basis?: string[];
   notices?: string[];
+  providerId?: string;
+  providerLayerId?: string;
+  providerProperties?: Record<string, unknown>;
   resolutionM?: number;
   severity?: "advisory" | "critical" | "info" | "warning" | string;
   sourceId: string;
@@ -712,9 +720,12 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
   }
   return {
     assumptions: isRecord(value.assumptions) ? value.assumptions : undefined,
+    btsStatus: optionalString(value.btsStatus),
+    btsStatusSource: optionalString(value.btsStatusSource),
     category,
     confidence: optionalFinite(value.confidence),
     basis: optionalStringArray(value.basis),
+    dataQuality: optionalString(value.dataQuality),
     demSource: optionalString(value.demSource),
     disclaimer: optionalString(value.disclaimer),
     estimatedSignalDbm: optionalNumber(value.estimatedSignalDbm),
@@ -722,13 +733,18 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     generatedAt: optionalString(value.generatedAt),
     label,
     layer: value.layer,
+    layerId: optionalString(value.layerId),
     license: isRecord(value.license) ? value.license : undefined,
     metrics: isRecord(value.metrics) ? value.metrics : undefined,
     modelVersion: optionalString(value.modelVersion),
     observedAt: optionalString(value.observedAt),
     operator: optionalString(value.operator),
+    operatorStatusAvailable: optionalBoolean(value.operatorStatusAvailable),
     notices: optionalStringArray(value.notices),
     quality: optionalString(value.quality),
+    providerId: optionalString(value.providerId),
+    providerLayerId: optionalString(value.providerLayerId),
+    providerProperties: isRecord(value.providerProperties) ? value.providerProperties : undefined,
     resolutionM: optionalNumber(value.resolutionM),
     severity: optionalString(value.severity),
     sourceId,
@@ -1069,6 +1085,10 @@ function optionalStringArray(value: unknown): string[] | undefined {
     return normalized ? [normalized] : [];
   });
   return items.length > 0 ? items : undefined;
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function clampNumber(value: number, min: number, max: number): number {

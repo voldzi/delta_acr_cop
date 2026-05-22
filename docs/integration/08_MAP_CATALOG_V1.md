@@ -109,7 +109,7 @@ Examples:
 | `mobile_network_model` | `final` / `aggregate` | user layer `public.mobile.network` |
 | `mobile_coverage_model` | `input` / `diagnostic` | diagnostics, optional technical overlay |
 | `ctu_nettest` | `input` | diagnostics and provenance |
-| `osm_postgis` communications towers | `reference` / `input` | reference/diagnostics, not final mobile status |
+| `osm_postgis` communications towers | `reference` / `input` | neutral reference infrastructure; never final mobile status |
 | `chmi_alerts` | `final` | user layer `public.safety.warnings` |
 | `safety_data` projection in situation-data | `projection` | compatibility only; COP should prefer safety-data |
 
@@ -366,6 +366,26 @@ Every rendered feature should carry:
   }
 }
 ```
+
+For communications infrastructure references, providers should explicitly mark the feature as a reference and avoid implying operational BTS status:
+
+```json
+{
+  "properties": {
+    "layerId": "reference.infrastructure.communications",
+    "providerId": "sim.situation-data",
+    "providerLayerId": "mobile.osm_postgis.communications",
+    "sourceId": "osm_postgis",
+    "category": "communications_tower",
+    "status": "unknown",
+    "btsStatus": "unknown",
+    "operatorStatusAvailable": false,
+    "disclaimer": "Reference infrastructure only; BTS operational status is unknown."
+  }
+}
+```
+
+COP renders those points with a neutral reference BTS icon. Green/yellow/orange/red status colors belong to `public.mobile.network` polygons according to `quality`, not to reference tower points.
 
 Provider-native fields may be preserved under:
 

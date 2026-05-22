@@ -227,6 +227,9 @@ export interface SituationFeatureProperties {
   certainty?: string;
   confidence?: number;
   assumptions?: Record<string, unknown>;
+  btsStatus?: string;
+  btsStatusSource?: string;
+  dataQuality?: string;
   demSource?: string;
   description?: string;
   effectiveAt?: string;
@@ -239,6 +242,7 @@ export interface SituationFeatureProperties {
   headline?: string;
   label: string;
   layer: SituationLayerId;
+  layerId?: string;
   license?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
   modelVersion?: string;
@@ -246,8 +250,10 @@ export interface SituationFeatureProperties {
   notices?: string[];
   observedAt?: string;
   operator?: string;
+  operatorStatusAvailable?: boolean;
   providerId?: string;
   providerLayerId?: string;
+  providerProperties?: Record<string, unknown>;
   quality?: string;
   receivedAt?: string;
   recommendedAction?: string;

@@ -64,7 +64,7 @@ const defaultCenter = parseMapCenter(import.meta.env.VITE_COP_MAP_CENTER);
 const defaultZoom = parseFiniteNumber(import.meta.env.VITE_COP_MAP_ZOOM, 8);
 const earthRadiusKm = 6371.0088;
 const mobileNetworkIconPrefix = "cop-mobile-network";
-const mobileNetworkIconTones = ["info", "advisory", "warning", "critical", "unknown"] as const;
+const mobileNetworkIconTones = ["info", "advisory", "warning", "critical", "unknown", "reference"] as const;
 type MobileNetworkIconTone = (typeof mobileNetworkIconTones)[number];
 const civilAircraftIconPrefix = "cop-civil-aircraft";
 const civilAircraftIconKinds = ["jet", "turboprop", "small_aircraft", "helicopter", "glider", "uav", "unknown"] as const;
@@ -1694,13 +1694,14 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
     };
   }
   if (isCommunicationTowerFeature(feature)) {
+    const referenceStatus = communicationTowerReferenceStatus();
     return {
       communicationTower: true,
       mobileNetworkLabel: formatCommunicationTowerLabel(feature),
-      mobileSymbolKey: getMobileNetworkIconKey(status.tone),
-      situationStatusColor: status.color,
-      situationStatusLabel: status.label,
-      situationStatusTone: status.tone
+      mobileSymbolKey: getMobileNetworkIconKey(referenceStatus.tone),
+      situationStatusColor: referenceStatus.color,
+      situationStatusLabel: referenceStatus.label,
+      situationStatusTone: referenceStatus.tone
     };
   }
   const osmCategory = resolveOsmCategoryPresentation(feature);
@@ -1778,15 +1779,28 @@ function isSyntheticWarningPoint(feature: SituationFeature): boolean {
 }
 
 function isCommunicationTowerFeature(feature: SituationFeature): boolean {
-  return feature.properties.sourceId === "osm_postgis"
-    && feature.properties.layer === "mobile"
-    && normalizeSituationCategory(feature.properties.category) === "communications_tower";
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
+  const providerLayerId = feature.properties.providerLayerId ?? stringProperty(providerProperties.providerLayerId);
+  return feature.properties.layer === "mobile"
+    && normalizeSituationCategory(feature.properties.category) === "communications_tower"
+    && (
+      feature.properties.sourceId === "osm_postgis"
+      || feature.properties.layerId === "reference.infrastructure.communications"
+      || providerLayerId === "mobile.osm_postgis.communications"
+      || stringProperty(tags.referenceOnly) === "true"
+      || stringProperty(providerTags.referenceOnly) === "true"
+    );
 }
 
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     const coverage = mobileCoverageStatus(feature.properties.quality);
     return feature.properties.stale ? { ...coverage, label: `${coverage.label} · STALE`, tone: coverage.tone === "info" ? "warning" : coverage.tone } : coverage;
+  }
+  if (isCommunicationTowerFeature(feature)) {
+    return communicationTowerReferenceStatus();
   }
   if (feature.properties.layer === "flight_airports") {
     return { color: "#38bdf8", label: "REFERENČNÍ", tone: "info" };
@@ -1843,6 +1857,10 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
     return { color: "#22c55e", label: "OK", tone: "info" };
   }
   return { color: "#a78bfa", label: raw.toUpperCase(), tone: "unknown" };
+}
+
+function communicationTowerReferenceStatus(): { color: string; label: string; tone: string } {
+  return { color: "#8cb6d8", label: "REFERENČNÍ", tone: "reference" };
 }
 
 function mobileCoverageStatus(quality: string | undefined): { color: string; label: string; tone: string } {
@@ -2081,6 +2099,7 @@ function mobileNetworkIconColor(tone: MobileNetworkIconTone): string {
     advisory: "#fb923c",
     critical: "#ef4444",
     info: "#22c55e",
+    reference: "#8cb6d8",
     unknown: "#a78bfa",
     warning: "#facc15"
   };
@@ -2251,6 +2270,15 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
       status.label,
       typeof feature.properties.estimatedSignalDbm === "number" ? `${Math.round(feature.properties.estimatedSignalDbm)} dBm` : undefined,
       typeof feature.properties.confidence === "number" ? `${Math.round(feature.properties.confidence * 100)} %` : undefined
+    ].filter(Boolean).join(" · ");
+  }
+  if (isCommunicationTowerFeature(feature)) {
+    return [
+      "Komunikační infrastruktura",
+      formatCommunicationTowerLabel(feature),
+      "stav operátora neznámý",
+      typeof feature.properties.confidence === "number" ? `${Math.round(feature.properties.confidence * 100)} %` : undefined,
+      feature.properties.sourceId
     ].filter(Boolean).join(" · ");
   }
   return [

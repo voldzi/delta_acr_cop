@@ -253,17 +253,24 @@ describe("COP map data helpers", () => {
         {
           geometry: { coordinates: [14.91, 50.19], type: "Point" },
           properties: {
+            btsStatus: "unknown",
             category: "communications_tower",
             confidence: 0.92,
+            disclaimer: "Reference infrastructure only; BTS operational status is unknown.",
             featureId: "osm:node:4337203413",
             label: "GSM-R",
             layer: "mobile",
+            layerId: "reference.infrastructure.communications",
             observedAt: "2026-05-20T10:00:00Z",
+            operatorStatusAvailable: false,
+            providerLayerId: "mobile.osm_postgis.communications",
             sourceId: "osm_postgis",
             stale: false,
+            status: "unknown",
             tags: {
               osmId: "4337203413",
               osmType: "node",
+              referenceOnly: "true",
               towerType: "communication"
             }
           },
@@ -296,10 +303,10 @@ describe("COP map data helpers", () => {
       featureId: "osm:node:4337203413",
       layer: "mobile",
       mobileNetworkLabel: "GSM-R",
-      mobileSymbolKey: "cop-mobile-network-info",
-      situationStatusColor: "#22c55e",
-      situationStatusLabel: "OK",
-      situationStatusTone: "info"
+      mobileSymbolKey: "cop-mobile-network-reference",
+      situationStatusColor: "#8cb6d8",
+      situationStatusLabel: "REFERENČNÍ",
+      situationStatusTone: "reference"
     });
     expect(collection.features[0]?.properties.osmPoi).toBeUndefined();
   });
