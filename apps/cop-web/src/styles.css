@@ -882,6 +882,48 @@ h1 {
   line-height: 1.35;
 }
 
+.technical-source-list {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  border: 1px dashed rgba(142, 157, 170, 0.18);
+  background: rgba(5, 9, 12, 0.28);
+}
+
+.technical-source-heading,
+.technical-source-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.technical-source-heading span {
+  color: #cbd7e2;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.technical-source-heading small,
+.technical-source-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.technical-source-row em {
+  color: #9aa8b5;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .coverage-technology-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -152,6 +152,14 @@ import {
   writeCopOfflineSnapshot,
   type CopOfflineSnapshot
 } from "./pwa-offline";
+import {
+  filterCitizenSituationLayers,
+  filterCitizenSituationSources,
+  filterTechnicalSituationSources,
+  normalizeCitizenSituationLayerIds,
+  resolveSituationSourcesForFetch,
+  sanitizeCitizenSituationSourceIds
+} from "./situation-source-policy";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
@@ -605,7 +613,8 @@ export function App() {
         if (cancelled) {
           return;
         }
-        setSituationLayers(response.items.filter((layer) => !isSafetyLayerId(layer.layerId)));
+        const citizenLayers = filterCitizenSituationLayers(response.items.filter((layer) => !isSafetyLayerId(layer.layerId)));
+        setSituationLayers(citizenLayers);
         setSituationSources(sourcesResponse.items);
         setSituationWarnings([
           ...(response.warnings ?? []),
@@ -615,8 +624,7 @@ export function App() {
         ]);
         setSituationStatus(situationStatusFromHealth(response.sourceHealth?.health, response.sourceStatus));
         if (initialPreferences.situationLayerIds === undefined) {
-          const defaultLayers = response.items
-            .filter((layer) => !isSafetyLayerId(layer.layerId))
+          const defaultLayers = citizenLayers
             .filter((layer) => layer.defaultVisible)
             .map((layer) => layer.layerId);
           if (defaultLayers.length > 0) {
@@ -737,7 +745,7 @@ export function App() {
   const visibleSituationSourceKey = visibleSituationSourceIds.join(",");
   const visibleSafetyLayerKey = visibleSafetyLayerIds.join(",");
   const visibleTakLayerKey = visibleTakLayerIds.join(",");
-  const situationCoverageEnabled = visibleSituationLayerIds.includes("mobile_coverage") || visibleSituationLayerIds.includes("mobile_network");
+  const situationCoverageEnabled = visibleSituationLayerIds.includes("mobile_network");
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -766,7 +774,7 @@ export function App() {
         bbox: mapBounds,
         layers: visibleSituationLayerIds,
         limit: 250,
-        sources: visibleSituationSourceIds.length > 0 ? visibleSituationSourceIds : undefined,
+        sources: resolveSituationSourcesForFetch(visibleSituationLayerIds, visibleSituationSourceIds),
         technology: situationCoverageEnabled ? coverageTechnology : undefined
       })
         .then((collection) => {
@@ -1450,14 +1458,17 @@ export function App() {
 
   function toggleSituationSource(sourceId: string) {
     setVisibleSituationSourceIds((current) => {
-      const selectableSourceIds = situationSources.filter((source) => source.enabled !== false).map((source) => source.sourceId);
+      const selectableSourceIds = filterCitizenSituationSources(
+        situationSources.filter((source) => source.enabled !== false && !isSafetyOnlySituationSource(source))
+      ).map((source) => source.sourceId);
       if (!selectableSourceIds.includes(sourceId)) {
-        return current;
+        return sanitizeCitizenSituationSourceIds(current);
       }
-      const selected = new Set(current.length > 0 ? current : selectableSourceIds);
+      const sanitizedCurrent = sanitizeCitizenSituationSourceIds(current);
+      const selected = new Set(sanitizedCurrent.length > 0 ? sanitizedCurrent : selectableSourceIds);
       if (selected.has(sourceId)) {
         if (selected.size <= 1) {
-          return current;
+          return sanitizedCurrent;
         }
         selected.delete(sourceId);
       } else {
@@ -3447,8 +3458,10 @@ function SituationLayerControls({
   onToggleSource: (sourceId: string) => void;
 }) {
   const layerItems = layers.length > 0 ? layers : defaultSituationLayers();
-  const sourceItems = sources.filter((source) => !isSafetyOnlySituationSource(source));
-  const coverageEnabled = visibleLayerIds.includes("mobile_coverage") || visibleLayerIds.includes("mobile_network");
+  const sourceItems = filterCitizenSituationSources(sources.filter((source) => !isSafetyOnlySituationSource(source)));
+  const technicalSourceItems = filterTechnicalSituationSources(sources.filter((source) => !isSafetyOnlySituationSource(source)));
+  const effectiveVisibleSourceIds = sanitizeCitizenSituationSourceIds(visibleSourceIds);
+  const coverageEnabled = visibleLayerIds.includes("mobile_network");
   return (
     <div className="situation-layer-box">
       <div className="situation-layer-header">
@@ -3490,7 +3503,7 @@ function SituationLayerControls({
       {sourceItems.length > 0 ? (
         <div className="situation-source-list">
           {sourceItems.map((source) => {
-            const checked = visibleSourceIds.length === 0 || visibleSourceIds.includes(source.sourceId);
+            const checked = effectiveVisibleSourceIds.length === 0 || effectiveVisibleSourceIds.includes(source.sourceId);
             const disabled = source.enabled === false;
             return (
               <label className={`situation-source-toggle ${disabled ? "disabled" : ""}`} key={source.sourceId} title={source.label ?? source.sourceId}>
@@ -3502,6 +3515,20 @@ function SituationLayerControls({
               </label>
             );
           })}
+        </div>
+      ) : null}
+      {technicalSourceItems.length > 0 ? (
+        <div className="technical-source-list" aria-label="Technické vstupy mobilní sítě">
+          <div className="technical-source-heading">
+            <span>Technické vstupy</span>
+            <small>diagnostika SIM, ne běžné vrstvy mapy</small>
+          </div>
+          {technicalSourceItems.map((source) => (
+            <div className="technical-source-row" key={source.sourceId} title={source.label ?? source.sourceId}>
+              <span>{source.label ?? source.sourceId}</span>
+              <em>{source.enabled === false ? "vypnuto" : "běží"}</em>
+            </div>
+          ))}
         </div>
       ) : null}
       <ReadinessRow label="Features" value={String(featureCount)} tone={featureCount > 0 ? "ok" : "neutral"} />
@@ -4500,26 +4527,11 @@ function defaultSituationLayers(): SituationLayer[] {
     },
     {
       defaultVisible: false,
-      description: "Mobilní kontextové prvky mimo hlavní track streamy.",
-      geometryTypes: ["Point"],
-      label: "Mobile",
-      layerId: "mobile"
-    },
-    {
-      defaultVisible: false,
       description: "Sjednocené občanské hodnocení mobilní sítě ze SIM.",
       expectedCadenceSeconds: 600,
       geometryTypes: ["Polygon"],
       label: "Mobilní síť",
       layerId: "mobile_network"
-    },
-    {
-      defaultVisible: false,
-      description: "Technický modelový odhad pokrytí ze SIM.",
-      expectedCadenceSeconds: 600,
-      geometryTypes: ["Polygon"],
-      label: "Technické pokrytí",
-      layerId: "mobile_coverage"
     },
     {
       defaultVisible: false,
@@ -5250,13 +5262,13 @@ function normalizeHistoryWindowSeconds(value: number | undefined): number {
 }
 
 function normalizeSituationLayerIds(value: string[] | undefined): SituationLayerId[] {
-  const layers = (value ?? defaultSituationLayerIds).filter(isSituationLayerId);
+  const layers = normalizeCitizenSituationLayerIds((value ?? defaultSituationLayerIds).filter(isSituationLayerId));
   const unique = Array.from(new Set(layers));
   return value === undefined && unique.length === 0 ? [...defaultSituationLayerIds] : unique;
 }
 
 function normalizeSourceIds(value: string[] | undefined): string[] {
-  return Array.from(new Set((value ?? []).map((item) => item.trim()).filter(Boolean))).slice(0, 32);
+  return sanitizeCitizenSituationSourceIds(value ?? []);
 }
 
 function isSituationLayerId(value: string): value is SituationLayerId {
