@@ -15,6 +15,7 @@ export interface MapCatalogProvider {
 
 export interface MapCatalogGroup {
   groupId: string;
+  icon?: string;
   label: string;
   order: number;
   parentGroupId?: string;
@@ -198,14 +199,14 @@ function buildProviders(input: BuildMapCatalogInput): MapCatalogProvider[] {
 
 function defaultGroups(includeDiagnostics: boolean, includePartner: boolean): MapCatalogGroup[] {
   return [
-    { groupId: "risks", label: "Rizika a výstrahy", order: 10 },
-    { groupId: "risks.weather", label: "Počasí", order: 20, parentGroupId: "risks" },
-    { groupId: "communications", label: "Komunikace a doprava", order: 30 },
-    { groupId: "infrastructure", label: "Infrastruktura", order: 40 },
-    { groupId: "flight", label: "Letecký provoz", order: 50 },
-    { groupId: "user", label: "Moje data", order: 60 },
-    ...(includePartner ? [{ groupId: "partner", label: "Partnerské vrstvy", order: 70 }] : []),
-    ...(includeDiagnostics ? [{ groupId: "diagnostic", label: "Diagnostika", order: 90 }] : [])
+    { groupId: "risks", icon: "alert-triangle", label: "Rizika a výstrahy", order: 10 },
+    { groupId: "risks.weather", icon: "cloud-sun", label: "Počasí", order: 20, parentGroupId: "risks" },
+    { groupId: "communications", icon: "radio-tower", label: "Komunikace a doprava", order: 30 },
+    { groupId: "infrastructure", icon: "building-2", label: "Infrastruktura", order: 40 },
+    { groupId: "flight", icon: "plane", label: "Letecký provoz", order: 50 },
+    { groupId: "user", icon: "map-pin", label: "Moje data", order: 60 },
+    ...(includePartner ? [{ groupId: "partner", icon: "shield-check", label: "Partnerské vrstvy", order: 70 }] : []),
+    ...(includeDiagnostics ? [{ groupId: "diagnostic", icon: "database", label: "Diagnostika", order: 90 }] : [])
   ];
 }
 

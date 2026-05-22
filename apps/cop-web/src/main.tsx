@@ -4,7 +4,9 @@ import {
   Activity,
   AlertTriangle,
   Bot,
+  Building2,
   Clock3,
+  CloudSun,
   Database,
   Gauge,
   History,
@@ -15,6 +17,7 @@ import {
   MapPin,
   MousePointer2,
   Pause,
+  Plane,
   Play,
   Plus,
   RefreshCw,
@@ -173,6 +176,10 @@ type SettingsTab = "map" | "data" | "awareness" | "account";
 type ProfileSyncStatus = "disabled" | "error" | "loading" | "saving" | "synced";
 type SituationLayerStatus = "disabled" | "loading" | "online" | "degraded" | "zoom";
 type CoverageTechnology = "2G" | "4G" | "5G";
+interface CatalogGroupView {
+  group: MapCatalogResponse["groups"][number];
+  layers: MapCatalogLayer[];
+}
 
 const historyLimitOptions = [36, 72, 120, 240, 600] as const;
 const historyWindowOptions = [30, 60, 120, 180, 300, 600] as const;
@@ -269,6 +276,10 @@ export function App() {
   const [trackHistory, setTrackHistory] = React.useState<TrackHistory>({});
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<SettingsTab>("map");
+  const [activeCatalogGroupId, setActiveCatalogGroupId] = React.useState<string | null>(null);
+  const [visibleCatalogLayerIds, setVisibleCatalogLayerIds] = React.useState<string[]>(() =>
+    normalizeCatalogLayerIds(initialPreferences.catalogLayerIds)
+  );
   const [zoneCreationMode, setZoneCreationMode] = React.useState(false);
   const [autoFit, setAutoFit] = React.useState(initialPreferences.autoFit ?? true);
   const [mapView, setMapView] = React.useState<MapViewState | undefined>(() => normalizeMapView(initialPreferences.mapView));
@@ -319,6 +330,7 @@ export function App() {
   const [serverProfileUpdatedAt, setServerProfileUpdatedAt] = React.useState<string | null>(null);
   const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad situačními daty.");
   const loadInFlightRef = React.useRef(false);
+  const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
   const profileHydratedRef = React.useRef(false);
   const profileLoadKeyRef = React.useRef<string | null>(null);
   const profileSaveTimerRef = React.useRef<number | undefined>(undefined);
@@ -631,6 +643,23 @@ export function App() {
         setSituationStatus(providerStatusFromCatalog(catalog, "sim.situation-data"));
         setSafetyStatus(providerStatusFromCatalog(catalog, "sim.safety-data"));
         setTakStatus(authToken ? providerStatusFromCatalog(catalog, "sim.tak-gateway") : "disabled");
+        setVisibleCatalogLayerIds((current) => {
+          const availableLayerIds = new Set(selectableCatalogLayers(catalog).map((layer) => layer.layerId));
+          if (catalogSelectionInitializedRef.current) {
+            return current.filter((layerId) => availableLayerIds.has(layerId));
+          }
+          catalogSelectionInitializedRef.current = true;
+          const fromLegacySelection = catalogLayerIdsFromLegacySelection(catalog, {
+            safetyLayerIds: visibleSafetyLayerIds,
+            situationLayerIds: visibleSituationLayerIds,
+            situationSourceIds: visibleSituationSourceIds,
+            takLayerIds: visibleTakLayerIds,
+            trackLayerIds: visibleTrackLayerIds
+          });
+          const defaults = defaultVisibleCatalogLayerIds(catalog);
+          const nextLayerIds = fromLegacySelection.length > 0 ? fromLegacySelection : defaults;
+          return nextLayerIds.filter((layerId) => availableLayerIds.has(layerId));
+        });
         if (initialPreferences.situationLayerIds === undefined) {
           const defaultLayers = nextSituationLayers
             .filter((layer) => layer.defaultVisible)
@@ -673,11 +702,20 @@ export function App() {
     };
   }, [apiBase, authToken, dataAccessReady, initialPreferences.safetyLayerIds, initialPreferences.situationLayerIds]);
 
-  const visibleSituationLayerKey = visibleSituationLayerIds.join(",");
-  const visibleSituationSourceKey = visibleSituationSourceIds.join(",");
-  const visibleSafetyLayerKey = visibleSafetyLayerIds.join(",");
-  const visibleTakLayerKey = visibleTakLayerIds.join(",");
-  const situationCoverageEnabled = visibleSituationLayerIds.includes("mobile_network");
+  const visibleCatalogLayerKey = visibleCatalogLayerIds.join(",");
+
+  React.useEffect(() => {
+    if (!mapCatalog) {
+      return;
+    }
+    const legacySelection = legacySelectionFromCatalogLayerIds(mapCatalog, visibleCatalogLayerIds);
+    setVisibleSituationLayerIds(legacySelection.situationLayerIds);
+    setVisibleSituationSourceIds(legacySelection.situationSourceIds);
+    setVisibleSafetyLayerIds(legacySelection.safetyLayerIds);
+    setVisibleTakLayerIds(legacySelection.takLayerIds);
+    setVisibleTrackLayerIds(legacySelection.trackLayerIds);
+    setSelectedLayer(legacySelection.trackLayerIds[0] ?? "air-situation");
+  }, [mapCatalog, visibleCatalogLayerKey]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -704,12 +742,7 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = mapCatalogLayerIdsForProviderSelection(
-        mapCatalog,
-        "sim.situation-data",
-        visibleSituationLayerIds,
-        visibleSituationSourceIds
-      );
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.situation-data", visibleCatalogLayerIds);
       if (catalogLayerIds.length === 0) {
         setSituationFeatures(null);
         setSituationStatus("disabled");
@@ -719,7 +752,7 @@ export function App() {
       setSituationStatus((current) => current === "online" ? "online" : "loading");
       fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
-        filters: buildCatalogFeatureFilters(catalogLayerIds, situationCoverageEnabled ? coverageTechnology : undefined),
+        filters: buildCatalogFeatureFilters(catalogLayerIds, hasMobileCatalogSelection(catalogLayerIds) ? coverageTechnology : undefined),
         layerIds: catalogLayerIds,
         limit: 250,
       })
@@ -749,7 +782,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, coverageTechnology, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, situationCoverageEnabled, visibleSituationLayerIds, visibleSituationLayerKey, visibleSituationSourceIds, visibleSituationSourceKey]);
+  }, [authToken, coverageTechnology, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -776,7 +809,7 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = mapCatalogLayerIdsForProviderSelection(mapCatalog, "sim.safety-data", visibleSafetyLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.safety-data", visibleCatalogLayerIds);
       if (catalogLayerIds.length === 0) {
         setSafetyFeatures(null);
         setSafetyStatus("disabled");
@@ -815,7 +848,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleSafetyLayerIds, visibleSafetyLayerKey]);
+  }, [authToken, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
 
   React.useEffect(() => {
     if (!authToken) {
@@ -843,7 +876,7 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = mapCatalogLayerIdsForProviderSelection(mapCatalog, "sim.tak-gateway", visibleTakLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.tak-gateway", visibleCatalogLayerIds);
       if (catalogLayerIds.length === 0) {
         setTakFeatures(null);
         setTakStatus("disabled");
@@ -883,7 +916,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, mapBounds, mapCatalog, mapView?.zoom, visibleTakLayerIds, visibleTakLayerKey]);
+  }, [authToken, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
 
   React.useEffect(() => {
     if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
@@ -1049,6 +1082,10 @@ export function App() {
     if (settings.mapClusterEnabled !== undefined) {
       setMapClusterEnabled(settings.mapClusterEnabled);
     }
+    if (settings.catalogLayerIds !== undefined) {
+      catalogSelectionInitializedRef.current = true;
+      setVisibleCatalogLayerIds(normalizeCatalogLayerIds(settings.catalogLayerIds));
+    }
     if (settings.showAlertAreas !== undefined) {
       setShowAlertAreas(settings.showAlertAreas);
     }
@@ -1107,6 +1144,7 @@ export function App() {
     alertRadiusKm,
     autoFit,
     autoRefresh,
+    catalogLayerIds: visibleCatalogLayerIds,
     domainScope,
     includeSynthetic,
     mapClusterEnabled,
@@ -1144,6 +1182,7 @@ export function App() {
     proximityAlertEnabled,
     refreshSeconds,
     visibleSafetyLayerIds,
+    visibleCatalogLayerIds,
     selectedLayer,
     coverageTechnology,
     showAlertAreas,
@@ -1161,7 +1200,10 @@ export function App() {
     profileHydratedRef.current = false;
     profileLoadKeyRef.current = null;
     skipNextPreferenceWriteRef.current = true;
-    applyPreferenceSettings(readUserPreferences(userStorageScope), { focusMap: true });
+    const scopedPreferences = readUserPreferences(userStorageScope);
+    catalogSelectionInitializedRef.current = scopedPreferences.catalogLayerIds !== undefined;
+    setVisibleCatalogLayerIds(normalizeCatalogLayerIds(scopedPreferences.catalogLayerIds));
+    applyPreferenceSettings(scopedPreferences, { focusMap: true });
     setViewProfiles(readViewProfiles(userStorageScope));
     setOfflineSnapshotState(initialOfflineSnapshotState(userStorageScope));
     setLastProfileName(null);
@@ -1497,6 +1539,82 @@ export function App() {
     });
   }
 
+  function applyCatalogLayerSelection(nextLayerIds: string[]) {
+    const normalizedLayerIds = normalizeCatalogLayerIds(nextLayerIds);
+    catalogSelectionInitializedRef.current = true;
+    setVisibleCatalogLayerIds(normalizedLayerIds);
+  }
+
+  function isCatalogLayerEnabled(layer: MapCatalogLayer): boolean {
+    return visibleCatalogLayerIds.includes(layer.layerId);
+  }
+
+  function isCatalogLayerOperable(layer: MapCatalogLayer): boolean {
+    return isImplementedCatalogLayer(layer);
+  }
+
+  function toggleCatalogLayer(layer: MapCatalogLayer) {
+    if (!isCatalogLayerOperable(layer)) {
+      return;
+    }
+    const enabled = isCatalogLayerEnabled(layer);
+    if (layer.layerId === "user.zone.alerts") {
+      if (aoiRules.length === 0 && !enabled) {
+        handleCreateAoiRuleFromMap();
+      }
+      setAlertPreferences((current) => ({
+        ...current,
+        aoiRules: (current.aoiRules ?? []).map(normalizeClientAoiRule).map((zone) => ({ ...zone, enabled: !enabled }))
+      }));
+    }
+    applyCatalogLayerSelection(toggleCatalogLayerId(visibleCatalogLayerIds, layer.layerId, !enabled));
+  }
+
+  function catalogLayerFeatureCount(layer: MapCatalogLayer): number {
+    const providerLayerIds = new Set(layer.query.providerLayerIds ?? []);
+    const providerSourceIds = new Set(layer.query.providerSourceIds ?? []);
+    const categoryIds = new Set(layer.query.categoryIds ?? []);
+    if (layer.query.providerId === "sim.situation-data") {
+      return (situationFeatures?.features ?? []).filter((feature) =>
+        providerLayerIds.has(feature.properties.layer)
+        && (providerSourceIds.size === 0 || providerSourceIds.has(feature.properties.sourceId))
+        && (categoryIds.size === 0 || categoryIds.has(feature.properties.category))
+      ).length;
+    }
+    if (layer.query.providerId === "sim.safety-data") {
+      return (safetyFeatures?.features ?? []).filter((feature) => providerLayerIds.has(feature.properties.layer)).length;
+    }
+    if (layer.query.providerId === "sim.tak-gateway") {
+      return (takFeatures?.features ?? []).filter((feature) => providerLayerIds.has(feature.properties.layer)).length;
+    }
+    if (layer.layerId === "flight.public.tracks") {
+      return visibleObjects.length;
+    }
+    if (layer.layerId === "user.zone.alerts") {
+      return aoiRules.filter((zone) => zone.enabled).length;
+    }
+    return 0;
+  }
+
+  function catalogLayerStatus(layer: MapCatalogLayer): SituationLayerStatus {
+    if (layer.query.providerId === "sim.situation-data") {
+      return situationStatus;
+    }
+    if (layer.query.providerId === "sim.safety-data") {
+      return safetyStatus;
+    }
+    if (layer.query.providerId === "sim.tak-gateway") {
+      return takStatus;
+    }
+    if (layer.layerId === "flight.public.tracks") {
+      return operatingMode === "OFFLINE" ? "degraded" : "online";
+    }
+    if (layer.layerId === "user.zone.alerts") {
+      return aoiRules.some((zone) => zone.enabled) ? "online" : "disabled";
+    }
+    return "disabled";
+  }
+
   async function acknowledgeServerAlert(alertId: string) {
     if (!authToken) {
       setLoadError("Potvrzení serverové výstrahy je dostupné po přihlášení přes Keycloak.");
@@ -1653,6 +1771,14 @@ export function App() {
     () => resolveOperatingMode({ browserOnline, health, loadError, offlineSnapshotState, streamStatus }),
     [browserOnline, health, loadError, offlineSnapshotState, streamStatus]
   );
+  const catalogGroupViews = React.useMemo(() => buildCatalogGroupViews(mapCatalog), [mapCatalog]);
+  const activeCatalogGroup = catalogGroupViews.find((view) => view.group.groupId === activeCatalogGroupId) ?? null;
+
+  React.useEffect(() => {
+    if (activeCatalogGroupId && !catalogGroupViews.some((view) => view.group.groupId === activeCatalogGroupId)) {
+      setActiveCatalogGroupId(null);
+    }
+  }, [activeCatalogGroupId, catalogGroupViews]);
 
   return (
     <main className="shell">
@@ -1702,109 +1828,41 @@ export function App() {
       <WorkspaceNavigator activeWorkspace={activeWorkspace} onChange={setActiveWorkspace} onOpenSettings={() => openSettings("map")} />
 
       <section className={`workspace workspace-${activeWorkspace}`}>
-        <aside className="panel left-panel">
-          <div className="refresh-row">
-            <div>
-              <span>Poslední načtení</span>
-              <strong>{lastLoadedAt ?? "čekám na data"}</strong>
-            </div>
-            <button className="icon-button" onClick={() => void load()} disabled={isLoading} title="Obnovit situační data">
-              <RefreshCw size={16} className={isLoading ? "spin" : ""} />
-            </button>
-          </div>
-          {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
-          <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} />
-
-          {showMapLayerControls ? (
+        <aside className={`panel left-panel ${showMapLayerControls ? "map-catalog-panel" : ""}`}>
+          {!showMapLayerControls ? (
             <>
-              <div className="workspace-module-card map-layer-card">
-                <PanelTitle icon={<Layers size={17} />} title="Operační vrstvy" />
-                <LayerSourceTree
-                  metrics={metrics}
-                  scopedObjects={scopedObjects}
-                  selectedLayerIds={visibleTrackLayerIds}
-                  onToggleTrackLayer={toggleTrackLayer}
-                />
-
-                <SituationLayerControls
-                  featureCount={situationFeatures?.summary.featureCount ?? 0}
-                  layers={situationLayers}
-                  sources={situationSources}
-                  status={situationStatus}
-                  coverageTechnology={coverageTechnology}
-                  visibleLayerIds={visibleSituationLayerIds}
-                  visibleSourceIds={visibleSituationSourceIds}
-                  warnings={situationWarnings}
-                  onToggle={toggleSituationLayer}
-                  onToggleSource={toggleSituationSource}
-                  onCoverageTechnologyChange={setCoverageTechnology}
-                />
-
-                <SafetyLayerControls
-                  config={safetyConfig}
-                  featureCount={safetyFeatures?.summary.featureCount ?? 0}
-                  layers={safetyLayers}
-                  sources={safetySources}
-                  status={safetyStatus}
-                  visibleLayerIds={visibleSafetyLayerIds}
-                  warnings={safetyWarnings}
-                  onToggle={toggleSafetyLayer}
-                />
-
-                <TakGatewayLayerControls
-                  featureCount={takFeatures?.summary.featureCount ?? 0}
-                  layers={takLayers}
-                  sources={takSources}
-                  status={takStatus}
-                  visibleLayerIds={visibleTakLayerIds}
-                  warnings={takWarnings}
-                  onToggle={toggleTakLayer}
-                />
-
-                <UserZoneLayerControls
-                  creationMode={zoneCreationMode}
-                  zones={aoiRules}
-                  onColorChange={handleAoiRuleColorChange}
-                  onCreateFromMap={handleCreateAoiRuleFromMap}
-                  onCreateFromUserLocation={handleCreateAoiRuleFromUserLocation}
-                  onDelete={handleAoiRuleDelete}
-                  onEnabledChange={handleAoiRuleEnabledChange}
-                  onRadiusChange={handleAoiRuleRadiusChange}
-                  onStartMapClickCreation={() => setZoneCreationMode((current) => !current)}
-                />
+              <div className="refresh-row">
+                <div>
+                  <span>Poslední načtení</span>
+                  <strong>{lastLoadedAt ?? "čekám na data"}</strong>
+                </div>
+                <button className="icon-button" onClick={() => void load()} disabled={isLoading} title="Obnovit situační data">
+                  <RefreshCw size={16} className={isLoading ? "spin" : ""} />
+                </button>
               </div>
-
-              <div className="control-block compact-control-block">
-                <PanelTitle icon={<SlidersHorizontal size={17} />} title="Rychlé filtry" />
-                <label className="search-field">
-                  <Search size={15} />
-                  <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="ID, typ, zdroj" />
-                </label>
-                <SegmentedControl
-                  label="Affiliation"
-                  options={[
-                    ["all", "Vše"],
-                    ["friend", "Vlastní"],
-                    ["hostile", "Rizikové"],
-                    ["unknown", "Neznámé"]
-                  ]}
-                  value={affiliationScope}
-                  onChange={(value) => setAffiliationScope(value as AffiliationScope)}
-                />
-                <SegmentedControl
-                  label="Domain"
-                  options={[
-                    ["all", "All"],
-                    ["AIR", "AIR"],
-                    ["LAND", "LAND"],
-                    ["RESCUE", "RESCUE"]
-                  ]}
-                  value={domainScope}
-                  onChange={(value) => setDomainScope(value as DomainScope)}
-                />
-              </div>
+              {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
+              <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} />
             </>
           ) : null}
+
+          {showMapLayerControls ? (
+            <CatalogLayerMenu
+              activeGroup={activeCatalogGroup}
+              groups={catalogGroupViews}
+              loadError={loadError}
+              statusLabel={missionModeLabel(operatingMode, offlineSnapshotState)}
+              onCloseDrawer={() => setActiveCatalogGroupId(null)}
+              onGroupSelect={(groupId) => setActiveCatalogGroupId((current) => current === groupId ? null : groupId)}
+              getFeatureCount={catalogLayerFeatureCount}
+              getLayerStatus={catalogLayerStatus}
+              isLayerEnabled={isCatalogLayerEnabled}
+              isLayerOperable={isCatalogLayerOperable}
+              onToggleLayer={toggleCatalogLayer}
+              coverageTechnology={coverageTechnology}
+              onCoverageTechnologyChange={setCoverageTechnology}
+            />
+          ) : null}
+          {showMapLayerControls ? <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} /> : null}
 
           {showDataControls ? (
             <>
@@ -3335,6 +3393,162 @@ function PanelTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
       {icon}
       <span>{title}</span>
     </div>
+  );
+}
+
+function CatalogLayerMenu({
+  activeGroup,
+  coverageTechnology,
+  getFeatureCount,
+  getLayerStatus,
+  groups,
+  isLayerEnabled,
+  isLayerOperable,
+  loadError,
+  statusLabel,
+  onCloseDrawer,
+  onCoverageTechnologyChange,
+  onGroupSelect,
+  onToggleLayer
+}: {
+  activeGroup: CatalogGroupView | null;
+  coverageTechnology: CoverageTechnology;
+  getFeatureCount: (layer: MapCatalogLayer) => number;
+  getLayerStatus: (layer: MapCatalogLayer) => SituationLayerStatus;
+  groups: CatalogGroupView[];
+  isLayerEnabled: (layer: MapCatalogLayer) => boolean;
+  isLayerOperable: (layer: MapCatalogLayer) => boolean;
+  loadError: string | null;
+  statusLabel: string;
+  onCloseDrawer: () => void;
+  onCoverageTechnologyChange: (technology: CoverageTechnology) => void;
+  onGroupSelect: (groupId: string) => void;
+  onToggleLayer: (layer: MapCatalogLayer) => void;
+}) {
+  const activeLayerCount = groups.reduce((sum, view) => sum + view.layers.filter(isLayerEnabled).length, 0);
+  return (
+    <div className="catalog-layer-menu" data-testid="catalog-layer-rail">
+      <div className="catalog-rail-status" title={`Režim ${statusLabel}`}>
+        <Layers size={18} />
+        <strong>{activeLayerCount}</strong>
+      </div>
+      <nav className="catalog-rail" aria-label="Katalog mapových vrstev">
+        {groups.map((view) => {
+          const enabledCount = view.layers.filter(isLayerEnabled).length;
+          const isActive = activeGroup?.group.groupId === view.group.groupId;
+          return (
+            <button
+              aria-label={view.group.label}
+              aria-pressed={isActive}
+              className={`catalog-rail-button ${isActive ? "active" : ""} ${enabledCount > 0 ? "has-enabled" : ""}`}
+              key={view.group.groupId}
+              onClick={() => onGroupSelect(view.group.groupId)}
+              title={view.group.label}
+              type="button"
+            >
+              {catalogGroupIcon(view.group.icon)}
+              <span>{enabledCount > 0 ? enabledCount : view.layers.length}</span>
+            </button>
+          );
+        })}
+      </nav>
+      {groups.length === 0 ? <div className="catalog-empty-state">Katalog se načítá</div> : null}
+      {activeGroup ? (
+        <CatalogLayerDrawer
+          coverageTechnology={coverageTechnology}
+          getFeatureCount={getFeatureCount}
+          getLayerStatus={getLayerStatus}
+          groupView={activeGroup}
+          isLayerEnabled={isLayerEnabled}
+          isLayerOperable={isLayerOperable}
+          loadError={loadError}
+          onClose={onCloseDrawer}
+          onCoverageTechnologyChange={onCoverageTechnologyChange}
+          onToggleLayer={onToggleLayer}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function CatalogLayerDrawer({
+  coverageTechnology,
+  getFeatureCount,
+  getLayerStatus,
+  groupView,
+  isLayerEnabled,
+  isLayerOperable,
+  loadError,
+  onClose,
+  onCoverageTechnologyChange,
+  onToggleLayer
+}: {
+  coverageTechnology: CoverageTechnology;
+  getFeatureCount: (layer: MapCatalogLayer) => number;
+  getLayerStatus: (layer: MapCatalogLayer) => SituationLayerStatus;
+  groupView: CatalogGroupView;
+  isLayerEnabled: (layer: MapCatalogLayer) => boolean;
+  isLayerOperable: (layer: MapCatalogLayer) => boolean;
+  loadError: string | null;
+  onClose: () => void;
+  onCoverageTechnologyChange: (technology: CoverageTechnology) => void;
+  onToggleLayer: (layer: MapCatalogLayer) => void;
+}) {
+  const enabledCount = groupView.layers.filter(isLayerEnabled).length;
+  return (
+    <section className="catalog-layer-drawer" data-testid="catalog-layer-drawer">
+      <div className="catalog-drawer-header">
+        <div>
+          <span>Katalog vrstev</span>
+          <strong>{groupView.group.label}</strong>
+        </div>
+        <button aria-label="Zavřít katalog vrstev" onClick={onClose} type="button">
+          <X size={18} />
+        </button>
+      </div>
+      <div className="catalog-drawer-summary">
+        <ReadinessRow label="Zapnuto" value={`${enabledCount}/${groupView.layers.length}`} tone={enabledCount > 0 ? "ok" : "neutral"} />
+      </div>
+      {loadError ? <div className="catalog-warning">API chyba: {loadError}</div> : null}
+      <div className="catalog-layer-list">
+        {groupView.layers.map((layer) => {
+          const enabled = isLayerEnabled(layer);
+          const operable = isLayerOperable(layer);
+          const status = getLayerStatus(layer);
+          return (
+            <div className={`catalog-layer-row ${enabled ? "enabled" : ""} ${!operable ? "disabled" : ""}`} key={layer.layerId}>
+              <label title={layer.description ?? layer.label}>
+                <input checked={enabled} disabled={!operable} onChange={() => onToggleLayer(layer)} type="checkbox" />
+                <span>
+                  <strong>{layer.label}</strong>
+                  <small>{catalogLayerHint(layer, operable)}</small>
+                </span>
+                <em>{getFeatureCount(layer)}</em>
+              </label>
+              <div className="catalog-layer-meta">
+                <span className={`catalog-status ${status}`}>{situationStatusLabel(status)}</span>
+                <span>{catalogLayerProviderLabel(layer)}</span>
+              </div>
+              {enabled && layer.filters?.some((filter) => filter.filterId === "technology") ? (
+                <div className="catalog-technology-control" aria-label={`Technologie vrstvy ${layer.label}`}>
+                  {coverageTechnologyOptions.map((technology) => (
+                    <button
+                      aria-pressed={coverageTechnology === technology}
+                      className={coverageTechnology === technology ? "active" : ""}
+                      key={technology}
+                      onClick={() => onCoverageTechnologyChange(technology)}
+                      type="button"
+                    >
+                      {technology}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -5153,6 +5367,57 @@ function workspaceIcon(module: WorkspaceModule): React.ReactNode {
   }
 }
 
+function catalogGroupIcon(icon: string | undefined, size = 19): React.ReactNode {
+  switch (icon) {
+    case "alert-triangle":
+      return <AlertTriangle size={size} />;
+    case "building-2":
+      return <Building2 size={size} />;
+    case "cloud-sun":
+      return <CloudSun size={size} />;
+    case "database":
+      return <Database size={size} />;
+    case "map-pin":
+      return <MapPin size={size} />;
+    case "plane":
+      return <Plane size={size} />;
+    case "radio-tower":
+      return <RadioTower size={size} />;
+    case "shield-check":
+      return <ShieldCheck size={size} />;
+    default:
+      return <Layers size={size} />;
+  }
+}
+
+function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
+  if (!operable) {
+    return "Připraveno v katalogu, zobrazení se doplní v další integraci";
+  }
+  const geometry = layer.geometryTypes && layer.geometryTypes.length > 0 ? layer.geometryTypes.join("/") : "data";
+  const cadence = typeof layer.refreshSeconds === "number" ? `${layer.refreshSeconds}s` : "dle zdroje";
+  return `${geometry} · ${cadence}`;
+}
+
+function catalogLayerProviderLabel(layer: MapCatalogLayer): string {
+  if (layer.query.providerId === "sim.situation-data") {
+    return "Situační data";
+  }
+  if (layer.query.providerId === "sim.safety-data") {
+    return "Bezpečnost";
+  }
+  if (layer.query.providerId === "sim.tak-gateway") {
+    return "Partnerský feed";
+  }
+  if (layer.query.providerId === "cop.tracks") {
+    return "Live tracky";
+  }
+  if (layer.query.providerId === "cop.user-profile") {
+    return "Uživatelský profil";
+  }
+  return layer.query.providerId;
+}
+
 function readInitialMapToggle(name: "history" | "prediction", fallback: boolean): boolean {
   if (typeof window === "undefined") {
     return fallback;
@@ -5187,6 +5452,10 @@ function normalizeTrackLayerIds(value: string[] | undefined, fallback: CopLayer 
   return Array.from(new Set(layers));
 }
 
+function normalizeCatalogLayerIds(value: string[] | undefined): string[] {
+  return Array.from(new Set((value ?? []).filter((item) => typeof item === "string" && item.trim().length > 0)));
+}
+
 function isCopLayer(value: string): value is CopLayer {
   return copLayerIds.includes(value as CopLayer);
 }
@@ -5215,6 +5484,195 @@ function readInitialAffiliationScope(value: string | undefined): AffiliationScop
 }
 
 type CatalogProviderId = "sim.safety-data" | "sim.situation-data" | "sim.tak-gateway";
+
+function buildCatalogGroupViews(catalog: MapCatalogResponse | null): CatalogGroupView[] {
+  if (!catalog) {
+    return [];
+  }
+  const layers = selectableCatalogLayers(catalog);
+  return catalog.groups
+    .map((group) => ({
+      group,
+      layers: layers
+        .filter((layer) => layer.groupId === group.groupId)
+        .sort((a, b) => catalogLayerSortKey(a) - catalogLayerSortKey(b) || a.label.localeCompare(b.label, "cs"))
+    }))
+    .filter((view) => view.layers.length > 0)
+    .sort((a, b) => a.group.order - b.group.order || a.group.label.localeCompare(b.group.label, "cs"));
+}
+
+function selectableCatalogLayers(catalog: MapCatalogResponse): MapCatalogLayer[] {
+  return catalog.layers.filter((layer) =>
+    layer.selectable
+    && layer.audience !== "diagnostic"
+    && layer.role !== "diagnostic"
+    && layer.kind !== "mvt_tiles"
+    && layer.kind !== "raster_tiles"
+  );
+}
+
+function catalogLayerSortKey(layer: MapCatalogLayer): number {
+  if (layer.defaultVisible) {
+    return 0;
+  }
+  if (layer.role === "primary") {
+    return 10;
+  }
+  if (layer.role === "overlay") {
+    return 20;
+  }
+  if (layer.role === "reference") {
+    return 30;
+  }
+  return 40;
+}
+
+function isImplementedCatalogLayer(layer: MapCatalogLayer): boolean {
+  return (layer.query.mode === "bbox"
+    && (layer.query.providerId === "sim.situation-data"
+      || layer.query.providerId === "sim.safety-data"
+      || layer.query.providerId === "sim.tak-gateway"))
+    || layer.layerId === "flight.public.tracks"
+    || layer.layerId === "user.zone.alerts";
+}
+
+function defaultVisibleCatalogLayerIds(catalog: MapCatalogResponse): string[] {
+  return selectableCatalogLayers(catalog)
+    .filter((layer) => layer.defaultVisible && isImplementedCatalogLayer(layer) && layer.layerId !== "user.zone.alerts")
+    .map((layer) => layer.layerId);
+}
+
+function toggleCatalogLayerId(current: string[], layerId: string, enabled: boolean): string[] {
+  const selected = new Set(current);
+  if (enabled) {
+    selected.add(layerId);
+  } else {
+    selected.delete(layerId);
+  }
+  return Array.from(selected);
+}
+
+function catalogLayerIdsForProviderSelection(catalog: MapCatalogResponse, providerId: CatalogProviderId, selectedLayerIds: string[]): string[] {
+  const selected = new Set(selectedLayerIds);
+  return catalog.layers
+    .filter((layer) => selected.has(layer.layerId) && isImplementedCatalogLayer(layer))
+    .filter((layer) => layer.query.mode === "bbox" && layer.query.providerId === providerId)
+    .map((layer) => layer.layerId);
+}
+
+function hasMobileCatalogSelection(layerIds: string[]): boolean {
+  return layerIds.some((layerId) => layerId.includes("mobile"));
+}
+
+function catalogLayerIdsFromLegacySelection(
+  catalog: MapCatalogResponse,
+  selection: {
+    safetyLayerIds: SafetyLayerId[];
+    situationLayerIds: SituationLayerId[];
+    situationSourceIds: string[];
+    takLayerIds: TakLayerId[];
+    trackLayerIds: CopLayer[];
+  }
+): string[] {
+  return selectableCatalogLayers(catalog)
+    .filter(isImplementedCatalogLayer)
+    .filter((layer) => catalogLayerMatchesLegacySelection(layer, selection))
+    .map((layer) => layer.layerId);
+}
+
+function catalogLayerMatchesLegacySelection(
+  layer: MapCatalogLayer,
+  selection: {
+    safetyLayerIds: SafetyLayerId[];
+    situationLayerIds: SituationLayerId[];
+    situationSourceIds: string[];
+    takLayerIds: TakLayerId[];
+    trackLayerIds: CopLayer[];
+  }
+): boolean {
+  const providerLayerIds = layer.query.providerLayerIds ?? [];
+  const providerSourceIds = layer.query.providerSourceIds ?? [];
+  if (layer.layerId === "flight.public.tracks") {
+    return selection.trackLayerIds.length > 0;
+  }
+  if (layer.layerId === "user.zone.alerts") {
+    return false;
+  }
+  if (layer.query.providerId === "sim.situation-data") {
+    const layerMatch = providerLayerIds.some((layerId) => isSituationLayerId(layerId) && selection.situationLayerIds.includes(layerId));
+    const sourceMatch = selection.situationSourceIds.length === 0
+      || providerSourceIds.length === 0
+      || providerSourceIds.some((sourceId) => selection.situationSourceIds.includes(sourceId));
+    return layerMatch && sourceMatch;
+  }
+  if (layer.query.providerId === "sim.safety-data") {
+    return providerLayerIds.some((layerId) => isSafetyLayerId(layerId) && selection.safetyLayerIds.includes(layerId));
+  }
+  if (layer.query.providerId === "sim.tak-gateway") {
+    return providerLayerIds.some((layerId) => isTakLayerId(layerId) && selection.takLayerIds.includes(layerId));
+  }
+  return false;
+}
+
+function legacySelectionFromCatalogLayerIds(
+  catalog: MapCatalogResponse,
+  catalogLayerIds: string[]
+): {
+  safetyLayerIds: SafetyLayerId[];
+  situationLayerIds: SituationLayerId[];
+  situationSourceIds: string[];
+  takLayerIds: TakLayerId[];
+  trackLayerIds: CopLayer[];
+} {
+  const selected = new Set(catalogLayerIds);
+  const situationLayerIds = new Set<SituationLayerId>();
+  const situationSourceIds = new Set<string>();
+  const safetyLayerIds = new Set<SafetyLayerId>();
+  const takLayerIds = new Set<TakLayerId>();
+  let tracksEnabled = false;
+
+  for (const layer of catalog.layers) {
+    if (!selected.has(layer.layerId) || !isImplementedCatalogLayer(layer)) {
+      continue;
+    }
+    if (layer.layerId === "flight.public.tracks") {
+      tracksEnabled = true;
+      continue;
+    }
+    if (layer.query.providerId === "sim.situation-data") {
+      for (const providerLayerId of layer.query.providerLayerIds ?? []) {
+        if (isSituationLayerId(providerLayerId)) {
+          situationLayerIds.add(providerLayerId);
+        }
+      }
+      for (const sourceId of layer.query.providerSourceIds ?? []) {
+        situationSourceIds.add(sourceId);
+      }
+    }
+    if (layer.query.providerId === "sim.safety-data") {
+      for (const providerLayerId of layer.query.providerLayerIds ?? []) {
+        if (isSafetyLayerId(providerLayerId)) {
+          safetyLayerIds.add(providerLayerId);
+        }
+      }
+    }
+    if (layer.query.providerId === "sim.tak-gateway") {
+      for (const providerLayerId of layer.query.providerLayerIds ?? []) {
+        if (isTakLayerId(providerLayerId)) {
+          takLayerIds.add(providerLayerId);
+        }
+      }
+    }
+  }
+
+  return {
+    safetyLayerIds: normalizeSafetyLayerIds(Array.from(safetyLayerIds)),
+    situationLayerIds: normalizeSituationLayerIds(Array.from(situationLayerIds)),
+    situationSourceIds: sanitizeCitizenSituationSourceIds(Array.from(situationSourceIds)),
+    takLayerIds: normalizeTakLayerIds(Array.from(takLayerIds)),
+    trackLayerIds: tracksEnabled ? ["air-situation"] : []
+  };
+}
 
 function providerStatusFromCatalog(catalog: MapCatalogResponse, providerId: CatalogProviderId): SituationLayerStatus {
   const status = catalog.providers.find((provider) => provider.providerId === providerId)?.status;

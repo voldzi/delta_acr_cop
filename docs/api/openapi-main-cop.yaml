@@ -1740,6 +1740,8 @@ components:
       properties:
         groupId:
           type: string
+        icon:
+          type: string
         label:
           type: string
         order:

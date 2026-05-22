@@ -2872,6 +2872,7 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     alertRadiusKm: optionalFiniteNumber(value.alertRadiusKm, 1, 50),
     autoFit: optionalBoolean(value.autoFit),
     autoRefresh: optionalBoolean(value.autoRefresh),
+    catalogLayerIds: normalizeStringList(value.catalogLayerIds, 120, 140),
     domainScope: optionalString(value.domainScope, ["all", "AIR", "LAND", "SEA", "RESCUE", "OTHER"]),
     includeSynthetic: optionalBoolean(value.includeSynthetic),
     mapClusterEnabled: optionalBoolean(value.mapClusterEnabled),

@@ -148,11 +148,13 @@ Response:
     {
       "groupId": "risks",
       "label": "Rizika a výstrahy",
+      "icon": "alert-triangle",
       "order": 10,
       "children": [
         {
           "groupId": "risks.weather",
           "label": "Počasí",
+          "icon": "cloud-sun",
           "order": 20
         }
       ]
@@ -232,6 +234,7 @@ Required fields:
 Recommended fields:
 
 - `description`
+- `icon`
 - `geometryTypes`
 - `minZoom`
 - `maxZoom`

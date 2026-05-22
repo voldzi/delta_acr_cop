@@ -51,6 +51,9 @@ describe("COP web dashboard", () => {
           updatedAt: "2026-05-19T08:00:00Z"
         });
       }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
       if (url.includes("/api/v1/sources/health")) {
         return jsonResponse({
           items: [
@@ -153,10 +156,11 @@ describe("COP web dashboard", () => {
     expect(screen.getByText("SFAP-----------")).toBeTruthy();
     expect(screen.getByText("SIM")).toBeTruthy();
     expect(screen.queryByText("Source Registry")).toBeNull();
-    const airSituationGroup = screen.getByText("Air situation").closest(".layer-source-group") as HTMLElement;
-    const trackLayerCheckboxes = within(airSituationGroup).getAllByRole("checkbox") as HTMLInputElement[];
-    expect(trackLayerCheckboxes[0]?.checked).toBe(true);
-    expect(trackLayerCheckboxes.slice(1).every((checkbox) => checkbox.checked && checkbox.disabled)).toBe(true);
+    expect(screen.getByTestId("catalog-layer-rail")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Letecký provoz/u }));
+    const catalogDrawer = screen.getByTestId("catalog-layer-drawer");
+    expect(within(catalogDrawer).getByText("Veřejné lety")).toBeTruthy();
+    expect((within(catalogDrawer).getByRole("checkbox", { name: /Veřejné lety/u }) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByRole("button", { name: /Mapa/u }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: /Data/u }));
     expect(screen.getByText("Zobrazit simulovaná data")).toBeTruthy();
@@ -283,9 +287,71 @@ describe("COP web dashboard", () => {
 
     await waitFor(() => expect(screen.getAllByText("OFFLINE_TRACK-001").length).toBeGreaterThan(0));
     expect(screen.getByText("Degraded read-only fallback")).toBeTruthy();
-    expect(screen.getByText(/Zobrazuji lokální read-only snapshot/u)).toBeTruthy();
+    expect(screen.getByText(/Snapshot/u)).toBeTruthy();
   });
 });
+
+function testMapCatalogResponse(): unknown {
+  return {
+    catalogVersion: "map-catalog-v1",
+    generatedAt: "2026-05-19T08:00:00Z",
+    groups: [
+      { groupId: "risks", icon: "alert-triangle", label: "Rizika a výstrahy", order: 10 },
+      { groupId: "risks.weather", icon: "cloud-sun", label: "Počasí", order: 20, parentGroupId: "risks" },
+      { groupId: "flight", icon: "plane", label: "Letecký provoz", order: 50 }
+    ],
+    layers: [
+      {
+        audience: "public",
+        defaultVisible: true,
+        geometryTypes: ["Point"],
+        groupId: "flight",
+        kind: "track_stream",
+        label: "Veřejné lety",
+        layerId: "flight.public.tracks",
+        maxZoom: 18,
+        minZoom: 4,
+        query: {
+          mode: "stream",
+          providerId: "cop.tracks",
+          streamId: "cop.live"
+        },
+        refreshSeconds: 5,
+        role: "primary",
+        selectable: true,
+        styleProfile: "flight-public-track-v1"
+      },
+      {
+        audience: "public",
+        defaultVisible: true,
+        geometryTypes: ["Point"],
+        groupId: "risks.weather",
+        kind: "vector_features",
+        label: "Počasí",
+        layerId: "public.weather.current",
+        query: {
+          maxFeatures: 50,
+          mode: "bbox",
+          providerId: "sim.situation-data",
+          providerLayerIds: ["weather"],
+          providerSourceIds: ["open_meteo"],
+          streamId: "cop.features"
+        },
+        refreshSeconds: 600,
+        role: "primary",
+        selectable: true,
+        styleProfile: "weather-current-v1"
+      }
+    ],
+    locale: "cs-CZ",
+    providers: [
+      { label: "SIM situation data", providerId: "sim.situation-data", status: "online" },
+      { label: "COP track stream", providerId: "cop.tracks", status: "online" }
+    ],
+    sources: [],
+    warnings: []
+  };
+}
 
 function jsonResponse(body: unknown): Response {
   return {

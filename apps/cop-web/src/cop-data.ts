@@ -536,6 +536,7 @@ export interface MapCatalogProvider {
 
 export interface MapCatalogGroup {
   groupId: string;
+  icon?: string;
   label: string;
   order: number;
   parentGroupId?: string;

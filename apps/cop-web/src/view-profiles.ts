@@ -12,6 +12,7 @@ export interface ViewProfileSettings {
   alertRadiusKm?: number;
   autoFit?: boolean;
   autoRefresh?: boolean;
+  catalogLayerIds?: string[];
   domainScope?: string;
   includeSynthetic?: boolean;
   mapClusterEnabled?: boolean;
@@ -240,6 +241,7 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     alertRadiusKm: optionalNumber(value.alertRadiusKm),
     autoFit: optionalBoolean(value.autoFit),
     autoRefresh: optionalBoolean(value.autoRefresh),
+    catalogLayerIds: optionalStringArray(value.catalogLayerIds),
     domainScope: optionalString(value.domainScope),
     includeSynthetic: optionalBoolean(value.includeSynthetic),
     mapClusterEnabled: optionalBoolean(value.mapClusterEnabled),
