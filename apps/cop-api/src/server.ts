@@ -3140,8 +3140,9 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     predictionMinutes: optionalFiniteNumber(value.predictionMinutes, 2, 20),
     predictionMode: optionalString(value.predictionMode, ["adaptive", "telemetry", "history", "maneuver"]),
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
+    publicFlightSymbolMode: optionalString(value.publicFlightSymbolMode, ["civil", "standard"]),
     refreshSeconds: optionalFiniteNumber(value.refreshSeconds, 1, 60),
-    selectedLayer: optionalString(value.selectedLayer, ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
+    selectedLayer: optionalString(value.selectedLayer, ["air-situation", "sim-air", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
     showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
@@ -3149,7 +3150,8 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     situationLayerIds: optionalStringArray(value.situationLayerIds, ["weather", "ground", "mobile", "mobile_network", "mobile_coverage", "traffic", "air_quality"]),
     situationSourceIds: normalizeStringList(value.situationSourceIds, 32, 80),
     takLayerIds: optionalStringArray(value.takLayerIds, ["mobile", "ground", "traffic"]),
-    trackLayerIds: optionalStringArray(value.trackLayerIds, ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
+    trackLayerIds: optionalStringArray(value.trackLayerIds, ["air-situation", "sim-air", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
+    trackHistoryDisplayMode: optionalString(value.trackHistoryDisplayMode, ["all", "selected"]),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600)
   });

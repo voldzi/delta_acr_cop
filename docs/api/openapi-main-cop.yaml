@@ -1374,6 +1374,9 @@ components:
           enum: [adaptive, telemetry, history, maneuver]
         proximityAlertEnabled:
           type: boolean
+        publicFlightSymbolMode:
+          type: string
+          enum: [civil, standard]
         refreshSeconds:
           type: number
           minimum: 1
@@ -1385,7 +1388,7 @@ components:
             enum: [warnings, flood]
         selectedLayer:
           type: string
-          enum: [air-situation, uav, friendly, foreign, public-flights, data-quality]
+          enum: [air-situation, sim-air, uav, friendly, foreign, public-flights, data-quality]
         showAlertAreas:
           type: boolean
         showHistory:
@@ -1401,7 +1404,10 @@ components:
           type: array
           items:
             type: string
-            enum: [air-situation, uav, friendly, foreign, public-flights, data-quality]
+            enum: [air-situation, sim-air, uav, friendly, foreign, public-flights, data-quality]
+        trackHistoryDisplayMode:
+          type: string
+          enum: [all, selected]
         trackHistoryLimit:
           type: number
           minimum: 1

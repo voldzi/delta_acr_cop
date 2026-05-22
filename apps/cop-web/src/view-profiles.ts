@@ -1,6 +1,6 @@
 import type { CopLayer } from "./cop-data";
 import type { PredictionMode } from "./track-history";
-import { normalizeMapView, type MapViewState } from "./user-preferences";
+import { normalizeMapView, type MapViewState, type PublicFlightSymbolMode, type TrackHistoryDisplayMode } from "./user-preferences";
 
 const customProfilesKey = "cop.user.viewProfiles.v1";
 
@@ -21,6 +21,7 @@ export interface ViewProfileSettings {
   predictionMinutes?: number;
   predictionMode?: PredictionMode;
   proximityAlertEnabled?: boolean;
+  publicFlightSymbolMode?: PublicFlightSymbolMode;
   refreshSeconds?: number;
   safetyLayerIds?: string[];
   selectedLayer?: CopLayer;
@@ -32,6 +33,7 @@ export interface ViewProfileSettings {
   situationSourceIds?: string[];
   takLayerIds?: string[];
   trackLayerIds?: CopLayer[];
+  trackHistoryDisplayMode?: TrackHistoryDisplayMode;
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
 }
@@ -66,6 +68,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
+      trackHistoryDisplayMode: "all",
     situationLayerIds: ["weather"],
     takLayerIds: [],
     trackHistoryLimit: 120,
@@ -93,6 +96,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
+      trackHistoryDisplayMode: "all",
     situationLayerIds: ["weather"],
     takLayerIds: [],
     trackHistoryLimit: 72,
@@ -120,6 +124,8 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
+      publicFlightSymbolMode: "civil",
+      trackHistoryDisplayMode: "selected",
     situationLayerIds: ["weather", "traffic"],
     takLayerIds: [],
     trackHistoryLimit: 120,
@@ -146,6 +152,7 @@ export const builtInViewProfiles: ViewProfile[] = [
       showAlertAreas: true,
       showHistory: false,
       showPrediction: false,
+      trackHistoryDisplayMode: "all",
       situationLayerIds: ["weather", "mobile"],
       takLayerIds: []
     }
@@ -250,6 +257,7 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     predictionMinutes: optionalNumber(value.predictionMinutes),
     predictionMode: normalizePredictionMode(value.predictionMode),
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
+    publicFlightSymbolMode: normalizePublicFlightSymbolMode(value.publicFlightSymbolMode),
     refreshSeconds: optionalNumber(value.refreshSeconds),
     safetyLayerIds: optionalStringArray(value.safetyLayerIds),
     selectedLayer: normalizeLayer(value.selectedLayer),
@@ -260,13 +268,14 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     situationSourceIds: optionalStringArray(value.situationSourceIds),
     takLayerIds: optionalStringArray(value.takLayerIds),
     trackLayerIds: optionalLayerArray(value.trackLayerIds),
+    trackHistoryDisplayMode: normalizeTrackHistoryDisplayMode(value.trackHistoryDisplayMode),
     trackHistoryLimit: optionalNumber(value.trackHistoryLimit),
     trackHistoryWindowSeconds: optionalNumber(value.trackHistoryWindowSeconds)
   };
 }
 
 function normalizeLayer(value: unknown): CopLayer | undefined {
-  return value === "air-situation" || value === "uav" || value === "friendly" || value === "foreign" || value === "public-flights" || value === "data-quality"
+  return value === "air-situation" || value === "sim-air" || value === "uav" || value === "friendly" || value === "foreign" || value === "public-flights" || value === "data-quality"
     ? value
     : undefined;
 }
@@ -281,6 +290,14 @@ function optionalLayerArray(value: unknown): CopLayer[] | undefined {
 
 function normalizePredictionMode(value: unknown): PredictionMode | undefined {
   return value === "adaptive" || value === "telemetry" || value === "history" || value === "maneuver" ? value : undefined;
+}
+
+function normalizePublicFlightSymbolMode(value: unknown): PublicFlightSymbolMode | undefined {
+  return value === "civil" || value === "standard" ? value : undefined;
+}
+
+function normalizeTrackHistoryDisplayMode(value: unknown): TrackHistoryDisplayMode | undefined {
+  return value === "all" || value === "selected" ? value : undefined;
 }
 
 function normalizeOptionalWorkspaceModule(value: unknown): WorkspaceModule | undefined {

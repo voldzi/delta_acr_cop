@@ -58,6 +58,7 @@ import {
   copLayerIds,
   getDataQualityCount,
   getPublicFlightCount,
+  getSimulatedAirCount,
   getUavCount,
   isPublicFlightObject,
   saveUserProfile,
@@ -138,6 +139,8 @@ import {
   readUserPreferences,
   writeUserPreferences,
   type MapViewState,
+  type PublicFlightSymbolMode,
+  type TrackHistoryDisplayMode,
   type UserPreferences
 } from "./user-preferences";
 import {
@@ -270,6 +273,12 @@ export function App() {
   const [showHistory, setShowHistory] = React.useState(() => readInitialMapToggle("history", initialPreferences.showHistory ?? false));
   const [showPrediction, setShowPrediction] = React.useState(() =>
     readInitialMapToggle("prediction", initialPreferences.showPrediction ?? false)
+  );
+  const [trackHistoryDisplayMode, setTrackHistoryDisplayMode] = React.useState<TrackHistoryDisplayMode>(() =>
+    normalizeTrackHistoryDisplayMode(initialPreferences.trackHistoryDisplayMode)
+  );
+  const [publicFlightSymbolMode, setPublicFlightSymbolMode] = React.useState<PublicFlightSymbolMode>(() =>
+    normalizePublicFlightSymbolMode(initialPreferences.publicFlightSymbolMode)
   );
   const [mapClusterEnabled, setMapClusterEnabled] = React.useState(initialPreferences.mapClusterEnabled ?? false);
   const [showAlertAreas, setShowAlertAreas] = React.useState(initialPreferences.showAlertAreas ?? false);
@@ -1247,6 +1256,12 @@ export function App() {
     if (settings.showHistory !== undefined) {
       setShowHistory(settings.showHistory);
     }
+    if (settings.trackHistoryDisplayMode !== undefined) {
+      setTrackHistoryDisplayMode(normalizeTrackHistoryDisplayMode(settings.trackHistoryDisplayMode));
+    }
+    if (settings.publicFlightSymbolMode !== undefined) {
+      setPublicFlightSymbolMode(normalizePublicFlightSymbolMode(settings.publicFlightSymbolMode));
+    }
     if (settings.showPrediction !== undefined) {
       setShowPrediction(settings.showPrediction);
     }
@@ -1324,6 +1339,7 @@ export function App() {
     predictionMinutes,
     predictionMode,
     proximityAlertEnabled,
+    publicFlightSymbolMode,
     refreshSeconds,
     safetyLayerIds: visibleSafetyLayerIds,
     selectedLayer,
@@ -1335,6 +1351,7 @@ export function App() {
     situationSourceIds: visibleSituationSourceIds,
     takLayerIds: visibleTakLayerIds,
     trackLayerIds: visibleTrackLayerIds,
+    trackHistoryDisplayMode,
     trackHistoryLimit,
     trackHistoryWindowSeconds
   }), [
@@ -1351,6 +1368,7 @@ export function App() {
     predictionMinutes,
     predictionMode,
     proximityAlertEnabled,
+    publicFlightSymbolMode,
     refreshSeconds,
     visibleSafetyLayerIds,
     visibleCatalogLayerIds,
@@ -1363,6 +1381,7 @@ export function App() {
     visibleSituationSourceIds,
     visibleTakLayerIds,
     visibleTrackLayerIds,
+    trackHistoryDisplayMode,
     trackHistoryLimit,
     trackHistoryWindowSeconds
   ]);
@@ -1769,7 +1788,7 @@ export function App() {
       return (takFeatures?.features ?? []).filter((feature) => providerLayerIds.has(feature.properties.layer)).length;
     }
     if (layer.layerId === "flight.public.tracks") {
-      return visibleObjects.length;
+      return visibleObjects.filter(isPublicFlightObject).length;
     }
     if (layer.layerId === "user.zone.alerts") {
       return aoiRules.filter((zone) => zone.enabled).length;
@@ -1928,6 +1947,7 @@ export function App() {
         predictionMinutes,
         predictionMode,
         proximityAlertEnabled,
+        publicFlightSymbolMode,
         refreshSeconds,
         safetyLayerIds: visibleSafetyLayerIds,
         selectedLayer,
@@ -1938,6 +1958,7 @@ export function App() {
         situationSourceIds: visibleSituationSourceIds,
         takLayerIds: visibleTakLayerIds,
         trackLayerIds: visibleTrackLayerIds,
+        trackHistoryDisplayMode,
         trackHistoryLimit,
         trackHistoryWindowSeconds
       }
@@ -2193,7 +2214,9 @@ export function App() {
               selectedObjectId={explicitlySelectedObject?.objectId}
               showHistory={showHistory}
               showPrediction={showPrediction}
+              trackHistoryDisplayMode={trackHistoryDisplayMode}
               trackHistory={replayTrackHistory}
+              publicFlightSymbolMode={publicFlightSymbolMode}
               predictionMinutes={predictionMinutes}
               predictionMode={predictionMode}
               autoFit={autoFit}
@@ -2472,6 +2495,7 @@ export function App() {
           minConfidence={minConfidence}
           predictionMinutes={predictionMinutes}
           predictionMode={predictionMode}
+          publicFlightSymbolMode={publicFlightSymbolMode}
           profileSyncError={profileSyncError}
           profileSyncStatus={profileSyncStatus}
           proximityAlertEnabled={proximityAlertEnabled}
@@ -2481,6 +2505,7 @@ export function App() {
           showAlertAreas={showAlertAreas}
           showHistory={showHistory}
           showPrediction={showPrediction}
+          trackHistoryDisplayMode={trackHistoryDisplayMode}
           trackHistoryLimit={trackHistoryLimit}
           trackHistoryWindowSeconds={trackHistoryWindowSeconds}
           onAlertRadiusKmChange={setAlertRadiusKm}
@@ -2505,12 +2530,14 @@ export function App() {
           onMapClusterEnabledChange={setMapClusterEnabled}
           onPredictionMinutesChange={setPredictionMinutes}
           onPredictionModeChange={setPredictionMode}
+          onPublicFlightSymbolModeChange={setPublicFlightSymbolMode}
           onProximityAlertEnabledChange={(value) => void handleProximityAlertToggle(value)}
           onRefreshSecondsChange={setRefreshSeconds}
           onShowAlertAreasChange={setShowAlertAreas}
           onShowHistoryChange={setShowHistory}
           onShowPredictionChange={setShowPrediction}
           onTabChange={setSettingsTab}
+          onTrackHistoryDisplayModeChange={setTrackHistoryDisplayMode}
           onTrackHistoryLimitChange={setTrackHistoryLimit}
           onTrackHistoryWindowSecondsChange={setTrackHistoryWindowSeconds}
           onLogin={loginOperator}
@@ -3434,6 +3461,7 @@ function SettingsDrawer({
   minConfidence,
   predictionMinutes,
   predictionMode,
+  publicFlightSymbolMode,
   profileSyncError,
   profileSyncStatus,
   proximityAlertEnabled,
@@ -3442,6 +3470,7 @@ function SettingsDrawer({
   showAlertAreas,
   showHistory,
   showPrediction,
+  trackHistoryDisplayMode,
   trackHistoryLimit,
   trackHistoryWindowSeconds,
   onAlertRadiusKmChange,
@@ -3456,12 +3485,14 @@ function SettingsDrawer({
   onMinConfidenceChange,
   onPredictionMinutesChange,
   onPredictionModeChange,
+  onPublicFlightSymbolModeChange,
   onProximityAlertEnabledChange,
   onRefreshSecondsChange,
   onShowAlertAreasChange,
   onShowHistoryChange,
   onShowPredictionChange,
   onTabChange,
+  onTrackHistoryDisplayModeChange,
   onTrackHistoryLimitChange,
   onTrackHistoryWindowSecondsChange,
   onLogin,
@@ -3478,6 +3509,7 @@ function SettingsDrawer({
   minConfidence: number;
   predictionMinutes: number;
   predictionMode: PredictionMode;
+  publicFlightSymbolMode: PublicFlightSymbolMode;
   profileSyncError: string | null;
   profileSyncStatus: ProfileSyncStatus;
   proximityAlertEnabled: boolean;
@@ -3486,6 +3518,7 @@ function SettingsDrawer({
   showAlertAreas: boolean;
   showHistory: boolean;
   showPrediction: boolean;
+  trackHistoryDisplayMode: TrackHistoryDisplayMode;
   trackHistoryLimit: number;
   trackHistoryWindowSeconds: number;
   onAlertRadiusKmChange: (value: number) => void;
@@ -3500,12 +3533,14 @@ function SettingsDrawer({
   onMinConfidenceChange: (value: number) => void;
   onPredictionMinutesChange: (value: number) => void;
   onPredictionModeChange: (value: PredictionMode) => void;
+  onPublicFlightSymbolModeChange: (value: PublicFlightSymbolMode) => void;
   onProximityAlertEnabledChange: (value: boolean) => void;
   onRefreshSecondsChange: (value: RefreshSeconds) => void;
   onShowAlertAreasChange: (value: boolean) => void;
   onShowHistoryChange: (value: boolean) => void;
   onShowPredictionChange: (value: boolean) => void;
   onTabChange: (value: SettingsTab) => void;
+  onTrackHistoryDisplayModeChange: (value: TrackHistoryDisplayMode) => void;
   onTrackHistoryLimitChange: (value: number) => void;
   onTrackHistoryWindowSecondsChange: (value: number) => void;
   onLogin: () => void;
@@ -3552,11 +3587,29 @@ function SettingsDrawer({
                 Shlukovat objekty při oddálení
               </label>
               <p className="settings-help">Kliknutí na shluk mapu přiblíží a ukáže náhled objektů uvnitř. Po dalším přiblížení se shluky rozpadají do menších skupin a jednotlivých stop.</p>
+              <SegmentedControl
+                label="Veřejné lety"
+                options={[
+                  ["civil", "Letadla"],
+                  ["standard", "Standard"]
+                ]}
+                value={publicFlightSymbolMode}
+                onChange={(value) => onPublicFlightSymbolModeChange(value as PublicFlightSymbolMode)}
+              />
               <PanelTitle icon={<History size={17} />} title="Historie a predikce" />
               <label className="toggle-row">
                 <input type="checkbox" checked={showHistory} onChange={(event) => onShowHistoryChange(event.target.checked)} />
                 Historie trasy
               </label>
+              <SegmentedControl
+                label="Zobrazení historie"
+                options={[
+                  ["selected", "Vybraný"],
+                  ["all", "Vše"]
+                ]}
+                value={trackHistoryDisplayMode}
+                onChange={(value) => onTrackHistoryDisplayModeChange(value as TrackHistoryDisplayMode)}
+              />
               <SegmentedControl
                 label="Čas historie"
                 options={historyWindowOptions.map((option) => [String(option), `${option}s`])}
@@ -3901,11 +3954,12 @@ function LayerSourceTree({
   const overallSelected = selectedLayerIds.includes("air-situation");
   const streams: Array<{ count: number; description: string; label: string; layerId: CopLayer }> = [
     { count: scopedObjects.length, description: "Všechny přijaté georeferencované tracky po aktivních filtrech.", label: "Celkový obraz", layerId: "air-situation" },
+    { count: getSimulatedAirCount(scopedObjects), description: "Simulovaná letecká situace ze SIM track streamu.", label: "Simulace", layerId: "sim-air" },
     { count: getUavCount(scopedObjects), description: "Bezpilotní prostředky a UAV tracky.", label: "UAV", layerId: "uav" },
     { count: metrics.friendlyCount, description: "Vlastní a pravděpodobně vlastní objekty.", label: "Vlastní", layerId: "friendly" },
     { count: metrics.foreignCount, description: "Rizikové nebo neověřené objekty.", label: "Rizikové", layerId: "foreign" },
-    { count: metrics.publicFlightCount, description: "Veřejná letová data ze SIM flight-data zdroje.", label: "Public flights", layerId: "public-flights" },
-    { count: getDataQualityCount(scopedObjects), description: "Tracky s nízkou confidence nebo datovou nejistotou.", label: "Data quality", layerId: "data-quality" }
+    { count: metrics.publicFlightCount, description: "Veřejná letová data ze SIM flight-data zdroje.", label: "Veřejné lety", layerId: "public-flights" },
+    { count: getDataQualityCount(scopedObjects), description: "Tracky s nízkou confidence nebo datovou nejistotou.", label: "Kvalita dat", layerId: "data-quality" }
   ];
 
   return (
@@ -6038,7 +6092,7 @@ function catalogLayerMatchesLegacySelection(
   const providerLayerIds = layer.query.providerLayerIds ?? [];
   const providerSourceIds = layer.query.providerSourceIds ?? [];
   if (layer.layerId === "flight.public.tracks") {
-    return selection.trackLayerIds.length > 0;
+    return selection.trackLayerIds.includes("air-situation") || selection.trackLayerIds.includes("public-flights");
   }
   if (layer.layerId === "user.zone.alerts") {
     return false;
@@ -6074,14 +6128,14 @@ function legacySelectionFromCatalogLayerIds(
   const situationSourceIds = new Set<string>();
   const safetyLayerIds = new Set<SafetyLayerId>();
   const takLayerIds = new Set<TakLayerId>();
-  let tracksEnabled = false;
+  const trackLayerIds = new Set<CopLayer>();
 
   for (const layer of catalog.layers) {
     if (!selected.has(layer.layerId) || !isImplementedCatalogLayer(layer)) {
       continue;
     }
     if (layer.layerId === "flight.public.tracks") {
-      tracksEnabled = true;
+      trackLayerIds.add("public-flights");
       continue;
     }
     if (layer.query.providerId === "sim.situation-data") {
@@ -6115,7 +6169,7 @@ function legacySelectionFromCatalogLayerIds(
     situationLayerIds: normalizeSituationLayerIds(Array.from(situationLayerIds)),
     situationSourceIds: sanitizeCitizenSituationSourceIds(Array.from(situationSourceIds)),
     takLayerIds: normalizeTakLayerIds(Array.from(takLayerIds)),
-    trackLayerIds: tracksEnabled ? ["air-situation"] : []
+    trackLayerIds: normalizeTrackLayerIds(Array.from(trackLayerIds), "public-flights")
   };
 }
 
@@ -6300,6 +6354,14 @@ function readInitialDomainScope(value: string | undefined): DomainScope {
 
 function readInitialPredictionMode(value: string | undefined): PredictionMode {
   return predictionModeOptions.some(([option]) => option === value) ? (value as PredictionMode) : "adaptive";
+}
+
+function normalizePublicFlightSymbolMode(value: string | undefined): PublicFlightSymbolMode {
+  return value === "standard" ? "standard" : "civil";
+}
+
+function normalizeTrackHistoryDisplayMode(value: string | undefined): TrackHistoryDisplayMode {
+  return value === "selected" ? "selected" : "all";
 }
 
 function readInitialHistoryLimit(value: number | undefined): number {

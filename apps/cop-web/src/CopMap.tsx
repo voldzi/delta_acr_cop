@@ -6,10 +6,10 @@ import maplibregl, {
   type StyleSpecification
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { AoiRule, CopAlert, CopObject, MapBounds, SituationFeature, SituationFeatureCollectionResponse } from "./cop-data";
+import { isPublicFlightObject, type AoiRule, type CopAlert, type CopObject, type MapBounds, type SituationFeature, type SituationFeatureCollectionResponse } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
-import type { MapViewState } from "./user-preferences";
+import type { MapViewState, PublicFlightSymbolMode, TrackHistoryDisplayMode } from "./user-preferences";
 import {
   createNatoSymbolSvg,
   getAffiliationPresentation,
@@ -47,6 +47,7 @@ const situationLabelLayerId = "cop-situation-label";
 const userLocationAccuracyLayerId = "cop-user-location-accuracy";
 const userLocationLayerId = "cop-user-location-point";
 const trackSelectedHaloLayerId = "cop-live-track-selected-halo";
+const trackHoverHaloLayerId = "cop-live-track-hover-halo";
 const trackSymbolLayerId = "cop-live-track-symbol";
 const trackLabelLayerId = "cop-live-track-label";
 const trackClusterCircleLayerId = "cop-live-track-cluster-circle";
@@ -65,6 +66,9 @@ const earthRadiusKm = 6371.0088;
 const mobileNetworkIconPrefix = "cop-mobile-network";
 const mobileNetworkIconTones = ["info", "advisory", "warning", "critical", "unknown"] as const;
 type MobileNetworkIconTone = (typeof mobileNetworkIconTones)[number];
+const civilAircraftIconPrefix = "cop-civil-aircraft";
+const civilAircraftIconKinds = ["jet", "turboprop", "small_aircraft", "helicopter", "glider", "uav", "unknown"] as const;
+type CivilAircraftIconKind = (typeof civilAircraftIconKinds)[number];
 const osmCategoryIconPrefix = "cop-osm-category";
 const osmCategoryIconIds = ["airport", "hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "other"] as const;
 type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
@@ -77,8 +81,13 @@ export interface TrackFeatureProperties {
   status: string;
   synthetic: boolean;
   selected: boolean;
+  hovered: boolean;
   symbolCode: string;
   symbolKey: string;
+  displaySymbolKey: string;
+  publicFlight: boolean;
+  aircraftHeadingDeg?: number;
+  civilAircraftKind?: CivilAircraftIconKind;
   label: string;
   symbolColor: string;
   symbolDisposition: AffiliationDisposition;
@@ -181,7 +190,9 @@ interface CopMapProps {
   selectedObjectId?: string;
   showHistory: boolean;
   showPrediction: boolean;
+  trackHistoryDisplayMode: TrackHistoryDisplayMode;
   trackHistory: TrackHistory;
+  publicFlightSymbolMode: PublicFlightSymbolMode;
   predictionMinutes: number;
   predictionMode: PredictionMode;
   autoFit: boolean;
@@ -231,7 +242,9 @@ export function CopMap({
   selectedObjectId,
   showHistory,
   showPrediction,
+  trackHistoryDisplayMode,
   trackHistory,
+  publicFlightSymbolMode,
   predictionMinutes,
   predictionMode,
   autoFit,
@@ -275,6 +288,7 @@ export function CopMap({
   const [mapError, setMapError] = React.useState<string | null>(null);
   const [clusterInfo, setClusterInfo] = React.useState<ClusterInfo | null>(null);
   const [mapFullscreen, setMapFullscreen] = React.useState(false);
+  const [hoveredObjectId, setHoveredObjectId] = React.useState<string | undefined>();
 
   const selectedId = selectedObjectId;
   const selectedObject = React.useMemo(
@@ -306,12 +320,12 @@ export function CopMap({
   );
   const positionedObjects = React.useMemo(() => objects.filter(hasPosition), [objects]);
   const featureCollection = React.useMemo(
-    () => objectsToTrackFeatureCollection(objects, selectedId),
-    [objects, selectedId]
+    () => objectsToTrackFeatureCollection(objects, selectedId, { hoveredObjectId, publicFlightSymbolMode }),
+    [hoveredObjectId, objects, publicFlightSymbolMode, selectedId]
   );
   const historyFeatureCollection = React.useMemo(
-    () => (showHistory ? objectsToHistoryFeatureCollection(objects, trackHistory, selectedId) : emptyLineFeatureCollection()),
-    [objects, selectedId, showHistory, trackHistory]
+    () => (showHistory ? objectsToHistoryFeatureCollection(objects, trackHistory, selectedId, trackHistoryDisplayMode) : emptyLineFeatureCollection()),
+    [objects, selectedId, showHistory, trackHistory, trackHistoryDisplayMode]
   );
   const predictionFeatureCollection = React.useMemo(
     () =>
@@ -389,11 +403,11 @@ export function CopMap({
       void (async () => {
         map.addSource(trackSourceId, {
           type: "geojson",
-          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId) as Parameters<GeoJSONSource["setData"]>[0]
+          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId, { publicFlightSymbolMode }) as Parameters<GeoJSONSource["setData"]>[0]
         });
         map.addSource(trackClusterSourceId, {
           type: "geojson",
-          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId) as Parameters<GeoJSONSource["setData"]>[0],
+          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId, { publicFlightSymbolMode }) as Parameters<GeoJSONSource["setData"]>[0],
           cluster: true,
           clusterMaxZoom: 14,
           clusterRadius: 52
@@ -427,6 +441,7 @@ export function CopMap({
           data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
         });
         await registerNatoSymbolImages(map);
+        await registerCivilAircraftSymbolImages(map);
         await registerSituationSymbolImages(map);
         if (mapRef.current !== map) {
           return;
@@ -890,6 +905,21 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: trackHoverHaloLayerId,
+          type: "circle",
+          source: trackSourceId,
+          filter: ["all", ["==", ["get", "hovered"], true], ["!=", ["get", "selected"], true]],
+          paint: {
+            "circle-color": ["get", "symbolColor"],
+            "circle-opacity": 0.12,
+            "circle-radius": ["case", ["get", "publicFlight"], 24, 18],
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-opacity": 0.64,
+            "circle-stroke-width": 1.8
+          }
+        });
+
+        map.addLayer({
           id: trackSelectedHaloLayerId,
           type: "circle",
           source: trackSourceId,
@@ -897,7 +927,7 @@ export function CopMap({
           paint: {
             "circle-color": ["get", "symbolColor"],
             "circle-opacity": 0.16,
-            "circle-radius": 18,
+            "circle-radius": ["case", ["get", "publicFlight"], 26, 18],
             "circle-stroke-color": "#ffffff",
             "circle-stroke-opacity": 0.86,
             "circle-stroke-width": 2
@@ -946,7 +976,7 @@ export function CopMap({
           paint: {
             "circle-color": ["get", "symbolColor"],
             "circle-opacity": 0.16,
-            "circle-radius": 18,
+            "circle-radius": ["case", ["get", "publicFlight"], 26, 18],
             "circle-stroke-color": "#ffffff",
             "circle-stroke-opacity": 0.86,
             "circle-stroke-width": 2
@@ -959,8 +989,10 @@ export function CopMap({
           source: trackClusterSourceId,
           filter: ["!", ["has", "point_count"]],
           layout: {
-            "icon-image": ["get", "symbolKey"],
-            "icon-size": 0.46,
+            "icon-image": ["get", "displaySymbolKey"],
+            "icon-size": ["case", ["get", "publicFlight"], 0.58, 0.46],
+            "icon-rotate": ["case", ["get", "publicFlight"], ["coalesce", ["get", "aircraftHeadingDeg"], 0], 0],
+            "icon-rotation-alignment": "map",
             "icon-allow-overlap": true,
             "icon-ignore-placement": true
           }
@@ -993,8 +1025,10 @@ export function CopMap({
           type: "symbol",
           source: trackSourceId,
           layout: {
-            "icon-image": ["get", "symbolKey"],
-            "icon-size": 0.46,
+            "icon-image": ["get", "displaySymbolKey"],
+            "icon-size": ["case", ["get", "publicFlight"], ["case", ["get", "selected"], 0.72, ["get", "hovered"], 0.68, 0.62], 0.46],
+            "icon-rotate": ["case", ["get", "publicFlight"], ["coalesce", ["get", "aircraftHeadingDeg"], 0], 0],
+            "icon-rotation-alignment": "map",
             "icon-allow-overlap": true,
             "icon-ignore-placement": true
           }
@@ -1080,23 +1114,32 @@ export function CopMap({
         map.on("zoomstart", handleUserMapInteraction);
         map.on("click", handleMapClick);
         map.on("moveend", () => emitMapViewport(map, onViewChangeRef, onBoundsChangeRef));
-        map.on("mouseenter", trackSymbolLayerId, () => {
+        const handleTrackHover = (event: MapLayerMouseEvent) => {
+          const objectId = event.features?.[0]?.properties?.objectId as string | undefined;
+          if (objectId) {
+            setHoveredObjectId(objectId);
+          }
           map.getCanvas().style.cursor = "pointer";
-        });
-        map.on("mouseenter", trackLabelLayerId, () => {
-          map.getCanvas().style.cursor = "pointer";
-        });
+        };
+        const handleTrackLeave = () => {
+          setHoveredObjectId(undefined);
+          map.getCanvas().style.cursor = "";
+        };
+        map.on("mouseenter", trackSymbolLayerId, handleTrackHover);
+        map.on("mousemove", trackSymbolLayerId, handleTrackHover);
+        map.on("mouseenter", trackLabelLayerId, handleTrackHover);
+        map.on("mousemove", trackLabelLayerId, handleTrackHover);
+        map.on("mouseenter", trackClusterSymbolLayerId, handleTrackHover);
+        map.on("mousemove", trackClusterSymbolLayerId, handleTrackHover);
+        map.on("mouseenter", trackClusterLabelLayerId, handleTrackHover);
+        map.on("mousemove", trackClusterLabelLayerId, handleTrackHover);
         map.on("mouseenter", trackClusterCircleLayerId, () => {
+          setHoveredObjectId(undefined);
           map.getCanvas().style.cursor = "zoom-in";
         });
         map.on("mouseenter", trackClusterCountLayerId, () => {
+          setHoveredObjectId(undefined);
           map.getCanvas().style.cursor = "zoom-in";
-        });
-        map.on("mouseenter", trackClusterSymbolLayerId, () => {
-          map.getCanvas().style.cursor = "pointer";
-        });
-        map.on("mouseenter", trackClusterLabelLayerId, () => {
-          map.getCanvas().style.cursor = "pointer";
         });
         map.on("mouseenter", situationPointLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
@@ -1122,24 +1165,18 @@ export function CopMap({
         map.on("mouseenter", situationFillLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
-        map.on("mouseleave", trackSymbolLayerId, () => {
-          map.getCanvas().style.cursor = "";
-        });
-        map.on("mouseleave", trackLabelLayerId, () => {
-          map.getCanvas().style.cursor = "";
-        });
+        map.on("mouseleave", trackSymbolLayerId, handleTrackLeave);
+        map.on("mouseleave", trackLabelLayerId, handleTrackLeave);
         map.on("mouseleave", trackClusterCircleLayerId, () => {
+          setHoveredObjectId(undefined);
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", trackClusterCountLayerId, () => {
+          setHoveredObjectId(undefined);
           map.getCanvas().style.cursor = "";
         });
-        map.on("mouseleave", trackClusterSymbolLayerId, () => {
-          map.getCanvas().style.cursor = "";
-        });
-        map.on("mouseleave", trackClusterLabelLayerId, () => {
-          map.getCanvas().style.cursor = "";
-        });
+        map.on("mouseleave", trackClusterSymbolLayerId, handleTrackLeave);
+        map.on("mouseleave", trackClusterLabelLayerId, handleTrackLeave);
         map.on("mouseleave", situationPointLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
@@ -1483,7 +1520,7 @@ function emitMapViewport(
 }
 
 function setTrackClusterVisibility(map: maplibregl.Map, clusterTracks: boolean): void {
-  const normalLayerIds = [trackSelectedHaloLayerId, trackSymbolLayerId, trackLabelLayerId];
+  const normalLayerIds = [trackHoverHaloLayerId, trackSelectedHaloLayerId, trackSymbolLayerId, trackLabelLayerId];
   const clusterLayerIds = [
     trackClusterCircleLayerId,
     trackClusterCountLayerId,
@@ -2073,12 +2110,23 @@ function recordNumber(record: Record<string, unknown>, key: string): number | un
   return Number.isFinite(value) ? value : undefined;
 }
 
-export function objectsToTrackFeatureCollection(objects: CopObject[], selectedObjectId?: string): TrackFeatureCollection {
+interface TrackFeatureOptions {
+  hoveredObjectId?: string;
+  publicFlightSymbolMode?: PublicFlightSymbolMode;
+}
+
+export function objectsToTrackFeatureCollection(objects: CopObject[], selectedObjectId?: string, options: TrackFeatureOptions = {}): TrackFeatureCollection {
   return {
     type: "FeatureCollection",
     features: objects.filter(hasPosition).map((object) => {
       const symbol = resolveCopObjectSymbol(object);
       const affiliation = getAffiliationPresentation(object.affiliation);
+      const publicFlight = isPublicFlightObject(object);
+      const civilAircraftKind = publicFlight ? resolveCivilAircraftIconKind(object) : undefined;
+      const standardSymbolKey = getNatoIconKey(object.objectType, object.affiliation);
+      const displaySymbolKey = publicFlight && options.publicFlightSymbolMode !== "standard"
+        ? getCivilAircraftIconKey(civilAircraftKind ?? "unknown")
+        : standardSymbolKey;
       return {
         type: "Feature",
         geometry: {
@@ -2093,15 +2141,72 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
           status: object.status,
           synthetic: Boolean(object.synthetic),
           selected: object.objectId === selectedObjectId,
+          hovered: object.objectId === options.hoveredObjectId,
           symbolCode: symbol.symbolCode,
-          symbolKey: getNatoIconKey(object.objectType, object.affiliation),
+          symbolKey: standardSymbolKey,
+          displaySymbolKey,
+          publicFlight,
+          aircraftHeadingDeg: publicFlight ? normalizeHeadingDeg(object.movement?.headingDeg ?? object.headingDeg) : undefined,
+          civilAircraftKind,
           label: formatTrackLabel(object),
-          symbolColor: affiliation.color,
+          symbolColor: publicFlight && options.publicFlightSymbolMode !== "standard" ? "#facc15" : affiliation.color,
           symbolDisposition: affiliation.disposition
         }
       };
     })
   };
+}
+
+function getCivilAircraftIconKey(kind: CivilAircraftIconKind): string {
+  return `${civilAircraftIconPrefix}-${kind}`;
+}
+
+function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind {
+  const flightData = object.attributes?.flightData;
+  const aircraft = isRecord(flightData?.aircraft) ? flightData.aircraft : {};
+  const iconHint = normalizeCivilAircraftIconKind(stringProperty(aircraft.iconHint));
+  if (iconHint) {
+    return iconHint;
+  }
+
+  const typeDesignator = normalizeCompactAscii(stringProperty(aircraft.typeDesignator) ?? "");
+  const category = normalizeCompactAscii(stringProperty(aircraft.category) ?? "");
+  const engineType = normalizeCompactAscii(stringProperty(aircraft.engineType) ?? "");
+  const model = normalizeCompactAscii(stringProperty(aircraft.model) ?? "");
+  const objectType = normalizeCompactAscii(object.objectType);
+
+  if (objectType.includes("uav") || category.includes("uav") || category.includes("drone")) {
+    return "uav";
+  }
+  if (typeDesignator.startsWith("h") || category.includes("helicopter") || model.includes("helicopter")) {
+    return "helicopter";
+  }
+  if (category.includes("glider") || typeDesignator.includes("glid") || typeDesignator.startsWith("asw") || typeDesignator.startsWith("dg")) {
+    return "glider";
+  }
+  if (engineType.includes("turboprop") || ["at", "be", "dh", "pc", "sf", "tb", "yk"].some((prefix) => typeDesignator.startsWith(prefix))) {
+    return "turboprop";
+  }
+  if (category.includes("light") || category.includes("small") || ["c1", "c2", "c3", "c4", "pa", "sr", "da", "p2"].some((prefix) => typeDesignator.startsWith(prefix))) {
+    return "small_aircraft";
+  }
+  if (engineType.includes("jet") || ["a", "b", "c", "e", "f", "m"].some((prefix) => typeDesignator.startsWith(prefix))) {
+    return "jet";
+  }
+  return "jet";
+}
+
+function normalizeCivilAircraftIconKind(value: string | undefined): CivilAircraftIconKind | undefined {
+  const normalized = value?.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return civilAircraftIconKinds.includes(normalized as CivilAircraftIconKind) ? normalized as CivilAircraftIconKind : undefined;
+}
+
+function normalizeHeadingDeg(value: number | null | undefined): number | undefined {
+  const heading = Number(value);
+  if (!Number.isFinite(heading)) {
+    return undefined;
+  }
+  return ((heading % 360) + 360) % 360;
 }
 
 export function formatTrackLabel(object: CopObject): string {
@@ -2225,11 +2330,15 @@ function normalizeTakAffiliation(value: unknown): "friend" | "hostile" | "neutra
 export function objectsToHistoryFeatureCollection(
   objects: CopObject[],
   trackHistory: TrackHistory,
-  selectedObjectId?: string
+  selectedObjectId?: string,
+  displayMode: TrackHistoryDisplayMode = "all"
 ): TrackLineFeatureCollection {
   return {
     type: "FeatureCollection",
     features: objects.flatMap((object) => {
+      if (displayMode === "selected" && object.objectId !== selectedObjectId) {
+        return [];
+      }
       const points = trackHistory[object.objectId] ?? [];
       if (points.length < 2) {
         return [];
@@ -2538,6 +2647,17 @@ async function registerNatoSymbolImages(map: maplibregl.Map) {
   );
 }
 
+async function registerCivilAircraftSymbolImages(map: maplibregl.Map) {
+  civilAircraftIconKinds.forEach((kind) => {
+    const key = getCivilAircraftIconKey(kind);
+    if (!map.hasImage(key)) {
+      map.addImage(key, createCivilAircraftSymbolImage(kind), {
+        pixelRatio: window.devicePixelRatio || 1
+      });
+    }
+  });
+}
+
 async function registerSituationSymbolImages(map: maplibregl.Map) {
   mobileNetworkIconTones.forEach((tone) => {
     const key = getMobileNetworkIconKey(tone);
@@ -2555,6 +2675,109 @@ async function registerSituationSymbolImages(map: maplibregl.Map) {
       });
     }
   });
+}
+
+function createCivilAircraftSymbolImage(kind: CivilAircraftIconKind): ImageData {
+  const canvas = document.createElement("canvas");
+  const size = 128;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+
+  context.clearRect(0, 0, size, size);
+  context.save();
+  context.translate(64, 64);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  drawCivilAircraftShape(context, kind, "rgba(6, 16, 25, 0.92)", 10);
+  drawCivilAircraftShape(context, kind, "rgba(248, 250, 252, 0.95)", 6);
+  drawCivilAircraftShape(context, kind, "#facc15", 3.2);
+  context.restore();
+
+  return context.getImageData(0, 0, size, size);
+}
+
+function drawCivilAircraftShape(context: CanvasRenderingContext2D, kind: CivilAircraftIconKind, strokeStyle: string, lineWidth: number): void {
+  context.save();
+  context.strokeStyle = strokeStyle;
+  context.fillStyle = strokeStyle;
+  context.lineWidth = lineWidth;
+
+  if (kind === "helicopter") {
+    context.beginPath();
+    context.moveTo(-34, -28);
+    context.lineTo(34, -28);
+    context.moveTo(0, -28);
+    context.lineTo(0, -12);
+    context.stroke();
+    drawRoundedRect(context, -18, -12, 36, 28, 10);
+    context.stroke();
+    context.beginPath();
+    context.moveTo(18, 0);
+    context.lineTo(42, 16);
+    context.lineTo(54, 16);
+    context.moveTo(-14, 17);
+    context.lineTo(14, 17);
+    context.stroke();
+    context.restore();
+    return;
+  }
+
+  if (kind === "uav") {
+    context.beginPath();
+    context.moveTo(0, -40);
+    context.lineTo(32, 24);
+    context.lineTo(0, 10);
+    context.lineTo(-32, 24);
+    context.closePath();
+    context.stroke();
+    context.beginPath();
+    context.arc(0, 0, 5, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+    return;
+  }
+
+  if (kind === "glider") {
+    context.beginPath();
+    context.moveTo(0, -42);
+    context.lineTo(0, 34);
+    context.moveTo(-48, -8);
+    context.quadraticCurveTo(0, -20, 48, -8);
+    context.moveTo(-14, 25);
+    context.lineTo(14, 25);
+    context.stroke();
+    context.restore();
+    return;
+  }
+
+  const wingSpan = kind === "small_aircraft" ? 34 : kind === "turboprop" ? 42 : 48;
+  const tailSpan = kind === "small_aircraft" ? 18 : 24;
+  context.beginPath();
+  context.moveTo(0, -48);
+  context.lineTo(0, 44);
+  context.moveTo(-wingSpan, -8);
+  context.lineTo(wingSpan, -8);
+  context.moveTo(-tailSpan, 29);
+  context.lineTo(tailSpan, 29);
+  context.stroke();
+  context.beginPath();
+  context.moveTo(0, -55);
+  context.lineTo(9, -39);
+  context.lineTo(-9, -39);
+  context.closePath();
+  context.fill();
+  if (kind === "turboprop") {
+    [-28, 28].forEach((x) => {
+      context.beginPath();
+      context.arc(x, -9, 5, 0, Math.PI * 2);
+      context.fill();
+    });
+  }
+  context.restore();
 }
 
 async function createNatoSymbolImage(objectType: string, affiliation: string): Promise<ImageData> {

@@ -90,6 +90,38 @@ describe("COP map data helpers", () => {
     expect(objectsToTrackFeatureCollection([publicFlight]).features[0]?.properties.label).toBe("CSA42");
   });
 
+  it("can render public flights as civil aircraft symbols with heading", () => {
+    const publicFlight = {
+      objectId: "flight:icao24:49f007",
+      objectType: "AIRCRAFT",
+      affiliation: "NEUTRAL",
+      domain: "AIR",
+      status: "ACTIVE",
+      confidence: 0.82,
+      movement: { headingDeg: 275, speedMps: 210 },
+      position: { lat: 50.1, lon: 14.4 },
+      attributes: {
+        dataOrigin: "PUBLIC_FLIGHT_AGGREGATE",
+        flightData: {
+          callsign: "CSA42",
+          aircraft: {
+            typeDesignator: "A320"
+          }
+        }
+      }
+    } satisfies CopObject;
+
+    expect(objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
+      aircraftHeadingDeg: 275,
+      civilAircraftKind: "jet",
+      displaySymbolKey: "cop-civil-aircraft-jet",
+      publicFlight: true,
+      symbolColor: "#facc15"
+    });
+    expect(objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "standard" }).features[0]?.properties.displaySymbolKey)
+      .toBe(objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "standard" }).features[0]?.properties.symbolKey);
+  });
+
   it("builds context-only situation features without converting them to COP tracks", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",
@@ -644,6 +676,40 @@ describe("COP map data helpers", () => {
     expect(predictionCollection.features[0]?.geometry.coordinates).toHaveLength(7);
     expect(predictionCollection.features[0]?.geometry.coordinates[1]?.[0]).toBeGreaterThan(14);
     expect(predictionCollection.features[0]?.properties.method).toBe("telemetry");
+  });
+
+  it("can limit route history to the selected object", () => {
+    const objects = [
+      {
+        objectId: "A",
+        objectType: "AIRCRAFT",
+        affiliation: "NEUTRAL",
+        domain: "AIR",
+        status: "ACTIVE",
+        position: { lat: 50, lon: 14 }
+      },
+      {
+        objectId: "B",
+        objectType: "AIRCRAFT",
+        affiliation: "NEUTRAL",
+        domain: "AIR",
+        status: "ACTIVE",
+        position: { lat: 50.1, lon: 14.1 }
+      }
+    ] satisfies CopObject[];
+    const history = {
+      A: [
+        { objectId: "A", affiliation: "NEUTRAL", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
+        { objectId: "A", affiliation: "NEUTRAL", lat: 50.1, lon: 14.1, timestamp: "2026-05-19T08:01:00Z" }
+      ],
+      B: [
+        { objectId: "B", affiliation: "NEUTRAL", lat: 51, lon: 15, timestamp: "2026-05-19T08:00:00Z" },
+        { objectId: "B", affiliation: "NEUTRAL", lat: 51.1, lon: 15.1, timestamp: "2026-05-19T08:01:00Z" }
+      ]
+    };
+
+    expect(objectsToHistoryFeatureCollection(objects, history, "A", "selected").features.map((feature) => feature.properties.objectId)).toEqual(["A"]);
+    expect(objectsToHistoryFeatureCollection(objects, history, "A", "all").features).toHaveLength(2);
   });
 
   it("builds a user location feature without adding it to COP tracks", () => {

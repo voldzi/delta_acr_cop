@@ -7,6 +7,9 @@ export interface MapViewState {
   pitch?: number;
 }
 
+export type PublicFlightSymbolMode = "civil" | "standard";
+export type TrackHistoryDisplayMode = "all" | "selected";
+
 export interface UserPreferences {
   activeWorkspace?: string;
   affiliationScope?: string;
@@ -22,6 +25,7 @@ export interface UserPreferences {
   predictionMinutes?: number;
   predictionMode?: string;
   proximityAlertEnabled?: boolean;
+  publicFlightSymbolMode?: PublicFlightSymbolMode;
   refreshSeconds?: number;
   safetyLayerIds?: string[];
   selectedLayer?: string;
@@ -33,6 +37,7 @@ export interface UserPreferences {
   situationSourceIds?: string[];
   takLayerIds?: string[];
   trackLayerIds?: string[];
+  trackHistoryDisplayMode?: TrackHistoryDisplayMode;
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
 }
@@ -107,6 +112,7 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     predictionMinutes: optionalFiniteNumber(value.predictionMinutes),
     predictionMode: optionalString(value.predictionMode),
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
+    publicFlightSymbolMode: optionalPublicFlightSymbolMode(value.publicFlightSymbolMode),
     refreshSeconds: optionalFiniteNumber(value.refreshSeconds),
     safetyLayerIds: optionalStringArray(value.safetyLayerIds),
     selectedLayer: optionalString(value.selectedLayer),
@@ -118,6 +124,7 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     situationSourceIds: optionalStringArray(value.situationSourceIds),
     takLayerIds: optionalStringArray(value.takLayerIds),
     trackLayerIds: optionalStringArray(value.trackLayerIds),
+    trackHistoryDisplayMode: optionalTrackHistoryDisplayMode(value.trackHistoryDisplayMode),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds)
   };
@@ -142,6 +149,14 @@ function optionalString(value: unknown): string | undefined {
 
 function optionalStringArray(value: unknown): string[] | undefined {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
+}
+
+function optionalPublicFlightSymbolMode(value: unknown): PublicFlightSymbolMode | undefined {
+  return value === "civil" || value === "standard" ? value : undefined;
+}
+
+function optionalTrackHistoryDisplayMode(value: unknown): TrackHistoryDisplayMode | undefined {
+  return value === "all" || value === "selected" ? value : undefined;
 }
 
 function scopedStorageKey(baseKey: string, scope: string | undefined): string {

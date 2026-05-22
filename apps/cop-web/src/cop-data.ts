@@ -912,8 +912,8 @@ export interface CopDashboardFilters {
   minConfidence: number;
 }
 
-export type CopLayer = "air-situation" | "uav" | "friendly" | "foreign" | "public-flights" | "data-quality";
-export const copLayerIds: CopLayer[] = ["air-situation", "uav", "friendly", "foreign", "public-flights", "data-quality"];
+export type CopLayer = "air-situation" | "sim-air" | "uav" | "friendly" | "foreign" | "public-flights" | "data-quality";
+export const copLayerIds: CopLayer[] = ["air-situation", "sim-air", "uav", "friendly", "foreign", "public-flights", "data-quality"];
 
 export async function fetchCopDashboardData(
   apiBase: string,
@@ -1086,6 +1086,9 @@ export function filterObjectsByLayer(objects: CopObject[], layer: CopLayer): Cop
   if (layer === "public-flights") {
     return objects.filter(isPublicFlightObject);
   }
+  if (layer === "sim-air") {
+    return objects.filter(isSimulatedAirObject);
+  }
   return objects;
 }
 
@@ -1118,8 +1121,20 @@ export function getPublicFlightCount(objects: CopObject[]): number {
   return objects.filter(isPublicFlightObject).length;
 }
 
+export function getSimulatedAirCount(objects: CopObject[]): number {
+  return objects.filter(isSimulatedAirObject).length;
+}
+
 export function isPublicFlightObject(object: CopObject): boolean {
   return object.attributes?.flightData !== undefined || object.attributes?.dataOrigin === "PUBLIC_FLIGHT_AGGREGATE";
+}
+
+export function isSimulatedAirObject(object: CopObject): boolean {
+  if (isPublicFlightObject(object)) {
+    return false;
+  }
+  const sourceSystemId = object.attributes?.provenance?.sourceSystemId?.toLowerCase() ?? "";
+  return object.domain === "AIR" && (Boolean(object.synthetic) || sourceSystemId.includes("sim"));
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
