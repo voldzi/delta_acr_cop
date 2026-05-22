@@ -15,6 +15,7 @@ import {
   LogIn,
   LogOut,
   MapPin,
+  MessageCircle,
   MousePointer2,
   Pause,
   Plane,
@@ -50,6 +51,7 @@ import {
   fetchCopAlerts,
   fetchMapCatalog,
   fetchMapFeatures,
+  fetchMessagingStatus,
   fetchUserProfile,
   filterObjectsByLayers,
   filterVisibleObjects,
@@ -76,6 +78,7 @@ import {
   type MapCatalogResponse,
   type MapCatalogSource,
   type MapBounds,
+  type MessagingStatusResponse,
   type ObjectProvenance,
   type SourceHealthItem,
   type SourceSystem,
@@ -165,6 +168,7 @@ import "./styles.css";
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? (import.meta.env.DEV ? "dev-lab-token" : "");
 const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_COP_REFRESH_MS ?? "5000");
+const messagingLauncherEnabled = readBooleanEnv(import.meta.env.VITE_COP_MESSAGING_LAUNCHER_ENABLED ?? "true");
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
 type DomainScope = "all" | "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
@@ -336,6 +340,10 @@ export function App() {
   const [profileSyncStatus, setProfileSyncStatus] = React.useState<ProfileSyncStatus>("loading");
   const [profileSyncError, setProfileSyncError] = React.useState<string | null>(null);
   const [serverProfileUpdatedAt, setServerProfileUpdatedAt] = React.useState<string | null>(null);
+  const [messagingOpen, setMessagingOpen] = React.useState(false);
+  const [messagingStatus, setMessagingStatus] = React.useState<MessagingStatusResponse | null>(null);
+  const [messagingLoading, setMessagingLoading] = React.useState(false);
+  const [messagingError, setMessagingError] = React.useState<string | null>(null);
   const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad situačními daty.");
   const loadInFlightRef = React.useRef(false);
   const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
@@ -444,6 +452,19 @@ export function App() {
       setServerAlerts(await fetchCopAlerts(apiBase, authToken));
     } catch {
       // Main data loading already reports API errors; alert refresh should not obscure the current situation view.
+    }
+  }, [authToken]);
+
+  const loadMessagingStatus = React.useCallback(async () => {
+    setMessagingLoading(true);
+    try {
+      setMessagingStatus(await fetchMessagingStatus(apiBase, authToken));
+      setMessagingError(null);
+    } catch (error) {
+      setMessagingStatus(null);
+      setMessagingError(error instanceof Error ? error.message : "Stav messaging služby není dostupný.");
+    } finally {
+      setMessagingLoading(false);
     }
   }, [authToken]);
 
@@ -611,6 +632,13 @@ export function App() {
     }, Math.max(refreshSeconds, 5) * 1000);
     return () => window.clearInterval(timer);
   }, [authToken, loadAlerts, refreshSeconds]);
+
+  React.useEffect(() => {
+    if (!messagingOpen) {
+      return;
+    }
+    void loadMessagingStatus();
+  }, [loadMessagingStatus, messagingOpen]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -2489,6 +2517,33 @@ export function App() {
           onLogout={logoutOperator}
         />
       ) : null}
+
+      {messagingLauncherEnabled ? (
+        <button
+          aria-label="Otevřít zprávy"
+          className={`messaging-launcher ${messagingOpen ? "active" : ""}`}
+          onClick={() => setMessagingOpen(true)}
+          title="Otevřít komunikační okno"
+          type="button"
+        >
+          <MessageCircle size={20} />
+          <span>Zprávy</span>
+        </button>
+      ) : null}
+
+      {messagingOpen ? (
+        <MessagingPanel
+          authenticated={profileAccessReady}
+          authConfig={authConfig}
+          error={messagingError}
+          loading={messagingLoading}
+          session={authSession}
+          status={messagingStatus}
+          onClose={() => setMessagingOpen(false)}
+          onLogin={openLoginPrompt}
+          onRefresh={() => void loadMessagingStatus()}
+        />
+      ) : null}
     </main>
   );
 }
@@ -2510,6 +2565,91 @@ function ProximityAlertList({ alerts }: { alerts: ProximityAlert[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function MessagingPanel({
+  authenticated,
+  authConfig,
+  error,
+  loading,
+  session,
+  status,
+  onClose,
+  onLogin,
+  onRefresh
+}: {
+  authenticated: boolean;
+  authConfig: AuthConfig;
+  error: string | null;
+  loading: boolean;
+  session: AuthSession;
+  status: MessagingStatusResponse | null;
+  onClose: () => void;
+  onLogin: () => void;
+  onRefresh: () => void;
+}) {
+  const providerStatus = status?.status ?? "degraded";
+  const features = status?.features ?? {};
+  const e2eeRequired = features.endToEndEncryptionRequired === true;
+  const chatReady = Boolean(status?.chatAvailable && authenticated);
+  return (
+    <section className="messaging-panel" aria-label="Zprávy">
+      <div className="messaging-panel-header">
+        <PanelTitle icon={<MessageCircle size={17} />} title="Zprávy" />
+        <button aria-label="Zavřít zprávy" className="icon-button compact" onClick={onClose} title="Zavřít" type="button">
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="messaging-status-grid">
+        <ReadinessRow label="Provider" value={status?.serviceName ?? "CSM Messaging"} tone={messagingStatusTone(providerStatus)} />
+        <ReadinessRow label="Stav" value={messagingStatusLabel(providerStatus, loading)} tone={messagingStatusTone(providerStatus)} />
+        <ReadinessRow label="Přihlášení" value={authenticated ? operatorDisplayName(session, authConfig) : "vyžaduje účet"} tone={authenticated ? "ok" : "neutral"} />
+        <ReadinessRow label="E2EE" value={e2eeRequired ? "vyžadováno" : "čeká na kontrakt"} tone={e2eeRequired ? "ok" : "neutral"} />
+      </div>
+
+      {error ? <div className="error-banner">Messaging: {error}</div> : null}
+
+      {!authenticated ? (
+        <div className="messaging-empty-state">
+          <strong>Komunikace je přihlášená funkce.</strong>
+          <p>Mapa zůstává dostupná i bez účtu, ale zprávy musí být svázané s ověřenou identitou uživatele.</p>
+          <button className="primary-button secondary" onClick={onLogin} type="button">
+            <LogIn size={16} />
+            Přihlásit přes Keycloak
+          </button>
+        </div>
+      ) : chatReady ? (
+        <div className="messaging-empty-state">
+          <strong>Messaging provider je připraven.</strong>
+          <p>Konverzace budou načtené přes Matrix bootstrap a klientskou E2EE knihovnu.</p>
+        </div>
+      ) : (
+        <div className="messaging-empty-state">
+          <strong>Chat zatím běží v integračním režimu.</strong>
+          <p>COP čte pouze server-side capability/health metadata. Obsah zpráv se přes COP ani Phoenix API neposílá jako plaintext.</p>
+        </div>
+      )}
+
+      {status?.warnings.length ? (
+        <div className="messaging-warning-list">
+          {status.warnings.slice(0, 4).map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="messaging-panel-actions">
+        <button className="mini-button" disabled={loading} onClick={onRefresh} type="button">
+          <RefreshCw size={14} className={loading ? "spin" : ""} />
+          Obnovit stav
+        </button>
+        <button className="mini-button" disabled type="button">
+          Otevřít konverzace
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -3034,6 +3174,29 @@ function streamStatusTone(status: CopStreamStatus): "ok" | "warn" | "neutral" {
     return "neutral";
   }
   return "warn";
+}
+
+function messagingStatusTone(status: MessagingStatusResponse["status"]): "ok" | "warn" | "neutral" {
+  if (status === "online") {
+    return "ok";
+  }
+  if (status === "degraded") {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function messagingStatusLabel(status: MessagingStatusResponse["status"], loading: boolean): string {
+  if (loading) {
+    return "ověřuji";
+  }
+  if (status === "online") {
+    return "online";
+  }
+  if (status === "degraded") {
+    return "degraded";
+  }
+  return "vypnuto";
 }
 
 function streamReadinessLabel(status: CopStreamStatus, telemetry: StreamTelemetry): string {
@@ -6213,6 +6376,13 @@ function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefi
   const width = Math.abs(bounds.east - bounds.west);
   const height = Math.abs(bounds.north - bounds.south);
   return (zoom ?? 0) < 6 || width > 6 || height > 4;
+}
+
+function readBooleanEnv(value: string | undefined, fallback = true): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+  return value === "true" || value === "1" || value === "yes" || value === "on";
 }
 
 registerCopServiceWorker();

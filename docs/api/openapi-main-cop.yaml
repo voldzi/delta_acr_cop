@@ -43,6 +43,8 @@ tags:
     description: Authenticated server-side partner TAK/CoT context proxied from SIM tak-gateway-api.
   - name: Audit
     description: Audit and provenance query endpoints.
+  - name: Messaging
+    description: Server-side status bridge for the standalone CSM Messaging provider.
   - name: AI
     description: Guardrailed AI assistance endpoints.
   - name: Health
@@ -1030,6 +1032,26 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+  /api/v1/messaging/status:
+    get:
+      tags: [Messaging]
+      summary: Read CSM Messaging provider status.
+      description: >
+        Server-side capability and health bridge for the standalone CSM Messaging
+        service. The browser must not call the messaging provider directly or
+        receive service tokens.
+      operationId: getMessagingStatus
+      responses:
+        "200":
+          description: Messaging provider status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /health/live:
     get:
       tags: [Health]
@@ -3508,13 +3530,56 @@ components:
         timestamp:
           type: string
           format: date-time
+    MessagingStatus:
+      type: object
+      required: [chatAvailable, checkedAt, contractVersion, enabled, providerId, serviceName, status, warnings]
+      properties:
+        architecture:
+          type: object
+          additionalProperties: true
+        chatAvailable:
+          type: boolean
+          description: >
+            True only after a client-safe Matrix/E2EE bootstrap contract is
+            available. Capability and health checks alone do not enable chat.
+        checkedAt:
+          type: string
+          format: date-time
+        contractVersion:
+          type: string
+          enum: [cop-messaging-status-v1]
+        detail:
+          type: string
+        enabled:
+          type: boolean
+        features:
+          type: object
+          additionalProperties: true
+        providerId:
+          type: string
+          enum: [csm.messaging]
+        publicUrl:
+          type: string
+          format: uri
+        security:
+          type: object
+          additionalProperties: true
+        serviceName:
+          type: string
+        status:
+          type: string
+          enum: [online, degraded, disabled]
+        warnings:
+          type: array
+          items:
+            type: string
     DependencyHealth:
       type: object
       required: [status, dependencies]
       properties:
         status:
           type: string
-          enum: [ok, degraded, unavailable]
+          enum: [ok, degraded, unavailable, disabled]
         dependencies:
           type: array
           items:
@@ -3525,7 +3590,7 @@ components:
                 type: string
               status:
                 type: string
-                enum: [ok, degraded, unavailable]
+                enum: [ok, degraded, unavailable, disabled]
               detail:
                 type: string
     ErrorResponse:

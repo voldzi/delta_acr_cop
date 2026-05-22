@@ -223,6 +223,102 @@ h1 {
   font-size: 13px;
 }
 
+.messaging-launcher {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 70;
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(140, 182, 216, 0.5);
+  background: rgba(13, 20, 27, 0.92);
+  color: #e8eef5;
+  box-shadow: 0 16px 46px rgba(0, 0, 0, 0.42);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.messaging-launcher svg {
+  color: var(--cyan);
+}
+
+.messaging-launcher.active,
+.messaging-launcher:hover {
+  border-color: rgba(200, 240, 141, 0.78);
+  background: rgba(151, 199, 104, 0.16);
+  color: var(--lime);
+}
+
+.messaging-panel {
+  position: fixed;
+  right: 22px;
+  bottom: 76px;
+  z-index: 71;
+  display: grid;
+  gap: 12px;
+  width: min(390px, calc(100vw - 32px));
+  max-height: min(620px, calc(100svh - 110px));
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid rgba(140, 182, 216, 0.42);
+  background: rgba(8, 13, 18, 0.94);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(18px);
+}
+
+.messaging-panel-header,
+.messaging-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.messaging-status-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.messaging-empty-state {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(142, 157, 170, 0.22);
+  background: rgba(18, 25, 31, 0.72);
+}
+
+.messaging-empty-state strong {
+  color: #f3f7fa;
+  font-size: 13px;
+}
+
+.messaging-empty-state p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.messaging-warning-list {
+  display: grid;
+  gap: 6px;
+}
+
+.messaging-warning-list span {
+  display: block;
+  padding: 7px 8px;
+  border: 1px solid rgba(250, 204, 21, 0.32);
+  background: rgba(250, 204, 21, 0.08);
+  color: #f7df84;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .workspace-nav {
   display: grid;
   grid-template-columns: repeat(5, minmax(92px, 1fr)) minmax(116px, auto);
@@ -3316,6 +3412,21 @@ dd {
 
   .operator-button {
     display: none;
+  }
+
+  .messaging-launcher {
+    right: 12px;
+    bottom: 14px;
+    min-height: 42px;
+    padding: 0 12px;
+  }
+
+  .messaging-panel {
+    right: 10px;
+    bottom: 66px;
+    width: calc(100vw - 20px);
+    max-height: min(560px, calc(100svh - 92px));
+    padding: 12px;
   }
 
   .center-column {

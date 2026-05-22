@@ -37,6 +37,7 @@ import {
 } from "./flight-data-source.js";
 import { buildMapCatalog, type MapCatalogLayer } from "./map-catalog.js";
 import { createMediaStorageFromEnv, type MediaStorage } from "./media-storage.js";
+import { createMessagingProviderFromEnv, type MessagingProvider } from "./messaging-provider.js";
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems } from "./source-health.js";
@@ -87,6 +88,7 @@ export interface BuildServerOptions {
   flightDataSource?: FlightDataSource;
   communityReportStore?: CommunityReportStore;
   mediaStorage?: MediaStorage;
+  messagingProvider?: MessagingProvider;
   safetyDataSource?: SafetyDataSource;
   situationDataSource?: SituationDataSource;
   takGatewaySource?: TakGatewaySource;
@@ -138,6 +140,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const communityReportStore = options.communityReportStore ?? createCommunityReportStoreFromEnv();
   const communityReportFallbackStore = new InMemoryCommunityReportStore("memory-fallback");
   const mediaStorage = options.mediaStorage ?? createMediaStorageFromEnv();
+  const messagingProvider = options.messagingProvider ?? createMessagingProviderFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
   const safetyDataSource = options.safetyDataSource ?? createSafetyDataSourceFromEnv();
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
@@ -220,6 +223,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
       { name: "community-report-store", status: communityReportStoreStatus, detail: communityReportStoreDependencyDetail() },
       { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
+      await messagingDependency(),
       ...(flightDataSource ? [flightDataDependency()] : []),
       ...(situationDataSource ? [situationDataDependency()] : []),
       ...(safetyDataSource ? [safetyDataDependency()] : []),
@@ -402,6 +406,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   function mediaStorageDependencyDetail(): string {
     const diagnostics = mediaStorage?.diagnostics?.();
     return diagnostics ? `${mediaStorageDetail}; ${diagnostics}` : mediaStorageDetail;
+  }
+
+  async function messagingDependency(): Promise<{ detail: string; name: string; status: DependencyStatus }> {
+    const status = await messagingProvider.fetchStatus(now());
+    return {
+      detail: status.detail ?? status.warnings[0] ?? status.status,
+      name: "csm-messaging-provider",
+      status: status.status === "online" ? "ok" : status.status === "disabled" ? "disabled" : "degraded"
+    };
   }
 
   function activeUserProfileStore(): UserProfileStore {
@@ -936,6 +949,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       preferences: profile?.preferences ?? {},
       updatedAt: profile?.updatedAt ?? null
     };
+  });
+
+  app.get("/api/v1/messaging/status", async () => {
+    return messagingProvider.fetchStatus(now());
   });
 
   app.put("/api/v1/me/preferences", async (request, reply) => {

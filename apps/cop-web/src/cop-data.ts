@@ -786,6 +786,22 @@ export interface ServerUserProfile {
   updatedAt: string | null;
 }
 
+export interface MessagingStatusResponse {
+  architecture?: Record<string, unknown>;
+  chatAvailable: boolean;
+  checkedAt: string;
+  contractVersion: "cop-messaging-status-v1";
+  detail?: string;
+  enabled: boolean;
+  features?: Record<string, unknown>;
+  providerId: "csm.messaging";
+  publicUrl?: string;
+  security?: Record<string, unknown>;
+  serviceName: string;
+  status: "degraded" | "disabled" | "online";
+  warnings: string[];
+}
+
 export interface CopAlert {
   acknowledgedAt?: string;
   alertId: string;
@@ -1013,6 +1029,12 @@ export async function acknowledgeCopAlert(apiBase: string, token: string, alertI
       "Content-Type": "application/json"
     },
     method: "POST"
+  });
+}
+
+export async function fetchMessagingStatus(apiBase: string, token: string | undefined): Promise<MessagingStatusResponse> {
+  return fetchJson<MessagingStatusResponse>(`${apiBase}/api/v1/messaging/status`, {
+    headers: authHeaders(token)
   });
 }
 
