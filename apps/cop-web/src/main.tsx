@@ -2568,7 +2568,8 @@ function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
     <ObjectDetailSection title="Vybraný situační prvek">
       <DetailGrid rows={rows} />
       {feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network" ? <MobileCoverageSummary feature={feature} /> : null}
-      {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
+      {isCommunicationTowerFeature(feature) ? <CommunicationTowerSummary feature={feature} /> : null}
+      {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
     </ObjectDetailSection>
   );
@@ -2596,6 +2597,18 @@ function MobileNetworkStatusSummary({ feature }: { feature: SituationFeature }) 
       <DataMetric label="Upload" value={formatOptionalNumber(recordNumber(metrics, "uploadMbps"), " Mbps")} tone={mobileMetricTone(recordNumber(metrics, "uploadMbps"), 5, 1.5, true)} />
       <DataMetric label="Latence" value={formatOptionalNumber(recordNumber(metrics, "latencyMs"), " ms")} tone={mobileMetricTone(recordNumber(metrics, "latencyMs"), 75, 150, false)} />
       <DataMetric label="Signál" value={formatOptionalNumber(recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"), " dBm")} tone={mobileMetricTone(recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"), -100, -110, true)} />
+    </div>
+  );
+}
+
+function CommunicationTowerSummary({ feature }: { feature: SituationFeature }) {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return (
+    <div className="mobile-status-summary">
+      <DataMetric label="Typ" value={stringProperty(tags.towerType) ?? "communication"} tone="neutral" />
+      <DataMetric label="OSM" value={formatOsmReference(tags)} tone="neutral" />
+      <DataMetric label="Status" value={formatCommunicationTowerStatus(feature.properties.status)} tone="neutral" />
+      <DataMetric label="Confidence" value={formatOptionalPercent(feature.properties.confidence)} tone="neutral" />
     </div>
   );
 }
@@ -4194,7 +4207,19 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
         </ObjectDetailSection>
       ) : null}
 
-      {properties.layer === "mobile" ? <MobileNetworkStatusSummary feature={feature} /> : null}
+      {isCommunicationTowerFeature(feature) ? (
+        <ObjectDetailSection title="Komunikační stožár">
+          <DetailGrid
+            rows={[
+              ["Typ", stringProperty(isRecord(properties.tags) ? properties.tags.towerType : undefined) ?? "communication"],
+              ["OSM", formatOsmReference(isRecord(properties.tags) ? properties.tags : {})],
+              ["Stav", formatCommunicationTowerStatus(properties.status)],
+              ["Poznámka", "Jde o referenční OSM infrastrukturu, ne potvrzený realtime stav operátora."]
+            ]}
+          />
+        </ObjectDetailSection>
+      ) : null}
+      {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {properties.description || properties.recommendedAction ? (
         <ObjectDetailSection title="Popis">
@@ -4882,6 +4907,18 @@ function isTakGatewayFeature(feature: SituationFeature): boolean {
   return stringProperty(tags.dataSource) === "tak-gateway";
 }
 
+function isCommunicationTowerFeature(feature: SituationFeature): boolean {
+  return feature.properties.sourceId === "osm_postgis"
+    && feature.properties.layer === "mobile"
+    && feature.properties.category.toLowerCase().replace(/[\s.-]+/g, "_") === "communications_tower";
+}
+
+function formatOsmReference(tags: Record<string, unknown>): string {
+  const osmType = stringProperty(tags.osmType);
+  const osmId = stringProperty(tags.osmId);
+  return [osmType, osmId].filter(Boolean).join(":") || "n/a";
+}
+
 function formatTakAffiliation(value: string | undefined): string {
   if (value === "friend") {
     return "vlastní/partner";
@@ -5053,6 +5090,10 @@ function formatMobileNetworkStatus(status: string | undefined): string {
     return "Nedostatek dat";
   }
   return status ?? "n/a";
+}
+
+function formatCommunicationTowerStatus(status: string | undefined): string {
+  return status ? formatMobileNetworkStatus(status) : "Referenční bod";
 }
 
 function isAviationWeatherFeature(feature: SituationFeature): boolean {

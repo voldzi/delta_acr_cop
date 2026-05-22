@@ -218,6 +218,55 @@ describe("map catalog route", () => {
     expect(body.warnings.join(" ")).toContain("partner.tak.mobile");
   });
 
+  it("uses catalog defaults for mobile-network technology filters", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource: new FakeProviderCatalogSituationDataSource()
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [13.85, 49.65, 15.35, 50.45],
+        layerIds: ["public.mobile.network"],
+        limit: 20
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { situation?: SituationFeatureCollection };
+    expect(body.situation?.query).toMatchObject({
+      layers: ["mobile_network"],
+      sources: ["mobile_network_model"],
+      technology: "4G"
+    });
+  });
+
+  it("post-filters provider features by catalog category ids", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource: new FakeProviderCatalogSituationDataSource()
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [13.85, 49.65, 15.35, 50.45],
+        layerIds: ["reference.infrastructure.communications"],
+        limit: 20
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { situation?: SituationFeatureCollection };
+    expect(body.situation?.features.map((feature) => feature.properties.category)).toEqual(["communications_tower"]);
+    expect(body.situation?.summary.featureCount).toBe(1);
+  });
+
   it("allows authenticated map feature queries to include partner layers", async () => {
     const app = buildServer({
       now: () => new Date("2026-05-22T08:00:00Z"),
@@ -302,6 +351,15 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           audience: "public",
           cacheTtlSeconds: 3600,
           defaultVisible: false,
+          filters: [
+            {
+              defaultValue: ["4G"],
+              filterId: "technology",
+              label: "Technologie",
+              type: "multi_select",
+              values: ["2G", "4G", "5G"]
+            }
+          ],
           geometryTypes: ["Polygon"],
           kind: "vector_features",
           label: "Mobilní síť",
@@ -411,6 +469,57 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
         }
       ],
       status: "online",
+      warnings: []
+    };
+  }
+
+  override async fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
+    if (!query.layers.includes("mobile")) {
+      return {
+        ...(await super.fetchFeatures(query, requestNow)),
+        query
+      };
+    }
+    return {
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.4, 50.1], type: "Point" },
+          properties: {
+            category: "communications_tower",
+            confidence: 0.72,
+            featureId: "mobile:osm_postgis:node:1:communications_tower",
+            label: "GSM-R",
+            layer: "mobile",
+            observedAt: requestNow.toISOString(),
+            severity: "info",
+            sourceId: "osm_postgis",
+            stale: false
+          },
+          type: "Feature"
+        },
+        {
+          geometry: { coordinates: [14.41, 50.11], type: "Point" },
+          properties: {
+            category: "network_measurement",
+            confidence: 0.72,
+            featureId: "mobile:osm_postgis:node:2:network_measurement",
+            label: "Raw mobile input",
+            layer: "mobile",
+            observedAt: requestNow.toISOString(),
+            severity: "info",
+            sourceId: "osm_postgis",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: requestNow.toISOString(),
+      query,
+      source: { sourceId: "situation-data-api", sourceType: "PUBLIC_SITUATION_AGGREGATE" },
+      sources: await this.fetchSources(requestNow),
+      summary: { featureCount: 2, sourceCount: 1, staleFeatureCount: 0, warningCount: 0 },
+      type: "FeatureCollection",
       warnings: []
     };
   }

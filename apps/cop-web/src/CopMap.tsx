@@ -154,6 +154,7 @@ export interface SituationContextFeatureCollection {
       coverageLabel?: string;
       coverageQuality?: string;
       coverageTechnology?: string;
+      communicationTower?: boolean;
       mapPointSuppressed?: boolean;
       situationStatusColor?: string;
       situationStatusLabel?: string;
@@ -547,7 +548,7 @@ export function CopMap({
               ["==", ["get", "layer"], "mobile_coverage"],
               ["case", ["get", "stale"], 0.1, 0.2],
               ["==", ["get", "layer"], "mobile_network"],
-              ["case", ["get", "stale"], 0.1, 0.2],
+              ["case", ["get", "stale"], 0.08, 0.16],
               ["get", "stale"],
               0.06,
               0.1
@@ -598,12 +599,22 @@ export function CopMap({
               ["==", ["get", "layer"], "mobile_coverage"],
               ["case", ["get", "stale"], 0.42, 0.62],
               ["==", ["get", "layer"], "mobile_network"],
-              ["case", ["get", "stale"], 0.42, 0.62],
+              ["case", ["get", "stale"], 0.26, 0.38],
               ["get", "stale"],
               0.48,
               0.76
             ],
-            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1.1, 12, 1.8, 16, 2.6]
+            "line-width": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              7,
+              ["case", ["==", ["get", "layer"], "mobile_network"], 0.65, 1.1],
+              12,
+              ["case", ["==", ["get", "layer"], "mobile_network"], 1.05, 1.8],
+              16,
+              ["case", ["==", ["get", "layer"], "mobile_network"], 1.45, 2.6]
+            ]
           }
         });
 
@@ -1021,6 +1032,7 @@ export function CopMap({
         map.on("click", trackClusterLabelLayerId, handleClick);
         map.on("click", situationPointLayerId, handleSituationClick);
         map.on("click", situationLabelLayerId, handleSituationClick);
+        map.on("click", situationOsmSymbolLayerId, handleSituationClick);
         map.on("click", situationMobileSymbolLayerId, handleSituationClick);
         map.on("click", situationWeatherPointLayerId, handleSituationClick);
         map.on("click", situationWeatherLabelLayerId, handleSituationClick);
@@ -1044,6 +1056,7 @@ export function CopMap({
               trackClusterCountLayerId,
               situationPointLayerId,
               situationLabelLayerId,
+              situationOsmSymbolLayerId,
               situationMobileSymbolLayerId,
               situationWeatherPointLayerId,
               situationWeatherLabelLayerId,
@@ -1091,6 +1104,9 @@ export function CopMap({
         map.on("mouseenter", situationLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationOsmSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationMobileSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -1128,6 +1144,9 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationOsmSymbolLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationMobileSymbolLayerId, () => {
@@ -1627,6 +1646,16 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
       takGateway: true
     };
   }
+  if (isCommunicationTowerFeature(feature)) {
+    return {
+      communicationTower: true,
+      mobileNetworkLabel: formatCommunicationTowerLabel(feature),
+      mobileSymbolKey: getMobileNetworkIconKey(status.tone),
+      situationStatusColor: status.color,
+      situationStatusLabel: status.label,
+      situationStatusTone: status.tone
+    };
+  }
   const osmCategory = resolveOsmCategoryPresentation(feature);
   if (osmCategory) {
     return {
@@ -1699,6 +1728,12 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
 
 function isSyntheticWarningPoint(feature: SituationFeature): boolean {
   return feature.geometry.type === "Point" && feature.properties.layer === "warnings";
+}
+
+function isCommunicationTowerFeature(feature: SituationFeature): boolean {
+  return feature.properties.sourceId === "osm_postgis"
+    && feature.properties.layer === "mobile"
+    && normalizeSituationCategory(feature.properties.category) === "communications_tower";
 }
 
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
@@ -1825,6 +1860,20 @@ function formatMobileNetworkLabel(feature: SituationFeature): string {
   return normalizeMobileNetworkLabel(raw) ?? "MOBILE";
 }
 
+function formatCommunicationTowerLabel(feature: SituationFeature): string {
+  const label = feature.properties.label?.trim();
+  if (label && !["communications_tower", "communication tower"].includes(label.toLowerCase())) {
+    return label.length > 12 ? `${label.slice(0, 11)}…` : label;
+  }
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const towerType = stringProperty(tags.towerType) ?? stringProperty(tags.communication);
+  if (towerType) {
+    const normalized = towerType.replace(/[_-]+/g, " ").trim();
+    return normalized.length > 0 ? normalized.toUpperCase().slice(0, 12) : "BTS";
+  }
+  return "BTS";
+}
+
 function normalizeMobileNetworkLabel(raw: string | undefined): string | undefined {
   if (!raw) {
     return undefined;
@@ -1856,7 +1905,7 @@ function resolveOsmCategoryPresentation(feature: SituationFeature): { iconId: Os
   if (feature.properties.sourceId !== "osm_postgis") {
     return null;
   }
-  const normalized = feature.properties.category.toLowerCase().replace(/[\s.-]+/g, "_");
+  const normalized = normalizeSituationCategory(feature.properties.category);
   if (["hospital", "clinic", "doctors", "healthcare_hospital", "healthcare_clinic", "healthcare_doctor", "ambulance_station"].includes(normalized)) {
     return { iconId: "hospital", label: "Nemocnice" };
   }
@@ -1879,6 +1928,10 @@ function resolveOsmCategoryPresentation(feature: SituationFeature): { iconId: Os
     return { iconId: "communications_tower", label: "Komunikační věž" };
   }
   return { iconId: "other", label: "OSM" };
+}
+
+function normalizeSituationCategory(category: string): string {
+  return category.toLowerCase().replace(/[\s.-]+/g, "_");
 }
 
 function getMobileNetworkIconKey(tone: string | undefined): string {

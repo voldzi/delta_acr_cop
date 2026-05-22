@@ -214,6 +214,64 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("renders OSM communication towers with the mobile tower symbol", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.91, 50.19], type: "Point" },
+          properties: {
+            category: "communications_tower",
+            confidence: 0.92,
+            featureId: "osm:node:4337203413",
+            label: "GSM-R",
+            layer: "mobile",
+            observedAt: "2026-05-20T10:00:00Z",
+            sourceId: "osm_postgis",
+            stale: false,
+            tags: {
+              osmId: "4337203413",
+              osmType: "node",
+              towerType: "communication"
+            }
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-20T10:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["mobile"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      communicationTower: true,
+      featureId: "osm:node:4337203413",
+      layer: "mobile",
+      mobileNetworkLabel: "GSM-R",
+      mobileSymbolKey: "cop-mobile-network-info",
+      situationStatusColor: "#22c55e",
+      situationStatusLabel: "OK",
+      situationStatusTone: "info"
+    });
+    expect(collection.features[0]?.properties.osmPoi).toBeUndefined();
+  });
+
   it("adds mobile coverage polygon render metadata from SIM quality", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",

@@ -37,6 +37,7 @@ import {
   emptySituationFeatureCollection,
   unavailableSituationDataHealth,
   type SituationDataSource,
+  type SituationFeature,
   type SituationFeatureCollection,
   type SituationFeatureQuery,
   type SituationLayerId,
@@ -1273,7 +1274,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     ];
 
     const [situationCollection, safetyCollection, takCollection] = await Promise.all([
-      readSituationMapQuery(providerQueries.situation, requestNow, actor),
+      readSituationMapQuery(providerQueries.situation, requestNow, actor, selectedLayers),
       readSafetyMapQuery(providerQueries.safety, requestNow),
       includePartner ? readTakMapQuery(providerQueries.tak, requestNow) : Promise.resolve(undefined)
     ]);
@@ -1843,7 +1844,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function readSituationMapQuery(query: SituationFeatureQuery | undefined, requestNow: Date, actor: AuthenticatedActor | null) {
+  async function readSituationMapQuery(
+    query: SituationFeatureQuery | undefined,
+    requestNow: Date,
+    actor: AuthenticatedActor | null,
+    selectedLayers: MapCatalogLayer[] = []
+  ) {
     if (!query) {
       return undefined;
     }
@@ -1869,7 +1875,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     try {
-      const collection = filterSituationCollectionForActor(await situationDataSource.fetchFeatures(sanitized.query, requestNow), actor, sanitized.warnings);
+      const actorFilteredCollection = filterSituationCollectionForActor(await situationDataSource.fetchFeatures(sanitized.query, requestNow), actor, sanitized.warnings);
+      const collection = filterSituationCollectionForCatalogLayers(actorFilteredCollection, selectedLayers);
       const health = buildSituationDataHealth(collection, requestNow);
       state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
       return {
@@ -2243,7 +2250,7 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
       for (const sourceId of layer.query.providerSourceIds ?? []) {
         situationSources.add(sourceId);
       }
-      situationTechnology = situationTechnology ?? readMapQueryTechnology(request.filters[layer.layerId]);
+      situationTechnology = situationTechnology ?? readMapQueryTechnology(request.filters[layer.layerId]) ?? readDefaultTechnologyFilter(layer);
     } else if (layer.query.providerId === "sim.safety-data") {
       for (const layerId of layer.query.providerLayerIds ?? []) {
         if (isSafetyLayerId(layerId)) {
@@ -2294,6 +2301,15 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
 
 function readMapQueryTechnology(value: Record<string, unknown> | undefined): string | undefined {
   const raw = value?.technology;
+  if (Array.isArray(raw)) {
+    return raw.find((item): item is string => isCoverageTechnology(item));
+  }
+  return isCoverageTechnology(raw) ? raw : undefined;
+}
+
+function readDefaultTechnologyFilter(layer: MapCatalogLayer): string | undefined {
+  const technologyFilter = layer.filters?.find((filter) => filter.filterId === "technology");
+  const raw = technologyFilter?.defaultValue;
   if (Array.isArray(raw)) {
     return raw.find((item): item is string => isCoverageTechnology(item));
   }
@@ -2377,6 +2393,50 @@ function filterSituationCollectionForActor(
     },
     warnings
   };
+}
+
+function filterSituationCollectionForCatalogLayers(
+  collection: SituationFeatureCollection,
+  selectedLayers: MapCatalogLayer[]
+): SituationFeatureCollection {
+  const situationLayers = selectedLayers.filter((layer) => layer.query.mode === "bbox" && layer.query.providerId === "sim.situation-data");
+  if (situationLayers.length === 0) {
+    return collection;
+  }
+  const features = collection.features.filter((feature) => situationLayers.some((layer) => situationFeatureMatchesCatalogLayer(feature, layer)));
+  const sourceIds = new Set(features.map((feature) => feature.properties.sourceId));
+  const sources = sourceIds.size > 0 ? collection.sources.filter((source) => sourceIds.has(source.sourceId)) : collection.sources;
+  return {
+    ...collection,
+    features,
+    sources,
+    summary: {
+      ...collection.summary,
+      featureCount: features.length,
+      sourceCount: sources.length,
+      staleFeatureCount: features.filter((feature) => feature.properties.stale).length
+    }
+  };
+}
+
+function situationFeatureMatchesCatalogLayer(feature: SituationFeature, layer: MapCatalogLayer): boolean {
+  const providerLayerIds = layer.query.providerLayerIds ?? [];
+  if (providerLayerIds.length > 0 && !providerLayerIds.includes(feature.properties.layer)) {
+    return false;
+  }
+  const providerSourceIds = layer.query.providerSourceIds ?? [];
+  if (providerSourceIds.length > 0 && !providerSourceIds.includes(feature.properties.sourceId)) {
+    return false;
+  }
+  const categoryIds = layer.query.categoryIds ?? [];
+  if (categoryIds.length > 0 && !categoryIds.map(normalizeSituationCategoryId).includes(normalizeSituationCategoryId(feature.properties.category))) {
+    return false;
+  }
+  return true;
+}
+
+function normalizeSituationCategoryId(value: string): string {
+  return value.toLowerCase().replace(/[\s.-]+/g, "_");
 }
 
 function filterSituationSourcesForActor(sources: SituationSourceDescriptor[], actor: AuthenticatedActor | null): SituationSourceDescriptor[] {
