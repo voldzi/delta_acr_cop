@@ -158,6 +158,49 @@ describe("CsmMessagingProvider", () => {
     expect(status.warnings).toContain("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
   });
 
+  it("sanitizes provider credential hints from public messaging status", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/capabilities")) {
+        return new Response(JSON.stringify({
+          architecture: { plaintextOnServer: false },
+          contractVersion: "csm-messaging-provider-v1",
+          features: {
+            endToEndEncryptionRequired: true,
+            matrixTokenBootstrap: false
+          },
+          providerId: "csm.messaging",
+          security: {
+            readFromBrowser: false,
+            serverSideIntegrationOnly: true
+          },
+          serviceName: "CSM Messaging",
+          status: "degraded"
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        checks: [{
+          id: "matrix_config",
+          message: "CSM_MATRIX_ADMIN_TOKEN must be configured before Matrix token bootstrap is operational.",
+          status: "degraded"
+        }],
+        status: "degraded"
+      }), { status: 503 });
+    }));
+
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000
+    });
+
+    const status = await provider.fetchStatus(new Date("2026-05-22T12:00:00Z"));
+
+    expect(JSON.stringify(status)).not.toContain("CSM_MATRIX_ADMIN_TOKEN");
+    expect(status.warnings).toContain("Messaging Matrix token bootstrap configuration is incomplete.");
+  });
+
   it("fetches Matrix bootstrap server-side with provider token and COP user headers", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe("http://messaging.local:4050/api/v1/matrix/token");

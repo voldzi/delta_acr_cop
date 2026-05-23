@@ -197,7 +197,7 @@ export class CsmMessagingProvider implements MessagingProvider {
         ...(tokenResponse.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging token contract version is ${tokenResponse.contractVersion ?? "unknown"}.`]),
         ...(tokenResponse.providerId === "csm.messaging" ? [] : [`Messaging token provider id is ${tokenResponse.providerId ?? "unknown"}.`]),
         ...statusWarnings(tokenResponse.status, "matrix token"),
-        ...(tokenResponse.warnings ?? [])
+        ...(tokenResponse.warnings ?? []).map(sanitizeProviderWarning)
       ];
       const tokenAvailable = tokenResult.ok
         && tokenResponse.tokenAvailable === true
@@ -366,9 +366,16 @@ function normalizeMatrixTokenResponse(value: Record<string, unknown>): CsmMessag
 }
 
 function healthCheckWarnings(health: CsmMessagingHealth | undefined): string[] {
-  return (health?.checks ?? []).flatMap((check) =>
-    isOperationalStatus(check.status) ? [] : [`${check.id ?? "check"}: ${check.message ?? check.status ?? "degraded"}`]
-  );
+  return (health?.checks ?? []).flatMap((check) => {
+    if (isOperationalStatus(check.status)) {
+      return [];
+    }
+    const rawMessage = check.message ?? check.status ?? "degraded";
+    if (containsSensitiveConfigHint(check.id) || containsSensitiveConfigHint(rawMessage)) {
+      return ["Messaging Matrix token bootstrap configuration is incomplete."];
+    }
+    return [`${check.id ?? "check"}: ${sanitizeProviderWarning(rawMessage)}`];
+  });
 }
 
 function statusWarnings(status: string | undefined, label: string): string[] {
@@ -378,6 +385,17 @@ function statusWarnings(status: string | undefined, label: string): string[] {
 function isOperationalStatus(status: string | undefined): boolean {
   const normalized = status?.toLowerCase();
   return normalized === "ok" || normalized === "online" || normalized === "ready";
+}
+
+function sanitizeProviderWarning(warning: string): string {
+  if (containsSensitiveConfigHint(warning)) {
+    return "Messaging provider has incomplete server-side credential configuration.";
+  }
+  return warning;
+}
+
+function containsSensitiveConfigHint(value: string | undefined): boolean {
+  return /\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY|ADMIN)[A-Z0-9_]*\b/u.test(value ?? "");
 }
 
 function isClientSafeMatrixBootstrapReady(capabilities: CsmMessagingCapabilities, providerOk: boolean, healthOk: boolean): boolean {
