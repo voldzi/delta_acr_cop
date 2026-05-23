@@ -1062,10 +1062,12 @@ export async function fetchMessagingStatus(apiBase: string, token: string | unde
   });
 }
 
-export async function fetchMessagingBootstrap(apiBase: string, token: string): Promise<MessagingBootstrapResponse> {
+export async function fetchMessagingBootstrap(apiBase: string, token: string, deviceId: string): Promise<MessagingBootstrapResponse> {
   return fetchJson<MessagingBootstrapResponse>(`${apiBase}/api/v1/messaging/bootstrap`, {
+    body: JSON.stringify({ deviceId }),
     headers: {
-      Authorization: `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
     },
     method: "POST"
   });

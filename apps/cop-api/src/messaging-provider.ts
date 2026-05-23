@@ -48,7 +48,7 @@ export interface MessagingMatrixBootstrap {
 export interface MessagingProvider {
   readonly config: MessagingProviderConfig;
   fetchStatus(requestNow: Date): Promise<MessagingProviderStatus>;
-  fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingMatrixBootstrap>;
+  fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date, deviceId?: string): Promise<MessagingMatrixBootstrap>;
 }
 
 interface CsmMessagingCapabilities {
@@ -175,7 +175,7 @@ export class CsmMessagingProvider implements MessagingProvider {
     }
   }
 
-  async fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingMatrixBootstrap> {
+  async fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date, deviceId?: string): Promise<MessagingMatrixBootstrap> {
     if (!this.config.enabled) {
       return disabledMatrixBootstrap(requestNow, this.config);
     }
@@ -185,7 +185,7 @@ export class CsmMessagingProvider implements MessagingProvider {
         this.config,
         requestNow,
         {
-          headers: actorHeaders(actor),
+          headers: actorHeaders(actor, deviceId),
           method: "POST"
         }
       );
@@ -407,12 +407,18 @@ function isClientSafeMatrixBootstrapReady(capabilities: CsmMessagingCapabilities
     && capabilities.architecture?.plaintextOnServer !== true;
 }
 
-function actorHeaders(actor: AuthenticatedActor): Record<string, string> {
-  return {
+function actorHeaders(actor: AuthenticatedActor, deviceId?: string): Record<string, string> {
+  const headers: Record<string, string> = {
     "x-csm-user-id": actor.subjectId,
     "x-csm-user-name": actor.displayName || actor.username,
     "x-csm-user-role": actor.roles?.[0] ?? actor.authMode
   };
+
+  if (deviceId) {
+    headers["x-csm-device-id"] = deviceId;
+  }
+
+  return headers;
 }
 
 function optionalString(value: unknown): string | undefined {

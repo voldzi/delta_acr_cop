@@ -207,6 +207,7 @@ describe("CsmMessagingProvider", () => {
       expect(init?.method).toBe("POST");
       expect(init?.headers).toMatchObject({
         Authorization: "Bearer provider-token",
+        "x-csm-device-id": "COPWEB.device-1",
         "x-csm-user-id": "user-123",
         "x-csm-user-name": "User One",
         "x-csm-user-role": "cop_operator"
@@ -242,7 +243,7 @@ describe("CsmMessagingProvider", () => {
       roles: ["cop_operator"],
       subjectId: "user-123",
       username: "user.one"
-    }, new Date("2026-05-22T12:00:00Z"));
+    }, new Date("2026-05-22T12:00:00Z"), "COPWEB.device-1");
 
     expect(bootstrap).toMatchObject({
       accessToken: "matrix-user-token",
@@ -343,20 +344,26 @@ describe("CsmMessagingProvider", () => {
   it("exposes authenticated Matrix bootstrap without leaking provider token", async () => {
     vi.stubEnv("COP_AUTH_MODE", "lab");
     vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      accessToken: "matrix-user-token",
-      contractVersion: "csm-messaging-provider-v1",
-      deviceId: "COP_WEB_lab",
-      e2eeRequired: true,
-      expiresAt: "2026-05-23T12:00:00Z",
-      homeserverBaseUrl: "https://msg.zeleznalady.cz",
-      providerId: "csm.messaging",
-      serverName: "msg.zeleznalady.cz",
-      status: "ready",
-      tokenAvailable: true,
-      userId: "@lab:msg.zeleznalady.cz",
-      warnings: []
-    }), { status: 200 }));
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        "x-csm-device-id": "COPWEB.route-test"
+      });
+
+      return new Response(JSON.stringify({
+        accessToken: "matrix-user-token",
+        contractVersion: "csm-messaging-provider-v1",
+        deviceId: "COPWEB.route-test",
+        e2eeRequired: true,
+        expiresAt: "2026-05-23T12:00:00Z",
+        homeserverBaseUrl: "https://msg.zeleznalady.cz",
+        providerId: "csm.messaging",
+        serverName: "msg.zeleznalady.cz",
+        status: "ready",
+        tokenAvailable: true,
+        userId: "@lab:msg.zeleznalady.cz",
+        warnings: []
+      }), { status: 200 });
+    });
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
       messagingProvider: new CsmMessagingProvider({
@@ -370,6 +377,9 @@ describe("CsmMessagingProvider", () => {
     });
 
     const response = await app.inject({
+      body: {
+        deviceId: "COPWEB.route-test"
+      },
       headers: {
         authorization: "Bearer lab-secret"
       },

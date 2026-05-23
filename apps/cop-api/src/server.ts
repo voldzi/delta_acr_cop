@@ -961,7 +961,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return reply;
     }
 
-    return messagingProvider.fetchMatrixBootstrap(actor, now());
+    const body = isRecord(request.body) ? request.body : {};
+    const deviceId = optionalTrimmedString(body.deviceId, 64);
+    return messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId);
   });
 
   app.put("/api/v1/me/preferences", async (request, reply) => {

@@ -6,6 +6,9 @@ import type { MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage, 
 
 type Tone = "ok" | "warn" | "neutral";
 
+const matrixDeviceIdStorageKey = "cop.messaging.matrixDeviceId";
+let fallbackMatrixDeviceId: string | null = null;
+
 export function MessagingPanel({
   apiBase,
   authenticated,
@@ -58,7 +61,7 @@ export function MessagingPanel({
     setBootstrapLoading(true);
     setBootstrapError(null);
     try {
-      const bootstrap = await fetchMessagingBootstrap(apiBase, authToken);
+      const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, getOrCreateMatrixDeviceId());
       if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
         setBootstrapError(bootstrap.detail ?? bootstrap.warnings[0] ?? "Matrix token bootstrap není připravený.");
         return;
@@ -245,6 +248,43 @@ function MatrixChatShell({
       </div>
     </div>
   );
+}
+
+function getOrCreateMatrixDeviceId(): string {
+  if (typeof window === "undefined") {
+    fallbackMatrixDeviceId ??= createMatrixDeviceId();
+    return fallbackMatrixDeviceId;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(matrixDeviceIdStorageKey);
+    if (isValidMatrixDeviceId(stored)) {
+      return stored;
+    }
+
+    const next = createMatrixDeviceId();
+    window.localStorage.setItem(matrixDeviceIdStorageKey, next);
+    return next;
+  } catch {
+    fallbackMatrixDeviceId ??= createMatrixDeviceId();
+    return fallbackMatrixDeviceId;
+  }
+}
+
+function createMatrixDeviceId(): string {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto?.getRandomValues?.(bytes);
+
+  if (bytes.every((value) => value === 0)) {
+    return `COPWEB.${Date.now().toString(36)}`;
+  }
+
+  const suffix = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `COPWEB.${suffix}`;
+}
+
+function isValidMatrixDeviceId(value: string | null): value is string {
+  return Boolean(value && /^[A-Za-z0-9._=-]{1,64}$/u.test(value));
 }
 
 function ReadinessRow({ label, value, tone }: { label: string; value: string; tone: Tone }) {
