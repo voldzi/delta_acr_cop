@@ -17,6 +17,7 @@ import {
   MapPin,
   MessageCircle,
   MousePointer2,
+  Move,
   Pause,
   Plane,
   Play,
@@ -4331,9 +4332,118 @@ function MapGlobalSearch({
   onSelect: (result: MapSearchResult) => void;
 }) {
   const hasQuery = query.trim().length > 0;
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const dragStateRef = React.useRef<MapSearchDragState | null>(null);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [position, setPosition] = React.useState<MapSearchPosition | null>(() => readMapSearchPosition());
+
+  const persistPosition = React.useCallback((nextPosition: MapSearchPosition | null) => {
+    setPosition(nextPosition);
+    writeMapSearchPosition(nextPosition);
+  }, []);
+
+  React.useEffect(() => {
+    if (!isDragging) {
+      return undefined;
+    }
+    const handlePointerMove = (event: PointerEvent) => {
+      const dragState = dragStateRef.current;
+      if (!dragState) {
+        return;
+      }
+      const nextPosition = clampMapSearchPosition({
+        left: event.clientX - dragState.parentRect.left - dragState.offsetX,
+        top: event.clientY - dragState.parentRect.top - dragState.offsetY,
+        width: dragState.width
+      }, dragState.parentRect);
+      persistPosition(nextPosition);
+    };
+    const finishDrag = () => {
+      dragStateRef.current = null;
+      setIsDragging(false);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishDrag, { once: true });
+    window.addEventListener("pointercancel", finishDrag, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+    };
+  }, [isDragging, persistPosition]);
+
+  React.useEffect(() => {
+    if (!position) {
+      return undefined;
+    }
+    const clampCurrentPosition = () => {
+      const element = containerRef.current;
+      const parent = element?.parentElement;
+      if (!element || !parent) {
+        return;
+      }
+      const parentRect = parent.getBoundingClientRect();
+      const current = {
+        left: element.offsetLeft,
+        top: element.offsetTop,
+        width: element.getBoundingClientRect().width
+      };
+      const clamped = clampMapSearchPosition(current, parentRect);
+      if (Math.abs(clamped.left - current.left) > 1 || Math.abs(clamped.top - current.top) > 1 || Math.abs(clamped.width - position.width) > 1) {
+        persistPosition(clamped);
+      }
+    };
+    const animationFrame = window.requestAnimationFrame(clampCurrentPosition);
+    window.addEventListener("resize", clampCurrentPosition);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", clampCurrentPosition);
+    };
+  }, [persistPosition, position]);
+
+  function startDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+    const element = containerRef.current;
+    const parent = element?.parentElement;
+    if (!element || !parent) {
+      return;
+    }
+    const elementRect = element.getBoundingClientRect();
+    const parentRect = parent.getBoundingClientRect();
+    dragStateRef.current = {
+      offsetX: event.clientX - elementRect.left,
+      offsetY: event.clientY - elementRect.top,
+      parentRect,
+      width: Math.min(elementRect.width, Math.max(180, parentRect.width - 16))
+    };
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setIsDragging(true);
+  }
+
   return (
-    <div className="map-global-search">
-      <label className="map-global-search-field">
+    <div
+      className={`map-global-search ${position ? "is-moved" : ""} ${isDragging ? "is-dragging" : ""}`}
+      ref={containerRef}
+      style={position ? {
+        left: `${position.left}px`,
+        right: "auto",
+        top: `${position.top}px`,
+        width: `min(${position.width}px, calc(100% - 16px))`
+      } : undefined}
+    >
+      <div className="map-global-search-field">
+        <button
+          aria-label="Přesunout hledání"
+          className="map-global-search-drag"
+          onPointerDown={startDrag}
+          title="Přesunout hledání"
+          type="button"
+        >
+          <Move size={15} />
+        </button>
         <Search size={16} />
         <input
           aria-label="Hledat v mapě"
@@ -4342,12 +4452,19 @@ function MapGlobalSearch({
           value={query}
           onChange={(event) => onChange(event.target.value)}
         />
-      </label>
-      {hasQuery ? (
-        <button className="map-global-search-clear" type="button" aria-label="Vymazat hledání v mapě" onClick={onClear}>
-          <X size={15} />
-        </button>
-      ) : null}
+      </div>
+      <div className="map-global-search-actions">
+        {position ? (
+          <button className="map-global-search-reset" type="button" aria-label="Vrátit hledání na výchozí místo" onClick={() => persistPosition(null)}>
+            <MousePointer2 size={15} />
+          </button>
+        ) : null}
+        {hasQuery ? (
+          <button className="map-global-search-clear" type="button" aria-label="Vymazat hledání v mapě" onClick={onClear}>
+            <X size={15} />
+          </button>
+        ) : null}
+      </div>
       {hasQuery ? (
         <div className="map-global-search-results" role="listbox" aria-label="Výsledky hledání v mapě">
           {results.length > 0 ? (
@@ -4368,6 +4485,63 @@ function MapGlobalSearch({
       ) : null}
     </div>
   );
+}
+
+interface MapSearchPosition {
+  left: number;
+  top: number;
+  width: number;
+}
+
+interface MapSearchDragState {
+  offsetX: number;
+  offsetY: number;
+  parentRect: DOMRect;
+  width: number;
+}
+
+const mapSearchPositionStorageKey = "cop.mapGlobalSearch.position.v1";
+
+function readMapSearchPosition(): MapSearchPosition | null {
+  try {
+    const rawValue = window.localStorage.getItem(mapSearchPositionStorageKey);
+    if (!rawValue) {
+      return null;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<MapSearchPosition>;
+    if (!Number.isFinite(parsed.left) || !Number.isFinite(parsed.top) || !Number.isFinite(parsed.width)) {
+      return null;
+    }
+    return {
+      left: Number(parsed.left),
+      top: Number(parsed.top),
+      width: Number(parsed.width)
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeMapSearchPosition(position: MapSearchPosition | null) {
+  try {
+    if (!position) {
+      window.localStorage.removeItem(mapSearchPositionStorageKey);
+      return;
+    }
+    window.localStorage.setItem(mapSearchPositionStorageKey, JSON.stringify(position));
+  } catch {
+    // Non-critical personalization; ignore blocked or unavailable storage.
+  }
+}
+
+function clampMapSearchPosition(position: MapSearchPosition, parentRect: DOMRect): MapSearchPosition {
+  const padding = 8;
+  const width = Math.min(Math.max(180, position.width), Math.max(180, parentRect.width - padding * 2));
+  return {
+    left: clamp(position.left, padding, Math.max(padding, parentRect.width - width - padding)),
+    top: clamp(position.top, padding, Math.max(padding, parentRect.height - 72)),
+    width
+  };
 }
 
 function ObjectSearchControl({
