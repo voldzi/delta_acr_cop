@@ -120,6 +120,7 @@ import {
   REFRESH_OPTIONS,
   type RefreshSeconds
 } from "./refresh-config";
+import { buildMapSearchResults, type MapSearchResult } from "./map-search";
 import {
   countHistoryPoints,
   getReplayTimestamp,
@@ -172,6 +173,7 @@ const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? (import.meta.env.DEV ? "dev-lab-token" : "");
 const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_COP_REFRESH_MS ?? "5000");
 const messagingLauncherEnabled = readBooleanEnv(import.meta.env.VITE_COP_MESSAGING_LAUNCHER_ENABLED ?? "true");
+const XrWorkspace = React.lazy(() => import("./XrWorkspace"));
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
 type DomainScope = "all" | "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
@@ -256,6 +258,7 @@ export function App() {
   );
   const [domainScope, setDomainScope] = React.useState<DomainScope>(() => readInitialDomainScope(initialPreferences.domainScope));
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [mapSearchQuery, setMapSearchQuery] = React.useState("");
   const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
   const [, setLastStreamAt] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -1208,6 +1211,10 @@ export function App() {
   const explicitlySelectedObject = selectedObjectId ? visibleObjects.find((object) => object.objectId === selectedObjectId) ?? null : null;
   const selectedObject = explicitlySelectedObject ?? visibleObjects[0] ?? null;
   const selectedSituationFeature = combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
+  const mapSearchResults = React.useMemo(
+    () => buildMapSearchResults(visibleObjectsSearchScope, combinedSituationFeatures?.features ?? [], mapSearchQuery),
+    [combinedSituationFeatures, mapSearchQuery, visibleObjectsSearchScope]
+  );
   const metrics = React.useMemo(() => buildMetrics(scopedObjects, sources), [scopedObjects, sources]);
   const eventStream = React.useMemo(() => buildEventStream(visibleObjects), [visibleObjects]);
   const historyPointCount = React.useMemo(
@@ -1883,6 +1890,23 @@ export function App() {
     );
   }
 
+  function selectMapSearchResult(result: MapSearchResult) {
+    if (result.kind === "track" && result.objectId) {
+      setSelectedObjectId(result.objectId);
+      setSelectedSituationFeatureId(null);
+    } else if (result.kind === "feature" && result.featureId) {
+      setSelectedSituationFeatureId(result.featureId);
+      setSelectedObjectId(null);
+    }
+    setMapView({
+      bearing: mapView?.bearing ?? 0,
+      center: result.center,
+      pitch: mapView?.pitch ?? 0,
+      zoom: Math.max(mapView?.zoom ?? 10, result.kind === "track" ? 11 : 10)
+    });
+    setFocusViewRequest((current) => current + 1);
+  }
+
   function openSettings(tab: SettingsTab) {
     setSettingsTab(tab);
     setSettingsOpen(true);
@@ -2034,20 +2058,29 @@ export function App() {
           <StatusItem icon={<RadioTower size={16} />} label="Sources" value={String(sources.length)} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
           <StatusItem icon={<Database size={16} />} label="Objects" value={String(visibleObjects.length)} tone="neutral" />
         </div>
-        <button
-          aria-label="Operátor - otevřít nastavení"
-          className="operator-button"
-          onClick={() => openSettings("account")}
-          title="Operátor - otevřít nastavení"
-          type="button"
-        >
-          <UserCircle size={19} />
-          <span>
-            Operátor
-            <strong>{operatorDisplayName(authSession, authConfig)}</strong>
-          </span>
-          <Settings size={16} />
-        </button>
+        <div className="topbar-actions">
+          <a className="operator-button xr-entry-button" href="/xr" title="Otevřít prostorový XR režim">
+            <Sparkles size={18} />
+            <span>
+              XR
+              <strong>Quest</strong>
+            </span>
+          </a>
+          <button
+            aria-label="Operátor - otevřít nastavení"
+            className="operator-button"
+            onClick={() => openSettings("account")}
+            title="Operátor - otevřít nastavení"
+            type="button"
+          >
+            <UserCircle size={19} />
+            <span>
+              Operátor
+              <strong>{operatorDisplayName(authSession, authConfig)}</strong>
+            </span>
+            <Settings size={16} />
+          </button>
+        </div>
       </header>
 
       <WorkspaceNavigator activeWorkspace={activeWorkspace} onChange={setActiveWorkspace} onOpenSettings={() => openSettings("map")} />
@@ -2223,6 +2256,18 @@ export function App() {
 
         <section className={`center-column center-column-${activeWorkspace}`}>
           <section className="map-stage">
+            {activeWorkspace === "map" ? (
+              <MapGlobalSearch
+                query={mapSearchQuery}
+                results={mapSearchResults}
+                onChange={setMapSearchQuery}
+                onClear={() => setMapSearchQuery("")}
+                onSelect={(result) => {
+                  selectMapSearchResult(result);
+                  setMapSearchQuery("");
+                }}
+              />
+            ) : null}
             <CopMap
               alerts={mapAlerts}
               aoiRules={aoiRules}
@@ -4372,6 +4417,59 @@ function SegmentedControl({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function MapGlobalSearch({
+  query,
+  results,
+  onChange,
+  onClear,
+  onSelect
+}: {
+  query: string;
+  results: MapSearchResult[];
+  onChange: (value: string) => void;
+  onClear: () => void;
+  onSelect: (result: MapSearchResult) => void;
+}) {
+  const hasQuery = query.trim().length > 0;
+  return (
+    <div className="map-global-search">
+      <label className="map-global-search-field">
+        <Search size={16} />
+        <input
+          aria-label="Hledat v mapě"
+          autoComplete="off"
+          placeholder="Hledat let, BTS, letiště, výstrahu..."
+          value={query}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
+      {hasQuery ? (
+        <button className="map-global-search-clear" type="button" aria-label="Vymazat hledání v mapě" onClick={onClear}>
+          <X size={15} />
+        </button>
+      ) : null}
+      {hasQuery ? (
+        <div className="map-global-search-results" role="listbox" aria-label="Výsledky hledání v mapě">
+          {results.length > 0 ? (
+            results.map((result) => (
+              <button className={`map-search-card map-search-card-${result.type}`} key={result.id} type="button" onClick={() => onSelect(result)}>
+                <span className="map-search-type">{result.typeLabel}</span>
+                <span className="map-search-main">
+                  <strong>{result.label}</strong>
+                  <small>{result.subtitle || "Bez doplňujících metadat"}</small>
+                </span>
+                <MapPin size={15} />
+              </button>
+            ))
+          ) : (
+            <div className="map-search-empty">Nic v aktuálních vrstvách neodpovídá hledání.</div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -6602,9 +6700,16 @@ registerCopServiceWorker();
 
 const rootElement = document.getElementById("root");
 if (rootElement) {
+  const isXrRoute = window.location.pathname === "/xr" || window.location.pathname.startsWith("/xr/");
   createRoot(rootElement).render(
     <React.StrictMode>
-      <App />
+      {isXrRoute ? (
+        <React.Suspense fallback={<main className="xr-shell"><div className="xr-loading">Načítám prostorový režim...</div></main>}>
+          <XrWorkspace />
+        </React.Suspense>
+      ) : (
+        <App />
+      )}
     </React.StrictMode>
   );
 }
