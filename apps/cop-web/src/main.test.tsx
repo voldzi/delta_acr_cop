@@ -16,7 +16,12 @@ vi.mock("./CopMap", async () => {
         objects.length === 0
           ? React.createElement("span", null, emptyMessage)
           : objects.map((object) => React.createElement("span", { key: object.objectId }, object.objectId))
-      )
+      ),
+    formatTrackLabel: (object: { attributes?: { flightData?: { callsign?: string; icao24?: string; registration?: string } }; objectId: string }) =>
+      object.attributes?.flightData?.callsign
+      ?? object.attributes?.flightData?.registration
+      ?? object.attributes?.flightData?.icao24
+      ?? object.objectId
   };
 });
 
@@ -161,9 +166,22 @@ describe("COP web dashboard", () => {
     const catalogDrawer = screen.getByTestId("catalog-layer-drawer");
     expect(within(catalogDrawer).getByText("Veřejné lety")).toBeTruthy();
     expect((within(catalogDrawer).getByRole("checkbox", { name: /Veřejné lety/u }) as HTMLInputElement).checked).toBe(true);
+    expect(within(catalogDrawer).getByText("Simulace")).toBeTruthy();
+    expect((within(catalogDrawer).getByRole("checkbox", { name: /Simulace/u }) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByRole("button", { name: /Mapa/u }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: /Data/u }));
     expect(screen.getByText("Zobrazit simulovaná data")).toBeTruthy();
+    const objectSearchInput = screen.getAllByLabelText("Hledat v zobrazených objektech")[0] as HTMLInputElement;
+    fireEvent.change(objectSearchInput, { target: { value: "UAV" } });
+    await waitFor(() => expect(screen.getByTestId("cop-map").textContent).toContain("AIR_SIM_UAV-0001"));
+    expect(screen.getByTestId("cop-map").textContent).not.toContain("AIR_SIM_AIRCRAFT-0001");
+    expect(screen.getAllByText("1 z 2").length).toBeGreaterThan(0);
+    const clearSearchButton = screen.getAllByRole("button", { name: "Vymazat hledání" })[0];
+    if (!clearSearchButton) {
+      throw new Error("Clear search button not found");
+    }
+    fireEvent.click(clearSearchButton);
+    await waitFor(() => expect(screen.getByTestId("cop-map").textContent).toContain("AIR_SIM_AIRCRAFT-0001"));
     expect(screen.getByText("Profily pohledu")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /UAV watch/u }));
     expect(screen.getByText("Aktivní: UAV watch")).toBeTruthy();
@@ -320,6 +338,26 @@ function testMapCatalogResponse(): unknown {
         role: "primary",
         selectable: true,
         styleProfile: "flight-public-track-v1"
+      },
+      {
+        audience: "public",
+        defaultVisible: true,
+        geometryTypes: ["Point"],
+        groupId: "flight",
+        kind: "track_stream",
+        label: "Simulace",
+        layerId: "flight.sim.tracks",
+        maxZoom: 18,
+        minZoom: 4,
+        query: {
+          mode: "stream",
+          providerId: "cop.tracks",
+          streamId: "cop.live"
+        },
+        refreshSeconds: 5,
+        role: "primary",
+        selectable: true,
+        styleProfile: "sim-air-track-v1"
       },
       {
         audience: "public",

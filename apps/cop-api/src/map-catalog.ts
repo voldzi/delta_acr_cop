@@ -824,7 +824,7 @@ function buildCopOwnedLayers(): MapCatalogLayer[] {
       audience: "public",
       cacheTtlSeconds: 5,
       defaultVisible: true,
-      description: "Aktuální georeferencované tracky v COP state.",
+      description: "Veřejná letová data agregovaná přes SIM flight-data.",
       geometryTypes: ["Point"],
       groupId: "flight",
       kind: "track_stream",
@@ -845,6 +845,32 @@ function buildCopOwnedLayers(): MapCatalogLayer[] {
       role: "primary",
       selectable: true,
       styleProfile: "flight-public-track-v1"
+    },
+    {
+      audience: "public",
+      cacheTtlSeconds: 5,
+      defaultVisible: true,
+      description: "Simulovaná letecká situace ze SIM track streamu.",
+      geometryTypes: ["Point"],
+      groupId: "flight",
+      kind: "track_stream",
+      label: "Simulace",
+      layerId: "flight.sim.tracks",
+      maxZoom: 18,
+      minZoom: 4,
+      provenance: {
+        sourceIds: ["sim.air-situation"]
+      },
+      query: {
+        maxFeatures: 500,
+        mode: "stream",
+        providerId: "cop.tracks",
+        streamId: "cop.live"
+      },
+      refreshSeconds: 5,
+      role: "primary",
+      selectable: true,
+      styleProfile: "sim-air-track-v1"
     },
     {
       audience: "public",
@@ -932,7 +958,7 @@ function buildCopSources(): MapCatalogSource[] {
       audience: "public",
       cacheTtlSeconds: 5,
       enabled: true,
-      feedsCatalogLayerIds: ["flight.public.tracks"],
+      feedsCatalogLayerIds: ["flight.public.tracks", "flight.sim.tracks"],
       label: "COP current track state",
       providerId: "cop.tracks",
       selectableInMap: false,

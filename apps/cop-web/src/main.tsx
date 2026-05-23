@@ -101,7 +101,7 @@ import {
   type TakLayerId,
   type TakSourceDescriptor
 } from "./cop-data";
-import { CopMap } from "./CopMap";
+import { CopMap, formatTrackLabel } from "./CopMap";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
 import {
@@ -1165,9 +1165,17 @@ export function App() {
     () => filterVisibleObjects(objectsForDisplay, { includeSynthetic, minConfidence }),
     [includeSynthetic, minConfidence, objectsForDisplay]
   );
+  const searchScopeObjects = React.useMemo(
+    () => applyOperationalFilters(baseFilteredObjects, affiliationScope, domainScope, ""),
+    [affiliationScope, baseFilteredObjects, domainScope]
+  );
   const scopedObjects = React.useMemo(
-    () => applyOperationalFilters(baseFilteredObjects, affiliationScope, domainScope, searchQuery),
-    [affiliationScope, baseFilteredObjects, domainScope, searchQuery]
+    () => applyObjectSearch(searchScopeObjects, searchQuery),
+    [searchScopeObjects, searchQuery]
+  );
+  const visibleObjectsSearchScope = React.useMemo(
+    () => filterObjectsByLayers(searchScopeObjects, visibleTrackLayerIds),
+    [searchScopeObjects, visibleTrackLayerIds]
   );
   const visibleObjects = React.useMemo(
     () => filterObjectsByLayers(scopedObjects, visibleTrackLayerIds),
@@ -1757,6 +1765,9 @@ export function App() {
         aoiRules: (current.aoiRules ?? []).map(normalizeClientAoiRule).map((zone) => ({ ...zone, enabled: !enabled }))
       }));
     }
+    if (layer.layerId === "flight.sim.tracks" && !enabled) {
+      setIncludeSynthetic(true);
+    }
     applyCatalogLayerSelection(toggleCatalogLayerId(visibleCatalogLayerIds, layer.layerId, !enabled));
   }
 
@@ -1790,6 +1801,9 @@ export function App() {
     if (layer.layerId === "flight.public.tracks") {
       return visibleObjects.filter(isPublicFlightObject).length;
     }
+    if (layer.layerId === "flight.sim.tracks") {
+      return getSimulatedAirCount(visibleObjects);
+    }
     if (layer.layerId === "user.zone.alerts") {
       return aoiRules.filter((zone) => zone.enabled).length;
     }
@@ -1814,6 +1828,9 @@ export function App() {
     }
     if (layer.layerId === "flight.public.tracks") {
       return operatingMode === "OFFLINE" ? "degraded" : "online";
+    }
+    if (layer.layerId === "flight.sim.tracks") {
+      return includeSynthetic ? (operatingMode === "OFFLINE" ? "degraded" : "online") : "disabled";
     }
     if (layer.layerId === "user.zone.alerts") {
       return aoiRules.some((zone) => zone.enabled) ? "online" : "disabled";
@@ -2101,10 +2118,12 @@ export function App() {
 
               <div className="control-block">
                 <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry dat" />
-                <label className="search-field">
-                  <Search size={15} />
-                  <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Object ID, type, affiliation" />
-                </label>
+                <ObjectSearchControl
+                  resultCount={visibleObjects.length}
+                  totalCount={visibleObjectsSearchScope.length}
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                />
                 <label className="toggle-row">
                   <input type="checkbox" checked={includeSynthetic} onChange={(event) => setIncludeSynthetic(event.target.checked)} />
                   Zobrazit simulovaná data
@@ -2259,8 +2278,15 @@ export function App() {
               <div className="track-board data-track-board">
                 <div className="deck-header">
                   <PanelTitle icon={<ListFilter size={17} />} title="Datové objekty" />
-                  <span>{visibleObjects.length} objektů</span>
+                  <span>{formatObjectSearchCount(visibleObjects.length, visibleObjectsSearchScope.length, searchQuery)}</span>
                 </div>
+                <ObjectSearchControl
+                  compact
+                  resultCount={visibleObjects.length}
+                  totalCount={visibleObjectsSearchScope.length}
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                />
                 <TrackTable
                   objects={visibleObjects}
                   selectedObjectId={explicitlySelectedObject?.objectId}
@@ -2326,8 +2352,15 @@ export function App() {
               <div className="track-board">
                 <div className="deck-header">
                   <PanelTitle icon={<ListFilter size={17} />} title="Track list" />
-                  <span>{visibleObjects.length} tracks</span>
+                  <span>{formatObjectSearchCount(visibleObjects.length, visibleObjectsSearchScope.length, searchQuery)}</span>
                 </div>
+                <ObjectSearchControl
+                  compact
+                  resultCount={visibleObjects.length}
+                  totalCount={visibleObjectsSearchScope.length}
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                />
                 <TrackTable
                   objects={visibleObjects}
                   selectedObjectId={explicitlySelectedObject?.objectId}
@@ -4343,6 +4376,40 @@ function SegmentedControl({
   );
 }
 
+function ObjectSearchControl({
+  compact = false,
+  resultCount,
+  totalCount,
+  value,
+  onChange
+}: {
+  compact?: boolean;
+  resultCount: number;
+  totalCount: number;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className={`object-search-control ${compact ? "compact" : ""}`}>
+      <label className="search-field object-search-input">
+        <Search size={15} />
+        <input
+          aria-label="Hledat v zobrazených objektech"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="ID, callsign, typ, zdroj..."
+        />
+      </label>
+      {value.trim() ? (
+        <button className="icon-button object-search-clear" type="button" aria-label="Vymazat hledání" onClick={() => onChange("")}>
+          <X size={15} />
+        </button>
+      ) : null}
+      <span className="object-search-count">{formatObjectSearchCount(resultCount, totalCount, value)}</span>
+    </div>
+  );
+}
+
 function TrackTable({
   objects,
   selectedObjectId,
@@ -4374,7 +4441,7 @@ function TrackTable({
             role="row"
             type="button"
           >
-            <span>{object.objectId}</span>
+            <span title={object.objectId}>{formatObjectListLabel(object)}</span>
             <span>{object.objectType}</span>
             <span>
               <i className={`affiliation-dot ${affiliation.disposition}`} />
@@ -4802,22 +4869,78 @@ function applyOperationalFilters(
   domainScope: DomainScope,
   searchQuery: string
 ): CopObject[] {
-  const normalizedQuery = searchQuery.trim().toLowerCase();
-  return objects.filter((object) => {
+  return applyObjectSearch(objects.filter((object) => {
     if (affiliationScope !== "all" && getAffiliationPresentation(object.affiliation).disposition !== affiliationScope) {
       return false;
     }
     if (domainScope !== "all" && object.domain !== domainScope) {
       return false;
     }
-    if (!normalizedQuery) {
-      return true;
-    }
-    return [object.objectId, object.objectType, object.affiliation, object.domain, object.status]
-      .join(" ")
-      .toLowerCase()
-      .includes(normalizedQuery);
-  });
+    return true;
+  }), searchQuery);
+}
+
+function applyObjectSearch(objects: CopObject[], searchQuery: string): CopObject[] {
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return objects;
+  }
+  return objects.filter((object) => buildObjectSearchText(object).includes(normalizedQuery));
+}
+
+function buildObjectSearchText(object: CopObject): string {
+  const flightData = object.attributes?.flightData;
+  const provenance = object.attributes?.provenance;
+  const values: unknown[] = [
+    object.objectId,
+    formatTrackLabel(object),
+    object.objectType,
+    object.affiliation,
+    object.domain,
+    object.status,
+    flightData?.callsign,
+    flightData?.registration,
+    flightData?.icao24,
+    flightData?.originCountry,
+    flightData ? formatFlightAircraft(flightData) : undefined,
+    flightData ? formatFlightProviders(flightData) : undefined,
+    provenance?.sourceSystemId,
+    provenance?.sourceDeviceId,
+    object.position?.lat,
+    object.position?.lon,
+    object.attributes
+  ];
+  return collectSearchText(values).join(" ").toLowerCase();
+}
+
+function collectSearchText(value: unknown, depth = 0, output: string[] = []): string[] {
+  if (output.length >= 80 || depth > 2 || value === null || value === undefined) {
+    return output;
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    output.push(String(value));
+    return output;
+  }
+  if (Array.isArray(value)) {
+    value.slice(0, 12).forEach((item) => collectSearchText(item, depth + 1, output));
+    return output;
+  }
+  if (typeof value === "object") {
+    Object.entries(value as Record<string, unknown>).slice(0, 24).forEach(([key, item]) => {
+      output.push(key);
+      collectSearchText(item, depth + 1, output);
+    });
+  }
+  return output;
+}
+
+function formatObjectSearchCount(resultCount: number, totalCount: number, searchQuery: string): string {
+  return searchQuery.trim() ? `${resultCount} z ${totalCount}` : `${totalCount} objektů`;
+}
+
+function formatObjectListLabel(object: CopObject): string {
+  const label = formatTrackLabel(object);
+  return label || object.objectId;
 }
 
 function buildMetrics(objects: CopObject[], sources: SourceSystem[]): DashboardMetrics {
@@ -6026,6 +6149,7 @@ function isImplementedCatalogLayer(layer: MapCatalogLayer): boolean {
       || layer.query.providerId === "sim.safety-data"
       || layer.query.providerId === "sim.tak-gateway"))
     || layer.layerId === "flight.public.tracks"
+    || layer.layerId === "flight.sim.tracks"
     || layer.layerId === "user.zone.alerts";
 }
 
@@ -6114,6 +6238,9 @@ function catalogLayerMatchesLegacySelection(
   if (layer.layerId === "flight.public.tracks") {
     return selection.trackLayerIds.includes("air-situation") || selection.trackLayerIds.includes("public-flights");
   }
+  if (layer.layerId === "flight.sim.tracks") {
+    return selection.trackLayerIds.includes("air-situation") || selection.trackLayerIds.includes("sim-air");
+  }
   if (layer.layerId === "user.zone.alerts") {
     return false;
   }
@@ -6156,6 +6283,10 @@ function legacySelectionFromCatalogLayerIds(
     }
     if (layer.layerId === "flight.public.tracks") {
       trackLayerIds.add("public-flights");
+      continue;
+    }
+    if (layer.layerId === "flight.sim.tracks") {
+      trackLayerIds.add("sim-air");
       continue;
     }
     if (layer.query.providerId === "sim.situation-data") {

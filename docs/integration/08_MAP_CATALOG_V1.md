@@ -50,6 +50,7 @@ reference.infrastructure.healthcare
 reference.infrastructure.emergency
 reference.infrastructure.communications
 flight.public.tracks
+flight.sim.tracks
 flight.reference.airports
 flight.reference.airspaces
 user.zone.alerts
@@ -413,6 +414,7 @@ Provider-native fields may be preserved under:
 | `reference.infrastructure.emergency` | Záchranná infrastruktura | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `fire_station`, `police`, `ambulance_station`, `shelter` |
 | `reference.infrastructure.communications` | BTS / komunikační stožáry | `sim.situation-data` layer `mobile`, source `osm_postgis`, category `communications_tower` |
 | `flight.public.tracks` | Veřejné lety | `sim.flight-data` tracks |
+| `flight.sim.tracks` | Simulace | COP current track stream, synthetic SIM air objects |
 | `flight.reference.airports` | Letiště | `sim.flight-data` airports |
 | `flight.reference.airspaces` | Letecké prostory | `sim.flight-data` airspaces |
 | `partner.tak.mobile` | Partnerské jednotky | `sim.tak-gateway` layer `mobile` |
