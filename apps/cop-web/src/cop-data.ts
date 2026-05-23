@@ -223,6 +223,15 @@ export type SituationGeometry =
 export interface SituationFeatureProperties {
   affectedAreas?: string[];
   affiliation?: string;
+  attachments?: Array<{
+    attachmentId: string;
+    byteSize: number;
+    contentType: string;
+    contentUrl?: string;
+    fileName?: string;
+    kind: CommunityAttachmentKind;
+    uploadedAt?: string;
+  }>;
   category: string;
   certainty?: string;
   confidence?: number;
@@ -577,6 +586,62 @@ export interface CommunityFeatureCollectionResponse {
   };
   type: "FeatureCollection";
   warnings?: string[];
+}
+
+export type CommunityReportCategory =
+  | "bridge_damage"
+  | "fire"
+  | "flood"
+  | "hazard"
+  | "infrastructure_damage"
+  | "medical"
+  | "other"
+  | "road_blockage"
+  | "utility_outage";
+
+export type CommunityReportHazardSeverity = "advisory" | "critical" | "warning";
+export type CommunityReportVisibility = "community" | "private" | "public";
+export type CommunityAttachmentKind = "document" | "photo" | "video";
+
+export interface CommunityReportLocation {
+  accuracyM?: number;
+  lat: number;
+  lon: number;
+  source: "device" | "manual" | "photo_exif" | "unknown";
+}
+
+export interface CommunityReportAttachment {
+  attachmentId: string;
+  byteSize: number;
+  captureLocation?: CommunityReportLocation;
+  contentType: string;
+  contentUrl?: string;
+  fileName?: string;
+  kind: CommunityAttachmentKind;
+  reportId: string;
+  status: "failed" | "pending_upload" | "removed" | "uploaded";
+}
+
+export interface CommunityReport {
+  attachments: CommunityReportAttachment[];
+  category: CommunityReportCategory;
+  description?: string;
+  location: CommunityReportLocation;
+  observedAt: string;
+  properties: Record<string, unknown>;
+  reportId: string;
+  status: "draft" | "hidden" | "published" | "rejected" | "submitted";
+  title: string;
+  visibility: CommunityReportVisibility;
+}
+
+export interface CommunityAttachmentUploadSlot {
+  bucket: string;
+  expiresAt: string;
+  headers: Record<string, string>;
+  method: "PUT";
+  objectKey: string;
+  uploadUrl: string;
 }
 
 export interface TakLayersResponse {
@@ -1073,6 +1138,138 @@ export async function fetchMessagingBootstrap(apiBase: string, token: string, de
   });
 }
 
+export async function createCommunityReport(
+  apiBase: string,
+  token: string,
+  payload: {
+    category: CommunityReportCategory;
+    description?: string;
+    hazardSeverity: CommunityReportHazardSeverity;
+    location: CommunityReportLocation;
+    observedAt?: string;
+    title: string;
+    validUntil?: string;
+    visibility?: CommunityReportVisibility;
+  }
+): Promise<CommunityReport> {
+  return fetchJson<CommunityReport>(`${apiBase}/api/v1/community/reports`, {
+    body: JSON.stringify({
+      ...payload,
+      properties: {
+        hazardSeverity: payload.hazardSeverity,
+        ...(payload.validUntil ? { validUntil: payload.validUntil } : {})
+      },
+      visibility: payload.visibility ?? "community"
+    }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function createCommunityAttachmentUpload(
+  apiBase: string,
+  token: string,
+  reportId: string,
+  payload: {
+    byteSize: number;
+    captureLocation?: CommunityReportLocation;
+    contentType: string;
+    fileName?: string;
+    kind: CommunityAttachmentKind;
+  }
+): Promise<{ attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }> {
+  return fetchJson<{ attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }>(
+    `${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments`,
+    {
+      body: JSON.stringify(payload),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    }
+  );
+}
+
+export async function completeCommunityAttachmentUpload(
+  apiBase: string,
+  token: string,
+  reportId: string,
+  attachmentId: string,
+  payload: { byteSize: number; checksumSha256?: string }
+): Promise<CommunityReportAttachment> {
+  return fetchJson<CommunityReportAttachment>(
+    `${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachmentId)}/complete`,
+    {
+      body: JSON.stringify(payload),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    }
+  );
+}
+
+export async function uploadCommunityAttachmentViaApi(
+  apiBase: string,
+  token: string,
+  reportId: string,
+  attachmentId: string,
+  file: File
+): Promise<CommunityReportAttachment> {
+  return fetchJson<CommunityReportAttachment>(
+    `${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachmentId)}/upload`,
+    {
+      body: JSON.stringify({
+        byteSize: file.size,
+        dataBase64: await fileToBase64(file)
+      }),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    }
+  );
+}
+
+export async function uploadCommunityAttachmentFile(
+  apiBase: string,
+  token: string,
+  reportId: string,
+  file: File,
+  slot: { attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }
+): Promise<CommunityReportAttachment> {
+  try {
+    const directResponse = await fetch(slot.upload.uploadUrl, {
+      body: file,
+      headers: slot.upload.headers,
+      method: "PUT"
+    });
+    if (!directResponse.ok) {
+      throw new Error(`${directResponse.status} ${directResponse.statusText || "direct upload failed"}`);
+    }
+    return completeCommunityAttachmentUpload(apiBase, token, reportId, slot.attachment.attachmentId, {
+      byteSize: file.size
+    });
+  } catch {
+    return uploadCommunityAttachmentViaApi(apiBase, token, reportId, slot.attachment.attachmentId, file);
+  }
+}
+
+export async function submitCommunityReport(apiBase: string, token: string, reportId: string): Promise<CommunityReport> {
+  return fetchJson<CommunityReport>(`${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/submit`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    method: "POST"
+  });
+}
+
 export function connectCopStream(apiBase: string, token: string | undefined, handlers: CopStreamHandlers): CopStreamConnection | null {
   if (typeof ReadableStream === "undefined") {
     return null;
@@ -1186,6 +1383,17 @@ async function fetchOptionalJson<T>(url: string, init?: RequestInit): Promise<T 
   } catch {
     return undefined;
   }
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 async function readCopStream(apiBase: string, token: string | undefined, signal: AbortSignal, handlers: CopStreamHandlers): Promise<void> {

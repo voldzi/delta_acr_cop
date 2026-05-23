@@ -41,6 +41,8 @@ Nové endpointy:
 - `POST /api/v1/community/reports/{reportId}/submit`
 - `POST /api/v1/community/reports/{reportId}/attachments`
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete`
+- `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload`
+- `GET /api/v1/community/reports/{reportId}/attachments/{attachmentId}/content`
 
 Vytvoření reportu:
 
@@ -56,9 +58,14 @@ Vytvoření reportu:
     "source": "device"
   },
   "observedAt": "2026-05-20T11:59:30Z",
+  "hazardSeverity": "warning",
+  "validUntil": "2026-05-20T15:00:00Z",
   "visibility": "community"
 }
 ```
+
+`hazardSeverity` je uživatelský odhad závažnosti: `advisory`, `warning`, `critical`.
+`validUntil` je odhadovaná platnost rizika; po vypršení se mapový prvek označí jako stale, ale nezmizí bez moderace/retence.
 
 Kategorie:
 
@@ -72,7 +79,8 @@ Kategorie:
 - `hazard`
 - `other`
 
-Upload přílohy neprobíhá přes API proces. COP API vytvoří presigned `PUT` URL a klient nahraje soubor přímo do SeaweedFS/S3.
+Primární upload přílohy neprobíhá přes API proces. COP API vytvoří presigned `PUT` URL a klient nahraje soubor přímo do SeaweedFS/S3.
+Protože veřejný web běží přes HTTPS a pilotní SeaweedFS je zatím interní HTTP endpoint, COP umí i serverový fallback `POST /attachments/{attachmentId}/upload`, který přijme base64 obsah a uloží objekt do SeaweedFS server-side. Tento fallback je limitovaný `COP_MEDIA_MAX_ATTACHMENT_BYTES`.
 
 Podporované přílohy v první verzi:
 
@@ -81,6 +89,7 @@ Podporované přílohy v první verzi:
 - dokument: `application/pdf`.
 
 Po úspěšném uploadu klient zavolá `complete`. Do budoucna je vhodné doplnit serverovou kontrolu objektu přes `HEAD`, AV/obsahovou kontrolu a generování náhledů.
+Po dokončení má příloha `contentUrl`; detail komunitního prvku může zobrazit obrázek, přehrát video přes HTML5 `video` a otevřít PDF.
 
 ## Poloha fotky
 
@@ -120,13 +129,13 @@ Poznámka k veřejnému provozu: `COP_MEDIA_S3_PUBLIC_ENDPOINT` musí být dosa�
 
 1. Uživatel se přihlásí přes Keycloak/OIDC.
 2. Aplikace získá polohu zařízení a přesnost.
-3. Uživatel pořídí fotku a vybere kategorii.
+3. Uživatel pořídí fotku/video nebo vybere PDF a určí kategorii, riziko a platnost.
 4. Aplikace vytvoří `POST /api/v1/community/reports`.
 5. Aplikace požádá o upload slot přes `POST /attachments`.
-6. Aplikace nahraje fotku na `upload.uploadUrl`.
+6. Aplikace nahraje přílohu na `upload.uploadUrl`; pokud to není možné, použije fallback `POST /upload`.
 7. Aplikace zavolá `POST /complete`.
 8. Aplikace zavolá `POST /submit`.
-9. Report se zobrazí v komunitní mapové vrstvě.
+9. Report se zobrazí v komunitní mapové vrstvě včetně přehratelných/otevíratelných příloh.
 
 Offline iOS režim má držet lokální outbox a odeslat kroky až po obnovení spojení.
 
@@ -164,7 +173,9 @@ Veřejný web má dva zřetelné režimy:
 
 Anonymní uživatel nesmí dostat lab token ve web bundle. `COP_PUBLIC_LAB_VALUE` proto zůstává pro veřejné nasazení prázdné. Serverový `COP_LAB_TOKEN` může zůstat jen pro interní pilotní zdroje.
 
-UI nyní zobrazuje panel režimu účtu a zamyká ukládání vlastních profilů pohledu, potvrzování serverových výstrah a AI akce za přihlášení přes Keycloak. Lokální mapové čtení zůstává dostupné bez účtu.
+UI nyní zobrazuje panel režimu účtu a zamyká ukládání vlastních profilů pohledu, potvrzování serverových výstrah, AI akce a tvorbu komunitních hlášení za přihlášení přes Keycloak. Lokální mapové čtení zůstává dostupné bez účtu.
+
+Webové tlačítko `Nahlásit` otevře formulář pro kategorii, popis, uživatelský stupeň rizika, odhad platnosti, polohu a přílohy. Poloha se bere z GPS, ze středu mapy nebo interaktivním kliknutím do mapy. Každá příloha dostane stejnou polohu pořízení, pokud soubor sám neposkytne ověřená geodata.
 
 ## AI
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildServer } from "./server.js";
-import type { MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
+import type { MediaObjectReadRequest, MediaObjectWriteRequest, MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
 
 describe("community report routes", () => {
   const originalEnv = { ...process.env };
@@ -29,6 +29,8 @@ describe("community report routes", () => {
         },
         observedAt: "2026-05-20T11:59:30Z",
         title: "Požár u cesty",
+        hazardSeverity: "warning",
+        validUntil: "2026-05-20T15:00:00Z",
         visibility: "community"
       },
       url: "/api/v1/community/reports"
@@ -112,8 +114,9 @@ describe("community report routes", () => {
               attachmentCount: 1,
               category: "fire",
               label: "Požár u cesty",
+              hazardSeverity: "warning",
               photoCount: 1,
-              severity: "critical",
+              severity: "warning",
               sourceId: "community_reports"
             }
           }
@@ -201,10 +204,74 @@ describe("community report routes", () => {
     expect(response.statusCode).toBe(400);
     await app.close();
   });
+
+  it("uploads video and document attachments through the API proxy", async () => {
+    const mediaStorage = new FakeMediaStorage();
+    const app = buildServer({
+      mediaStorage,
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        category: "bridge_damage",
+        location: {
+          lat: 50.075,
+          lon: 14.438,
+          source: "manual"
+        },
+        title: "Poškození mostu",
+        visibility: "community"
+      },
+      url: "/api/v1/community/reports"
+    });
+    const report = createResponse.json() as { reportId: string };
+    const body = Buffer.from("fake-video-data");
+    const attachmentResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        byteSize: body.length,
+        captureLocation: {
+          lat: 50.075,
+          lon: 14.438,
+          source: "manual"
+        },
+        contentType: "video/mp4",
+        fileName: "bridge.mp4",
+        kind: "video"
+      },
+      url: `/api/v1/community/reports/${report.reportId}/attachments`
+    });
+    const attachment = (attachmentResponse.json() as { attachment: { attachmentId: string } }).attachment;
+    const uploadResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        byteSize: body.length,
+        dataBase64: body.toString("base64")
+      },
+      url: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/upload`
+    });
+
+    expect(uploadResponse.statusCode).toBe(200);
+    expect(uploadResponse.json()).toMatchObject({
+      contentType: "video/mp4",
+      contentUrl: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content`,
+      kind: "video",
+      status: "uploaded"
+    });
+    expect(mediaStorage.objects.get(`community-reports/${report.reportId}/${attachment.attachmentId}/bridge.mp4`)?.toString()).toBe("fake-video-data");
+
+    await app.close();
+  });
 });
 
 class FakeMediaStorage implements MediaStorage {
   readonly name = "fake-media";
+  readonly objects = new Map<string, Buffer>();
 
   async init(): Promise<void> {}
 
@@ -221,5 +288,13 @@ class FakeMediaStorage implements MediaStorage {
       objectKey: `community-reports/${request.reportId}/${request.attachmentId}/${request.fileName ?? "attachment.bin"}`,
       uploadUrl: `https://media.example.test/${request.reportId}/${request.attachmentId}`
     };
+  }
+
+  async createReadUrl(request: MediaObjectReadRequest): Promise<string> {
+    return `https://media.example.test/read/${encodeURIComponent(request.objectKey)}`;
+  }
+
+  async putObject(request: MediaObjectWriteRequest): Promise<void> {
+    this.objects.set(request.objectKey, request.body);
   }
 }

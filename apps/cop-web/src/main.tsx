@@ -48,6 +48,8 @@ import {
 import {
   acknowledgeCopAlert,
   connectCopStream,
+  createCommunityAttachmentUpload,
+  createCommunityReport,
   fetchCopDashboardData,
   fetchCopAlerts,
   fetchMapCatalog,
@@ -63,6 +65,8 @@ import {
   getUavCount,
   isPublicFlightObject,
   saveUserProfile,
+  submitCommunityReport,
+  uploadCommunityAttachmentFile,
   type CopDashboardData,
   type AoiRule,
   type AlertPreferences,
@@ -72,7 +76,11 @@ import {
   type CopLayer,
   type CopObject,
   type CopStreamHealth,
+  type CommunityAttachmentKind,
   type CommunityFeatureCollectionResponse,
+  type CommunityReportCategory,
+  type CommunityReportHazardSeverity,
+  type CommunityReportLocation,
   type FlightDataAttributes,
   type FlightReferenceFeatureCollectionResponse,
   type HealthStatus,
@@ -335,6 +343,13 @@ export function App() {
   const [communityFeatures, setCommunityFeatures] = React.useState<CommunityFeatureCollectionResponse | null>(null);
   const [communityStatus, setCommunityStatus] = React.useState<SituationLayerStatus>("online");
   const [communityWarnings, setCommunityWarnings] = React.useState<string[]>([]);
+  const [communityReportOpen, setCommunityReportOpen] = React.useState(false);
+  const [communityReportDraft, setCommunityReportDraft] = React.useState<CommunityReportDraft>(() => createCommunityReportDraft());
+  const [communityReportSubmitting, setCommunityReportSubmitting] = React.useState(false);
+  const [communityReportError, setCommunityReportError] = React.useState<string | null>(null);
+  const [communityReportSuccess, setCommunityReportSuccess] = React.useState<string | null>(null);
+  const [communityReportLocationPickMode, setCommunityReportLocationPickMode] = React.useState(false);
+  const [communityRefreshNonce, setCommunityRefreshNonce] = React.useState(0);
   const [takLayers, setTakLayers] = React.useState<TakLayer[]>([]);
   const [visibleTakLayerIds, setVisibleTakLayerIds] = React.useState<TakLayerId[]>(() => normalizeTakLayerIds(initialPreferences.takLayerIds));
   const [takFeatures, setTakFeatures] = React.useState<TakFeatureCollectionResponse | null>(null);
@@ -973,7 +988,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
+  }, [apiBase, authToken, communityRefreshNonce, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
 
   React.useEffect(() => {
     if (!authToken) {
@@ -1943,12 +1958,133 @@ export function App() {
   function startCommunityReportCapture() {
     locateUser();
     if (!profileAccessReady) {
-      setProfileSyncError("Sběr hlášení s fotkou, popisem a polohou bude dostupný po přihlášení přes Keycloak.");
+      setProfileSyncError("Vlastní hlášení s polohou a přílohami je dostupné po přihlášení přes Keycloak.");
       openSettings("account");
       return;
     }
-    setLocationStatus("Sběr hlášení: poloha se připravuje pro nový report, formulář s fotkou a popisem bude další krok.");
-    openSettings("awareness");
+    setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(userLocation, mapView)));
+    setCommunityReportError(null);
+    setCommunityReportSuccess(null);
+    setCommunityReportLocationPickMode(false);
+    setCommunityReportOpen(true);
+    setLocationStatus("Sběr hlášení: doplňte popis, riziko, platnost a případné přílohy.");
+  }
+
+  function setCommunityReportLocationFromUser() {
+    if (!userLocation) {
+      locateUser();
+      setCommunityReportError("Nejdřív zaměřuji vaši polohu. Po povolení polohy tlačítko použijte znovu.");
+      return;
+    }
+    setCommunityReportDraft((current) => ({
+      ...current,
+      location: {
+        ...(typeof userLocation.accuracyM === "number" ? { accuracyM: userLocation.accuracyM } : {}),
+        lat: userLocation.lat,
+        lon: userLocation.lon,
+        source: "device"
+      }
+    }));
+    setCommunityReportError(null);
+  }
+
+  function setCommunityReportLocationFromMapCenter() {
+    setCommunityReportDraft((current) => ({
+      ...current,
+      location: resolveCommunityReportLocation(null, mapView)
+    }));
+    setCommunityReportError(null);
+  }
+
+  function startCommunityReportMapPick() {
+    setCommunityReportLocationPickMode(true);
+    setCommunityReportOpen(false);
+    setCommunityReportError(null);
+    setLocationStatus("Kliknutím do mapy určíte polohu nového hlášení.");
+  }
+
+  function handleCommunityReportLocationPicked(center: { lat: number; lon: number }) {
+    setCommunityReportDraft((current) => ({
+      ...current,
+      location: {
+        lat: center.lat,
+        lon: center.lon,
+        source: "manual"
+      }
+    }));
+    setCommunityReportLocationPickMode(false);
+    setCommunityReportOpen(true);
+    setLocationStatus(`Poloha hlášení: ${center.lat.toFixed(5)}, ${center.lon.toFixed(5)}`);
+  }
+
+  async function submitCommunityReportDraft() {
+    if (!authToken) {
+      setCommunityReportError("Pro uložení hlášení je potřeba přihlášení.");
+      openSettings("account");
+      return;
+    }
+    const validationError = validateCommunityReportDraft(communityReportDraft);
+    if (validationError) {
+      setCommunityReportError(validationError);
+      return;
+    }
+    setCommunityReportSubmitting(true);
+    setCommunityReportError(null);
+    setCommunityReportSuccess(null);
+    try {
+      const report = await createCommunityReport(apiBase, authToken, {
+        category: communityReportDraft.category,
+        description: communityReportDraft.description.trim() || undefined,
+        hazardSeverity: communityReportDraft.hazardSeverity,
+        location: communityReportDraft.location,
+        observedAt: new Date().toISOString(),
+        title: communityReportDraft.title.trim(),
+        validUntil: communityReportDraft.validUntil ? new Date(communityReportDraft.validUntil).toISOString() : undefined,
+        visibility: "community"
+      });
+      for (const file of communityReportDraft.files) {
+        const contentType = normalizeCommunityFileContentType(file);
+        const kind = communityAttachmentKindFromContentType(contentType);
+        if (!kind) {
+          throw new Error(`Nepodporovaný typ souboru: ${file.name || contentType}`);
+        }
+        const slot = await createCommunityAttachmentUpload(apiBase, authToken, report.reportId, {
+          byteSize: file.size,
+          captureLocation: communityReportDraft.location,
+          contentType,
+          fileName: file.name || undefined,
+          kind
+        });
+        await uploadCommunityAttachmentFile(apiBase, authToken, report.reportId, file, slot);
+      }
+      const submitted = await submitCommunityReport(apiBase, authToken, report.reportId);
+      setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(userLocation, mapView)));
+      setCommunityReportSuccess("Hlášení bylo uloženo a sdíleno do mapové vrstvy.");
+      setCommunityReportOpen(false);
+      setCommunityReportLocationPickMode(false);
+      setCommunityRefreshNonce((current) => current + 1);
+      setSelectedSituationFeatureId(`community:${submitted.reportId}`);
+      setSelectedObjectId(null);
+      enableCommunityReportCatalogLayers();
+      setLocationStatus("Hlášení bylo uloženo.");
+    } catch (error) {
+      setCommunityReportError(error instanceof Error ? error.message : "Hlášení se nepodařilo uložit.");
+    } finally {
+      setCommunityReportSubmitting(false);
+    }
+  }
+
+  function enableCommunityReportCatalogLayers() {
+    if (!mapCatalog) {
+      return;
+    }
+    const reportLayerIds = mapCatalog.layers
+      .filter((layer) => layer.query.providerId === "cop.community" && layer.selectable)
+      .map((layer) => layer.layerId);
+    if (reportLayerIds.length === 0) {
+      return;
+    }
+    setVisibleCatalogLayerIds((current) => Array.from(new Set([...current, ...reportLayerIds])));
   }
 
   function logoutOperator() {
@@ -2312,8 +2448,10 @@ export function App() {
                 setSelectedSituationFeatureId(null);
               }}
               onCreateZoneAt={handleCreateAoiRuleFromMapClick}
+              onPickReportLocation={handleCommunityReportLocationPicked}
               onRequestUserLocation={locateUser}
               onViewChange={setMapView}
+              reportLocationPickActive={communityReportLocationPickMode}
               showAlertAreas={showAlertAreas}
               showProximityAlertRadius={proximityAlertEnabled}
               userLocation={userLocation}
@@ -2654,7 +2792,176 @@ export function App() {
           onRefresh={() => void loadMessagingStatus()}
         />
       ) : null}
+
+      {communityReportOpen ? (
+        <CommunityReportDialog
+          draft={communityReportDraft}
+          error={communityReportError}
+          isSubmitting={communityReportSubmitting}
+          success={communityReportSuccess}
+          onChange={setCommunityReportDraft}
+          onClose={() => {
+            setCommunityReportOpen(false);
+            setCommunityReportError(null);
+          }}
+          onLocationFromMap={setCommunityReportLocationFromMapCenter}
+          onLocationFromMapClick={startCommunityReportMapPick}
+          onLocationFromUser={setCommunityReportLocationFromUser}
+          onSubmit={() => void submitCommunityReportDraft()}
+        />
+      ) : null}
     </main>
+  );
+}
+
+interface CommunityReportDraft {
+  category: CommunityReportCategory;
+  description: string;
+  files: File[];
+  hazardSeverity: CommunityReportHazardSeverity;
+  location: CommunityReportLocation;
+  title: string;
+  validUntil: string;
+}
+
+interface CommunityReportDialogProps {
+  draft: CommunityReportDraft;
+  error: string | null;
+  isSubmitting: boolean;
+  success: string | null;
+  onChange: React.Dispatch<React.SetStateAction<CommunityReportDraft>>;
+  onClose: () => void;
+  onLocationFromMap: () => void;
+  onLocationFromMapClick: () => void;
+  onLocationFromUser: () => void;
+  onSubmit: () => void;
+}
+
+function CommunityReportDialog({
+  draft,
+  error,
+  isSubmitting,
+  success,
+  onChange,
+  onClose,
+  onLocationFromMap,
+  onLocationFromMapClick,
+  onLocationFromUser,
+  onSubmit
+}: CommunityReportDialogProps) {
+  return (
+    <div className="report-dialog-backdrop" role="presentation">
+      <section className="report-dialog" aria-modal="true" role="dialog" aria-labelledby="community-report-title">
+        <div className="report-dialog-header">
+          <div>
+            <span>Komunitní hlášení</span>
+            <h2 id="community-report-title">Nahlásit událost v okolí</h2>
+          </div>
+          <button aria-label="Zavřít" className="icon-button" onClick={onClose} type="button">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="report-form-grid">
+          <label>
+            Typ události
+            <select
+              value={draft.category}
+              onChange={(event) => onChange((current) => ({ ...current, category: event.target.value as CommunityReportCategory }))}
+            >
+              {communityReportCategoryOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Odhad rizika
+            <select
+              value={draft.hazardSeverity}
+              onChange={(event) => onChange((current) => ({ ...current, hazardSeverity: event.target.value as CommunityReportHazardSeverity }))}
+            >
+              <option value="advisory">Informace</option>
+              <option value="warning">Varování</option>
+              <option value="critical">Kritické</option>
+            </select>
+          </label>
+        </div>
+
+        <label className="report-field">
+          Název
+          <input
+            maxLength={120}
+            placeholder="Např. Požár u lesa"
+            value={draft.title}
+            onChange={(event) => onChange((current) => ({ ...current, title: event.target.value }))}
+          />
+        </label>
+
+        <label className="report-field">
+          Popis
+          <textarea
+            maxLength={2000}
+            placeholder="Stručně popište, co je vidět a proč je to důležité."
+            value={draft.description}
+            onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))}
+          />
+        </label>
+
+        <div className="report-form-grid">
+          <label>
+            Platnost rizika
+            <input
+              type="datetime-local"
+              value={draft.validUntil}
+              onChange={(event) => onChange((current) => ({ ...current, validUntil: event.target.value }))}
+            />
+          </label>
+          <div className="report-coordinate-box">
+            <span>Poloha</span>
+            <strong>{formatReportLocation(draft.location)}</strong>
+          </div>
+        </div>
+
+        <div className="report-location-actions">
+          <button className="mini-button" onClick={onLocationFromUser} type="button">Moje poloha</button>
+          <button className="mini-button" onClick={onLocationFromMap} type="button">Střed mapy</button>
+          <button className="mini-button" onClick={onLocationFromMapClick} type="button">Vybrat v mapě</button>
+        </div>
+
+        <label className="report-field">
+          Přílohy
+          <input
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,video/mp4,video/quicktime"
+            multiple
+            type="file"
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? []);
+              onChange((current) => ({ ...current, files }));
+            }}
+          />
+        </label>
+        <div className="report-attachment-list">
+          {draft.files.length === 0 ? (
+            <span>Bez příloh. Lze vložit fotografii, PDF nebo video.</span>
+          ) : draft.files.map((file) => (
+            <div className="report-attachment-row" key={`${file.name}-${file.size}-${file.lastModified}`}>
+              <span>{file.name || "Soubor"}</span>
+              <strong>{communityAttachmentKindLabel(communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file)))} · {formatFileSize(file.size)}</strong>
+            </div>
+          ))}
+        </div>
+
+        {error ? <div className="report-dialog-message error">{error}</div> : null}
+        {success ? <div className="report-dialog-message success">{success}</div> : null}
+
+        <div className="report-dialog-actions">
+          <button className="ghost-button" disabled={isSubmitting} onClick={onClose} type="button">Zrušit</button>
+          <button className="primary-button" disabled={isSubmitting} onClick={onSubmit} type="button">
+            {isSubmitting ? "Ukládám..." : "Uložit hlášení"}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -4846,6 +5153,12 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
         </ObjectDetailSection>
       ) : null}
 
+      {properties.layer === "community" && properties.attachments && properties.attachments.length > 0 ? (
+        <ObjectDetailSection title="Přílohy">
+          <CommunityAttachmentPreview attachments={properties.attachments} />
+        </ObjectDetailSection>
+      ) : null}
+
       <ObjectDetailSection title="Poloha">
         <DetailGrid
           rows={[
@@ -4874,6 +5187,37 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
         {properties.stale ? <span className="warning-badge">STALE</span> : null}
         {properties.severity ? <span className="warning-badge">{properties.severity.toUpperCase()}</span> : null}
       </div>
+    </div>
+  );
+}
+
+function CommunityAttachmentPreview({
+  attachments
+}: {
+  attachments: NonNullable<SituationFeature["properties"]["attachments"]>;
+}) {
+  return (
+    <div className="community-media-list">
+      {attachments.map((attachment) => (
+        <div className="community-media-item" key={attachment.attachmentId}>
+          <div className="community-media-meta">
+            <strong>{attachment.fileName ?? communityAttachmentKindLabel(attachment.kind)}</strong>
+            <span>{communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}</span>
+          </div>
+          {attachment.contentUrl && attachment.kind === "photo" ? (
+            <img alt={attachment.fileName ?? "Fotografie hlášení"} src={attachment.contentUrl} />
+          ) : null}
+          {attachment.contentUrl && attachment.kind === "video" ? (
+            <video controls preload="metadata" src={attachment.contentUrl} />
+          ) : null}
+          {attachment.contentUrl && attachment.kind === "document" ? (
+            <a className="mini-button community-document-link" href={attachment.contentUrl} rel="noreferrer" target="_blank">
+              Otevřít PDF
+            </a>
+          ) : null}
+          {!attachment.contentUrl ? <span className="empty-mini">Příloha zatím nemá dostupný náhled.</span> : null}
+        </div>
+      ))}
     </div>
   );
 }
@@ -5104,6 +5448,151 @@ function collectSearchText(value: unknown, depth = 0, output: string[] = []): st
 
 function formatObjectSearchCount(resultCount: number, totalCount: number, searchQuery: string): string {
   return searchQuery.trim() ? `${resultCount} z ${totalCount}` : `${totalCount} objektů`;
+}
+
+const communityReportCategoryOptions: Array<{ label: string; value: CommunityReportCategory }> = [
+  { label: "Požár", value: "fire" },
+  { label: "Povodeň", value: "flood" },
+  { label: "Poškozený most", value: "bridge_damage" },
+  { label: "Neprůjezdná komunikace", value: "road_blockage" },
+  { label: "Poškozená infrastruktura", value: "infrastructure_damage" },
+  { label: "Zdravotní událost", value: "medical" },
+  { label: "Výpadek služby", value: "utility_outage" },
+  { label: "Riziko v okolí", value: "hazard" },
+  { label: "Jiné", value: "other" }
+];
+
+function createCommunityReportDraft(location = resolveCommunityReportLocation(null, undefined)): CommunityReportDraft {
+  return {
+    category: "hazard",
+    description: "",
+    files: [],
+    hazardSeverity: "warning",
+    location,
+    title: "",
+    validUntil: toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000))
+  };
+}
+
+function resolveCommunityReportLocation(userLocation: UserLocation | null, mapView: MapViewState | undefined): CommunityReportLocation {
+  if (userLocation) {
+    return {
+      ...(typeof userLocation.accuracyM === "number" ? { accuracyM: userLocation.accuracyM } : {}),
+      lat: userLocation.lat,
+      lon: userLocation.lon,
+      source: "device"
+    };
+  }
+  if (mapView) {
+    return {
+      lat: mapView.center[1],
+      lon: mapView.center[0],
+      source: "manual"
+    };
+  }
+  return {
+    lat: defaultAoiCenter.lat,
+    lon: defaultAoiCenter.lon,
+    source: "manual"
+  };
+}
+
+function validateCommunityReportDraft(draft: CommunityReportDraft): string | null {
+  if (!draft.title.trim()) {
+    return "Doplňte název hlášení.";
+  }
+  if (!Number.isFinite(draft.location.lat) || !Number.isFinite(draft.location.lon)) {
+    return "Hlášení musí mít polohu.";
+  }
+  if (!draft.validUntil || Number.isNaN(Date.parse(draft.validUntil))) {
+    return "Doplňte odhadovanou platnost rizika.";
+  }
+  if (Date.parse(draft.validUntil) <= Date.now() - 60_000) {
+    return "Platnost rizika musí být v budoucnosti.";
+  }
+  const unsupported = draft.files.find((file) => !communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file)));
+  if (unsupported) {
+    return `Soubor ${unsupported.name || "bez názvu"} nemá podporovaný typ. Povolené jsou obrázky, PDF, MP4 a MOV.`;
+  }
+  return null;
+}
+
+function normalizeCommunityFileContentType(file: File): string {
+  const type = file.type.toLowerCase();
+  if (type) {
+    return type;
+  }
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  if (name.endsWith(".png")) {
+    return "image/png";
+  }
+  if (name.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (name.endsWith(".heic")) {
+    return "image/heic";
+  }
+  if (name.endsWith(".heif")) {
+    return "image/heif";
+  }
+  if (name.endsWith(".pdf")) {
+    return "application/pdf";
+  }
+  if (name.endsWith(".mov")) {
+    return "video/quicktime";
+  }
+  if (name.endsWith(".mp4")) {
+    return "video/mp4";
+  }
+  return type;
+}
+
+function communityAttachmentKindFromContentType(contentType: string): CommunityAttachmentKind | null {
+  if (contentType.startsWith("image/")) {
+    return "photo";
+  }
+  if (contentType.startsWith("video/")) {
+    return "video";
+  }
+  if (contentType === "application/pdf") {
+    return "document";
+  }
+  return null;
+}
+
+function communityAttachmentKindLabel(kind: CommunityAttachmentKind | null): string {
+  if (kind === "photo") {
+    return "foto";
+  }
+  if (kind === "video") {
+    return "video";
+  }
+  if (kind === "document") {
+    return "PDF";
+  }
+  return "soubor";
+}
+
+function formatReportLocation(location: CommunityReportLocation): string {
+  return `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)} · ${location.source === "device" ? "GPS" : "mapa"}`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} kB`;
+  }
+  return `${bytes} B`;
+}
+
+function toDateTimeLocalValue(value: Date): string {
+  const offsetMs = value.getTimezoneOffset() * 60_000;
+  return new Date(value.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
 function formatObjectListLabel(object: CopObject): string {

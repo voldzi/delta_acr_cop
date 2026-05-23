@@ -8,6 +8,16 @@ export interface MediaUploadRequest {
   reportId: string;
 }
 
+export interface MediaObjectReadRequest {
+  objectKey: string;
+}
+
+export interface MediaObjectWriteRequest {
+  body: Buffer;
+  contentType: string;
+  objectKey: string;
+}
+
 export interface MediaUploadSlot {
   bucket: string;
   expiresAt: string;
@@ -23,6 +33,8 @@ export interface MediaStorage {
   diagnostics?(): string | undefined;
   init(): Promise<void>;
   createUploadSlot(request: MediaUploadRequest, now: Date): Promise<MediaUploadSlot>;
+  createReadUrl(request: MediaObjectReadRequest, now: Date): Promise<string>;
+  putObject(request: MediaObjectWriteRequest, now: Date): Promise<void>;
 }
 
 interface S3MediaStorageConfig {
@@ -100,6 +112,45 @@ export class S3PresignedMediaStorage implements MediaStorage {
     };
   }
 
+  async createReadUrl(request: MediaObjectReadRequest, now: Date): Promise<string> {
+    return presignUrl({
+      accessKeyId: this.config.accessKeyId,
+      bucket: this.config.bucket,
+      endpoint: this.config.endpoint,
+      expiresSeconds: this.config.uploadExpiresSeconds,
+      method: "GET",
+      objectKey: request.objectKey,
+      region: this.config.region,
+      secretAccessKey: this.config.secretAccessKey,
+      timestamp: now
+    });
+  }
+
+  async putObject(request: MediaObjectWriteRequest, now: Date): Promise<void> {
+    const uploadUrl = presignUrl({
+      accessKeyId: this.config.accessKeyId,
+      bucket: this.config.bucket,
+      contentType: request.contentType,
+      endpoint: this.config.endpoint,
+      expiresSeconds: this.config.uploadExpiresSeconds,
+      method: "PUT",
+      objectKey: request.objectKey,
+      region: this.config.region,
+      secretAccessKey: this.config.secretAccessKey,
+      timestamp: now
+    });
+    const response = await fetch(uploadUrl, {
+      body: new Uint8Array(request.body),
+      headers: {
+        "content-type": request.contentType
+      },
+      method: "PUT"
+    });
+    if (!response.ok) {
+      throw new Error(`object upload failed with HTTP ${response.status}`);
+    }
+  }
+
   private async ensureBucket(): Promise<void> {
     const headResponse = await signedS3Request({
       accessKeyId: this.config.accessKeyId,
@@ -136,7 +187,7 @@ export class S3PresignedMediaStorage implements MediaStorage {
 interface PresignPutUrlInput {
   accessKeyId: string;
   bucket: string;
-  contentType: string;
+  contentType?: string;
   endpoint: string;
   expiresSeconds: number;
   objectKey: string;
@@ -196,6 +247,10 @@ async function signedS3Request(input: SignedS3RequestInput): Promise<Response> {
 }
 
 function presignPutUrl(input: PresignPutUrlInput): string {
+  return presignUrl({ ...input, method: "PUT" });
+}
+
+function presignUrl(input: PresignPutUrlInput & { method: "GET" | "PUT" }): string {
   const endpoint = new URL(input.endpoint);
   const amzDate = formatAmzDate(input.timestamp);
   const dateScope = amzDate.slice(0, 8);
@@ -211,7 +266,7 @@ function presignPutUrl(input: PresignPutUrlInput): string {
   };
   const canonicalQuery = canonicalQueryString(query);
   const canonicalRequest = [
-    "PUT",
+    input.method,
     urlPath,
     canonicalQuery,
     `host:${endpoint.host}\n`,

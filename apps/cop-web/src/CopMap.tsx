@@ -211,10 +211,12 @@ interface CopMapProps {
   onClearSelection?: () => void;
   onRequestUserLocation: () => void;
   onViewChange: (view: MapViewState) => void;
+  reportLocationPickActive?: boolean;
   showAlertAreas: boolean;
   showProximityAlertRadius: boolean;
   zoneCreationActive?: boolean;
   onCreateZoneAt?: (center: { lat: number; lon: number }) => void;
+  onPickReportLocation?: (center: { lat: number; lon: number }) => void;
   userLocation: UserLocation | null;
 }
 
@@ -262,8 +264,10 @@ export function CopMap({
   onAutoFitChange,
   onClearSelection,
   onCreateZoneAt,
+  onPickReportLocation,
   onRequestUserLocation,
   onViewChange,
+  reportLocationPickActive = false,
   showAlertAreas,
   showProximityAlertRadius,
   userLocation,
@@ -279,7 +283,9 @@ export function CopMap({
   const onAutoFitChangeRef = React.useRef(onAutoFitChange);
   const onClearSelectionRef = React.useRef(onClearSelection);
   const onCreateZoneAtRef = React.useRef(onCreateZoneAt);
+  const onPickReportLocationRef = React.useRef(onPickReportLocation);
   const onViewChangeRef = React.useRef(onViewChange);
+  const reportLocationPickActiveRef = React.useRef(reportLocationPickActive);
   const zoneCreationActiveRef = React.useRef(zoneCreationActive);
   const lastFitSignatureRef = React.useRef("");
   const handledFocusViewRequestRef = React.useRef(0);
@@ -360,7 +366,9 @@ export function CopMap({
   onAutoFitChangeRef.current = onAutoFitChange;
   onClearSelectionRef.current = onClearSelection;
   onCreateZoneAtRef.current = onCreateZoneAt;
+  onPickReportLocationRef.current = onPickReportLocation;
   onViewChangeRef.current = onViewChange;
+  reportLocationPickActiveRef.current = reportLocationPickActive;
   zoneCreationActiveRef.current = zoneCreationActive;
 
   React.useEffect(() => {
@@ -1080,6 +1088,10 @@ export function CopMap({
           }
         };
         const handleMapClick = (event: maplibregl.MapMouseEvent) => {
+          if (reportLocationPickActiveRef.current && onPickReportLocationRef.current) {
+            onPickReportLocationRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
+            return;
+          }
           const clickedFeatures = map.queryRenderedFeatures(event.point, {
             layers: [
               trackSymbolLayerId,
@@ -1378,6 +1390,7 @@ export function CopMap({
     <div className={`map-container ${mapFullscreen ? "fullscreen" : ""}`}>
       <div className="map-canvas" ref={containerRef} aria-label="Georeferencovaná situační mapa" />
       {zoneCreationActive ? <div className="map-zone-create-hint">Kliknutím do mapy vytvoříte novou uživatelskou zónu</div> : null}
+      {reportLocationPickActive ? <div className="map-zone-create-hint">Kliknutím do mapy určíte polohu hlášení</div> : null}
       <div className="map-overlay-stack">
         <div
           className="map-toolbar"

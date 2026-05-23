@@ -425,6 +425,90 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload:
+    post:
+      tags: [Community Reports]
+      summary: Upload an attachment through COP API as a fallback to direct object-storage PUT.
+      operationId: proxyUploadCommunityReportAttachment
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunityAttachmentProxyUploadRequest"
+      responses:
+        "200":
+          description: Uploaded attachment metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReportAttachment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/community/reports/{reportId}/attachments/{attachmentId}/content:
+    get:
+      tags: [Community Reports]
+      summary: Stream uploaded community media for map/details playback.
+      operationId: getCommunityReportAttachmentContent
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Attachment content.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+            video/quicktime:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Partial attachment content for video range playback.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/ingest/events:
     post:
       tags: [Ingest]
@@ -1537,6 +1621,14 @@ components:
         observedAt:
           type: string
           format: date-time
+        hazardSeverity:
+          $ref: "#/components/schemas/CommunityReportHazardSeverity"
+        severity:
+          $ref: "#/components/schemas/CommunityReportHazardSeverity"
+          deprecated: true
+        validUntil:
+          type: string
+          format: date-time
         visibility:
           $ref: "#/components/schemas/CommunityReportVisibility"
         properties:
@@ -1659,6 +1751,9 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        contentUrl:
+          type: string
+          description: Relative COP API URL for reading uploaded media. Present only after upload completion.
     CommunityAttachmentUploadRequest:
       type: object
       required: [contentType, byteSize]
@@ -1713,6 +1808,16 @@ components:
             uploadUrl:
               type: string
               format: uri
+    CommunityAttachmentProxyUploadRequest:
+      type: object
+      required: [dataBase64]
+      properties:
+        byteSize:
+          type: integer
+          minimum: 1
+        dataBase64:
+          type: string
+          description: Base64 encoded file data. Used as HTTPS-safe fallback when direct browser PUT to object storage is unavailable.
     CommunityReportLocation:
       type: object
       required: [lat, lon, source]
@@ -1734,6 +1839,9 @@ components:
     CommunityReportCategory:
       type: string
       enum: [fire, flood, bridge_damage, road_blockage, infrastructure_damage, medical, utility_outage, hazard, other]
+    CommunityReportHazardSeverity:
+      type: string
+      enum: [advisory, warning, critical]
     CommunityReportStatus:
       type: string
       enum: [draft, submitted, published, hidden, rejected]
