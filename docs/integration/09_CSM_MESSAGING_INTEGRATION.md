@@ -66,22 +66,56 @@ GET /api/v1/messaging/status
 This endpoint is a server-side bridge. It must not return provider service
 tokens, Matrix admin tokens, database credentials or message payloads.
 
-`chatAvailable` stays `false` until a separate client-safe Matrix/E2EE
-bootstrap contract is available and implemented.
+`chatAvailable` is `true` only when the provider reports a client-safe
+Matrix/E2EE bootstrap contract:
+
+- `features.matrixTokenBootstrap=true`
+- `features.endToEndEncryptionRequired=true`
+- `security.readFromBrowser=false`
+- `architecture.plaintextOnServer=false`
+- provider capability and health status are operational
+
+The public status response must never contain Matrix user tokens, provider
+tokens, Synapse admin tokens or message payloads.
+
+Authenticated clients open chat through:
+
+```http
+POST /api/v1/messaging/bootstrap
+Authorization: Bearer <COP user access token>
+```
+
+COP then calls CSM Messaging server-side:
+
+```http
+POST /api/v1/matrix/token
+Authorization: Bearer <COP_CSM_MESSAGING_TOKEN>
+x-csm-user-id: <authenticated COP user id>
+x-csm-user-name: <display name>
+x-csm-user-role: <role>
+```
+
+The bootstrap endpoint may return a short-lived Matrix user token to the web
+client. That token is scoped to the authenticated user. It is not a provider,
+admin or service token.
+
+After bootstrap, the browser sends and reads messages directly through
+Matrix client-server APIs using Matrix SDK and E2EE. COP must not add any
+plaintext message send/read endpoints.
 
 ## Runtime Configuration
 
 ```env
-COP_CSM_MESSAGING_ENABLED=false
+COP_CSM_MESSAGING_ENABLED=true
 COP_CSM_MESSAGING_BASE_URL=http://docker.home.cz:4050
 COP_CSM_MESSAGING_PUBLIC_URL=https://msg.zeleznalady.cz
-COP_CSM_MESSAGING_TOKEN=
+COP_CSM_MESSAGING_TOKEN=<same-value-as-CSM_MESSAGING_API_TOKEN>
 COP_CSM_MESSAGING_TIMEOUT_MS=3000
 COP_CSM_MESSAGING_CACHE_TTL_MS=10000
 COP_WEB_MESSAGING_LAUNCHER_ENABLED=true
 ```
 
-`COP_CSM_MESSAGING_ENABLED=false` means the chat launcher can still be visible,
+If `COP_CSM_MESSAGING_ENABLED=false`, the chat launcher can still be visible,
 but it will show an integration/disabled state instead of opening
 conversations.
 
@@ -118,5 +152,6 @@ x-csm-user-role: <role>
 ```
 
 The Matrix token endpoint must remain scoped to the authenticated user and must
-not grant administrative or service-level capabilities. `chatAvailable` stays
-`false` until COP implements that client-safe Matrix/E2EE bootstrap.
+not grant administrative or service-level capabilities. `chatAvailable` is
+derived from provider metadata only; the actual `accessToken` is returned only
+from the authenticated bootstrap endpoint.

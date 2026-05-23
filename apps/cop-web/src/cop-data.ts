@@ -808,6 +808,24 @@ export interface MessagingStatusResponse {
   warnings: string[];
 }
 
+export interface MessagingBootstrapResponse {
+  accessToken?: string;
+  chatAvailable: boolean;
+  contractVersion: "cop-messaging-bootstrap-v1";
+  detail?: string;
+  deviceId?: string;
+  e2eeRequired?: boolean;
+  enabled: boolean;
+  expiresAt?: string;
+  homeserverBaseUrl?: string;
+  providerId: "csm.messaging";
+  serverName?: string;
+  status: "degraded" | "disabled" | "online";
+  tokenAvailable: boolean;
+  userId?: string;
+  warnings: string[];
+}
+
 export interface CopAlert {
   acknowledgedAt?: string;
   alertId: string;
@@ -1041,6 +1059,15 @@ export async function acknowledgeCopAlert(apiBase: string, token: string, alertI
 export async function fetchMessagingStatus(apiBase: string, token: string | undefined): Promise<MessagingStatusResponse> {
   return fetchJson<MessagingStatusResponse>(`${apiBase}/api/v1/messaging/status`, {
     headers: authHeaders(token)
+  });
+}
+
+export async function fetchMessagingBootstrap(apiBase: string, token: string): Promise<MessagingBootstrapResponse> {
+  return fetchJson<MessagingBootstrapResponse>(`${apiBase}/api/v1/messaging/bootstrap`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    method: "POST"
   });
 }
 

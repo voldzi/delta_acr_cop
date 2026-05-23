@@ -1,3 +1,5 @@
+import type { AuthenticatedActor } from "./security.js";
+
 export type MessagingIntegrationRuntimeStatus = "degraded" | "disabled" | "online";
 
 export interface MessagingProviderConfig {
@@ -25,9 +27,28 @@ export interface MessagingProviderStatus {
   warnings: string[];
 }
 
+export interface MessagingMatrixBootstrap {
+  accessToken?: string;
+  chatAvailable: boolean;
+  contractVersion: "cop-messaging-bootstrap-v1";
+  detail?: string;
+  deviceId?: string;
+  e2eeRequired?: boolean;
+  enabled: boolean;
+  expiresAt?: string;
+  homeserverBaseUrl?: string;
+  providerId: "csm.messaging";
+  serverName?: string;
+  status: MessagingIntegrationRuntimeStatus;
+  tokenAvailable: boolean;
+  userId?: string;
+  warnings: string[];
+}
+
 export interface MessagingProvider {
   readonly config: MessagingProviderConfig;
   fetchStatus(requestNow: Date): Promise<MessagingProviderStatus>;
+  fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingMatrixBootstrap>;
 }
 
 interface CsmMessagingCapabilities {
@@ -43,6 +64,21 @@ interface CsmMessagingCapabilities {
 interface CsmMessagingHealth {
   checks?: Array<{ id?: string; message?: string; status?: string }>;
   status?: string;
+}
+
+interface CsmMessagingMatrixTokenResponse {
+  accessToken?: string;
+  contractVersion?: string;
+  deviceId?: string;
+  e2eeRequired?: boolean;
+  expiresAt?: string;
+  homeserverBaseUrl?: string;
+  providerId?: string;
+  serverName?: string;
+  status?: string;
+  tokenAvailable?: boolean;
+  userId?: string;
+  warnings?: string[];
 }
 
 const defaultConfig: MessagingProviderConfig = {
@@ -109,16 +145,19 @@ export class CsmMessagingProvider implements MessagingProvider {
         ...statusWarnings(health?.status, "health"),
         ...healthCheckWarnings(health),
         ...(capabilities.security?.readFromBrowser === true ? ["Messaging provider unexpectedly allows direct browser reads. COP will still use server-side integration only."] : []),
-        ...(capabilities.architecture?.plaintextOnServer === true ? ["Messaging provider reports plaintext server handling; chat UI remains disabled."] : []),
-        "Messaging metadata API is available server-side. End-to-end chat remains disabled until client-safe Matrix token bootstrap is ready."
+        ...(capabilities.architecture?.plaintextOnServer === true ? ["Messaging provider reports plaintext server handling; chat UI remains disabled."] : [])
       ];
       const providerOk = capabilitiesResult.ok && isOperationalStatus(capabilities.status);
       const healthOk = healthResult.ok && isOperationalStatus(health?.status);
       const status: MessagingIntegrationRuntimeStatus = providerOk && healthOk ? "online" : "degraded";
+      const chatAvailable = isClientSafeMatrixBootstrapReady(capabilities, providerOk, healthOk);
+      if (!chatAvailable) {
+        warnings.push("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
+      }
 
       return {
         architecture: capabilities.architecture,
-        chatAvailable: false,
+        chatAvailable,
         checkedAt: requestNow.toISOString(),
         contractVersion: "cop-messaging-status-v1",
         detail: health?.status ? `provider=${capabilities.status ?? "unknown"}; health=${health.status}` : `provider=${capabilities.status ?? "unknown"}`,
@@ -133,6 +172,62 @@ export class CsmMessagingProvider implements MessagingProvider {
       };
     } catch (error) {
       return degradedMessagingStatus(requestNow, this.config, errorMessage(error));
+    }
+  }
+
+  async fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingMatrixBootstrap> {
+    if (!this.config.enabled) {
+      return disabledMatrixBootstrap(requestNow, this.config);
+    }
+    try {
+      const tokenResult = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/matrix/token`),
+        this.config,
+        requestNow,
+        {
+          headers: actorHeaders(actor),
+          method: "POST"
+        }
+      );
+      if (!isRecord(tokenResult.body)) {
+        return degradedMatrixBootstrap(requestNow, this.config, "Messaging Matrix token response is not valid JSON.");
+      }
+      const tokenResponse = normalizeMatrixTokenResponse(tokenResult.body);
+      const warnings = [
+        ...(tokenResponse.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging token contract version is ${tokenResponse.contractVersion ?? "unknown"}.`]),
+        ...(tokenResponse.providerId === "csm.messaging" ? [] : [`Messaging token provider id is ${tokenResponse.providerId ?? "unknown"}.`]),
+        ...statusWarnings(tokenResponse.status, "matrix token"),
+        ...(tokenResponse.warnings ?? [])
+      ];
+      const tokenAvailable = tokenResult.ok
+        && tokenResponse.tokenAvailable === true
+        && Boolean(tokenResponse.accessToken)
+        && Boolean(tokenResponse.userId)
+        && Boolean(tokenResponse.deviceId)
+        && Boolean(tokenResponse.homeserverBaseUrl)
+        && tokenResponse.e2eeRequired === true;
+      if (!tokenAvailable) {
+        warnings.push("Matrix user token is not available or is missing required E2EE bootstrap fields.");
+      }
+      const status: MessagingIntegrationRuntimeStatus = tokenAvailable ? "online" : "degraded";
+      return {
+        ...(tokenAvailable && tokenResponse.accessToken ? { accessToken: tokenResponse.accessToken } : {}),
+        chatAvailable: tokenAvailable,
+        contractVersion: "cop-messaging-bootstrap-v1",
+        ...(tokenResponse.deviceId ? { deviceId: tokenResponse.deviceId } : {}),
+        ...(tokenResponse.e2eeRequired !== undefined ? { e2eeRequired: tokenResponse.e2eeRequired } : {}),
+        enabled: true,
+        ...(tokenResponse.expiresAt ? { expiresAt: tokenResponse.expiresAt } : {}),
+        ...(tokenResponse.homeserverBaseUrl ? { homeserverBaseUrl: tokenResponse.homeserverBaseUrl } : {}),
+        providerId: "csm.messaging",
+        ...(tokenResponse.serverName ? { serverName: tokenResponse.serverName } : {}),
+        status,
+        tokenAvailable,
+        ...(tokenResponse.userId ? { userId: tokenResponse.userId } : {}),
+        warnings: Array.from(new Set(warnings))
+      };
+    } catch (error) {
+      return degradedMatrixBootstrap(requestNow, this.config, errorMessage(error));
     }
   }
 }
@@ -167,19 +262,52 @@ function degradedMessagingStatus(requestNow: Date, config: MessagingProviderConf
   };
 }
 
-async function fetchJsonWithStatus(url: URL, config: MessagingProviderConfig, requestNow: Date): Promise<{ body: unknown; ok: boolean; status: number }> {
+function disabledMatrixBootstrap(_requestNow: Date, config: MessagingProviderConfig = defaultConfig): MessagingMatrixBootstrap {
+  return {
+    chatAvailable: false,
+    contractVersion: "cop-messaging-bootstrap-v1",
+    detail: "Messaging provider integration is disabled by COP_CSM_MESSAGING_ENABLED.",
+    enabled: false,
+    providerId: "csm.messaging",
+    status: "disabled",
+    tokenAvailable: false,
+    warnings: ["Messaging provider is disabled."]
+  };
+}
+
+function degradedMatrixBootstrap(_requestNow: Date, config: MessagingProviderConfig, detail: string): MessagingMatrixBootstrap {
+  return {
+    chatAvailable: false,
+    contractVersion: "cop-messaging-bootstrap-v1",
+    detail,
+    enabled: config.enabled,
+    providerId: "csm.messaging",
+    status: "degraded",
+    tokenAvailable: false,
+    warnings: [detail]
+  };
+}
+
+async function fetchJsonWithStatus(
+  url: URL,
+  config: MessagingProviderConfig,
+  requestNow: Date,
+  options: { headers?: Record<string, string>; method?: "GET" | "POST" } = {}
+): Promise<{ body: unknown; ok: boolean; status: number }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
     const headers: Record<string, string> = {
       Accept: "application/json",
-      "X-COP-Request-At": requestNow.toISOString()
+      "X-COP-Request-At": requestNow.toISOString(),
+      ...(options.headers ?? {})
     };
     if (config.token) {
       headers.Authorization = `Bearer ${config.token}`;
     }
     const response = await fetch(url, {
       headers,
+      method: options.method ?? "GET",
       signal: controller.signal
     });
     const text = await response.text();
@@ -220,6 +348,23 @@ function normalizeHealth(value: Record<string, unknown>): CsmMessagingHealth {
   };
 }
 
+function normalizeMatrixTokenResponse(value: Record<string, unknown>): CsmMessagingMatrixTokenResponse {
+  return {
+    accessToken: optionalString(value.accessToken),
+    contractVersion: optionalString(value.contractVersion),
+    deviceId: optionalString(value.deviceId),
+    e2eeRequired: typeof value.e2eeRequired === "boolean" ? value.e2eeRequired : undefined,
+    expiresAt: optionalString(value.expiresAt),
+    homeserverBaseUrl: optionalString(value.homeserverBaseUrl),
+    providerId: optionalString(value.providerId),
+    serverName: optionalString(value.serverName),
+    status: optionalString(value.status),
+    tokenAvailable: typeof value.tokenAvailable === "boolean" ? value.tokenAvailable : undefined,
+    userId: optionalString(value.userId),
+    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
+  };
+}
+
 function healthCheckWarnings(health: CsmMessagingHealth | undefined): string[] {
   return (health?.checks ?? []).flatMap((check) =>
     isOperationalStatus(check.status) ? [] : [`${check.id ?? "check"}: ${check.message ?? check.status ?? "degraded"}`]
@@ -233,6 +378,23 @@ function statusWarnings(status: string | undefined, label: string): string[] {
 function isOperationalStatus(status: string | undefined): boolean {
   const normalized = status?.toLowerCase();
   return normalized === "ok" || normalized === "online" || normalized === "ready";
+}
+
+function isClientSafeMatrixBootstrapReady(capabilities: CsmMessagingCapabilities, providerOk: boolean, healthOk: boolean): boolean {
+  return providerOk
+    && healthOk
+    && capabilities.features?.matrixTokenBootstrap === true
+    && capabilities.features?.endToEndEncryptionRequired === true
+    && capabilities.security?.readFromBrowser === false
+    && capabilities.architecture?.plaintextOnServer !== true;
+}
+
+function actorHeaders(actor: AuthenticatedActor): Record<string, string> {
+  return {
+    "x-csm-user-id": actor.subjectId,
+    "x-csm-user-name": actor.displayName || actor.username,
+    "x-csm-user-role": actor.roles?.[0] ?? actor.authMode
+  };
 }
 
 function optionalString(value: unknown): string | undefined {

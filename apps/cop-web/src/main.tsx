@@ -102,6 +102,7 @@ import {
   type TakSourceDescriptor
 } from "./cop-data";
 import { CopMap, formatTrackLabel } from "./CopMap";
+import { MessagingPanel } from "./messaging/MessagingPanel";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
 import {
@@ -367,6 +368,7 @@ export function App() {
   const authToken = getAuthorizationToken(authSession, labToken);
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken);
   const profileAccessReady = Boolean(authToken);
+  const messagingAuthenticated = authSession.status === "authenticated" && Boolean(authSession.accessToken);
 
   const applyDashboardData = React.useCallback((data: CopDashboardData, observedAt: Date) => {
     setHealth(data.health);
@@ -2638,8 +2640,10 @@ export function App() {
 
       {messagingOpen ? (
         <MessagingPanel
-          authenticated={profileAccessReady}
+          apiBase={apiBase}
+          authenticated={messagingAuthenticated}
           authConfig={authConfig}
+          authToken={messagingAuthenticated ? authSession.accessToken : undefined}
           error={messagingError}
           loading={messagingLoading}
           session={authSession}
@@ -2670,91 +2674,6 @@ function ProximityAlertList({ alerts }: { alerts: ProximityAlert[] }) {
         </div>
       ))}
     </div>
-  );
-}
-
-function MessagingPanel({
-  authenticated,
-  authConfig,
-  error,
-  loading,
-  session,
-  status,
-  onClose,
-  onLogin,
-  onRefresh
-}: {
-  authenticated: boolean;
-  authConfig: AuthConfig;
-  error: string | null;
-  loading: boolean;
-  session: AuthSession;
-  status: MessagingStatusResponse | null;
-  onClose: () => void;
-  onLogin: () => void;
-  onRefresh: () => void;
-}) {
-  const providerStatus = status?.status ?? "degraded";
-  const features = status?.features ?? {};
-  const e2eeRequired = features.endToEndEncryptionRequired === true;
-  const chatReady = Boolean(status?.chatAvailable && authenticated);
-  return (
-    <section className="messaging-panel" aria-label="Zprávy">
-      <div className="messaging-panel-header">
-        <PanelTitle icon={<MessageCircle size={17} />} title="Zprávy" />
-        <button aria-label="Zavřít zprávy" className="icon-button compact" onClick={onClose} title="Zavřít" type="button">
-          <X size={16} />
-        </button>
-      </div>
-
-      <div className="messaging-status-grid">
-        <ReadinessRow label="Provider" value={status?.serviceName ?? "CSM Messaging"} tone={messagingStatusTone(providerStatus)} />
-        <ReadinessRow label="Stav" value={messagingStatusLabel(providerStatus, loading)} tone={messagingStatusTone(providerStatus)} />
-        <ReadinessRow label="Přihlášení" value={authenticated ? operatorDisplayName(session, authConfig) : "vyžaduje účet"} tone={authenticated ? "ok" : "neutral"} />
-        <ReadinessRow label="E2EE" value={e2eeRequired ? "vyžadováno" : "čeká na kontrakt"} tone={e2eeRequired ? "ok" : "neutral"} />
-      </div>
-
-      {error ? <div className="error-banner">Messaging: {error}</div> : null}
-
-      {!authenticated ? (
-        <div className="messaging-empty-state">
-          <strong>Komunikace je přihlášená funkce.</strong>
-          <p>Mapa zůstává dostupná i bez účtu, ale zprávy musí být svázané s ověřenou identitou uživatele.</p>
-          <button className="primary-button secondary" onClick={onLogin} type="button">
-            <LogIn size={16} />
-            Přihlásit přes Keycloak
-          </button>
-        </div>
-      ) : chatReady ? (
-        <div className="messaging-empty-state">
-          <strong>Messaging provider je připraven.</strong>
-          <p>Konverzace budou načtené přes Matrix bootstrap a klientskou E2EE knihovnu.</p>
-        </div>
-      ) : (
-        <div className="messaging-empty-state">
-          <strong>Chat zatím běží v integračním režimu.</strong>
-          <p>COP čte pouze server-side capability/health metadata. Obsah zpráv se přes COP ani Phoenix API neposílá jako plaintext.</p>
-        </div>
-      )}
-
-      {status?.warnings.length ? (
-        <div className="messaging-warning-list">
-          {status.warnings.slice(0, 4).map((warning) => (
-            <span key={warning}>{warning}</span>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="messaging-panel-actions">
-        <button className="mini-button" disabled={loading} onClick={onRefresh} type="button">
-          <RefreshCw size={14} className={loading ? "spin" : ""} />
-          Obnovit stav
-        </button>
-        <button className="mini-button" disabled type="button">
-          Otevřít konverzace
-        </button>
-      </div>
-    </section>
   );
 }
 
@@ -3280,29 +3199,6 @@ function streamStatusTone(status: CopStreamStatus): "ok" | "warn" | "neutral" {
     return "neutral";
   }
   return "warn";
-}
-
-function messagingStatusTone(status: MessagingStatusResponse["status"]): "ok" | "warn" | "neutral" {
-  if (status === "online") {
-    return "ok";
-  }
-  if (status === "degraded") {
-    return "warn";
-  }
-  return "neutral";
-}
-
-function messagingStatusLabel(status: MessagingStatusResponse["status"], loading: boolean): string {
-  if (loading) {
-    return "ověřuji";
-  }
-  if (status === "online") {
-    return "online";
-  }
-  if (status === "degraded") {
-    return "degraded";
-  }
-  return "vypnuto";
 }
 
 function streamReadinessLabel(status: CopStreamStatus, telemetry: StreamTelemetry): string {

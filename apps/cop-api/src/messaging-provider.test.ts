@@ -38,7 +38,8 @@ describe("CsmMessagingProvider", () => {
             directMessages: true,
             endToEndEncryptionRequired: true,
             groups: true,
-            mapObjectLinks: true
+            mapObjectLinks: true,
+            matrixTokenBootstrap: true
           },
           providerId: "csm.messaging",
           security: {
@@ -69,14 +70,14 @@ describe("CsmMessagingProvider", () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe("http://messaging.local:4050/health/ready");
     expect(status).toMatchObject({
       architecture: { plaintextOnServer: false },
-      chatAvailable: false,
+      chatAvailable: true,
       enabled: true,
       features: { directMessages: true, endToEndEncryptionRequired: true },
       providerId: "csm.messaging",
       serviceName: "CSM Messaging",
       status: "online"
     });
-    expect(status.warnings).toContain("Messaging metadata API is available server-side. End-to-end chat remains disabled until client-safe Matrix token bootstrap is ready.");
+    expect(JSON.stringify(status)).not.toContain("accessToken");
   });
 
   it("sends the configured server token only to the messaging provider", async () => {
@@ -122,6 +123,128 @@ describe("CsmMessagingProvider", () => {
     expect(JSON.stringify(status)).not.toContain("server-token-123");
   });
 
+  it("keeps chat disabled when Matrix bootstrap is not advertised", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/capabilities")) {
+        return new Response(JSON.stringify({
+          architecture: { plaintextOnServer: false },
+          contractVersion: "csm-messaging-provider-v1",
+          features: {
+            endToEndEncryptionRequired: true
+          },
+          providerId: "csm.messaging",
+          security: {
+            readFromBrowser: false,
+            serverSideIntegrationOnly: true
+          },
+          serviceName: "CSM Messaging",
+          status: "online"
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
+    }));
+
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000
+    });
+
+    const status = await provider.fetchStatus(new Date("2026-05-22T12:00:00Z"));
+
+    expect(status.chatAvailable).toBe(false);
+    expect(status.warnings).toContain("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
+  });
+
+  it("fetches Matrix bootstrap server-side with provider token and COP user headers", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/matrix/token");
+      expect(init?.method).toBe("POST");
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "x-csm-user-id": "user-123",
+        "x-csm-user-name": "User One",
+        "x-csm-user-role": "cop_operator"
+      });
+      return new Response(JSON.stringify({
+        accessToken: "matrix-user-token",
+        contractVersion: "csm-messaging-provider-v1",
+        deviceId: "COP_WEB_1",
+        e2eeRequired: true,
+        expiresAt: "2026-05-23T12:00:00Z",
+        homeserverBaseUrl: "https://msg.zeleznalady.cz",
+        providerId: "csm.messaging",
+        serverName: "msg.zeleznalady.cz",
+        status: "ready",
+        tokenAvailable: true,
+        userId: "@user:msg.zeleznalady.cz",
+        warnings: []
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token"
+    });
+
+    const bootstrap = await provider.fetchMatrixBootstrap({
+      authMode: "oidc",
+      displayName: "User One",
+      roles: ["cop_operator"],
+      subjectId: "user-123",
+      username: "user.one"
+    }, new Date("2026-05-22T12:00:00Z"));
+
+    expect(bootstrap).toMatchObject({
+      accessToken: "matrix-user-token",
+      chatAvailable: true,
+      contractVersion: "cop-messaging-bootstrap-v1",
+      e2eeRequired: true,
+      providerId: "csm.messaging",
+      status: "online",
+      tokenAvailable: true,
+      userId: "@user:msg.zeleznalady.cz"
+    });
+    expect(JSON.stringify(bootstrap)).not.toContain("provider-token");
+  });
+
+  it("returns a disabled bootstrap state when provider token is not available", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      contractVersion: "csm-messaging-provider-v1",
+      providerId: "csm.messaging",
+      status: "ready",
+      tokenAvailable: false,
+      warnings: ["Matrix token issuer is not configured."]
+    }), { status: 200 })));
+
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000
+    });
+
+    const bootstrap = await provider.fetchMatrixBootstrap({
+      authMode: "oidc",
+      displayName: "User One",
+      subjectId: "user-123",
+      username: "user.one"
+    }, new Date("2026-05-22T12:00:00Z"));
+
+    expect(bootstrap).toMatchObject({
+      chatAvailable: false,
+      status: "degraded",
+      tokenAvailable: false
+    });
+    expect(bootstrap.accessToken).toBeUndefined();
+  });
+
   it("exposes messaging status through the COP API public read boundary", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const app = buildServer({
@@ -145,5 +268,78 @@ describe("CsmMessagingProvider", () => {
       providerId: "csm.messaging",
       status: "disabled"
     });
+  });
+
+  it("requires authentication for Matrix bootstrap and never exposes provider token in status", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: false,
+        timeoutMs: 3000,
+        token: "server-token-123"
+      }),
+      now: () => new Date("2026-05-22T12:00:00Z")
+    });
+
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/messaging/status"
+    });
+    const bootstrapResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/messaging/bootstrap"
+    });
+
+    expect(statusResponse.statusCode).toBe(200);
+    expect(JSON.stringify(statusResponse.json())).not.toContain("server-token-123");
+    expect(bootstrapResponse.statusCode).toBe(401);
+  });
+
+  it("exposes authenticated Matrix bootstrap without leaking provider token", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      accessToken: "matrix-user-token",
+      contractVersion: "csm-messaging-provider-v1",
+      deviceId: "COP_WEB_lab",
+      e2eeRequired: true,
+      expiresAt: "2026-05-23T12:00:00Z",
+      homeserverBaseUrl: "https://msg.zeleznalady.cz",
+      providerId: "csm.messaging",
+      serverName: "msg.zeleznalady.cz",
+      status: "ready",
+      tokenAvailable: true,
+      userId: "@lab:msg.zeleznalady.cz",
+      warnings: []
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      }),
+      now: () => new Date("2026-05-22T12:00:00Z")
+    });
+
+    const response = await app.inject({
+      headers: {
+        authorization: "Bearer lab-secret"
+      },
+      method: "POST",
+      url: "/api/v1/messaging/bootstrap"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      accessToken: "matrix-user-token",
+      chatAvailable: true,
+      tokenAvailable: true
+    });
+    expect(JSON.stringify(response.json())).not.toContain("provider-token");
   });
 });

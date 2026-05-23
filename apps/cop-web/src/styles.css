@@ -336,6 +336,139 @@ h1 {
   line-height: 1.35;
 }
 
+.messaging-security-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--lime);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.matrix-chat-shell {
+  display: grid;
+  grid-template-rows: minmax(80px, 0.34fr) minmax(220px, 1fr);
+  gap: 10px;
+  min-height: 420px;
+}
+
+.matrix-room-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid rgba(142, 157, 170, 0.22);
+  background: rgba(10, 16, 21, 0.7);
+}
+
+.matrix-room-list button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(18, 25, 31, 0.74);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.matrix-room-list button.active,
+.matrix-room-list button:hover {
+  border-color: rgba(200, 240, 141, 0.58);
+  background: rgba(151, 199, 104, 0.14);
+}
+
+.matrix-room-list strong,
+.matrix-room-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matrix-room-list small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.matrix-room-view {
+  display: grid;
+  grid-template-rows: auto minmax(160px, 1fr) auto;
+  min-height: 0;
+  border: 1px solid rgba(142, 157, 170, 0.22);
+  background: rgba(8, 13, 18, 0.72);
+}
+
+.matrix-room-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(142, 157, 170, 0.18);
+}
+
+.matrix-room-header small {
+  color: var(--lime);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.matrix-timeline {
+  display: grid;
+  align-content: end;
+  gap: 8px;
+  min-height: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+}
+
+.matrix-message {
+  display: grid;
+  gap: 3px;
+  justify-self: start;
+  max-width: 88%;
+  padding: 8px 9px;
+  border: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(18, 25, 31, 0.9);
+}
+
+.matrix-message.own {
+  justify-self: end;
+  border-color: rgba(200, 240, 141, 0.36);
+  background: rgba(151, 199, 104, 0.14);
+}
+
+.matrix-message small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.matrix-message span {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.matrix-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid rgba(142, 157, 170, 0.18);
+}
+
+.matrix-composer input {
+  min-width: 0;
+  border: 1px solid rgba(142, 157, 170, 0.24);
+  background: rgba(9, 14, 18, 0.94);
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+}
+
 .workspace-nav {
   display: grid;
   grid-template-columns: repeat(5, minmax(92px, 1fr)) minmax(116px, auto);

@@ -955,6 +955,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return messagingProvider.fetchStatus(now());
   });
 
+  app.post("/api/v1/messaging/bootstrap", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+
+    return messagingProvider.fetchMatrixBootstrap(actor, now());
+  });
+
   app.put("/api/v1/me/preferences", async (request, reply) => {
     const actor = requireActor(request, reply);
     if (!actor) {

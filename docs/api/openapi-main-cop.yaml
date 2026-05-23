@@ -1052,6 +1052,27 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+  /api/v1/messaging/bootstrap:
+    post:
+      tags: [Messaging]
+      summary: Create client-safe Matrix bootstrap for the authenticated user.
+      description: >
+        Authenticated COP users may request a short-lived Matrix user token for
+        direct Matrix client-server communication with E2EE. This endpoint never
+        returns provider, service or Synapse admin tokens and does not proxy
+        plaintext messages.
+      operationId: createMessagingBootstrap
+      responses:
+        "200":
+          description: Matrix bootstrap state for the authenticated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingBootstrap"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /health/live:
     get:
       tags: [Health]
@@ -3560,7 +3581,7 @@ components:
           type: boolean
           description: >
             True only after a client-safe Matrix/E2EE bootstrap contract is
-            available. Capability and health checks alone do not enable chat.
+            advertised by provider metadata and provider health is operational.
         checkedAt:
           type: string
           format: date-time
@@ -3588,6 +3609,48 @@ components:
         status:
           type: string
           enum: [online, degraded, disabled]
+        warnings:
+          type: array
+          items:
+            type: string
+    MessagingBootstrap:
+      type: object
+      required: [chatAvailable, contractVersion, enabled, providerId, status, tokenAvailable, warnings]
+      properties:
+        accessToken:
+          type: string
+          description: Short-lived Matrix user token scoped to the authenticated user.
+        chatAvailable:
+          type: boolean
+        contractVersion:
+          type: string
+          enum: [cop-messaging-bootstrap-v1]
+        detail:
+          type: string
+        deviceId:
+          type: string
+        e2eeRequired:
+          type: boolean
+        enabled:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+        homeserverBaseUrl:
+          type: string
+          format: uri
+        providerId:
+          type: string
+          enum: [csm.messaging]
+        serverName:
+          type: string
+        status:
+          type: string
+          enum: [online, degraded, disabled]
+        tokenAvailable:
+          type: boolean
+        userId:
+          type: string
         warnings:
           type: array
           items:
