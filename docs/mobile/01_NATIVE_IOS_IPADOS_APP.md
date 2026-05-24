@@ -92,11 +92,16 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `GET/PUT /api/v1/me/preferences` pro serverové preference,
 - `GET /api/v1/community/reports` pro komunitní mapovou vrstvu,
 - `POST /api/v1/community/reports` pro vytvoření hlášení,
+- `PATCH /api/v1/community/reports/{reportId}` pro úpravu vlastního hlášení,
+- `DELETE /api/v1/community/reports/{reportId}` pro smazání vlastního hlášení,
+- `GET/POST /api/v1/community/groups` pro skupiny, do kterých se hlášení a média ukládají,
 - `POST /api/v1/community/reports/{reportId}/attachments` pro presigned upload fotky/videa/dokumentu,
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete` pro potvrzení uploadu,
 - `POST /api/v1/community/reports/{reportId}/submit` pro odeslání hlášení ke sdílení,
 - `GET /api/v1/sources` a `/api/v1/sources/health`,
 - `POST /api/v1/ai/cop-assistant/query` pouze pro povolené informační dotazy.
+
+Nativní iOS klient má před vytvořením hlášení načíst polohu z média, pokud je dostupná. Pro fotky použít metadata z Photos/EXIF, pro video a iPhone Spatial Video preferovat AVFoundation/Photos metadata. Pokud uživatel polohu z média potvrdí, poslat `location.source="media_metadata"`. Hlášení musí být vždy přiřazené do COP skupiny; nová skupina vytvořená z hlášení má dostat `anchorLocation` z první polohy reportu.
 
 ## Doporučená architektura iOS aplikace
 

@@ -759,6 +759,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function updateCommunityReport(reportId: string, actor: AuthenticatedActor, input: Parameters<CommunityReportStore["updateReport"]>[2], requestNow: Date): Promise<CommunityReportRecord | null> {
+    try {
+      return await activeCommunityReportStore().updateReport(reportId, actor.subjectId, input, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.updateReport(reportId, actor.subjectId, input, requestNow);
+    }
+  }
+
+  async function deleteCommunityReport(reportId: string, actor: AuthenticatedActor, requestNow: Date): Promise<boolean> {
+    try {
+      return await activeCommunityReportStore().deleteReport(reportId, actor.subjectId, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.deleteReport(reportId, actor.subjectId, requestNow);
+    }
+  }
+
   async function createCommunityAttachment(input: Parameters<CommunityReportStore["createAttachment"]>[0]) {
     try {
       return await activeCommunityReportStore().createAttachment(input);
@@ -1119,8 +1137,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const requestNow = now();
     const group = await createCommunityGroup({
+      anchorLocation: groupRequest.anchorLocation,
       createdBy: actorToCommunityActor(actor),
       description: groupRequest.description,
+      metadata: groupRequest.metadata,
       name: groupRequest.name,
       visibility: groupRequest.visibility
     }, requestNow);
@@ -1325,6 +1345,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         correlationIdFrom(request.headers["x-correlation-id"])
       );
     }
+    const requestedGroupId = communityReportGroupId(input);
+    if (requestedGroupId) {
+      const group = await readCommunityGroup(requestedGroupId);
+      if (!group || !canUseCommunityGroupForReport(group, actor)) {
+        return sendError(reply, 403, "FORBIDDEN", "Current user cannot publish into the selected community group.", crypto.randomUUID());
+      }
+    }
     const report = await createCommunityReport(input, requestNow);
     appendAudit(state, "COMMUNITY_REPORT_CREATED", {
       actorAuthMode: actor.authMode,
@@ -1335,6 +1362,42 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return reply.code(201).send(communityReportResponseItem(report, requestNow, actor, new Set()));
   });
 
+  app.patch("/api/v1/community/reports/:reportId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { reportId: string };
+    const update = normalizeCommunityReportUpdate(request.body);
+    if (!update) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Community report update requires at least one editable field.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const requestedGroupId = communityReportGroupId({ properties: update.properties ?? {} });
+    if (requestedGroupId) {
+      const group = await readCommunityGroup(requestedGroupId);
+      if (!group || !canUseCommunityGroupForReport(group, actor)) {
+        return sendError(reply, 403, "FORBIDDEN", "Current user cannot publish into the selected community group.", crypto.randomUUID());
+      }
+    }
+    const requestNow = now();
+    const report = await updateCommunityReport(params.reportId, actor, update, requestNow);
+    if (!report) {
+      return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+    }
+    appendAudit(state, "COMMUNITY_REPORT_UPDATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      reportId: report.reportId
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return communityReportResponseItem(report, requestNow, actor, await readCommunityActorGroupIds(actor));
+  });
+
   app.get("/api/v1/community/reports/:reportId", async (request, reply) => {
     const actor = actorFromRequest(request);
     const params = request.params as { reportId: string };
@@ -1343,6 +1406,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
     }
     return communityReportResponseItem(report, now(), actor, await readCommunityActorGroupIds(actor));
+  });
+
+  app.delete("/api/v1/community/reports/:reportId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { reportId: string };
+    const deleted = await deleteCommunityReport(params.reportId, actor, now());
+    if (!deleted) {
+      return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+    }
+    appendAudit(state, "COMMUNITY_REPORT_DELETED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      reportId: params.reportId
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return reply.code(204).send();
   });
 
   app.post("/api/v1/community/reports/:reportId/submit", async (request, reply) => {
@@ -3105,6 +3186,8 @@ function normalizeCreateCommunityReport(
   const properties = {
     ...normalizedJsonRecord(value.properties, 8000),
     hazardSeverity,
+    ...(optionalUuid(value.groupId) ? { groupId: optionalUuid(value.groupId) } : {}),
+    ...(optionalTrimmedString(value.groupName, 120) ? { groupName: optionalTrimmedString(value.groupName, 120) } : {}),
     ...(validUntil ? { validUntil } : {})
   };
   return {
@@ -3123,6 +3206,40 @@ function normalizeCreateCommunityReport(
   };
 }
 
+function normalizeCommunityReportUpdate(value: unknown): Parameters<CommunityReportStore["updateReport"]>[2] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const category = isCommunityReportCategory(value.category) ? value.category : undefined;
+  const location = normalizeCommunityLocation(value.location, "manual");
+  const title = optionalTrimmedString(value.title, 120);
+  const description = hasOwn(value, "description")
+    ? optionalTrimmedString(value.description, 2000) ?? null
+    : undefined;
+  const hazardSeverity = isCommunityReportHazardSeverity(value.hazardSeverity)
+    ? value.hazardSeverity
+    : isCommunityReportHazardSeverity(value.severity)
+      ? value.severity
+      : undefined;
+  const validUntil = hasOwn(value, "validUntil") ? optionalIsoTimestamp(value.validUntil) ?? null : undefined;
+  const properties = {
+    ...normalizedJsonRecord(value.properties, 8000),
+    ...(hazardSeverity ? { hazardSeverity } : {}),
+    ...(optionalUuid(value.groupId) ? { groupId: optionalUuid(value.groupId) } : {}),
+    ...(optionalTrimmedString(value.groupName, 120) ? { groupName: optionalTrimmedString(value.groupName, 120) } : {})
+  };
+  const update = {
+    ...(category ? { category } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(location ? { location } : {}),
+    ...(Object.keys(properties).length > 0 ? { properties } : {}),
+    ...(title ? { title } : {}),
+    ...(validUntil !== undefined ? { validUntil } : {}),
+    ...(isCommunityVisibility(value.visibility) ? { visibility: value.visibility } : {})
+  };
+  return Object.keys(update).length > 0 ? update : null;
+}
+
 function actorToCommunityActor(actor: AuthenticatedActor) {
   return {
     displayName: actor.displayName,
@@ -3132,7 +3249,9 @@ function actorToCommunityActor(actor: AuthenticatedActor) {
 }
 
 function normalizeCommunityGroupRequest(value: unknown): {
+  anchorLocation?: CommunityReportLocation;
   description?: string;
+  metadata?: Record<string, unknown>;
   name: string;
   visibility: CommunityGroupVisibility;
 } | null {
@@ -3144,7 +3263,9 @@ function normalizeCommunityGroupRequest(value: unknown): {
     return null;
   }
   return {
+    ...(normalizeCommunityLocation(value.anchorLocation, "manual") ? { anchorLocation: normalizeCommunityLocation(value.anchorLocation, "manual") } : {}),
     ...(optionalTrimmedString(value.description, 500) ? { description: optionalTrimmedString(value.description, 500) } : {}),
+    ...(isRecord(value.metadata) ? { metadata: normalizedJsonRecord(value.metadata, 4000) } : {}),
     name,
     visibility: isCommunityGroupVisibility(value.visibility) ? value.visibility : "private"
   };
@@ -3406,6 +3527,17 @@ function canReadCommunityGroup(group: CommunityGroupRecord, actor: Authenticated
   return group.visibility === "public" || group.members.some((member) => member.subjectId === actor.subjectId);
 }
 
+function canUseCommunityGroupForReport(group: CommunityGroupRecord, actor: AuthenticatedActor): boolean {
+  return group.members.some((member) =>
+    member.subjectId === actor.subjectId
+    && member.status === "active"
+  );
+}
+
+function communityReportGroupId(report: Pick<CommunityReportRecord, "properties"> | { properties?: Record<string, unknown> }): string | undefined {
+  return optionalUuid(report.properties?.groupId);
+}
+
 type CommunityAttachmentAccessMode = "groups" | "private" | "public" | "users";
 
 interface CommunityAttachmentAccessPolicy {
@@ -3515,6 +3647,8 @@ function communityReportsFeatureCollection(
         description: report.description ?? null,
         documentCount: report.attachments.filter((attachment) => attachment.kind === "document" && attachment.status === "uploaded").length,
         featureId: `community:${report.reportId}`,
+        groupId: typeof report.properties.groupId === "string" ? report.properties.groupId : null,
+        groupName: typeof report.properties.groupName === "string" ? report.properties.groupName : null,
         hazardSeverity: communityReportSeverity(report),
         label: report.title,
         layer: "community",
@@ -3768,7 +3902,7 @@ function isCommunityAttachmentAccessMode(value: unknown): value is CommunityAtta
 }
 
 function isCommunityLocationSource(value: unknown): value is CommunityLocationSource {
-  return value === "device" || value === "manual" || value === "photo_exif" || value === "unknown";
+  return value === "device" || value === "manual" || value === "media_metadata" || value === "photo_exif" || value === "unknown";
 }
 
 function isCommunityAttachmentKind(value: unknown): value is CommunityAttachmentKind {
@@ -3874,8 +4008,10 @@ function mobileEndpoints() {
     communityReportAttachmentComplete: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete",
     communityReportAttachmentCreate: "/api/v1/community/reports/{reportId}/attachments",
     communityReportAttachmentUpload: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload",
+    communityReportDelete: "/api/v1/community/reports/{reportId}",
     communityReportDetail: "/api/v1/community/reports/{reportId}",
     communityReportSubmit: "/api/v1/community/reports/{reportId}/submit",
+    communityReportUpdate: "/api/v1/community/reports/{reportId}",
     communityReports: "/api/v1/community/reports",
     deviceRegistration: "/api/v1/mobile/devices",
     mapQuery: "/api/v1/map/query",
@@ -4081,6 +4217,16 @@ function optionalTrimmedString(value: unknown, maxLength: number): string | unde
   }
   const normalized = value.trim();
   return normalized ? normalized.slice(0, maxLength) : undefined;
+}
+
+function optionalUuid(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(normalized)
+    ? normalized.toLowerCase()
+    : undefined;
 }
 
 function isCopAlertType(value: unknown): value is CopAlert["type"] {

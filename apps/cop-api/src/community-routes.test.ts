@@ -358,6 +358,123 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("links reports to groups and lets the author edit and delete the report", async () => {
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const groupResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        anchorLocation: {
+          lat: 50.11,
+          lon: 17.38,
+          source: "manual"
+        },
+        name: "Povodně Vrbno",
+        visibility: "private"
+      },
+      url: "/api/v1/community/groups"
+    });
+    expect(groupResponse.statusCode).toBe(201);
+    expect(groupResponse.json()).toMatchObject({
+      anchorLocation: {
+        lat: 50.11,
+        lon: 17.38
+      },
+      name: "Povodně Vrbno"
+    });
+    const group = groupResponse.json() as { groupId: string; name: string };
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        category: "flood",
+        groupId: group.groupId,
+        groupName: group.name,
+        hazardSeverity: "critical",
+        location: {
+          lat: 50.12,
+          lon: 17.39,
+          source: "manual"
+        },
+        title: "Zaplavený most",
+        visibility: "community"
+      },
+      url: "/api/v1/community/reports"
+    });
+    expect(createResponse.statusCode).toBe(201);
+    const report = createResponse.json() as { reportId: string };
+
+    const submitResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: `/api/v1/community/reports/${report.reportId}/submit`
+    });
+    expect(submitResponse.statusCode).toBe(200);
+
+    const updateResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "PATCH",
+      payload: {
+        description: "Most je neprůjezdný, voda stoupá.",
+        hazardSeverity: "warning",
+        title: "Most neprůjezdný"
+      },
+      url: `/api/v1/community/reports/${report.reportId}`
+    });
+    expect(updateResponse.statusCode).toBe(200);
+    expect(updateResponse.json()).toMatchObject({
+      description: "Most je neprůjezdný, voda stoupá.",
+      properties: {
+        groupId: group.groupId,
+        groupName: group.name,
+        hazardSeverity: "warning"
+      },
+      title: "Most neprůjezdný"
+    });
+
+    const listResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/community/reports?bbox=17.0,49.8,17.8,50.4"
+    });
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json()).toMatchObject({
+      featureCollection: {
+        features: [
+          {
+            properties: {
+              groupId: group.groupId,
+              groupName: group.name,
+              hazardSeverity: "warning",
+              label: "Most neprůjezdný"
+            }
+          }
+        ]
+      }
+    });
+
+    const deleteResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "DELETE",
+      url: `/api/v1/community/reports/${report.reportId}`
+    });
+    expect(deleteResponse.statusCode).toBe(204);
+
+    const afterDeleteResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: `/api/v1/community/reports/${report.reportId}`
+    });
+    expect(afterDeleteResponse.statusCode).toBe(404);
+
+    await app.close();
+  });
+
   it("rejects invalid report payloads", async () => {
     const app = buildServer({ mediaStorage: new FakeMediaStorage() });
 

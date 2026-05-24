@@ -179,16 +179,34 @@ from the authenticated bootstrap endpoint.
 ## Relationship to COP Groups
 
 COP owns community reporting and media ACL. CSM Messaging owns conversations.
-The two concepts are deliberately separate:
+The two concepts are deliberately separate, but the user workflow joins them
+through the COP community group:
 
 - COP community group: controls who can see restricted media attached to map
-  reports.
+  reports and can optionally hold an `anchorLocation` for the event on the map.
 - Messaging conversation/Matrix room: carries chat messages and future map
   links.
 
-The current COP UI lets authenticated users create sharing groups and manage
-members in the conversation panel. A later provider contract should add a
-server-side metadata link between a COP `groupId` and a CSM conversation or
-Matrix room. Until that exists, COP must not infer media authorization from a
-Matrix room membership and must not expose protected media through chat
-messages.
+The current COP UI requires a group context for every new report. If the user
+creates the group from the report dialog, the group is anchored by the first
+report location. If the user creates it from Chat/Konverzace, the location is
+unknown until the user sets it or submits a map report into that group.
+
+When COP creates a messaging conversation for a group, it sends safe metadata
+only:
+
+```json
+{
+  "type": "group",
+  "title": "Požár u Vrbna",
+  "metadata": {
+    "source": "cop.community",
+    "externalId": "<cop-group-id>"
+  }
+}
+```
+
+`externalId` is an integration reference, not an authorization source. COP must
+not infer media authorization from Matrix room membership and must not expose
+protected media through chat messages. Media access is evaluated from
+`attachment.metadata.access` and active COP group membership.

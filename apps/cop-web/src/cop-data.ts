@@ -251,6 +251,9 @@ export interface SituationFeatureProperties {
   featureId: string;
   generatedAt?: string;
   geocodes?: Array<{ scheme: string; value: string }>;
+  groupId?: string | null;
+  groupName?: string | null;
+  hazardSeverity?: string;
   headline?: string;
   label: string;
   layer: SituationLayerId;
@@ -269,6 +272,7 @@ export interface SituationFeatureProperties {
   quality?: string;
   receivedAt?: string;
   recommendedAction?: string;
+  reportId?: string;
   resolutionM?: number;
   severity?: string;
   sourceId: string;
@@ -621,7 +625,7 @@ export interface CommunityReportLocation {
   accuracyM?: number;
   lat: number;
   lon: number;
-  source: "device" | "manual" | "photo_exif" | "unknown";
+  source: "device" | "manual" | "media_metadata" | "photo_exif" | "unknown";
 }
 
 export interface CommunityReportAttachment {
@@ -650,6 +654,7 @@ export interface CommunityGroupMember {
 }
 
 export interface CommunityGroup {
+  anchorLocation?: CommunityReportLocation;
   createdAt: string;
   createdBy: {
     displayName: string;
@@ -658,6 +663,7 @@ export interface CommunityGroup {
   };
   description?: string;
   groupId: string;
+  metadata?: Record<string, unknown>;
   members: CommunityGroupMember[];
   name: string;
   updatedAt: string;
@@ -667,6 +673,11 @@ export interface CommunityGroup {
 export interface CommunityReport {
   attachments: CommunityReportAttachment[];
   category: CommunityReportCategory;
+  createdBy?: {
+    displayName: string;
+    subjectId: string;
+    username: string;
+  };
   description?: string;
   location: CommunityReportLocation;
   observedAt: string;
@@ -1299,6 +1310,8 @@ export async function createCommunityReport(
     category: CommunityReportCategory;
     description?: string;
     hazardSeverity: CommunityReportHazardSeverity;
+    groupId?: string;
+    groupName?: string;
     location: CommunityReportLocation;
     observedAt?: string;
     title: string;
@@ -1309,7 +1322,11 @@ export async function createCommunityReport(
   return fetchJson<CommunityReport>(`${apiBase}/api/v1/community/reports`, {
     body: JSON.stringify({
       ...payload,
+      ...(payload.groupId ? { groupId: payload.groupId } : {}),
+      ...(payload.groupName ? { groupName: payload.groupName } : {}),
       properties: {
+        ...(payload.groupId ? { groupId: payload.groupId } : {}),
+        ...(payload.groupName ? { groupName: payload.groupName } : {}),
         hazardSeverity: payload.hazardSeverity,
         ...(payload.validUntil ? { validUntil: payload.validUntil } : {})
       },
@@ -1333,7 +1350,9 @@ export async function createCommunityGroup(
   apiBase: string,
   token: string,
   payload: {
+    anchorLocation?: CommunityReportLocation;
     description?: string;
+    metadata?: Record<string, unknown>;
     name: string;
     visibility: CommunityGroupVisibility;
   }
@@ -1346,6 +1365,50 @@ export async function createCommunityGroup(
     },
     method: "POST"
   });
+}
+
+export async function updateCommunityReport(
+  apiBase: string,
+  token: string,
+  reportId: string,
+  payload: {
+    category?: CommunityReportCategory;
+    description?: string;
+    hazardSeverity?: CommunityReportHazardSeverity;
+    groupId?: string;
+    groupName?: string;
+    location?: CommunityReportLocation;
+    title?: string;
+    validUntil?: string;
+    visibility?: CommunityReportVisibility;
+  }
+): Promise<CommunityReport> {
+  return fetchJson<CommunityReport>(`${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}`, {
+    body: JSON.stringify({
+      ...payload,
+      properties: {
+        ...(payload.groupId ? { groupId: payload.groupId } : {}),
+        ...(payload.groupName ? { groupName: payload.groupName } : {}),
+        ...(payload.hazardSeverity ? { hazardSeverity: payload.hazardSeverity } : {}),
+        ...(payload.validUntil ? { validUntil: payload.validUntil } : {})
+      }
+    }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "PATCH"
+  });
+}
+
+export async function deleteCommunityReport(apiBase: string, token: string, reportId: string): Promise<void> {
+  const response = await fetch(`${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}`, {
+    headers: authHeaders(token),
+    method: "DELETE"
+  });
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText || "API request failed"} for ${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}`);
+  }
 }
 
 export async function requestCommunityGroupJoin(apiBase: string, token: string, groupId: string): Promise<CommunityGroup> {

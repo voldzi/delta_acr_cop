@@ -52,6 +52,7 @@ import {
   createCommunityGroup,
   createCommunityReport,
   createMessagingConversation,
+  deleteCommunityReport,
   fetchCopDashboardData,
   fetchCopAlerts,
   fetchCommunityGroups,
@@ -71,6 +72,7 @@ import {
   isPublicFlightObject,
   saveUserProfile,
   submitCommunityReport,
+  updateCommunityReport,
   upsertCommunityGroupMember,
   uploadCommunityAttachmentFile,
   type CopDashboardData,
@@ -367,6 +369,7 @@ export function App() {
   const [communityRefreshNonce, setCommunityRefreshNonce] = React.useState(0);
   const [communityGroups, setCommunityGroups] = React.useState<CommunityGroup[]>([]);
   const [communityGroupsError, setCommunityGroupsError] = React.useState<string | null>(null);
+  const [communityGallery, setCommunityGallery] = React.useState<CommunityGalleryState | null>(null);
   const [takLayers, setTakLayers] = React.useState<TakLayer[]>([]);
   const [visibleTakLayerIds, setVisibleTakLayerIds] = React.useState<TakLayerId[]>(() => normalizeTakLayerIds(initialPreferences.takLayerIds));
   const [takFeatures, setTakFeatures] = React.useState<TakFeatureCollectionResponse | null>(null);
@@ -2117,6 +2120,31 @@ export function App() {
     setLocationStatus(`Poloha hlášení: ${center.lat.toFixed(5)}, ${center.lon.toFixed(5)}`);
   }
 
+  async function handleCommunityReportFilesSelected(files: File[]) {
+    setCommunityReportDraft((current) => ({
+      ...current,
+      files,
+      mediaLocationHint: ""
+    }));
+    if (files.length === 0) {
+      return;
+    }
+    const located = await firstMediaLocation(files);
+    if (!located) {
+      setCommunityReportDraft((current) => ({
+        ...current,
+        mediaLocationHint: "V přiložených médiích jsem nenašel čitelnou polohu. Polohu nastavte z GPS nebo mapy."
+      }));
+      return;
+    }
+    setCommunityReportDraft((current) => ({
+      ...current,
+      location: located.location,
+      mediaLocationHint: `Použita poloha ze souboru ${located.fileName}.`
+    }));
+    setLocationStatus(`Poloha hlášení převzata ze souboru ${located.fileName}.`);
+  }
+
   async function handleCreateCommunityGroupFromReport() {
     if (!messagingAuthenticated || !authSession.accessToken) {
       openSettings("account");
@@ -2128,7 +2156,13 @@ export function App() {
       return;
     }
     try {
-      const group = await createCommunityGroupForUi(name, communityReportDraft.newGroupVisibility);
+      const group = await createCommunityGroupForUi(name, communityReportDraft.newGroupVisibility, {
+        anchorLocation: communityReportDraft.location,
+        metadata: {
+          createdFrom: "report-dialog",
+          initialCategory: communityReportDraft.category
+        }
+      });
       setCommunityReportDraft((current) => ({
         ...current,
         mediaAccessGroupId: group.groupId,
@@ -2141,11 +2175,17 @@ export function App() {
     }
   }
 
-  async function createCommunityGroupForUi(name: string, visibility: "private" | "public"): Promise<CommunityGroup> {
+  async function createCommunityGroupForUi(
+    name: string,
+    visibility: "private" | "public",
+    options: { anchorLocation?: CommunityReportLocation; metadata?: Record<string, unknown> } = {}
+  ): Promise<CommunityGroup> {
     if (!messagingAuthenticated || !authSession.accessToken) {
       throw new Error("Pro správu skupin je potřeba přihlášení.");
     }
     const group = await createCommunityGroup(apiBase, authSession.accessToken, {
+      anchorLocation: options.anchorLocation,
+      metadata: options.metadata,
       name,
       visibility
     });
@@ -2204,16 +2244,37 @@ export function App() {
     setCommunityReportError(null);
     setCommunityReportSuccess(null);
     try {
-      const report = await createCommunityReport(apiBase, authToken, {
+      let eventGroup = communityReportDraft.mediaAccessGroupId
+        ? communityGroups.find((group) => group.groupId === communityReportDraft.mediaAccessGroupId) ?? null
+        : null;
+      if (!eventGroup) {
+        const fallbackGroupName = communityReportDraft.newGroupName.trim()
+          || communityReportDraft.title.trim()
+          || communityReportCategoryLabelForValue(communityReportDraft.category);
+        eventGroup = await createCommunityGroupForUi(fallbackGroupName, communityReportDraft.newGroupVisibility, {
+          anchorLocation: communityReportDraft.location,
+          metadata: {
+            createdFrom: "community-report",
+            initialCategory: communityReportDraft.category,
+            initialSeverity: communityReportDraft.hazardSeverity
+          }
+        });
+      }
+      const reportPayload = {
         category: communityReportDraft.category,
         description: communityReportDraft.description.trim() || undefined,
+        groupId: eventGroup.groupId,
+        groupName: eventGroup.name,
         hazardSeverity: communityReportDraft.hazardSeverity,
         location: communityReportDraft.location,
         observedAt: new Date().toISOString(),
         title: communityReportDraft.title.trim(),
         validUntil: communityReportDraft.validUntil ? new Date(communityReportDraft.validUntil).toISOString() : undefined,
         visibility: "community"
-      });
+      } as const;
+      const report = communityReportDraft.reportId
+        ? await updateCommunityReport(apiBase, authToken, communityReportDraft.reportId, reportPayload)
+        : await createCommunityReport(apiBase, authToken, reportPayload);
       for (const file of communityReportDraft.files) {
         const contentType = normalizeCommunityFileContentType(file);
         const kind = communityAttachmentKindFromContentType(contentType);
@@ -2226,13 +2287,17 @@ export function App() {
           contentType,
           fileName: file.name || undefined,
           kind,
-          metadata: buildCommunityAttachmentMetadata(file, contentType, kind, communityReportDraft.videoSpatialMode, communityReportAccessPolicy(communityReportDraft))
+          metadata: buildCommunityAttachmentMetadata(file, contentType, kind, communityReportDraft.videoSpatialMode, communityReportAccessPolicy({
+            ...communityReportDraft,
+            mediaAccessGroupId: eventGroup.groupId,
+            mediaAccessMode: communityReportDraft.mediaAccessMode === "groups" ? "groups" : communityReportDraft.mediaAccessMode
+          }))
         });
         await uploadCommunityAttachmentFile(apiBase, authToken, report.reportId, file, slot);
       }
       const submitted = await submitCommunityReport(apiBase, authToken, report.reportId);
       setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(userLocation, mapView)));
-      setCommunityReportSuccess("Hlášení bylo uloženo a sdíleno do mapové vrstvy.");
+      setCommunityReportSuccess(communityReportDraft.reportId ? "Hlášení bylo upraveno." : "Hlášení bylo uloženo a propojeno se skupinou.");
       setCommunityReportOpen(false);
       setCommunityReportLocationPickMode(false);
       setCommunityRefreshNonce((current) => current + 1);
@@ -2244,6 +2309,57 @@ export function App() {
       setCommunityReportError(error instanceof Error ? error.message : "Hlášení se nepodařilo uložit.");
     } finally {
       setCommunityReportSubmitting(false);
+    }
+  }
+
+  function editCommunityReportFeature(feature: SituationFeature) {
+    const properties = feature.properties;
+    if (properties.layer !== "community" || !properties.reportId) {
+      return;
+    }
+    const coordinates = feature.geometry.type === "Point" ? feature.geometry.coordinates : null;
+    const groupId = typeof properties.groupId === "string" ? properties.groupId : "";
+    const severity = isCommunityHazardSeverityValue(properties.hazardSeverity)
+      ? properties.hazardSeverity
+      : isCommunityHazardSeverityValue(properties.severity)
+        ? properties.severity
+        : "warning";
+    setCommunityReportDraft({
+      ...createCommunityReportDraft({
+        lat: coordinates ? coordinates[1] : defaultAoiCenter.lat,
+        lon: coordinates ? coordinates[0] : defaultAoiCenter.lon,
+        source: "manual"
+      }),
+      category: isCommunityReportCategoryValue(properties.category) ? properties.category : "hazard",
+      description: properties.description ?? "",
+      hazardSeverity: severity,
+      mediaAccessGroupId: groupId,
+      mediaAccessMode: groupId ? "groups" : "public",
+      newGroupName: "",
+      reportId: properties.reportId,
+      title: properties.label ?? properties.headline ?? "",
+      validUntil: properties.validUntil ? toDateTimeLocalValue(new Date(properties.validUntil)) : toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000))
+    });
+    setCommunityReportError(null);
+    setCommunityReportSuccess(null);
+    setCommunityReportOpen(true);
+  }
+
+  async function handleDeleteCommunityReport(reportId: string) {
+    if (!authToken) {
+      openSettings("account");
+      return;
+    }
+    if (!window.confirm("Smazat toto hlášení včetně metadat příloh?")) {
+      return;
+    }
+    try {
+      await deleteCommunityReport(apiBase, authToken, reportId);
+      setSelectedSituationFeatureId(null);
+      setCommunityRefreshNonce((current) => current + 1);
+      setLocationStatus("Hlášení bylo smazáno.");
+    } catch (error) {
+      setLocationStatus(error instanceof Error ? error.message : "Hlášení se nepodařilo smazat.");
     }
   }
 
@@ -2788,7 +2904,22 @@ export function App() {
 
           <PanelTitle icon={<Database size={17} />} title={selectedSituationFeature ? "Situation detail" : "Object detail"} />
           {selectedSituationFeature ? (
-            <SituationFeatureDetail feature={selectedSituationFeature} />
+            <SituationFeatureDetail
+              feature={selectedSituationFeature}
+              onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
+              onEditReport={(feature) => editCommunityReportFeature(feature)}
+              onOpenGallery={(attachments, index, title, subtitle) => {
+                const galleryAttachments = buildCommunityGalleryAttachments(communityFeatures, selectedSituationFeature, attachments);
+                const selectedAttachmentId = attachments[index]?.attachmentId;
+                const galleryIndex = Math.max(0, galleryAttachments.findIndex((attachment) => attachment.attachmentId === selectedAttachmentId));
+                setCommunityGallery({
+                  attachments: galleryAttachments,
+                  index: galleryIndex,
+                  subtitle,
+                  title
+                });
+              }}
+            />
           ) : selectedObject ? (
             <ObjectDetail
               historyPoints={replayTrackHistory[selectedObject.objectId] ?? []}
@@ -2993,7 +3124,23 @@ export function App() {
           onLocationFromMapClick={startCommunityReportMapPick}
           onLocationFromUser={setCommunityReportLocationFromUser}
           onCreateGroup={() => void handleCreateCommunityGroupFromReport()}
+          onFilesSelected={(files) => void handleCommunityReportFilesSelected(files)}
           onSubmit={() => void submitCommunityReportDraft()}
+        />
+      ) : null}
+      {communityGallery ? (
+        <CommunityMediaGallery
+          gallery={communityGallery}
+          onClose={() => setCommunityGallery(null)}
+          onMove={(direction) => setCommunityGallery((current) => {
+            if (!current) {
+              return current;
+            }
+            return {
+              ...current,
+              index: (current.index + direction + current.attachments.length) % current.attachments.length
+            };
+          })}
         />
       ) : null}
     </main>
@@ -3006,14 +3153,23 @@ interface CommunityReportDraft {
   files: File[];
   hazardSeverity: CommunityReportHazardSeverity;
   location: CommunityReportLocation;
+  mediaLocationHint: string;
   mediaAccessGroupId: string;
   mediaAccessMode: CommunityMediaAccessMode;
   mediaAccessUserSubjectIds: string;
   newGroupName: string;
   newGroupVisibility: "private" | "public";
+  reportId?: string;
   title: string;
   validUntil: string;
   videoSpatialMode: CommunityVideoSpatialMode;
+}
+
+interface CommunityGalleryState {
+  attachments: NonNullable<SituationFeature["properties"]["attachments"]>;
+  index: number;
+  subtitle?: string;
+  title: string;
 }
 
 interface CommunityReportDialogProps {
@@ -3026,6 +3182,7 @@ interface CommunityReportDialogProps {
   onChange: React.Dispatch<React.SetStateAction<CommunityReportDraft>>;
   onClose: () => void;
   onCreateGroup: () => void;
+  onFilesSelected: (files: File[]) => void;
   onLocationFromMap: () => void;
   onLocationFromMapClick: () => void;
   onLocationFromUser: () => void;
@@ -3042,6 +3199,7 @@ function CommunityReportDialog({
   onChange,
   onClose,
   onCreateGroup,
+  onFilesSelected,
   onLocationFromMap,
   onLocationFromMapClick,
   onLocationFromUser,
@@ -3053,7 +3211,7 @@ function CommunityReportDialog({
         <div className="report-dialog-header">
           <div>
             <span>Komunitní hlášení</span>
-            <h2 id="community-report-title">Nahlásit událost v okolí</h2>
+            <h2 id="community-report-title">{draft.reportId ? "Upravit hlášení" : "Nahlásit událost v okolí"}</h2>
           </div>
           <button aria-label="Zavřít" className="icon-button" onClick={onClose} type="button">
             <X size={18} />
@@ -3119,6 +3277,7 @@ function CommunityReportDialog({
             <strong>{formatReportLocation(draft.location)}</strong>
           </div>
         </div>
+        {draft.mediaLocationHint ? <div className="report-dialog-message success">{draft.mediaLocationHint}</div> : null}
 
         <div className="report-location-actions">
           <button className="mini-button" onClick={onLocationFromUser} type="button">Moje poloha</button>
@@ -3128,9 +3287,12 @@ function CommunityReportDialog({
 
         <section className="report-access-panel">
           <div className="report-access-header">
-            <strong>Přístup k médiím</strong>
+            <strong>Skupina a média</strong>
             <span>{communityMediaAccessLabel(draft.mediaAccessMode)}</span>
           </div>
+          <span className="report-field-hint">
+            Každé hlášení je součástí skupiny. Skupina propojí mapový bod, konverzaci a přiložená média.
+          </span>
           <select
             value={draft.mediaAccessMode}
             onChange={(event) => onChange((current) => ({ ...current, mediaAccessMode: event.target.value as CommunityMediaAccessMode }))}
@@ -3170,8 +3332,8 @@ function CommunityReportDialog({
               <div className="report-create-group">
                 <input
                   maxLength={80}
-                  placeholder="Nová skupina, např. Povodně Vrbno"
-                  value={draft.newGroupName}
+                placeholder="Nová skupina, např. Povodně Vrbno"
+                value={draft.newGroupName}
                   onChange={(event) => onChange((current) => ({ ...current, newGroupName: event.target.value }))}
                 />
                 <select
@@ -3197,10 +3359,7 @@ function CommunityReportDialog({
             accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,video/mp4,video/quicktime"
             multiple
             type="file"
-            onChange={(event) => {
-              const files = Array.from(event.target.files ?? []);
-              onChange((current) => ({ ...current, files }));
-            }}
+            onChange={(event) => onFilesSelected(Array.from(event.target.files ?? []))}
           />
         </label>
         {draft.files.some(isCommunityVideoFile) ? (
@@ -3236,9 +3395,70 @@ function CommunityReportDialog({
         <div className="report-dialog-actions">
           <button className="ghost-button" disabled={isSubmitting} onClick={onClose} type="button">Zrušit</button>
           <button className="primary-button" disabled={isSubmitting} onClick={onSubmit} type="button">
-            {isSubmitting ? "Ukládám..." : "Uložit hlášení"}
+            {isSubmitting ? "Ukládám..." : draft.reportId ? "Uložit změny" : "Uložit hlášení"}
           </button>
         </div>
+      </section>
+    </div>
+  );
+}
+
+function CommunityMediaGallery({
+  gallery,
+  onClose,
+  onMove
+}: {
+  gallery: CommunityGalleryState;
+  onClose: () => void;
+  onMove: (direction: -1 | 1) => void;
+}) {
+  const attachment = gallery.attachments[gallery.index];
+  const spatialMode = attachment?.kind === "video" ? communityAttachmentSpatialMode(attachment) : "none";
+  const xrVideoUrl = attachment ? buildXrVideoUrl(attachment) : null;
+  if (!attachment) {
+    return null;
+  }
+  return (
+    <div className="community-gallery-backdrop" role="presentation">
+      <section className="community-gallery" aria-modal="true" role="dialog" aria-label="Galerie médií">
+        <header className="community-gallery-header">
+          <div>
+            <span>{gallery.subtitle ?? "Komunitní média"}</span>
+            <strong>{gallery.title}</strong>
+            <small>{gallery.index + 1} / {gallery.attachments.length} · {attachment.fileName ?? communityAttachmentKindLabel(attachment.kind)}</small>
+          </div>
+          <button aria-label="Zavřít galerii" className="icon-button" onClick={onClose} type="button">
+            <X size={20} />
+          </button>
+        </header>
+        <div className="community-gallery-stage">
+          {gallery.attachments.length > 1 ? (
+            <button aria-label="Předchozí médium" className="community-gallery-nav prev" onClick={() => onMove(-1)} type="button">‹</button>
+          ) : null}
+          {attachment.contentUrl && attachment.kind === "photo" ? (
+            <img alt={attachment.fileName ?? "Fotografie hlášení"} src={attachment.contentUrl} />
+          ) : null}
+          {attachment.contentUrl && attachment.kind === "video" ? (
+            <video controls playsInline preload="metadata" src={attachment.contentUrl} />
+          ) : null}
+          {attachment.contentUrl && attachment.kind === "document" ? (
+            <iframe src={attachment.contentUrl} title={attachment.fileName ?? "PDF příloha"} />
+          ) : null}
+          {!attachment.contentUrl ? (
+            <div className="community-gallery-denied">
+              {attachment.accessDenied ? "K tomuto médiu nemáte oprávnění." : "Médium zatím není dostupné."}
+            </div>
+          ) : null}
+          {gallery.attachments.length > 1 ? (
+            <button aria-label="Další médium" className="community-gallery-nav next" onClick={() => onMove(1)} type="button">›</button>
+          ) : null}
+        </div>
+        <footer className="community-gallery-footer">
+          <span>{communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}</span>
+          {attachment.kind === "video" ? <span>{communityAttachmentSpatialLabel(spatialMode)}</span> : null}
+          {xrVideoUrl ? <a className="mini-button" href={xrVideoUrl} rel="noreferrer" target="_blank">Otevřít 3D v XR</a> : null}
+          {attachment.contentUrl ? <a className="mini-button" href={attachment.contentUrl} rel="noreferrer" target="_blank">Otevřít soubor</a> : null}
+        </footer>
       </section>
     </div>
   );
@@ -5360,15 +5580,31 @@ function ObjectDetail({
   );
 }
 
-function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
+function SituationFeatureDetail({
+  feature,
+  onDeleteReport,
+  onEditReport,
+  onOpenGallery
+}: {
+  feature: SituationFeature;
+  onDeleteReport?: (reportId: string) => void;
+  onEditReport?: (feature: SituationFeature) => void;
+  onOpenGallery?: (
+    attachments: NonNullable<SituationFeature["properties"]["attachments"]>,
+    index: number,
+    title: string,
+    subtitle?: string
+  ) => void;
+}) {
   const properties = feature.properties;
   const status = situationFeatureStatusModel(feature);
+  const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
   return (
     <div className="object-detail situation-feature-detail">
       <div className="object-header">
         <div>
           <strong>{properties.headline ?? properties.label}</strong>
-          <span>{properties.featureId}</span>
+          <span>{isCommunityReport ? [properties.groupName, properties.reportId].filter(Boolean).join(" · ") : properties.featureId}</span>
         </div>
         <div className="object-header-badges">
           <em>{properties.layer}</em>
@@ -5376,21 +5612,30 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
         </div>
       </div>
 
+      {isCommunityReport ? (
+        <div className="community-report-actions">
+          <button className="mini-button" onClick={() => onEditReport?.(feature)} type="button">Upravit</button>
+          <button className="mini-button danger" onClick={() => onDeleteReport?.(properties.reportId as string)} type="button">Smazat</button>
+        </div>
+      ) : null}
+
       <ObjectDetailSection title="Kontext">
         <DetailGrid
           rows={[
-            ["Layer", situationLayerLabel(properties.layer)],
-            ["Category", properties.category],
-            ["Source", properties.sourceId],
-            ["Observed", formatShortDateTime(properties.observedAt)],
-            ["Effective", formatShortDateTime(properties.effectiveAt)],
-            ["Expires", formatShortDateTime(properties.expiresAt)],
-            ["Valid until", formatShortDateTime(properties.validUntil)],
-            ["Age", formatAge(properties.observedAt)],
-            ["Confidence", formatOptionalPercent(properties.confidence)],
-            ["Urgency", properties.urgency ?? "n/a"],
-            ["Certainty", properties.certainty ?? "n/a"],
-            ["Status", <StatusBadge key="status" label={status.label} tone={status.tone} />]
+            [isCommunityReport ? "Typ" : "Layer", isCommunityReport ? communityReportCategoryDisplay(properties.category) : situationLayerLabel(properties.layer)],
+            [isCommunityReport ? "Skupina" : "Category", isCommunityReport ? properties.groupName ?? "bez skupiny" : properties.category],
+            [isCommunityReport ? "Zdroj" : "Source", properties.sourceId],
+            [isCommunityReport ? "Vloženo" : "Observed", formatShortDateTime(properties.observedAt)],
+            [isCommunityReport ? "Platnost" : "Valid until", formatShortDateTime(properties.validUntil)],
+            [isCommunityReport ? "Stáří" : "Age", formatAge(properties.observedAt)],
+            [isCommunityReport ? "Riziko" : "Urgency", communitySeverityDisplay(properties.hazardSeverity ?? properties.severity ?? properties.urgency)],
+            [isCommunityReport ? "Stav" : "Status", <StatusBadge key="status" label={status.label} tone={status.tone} />],
+            ...(isCommunityReport ? [] : [
+              ["Effective", formatShortDateTime(properties.effectiveAt)],
+              ["Expires", formatShortDateTime(properties.expiresAt)],
+              ["Confidence", formatOptionalPercent(properties.confidence)],
+              ["Certainty", properties.certainty ?? "n/a"]
+            ] as Array<[string, React.ReactNode]>)
           ]}
         />
       </ObjectDetailSection>
@@ -5446,8 +5691,11 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
       ) : null}
 
       {properties.layer === "community" && properties.attachments && properties.attachments.length > 0 ? (
-        <ObjectDetailSection title="Přílohy">
-          <CommunityAttachmentPreview attachments={properties.attachments} />
+        <ObjectDetailSection title="Média">
+          <CommunityAttachmentPreview
+            attachments={properties.attachments}
+            onOpenGallery={(attachments, index) => onOpenGallery?.(attachments, index, properties.label, properties.groupName ?? undefined)}
+          />
         </ObjectDetailSection>
       ) : null}
 
@@ -5484,13 +5732,15 @@ function SituationFeatureDetail({ feature }: { feature: SituationFeature }) {
 }
 
 function CommunityAttachmentPreview({
-  attachments
+  attachments,
+  onOpenGallery
 }: {
   attachments: NonNullable<SituationFeature["properties"]["attachments"]>;
+  onOpenGallery?: (attachments: NonNullable<SituationFeature["properties"]["attachments"]>, index: number) => void;
 }) {
   return (
     <div className="community-media-list">
-      {attachments.map((attachment) => {
+      {attachments.map((attachment, index) => {
         const spatialMode = attachment.kind === "video" ? communityAttachmentSpatialMode(attachment) : "none";
         const xrVideoUrl = buildXrVideoUrl(attachment);
         return (
@@ -5500,12 +5750,19 @@ function CommunityAttachmentPreview({
               <span>{communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}</span>
             </div>
             {attachment.contentUrl && attachment.kind === "photo" ? (
-              <img alt={attachment.fileName ?? "Fotografie hlášení"} src={attachment.contentUrl} />
+              <button className="community-media-open" onClick={() => onOpenGallery?.(attachments, index)} type="button">
+                <img alt={attachment.fileName ?? "Fotografie hlášení"} src={attachment.contentUrl} />
+              </button>
             ) : null}
             {attachment.contentUrl && attachment.kind === "video" ? (
               <>
-                <video controls playsInline preload="metadata" src={attachment.contentUrl} />
+                <button className="community-media-open" onClick={() => onOpenGallery?.(attachments, index)} type="button">
+                  <video muted playsInline preload="metadata" src={attachment.contentUrl} />
+                </button>
                 <div className="community-media-actions">
+                  <button className="mini-button community-document-link" onClick={() => onOpenGallery?.(attachments, index)} type="button">
+                    Přehrát
+                  </button>
                   <span className="community-spatial-badge">{communityAttachmentSpatialLabel(spatialMode)}</span>
                   {xrVideoUrl ? (
                     <a className="mini-button community-document-link" href={xrVideoUrl} target="_blank" rel="noreferrer">
@@ -5521,9 +5778,9 @@ function CommunityAttachmentPreview({
               </>
             ) : null}
             {attachment.contentUrl && attachment.kind === "document" ? (
-              <a className="mini-button community-document-link" href={attachment.contentUrl} rel="noreferrer" target="_blank">
+              <button className="mini-button community-document-link" onClick={() => onOpenGallery?.(attachments, index)} type="button">
                 Otevřít PDF
-              </a>
+              </button>
             ) : null}
             {!attachment.contentUrl ? (
               <span className="empty-mini">
@@ -5777,6 +6034,35 @@ const communityReportCategoryOptions: Array<{ label: string; value: CommunityRep
   { label: "Jiné", value: "other" }
 ];
 
+function communityReportCategoryLabelForValue(category: CommunityReportCategory): string {
+  return communityReportCategoryOptions.find((option) => option.value === category)?.label ?? "Hlášení";
+}
+
+function communityReportCategoryDisplay(category: unknown): string {
+  return isCommunityReportCategoryValue(category) ? communityReportCategoryLabelForValue(category) : String(category ?? "Hlášení");
+}
+
+function communitySeverityDisplay(severity: unknown): string {
+  if (severity === "critical") {
+    return "Kritické";
+  }
+  if (severity === "warning") {
+    return "Varování";
+  }
+  if (severity === "advisory" || severity === "info") {
+    return "Informace";
+  }
+  return String(severity ?? "n/a");
+}
+
+function isCommunityReportCategoryValue(value: unknown): value is CommunityReportCategory {
+  return communityReportCategoryOptions.some((option) => option.value === value);
+}
+
+function isCommunityHazardSeverityValue(value: unknown): value is CommunityReportHazardSeverity {
+  return value === "advisory" || value === "warning" || value === "critical";
+}
+
 const communityVideoSpatialOptions: Array<{ label: string; value: CommunityVideoSpatialMode }> = [
   { label: "Běžné 2D video", value: "none" },
   { label: "iPhone prostorové MOV (uložit originál)", value: "apple_mv_hevc" },
@@ -5791,8 +6077,9 @@ function createCommunityReportDraft(location = resolveCommunityReportLocation(nu
     files: [],
     hazardSeverity: "warning",
     location,
+    mediaLocationHint: "",
     mediaAccessGroupId: "",
-    mediaAccessMode: "public",
+    mediaAccessMode: "groups",
     mediaAccessUserSubjectIds: "",
     newGroupName: "",
     newGroupVisibility: "private",
@@ -5838,8 +6125,8 @@ function validateCommunityReportDraft(draft: CommunityReportDraft): string | nul
   if (Date.parse(draft.validUntil) <= Date.now() - 60_000) {
     return "Platnost rizika musí být v budoucnosti.";
   }
-  if (draft.mediaAccessMode === "groups" && !draft.mediaAccessGroupId) {
-    return "Vyberte skupinu pro omezení přístupu k médiím.";
+  if (draft.mediaAccessMode === "groups" && !draft.mediaAccessGroupId && !draft.newGroupName.trim() && !draft.title.trim()) {
+    return "Vyberte skupinu nebo doplňte název hlášení pro založení nové skupiny.";
   }
   if (draft.mediaAccessMode === "users" && parseSubjectIdList(draft.mediaAccessUserSubjectIds).length === 0) {
     return "Doplňte alespoň jednoho uživatele pro omezení přístupu k médiím.";
@@ -6029,12 +6316,201 @@ function buildXrVideoUrl(attachment: NonNullable<SituationFeature["properties"][
   return `/xr?${params.toString()}`;
 }
 
+function buildCommunityGalleryAttachments(
+  collection: CommunityFeatureCollectionResponse | null,
+  feature: SituationFeature,
+  fallbackAttachments: NonNullable<SituationFeature["properties"]["attachments"]>
+): NonNullable<SituationFeature["properties"]["attachments"]> {
+  const groupId = typeof feature.properties.groupId === "string" ? feature.properties.groupId : undefined;
+  if (!groupId || !collection) {
+    return fallbackAttachments;
+  }
+  const byId = new Map<string, NonNullable<SituationFeature["properties"]["attachments"]>[number]>();
+  for (const item of collection.features) {
+    if (item.properties.layer !== "community" || item.properties.groupId !== groupId) {
+      continue;
+    }
+    for (const attachment of item.properties.attachments ?? []) {
+      byId.set(attachment.attachmentId, attachment);
+    }
+  }
+  return byId.size > 0 ? Array.from(byId.values()) : fallbackAttachments;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+async function firstMediaLocation(files: File[]): Promise<{ fileName: string; location: CommunityReportLocation } | null> {
+  for (const file of files) {
+    const contentType = normalizeCommunityFileContentType(file);
+    const location = contentType === "image/jpeg"
+      ? await extractJpegExifLocation(file)
+      : contentType === "video/quicktime" || contentType === "video/mp4"
+        ? await extractIso6709VideoLocation(file)
+        : null;
+    if (location) {
+      return {
+        fileName: file.name || "médium",
+        location
+      };
+    }
+  }
+  return null;
+}
+
+async function extractJpegExifLocation(file: File): Promise<CommunityReportLocation | null> {
+  const buffer = await file.slice(0, Math.min(file.size, 2 * 1024 * 1024)).arrayBuffer();
+  const view = new DataView(buffer);
+  if (view.byteLength < 4 || view.getUint16(0, false) !== 0xffd8) {
+    return null;
+  }
+  let offset = 2;
+  while (offset + 4 < view.byteLength) {
+    if (view.getUint8(offset) !== 0xff) {
+      return null;
+    }
+    const marker = view.getUint8(offset + 1);
+    const length = view.getUint16(offset + 2, false);
+    if (marker === 0xe1 && offset + 4 + length <= view.byteLength) {
+      return readExifGpsLocation(view, offset + 4, length - 2);
+    }
+    offset += 2 + Math.max(length, 2);
+  }
+  return null;
+}
+
+function readExifGpsLocation(view: DataView, offset: number, length: number): CommunityReportLocation | null {
+  if (length < 14 || readAscii(view, offset, 6) !== "Exif\u0000\u0000") {
+    return null;
+  }
+  const tiff = offset + 6;
+  const littleEndian = readAscii(view, tiff, 2) === "II";
+  const readU16 = (position: number) => view.getUint16(position, littleEndian);
+  const readU32 = (position: number) => view.getUint32(position, littleEndian);
+  if (readU16(tiff + 2) !== 42) {
+    return null;
+  }
+  const ifd0 = tiff + readU32(tiff + 4);
+  const gpsIfdOffset = readIfdValueOffset(view, ifd0, 0x8825, littleEndian, tiff, offset + length);
+  if (!gpsIfdOffset) {
+    return null;
+  }
+  const gps = readGpsIfd(view, gpsIfdOffset, littleEndian, tiff, offset + length);
+  if (!gps) {
+    return null;
+  }
+  return {
+    lat: gps.lat,
+    lon: gps.lon,
+    source: "photo_exif"
+  };
+}
+
+function readIfdValueOffset(view: DataView, ifdOffset: number, tag: number, littleEndian: boolean, tiff: number, maxOffset: number): number | null {
+  if (ifdOffset + 2 > maxOffset) {
+    return null;
+  }
+  const count = view.getUint16(ifdOffset, littleEndian);
+  for (let index = 0; index < count; index += 1) {
+    const entry = ifdOffset + 2 + index * 12;
+    if (entry + 12 > maxOffset) {
+      return null;
+    }
+    if (view.getUint16(entry, littleEndian) === tag) {
+      return tiff + view.getUint32(entry + 8, littleEndian);
+    }
+  }
+  return null;
+}
+
+function readGpsIfd(view: DataView, gpsIfdOffset: number, littleEndian: boolean, tiff: number, maxOffset: number): { lat: number; lon: number } | null {
+  if (gpsIfdOffset + 2 > maxOffset) {
+    return null;
+  }
+  const count = view.getUint16(gpsIfdOffset, littleEndian);
+  let latRef = "N";
+  let lonRef = "E";
+  let lat: number[] | null = null;
+  let lon: number[] | null = null;
+  for (let index = 0; index < count; index += 1) {
+    const entry = gpsIfdOffset + 2 + index * 12;
+    if (entry + 12 > maxOffset) {
+      return null;
+    }
+    const tag = view.getUint16(entry, littleEndian);
+    const type = view.getUint16(entry + 2, littleEndian);
+    const values = view.getUint32(entry + 4, littleEndian);
+    const valueOffset = tiff + view.getUint32(entry + 8, littleEndian);
+    if (tag === 1 && type === 2) {
+      latRef = String.fromCharCode(view.getUint8(entry + 8));
+    } else if (tag === 3 && type === 2) {
+      lonRef = String.fromCharCode(view.getUint8(entry + 8));
+    } else if (tag === 2 && type === 5 && values >= 3) {
+      lat = readExifRationals(view, valueOffset, 3, littleEndian, maxOffset);
+    } else if (tag === 4 && type === 5 && values >= 3) {
+      lon = readExifRationals(view, valueOffset, 3, littleEndian, maxOffset);
+    }
+  }
+  if (!lat || !lon) {
+    return null;
+  }
+  return {
+    lat: dmsToDecimal(lat, latRef),
+    lon: dmsToDecimal(lon, lonRef)
+  };
+}
+
+function readExifRationals(view: DataView, offset: number, count: number, littleEndian: boolean, maxOffset: number): number[] | null {
+  if (offset + count * 8 > maxOffset) {
+    return null;
+  }
+  return Array.from({ length: count }, (_, index) => {
+    const numerator = view.getUint32(offset + index * 8, littleEndian);
+    const denominator = view.getUint32(offset + index * 8 + 4, littleEndian);
+    return denominator === 0 ? 0 : numerator / denominator;
+  });
+}
+
+function dmsToDecimal(parts: number[], ref: string): number {
+  const [degrees = 0, minutes = 0, seconds = 0] = parts;
+  const value = degrees + minutes / 60 + seconds / 3600;
+  return ref === "S" || ref === "W" ? -value : value;
+}
+
+async function extractIso6709VideoLocation(file: File): Promise<CommunityReportLocation | null> {
+  const slices = [
+    file.slice(0, Math.min(file.size, 2 * 1024 * 1024)),
+    file.size > 2 * 1024 * 1024 ? file.slice(Math.max(0, file.size - 2 * 1024 * 1024)) : null
+  ].filter(Boolean) as Blob[];
+  const decoder = new TextDecoder("latin1");
+  for (const slice of slices) {
+    const text = decoder.decode(await slice.arrayBuffer());
+    const match = /([+-]\d{2,3}\.\d{3,})([+-]\d{3}\.\d{3,})(?:[+-]\d+(?:\.\d+)?)?\/?/u.exec(text);
+    if (match) {
+      const lat = Number(match[1]);
+      const lon = Number(match[2]);
+      if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+        return { lat, lon, source: "media_metadata" };
+      }
+    }
+  }
+  return null;
+}
+
+function readAscii(view: DataView, offset: number, length: number): string {
+  return Array.from({ length }, (_, index) => String.fromCharCode(view.getUint8(offset + index))).join("");
+}
+
 function formatReportLocation(location: CommunityReportLocation): string {
-  return `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)} · ${location.source === "device" ? "GPS" : "mapa"}`;
+  const sourceLabel: Record<CommunityReportLocation["source"], string> = {
+    device: "GPS",
+    manual: "mapa",
+    media_metadata: "médium",
+    photo_exif: "fotka",
+    unknown: "neznámé"
+  };
+  return `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)} · ${sourceLabel[location.source]}`;
 }
 
 function formatFileSize(bytes: number): string {

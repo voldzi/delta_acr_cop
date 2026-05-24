@@ -385,6 +385,48 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Community Reports]
+      summary: Update an owned community report.
+      operationId: updateCommunityReport
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunityReportUpdateRequest"
+      responses:
+        "200":
+          description: Updated community report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Community Reports]
+      summary: Delete an owned community report and its media metadata.
+      operationId: deleteCommunityReport
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      responses:
+        "204":
+          description: Community report deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/community/reports/{reportId}/submit:
     post:
       tags: [Community Reports]
@@ -1855,6 +1897,47 @@ components:
         severity:
           $ref: "#/components/schemas/CommunityReportHazardSeverity"
           deprecated: true
+        groupId:
+          type: string
+          format: uuid
+          description: COP community group used as the event context and default media ACL target.
+        groupName:
+          type: string
+          maxLength: 80
+          description: Human-readable group name copied into report metadata for map and mobile clients.
+        validUntil:
+          type: string
+          format: date-time
+        visibility:
+          $ref: "#/components/schemas/CommunityReportVisibility"
+        properties:
+          type: object
+          additionalProperties: true
+    CommunityReportUpdateRequest:
+      type: object
+      minProperties: 1
+      properties:
+        category:
+          $ref: "#/components/schemas/CommunityReportCategory"
+        title:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        location:
+          $ref: "#/components/schemas/CommunityReportLocation"
+        hazardSeverity:
+          $ref: "#/components/schemas/CommunityReportHazardSeverity"
+        severity:
+          $ref: "#/components/schemas/CommunityReportHazardSeverity"
+          deprecated: true
+        groupId:
+          type: string
+          format: uuid
+        groupName:
+          type: string
+          maxLength: 80
         validUntil:
           type: string
           format: date-time
@@ -2010,6 +2093,12 @@ components:
           maxLength: 500
         visibility:
           $ref: "#/components/schemas/CommunityGroupVisibility"
+        anchorLocation:
+          $ref: "#/components/schemas/CommunityReportLocation"
+          description: Optional primary event location for map display of the group. Report-created groups use the first report location.
+        metadata:
+          type: object
+          additionalProperties: true
     CommunityGroupMemberUpsertRequest:
       type: object
       required: [subjectId]
@@ -2040,6 +2129,11 @@ components:
           type: string
         visibility:
           $ref: "#/components/schemas/CommunityGroupVisibility"
+        anchorLocation:
+          $ref: "#/components/schemas/CommunityReportLocation"
+        metadata:
+          type: object
+          additionalProperties: true
         createdBy:
           type: object
           required: [displayName, subjectId, username]
@@ -2170,7 +2264,7 @@ components:
           minimum: 0
         source:
           type: string
-          enum: [device, manual, photo_exif, unknown]
+          enum: [device, manual, media_metadata, photo_exif, unknown]
     CommunityReportCategory:
       type: string
       enum: [fire, flood, bridge_damage, road_blockage, infrastructure_damage, medical, utility_outage, hazard, other]

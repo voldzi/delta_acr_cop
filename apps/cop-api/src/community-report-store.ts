@@ -16,7 +16,7 @@ export type CommunityReportCategory =
 
 export type CommunityReportStatus = "draft" | "submitted" | "published" | "hidden" | "rejected";
 export type CommunityReportVisibility = "private" | "community" | "public";
-export type CommunityLocationSource = "device" | "manual" | "photo_exif" | "unknown";
+export type CommunityLocationSource = "device" | "manual" | "media_metadata" | "photo_exif" | "unknown";
 export type CommunityAttachmentKind = "photo" | "video" | "document";
 export type CommunityAttachmentStatus = "pending_upload" | "uploaded" | "failed" | "removed";
 export type CommunityGroupVisibility = "private" | "public";
@@ -51,10 +51,12 @@ interface CommunityGroupMemberWithGroupId extends CommunityGroupMemberRecord {
 }
 
 export interface CommunityGroupRecord {
+  anchorLocation?: CommunityReportLocation;
   createdAt: string;
   createdBy: CommunityReportActor;
   description?: string;
   groupId: string;
+  metadata: Record<string, unknown>;
   members: CommunityGroupMemberRecord[];
   name: string;
   updatedAt: string;
@@ -111,10 +113,22 @@ export interface CreateCommunityReportInput {
 }
 
 export interface CreateCommunityGroupInput {
+  anchorLocation?: CommunityReportLocation;
   createdBy: CommunityReportActor;
   description?: string;
+  metadata?: Record<string, unknown>;
   name: string;
   visibility: CommunityGroupVisibility;
+}
+
+export interface UpdateCommunityReportInput {
+  category?: CommunityReportCategory;
+  description?: string | null;
+  location?: CommunityReportLocation;
+  properties?: Record<string, unknown>;
+  title?: string;
+  validUntil?: string | null;
+  visibility?: CommunityReportVisibility;
 }
 
 export interface CommunityGroupQuery {
@@ -177,6 +191,7 @@ export interface CommunityReportStore {
   createAttachment(input: CreateCommunityAttachmentInput): Promise<CommunityReportAttachmentRecord>;
   createGroup(input: CreateCommunityGroupInput, now: Date): Promise<CommunityGroupRecord>;
   createReport(input: CreateCommunityReportInput, now: Date): Promise<CommunityReportRecord>;
+  deleteReport(reportId: string, subjectId: string, now: Date): Promise<boolean>;
   diagnostics?(): string | undefined;
   getGroup(groupId: string): Promise<CommunityGroupRecord | null>;
   getReport(reportId: string): Promise<CommunityReportRecord | null>;
@@ -185,6 +200,7 @@ export interface CommunityReportStore {
   listReports(query: CommunityReportQuery): Promise<CommunityReportRecord[]>;
   requestGroupMembership(groupId: string, actor: CommunityReportActor, now: Date): Promise<CommunityGroupRecord | null>;
   submitReport(reportId: string, subjectId: string, now: Date): Promise<CommunityReportRecord | null>;
+  updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null>;
   upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null>;
 }
 
@@ -261,10 +277,12 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
       username: input.createdBy.username
     };
     const group: CommunityGroupRecord = {
+      ...(input.anchorLocation ? { anchorLocation: input.anchorLocation } : {}),
       createdAt: timestamp,
       createdBy: input.createdBy,
       ...(input.description ? { description: input.description } : {}),
       groupId: randomUUID(),
+      metadata: input.metadata ?? {},
       members: [owner],
       name: input.name,
       updatedAt: timestamp,
@@ -277,6 +295,52 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
   async getGroup(groupId: string): Promise<CommunityGroupRecord | null> {
     const group = this.groups.get(groupId);
     return group ? cloneCommunityGroup(group) : null;
+  }
+
+  async updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null> {
+    const report = this.reports.get(reportId);
+    if (!report || report.createdBy.subjectId !== subjectId || report.status === "hidden" || report.status === "rejected") {
+      return null;
+    }
+    const timestamp = now.toISOString();
+    const updated: CommunityReportRecord = {
+      ...report,
+      ...(input.category ? { category: input.category } : {}),
+      ...(input.description ? { description: input.description } : {}),
+      ...(input.location ? { location: input.location } : {}),
+      ...(input.properties ? { properties: { ...report.properties, ...input.properties } } : {}),
+      ...(input.title ? { title: input.title } : {}),
+      ...(input.visibility ? { visibility: input.visibility } : {}),
+      updatedAt: timestamp
+    };
+    if (input.description === null) {
+      delete updated.description;
+    }
+    if (input.validUntil !== undefined) {
+      updated.properties = {
+        ...updated.properties,
+        ...(input.validUntil ? { validUntil: input.validUntil } : {})
+      };
+      if (!input.validUntil) {
+        delete updated.properties.validUntil;
+      }
+    }
+    this.reports.set(reportId, updated);
+    return { ...updated, attachments: this.attachmentsForReport(reportId) };
+  }
+
+  async deleteReport(reportId: string, subjectId: string, _now: Date): Promise<boolean> {
+    const report = this.reports.get(reportId);
+    if (!report || report.createdBy.subjectId !== subjectId) {
+      return false;
+    }
+    this.reports.delete(reportId);
+    for (const [attachmentId, attachment] of this.attachments.entries()) {
+      if (attachment.reportId === reportId) {
+        this.attachments.delete(attachmentId);
+      }
+    }
+    return true;
   }
 
   async listGroups(query: CommunityGroupQuery): Promise<CommunityGroupRecord[]> {
@@ -505,9 +569,17 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       await client.query("BEGIN");
       const groupResult = await client.query<CommunityGroupRow>(
         `INSERT INTO cop_community_groups (
-          group_id, name, description, visibility, owner_subject_id, owner_username, owner_display_name, created_at, updated_at
+          group_id, name, description, visibility, owner_subject_id, owner_username, owner_display_name,
+          anchor_lat, anchor_lon, anchor_accuracy_m, anchor_location_source, anchor_geom, metadata, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $8::timestamptz)
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+          CASE
+            WHEN $8::double precision IS NULL OR $9::double precision IS NULL THEN NULL
+            ELSE ST_SetSRID(ST_MakePoint($9::double precision, $8::double precision), 4326)
+          END,
+          $12::jsonb, $13::timestamptz, $13::timestamptz
+        )
         RETURNING *`,
         [
           groupId,
@@ -517,6 +589,11 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
           input.createdBy.subjectId,
           input.createdBy.username,
           input.createdBy.displayName,
+          input.anchorLocation?.lat ?? null,
+          input.anchorLocation?.lon ?? null,
+          input.anchorLocation?.accuracyM ?? null,
+          input.anchorLocation?.source ?? null,
+          JSON.stringify(input.metadata ?? {}),
           timestamp
         ]
       );
@@ -627,6 +704,67 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     );
     await this.touchGroup(input.groupId, timestamp);
     return this.getGroup(input.groupId);
+  }
+
+  async updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null> {
+    const existing = await this.getReport(reportId);
+    if (!existing || existing.createdBy.subjectId !== subjectId || existing.status === "hidden" || existing.status === "rejected") {
+      return null;
+    }
+    const nextProperties = {
+      ...existing.properties,
+      ...(input.properties ?? {})
+    };
+    if (input.validUntil !== undefined) {
+      if (input.validUntil) {
+        nextProperties.validUntil = input.validUntil;
+      } else {
+        delete nextProperties.validUntil;
+      }
+    }
+    const nextLocation = input.location ?? existing.location;
+    const result = await this.pool.query<CommunityReportRow>(
+      `UPDATE cop_community_reports
+      SET
+        category = $3,
+        title = $4,
+        description = $5,
+        visibility = $6,
+        lat = $7,
+        lon = $8,
+        location_accuracy_m = $9,
+        location_source = $10,
+        location_geom = ST_SetSRID(ST_MakePoint($8::double precision, $7::double precision), 4326),
+        properties = $11::jsonb,
+        updated_at = $12::timestamptz
+      WHERE report_id = $1 AND subject_id = $2
+      RETURNING *`,
+      [
+        reportId,
+        subjectId,
+        input.category ?? existing.category,
+        input.title ?? existing.title,
+        input.description === undefined ? existing.description ?? null : input.description,
+        input.visibility ?? existing.visibility,
+        nextLocation.lat,
+        nextLocation.lon,
+        nextLocation.accuracyM ?? null,
+        nextLocation.source,
+        JSON.stringify(nextProperties),
+        now.toISOString()
+      ]
+    );
+    const row = result.rows[0];
+    return row ? reportFromRow(row, await this.attachmentsForReports([reportId])) : null;
+  }
+
+  async deleteReport(reportId: string, subjectId: string, _now: Date): Promise<boolean> {
+    const result = await this.pool.query(
+      `DELETE FROM cop_community_reports
+      WHERE report_id = $1 AND subject_id = $2`,
+      [reportId, subjectId]
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async listReports(query: CommunityReportQuery): Promise<CommunityReportRecord[]> {
@@ -787,9 +925,14 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
 }
 
 interface CommunityGroupRow extends QueryResultRow {
+  anchor_accuracy_m: number | string | null;
+  anchor_lat: number | string | null;
+  anchor_location_source: CommunityLocationSource | null;
+  anchor_lon: number | string | null;
   created_at: Date | string;
   description: string | null;
   group_id: string;
+  metadata: Record<string, unknown> | string | null;
   name: string;
   owner_display_name: string;
   owner_subject_id: string;
@@ -945,9 +1088,28 @@ CREATE TABLE IF NOT EXISTS cop_community_groups (
   owner_subject_id text NOT NULL,
   owner_username text NOT NULL,
   owner_display_name text NOT NULL,
+  anchor_lat double precision,
+  anchor_lon double precision,
+  anchor_accuracy_m double precision,
+  anchor_location_source text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE cop_community_groups
+  ADD COLUMN IF NOT EXISTS anchor_lat double precision,
+  ADD COLUMN IF NOT EXISTS anchor_lon double precision,
+  ADD COLUMN IF NOT EXISTS anchor_accuracy_m double precision,
+  ADD COLUMN IF NOT EXISTS anchor_location_source text,
+  ADD COLUMN IF NOT EXISTS metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS anchor_geom geometry(Point, 4326);
+
+UPDATE cop_community_groups
+SET anchor_geom = ST_SetSRID(ST_MakePoint(anchor_lon, anchor_lat), 4326)
+WHERE anchor_geom IS NULL
+  AND anchor_lon IS NOT NULL
+  AND anchor_lat IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS cop_community_group_members (
   group_id uuid NOT NULL REFERENCES cop_community_groups(group_id) ON DELETE CASCADE,
@@ -963,6 +1125,10 @@ CREATE TABLE IF NOT EXISTS cop_community_group_members (
 
 CREATE INDEX IF NOT EXISTS cop_community_groups_visibility_idx
   ON cop_community_groups (visibility, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS cop_community_groups_anchor_gix
+  ON cop_community_groups USING gist (anchor_geom)
+  WHERE anchor_geom IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS cop_community_group_members_subject_idx
   ON cop_community_group_members (subject_id, status);
@@ -1035,7 +1201,16 @@ function attachmentFromRow(row: CommunityAttachmentRow): CommunityReportAttachme
 
 function groupFromRow(row: CommunityGroupRow, members: Array<CommunityGroupMemberRecord | CommunityGroupMemberWithGroupId>): CommunityGroupRecord {
   const description = row.description ?? undefined;
+  const anchorLocation = row.anchor_lat === null || row.anchor_lon === null
+    ? undefined
+    : {
+        ...(row.anchor_accuracy_m === null ? {} : { accuracyM: Number(row.anchor_accuracy_m) }),
+        lat: Number(row.anchor_lat),
+        lon: Number(row.anchor_lon),
+        source: row.anchor_location_source ?? "unknown"
+      };
   return {
+    ...(anchorLocation ? { anchorLocation } : {}),
     createdAt: isoString(row.created_at),
     createdBy: {
       displayName: row.owner_display_name,
@@ -1044,6 +1219,7 @@ function groupFromRow(row: CommunityGroupRow, members: Array<CommunityGroupMembe
     },
     ...(description ? { description } : {}),
     groupId: row.group_id,
+    metadata: jsonRecord(row.metadata),
     members: members
       .filter((member) => !("groupId" in member) || member.groupId === row.group_id)
       .map((member) => ({
@@ -1078,7 +1254,9 @@ function groupMemberFromRow(row: CommunityGroupMemberRow): CommunityGroupMemberW
 function cloneCommunityGroup(group: CommunityGroupRecord): CommunityGroupRecord {
   return {
     ...group,
+    ...(group.anchorLocation ? { anchorLocation: { ...group.anchorLocation } } : {}),
     createdBy: { ...group.createdBy },
+    metadata: { ...group.metadata },
     members: group.members.map((member) => ({ ...member }))
   };
 }

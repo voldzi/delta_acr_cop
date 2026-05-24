@@ -8,6 +8,7 @@ COP ukládá:
 
 - uživatelský report,
 - polohu události,
+- vazbu reportu na komunitní skupinu,
 - stav reportu,
 - vazbu na uživatele z Keycloak/OIDC,
 - metadata příloh,
@@ -29,7 +30,8 @@ Produkční COP databáze používá PostGIS pro vlastní prostorová data aplik
 
 - `cop_community_reports.location_geom geometry(Point, 4326)` pro polohu události,
 - `cop_community_report_attachments.capture_geom geometry(Point, 4326)` pro volitelnou polohu pořízení přílohy,
-- GiST indexy nad oběma geometriemi.
+- `cop_community_groups.anchor_geom geometry(Point, 4326)` pro volitelnou hlavní polohu skupiny/události,
+- GiST indexy nad prostorovými sloupci.
 
 Sloupce `lat/lon` zůstávají zachované kvůli API kompatibilitě a čitelnosti. Při startu PostgreSQL store provede idempotentní migraci, doplní geometrii pro existující řádky a následné bbox dotazy `GET /api/v1/community/reports?bbox=...` používají PostGIS envelope nad `location_geom`.
 
@@ -40,6 +42,8 @@ Nové endpointy:
 - `GET /api/v1/community/reports`
 - `POST /api/v1/community/reports`
 - `GET /api/v1/community/reports/{reportId}`
+- `PATCH /api/v1/community/reports/{reportId}`
+- `DELETE /api/v1/community/reports/{reportId}`
 - `POST /api/v1/community/reports/{reportId}/submit`
 - `POST /api/v1/community/reports/{reportId}/attachments`
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete`
@@ -67,12 +71,15 @@ Vytvoření reportu:
   "observedAt": "2026-05-20T11:59:30Z",
   "hazardSeverity": "warning",
   "validUntil": "2026-05-20T15:00:00Z",
-  "visibility": "community"
+  "visibility": "community",
+  "groupId": "b7d7e35b-9bb3-4d25-b4a7-8b56abbb9999",
+  "groupName": "Požár u Vrbna"
 }
 ```
 
 `hazardSeverity` je uživatelský odhad závažnosti: `advisory`, `warning`, `critical`.
 `validUntil` je odhadovaná platnost rizika; po vypršení se mapový prvek označí jako stale, ale nezmizí bez moderace/retence.
+`groupId` propojuje hlášení se skupinou/konverzací. Webový klient při uložení hlášení skupinu vyžaduje: uživatel vybere existující skupinu, nebo se automaticky vytvoří nová skupina z názvu hlášení. Pokud skupina vznikla přes hlášení, její `anchorLocation` je nastavena na první polohu hlášení a skupina se může v budoucnu zobrazovat i jako samostatný bod události na mapě.
 
 Kategorie:
 
@@ -103,7 +110,7 @@ Video přílohy mohou nést metadata `metadata.spatialVideo`:
 - `mode: "apple_mv_hevc"`: iPhone Spatial Video v MOV/MV-HEVC se ukládá jako originální soubor. Webový XR jej bez serverové konverze neumí spolehlivě rozdělit na dvě oči, proto používá 2D fallback a metadata zachovává pro budoucí konverzní pipeline nebo nativní přehrání.
 
 Po úspěšném uploadu klient zavolá `complete`. Do budoucna je vhodné doplnit serverovou kontrolu objektu přes `HEAD`, AV/obsahovou kontrolu a generování náhledů.
-Po dokončení má příloha `contentUrl`; detail komunitního prvku může zobrazit obrázek, přehrát video přes HTML5 `video` a otevřít PDF.
+Po dokončení má příloha `contentUrl`; detail komunitního prvku může zobrazit obrázek, přehrát video přes HTML5 `video` a otevřít PDF. Webový klient zobrazuje média v galerii na celou obrazovku. Galerie sdružuje média reportů ve stejné skupině, aby se uživatel dostal k informacím přes mapu i přes konverzaci. Pokud médium není pro aktuálního uživatele dostupné, detail zůstane viditelný, ale galerie zobrazí chráněný stav bez URL objektu.
 
 ## Přístup k médiím
 
@@ -141,11 +148,21 @@ Vlastnosti skupiny:
 
 - `visibility: "public"`: uživatel může vstoupit bez schválení;
 - `visibility: "private"`: žádost o vstup je `pending` a správce ji musí potvrdit;
+- `anchorLocation`: volitelná hlavní poloha skupiny/události;
+- `metadata`: minimální aplikační metadata, například `createdFrom`, `initialCategory`, `initialSeverity` nebo vazba na konverzaci;
 - role členů: `owner`, `admin`, `member`;
 - stav členství: `active`, `pending`.
 
 Autor skupiny je automaticky `owner`. Pouze `owner` nebo `admin` mohou přidávat členy, potvrzovat žádosti a v další fázi měnit nastavení skupiny.
 V pilotním webu lze skupinu založit přímo při nahrávání hlášení nebo v panelu Konverzace. Pro produkci je potřeba doplnit uživatelský adresář, aby běžný uživatel nepracoval se syrovým `subjectId`.
+
+Pravidlo pro provázání mapy a chatu:
+
+- každé nové hlášení v UI patří do COP skupiny;
+- pokud uživatel vybere existující skupinu, report a média se uloží do ní;
+- pokud skupina vznikne z hlášení, získá `anchorLocation` z polohy prvního reportu;
+- pokud skupina vznikne z chatu, poloha je prázdná, dokud ji uživatel nebo první mapové hlášení nenastaví;
+- CSM Messaging může mít pro stejnou věc Matrix room/konverzaci, ale media ACL se vyhodnocuje podle COP skupiny, ne podle samotné Matrix místnosti.
 
 ## Poloha fotky
 
@@ -154,7 +171,10 @@ Poloha je pro tento use-case podstatná. Ukládají se dvě různé hodnoty:
 - `report.location`: poloha události, povinná;
 - `attachment.captureLocation`: volitelná poloha pořízení fotky.
 
-Klient může vyplnit `report.location` z GPS zařízení, z mapového výběru nebo z EXIF. Ve sdílených náhledech se EXIF nemá publikovat automaticky. Originální soubor může zůstat v chráněném objektovém úložišti, ale veřejné deriváty mají být bez EXIF.
+Klient může vyplnit `report.location` z GPS zařízení, z mapového výběru, z EXIF fotky nebo z metadat videa. Webový klient umí best-effort načíst JPEG EXIF GPS a u MOV/MP4 hledá běžný ISO 6709 zápis polohy. Nativní iOS aplikace má polohu pořízení číst přes Photos/AVFoundation, protože u iPhone Spatial Video může být přesnější než webový parser.
+
+Pokud médium polohu obsahuje, UI nabídne její použití jako polohy hlášení. Pokud ji neobsahuje, uživatel musí polohu určit ze zařízení nebo výběrem v mapě.
+Ve sdílených náhledech se EXIF nemá publikovat automaticky. Originální soubor může zůstat v chráněném objektovém úložišti, ale veřejné deriváty mají být bez EXIF.
 
 ## SeaweedFS konfigurace
 
@@ -187,13 +207,15 @@ Poznámka k veřejnému provozu: `COP_MEDIA_S3_PUBLIC_ENDPOINT` musí být dosa�
 1. Uživatel se přihlásí přes Keycloak/OIDC.
 2. Aplikace získá polohu zařízení a přesnost.
 3. Uživatel pořídí fotku/video nebo vybere PDF a určí kategorii, riziko a platnost.
-4. Aplikace vytvoří `POST /api/v1/community/reports`.
-5. Aplikace zvolí přístup k médiím: všem, jen autorovi, konkrétním uživatelům nebo skupině.
-6. Aplikace požádá o upload slot přes `POST /attachments` a předá `metadata.access`.
-7. Aplikace nahraje přílohu na `upload.uploadUrl`; pokud to není možné, použije fallback `POST /upload`.
-8. Aplikace zavolá `POST /complete`.
-9. Aplikace zavolá `POST /submit`.
-10. Report se zobrazí v komunitní mapové vrstvě. Přílohy jsou přehratelné nebo otevřitelné jen podle ACL.
+4. Aplikace přečte polohu z média, pokud je dostupná, a nabídne její použití.
+5. Aplikace vybere existující skupinu nebo vytvoří novou `POST /api/v1/community/groups`.
+6. Aplikace vytvoří `POST /api/v1/community/reports` s `groupId`.
+7. Aplikace zvolí přístup k médiím: všem, jen autorovi, konkrétním uživatelům nebo skupině.
+8. Aplikace požádá o upload slot přes `POST /attachments` a předá `metadata.access`.
+9. Aplikace nahraje přílohu na `upload.uploadUrl`; pokud to není možné, použije fallback `POST /upload`.
+10. Aplikace zavolá `POST /complete`.
+11. Aplikace zavolá `POST /submit`.
+12. Report se zobrazí v komunitní mapové vrstvě. Přílohy jsou přehratelné nebo otevřitelné jen podle ACL a v rámci skupiny se zobrazují v multimediální galerii.
 
 Offline iOS režim má držet lokální outbox a odeslat kroky až po obnovení spojení.
 
