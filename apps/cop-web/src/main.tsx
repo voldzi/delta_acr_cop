@@ -64,6 +64,7 @@ import {
   fetchPlaceGeocode,
   fetchUserProfile,
   resolveMessagingMatrixIdentities,
+  syncMessagingConversationMembers,
   filterObjectsByLayers,
   filterVisibleObjects,
   copLayerIds,
@@ -2217,6 +2218,7 @@ export function App() {
     let conversation: MessagingConversationSummary | undefined;
     try {
       const conversationResponse = await createMessagingConversation(apiBase, authSession.accessToken, {
+        members: communityGroupMembersToMessagingMembers(group),
         metadata: {
           externalId: group.groupId,
           source: "cop.community"
@@ -2225,10 +2227,17 @@ export function App() {
         type: "group"
       });
       if (conversationResponse.conversation) {
-        conversation = conversationResponse.conversation;
+        conversation = {
+          ...conversationResponse.conversation,
+          metadata: {
+            ...(conversationResponse.conversation.metadata ?? {}),
+            externalId: group.groupId,
+            source: "cop.community"
+          }
+        };
         setMessagingConversations((current) => [
-          conversationResponse.conversation as MessagingConversationSummary,
-          ...current.filter((item) => item.conversationId !== conversationResponse.conversation?.conversationId)
+          conversation as MessagingConversationSummary,
+          ...current.filter((item) => item.conversationId !== conversation?.conversationId)
         ]);
         setMessagingConversationsError(conversationResponse.status === "online" ? null : conversationResponse.warnings[0] ?? "Konverzace byla založena s omezením.");
       } else {
@@ -2255,7 +2264,44 @@ export function App() {
       username: subjectId
     });
     setCommunityGroups((current) => current.map((item) => item.groupId === group.groupId ? group : item));
+    await syncCommunityGroupMemberToConversation(group);
     return group;
+  }
+
+  async function syncCommunityGroupMemberToConversation(group: CommunityGroup): Promise<void> {
+    if (!authSession.accessToken) {
+      return;
+    }
+    const conversation = findMessagingConversationForCommunityGroup(group, messagingConversations);
+    if (!conversation) {
+      setMessagingConversationsError("Člen skupiny byl uložen, ale odpovídající konverzace pro synchronizaci nebyla nalezena.");
+      return;
+    }
+    try {
+      const result = await syncMessagingConversationMembers(
+        apiBase,
+        authSession.accessToken,
+        conversation.conversationId,
+        communityGroupMembersToMessagingMembers(group)
+      );
+      if (result.conversation) {
+        const enrichedConversation = {
+          ...result.conversation,
+          metadata: {
+            ...(result.conversation.metadata ?? conversation.metadata ?? {}),
+            externalId: group.groupId,
+            source: "cop.community"
+          }
+        };
+        setMessagingConversations((current) => [
+          enrichedConversation,
+          ...current.filter((item) => item.conversationId !== enrichedConversation.conversationId)
+        ]);
+      }
+      setMessagingConversationsError(result.status === "online" ? null : result.warnings[0] ?? "Člen skupiny byl uložen, synchronizace konverzace je omezená.");
+    } catch (error) {
+      setMessagingConversationsError(error instanceof Error ? error.message : "Člen skupiny byl uložen, ale synchronizace konverzace selhala.");
+    }
   }
 
   async function submitCommunityReportDraft() {
@@ -8344,6 +8390,21 @@ function normalizeTakLayerIds(value: string[] | undefined): TakLayerId[] {
 
 function isTakLayerId(value: string): value is TakLayerId {
   return value === "mobile" || value === "ground" || value === "traffic";
+}
+
+function communityGroupMembersToMessagingMembers(group: CommunityGroup): Array<{ displayName?: string; role?: string; userId: string }> {
+  return group.members
+    .filter((member) => member.status === "active")
+    .map((member) => ({
+      ...(member.displayName ? { displayName: member.displayName } : {}),
+      role: member.role,
+      userId: member.subjectId
+    }));
+}
+
+function findMessagingConversationForCommunityGroup(group: CommunityGroup, conversations: MessagingConversationSummary[]): MessagingConversationSummary | undefined {
+  return conversations.find((conversation) => conversation.metadata?.externalId === group.groupId)
+    ?? conversations.find((conversation) => conversation.title === group.name);
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {

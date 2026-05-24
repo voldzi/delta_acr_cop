@@ -1,6 +1,7 @@
 import React from "react";
 import { Lock, LogIn, MessageCircle, Pin, PinOff, Plus, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
+import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse } from "../cop-data";
 import { clearMatrixMessagingDeviceState, createMatrixMessagingSession } from "./matrixClient";
 import type { MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage, MessagingPanelProps } from "./types";
 
@@ -8,6 +9,32 @@ type Tone = "ok" | "warn" | "neutral";
 
 const matrixDeviceIdStorageKey = "cop.messaging.matrixDeviceId";
 let fallbackMatrixDeviceId: string | null = null;
+
+export function assertMatrixRoomBindingConfirmed(
+  binding: MessagingMatrixRoomBindingResponse,
+  roomId: string
+): void {
+  if (binding.status === "online" && binding.conversation?.matrix?.roomId === roomId) {
+    return;
+  }
+  throw new Error(binding.warnings[0] ?? "Messaging provider nepotvrdil vazbu Matrix místnosti. Chat nebude lokálně aktivován.");
+}
+
+export function matrixUserIdsFromResolution(
+  result: MessagingMatrixIdentityResolutionResponse,
+  requestedUserIds: string[]
+): string[] {
+  if (result.status !== "online") {
+    throw new Error(result.warnings[0] ?? "Některé členy se nepodařilo pozvat do Matrix místnosti.");
+  }
+  const requested = Array.from(new Set(requestedUserIds));
+  const resolvedByUserId = new Map(result.identities.map((identity) => [identity.userId, identity.matrixUserId]));
+  const missing = requested.filter((userId) => !resolvedByUserId.get(userId));
+  if (missing.length > 0) {
+    throw new Error(`Chybí Matrix identita pro členy: ${missing.slice(0, 5).join(", ")}.`);
+  }
+  return Array.from(new Set(requested.flatMap((userId) => resolvedByUserId.get(userId) ?? [])));
+}
 
 export function MessagingPanel({
   apiBase,
@@ -109,9 +136,8 @@ export function MessagingPanel({
         const inviteUserIds = await resolveConversationMatrixUsers(conversation);
         const roomId = await matrixSession.createGroupRoom(group.name, inviteUserIds);
         const binding = await onBindMatrixRoom(conversation.conversationId, roomId, true);
-        if (binding.conversation) {
-          onRefresh();
-        }
+        assertMatrixRoomBindingConfirmed(binding, roomId);
+        onRefresh();
         const nextRooms = ensureRoomSummary(matrixSession.getRooms(), {
           encrypted: true,
           name: group.name,
@@ -240,9 +266,8 @@ export function MessagingPanel({
       const inviteUserIds = await resolveConversationMatrixUsers(conversation);
       const roomId = await matrixSession.createGroupRoom(conversation.title, inviteUserIds);
       const binding = await onBindMatrixRoom(conversation.conversationId, roomId, true);
-      if (binding.conversation) {
-        onRefresh();
-      }
+      assertMatrixRoomBindingConfirmed(binding, roomId);
+      onRefresh();
       const nextRooms = ensureRoomSummary(matrixSession.getRooms(), {
         encrypted: true,
         name: conversation.title,
@@ -257,6 +282,9 @@ export function MessagingPanel({
   }
 
   async function resolveConversationMatrixUsers(conversation: MessagingPanelProps["conversations"][number]): Promise<string[]> {
+    if (!conversation.members && (conversation.memberCount ?? 0) > 1) {
+      throw new Error("Konverzace neobsahuje načtený seznam členů. Obnovte konverzace a zkuste to znovu.");
+    }
     const userIds = (conversation.members ?? [])
       .map((member) => member.userId)
       .filter((userId) => userId && userId !== session.profile?.subjectId);
@@ -264,10 +292,7 @@ export function MessagingPanel({
       return [];
     }
     const result = await onResolveMatrixIdentities(userIds);
-    if (result.status !== "online") {
-      setBootstrapError(result.warnings[0] ?? "Některé členy se nepodařilo pozvat do Matrix místnosti.");
-    }
-    return Array.from(new Set(result.identities.map((identity) => identity.matrixUserId).filter(Boolean)));
+    return matrixUserIdsFromResolution(result, userIds);
   }
 
   return (

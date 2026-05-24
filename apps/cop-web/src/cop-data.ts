@@ -1018,6 +1018,7 @@ export interface MessagingConversationSummary {
     role?: string;
     userId: string;
   }>;
+  metadata?: Record<string, string | number | boolean | null | Array<string | number | boolean | null>>;
   status?: string;
   title: string;
   type: "direct" | "group";
@@ -1058,6 +1059,15 @@ export interface MessagingMatrixIdentityResolutionResponse {
 
 export interface MessagingMatrixRoomBindingResponse {
   contractVersion: "cop-messaging-room-binding-v1";
+  conversation?: MessagingConversationSummary;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: "degraded" | "disabled" | "online";
+  warnings: string[];
+}
+
+export interface MessagingConversationMemberSyncResponse {
+  contractVersion: "cop-messaging-conversations-v1";
   conversation?: MessagingConversationSummary;
   enabled: boolean;
   providerId: "csm.messaging";
@@ -1381,6 +1391,25 @@ export async function bindMessagingConversationMatrixRoom(
     `${apiBase}/api/v1/messaging/conversations/${encodeURIComponent(conversationId)}/matrix-room`,
     {
       body: JSON.stringify(payload),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    }
+  );
+}
+
+export async function syncMessagingConversationMembers(
+  apiBase: string,
+  token: string,
+  conversationId: string,
+  members: Array<{ displayName?: string; role?: string; userId: string }>
+): Promise<MessagingConversationMemberSyncResponse> {
+  return fetchJson<MessagingConversationMemberSyncResponse>(
+    `${apiBase}/api/v1/messaging/conversations/${encodeURIComponent(conversationId)}/members`,
+    {
+      body: JSON.stringify({ members }),
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json"

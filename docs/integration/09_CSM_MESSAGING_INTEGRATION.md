@@ -45,6 +45,8 @@ Expected provider baseline:
     "mapObjectLinks": true,
     "eventLinks": true,
     "conversationMetadata": true,
+    "matrixIdentityResolution": true,
+    "matrixRoomBinding": true,
     "matrixTokenBootstrap": true
   },
   "endpoints": {
@@ -76,6 +78,8 @@ tokens, Matrix admin tokens, database credentials or message payloads.
 Matrix/E2EE bootstrap contract:
 
 - `features.matrixTokenBootstrap=true`
+- `features.matrixIdentityResolution=true`
+- `features.matrixRoomBinding=true`
 - `features.endToEndEncryptionRequired=true`
 - `security.readFromBrowser=false`
 - `architecture.plaintextOnServer=false`
@@ -132,14 +136,16 @@ COP also exposes two authenticated metadata-only helper endpoints:
 
 ```http
 POST /api/v1/messaging/matrix/identities/resolve
+POST /api/v1/messaging/conversations/{conversationId}/members
 POST /api/v1/messaging/conversations/{conversationId}/matrix-room
 ```
 
 Identity resolution returns only `userId`, `matrixUserId` and display metadata
 for inviting members into Matrix rooms. It never returns passwords or access
-tokens for other users. Matrix room binding persists only the `roomId`,
-encryption state and conversation metadata returned by Messaging; it does not
-persist messages.
+tokens for other users. Member synchronization forwards only CSM user IDs,
+display names and roles from COP community groups. Matrix room binding persists
+only the `roomId`, encryption state and conversation metadata returned by
+Messaging; it does not persist messages.
 
 After bootstrap, the browser sends and reads messages directly through
 Matrix client-server APIs using Matrix SDK and E2EE. COP must not add any
@@ -183,6 +189,7 @@ GET /api/v1/conversations
 POST /api/v1/conversations
 POST /api/v1/matrix/token
 POST /api/v1/matrix/identities/resolve
+POST /api/v1/conversations/{conversationId}/members
 POST /api/v1/conversations/{conversationId}/matrix-room
 POST /api/v1/conversations/{conversationId}/map-links
 ```
@@ -208,8 +215,12 @@ When a COP group/conversation is opened as chat, the web client:
 3. creates an encrypted Matrix room directly in the browser through Matrix SDK;
 4. stores the `roomId` back through `POST /api/v1/messaging/conversations/{conversationId}/matrix-room`.
 
-If any step is unavailable, the UI remains in a safe disabled/degraded state
-and does not add a plaintext message proxy.
+Identity resolution and room binding are fail-closed. If identity resolution is
+degraded or omits any requested member, the Matrix room is not created. If room
+binding does not return `status=online` with the same `matrix.roomId`, the COP UI
+does not select or show that room as active. If any step is unavailable, the UI
+remains in a safe disabled/degraded state and does not add a plaintext message
+proxy.
 
 ## Relationship to COP Groups
 
@@ -228,18 +239,30 @@ report location. If the user creates it from Chat/Konverzace, the location is
 unknown until the user sets it or submits a map report into that group.
 
 When COP creates a messaging conversation for a group, it sends safe metadata
-only:
+and the active COP group members:
 
 ```json
 {
   "type": "group",
   "title": "Požár u Vrbna",
+  "members": [
+    {
+      "userId": "<cop-subject-id>",
+      "displayName": "User",
+      "role": "owner"
+    }
+  ],
   "metadata": {
     "source": "cop.community",
     "externalId": "<cop-group-id>"
   }
 }
 ```
+
+When COP adds or approves a group member, it also calls
+`POST /api/v1/messaging/conversations/{conversationId}/members` with the active
+COP group members. This keeps chat membership metadata aligned with the media
+ACL group without using Matrix room membership as a media authorization source.
 
 `externalId` is an integration reference, not an authorization source. COP must
 not infer media authorization from Matrix room membership and must not expose

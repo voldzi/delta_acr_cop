@@ -39,6 +39,8 @@ describe("CsmMessagingProvider", () => {
             endToEndEncryptionRequired: true,
             groups: true,
             mapObjectLinks: true,
+            matrixIdentityResolution: true,
+            matrixRoomBinding: true,
             matrixTokenBootstrap: true
           },
           providerId: "csm.messaging",
@@ -155,6 +157,48 @@ describe("CsmMessagingProvider", () => {
     const status = await provider.fetchStatus(new Date("2026-05-22T12:00:00Z"));
 
     expect(status.chatAvailable).toBe(false);
+    expect(status.warnings).toContain("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
+  });
+
+  it("keeps chat disabled when identity resolution or room binding capabilities are missing", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/capabilities")) {
+        return new Response(JSON.stringify({
+          architecture: { plaintextOnServer: false },
+          contractVersion: "csm-messaging-provider-v1",
+          features: {
+            endToEndEncryptionRequired: true,
+            matrixTokenBootstrap: true
+          },
+          providerId: "csm.messaging",
+          security: {
+            readFromBrowser: false,
+            serverSideIntegrationOnly: true
+          },
+          serviceName: "CSM Messaging",
+          status: "online"
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
+    }));
+
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000
+    });
+
+    const status = await provider.fetchStatus(new Date("2026-05-22T12:00:00Z"));
+
+    expect(status).toMatchObject({
+      chatAvailable: false,
+      features: {
+        matrixTokenBootstrap: true
+      },
+      status: "online"
+    });
     expect(status.warnings).toContain("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
   });
 
@@ -492,6 +536,97 @@ describe("CsmMessagingProvider", () => {
     });
     expect(rejectedResponse.statusCode).toBe(400);
     expect(JSON.stringify(createResponse.json())).not.toContain("provider-token");
+    await app.close();
+  });
+
+  it("syncs COP group members into Messaging conversation metadata only", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "x-csm-user-id": "lab"
+      });
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/conversations/conv_1/members");
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(JSON.stringify({
+        members: [
+          { displayName: "Responder Three", userId: "user-3" }
+        ]
+      }));
+      return new Response(JSON.stringify({
+        contractVersion: "csm-messaging-provider-v1",
+        conversation: {
+          conversationId: "conv_1",
+          encrypted: true,
+          e2eeRequired: true,
+          matrix: {
+            roomId: null,
+            state: "pending_matrix_integration"
+          },
+          members: [
+            { displayName: "Lab", userId: "lab" },
+            { displayName: "Responder Three", userId: "user-3" }
+          ],
+          metadata: {
+            externalId: "community-group-1",
+            source: "cop.community"
+          },
+          status: "metadata_ready",
+          title: "Povodně Vrbno",
+          type: "group"
+        },
+        providerId: "csm.messaging"
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      }),
+      now: () => new Date("2026-05-22T12:00:00Z")
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      payload: {
+        members: [
+          { displayName: "Responder Three", userId: "user-3" }
+        ]
+      },
+      url: "/api/v1/messaging/conversations/conv_1/members"
+    });
+    const rejectedResponse = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      payload: {
+        members: [{ userId: "user-4" }],
+        message: "plaintext must not pass COP"
+      },
+      url: "/api/v1/messaging/conversations/conv_1/members"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      conversation: {
+        conversationId: "conv_1",
+        metadata: {
+          externalId: "community-group-1"
+        },
+        members: [
+          { userId: "lab" },
+          { userId: "user-3" }
+        ]
+      },
+      status: "online"
+    });
+    expect(rejectedResponse.statusCode).toBe(400);
+    expect(JSON.stringify(response.json())).not.toContain("provider-token");
     await app.close();
   });
 });

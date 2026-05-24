@@ -74,6 +74,7 @@ export interface MessagingConversationSummary {
   };
   memberCount?: number;
   members?: MessagingConversationMember[];
+  metadata?: Record<string, string | number | boolean | null | Array<string | number | boolean | null>>;
   status?: string;
   title: string;
   type: "direct" | "group";
@@ -136,12 +137,22 @@ export interface MessagingMatrixRoomBindingResponse {
   warnings: string[];
 }
 
+export interface MessagingConversationMemberSyncResponse {
+  contractVersion: "cop-messaging-conversations-v1";
+  conversation?: MessagingConversationSummary;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: MessagingIntegrationRuntimeStatus;
+  warnings: string[];
+}
+
 export interface MessagingProvider {
   readonly config: MessagingProviderConfig;
   fetchStatus(requestNow: Date): Promise<MessagingProviderStatus>;
   fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date, deviceId?: string): Promise<MessagingMatrixBootstrap>;
   fetchConversations(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingConversationList>;
   createConversation(actor: AuthenticatedActor, requestNow: Date, input: MessagingConversationCreateRequest): Promise<MessagingConversationCreateResponse>;
+  addConversationMembers(actor: AuthenticatedActor, requestNow: Date, conversationId: string, members: MessagingConversationMember[]): Promise<MessagingConversationMemberSyncResponse>;
   bindMatrixRoom(actor: AuthenticatedActor, requestNow: Date, conversationId: string, input: MessagingMatrixRoomBindingRequest): Promise<MessagingMatrixRoomBindingResponse>;
   resolveMatrixIdentities(actor: AuthenticatedActor, requestNow: Date, userIds: string[]): Promise<MessagingMatrixIdentityResolution>;
 }
@@ -483,6 +494,53 @@ export class CsmMessagingProvider implements MessagingProvider {
     }
   }
 
+  async addConversationMembers(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    conversationId: string,
+    members: MessagingConversationMember[]
+  ): Promise<MessagingConversationMemberSyncResponse> {
+    if (!this.config.enabled) {
+      return disabledConversationMemberSync();
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/conversations/${encodeURIComponent(conversationId)}/members`),
+        this.config,
+        requestNow,
+        {
+          body: JSON.stringify({ members }),
+          headers: {
+            ...actorHeaders(actor),
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        }
+      );
+      if (!isRecord(result.body)) {
+        return degradedConversationMemberSync("Messaging conversation member sync response is not valid JSON.");
+      }
+      const normalized = normalizeConversationCreateResponse(result.body);
+      const warnings = [
+        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging conversation member sync contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging conversation member sync provider id is ${normalized.providerId ?? "unknown"}.`])
+      ];
+      if (!result.ok || !normalized.conversation) {
+        warnings.push(`Messaging conversation member sync returned HTTP ${result.status}.`);
+      }
+      return {
+        contractVersion: "cop-messaging-conversations-v1",
+        ...(normalized.conversation ? { conversation: normalized.conversation } : {}),
+        enabled: true,
+        providerId: "csm.messaging",
+        status: result.ok && normalized.conversation ? "online" : "degraded",
+        warnings
+      };
+    } catch (error) {
+      return degradedConversationMemberSync(errorMessage(error));
+    }
+  }
+
   async bindMatrixRoom(
     actor: AuthenticatedActor,
     requestNow: Date,
@@ -619,6 +677,26 @@ function disabledConversationCreate(): MessagingConversationCreateResponse {
 }
 
 function degradedConversationCreate(detail: string): MessagingConversationCreateResponse {
+  return {
+    contractVersion: "cop-messaging-conversations-v1",
+    enabled: true,
+    providerId: "csm.messaging",
+    status: "degraded",
+    warnings: [detail]
+  };
+}
+
+function disabledConversationMemberSync(): MessagingConversationMemberSyncResponse {
+  return {
+    contractVersion: "cop-messaging-conversations-v1",
+    enabled: false,
+    providerId: "csm.messaging",
+    status: "disabled",
+    warnings: ["Messaging provider is disabled."]
+  };
+}
+
+function degradedConversationMemberSync(detail: string): MessagingConversationMemberSyncResponse {
   return {
     contractVersion: "cop-messaging-conversations-v1",
     enabled: true,
@@ -822,6 +900,7 @@ function normalizeConversationSummary(value: unknown): MessagingConversationSumm
   const members = Array.isArray(value.members)
     ? value.members.flatMap(normalizeConversationMember)
     : undefined;
+  const metadata = isRecord(value.metadata) ? normalizeSafeMetadata(value.metadata) : undefined;
   return [{
     conversationId,
     ...(optionalString(value.createdAt) ? { createdAt: optionalString(value.createdAt) } : {}),
@@ -832,11 +911,46 @@ function normalizeConversationSummary(value: unknown): MessagingConversationSumm
     ...(matrix ? { matrix } : {}),
     ...(typeof value.memberCount === "number" ? { memberCount: Math.max(0, Math.round(value.memberCount)) } : {}),
     ...(members ? { members } : {}),
+    ...(metadata ? { metadata } : {}),
     ...(optionalString(value.status) ? { status: optionalString(value.status) } : {}),
     title,
     type,
     ...(optionalString(value.updatedAt) ? { updatedAt: optionalString(value.updatedAt) } : {})
   }];
+}
+
+function normalizeSafeMetadata(value: Record<string, unknown>): MessagingConversationSummary["metadata"] | undefined {
+  const metadata: NonNullable<MessagingConversationSummary["metadata"]> = {};
+  for (const [key, rawValue] of Object.entries(value)) {
+    if (!/^[A-Za-z0-9_.:-]{1,80}$/u.test(key)) {
+      continue;
+    }
+    const normalized = normalizeSafeMetadataValue(rawValue);
+    if (normalized !== undefined) {
+      metadata[key] = normalized;
+    }
+  }
+  return Object.keys(metadata).length ? metadata : undefined;
+}
+
+function normalizeSafeMetadataValue(value: unknown): string | number | boolean | null | Array<string | number | boolean | null> | undefined {
+  if (value === null || typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string") {
+    return value.slice(0, 512);
+  }
+  if (Array.isArray(value)) {
+    const values = value
+      .map(normalizeSafeMetadataValue)
+      .filter((item): item is string | number | boolean | null => item === null || typeof item === "string" || typeof item === "number" || typeof item === "boolean")
+      .slice(0, 50);
+    return values.length ? values : undefined;
+  }
+  return undefined;
 }
 
 function normalizeConversationMember(value: unknown): MessagingConversationMember[] {
@@ -891,6 +1005,8 @@ function isClientSafeMatrixBootstrapReady(capabilities: CsmMessagingCapabilities
   return providerOk
     && healthOk
     && capabilities.features?.matrixTokenBootstrap === true
+    && capabilities.features?.matrixIdentityResolution === true
+    && capabilities.features?.matrixRoomBinding === true
     && capabilities.features?.endToEndEncryptionRequired === true
     && capabilities.security?.readFromBrowser === false
     && capabilities.architecture?.plaintextOnServer !== true;

@@ -51,6 +51,7 @@ import { createMediaStorageFromEnv, type MediaStorage } from "./media-storage.js
 import {
   createMessagingProviderFromEnv,
   type MessagingConversationCreateRequest,
+  type MessagingConversationMember,
   type MessagingMatrixRoomBindingRequest,
   type MessagingMapLink,
   type MessagingProvider
@@ -1180,6 +1181,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
     return messagingProvider.resolveMatrixIdentities(actor, now(), userIds);
+  });
+
+  app.post("/api/v1/messaging/conversations/:conversationId/members", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { conversationId: string };
+    const members = normalizeMessagingConversationMembersRequest(request.body);
+    if (!members) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Messaging conversation member sync requires members[] and may not contain plaintext message fields.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const result = await messagingProvider.addConversationMembers(actor, now(), params.conversationId, members);
+    return reply.code(result.conversation ? 200 : 502).send(result);
   });
 
   app.post("/api/v1/messaging/conversations/:conversationId/matrix-room", async (request, reply) => {
@@ -3525,6 +3546,14 @@ function normalizeMatrixIdentityResolutionRequest(value: unknown): string[] | nu
   return userIds.length > 0 ? userIds : null;
 }
 
+function normalizeMessagingConversationMembersRequest(value: unknown): MessagingConversationMember[] | null {
+  if (!isRecord(value) || containsMessagingPlaintextKey(value)) {
+    return null;
+  }
+  const members = normalizeMessagingMembers(value.members);
+  return members?.length ? members : null;
+}
+
 function normalizeMatrixRoomBindingRequest(value: unknown): MessagingMatrixRoomBindingRequest | null {
   if (!isRecord(value) || containsMessagingPlaintextKey(value)) {
     return null;
@@ -4239,6 +4268,7 @@ function mobileEndpoints() {
     messagingBootstrap: "/api/v1/messaging/bootstrap",
     messagingConversations: "/api/v1/messaging/conversations",
     messagingMatrixIdentityResolution: "/api/v1/messaging/matrix/identities/resolve",
+    messagingConversationMembers: "/api/v1/messaging/conversations/{conversationId}/members",
     messagingMatrixRoomBinding: "/api/v1/messaging/conversations/{conversationId}/matrix-room",
     messagingStatus: "/api/v1/messaging/status",
     sourceHealth: "/api/v1/sources/health",
