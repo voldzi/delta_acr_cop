@@ -697,6 +697,17 @@ export interface CommunityAttachmentUploadSlot {
   uploadUrl: string;
 }
 
+export type CommunityAttachmentUploadPhase = "direct" | "proxy";
+
+export interface CommunityAttachmentUploadProgress {
+  lengthComputable: boolean;
+  loaded: number;
+  phase: CommunityAttachmentUploadPhase;
+  total: number;
+}
+
+export type CommunityAttachmentUploadProgressHandler = (progress: CommunityAttachmentUploadProgress) => void;
+
 export interface TakLayersResponse {
   items: TakLayer[];
   serverTimestamp?: string;
@@ -1491,17 +1502,19 @@ export async function uploadCommunityAttachmentViaApi(
   token: string,
   reportId: string,
   attachmentId: string,
-  file: File
+  file: File,
+  onProgress?: CommunityAttachmentUploadProgressHandler
 ): Promise<CommunityReportAttachment> {
   const uploadUrl = `${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachmentId)}/upload`;
-  const response = await fetch(uploadUrl, {
-    body: file,
+  const response = await uploadFileWithProgress(uploadUrl, {
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": file.type || "application/octet-stream",
       "X-COP-Upload-Mode": "binary"
     },
-    method: "POST"
+    file,
+    method: "POST",
+    onProgress: onProgress ? (progress) => onProgress({ ...progress, phase: "proxy" }) : undefined
   });
   if (!response.ok) {
     const statusText = response.statusText || "API request failed";
@@ -1529,13 +1542,15 @@ async function tryDirectCommunityAttachmentUpload(
   token: string,
   reportId: string,
   file: File,
-  slot: { attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }
+  slot: { attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot },
+  onProgress?: CommunityAttachmentUploadProgressHandler
 ): Promise<CommunityReportAttachment | null> {
   try {
-    const directResponse = await fetch(slot.upload.uploadUrl, {
-      body: file,
+    const directResponse = await uploadFileWithProgress(slot.upload.uploadUrl, {
       headers: slot.upload.headers,
-      method: "PUT"
+      file,
+      method: "PUT",
+      onProgress: onProgress ? (progress) => onProgress({ ...progress, phase: "direct" }) : undefined
     });
     if (!directResponse.ok) {
       return null;
@@ -1553,13 +1568,57 @@ export async function uploadCommunityAttachmentFile(
   token: string,
   reportId: string,
   file: File,
-  slot: { attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }
+  slot: { attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot },
+  onProgress?: CommunityAttachmentUploadProgressHandler
 ): Promise<CommunityReportAttachment> {
-  const directUpload = await tryDirectCommunityAttachmentUpload(apiBase, token, reportId, file, slot);
+  const directUpload = await tryDirectCommunityAttachmentUpload(apiBase, token, reportId, file, slot, onProgress);
   if (directUpload) {
     return directUpload;
   }
-  return uploadCommunityAttachmentViaApi(apiBase, token, reportId, slot.attachment.attachmentId, file);
+  return uploadCommunityAttachmentViaApi(apiBase, token, reportId, slot.attachment.attachmentId, file, onProgress);
+}
+
+function uploadFileWithProgress(
+  url: string,
+  input: {
+    file: File;
+    headers: Record<string, string>;
+    method: "POST" | "PUT";
+    onProgress?: CommunityAttachmentUploadProgressHandler;
+  }
+): Promise<{ ok: boolean; json: () => Promise<unknown>; status: number; statusText: string }> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open(input.method, url);
+    for (const [name, value] of Object.entries(input.headers)) {
+      request.setRequestHeader(name, value);
+    }
+    request.upload.onprogress = (event) => {
+      input.onProgress?.({
+        lengthComputable: event.lengthComputable,
+        loaded: event.loaded,
+        phase: input.method === "PUT" ? "direct" : "proxy",
+        total: event.lengthComputable ? event.total : input.file.size
+      });
+    };
+    request.onload = () => {
+      input.onProgress?.({
+        lengthComputable: true,
+        loaded: input.file.size,
+        phase: input.method === "PUT" ? "direct" : "proxy",
+        total: input.file.size
+      });
+      resolve({
+        json: async () => JSON.parse(request.responseText || "null"),
+        ok: request.status >= 200 && request.status < 300,
+        status: request.status,
+        statusText: request.statusText
+      });
+    };
+    request.onerror = () => reject(new Error("Attachment upload failed before the server responded."));
+    request.onabort = () => reject(new Error("Attachment upload was cancelled."));
+    request.send(input.file);
+  });
 }
 
 export async function submitCommunityReport(apiBase: string, token: string, reportId: string): Promise<CommunityReport> {

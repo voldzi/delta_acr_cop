@@ -770,6 +770,76 @@ h1 {
   background: rgba(151, 199, 104, 0.12);
 }
 
+.community-upload-progress {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(200, 240, 141, 0.42);
+  background: rgba(151, 199, 104, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(5, 9, 12, 0.34);
+}
+
+.community-upload-progress-header,
+.community-upload-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.community-upload-progress-header span,
+.community-upload-progress-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-upload-progress-header span {
+  color: #e7f4ff;
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.community-upload-progress-header strong {
+  color: var(--lime);
+  font-family: var(--mono);
+  font-size: 15px;
+}
+
+.community-upload-progress-bar {
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(140, 182, 216, 0.30);
+  background: rgba(5, 9, 12, 0.55);
+}
+
+.community-upload-progress-bar span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: linear-gradient(90deg, #bff27d, #8ed8ff);
+  transition: width 160ms ease-out;
+}
+
+.community-upload-progress-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.community-upload-progress-meta span:last-child {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+}
+
+.community-upload-progress small {
+  color: #f8e28a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .community-media-item {
   display: grid;
   gap: 8px;
@@ -4737,6 +4807,12 @@ dd {
   .report-dialog-actions .primary-button,
   .report-dialog-actions .ghost-button {
     flex: 1 1 130px;
+  }
+
+  .community-upload-progress-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .center-column {

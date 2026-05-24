@@ -85,6 +85,7 @@ import {
   type CopObject,
   type CopStreamHealth,
   type CommunityAttachmentKind,
+  type CommunityAttachmentUploadProgress,
   type CommunityFeatureCollectionResponse,
   type CommunityGroup,
   type CommunityReportCategory,
@@ -365,6 +366,7 @@ export function App() {
   const [communityReportSubmitting, setCommunityReportSubmitting] = React.useState(false);
   const [communityReportError, setCommunityReportError] = React.useState<string | null>(null);
   const [communityReportSuccess, setCommunityReportSuccess] = React.useState<string | null>(null);
+  const [communityUploadProgress, setCommunityUploadProgress] = React.useState<CommunityUploadUiState | null>(null);
   const [communityReportLocationPickMode, setCommunityReportLocationPickMode] = React.useState(false);
   const [communityRefreshNonce, setCommunityRefreshNonce] = React.useState(0);
   const [communityGroups, setCommunityGroups] = React.useState<CommunityGroup[]>([]);
@@ -408,6 +410,18 @@ export function App() {
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken);
   const profileAccessReady = Boolean(authToken);
   const messagingAuthenticated = authSession.status === "authenticated" && Boolean(authSession.accessToken);
+
+  React.useEffect(() => {
+    if (!communityReportSubmitting) {
+      return;
+    }
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [communityReportSubmitting]);
 
   const applyDashboardData = React.useCallback((data: CopDashboardData, observedAt: Date) => {
     setHealth(data.health);
@@ -2243,7 +2257,19 @@ export function App() {
     setCommunityReportSubmitting(true);
     setCommunityReportError(null);
     setCommunityReportSuccess(null);
+    setCommunityUploadProgress(null);
+    const filesToUpload = communityReportDraft.files;
     try {
+      if (filesToUpload.length > 0) {
+        setCommunityUploadProgress({
+          fileCount: filesToUpload.length,
+          fileIndex: 1,
+          fileName: filesToUpload[0]?.name || "Příloha",
+          loadedBytes: 0,
+          phase: "preparing",
+          totalBytes: filesToUpload[0]?.size || 1
+        });
+      }
       let eventGroup = communityReportDraft.mediaAccessGroupId
         ? communityGroups.find((group) => group.groupId === communityReportDraft.mediaAccessGroupId) ?? null
         : null;
@@ -2275,12 +2301,20 @@ export function App() {
       const report = communityReportDraft.reportId
         ? await updateCommunityReport(apiBase, authToken, communityReportDraft.reportId, reportPayload)
         : await createCommunityReport(apiBase, authToken, reportPayload);
-      for (const file of communityReportDraft.files) {
+      for (const [fileIndex, file] of filesToUpload.entries()) {
         const contentType = normalizeCommunityFileContentType(file);
         const kind = communityAttachmentKindFromContentType(contentType);
         if (!kind) {
           throw new Error(`Nepodporovaný typ souboru: ${file.name || contentType}`);
         }
+        setCommunityUploadProgress({
+          fileCount: filesToUpload.length,
+          fileIndex: fileIndex + 1,
+          fileName: file.name || "Příloha",
+          loadedBytes: 0,
+          phase: "creating",
+          totalBytes: file.size || 1
+        });
         const slot = await createCommunityAttachmentUpload(apiBase, authToken, report.reportId, {
           byteSize: file.size,
           captureLocation: communityReportDraft.location,
@@ -2293,7 +2327,28 @@ export function App() {
             mediaAccessMode: communityReportDraft.mediaAccessMode === "groups" ? "groups" : communityReportDraft.mediaAccessMode
           }))
         });
-        await uploadCommunityAttachmentFile(apiBase, authToken, report.reportId, file, slot);
+        await uploadCommunityAttachmentFile(apiBase, authToken, report.reportId, file, slot, (progress) => {
+          setCommunityUploadProgress(uploadProgressFromAttachment(file, fileIndex, filesToUpload.length, progress));
+        });
+        setCommunityUploadProgress({
+          fileCount: filesToUpload.length,
+          fileIndex: fileIndex + 1,
+          fileName: file.name || "Příloha",
+          loadedBytes: file.size,
+          phase: "finalizing",
+          totalBytes: file.size || 1
+        });
+      }
+      if (filesToUpload.length > 0) {
+        const lastFile = filesToUpload[filesToUpload.length - 1];
+        setCommunityUploadProgress({
+          fileCount: filesToUpload.length,
+          fileIndex: filesToUpload.length,
+          fileName: lastFile?.name || "Přílohy",
+          loadedBytes: lastFile?.size || 1,
+          phase: "finalizing",
+          totalBytes: lastFile?.size || 1
+        });
       }
       const submitted = await submitCommunityReport(apiBase, authToken, report.reportId);
       setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(userLocation, mapView)));
@@ -2309,6 +2364,7 @@ export function App() {
       setCommunityReportError(error instanceof Error ? error.message : "Hlášení se nepodařilo uložit.");
     } finally {
       setCommunityReportSubmitting(false);
+      setCommunityUploadProgress(null);
     }
   }
 
@@ -3115,6 +3171,7 @@ export function App() {
           error={communityReportError}
           isSubmitting={communityReportSubmitting}
           success={communityReportSuccess}
+          uploadProgress={communityUploadProgress}
           onChange={setCommunityReportDraft}
           onClose={() => {
             setCommunityReportOpen(false);
@@ -3172,6 +3229,15 @@ interface CommunityGalleryState {
   title: string;
 }
 
+interface CommunityUploadUiState {
+  fileCount: number;
+  fileIndex: number;
+  fileName: string;
+  loadedBytes: number;
+  phase: "creating" | "direct" | "finalizing" | "preparing" | "proxy";
+  totalBytes: number;
+}
+
 interface CommunityReportDialogProps {
   communityGroups: CommunityGroup[];
   communityGroupsError: string | null;
@@ -3179,6 +3245,7 @@ interface CommunityReportDialogProps {
   error: string | null;
   isSubmitting: boolean;
   success: string | null;
+  uploadProgress: CommunityUploadUiState | null;
   onChange: React.Dispatch<React.SetStateAction<CommunityReportDraft>>;
   onClose: () => void;
   onCreateGroup: () => void;
@@ -3196,6 +3263,7 @@ function CommunityReportDialog({
   error,
   isSubmitting,
   success,
+  uploadProgress,
   onChange,
   onClose,
   onCreateGroup,
@@ -3213,7 +3281,7 @@ function CommunityReportDialog({
             <span>Komunitní hlášení</span>
             <h2 id="community-report-title">{draft.reportId ? "Upravit hlášení" : "Nahlásit událost v okolí"}</h2>
           </div>
-          <button aria-label="Zavřít" className="icon-button" onClick={onClose} type="button">
+          <button aria-label="Zavřít" className="icon-button" disabled={isSubmitting} onClick={onClose} type="button">
             <X size={18} />
           </button>
         </div>
@@ -3389,6 +3457,7 @@ function CommunityReportDialog({
           ))}
         </div>
 
+        {uploadProgress ? <CommunityUploadProgressPanel progress={uploadProgress} /> : null}
         {error ? <div className="report-dialog-message error">{error}</div> : null}
         {success ? <div className="report-dialog-message success">{success}</div> : null}
 
@@ -3399,6 +3468,34 @@ function CommunityReportDialog({
           </button>
         </div>
       </section>
+    </div>
+  );
+}
+
+function CommunityUploadProgressPanel({ progress }: { progress: CommunityUploadUiState }) {
+  const total = progress.totalBytes > 0 ? progress.totalBytes : 1;
+  const percent = Math.max(0, Math.min(100, Math.round((progress.loadedBytes / total) * 100)));
+  const phaseLabel: Record<CommunityUploadUiState["phase"], string> = {
+    creating: "Připravuji záznam",
+    direct: "Nahrávám do úložiště",
+    finalizing: "Dokončuji hlášení",
+    preparing: "Připravuji upload",
+    proxy: "Nahrávám přes zabezpečené API"
+  };
+  return (
+    <div className="community-upload-progress" role="status" aria-live="polite">
+      <div className="community-upload-progress-header">
+        <span>{phaseLabel[progress.phase]}</span>
+        <strong>{percent}%</strong>
+      </div>
+      <div className="community-upload-progress-bar" aria-label={`Průběh uploadu ${percent}%`}>
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      <div className="community-upload-progress-meta">
+        <span>{progress.fileIndex} / {progress.fileCount} · {progress.fileName}</span>
+        <span>{formatFileSize(progress.loadedBytes)} / {formatFileSize(progress.totalBytes)}</span>
+      </div>
+      <small>Nezavírejte stránku, dokud ukládání neskončí.</small>
     </div>
   );
 }
@@ -6511,6 +6608,23 @@ function formatReportLocation(location: CommunityReportLocation): string {
     unknown: "neznámé"
   };
   return `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)} · ${sourceLabel[location.source]}`;
+}
+
+function uploadProgressFromAttachment(
+  file: File,
+  fileIndex: number,
+  fileCount: number,
+  progress: CommunityAttachmentUploadProgress
+): CommunityUploadUiState {
+  const totalBytes = progress.lengthComputable && progress.total > 0 ? progress.total : file.size || 1;
+  return {
+    fileCount,
+    fileIndex: fileIndex + 1,
+    fileName: file.name || "Příloha",
+    loadedBytes: Math.min(progress.loaded, totalBytes),
+    phase: progress.phase,
+    totalBytes
+  };
 }
 
 function formatFileSize(bytes: number): string {
