@@ -55,6 +55,7 @@ import {
   fetchMapCatalog,
   fetchMapFeatures,
   fetchMessagingStatus,
+  fetchPlaceGeocode,
   fetchUserProfile,
   filterObjectsByLayers,
   filterVisibleObjects,
@@ -90,6 +91,7 @@ import {
   type MapBounds,
   type MessagingStatusResponse,
   type ObjectProvenance,
+  type PlaceGeocodeResult,
   type SourceHealthItem,
   type SourceSystem,
   type SafetyDataSourceId,
@@ -130,7 +132,7 @@ import {
   REFRESH_OPTIONS,
   type RefreshSeconds
 } from "./refresh-config";
-import { buildMapSearchResults, type MapSearchResult } from "./map-search";
+import { buildMapSearchResults, buildPlaceSearchResults, type MapSearchResult } from "./map-search";
 import {
   countHistoryPoints,
   getReplayTimestamp,
@@ -269,6 +271,9 @@ export function App() {
   const [domainScope, setDomainScope] = React.useState<DomainScope>(() => readInitialDomainScope(initialPreferences.domainScope));
   const [searchQuery, setSearchQuery] = React.useState("");
   const [mapSearchQuery, setMapSearchQuery] = React.useState("");
+  const [placeSearchItems, setPlaceSearchItems] = React.useState<PlaceGeocodeResult[]>([]);
+  const [placeSearchLoading, setPlaceSearchLoading] = React.useState(false);
+  const [placeSearchError, setPlaceSearchError] = React.useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
   const [, setLastStreamAt] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -1229,10 +1234,56 @@ export function App() {
   const explicitlySelectedObject = selectedObjectId ? visibleObjects.find((object) => object.objectId === selectedObjectId) ?? null : null;
   const selectedObject = explicitlySelectedObject ?? visibleObjects[0] ?? null;
   const selectedSituationFeature = combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
-  const mapSearchResults = React.useMemo(
+  const localMapSearchResults = React.useMemo(
     () => buildMapSearchResults(visibleObjectsSearchScope, combinedSituationFeatures?.features ?? [], mapSearchQuery),
     [combinedSituationFeatures, mapSearchQuery, visibleObjectsSearchScope]
   );
+  const placeMapSearchResults = React.useMemo(
+    () => buildPlaceSearchResults(placeSearchItems, mapSearchQuery, { limit: 5 }),
+    [mapSearchQuery, placeSearchItems]
+  );
+  const mapSearchResults = React.useMemo(
+    () => [...localMapSearchResults, ...placeMapSearchResults].slice(0, 12),
+    [localMapSearchResults, placeMapSearchResults]
+  );
+
+  React.useEffect(() => {
+    const query = mapSearchQuery.trim();
+    if (!dataAccessReady || query.length < 3) {
+      setPlaceSearchItems([]);
+      setPlaceSearchError(null);
+      setPlaceSearchLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setPlaceSearchLoading(true);
+    setPlaceSearchError(null);
+    const timer = window.setTimeout(() => {
+      fetchPlaceGeocode(apiBase, authToken, query, { language: "cs,en", limit: 5 })
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+          setPlaceSearchItems(response.items);
+          setPlaceSearchLoading(false);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) {
+            return;
+          }
+          setPlaceSearchItems([]);
+          setPlaceSearchError(error instanceof Error ? error.message : "Vyhledávání míst není dostupné.");
+          setPlaceSearchLoading(false);
+        });
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [apiBase, authToken, dataAccessReady, mapSearchQuery]);
+
   const metrics = React.useMemo(() => buildMetrics(scopedObjects, sources), [scopedObjects, sources]);
   const eventStream = React.useMemo(() => buildEventStream(visibleObjects), [visibleObjects]);
   const historyPointCount = React.useMemo(
@@ -1915,12 +1966,15 @@ export function App() {
     } else if (result.kind === "feature" && result.featureId) {
       setSelectedSituationFeatureId(result.featureId);
       setSelectedObjectId(null);
+    } else if (result.kind === "place") {
+      setSelectedObjectId(null);
+      setSelectedSituationFeatureId(null);
     }
     setMapView({
       bearing: mapView?.bearing ?? 0,
       center: result.center,
       pitch: mapView?.pitch ?? 0,
-      zoom: Math.max(mapView?.zoom ?? 10, result.kind === "track" ? 11 : 10)
+      zoom: result.kind === "place" ? result.zoom ?? 10 : Math.max(mapView?.zoom ?? 10, result.kind === "track" ? 11 : 10)
     });
     setFocusViewRequest((current) => current + 1);
   }
@@ -2397,6 +2451,8 @@ export function App() {
           <section className="map-stage">
             {activeWorkspace === "map" ? (
               <MapGlobalSearch
+                isSearchingPlaces={placeSearchLoading}
+                placeSearchError={placeSearchError}
                 query={mapSearchQuery}
                 results={mapSearchResults}
                 onChange={setMapSearchQuery}
@@ -4626,13 +4682,17 @@ function SegmentedControl({
 }
 
 function MapGlobalSearch({
+  isSearchingPlaces = false,
+  placeSearchError = null,
   query,
   results,
   onChange,
   onClear,
   onSelect
 }: {
+  isSearchingPlaces?: boolean;
   query: string;
+  placeSearchError?: string | null;
   results: MapSearchResult[];
   onChange: (value: string) => void;
   onClear: () => void;
@@ -4755,7 +4815,7 @@ function MapGlobalSearch({
         <input
           aria-label="Hledat v mapě"
           autoComplete="off"
-          placeholder="Hledat let, BTS, letiště, výstrahu..."
+          placeholder="Hledat let, BTS, letiště, místo..."
           value={query}
           onChange={(event) => onChange(event.target.value)}
         />
@@ -4786,8 +4846,17 @@ function MapGlobalSearch({
               </button>
             ))
           ) : (
-            <div className="map-search-empty">Nic v aktuálních vrstvách neodpovídá hledání.</div>
+            <div className={`map-search-empty ${placeSearchError ? "map-search-empty-warning" : ""}`}>
+              {isSearchingPlaces
+                ? "Hledám místa..."
+                : placeSearchError
+                  ? "Vyhledávání míst je dočasně nedostupné."
+                  : "Nic v aktuálních vrstvách ani v místech neodpovídá hledání."}
+            </div>
           )}
+          {results.length > 0 && placeSearchError ? (
+            <div className="map-search-empty map-search-empty-warning">Vyhledávání míst je dočasně nedostupné.</div>
+          ) : null}
         </div>
       ) : null}
     </div>

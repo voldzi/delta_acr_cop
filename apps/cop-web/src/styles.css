@@ -2556,6 +2556,11 @@ h1 {
   color: #c5a8ff;
 }
 
+.map-search-card-place .map-search-type {
+  border-color: rgba(245, 196, 93, 0.56);
+  color: #ffd37a;
+}
+
 .map-search-main {
   display: grid;
   min-width: 0;
@@ -2581,6 +2586,10 @@ h1 {
   padding: 10px;
   color: var(--muted);
   font-weight: 800;
+}
+
+.map-search-empty-warning {
+  color: #ffd76a;
 }
 
 .map-container {

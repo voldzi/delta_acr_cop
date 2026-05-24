@@ -24,3 +24,12 @@ Frontend používá MapLibre. Mapový styl je konfigurovatelný:
 - PWA service worker cacheuje mapové dlaždice a glyph assets pro opakované zobrazení, ale neprefetchuje mapy mimo aktuální viewport.
 
 Produkční provoz nemá směřovat tisíce klientů přímo na veřejný OSM tile server. Přechodný a cílový postup je popsaný v runbooku [10 Tile Cache and Map Tiles](../runbooks/10_TILE_CACHE_AND_MAP_TILES.md).
+
+## Vyhledávání nad mapou
+
+Globální vyhledávací pole v mapovém režimu kombinuje dvě kategorie výsledků:
+
+- lokálně zobrazené COP objekty a mapové prvky z aktuálně zapnutých vrstev,
+- veřejná místa přes serverový endpoint `GET /api/v1/geocode/search`.
+
+Web klient nevolá externí geocoder přímo. Dotaz jde přes COP API, kde je možné provider vyměnit, omezovat a cacheovat. Výběr místa nevybírá žádný COP objekt, pouze vyčistí aktivní detail a plynule přesune mapu na souřadnice se zoomem doporučeným providerem.

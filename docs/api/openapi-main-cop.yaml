@@ -192,6 +192,52 @@ paths:
                 $ref: "#/components/schemas/MapCatalog"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/geocode/search:
+    get:
+      tags: [Map Catalog]
+      summary: Search public places for map navigation.
+      operationId: searchPlaces
+      description: >
+        Returns client-safe geocoding results for map navigation. COP calls the
+        configured geocoder server-side and caches repeated searches so web and
+        native clients do not need direct external geocoder access.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 160
+          description: Place query, for example "Kyjev" or "Praha".
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+            default: cs,en
+          description: Preferred result language passed to the provider.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 8
+            default: 5
+      responses:
+        "200":
+          description: Place search results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaceGeocodeSearchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/map/query:
     post:
       tags: [Map Catalog]
@@ -1848,6 +1894,88 @@ components:
     CommunityReportVisibility:
       type: string
       enum: [private, community, public]
+    PlaceGeocodeSearchResponse:
+      type: object
+      required: [cache, contractVersion, items, providerId, query, serverTimestamp, warnings]
+      properties:
+        cache:
+          type: object
+          required: [key, status, ttlSeconds]
+          properties:
+            key:
+              type: string
+            status:
+              type: string
+              enum: [disabled, hit, miss]
+            ttlSeconds:
+              type: integer
+              minimum: 0
+        contractVersion:
+          type: string
+          const: cop-geocode-v1
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlaceGeocodeResult"
+        providerId:
+          type: string
+        query:
+          type: object
+          required: [language, limit, q]
+          properties:
+            language:
+              type: string
+            limit:
+              type: integer
+            q:
+              type: string
+        serverTimestamp:
+          type: string
+          format: date-time
+        warnings:
+          type: array
+          items:
+            type: string
+    PlaceGeocodeResult:
+      type: object
+      required: [center, displayName, id, providerId]
+      properties:
+        bbox:
+          type: object
+          required: [east, north, south, west]
+          properties:
+            east:
+              type: number
+            north:
+              type: number
+            south:
+              type: number
+            west:
+              type: number
+        center:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: number
+          description: "[longitude, latitude]"
+        displayName:
+          type: string
+        id:
+          type: string
+        importance:
+          type: number
+          minimum: 0
+        kind:
+          type: string
+        providerId:
+          type: string
+        subtitle:
+          type: string
+        zoomHint:
+          type: number
+          minimum: 1
+          maximum: 18
     MapCatalog:
       type: object
       required: [catalogVersion, generatedAt, groups, layers, locale, providers, sources, warnings]

@@ -1,6 +1,6 @@
-import type { CopObject, SituationFeature } from "./cop-data";
+import type { CopObject, PlaceGeocodeResult, SituationFeature } from "./cop-data";
 
-export type MapSearchResultKind = "track" | "feature";
+export type MapSearchResultKind = "feature" | "place" | "track";
 
 export type MapSearchResultType =
   | "airport"
@@ -9,6 +9,7 @@ export type MapSearchResultType =
   | "community"
   | "flight"
   | "mobile-network"
+  | "place"
   | "safety"
   | "situation"
   | "weather";
@@ -23,6 +24,7 @@ export interface MapSearchResult {
   subtitle: string;
   type: MapSearchResultType;
   typeLabel: string;
+  zoom?: number;
 }
 
 const MAX_SEARCH_RESULTS = 12;
@@ -135,6 +137,30 @@ export function buildFeatureSearchResult(feature: SituationFeature, center: [num
   };
 }
 
+export function buildPlaceSearchResults(items: PlaceGeocodeResult[], query: string, options: { limit?: number } = {}): MapSearchResult[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return [];
+  }
+  const limit = Math.max(1, options.limit ?? 5);
+  return items
+    .map((item) => ({
+      center: item.center,
+      id: `place:${item.id}`,
+      kind: "place" as const,
+      label: cleanSearchText(item.displayName.split(",")[0]) ?? item.displayName,
+      score: scorePlaceResult(item, normalizedQuery),
+      subtitle: item.subtitle || item.displayName,
+      type: "place" as const,
+      typeLabel: "Místo",
+      zoom: item.zoomHint
+    }))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label, "cs"))
+    .slice(0, limit)
+    .map(({ score: _score, ...result }) => result);
+}
+
 export function featureCenter(feature: SituationFeature): [number, number] | null {
   const geometry = feature.geometry;
   if (geometry.type === "Point") {
@@ -241,6 +267,8 @@ function mapResultTypeLabel(type: MapSearchResultType): string {
       return "Let";
     case "mobile-network":
       return "Mobilní síť";
+    case "place":
+      return "Místo";
     case "safety":
       return "Výstraha";
     case "weather":
@@ -249,6 +277,26 @@ function mapResultTypeLabel(type: MapSearchResultType): string {
     default:
       return "Vrstva";
   }
+}
+
+function scorePlaceResult(result: PlaceGeocodeResult, normalizedQuery: string): number {
+  const values = [result.displayName, result.subtitle, result.kind]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.toLowerCase());
+  let score = 20;
+  for (const value of values) {
+    if (value === normalizedQuery) {
+      score = Math.max(score, 120);
+    } else if (value.startsWith(normalizedQuery)) {
+      score = Math.max(score, 95);
+    } else if (value.includes(normalizedQuery)) {
+      score = Math.max(score, 70);
+    }
+  }
+  if (typeof result.importance === "number") {
+    score += Math.min(20, Math.max(0, result.importance * 20));
+  }
+  return score;
 }
 
 function buildFeatureSubtitle(feature: SituationFeature): string {

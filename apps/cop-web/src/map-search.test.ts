@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CopObject, SituationFeature } from "./cop-data";
-import { buildMapSearchResults, featureCenter } from "./map-search";
+import type { CopObject, PlaceGeocodeResult, SituationFeature } from "./cop-data";
+import { buildMapSearchResults, buildPlaceSearchResults, featureCenter } from "./map-search";
 
 describe("map search", () => {
   it("finds tracks and map features with typed result cards", () => {
@@ -73,6 +73,29 @@ describe("map search", () => {
     };
 
     expect(featureCenter(feature)).toEqual([14.8, 50.8]);
+  });
+
+  it("builds place results for geocoded cities", () => {
+    const places: PlaceGeocodeResult[] = [{
+      center: [30.5234, 50.4501],
+      displayName: "Kyjev, Ukrajina",
+      id: "nominatim:123",
+      importance: 0.8,
+      kind: "city",
+      providerId: "nominatim",
+      subtitle: "město",
+      zoomHint: 10
+    }];
+
+    expect(buildPlaceSearchResults(places, "Kyjev")).toEqual([
+      expect.objectContaining({
+        center: [30.5234, 50.4501],
+        kind: "place",
+        label: "Kyjev",
+        typeLabel: "Místo",
+        zoom: 10
+      })
+    ]);
   });
 });
 

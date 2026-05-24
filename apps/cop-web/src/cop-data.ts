@@ -793,6 +793,36 @@ export interface MapFeatureQueryResponse {
   warnings: string[];
 }
 
+export interface PlaceGeocodeResult {
+  bbox?: MapBounds;
+  center: [number, number];
+  displayName: string;
+  id: string;
+  importance?: number;
+  kind?: string;
+  providerId: string;
+  subtitle?: string;
+  zoomHint?: number;
+}
+
+export interface PlaceGeocodeResponse {
+  cache: {
+    key: string;
+    status: "disabled" | "hit" | "miss";
+    ttlSeconds: number;
+  };
+  contractVersion: "cop-geocode-v1";
+  items: PlaceGeocodeResult[];
+  providerId: string;
+  query: {
+    language: string;
+    limit: number;
+    q: string;
+  };
+  serverTimestamp: string;
+  warnings: string[];
+}
+
 export interface SourceHealthItem {
   acceptedEvents: number;
   avgConfidence?: number;
@@ -1084,6 +1114,24 @@ export async function fetchMapFeatures(
       "Content-Type": "application/json"
     },
     method: "POST"
+  });
+}
+
+export async function fetchPlaceGeocode(
+  apiBase: string,
+  token: string | undefined,
+  query: string,
+  options: { language?: string; limit?: number } = {}
+): Promise<PlaceGeocodeResponse> {
+  const params = new URLSearchParams({
+    q: query,
+    limit: String(options.limit ?? 5)
+  });
+  if (options.language) {
+    params.set("language", options.language);
+  }
+  return fetchJson<PlaceGeocodeResponse>(`${apiBase}/api/v1/geocode/search?${params.toString()}`, {
+    headers: authHeaders(token)
   });
 }
 

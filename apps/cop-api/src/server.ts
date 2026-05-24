@@ -39,6 +39,7 @@ import {
 import { buildMapCatalog, type MapCatalogLayer } from "./map-catalog.js";
 import { createMediaStorageFromEnv, type MediaStorage } from "./media-storage.js";
 import { createMessagingProviderFromEnv, type MessagingProvider } from "./messaging-provider.js";
+import { createPlaceGeocoderFromEnv, type PlaceGeocoder } from "./place-geocoder.js";
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems } from "./source-health.js";
@@ -90,6 +91,7 @@ export interface BuildServerOptions {
   communityReportStore?: CommunityReportStore;
   mediaStorage?: MediaStorage;
   messagingProvider?: MessagingProvider;
+  placeGeocoder?: PlaceGeocoder;
   safetyDataSource?: SafetyDataSource;
   situationDataSource?: SituationDataSource;
   takGatewaySource?: TakGatewaySource;
@@ -153,6 +155,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const communityReportFallbackStore = new InMemoryCommunityReportStore("memory-fallback");
   const mediaStorage = options.mediaStorage ?? createMediaStorageFromEnv();
   const messagingProvider = options.messagingProvider ?? createMessagingProviderFromEnv();
+  const placeGeocoder = options.placeGeocoder ?? createPlaceGeocoderFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
   const safetyDataSource = options.safetyDataSource ?? createSafetyDataSourceFromEnv();
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
@@ -235,6 +238,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
       { name: "community-report-store", status: communityReportStoreStatus, detail: communityReportStoreDependencyDetail() },
       { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
+      { name: "place-geocoder", status: placeGeocoder ? "ok" : "disabled", detail: placeGeocoder?.diagnostics?.() ?? "disabled" },
       await messagingDependency(),
       ...(flightDataSource ? [flightDataDependency()] : []),
       ...(situationDataSource ? [situationDataDependency()] : []),
@@ -1395,6 +1399,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       situation,
       tak
     });
+  });
+
+  app.get("/api/v1/geocode/search", async (request, reply) => {
+    if (!placeGeocoder) {
+      return sendError(reply, 503, "GEOCODER_UNAVAILABLE", "Place geocoder is disabled.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const query = request.query as Record<string, unknown>;
+    const q = optionalTrimmedString(query.q ?? query.query, 160);
+    if (!q || q.length < 3) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Geocode search requires q with at least 3 characters.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    try {
+      return await placeGeocoder.search({
+        language: optionalTrimmedString(query.language, 40),
+        limit: optionalFiniteNumber(query.limit, 1, 8),
+        query: q
+      }, now());
+    } catch (error) {
+      app.log.warn({ error, q }, "Place geocode search failed.");
+      return sendError(reply, 502, "GEOCODER_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationIdFrom(request.headers["x-correlation-id"]));
+    }
   });
 
   app.post("/api/v1/map/query", async (request, reply) => {
