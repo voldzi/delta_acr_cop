@@ -963,6 +963,45 @@ export interface MessagingBootstrapResponse {
   warnings: string[];
 }
 
+export interface MessagingConversationSummary {
+  conversationId: string;
+  createdAt?: string;
+  disclaimer?: string;
+  e2eeRequired?: boolean;
+  encrypted?: boolean;
+  mapLinkCount?: number;
+  matrix?: {
+    homeserverBaseUrl?: string;
+    roomId?: string | null;
+    serverName?: string;
+    state?: string;
+  };
+  memberCount?: number;
+  status?: string;
+  title: string;
+  type: "direct" | "group";
+  updatedAt?: string;
+}
+
+export interface MessagingConversationListResponse {
+  contractVersion: "cop-messaging-conversations-v1";
+  conversations: MessagingConversationSummary[];
+  count: number;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: "degraded" | "disabled" | "online";
+  warnings: string[];
+}
+
+export interface MessagingConversationCreateResponse {
+  contractVersion: "cop-messaging-conversations-v1";
+  conversation?: MessagingConversationSummary;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: "degraded" | "disabled" | "online";
+  warnings: string[];
+}
+
 export interface CopAlert {
   acknowledgedAt?: string;
   alertId: string;
@@ -1228,6 +1267,31 @@ export async function fetchMessagingBootstrap(apiBase: string, token: string, de
   });
 }
 
+export async function fetchMessagingConversations(apiBase: string, token: string): Promise<MessagingConversationListResponse> {
+  return fetchJson<MessagingConversationListResponse>(`${apiBase}/api/v1/messaging/conversations`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function createMessagingConversation(
+  apiBase: string,
+  token: string,
+  payload: {
+    metadata?: Record<string, string | number | boolean | null | Array<string | number | boolean | null>>;
+    title: string;
+    type?: "direct" | "group";
+  }
+): Promise<MessagingConversationCreateResponse> {
+  return fetchJson<MessagingConversationCreateResponse>(`${apiBase}/api/v1/messaging/conversations`, {
+    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
 export async function createCommunityReport(
   apiBase: string,
   token: string,
@@ -1366,20 +1430,59 @@ export async function uploadCommunityAttachmentViaApi(
   attachmentId: string,
   file: File
 ): Promise<CommunityReportAttachment> {
-  return fetchJson<CommunityReportAttachment>(
-    `${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachmentId)}/upload`,
-    {
-      body: JSON.stringify({
-        byteSize: file.size,
-        dataBase64: await fileToBase64(file)
-      }),
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      method: "POST"
+  const uploadUrl = `${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachmentId)}/upload`;
+  const response = await fetch(uploadUrl, {
+    body: file,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": file.type || "application/octet-stream",
+      "X-COP-Upload-Mode": "binary"
+    },
+    method: "POST"
+  });
+  if (!response.ok) {
+    const statusText = response.statusText || "API request failed";
+    const sizeHint = response.status === 413
+      ? ` Soubor má ${formatBytes(file.size)}; zvyšte COP_MEDIA_MAX_ATTACHMENT_BYTES a nginx client_max_body_size.`
+      : "";
+    throw new Error(`${response.status} ${statusText} for ${uploadUrl}.${sizeHint}`);
+  }
+  return (await response.json()) as CommunityReportAttachment;
+}
+
+function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+async function tryDirectCommunityAttachmentUpload(
+  apiBase: string,
+  token: string,
+  reportId: string,
+  file: File,
+  slot: { attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }
+): Promise<CommunityReportAttachment | null> {
+  try {
+    const directResponse = await fetch(slot.upload.uploadUrl, {
+      body: file,
+      headers: slot.upload.headers,
+      method: "PUT"
+    });
+    if (!directResponse.ok) {
+      return null;
     }
-  );
+    return completeCommunityAttachmentUpload(apiBase, token, reportId, slot.attachment.attachmentId, {
+      byteSize: file.size
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function uploadCommunityAttachmentFile(
@@ -1389,21 +1492,11 @@ export async function uploadCommunityAttachmentFile(
   file: File,
   slot: { attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }
 ): Promise<CommunityReportAttachment> {
-  try {
-    const directResponse = await fetch(slot.upload.uploadUrl, {
-      body: file,
-      headers: slot.upload.headers,
-      method: "PUT"
-    });
-    if (!directResponse.ok) {
-      throw new Error(`${directResponse.status} ${directResponse.statusText || "direct upload failed"}`);
-    }
-    return completeCommunityAttachmentUpload(apiBase, token, reportId, slot.attachment.attachmentId, {
-      byteSize: file.size
-    });
-  } catch {
-    return uploadCommunityAttachmentViaApi(apiBase, token, reportId, slot.attachment.attachmentId, file);
+  const directUpload = await tryDirectCommunityAttachmentUpload(apiBase, token, reportId, file, slot);
+  if (directUpload) {
+    return directUpload;
   }
+  return uploadCommunityAttachmentViaApi(apiBase, token, reportId, slot.attachment.attachmentId, file);
 }
 
 export async function submitCommunityReport(apiBase: string, token: string, reportId: string): Promise<CommunityReport> {
@@ -1528,17 +1621,6 @@ async function fetchOptionalJson<T>(url: string, init?: RequestInit): Promise<T 
   } catch {
     return undefined;
   }
-}
-
-async function fileToBase64(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
 }
 
 async function readCopStream(apiBase: string, token: string | undefined, signal: AbortSignal, handlers: CopStreamHandlers): Promise<void> {

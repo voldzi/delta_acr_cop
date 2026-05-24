@@ -51,11 +51,13 @@ import {
   createCommunityAttachmentUpload,
   createCommunityGroup,
   createCommunityReport,
+  createMessagingConversation,
   fetchCopDashboardData,
   fetchCopAlerts,
   fetchCommunityGroups,
   fetchMapCatalog,
   fetchMapFeatures,
+  fetchMessagingConversations,
   fetchMessagingStatus,
   fetchPlaceGeocode,
   fetchUserProfile,
@@ -96,6 +98,7 @@ import {
   type MapCatalogResponse,
   type MapCatalogSource,
   type MapBounds,
+  type MessagingConversationSummary,
   type MessagingStatusResponse,
   type ObjectProvenance,
   type PlaceGeocodeResult,
@@ -388,6 +391,8 @@ export function App() {
   const [messagingStatus, setMessagingStatus] = React.useState<MessagingStatusResponse | null>(null);
   const [messagingLoading, setMessagingLoading] = React.useState(false);
   const [messagingError, setMessagingError] = React.useState<string | null>(null);
+  const [messagingConversations, setMessagingConversations] = React.useState<MessagingConversationSummary[]>([]);
+  const [messagingConversationsError, setMessagingConversationsError] = React.useState<string | null>(null);
   const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad situačními daty.");
   const loadInFlightRef = React.useRef(false);
   const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
@@ -517,14 +522,22 @@ export function App() {
     if (!messagingAuthenticated || !authSession.accessToken) {
       setCommunityGroups([]);
       setCommunityGroupsError(null);
+      setMessagingConversations([]);
+      setMessagingConversationsError(null);
       return;
     }
     try {
-      const response = await fetchCommunityGroups(apiBase, authSession.accessToken);
-      setCommunityGroups(response.items);
+      const [groupsResponse, conversationsResponse] = await Promise.all([
+        fetchCommunityGroups(apiBase, authSession.accessToken),
+        fetchMessagingConversations(apiBase, authSession.accessToken)
+      ]);
+      setCommunityGroups(groupsResponse.items);
+      setMessagingConversations(conversationsResponse.conversations);
       setCommunityGroupsError(null);
+      setMessagingConversationsError(conversationsResponse.status === "online" ? null : conversationsResponse.warnings[0] ?? "Konverzace nejsou plně dostupné.");
     } catch (error) {
       setCommunityGroupsError(error instanceof Error ? error.message : "Skupiny nejsou dostupné.");
+      setMessagingConversationsError(error instanceof Error ? error.message : "Konverzace nejsou dostupné.");
     }
   }, [authSession.accessToken, messagingAuthenticated]);
 
@@ -2137,6 +2150,27 @@ export function App() {
       visibility
     });
     setCommunityGroups((current) => [group, ...current.filter((item) => item.groupId !== group.groupId)]);
+    try {
+      const conversationResponse = await createMessagingConversation(apiBase, authSession.accessToken, {
+        metadata: {
+          externalId: group.groupId,
+          source: "cop.community"
+        },
+        title: group.name,
+        type: "group"
+      });
+      if (conversationResponse.conversation) {
+        setMessagingConversations((current) => [
+          conversationResponse.conversation as MessagingConversationSummary,
+          ...current.filter((item) => item.conversationId !== conversationResponse.conversation?.conversationId)
+        ]);
+        setMessagingConversationsError(conversationResponse.status === "online" ? null : conversationResponse.warnings[0] ?? "Konverzace byla založena s omezením.");
+      } else {
+        setMessagingConversationsError(conversationResponse.warnings[0] ?? "Konverzaci se nepodařilo založit.");
+      }
+    } catch (error) {
+      setMessagingConversationsError(error instanceof Error ? error.message : "Konverzaci se nepodařilo založit.");
+    }
     return group;
   }
 
@@ -2924,6 +2958,8 @@ export function App() {
           authenticated={messagingAuthenticated}
           authConfig={authConfig}
           authToken={messagingAuthenticated ? authSession.accessToken : undefined}
+          conversations={messagingConversations}
+          conversationsError={messagingConversationsError}
           communityGroups={communityGroups}
           communityGroupsError={communityGroupsError}
           error={messagingError}

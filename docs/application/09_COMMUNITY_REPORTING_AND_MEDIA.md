@@ -87,7 +87,7 @@ Kategorie:
 - `other`
 
 Primární upload přílohy neprobíhá přes API proces. COP API vytvoří presigned `PUT` URL a klient nahraje soubor přímo do SeaweedFS/S3.
-Protože veřejný web běží přes HTTPS a pilotní SeaweedFS je zatím interní HTTP endpoint, COP umí i serverový fallback `POST /attachments/{attachmentId}/upload`, který přijme base64 obsah a uloží objekt do SeaweedFS server-side. Tento fallback je limitovaný `COP_MEDIA_MAX_ATTACHMENT_BYTES`.
+Protože veřejný web běží přes HTTPS a pilotní SeaweedFS je zatím interní HTTP endpoint, COP umí i serverový fallback `POST /attachments/{attachmentId}/upload`, který přijme binární tělo požadavku (`image/*`, `video/*`, `application/pdf`, `application/octet-stream`) a uloží objekt do SeaweedFS server-side. Starší base64 JSON fallback zůstává podporovaný jen kvůli kompatibilitě a malým přílohám; pro video se nepoužívá. Tento fallback je limitovaný `COP_MEDIA_MAX_ATTACHMENT_BYTES` a `COP_API_BODY_LIMIT_BYTES`.
 
 Podporované přílohy v první verzi:
 
@@ -171,7 +171,8 @@ COP_MEDIA_S3_BUCKET=cop-community-media
 COP_MEDIA_S3_ACCESS_KEY_ID=...
 COP_MEDIA_S3_SECRET_ACCESS_KEY=...
 COP_MEDIA_UPLOAD_EXPIRES_SECONDS=900
-COP_MEDIA_MAX_ATTACHMENT_BYTES=26214400
+COP_MEDIA_MAX_ATTACHMENT_BYTES=536870912
+COP_API_BODY_LIMIT_BYTES=536870912
 ```
 
 Pro produkci doporučuji samostatný bucket `cop-community-media` a samostatné S3 credentials jen pro COP.

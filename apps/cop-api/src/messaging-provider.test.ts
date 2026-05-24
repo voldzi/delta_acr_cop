@@ -395,4 +395,103 @@ describe("CsmMessagingProvider", () => {
     });
     expect(JSON.stringify(response.json())).not.toContain("provider-token");
   });
+
+  it("proxies conversation metadata server-side without plaintext message fields", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "x-csm-user-id": "lab",
+        "x-csm-user-role": "lab"
+      });
+      const url = String(input);
+      if (url.endsWith("/api/v1/conversations") && init?.method === "POST") {
+        expect(init.body).toBe(JSON.stringify({
+          metadata: {
+            externalId: "community-group-1",
+            source: "cop.community"
+          },
+          title: "Povodně Vrbno",
+          type: "group"
+        }));
+        return new Response(JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          conversation: {
+            conversationId: "conv_1",
+            encrypted: true,
+            e2eeRequired: true,
+            matrix: {
+              roomId: null,
+              state: "pending_matrix_integration"
+            },
+            memberCount: 1,
+            status: "metadata_ready",
+            title: "Povodně Vrbno",
+            type: "group"
+          },
+          providerId: "csm.messaging"
+        }), { status: 201 });
+      }
+      return new Response(JSON.stringify({
+        contractVersion: "csm-messaging-provider-v1",
+        conversations: [],
+        count: 0,
+        providerId: "csm.messaging"
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      }),
+      now: () => new Date("2026-05-22T12:00:00Z")
+    });
+
+    const listResponse = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "GET",
+      url: "/api/v1/messaging/conversations"
+    });
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      payload: {
+        metadata: {
+          externalId: "community-group-1",
+          source: "cop.community"
+        },
+        title: "Povodně Vrbno",
+        type: "group"
+      },
+      url: "/api/v1/messaging/conversations"
+    });
+    const rejectedResponse = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      payload: {
+        message: "plaintext must not pass COP",
+        title: "Forbidden",
+        type: "group"
+      },
+      url: "/api/v1/messaging/conversations"
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(createResponse.statusCode).toBe(201);
+    expect(createResponse.json()).toMatchObject({
+      conversation: {
+        conversationId: "conv_1",
+        title: "Povodně Vrbno"
+      },
+      status: "online"
+    });
+    expect(rejectedResponse.statusCode).toBe(400);
+    expect(JSON.stringify(createResponse.json())).not.toContain("provider-token");
+    await app.close();
+  });
 });

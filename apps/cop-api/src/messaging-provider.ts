@@ -6,6 +6,7 @@ export interface MessagingProviderConfig {
   baseUrl: string;
   cacheTtlMs: number;
   enabled: boolean;
+  matrixHomeserverPublicUrl?: string;
   publicUrl?: string;
   timeoutMs: number;
   token?: string;
@@ -45,10 +46,73 @@ export interface MessagingMatrixBootstrap {
   warnings: string[];
 }
 
+export interface MessagingConversationMember {
+  displayName?: string;
+  role?: string;
+  userId: string;
+}
+
+export interface MessagingMapLink {
+  bbox?: number[];
+  label?: string;
+  layerId?: string;
+  targetId: string;
+}
+
+export interface MessagingConversationSummary {
+  conversationId: string;
+  createdAt?: string;
+  disclaimer?: string;
+  e2eeRequired?: boolean;
+  encrypted?: boolean;
+  mapLinkCount?: number;
+  matrix?: {
+    homeserverBaseUrl?: string;
+    roomId?: string | null;
+    serverName?: string;
+    state?: string;
+  };
+  memberCount?: number;
+  members?: MessagingConversationMember[];
+  status?: string;
+  title: string;
+  type: "direct" | "group";
+  updatedAt?: string;
+}
+
+export interface MessagingConversationList {
+  contractVersion: "cop-messaging-conversations-v1";
+  conversations: MessagingConversationSummary[];
+  count: number;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: MessagingIntegrationRuntimeStatus;
+  warnings: string[];
+}
+
+export interface MessagingConversationCreateRequest {
+  mapLinks?: MessagingMapLink[];
+  members?: MessagingConversationMember[];
+  metadata?: Record<string, string | number | boolean | null | Array<string | number | boolean | null>>;
+  title: string;
+  type?: "direct" | "group";
+}
+
+export interface MessagingConversationCreateResponse {
+  contractVersion: "cop-messaging-conversations-v1";
+  conversation?: MessagingConversationSummary;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: MessagingIntegrationRuntimeStatus;
+  warnings: string[];
+}
+
 export interface MessagingProvider {
   readonly config: MessagingProviderConfig;
   fetchStatus(requestNow: Date): Promise<MessagingProviderStatus>;
   fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date, deviceId?: string): Promise<MessagingMatrixBootstrap>;
+  fetchConversations(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingConversationList>;
+  createConversation(actor: AuthenticatedActor, requestNow: Date, input: MessagingConversationCreateRequest): Promise<MessagingConversationCreateResponse>;
 }
 
 interface CsmMessagingCapabilities {
@@ -81,6 +145,19 @@ interface CsmMessagingMatrixTokenResponse {
   warnings?: string[];
 }
 
+interface CsmMessagingConversationListResponse {
+  conversations?: unknown[];
+  count?: number;
+  contractVersion?: string;
+  providerId?: string;
+}
+
+interface CsmMessagingConversationCreateProviderResponse {
+  contractVersion?: string;
+  conversation?: unknown;
+  providerId?: string;
+}
+
 const defaultConfig: MessagingProviderConfig = {
   baseUrl: "http://docker.home.cz:4050",
   cacheTtlMs: 10_000,
@@ -89,10 +166,13 @@ const defaultConfig: MessagingProviderConfig = {
 };
 
 export function createMessagingProviderFromEnv(env: Record<string, string | undefined> = process.env): MessagingProvider {
+  const matrixHomeserverPublicUrl = optionalTrimmedString(env.COP_CSM_MESSAGING_MATRIX_PUBLIC_URL)
+    ?? optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL);
   return new CsmMessagingProvider({
     baseUrl: trimTrailingSlash(env.COP_CSM_MESSAGING_BASE_URL ?? defaultConfig.baseUrl),
     cacheTtlMs: readInteger(env.COP_CSM_MESSAGING_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 300000),
     enabled: readBoolean(env.COP_CSM_MESSAGING_ENABLED, defaultConfig.enabled),
+    ...(matrixHomeserverPublicUrl ? { matrixHomeserverPublicUrl } : {}),
     ...(optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL) ? { publicUrl: optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL) } : {}),
     timeoutMs: readInteger(env.COP_CSM_MESSAGING_TIMEOUT_MS, defaultConfig.timeoutMs, 1000, 60000),
     ...(optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) ? { token: optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) } : {})
@@ -206,6 +286,14 @@ export class CsmMessagingProvider implements MessagingProvider {
         && Boolean(tokenResponse.deviceId)
         && Boolean(tokenResponse.homeserverBaseUrl)
         && tokenResponse.e2eeRequired === true;
+      const homeserverBaseUrl = tokenResponse.homeserverBaseUrl
+        ? clientSafeHomeserverBaseUrl(tokenResponse.homeserverBaseUrl, this.config)
+        : undefined;
+      if (tokenResponse.homeserverBaseUrl && homeserverBaseUrl !== tokenResponse.homeserverBaseUrl) {
+        warnings.push("Matrix homeserver URL was rewritten to the configured public HTTPS endpoint for browser use.");
+      } else if (tokenResponse.homeserverBaseUrl?.startsWith("http://")) {
+        warnings.push("Matrix homeserver URL is plain HTTP; browser chat may be blocked from the public HTTPS COP.");
+      }
       if (!tokenAvailable) {
         warnings.push("Matrix user token is not available or is missing required E2EE bootstrap fields.");
       }
@@ -218,7 +306,7 @@ export class CsmMessagingProvider implements MessagingProvider {
         ...(tokenResponse.e2eeRequired !== undefined ? { e2eeRequired: tokenResponse.e2eeRequired } : {}),
         enabled: true,
         ...(tokenResponse.expiresAt ? { expiresAt: tokenResponse.expiresAt } : {}),
-        ...(tokenResponse.homeserverBaseUrl ? { homeserverBaseUrl: tokenResponse.homeserverBaseUrl } : {}),
+        ...(homeserverBaseUrl ? { homeserverBaseUrl } : {}),
         providerId: "csm.messaging",
         ...(tokenResponse.serverName ? { serverName: tokenResponse.serverName } : {}),
         status,
@@ -228,6 +316,83 @@ export class CsmMessagingProvider implements MessagingProvider {
       };
     } catch (error) {
       return degradedMatrixBootstrap(requestNow, this.config, errorMessage(error));
+    }
+  }
+
+  async fetchConversations(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingConversationList> {
+    if (!this.config.enabled) {
+      return disabledConversationList();
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/conversations`),
+        this.config,
+        requestNow,
+        {
+          headers: actorHeaders(actor)
+        }
+      );
+      if (!isRecord(result.body)) {
+        return degradedConversationList("Messaging conversations response is not valid JSON.");
+      }
+      const normalized = normalizeConversationListResponse(result.body);
+      const warnings = [
+        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging conversations contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging conversations provider id is ${normalized.providerId ?? "unknown"}.`])
+      ];
+      return {
+        contractVersion: "cop-messaging-conversations-v1",
+        conversations: normalized.conversations ?? [],
+        count: normalized.count ?? normalized.conversations?.length ?? 0,
+        enabled: true,
+        providerId: "csm.messaging",
+        status: result.ok ? "online" : "degraded",
+        warnings
+      };
+    } catch (error) {
+      return degradedConversationList(errorMessage(error));
+    }
+  }
+
+  async createConversation(actor: AuthenticatedActor, requestNow: Date, input: MessagingConversationCreateRequest): Promise<MessagingConversationCreateResponse> {
+    if (!this.config.enabled) {
+      return disabledConversationCreate();
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/conversations`),
+        this.config,
+        requestNow,
+        {
+          body: JSON.stringify(input),
+          headers: {
+            ...actorHeaders(actor),
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        }
+      );
+      if (!isRecord(result.body)) {
+        return degradedConversationCreate("Messaging conversation create response is not valid JSON.");
+      }
+      const normalized = normalizeConversationCreateResponse(result.body);
+      const warnings = [
+        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging conversation contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging conversation provider id is ${normalized.providerId ?? "unknown"}.`])
+      ];
+      if (!result.ok || !normalized.conversation) {
+        warnings.push(`Messaging conversation create returned HTTP ${result.status}.`);
+      }
+      return {
+        contractVersion: "cop-messaging-conversations-v1",
+        ...(normalized.conversation ? { conversation: normalized.conversation } : {}),
+        enabled: true,
+        providerId: "csm.messaging",
+        status: result.ok && normalized.conversation ? "online" : "degraded",
+        warnings
+      };
+    } catch (error) {
+      return degradedConversationCreate(errorMessage(error));
     }
   }
 }
@@ -288,11 +453,55 @@ function degradedMatrixBootstrap(_requestNow: Date, config: MessagingProviderCon
   };
 }
 
+function disabledConversationList(): MessagingConversationList {
+  return {
+    contractVersion: "cop-messaging-conversations-v1",
+    conversations: [],
+    count: 0,
+    enabled: false,
+    providerId: "csm.messaging",
+    status: "disabled",
+    warnings: ["Messaging provider is disabled."]
+  };
+}
+
+function degradedConversationList(detail: string): MessagingConversationList {
+  return {
+    contractVersion: "cop-messaging-conversations-v1",
+    conversations: [],
+    count: 0,
+    enabled: true,
+    providerId: "csm.messaging",
+    status: "degraded",
+    warnings: [detail]
+  };
+}
+
+function disabledConversationCreate(): MessagingConversationCreateResponse {
+  return {
+    contractVersion: "cop-messaging-conversations-v1",
+    enabled: false,
+    providerId: "csm.messaging",
+    status: "disabled",
+    warnings: ["Messaging provider is disabled."]
+  };
+}
+
+function degradedConversationCreate(detail: string): MessagingConversationCreateResponse {
+  return {
+    contractVersion: "cop-messaging-conversations-v1",
+    enabled: true,
+    providerId: "csm.messaging",
+    status: "degraded",
+    warnings: [detail]
+  };
+}
+
 async function fetchJsonWithStatus(
   url: URL,
   config: MessagingProviderConfig,
   requestNow: Date,
-  options: { headers?: Record<string, string>; method?: "GET" | "POST" } = {}
+  options: { body?: string; headers?: Record<string, string>; method?: "GET" | "POST" } = {}
 ): Promise<{ body: unknown; ok: boolean; status: number }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -306,6 +515,7 @@ async function fetchJsonWithStatus(
       headers.Authorization = `Bearer ${config.token}`;
     }
     const response = await fetch(url, {
+      ...(options.body ? { body: options.body } : {}),
       headers,
       method: options.method ?? "GET",
       signal: controller.signal
@@ -365,6 +575,74 @@ function normalizeMatrixTokenResponse(value: Record<string, unknown>): CsmMessag
   };
 }
 
+function normalizeConversationListResponse(value: Record<string, unknown>): CsmMessagingConversationListResponse & { conversations?: MessagingConversationSummary[] } {
+  return {
+    contractVersion: optionalString(value.contractVersion),
+    conversations: Array.isArray(value.conversations) ? value.conversations.flatMap(normalizeConversationSummary) : undefined,
+    count: typeof value.count === "number" && Number.isFinite(value.count) ? Math.max(0, Math.round(value.count)) : undefined,
+    providerId: optionalString(value.providerId)
+  };
+}
+
+function normalizeConversationCreateResponse(value: Record<string, unknown>): CsmMessagingConversationCreateProviderResponse & { conversation?: MessagingConversationSummary } {
+  return {
+    contractVersion: optionalString(value.contractVersion),
+    conversation: normalizeConversationSummary(value.conversation)[0],
+    providerId: optionalString(value.providerId)
+  };
+}
+
+function normalizeConversationSummary(value: unknown): MessagingConversationSummary[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const conversationId = optionalString(value.conversationId);
+  const title = optionalString(value.title);
+  const type = optionalString(value.type);
+  if (!conversationId || !title || (type !== "direct" && type !== "group")) {
+    return [];
+  }
+  const matrix = isRecord(value.matrix) ? {
+    ...(optionalString(value.matrix.homeserverBaseUrl) ? { homeserverBaseUrl: optionalString(value.matrix.homeserverBaseUrl) } : {}),
+    ...(optionalString(value.matrix.roomId) ? { roomId: optionalString(value.matrix.roomId) } : value.matrix.roomId === null ? { roomId: null } : {}),
+    ...(optionalString(value.matrix.serverName) ? { serverName: optionalString(value.matrix.serverName) } : {}),
+    ...(optionalString(value.matrix.state) ? { state: optionalString(value.matrix.state) } : {})
+  } : undefined;
+  const members = Array.isArray(value.members)
+    ? value.members.flatMap(normalizeConversationMember)
+    : undefined;
+  return [{
+    conversationId,
+    ...(optionalString(value.createdAt) ? { createdAt: optionalString(value.createdAt) } : {}),
+    ...(optionalString(value.disclaimer) ? { disclaimer: optionalString(value.disclaimer) } : {}),
+    ...(typeof value.e2eeRequired === "boolean" ? { e2eeRequired: value.e2eeRequired } : {}),
+    ...(typeof value.encrypted === "boolean" ? { encrypted: value.encrypted } : {}),
+    ...(typeof value.mapLinkCount === "number" ? { mapLinkCount: Math.max(0, Math.round(value.mapLinkCount)) } : {}),
+    ...(matrix ? { matrix } : {}),
+    ...(typeof value.memberCount === "number" ? { memberCount: Math.max(0, Math.round(value.memberCount)) } : {}),
+    ...(members ? { members } : {}),
+    ...(optionalString(value.status) ? { status: optionalString(value.status) } : {}),
+    title,
+    type,
+    ...(optionalString(value.updatedAt) ? { updatedAt: optionalString(value.updatedAt) } : {})
+  }];
+}
+
+function normalizeConversationMember(value: unknown): MessagingConversationMember[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const userId = optionalString(value.userId);
+  if (!userId) {
+    return [];
+  }
+  return [{
+    ...(optionalString(value.displayName) ? { displayName: optionalString(value.displayName) } : {}),
+    ...(optionalString(value.role) ? { role: optionalString(value.role) } : {}),
+    userId
+  }];
+}
+
 function healthCheckWarnings(health: CsmMessagingHealth | undefined): string[] {
   return (health?.checks ?? []).flatMap((check) => {
     if (isOperationalStatus(check.status)) {
@@ -419,6 +697,17 @@ function actorHeaders(actor: AuthenticatedActor, deviceId?: string): Record<stri
   }
 
   return headers;
+}
+
+function clientSafeHomeserverBaseUrl(providerBaseUrl: string, config: MessagingProviderConfig): string {
+  const publicBaseUrl = config.matrixHomeserverPublicUrl ?? "";
+  if (!publicBaseUrl) {
+    return providerBaseUrl;
+  }
+  if (providerBaseUrl.startsWith("http://") || providerBaseUrl.includes("docker.home.cz")) {
+    return trimTrailingSlash(publicBaseUrl);
+  }
+  return providerBaseUrl;
 }
 
 function optionalString(value: unknown): string | undefined {

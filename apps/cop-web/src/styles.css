@@ -960,6 +960,28 @@ h1 {
   line-height: 1.4;
 }
 
+.conversation-start-card {
+  align-self: center;
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  max-width: 94%;
+  padding: 12px;
+  border: 1px solid rgba(200, 240, 141, 0.32);
+  background: rgba(151, 199, 104, 0.1);
+}
+
+.conversation-start-card strong {
+  color: #eef5fb;
+  font-size: 13px;
+}
+
+.conversation-start-card span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .matrix-composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -42,7 +42,12 @@ import {
 } from "./flight-data-source.js";
 import { buildMapCatalog, type MapCatalogLayer } from "./map-catalog.js";
 import { createMediaStorageFromEnv, type MediaStorage } from "./media-storage.js";
-import { createMessagingProviderFromEnv, type MessagingProvider } from "./messaging-provider.js";
+import {
+  createMessagingProviderFromEnv,
+  type MessagingConversationCreateRequest,
+  type MessagingMapLink,
+  type MessagingProvider
+} from "./messaging-provider.js";
 import { createPlaceGeocoderFromEnv, type PlaceGeocoder } from "./place-geocoder.js";
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
@@ -192,6 +197,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   void app.register(cors, { origin: true });
   void app.register(sensible);
   void app.register(websocket);
+  app.addContentTypeParser(
+    /^(?:image\/.+|video\/.+|application\/pdf|application\/octet-stream)(?:;.*)?$/iu,
+    { bodyLimit: maxCommunityAttachmentBytes, parseAs: "buffer" },
+    (_request, body, done) => {
+      done(null, body);
+    }
+  );
   app.addHook("preHandler", requireBearerToken);
   app.addHook("onReady", async () => {
     await initializeUserProfileStore();
@@ -1045,6 +1057,35 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId);
   });
 
+  app.get("/api/v1/messaging/conversations", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+
+    return messagingProvider.fetchConversations(actor, now());
+  });
+
+  app.post("/api/v1/messaging/conversations", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+
+    const conversationRequest = normalizeMessagingConversationCreateRequest(request.body);
+    if (!conversationRequest) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Messaging conversation requires a title and may not contain plaintext message fields.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const result = await messagingProvider.createConversation(actor, now(), conversationRequest);
+    return reply.code(result.conversation ? 201 : 502).send(result);
+  });
+
   app.get("/api/v1/community/groups", async (request, reply) => {
     const actor = requireActor(request, reply);
     if (!actor) {
@@ -1447,7 +1488,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         reply,
         400,
         "VALIDATION_ERROR",
-        "Attachment upload requires base64 data matching the declared attachment size.",
+        "Attachment upload requires binary data or base64 data matching the declared attachment size.",
         correlationIdFrom(request.headers["x-correlation-id"])
       );
     }
@@ -3134,6 +3175,159 @@ function normalizeCommunityGroupMemberRequest(value: unknown): {
   };
 }
 
+const messagingPlaintextKeys = new Set([
+  "body",
+  "comment",
+  "comments",
+  "content",
+  "description",
+  "draft",
+  "lastMessage",
+  "last_message",
+  "message",
+  "messagePreview",
+  "message_preview",
+  "messages",
+  "note",
+  "notes",
+  "plaintext",
+  "summary",
+  "text",
+  "transcript"
+]);
+
+const messagingMetadataKeys = new Set([
+  "classification",
+  "csmObjectId",
+  "eventId",
+  "eventType",
+  "externalId",
+  "incidentId",
+  "objectId",
+  "priority",
+  "severity",
+  "source",
+  "tags"
+]);
+
+function normalizeMessagingConversationCreateRequest(value: unknown): MessagingConversationCreateRequest | null {
+  if (!isRecord(value) || containsMessagingPlaintextKey(value)) {
+    return null;
+  }
+  const title = optionalTrimmedString(value.title, 120);
+  if (!title) {
+    return null;
+  }
+  const mapLinks = normalizeMessagingMapLinks(value.mapLinks);
+  const members = normalizeMessagingMembers(value.members);
+  const metadata = normalizeMessagingMetadata(value.metadata);
+  return {
+    ...(mapLinks ? { mapLinks } : {}),
+    ...(members ? { members } : {}),
+    ...(metadata ? { metadata } : {}),
+    title,
+    type: value.type === "direct" ? "direct" : "group"
+  };
+}
+
+function containsMessagingPlaintextKey(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(containsMessagingPlaintextKey);
+  }
+  if (!isRecord(value)) {
+    return false;
+  }
+  return Object.entries(value).some(([key, nested]) =>
+    messagingPlaintextKeys.has(key) || messagingPlaintextKeys.has(key.toLowerCase()) || containsMessagingPlaintextKey(nested)
+  );
+}
+
+function normalizeMessagingMembers(value: unknown): MessagingConversationCreateRequest["members"] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const members = value.flatMap((item) => {
+    if (typeof item === "string") {
+      const userId = optionalTrimmedString(item, 128);
+      return userId ? [{ userId }] : [];
+    }
+    if (!isRecord(item)) {
+      return [];
+    }
+    const userId = optionalTrimmedString(item.userId ?? item.id, 128);
+    return userId
+      ? [{
+          ...(optionalTrimmedString(item.displayName, 160) ? { displayName: optionalTrimmedString(item.displayName, 160) } : {}),
+          ...(optionalTrimmedString(item.role, 32) ? { role: optionalTrimmedString(item.role, 32) } : {}),
+          userId
+        }]
+      : [];
+  });
+  return members.length ? members.slice(0, 100) : undefined;
+}
+
+function normalizeMessagingMapLinks(value: unknown): MessagingMapLink[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const links = value.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    const targetId = optionalTrimmedString(item.targetId, 160);
+    if (!targetId) {
+      return [];
+    }
+    const bbox = Array.isArray(item.bbox) && item.bbox.length === 4
+      ? item.bbox.flatMap((coordinate) => typeof coordinate === "number" && Number.isFinite(coordinate) ? [coordinate] : [])
+      : undefined;
+    return [{
+      ...(bbox?.length === 4 ? { bbox } : {}),
+      ...(optionalTrimmedString(item.label, 160) ? { label: optionalTrimmedString(item.label, 160) } : {}),
+      ...(optionalTrimmedString(item.layerId, 160) ? { layerId: optionalTrimmedString(item.layerId, 160) } : {}),
+      targetId
+    }];
+  });
+  return links.length ? links.slice(0, 25) : undefined;
+}
+
+function normalizeMessagingMetadata(value: unknown): MessagingConversationCreateRequest["metadata"] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const metadata: NonNullable<MessagingConversationCreateRequest["metadata"]> = {};
+  for (const [key, rawValue] of Object.entries(value)) {
+    if (!messagingMetadataKeys.has(key)) {
+      continue;
+    }
+    const normalizedValue = normalizeMessagingMetadataValue(rawValue);
+    if (normalizedValue !== undefined) {
+      metadata[key] = normalizedValue;
+    }
+  }
+  return Object.keys(metadata).length ? metadata : undefined;
+}
+
+function normalizeMessagingMetadataValue(value: unknown): string | number | boolean | null | Array<string | number | boolean | null> | undefined {
+  if (value === null || typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string") {
+    return optionalTrimmedString(value, 256);
+  }
+  if (Array.isArray(value)) {
+    const values = value.flatMap((item) => {
+      const normalized = normalizeMessagingMetadataValue(item);
+      return normalized !== undefined && !Array.isArray(normalized) ? [normalized] : [];
+    });
+    return values.length ? values.slice(0, 32) : undefined;
+  }
+  return undefined;
+}
+
 function normalizeCommunityAttachmentRequest(value: unknown): {
   byteSize: number;
   capturedAt?: string;
@@ -3166,6 +3360,12 @@ function normalizeCommunityAttachmentRequest(value: unknown): {
 }
 
 function normalizeCommunityAttachmentUploadBody(value: unknown, declaredByteSize: number, maxByteSize: number): { body: Buffer } | null {
+  if (Buffer.isBuffer(value)) {
+    if (value.length < 1 || value.length > maxByteSize || value.length !== declaredByteSize) {
+      return null;
+    }
+    return { body: value };
+  }
   if (!isRecord(value)) {
     return null;
   }
@@ -3672,7 +3872,8 @@ function mobileEndpoints() {
     alerts: "/api/v1/cop/alerts",
     bootstrap: "/api/v1/mobile/bootstrap",
     communityReportAttachmentComplete: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete",
-    communityReportAttachmentUpload: "/api/v1/community/reports/{reportId}/attachments",
+    communityReportAttachmentCreate: "/api/v1/community/reports/{reportId}/attachments",
+    communityReportAttachmentUpload: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload",
     communityReportDetail: "/api/v1/community/reports/{reportId}",
     communityReportSubmit: "/api/v1/community/reports/{reportId}/submit",
     communityReports: "/api/v1/community/reports",
@@ -3681,6 +3882,9 @@ function mobileEndpoints() {
     offlineSnapshot: "/api/v1/mobile/offline-snapshot",
     preferences: "/api/v1/me/preferences",
     mapCatalog: "/api/v1/map/catalog",
+    messagingBootstrap: "/api/v1/messaging/bootstrap",
+    messagingConversations: "/api/v1/messaging/conversations",
+    messagingStatus: "/api/v1/messaging/status",
     sourceHealth: "/api/v1/sources/health",
     sources: "/api/v1/sources",
     stream: "/api/v1/stream/cop/live",

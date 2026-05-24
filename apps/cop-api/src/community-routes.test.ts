@@ -488,6 +488,65 @@ describe("community report routes", () => {
 
     await app.close();
   });
+
+  it("uploads video attachments through the binary API proxy without base64 JSON", async () => {
+    process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES = "10485760";
+    const mediaStorage = new FakeMediaStorage();
+    const app = buildServer({
+      mediaStorage,
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        category: "hazard",
+        location: {
+          lat: 50.075,
+          lon: 14.438,
+          source: "manual"
+        },
+        title: "Video hlášení",
+        visibility: "community"
+      },
+      url: "/api/v1/community/reports"
+    });
+    const report = createResponse.json() as { reportId: string };
+    const body = Buffer.from("binary-video-data");
+    const attachmentResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        byteSize: body.length,
+        contentType: "video/quicktime",
+        fileName: "IMG_2741.MOV",
+        kind: "video"
+      },
+      url: `/api/v1/community/reports/${report.reportId}/attachments`
+    });
+    const attachment = (attachmentResponse.json() as { attachment: { attachmentId: string } }).attachment;
+    const uploadResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token",
+        "content-type": "video/quicktime"
+      },
+      method: "POST",
+      payload: body,
+      url: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/upload`
+    });
+
+    expect(uploadResponse.statusCode).toBe(200);
+    expect(uploadResponse.json()).toMatchObject({
+      byteSize: body.length,
+      contentType: "video/quicktime",
+      kind: "video",
+      status: "uploaded"
+    });
+    expect(mediaStorage.objects.get(`community-reports/${report.reportId}/${attachment.attachmentId}/IMG_2741.MOV`)?.toString()).toBe("binary-video-data");
+
+    await app.close();
+  });
 });
 
 class FakeMediaStorage implements MediaStorage {

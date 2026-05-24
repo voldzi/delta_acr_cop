@@ -488,6 +488,34 @@ paths:
       requestBody:
         required: true
         content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/webp:
+            schema:
+              type: string
+              format: binary
+          video/mp4:
+            schema:
+              type: string
+              format: binary
+          video/quicktime:
+            schema:
+              type: string
+              format: binary
+          application/pdf:
+            schema:
+              type: string
+              format: binary
           application/json:
             schema:
               $ref: "#/components/schemas/CommunityAttachmentProxyUploadRequest"
@@ -1304,6 +1332,53 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+  /api/v1/messaging/conversations:
+    get:
+      tags: [Messaging]
+      summary: List CSM Messaging conversation metadata for the authenticated user.
+      description: >
+        Server-side metadata bridge to CSM Messaging. It returns conversation
+        metadata only; no plaintext message content is stored or proxied by COP.
+      operationId: listMessagingConversations
+      responses:
+        "200":
+          description: Conversation metadata visible to the user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingConversationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Messaging]
+      summary: Create CSM Messaging conversation metadata.
+      description: >
+        Creates only metadata, members and optional map links. Plaintext message
+        fields are rejected; real messages go directly through Matrix SDK.
+      operationId: createMessagingConversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessagingConversationCreateRequest"
+      responses:
+        "201":
+          description: Conversation metadata created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingConversationCreateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: Upstream provider did not create conversation metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingConversationCreateResponse"
   /health/live:
     get:
       tags: [Health]
@@ -4105,6 +4180,151 @@ components:
           type: array
           items:
             type: string
+    MessagingConversationList:
+      type: object
+      required: [contractVersion, conversations, count, enabled, providerId, status, warnings]
+      properties:
+        contractVersion:
+          type: string
+          enum: [cop-messaging-conversations-v1]
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessagingConversation"
+        count:
+          type: integer
+          minimum: 0
+        enabled:
+          type: boolean
+        providerId:
+          type: string
+          enum: [csm.messaging]
+        status:
+          type: string
+          enum: [online, degraded, disabled]
+        warnings:
+          type: array
+          items:
+            type: string
+    MessagingConversationCreateRequest:
+      type: object
+      required: [title]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        type:
+          type: string
+          enum: [direct, group]
+          default: group
+        members:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/MessagingConversationMember"
+        mapLinks:
+          type: array
+          maxItems: 25
+          items:
+            $ref: "#/components/schemas/MessagingMapLink"
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Safe metadata only. Plaintext message fields are rejected by COP and CSM Messaging.
+    MessagingConversationCreateResponse:
+      type: object
+      required: [contractVersion, enabled, providerId, status, warnings]
+      properties:
+        contractVersion:
+          type: string
+          enum: [cop-messaging-conversations-v1]
+        conversation:
+          $ref: "#/components/schemas/MessagingConversation"
+        enabled:
+          type: boolean
+        providerId:
+          type: string
+          enum: [csm.messaging]
+        status:
+          type: string
+          enum: [online, degraded, disabled]
+        warnings:
+          type: array
+          items:
+            type: string
+    MessagingConversation:
+      type: object
+      required: [conversationId, title, type]
+      properties:
+        conversationId:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+          enum: [direct, group]
+        status:
+          type: string
+        encrypted:
+          type: boolean
+        e2eeRequired:
+          type: boolean
+        memberCount:
+          type: integer
+          minimum: 0
+        mapLinkCount:
+          type: integer
+          minimum: 0
+        matrix:
+          type: object
+          properties:
+            roomId:
+              type:
+                - string
+                - "null"
+            state:
+              type: string
+            homeserverBaseUrl:
+              type: string
+              format: uri
+            serverName:
+              type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        disclaimer:
+          type: string
+    MessagingConversationMember:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+        displayName:
+          type: string
+        role:
+          type: string
+    MessagingMapLink:
+      type: object
+      required: [targetId]
+      properties:
+        targetId:
+          type: string
+        layerId:
+          type: string
+        label:
+          type: string
+        bbox:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: number
     DependencyHealth:
       type: object
       required: [status, dependencies]

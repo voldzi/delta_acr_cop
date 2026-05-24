@@ -1,11 +1,19 @@
 import type { AuthConfig, AuthSession } from "../auth";
-import type { CommunityGroup, CommunityGroupVisibility, MessagingBootstrapResponse, MessagingStatusResponse } from "../cop-data";
+import type {
+  CommunityGroup,
+  CommunityGroupVisibility,
+  MessagingBootstrapResponse,
+  MessagingConversationSummary,
+  MessagingStatusResponse
+} from "../cop-data";
 
 export interface MessagingPanelProps {
   apiBase: string;
   authenticated: boolean;
   authConfig: AuthConfig;
   authToken?: string;
+  conversations: MessagingConversationSummary[];
+  conversationsError: string | null;
   communityGroups: CommunityGroup[];
   communityGroupsError: string | null;
   error: string | null;
@@ -38,6 +46,7 @@ export interface MatrixTimelineMessage {
 
 export interface MatrixMessagingSession {
   bootstrap: MessagingBootstrapResponse;
+  createGroupRoom(name: string, inviteUserIds?: string[]): Promise<string>;
   getRooms(): MatrixRoomSummary[];
   getTimeline(roomId: string): MatrixTimelineMessage[];
   sendMessage(roomId: string, body: string): Promise<void>;

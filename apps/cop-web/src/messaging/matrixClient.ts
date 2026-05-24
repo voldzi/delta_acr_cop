@@ -2,6 +2,7 @@ import type { MessagingBootstrapResponse } from "../cop-data";
 import type { MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage } from "./types";
 
 interface MatrixClientLike {
+  createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;
   getRooms?: () => unknown[];
   getUserId?: () => string | null;
   initRustCrypto?: () => Promise<void>;
@@ -67,6 +68,30 @@ export async function createMatrixMessagingSession(
 
   return {
     bootstrap,
+    createGroupRoom: async (name, inviteUserIds = []) => {
+      if (typeof client.createRoom !== "function") {
+        throw new Error("Matrix SDK neumí založit konverzaci.");
+      }
+      const response = await client.createRoom({
+        invite: inviteUserIds,
+        initial_state: bootstrap.e2eeRequired ? [{
+          content: {
+            algorithm: "m.megolm.v1.aes-sha2"
+          },
+          state_key: "",
+          type: "m.room.encryption"
+        }] : [],
+        name,
+        preset: inviteUserIds.length > 0 ? "private_chat" : "trusted_private_chat",
+        visibility: "private"
+      });
+      callbacks.onRoomsChanged?.(readRooms(client));
+      const roomId = response.room_id ?? response.roomId;
+      if (!roomId) {
+        throw new Error("Matrix nevrátil identifikátor konverzace.");
+      }
+      return roomId;
+    },
     getRooms: () => readRooms(client),
     getTimeline: (roomId) => readTimeline(client, roomId),
     sendMessage: async (roomId, body) => {

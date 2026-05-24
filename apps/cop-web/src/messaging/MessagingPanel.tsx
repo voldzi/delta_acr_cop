@@ -14,6 +14,8 @@ export function MessagingPanel({
   authenticated,
   authConfig,
   authToken,
+  conversations,
+  conversationsError,
   communityGroups,
   communityGroupsError,
   error,
@@ -60,6 +62,7 @@ export function MessagingPanel({
   const e2eeRequired = status?.features?.endToEndEncryptionRequired === true;
   const matrixBootstrapReady = status?.features?.matrixTokenBootstrap === true;
   const selectedGroup = communityGroups.find((group) => group.groupId === selectedGroupId) ?? communityGroups[0] ?? null;
+  const selectedConversation = conversations.find((conversation) => conversation.conversationId === selectedRoomId) ?? null;
 
   async function createGroup() {
     const name = newGroupName.trim();
@@ -73,6 +76,17 @@ export function MessagingPanel({
       const group = await onCreateGroup(name, newGroupVisibility);
       setSelectedGroupId(group.groupId);
       setNewGroupName("");
+      if (matrixSession) {
+        const roomId = await matrixSession.createGroupRoom(group.name);
+        const nextRooms = ensureRoomSummary(matrixSession.getRooms(), {
+          encrypted: true,
+          name: group.name,
+          roomId,
+          unreadCount: 0
+        });
+        setRooms(nextRooms);
+        setSelectedRoomId(roomId);
+      }
     } catch (caught) {
       setGroupActionError(caught instanceof Error ? caught.message : "Skupinu se nepodařilo vytvořit.");
     } finally {
@@ -162,6 +176,27 @@ export function MessagingPanel({
     setTimeline(matrixSession.getTimeline(selectedRoomId));
   }
 
+  async function startRoomForConversation(conversationId: string) {
+    const conversation = conversations.find((item) => item.conversationId === conversationId);
+    if (!conversation || !matrixSession) {
+      return;
+    }
+    setBootstrapError(null);
+    try {
+      const roomId = await matrixSession.createGroupRoom(conversation.title);
+      const nextRooms = ensureRoomSummary(matrixSession.getRooms(), {
+        encrypted: true,
+        name: conversation.title,
+        roomId,
+        unreadCount: 0
+      });
+      setRooms(nextRooms);
+      setSelectedRoomId(roomId);
+    } catch (caught) {
+      setBootstrapError(caught instanceof Error ? caught.message : "Chatovou místnost se nepodařilo založit.");
+    }
+  }
+
   return (
     <section className={`messaging-panel ${pinned ? "pinned" : ""}`} aria-label="Konverzace">
       <div className="messaging-panel-header">
@@ -185,12 +220,13 @@ export function MessagingPanel({
       <div className="chat-status-strip">
         <span className={messagingStatusTone(providerStatus)}>{messagingStatusLabel(providerStatus, loading)}</span>
         <span>{authenticated ? operatorDisplayName(session, authConfig) : "bez účtu"}</span>
-        <span>{matrixSession ? `sync ${syncState}` : matrixBootstrapReady ? "chat připraven" : "čeká na chat"}</span>
-        {e2eeRequired ? <span>E2EE</span> : null}
+        <span>{matrixSession ? matrixSyncLabel(syncState) : matrixBootstrapReady ? "zprávy připravené" : "čeká na zprávy"}</span>
+        {e2eeRequired ? <span>šifrováno</span> : null}
       </div>
 
-      {error ? <div className="error-banner">Messaging: {error}</div> : null}
-      {bootstrapError ? <div className="error-banner">Matrix: {bootstrapError}</div> : null}
+      {error ? <div className="error-banner">Zprávy: {error}</div> : null}
+      {conversationsError ? <div className="error-banner">Konverzace: {conversationsError}</div> : null}
+      {bootstrapError ? <div className="error-banner">Chat: {bootstrapError}</div> : null}
 
       {!authenticated ? (
         <div className="messaging-empty-state">
@@ -203,18 +239,22 @@ export function MessagingPanel({
         </div>
       ) : matrixSession ? (
         <MatrixChatShell
+          conversations={conversations}
           composerText={composerText}
           rooms={rooms}
+          selectedConversation={selectedConversation}
           selectedRoomId={selectedRoomId}
           timeline={timeline}
           onComposerChange={setComposerText}
+          onConversationSelect={(conversationId) => setSelectedRoomId(conversationId)}
           onRoomSelect={setSelectedRoomId}
           onSend={() => void sendMessage()}
+          onStartRoom={(conversationId) => void startRoomForConversation(conversationId)}
         />
       ) : chatReady ? (
         <div className="messaging-empty-state">
-          <strong>Konverzace jsou připravené.</strong>
-          <p>Otevřete chat a pokračujte ve skupinách navázaných na sdílení v mapě.</p>
+          <strong>{conversations.length > 0 ? `${conversations.length} konverzací připraveno.` : "Zatím nemáte žádnou konverzaci."}</strong>
+          <p>{conversations.length > 0 ? "Otevřete chat a pokračujte ve skupinách navázaných na sdílení v mapě." : "Založte skupinu níže. Bude sloužit pro zprávy i omezení přístupu k médiím."}</p>
           <div className="messaging-security-note">
             <ShieldCheck size={15} />
             Šifrované zprávy nejdou přes COP API.
@@ -373,27 +413,49 @@ function CommunityGroupsPanel({
 }
 
 function MatrixChatShell({
+  conversations,
   composerText,
   rooms,
+  selectedConversation,
   selectedRoomId,
   timeline,
   onComposerChange,
+  onConversationSelect,
   onRoomSelect,
-  onSend
+  onSend,
+  onStartRoom
 }: {
+  conversations: MessagingPanelProps["conversations"];
   composerText: string;
   rooms: MatrixRoomSummary[];
+  selectedConversation: MessagingPanelProps["conversations"][number] | null;
   selectedRoomId: string | null;
   timeline: MatrixTimelineMessage[];
   onComposerChange: (value: string) => void;
+  onConversationSelect: (conversationId: string) => void;
   onRoomSelect: (roomId: string) => void;
   onSend: () => void;
+  onStartRoom: (conversationId: string) => void;
 }) {
   const selectedRoom = rooms.find((room) => room.roomId === selectedRoomId) ?? null;
+  const conversationOnlySelected = Boolean(selectedConversation && !selectedRoom);
+  const canSend = Boolean(selectedRoomId && selectedRoom);
   return (
     <div className="matrix-chat-shell">
       <div className="matrix-room-list" aria-label="Konverzace">
-        {rooms.length === 0 ? <div className="empty-mini">Matrix zatím nevrátil žádné konverzace.</div> : null}
+        {rooms.length === 0 && conversations.length === 0 ? <div className="empty-mini">Zatím nemáte žádnou konverzaci. Založte skupinu níže.</div> : null}
+        {conversations.map((conversation) => (
+          <button
+            aria-pressed={conversation.conversationId === selectedRoomId}
+            className={conversation.conversationId === selectedRoomId ? "active" : ""}
+            key={conversation.conversationId}
+            onClick={() => onConversationSelect(conversation.conversationId)}
+            type="button"
+          >
+            <strong>{conversation.title}</strong>
+            <small>{conversation.type === "group" ? "skupina" : "přímý chat"} · {conversation.memberCount ?? 1} členů · {conversation.matrix?.roomId ? "aktivní" : "připravit chat"}</small>
+          </button>
+        ))}
         {rooms.map((room) => (
           <button
             aria-pressed={room.roomId === selectedRoomId}
@@ -403,17 +465,26 @@ function MatrixChatShell({
             type="button"
           >
             <strong>{room.name}</strong>
-            <small>{room.encrypted ? "E2EE" : "bez E2EE"} · {room.unreadCount} nové</small>
+            <small>{room.encrypted ? "šifrované" : "stav šifrování neznámý"} · {room.unreadCount} nové</small>
           </button>
         ))}
       </div>
       <div className="matrix-room-view">
         <div className="matrix-room-header">
-          <strong>{selectedRoom?.name ?? "Vyberte konverzaci"}</strong>
-          <small>{selectedRoom?.encrypted ? "E2EE aktivní" : "E2EE stav neznámý"}</small>
+          <strong>{selectedRoom?.name ?? selectedConversation?.title ?? "Vyberte konverzaci"}</strong>
+          <small>{selectedRoom ? selectedRoom.encrypted ? "šifrováno" : "ověřuji šifrování" : selectedConversation ? "připraveno" : "čeká"}</small>
         </div>
         <div className="matrix-timeline" aria-live="polite">
-          {timeline.length === 0 ? <div className="empty-mini">Žádné zprávy v lokálně načtené timeline.</div> : null}
+          {conversationOnlySelected ? (
+            <div className="conversation-start-card">
+              <strong>{selectedConversation?.title}</strong>
+              <span>Skupina existuje pro sdílená média. Založte šifrovanou chatovou místnost a můžete začít psát.</span>
+              <button className="mini-button" onClick={() => selectedConversation ? onStartRoom(selectedConversation.conversationId) : undefined} type="button">
+                <Plus size={14} />
+                Začít chat
+              </button>
+            </div>
+          ) : timeline.length === 0 ? <div className="empty-mini">{selectedRoom ? "Zatím zde nejsou žádné zprávy." : "Vyberte nebo založte konverzaci."}</div> : null}
           {timeline.map((message) => (
             <div className={`matrix-message ${message.own ? "own" : ""}`} key={message.eventId}>
               <small>{message.sender} · {new Date(message.timestamp).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</small>
@@ -424,7 +495,7 @@ function MatrixChatShell({
         <div className="matrix-composer">
           <input
             aria-label="Text zprávy"
-            disabled={!selectedRoomId}
+            disabled={!canSend}
             onChange={(event) => onComposerChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
@@ -432,10 +503,10 @@ function MatrixChatShell({
                 onSend();
               }
             }}
-            placeholder="Napsat zprávu..."
+            placeholder={canSend ? "Napsat zprávu..." : "Nejdřív vyberte aktivní chat"}
             value={composerText}
           />
-          <button className="mini-button" disabled={!selectedRoomId || !composerText.trim()} onClick={onSend} type="button">
+          <button className="mini-button" disabled={!canSend || !composerText.trim()} onClick={onSend} type="button">
             <Send size={14} />
             Odeslat
           </button>
@@ -478,6 +549,13 @@ function createMatrixDeviceId(): string {
   return `COPWEB.${suffix}`;
 }
 
+function ensureRoomSummary(rooms: MatrixRoomSummary[], room: MatrixRoomSummary): MatrixRoomSummary[] {
+  if (rooms.some((item) => item.roomId === room.roomId)) {
+    return rooms;
+  }
+  return [room, ...rooms];
+}
+
 function isValidMatrixDeviceId(value: string | null): value is string {
   return Boolean(value && /^[A-Za-z0-9._=-]{1,64}$/u.test(value));
 }
@@ -503,6 +581,23 @@ function messagingStatusLabel(status: "degraded" | "disabled" | "online", loadin
     return "degraded";
   }
   return "vypnuto";
+}
+
+function matrixSyncLabel(state: string): string {
+  const normalized = state.toLowerCase();
+  if (normalized === "starting" || normalized === "prepared") {
+    return "připojuji";
+  }
+  if (normalized === "syncing" || normalized === "sync") {
+    return "synchronizace";
+  }
+  if (normalized === "error" || normalized === "reconnecting" || normalized === "stopped" || normalized.includes("error")) {
+    return "omezené";
+  }
+  if (normalized === "started") {
+    return "připojeno";
+  }
+  return "připojeno";
 }
 
 function operatorDisplayName(session: MessagingPanelProps["session"], authConfig: MessagingPanelProps["authConfig"]): string {

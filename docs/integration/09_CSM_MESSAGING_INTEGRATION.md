@@ -105,6 +105,19 @@ The bootstrap endpoint may return a short-lived Matrix user token to the web
 client. That token is scoped to the authenticated user. It is not a provider,
 admin or service token.
 
+Authenticated clients also read and create conversation metadata through COP:
+
+```http
+GET /api/v1/messaging/conversations
+POST /api/v1/messaging/conversations
+Authorization: Bearer <COP user access token>
+```
+
+These endpoints are metadata-only. COP rejects plaintext message fields and
+forwards only safe fields such as `title`, `type`, `members`, `mapLinks` and
+approved scalar `metadata` keys. The browser still sends actual messages only
+through Matrix SDK.
+
 After bootstrap, the browser sends and reads messages directly through
 Matrix client-server APIs using Matrix SDK and E2EE. COP must not add any
 plaintext message send/read endpoints.
@@ -115,6 +128,7 @@ plaintext message send/read endpoints.
 COP_CSM_MESSAGING_ENABLED=true
 COP_CSM_MESSAGING_BASE_URL=http://docker.home.cz:4050
 COP_CSM_MESSAGING_PUBLIC_URL=https://msg.zeleznalady.cz
+COP_CSM_MESSAGING_MATRIX_PUBLIC_URL=https://msg.zeleznalady.cz
 COP_CSM_MESSAGING_TOKEN=<same-value-as-CSM_MESSAGING_API_TOKEN>
 COP_CSM_MESSAGING_TIMEOUT_MS=3000
 COP_CSM_MESSAGING_CACHE_TTL_MS=10000
