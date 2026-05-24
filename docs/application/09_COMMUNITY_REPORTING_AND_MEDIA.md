@@ -107,7 +107,16 @@ Video přílohy mohou nést metadata `metadata.spatialVideo`:
 - `mode: "none"`: běžné 2D video, přehrání přes HTML5 `video`,
 - `mode: "side_by_side"`: stereoskopické video uložené jako jeden soubor se dvěma obrazy vedle sebe; XR režim jej v brýlích rozdělí na levé/pravé oko,
 - `mode: "over_under"`: stereoskopické video uložené jako jeden soubor s obrazy nad sebou; XR režim jej v brýlích rozdělí na levé/pravé oko,
-- `mode: "apple_mv_hevc"`: iPhone Spatial Video v MOV/MV-HEVC se ukládá jako originální soubor. Webový XR jej bez serverové konverze neumí spolehlivě rozdělit na dvě oči, proto používá 2D fallback a metadata zachovává pro budoucí konverzní pipeline nebo nativní přehrání.
+- `mode: "apple_mv_hevc"`: iPhone Spatial Video v MOV/MV-HEVC se ukládá jako originální soubor. Po dokončení uploadu COP zařadí úlohu konverze, zachová originál a vytvoří odvozené `video/mp4` side-by-side (`derivativeId: "xr-sbs"`) pro WebXR/Oculus přehrávač.
+
+Konverze Apple Spatial MOV běží asynchronně v API kontejneru přes `ffmpeg`. Metadata přílohy obsahují `metadata.spatialVideo.xrDerivative.status`:
+
+- `queued`: úloha čeká ve frontě;
+- `processing`: ffmpeg připravuje side-by-side derivát;
+- `ready`: `derivatives[].contentUrl` je dostupné oprávněným uživatelům a XR režim jej použije automaticky;
+- `failed`: originál zůstává uložený a web jej přehraje jako 2D, detail zobrazí chybu konverze.
+
+Konverzní objekt se ukládá do stejného SeaweedFS/S3 bucketu pod klíč `community-reports/{reportId}/{attachmentId}/derivatives/xr-sbs.mp4`. Přístup k derivátu se řídí stejným `metadata.access` jako originální soubor; API vrací derivátové `contentUrl` pouze oprávněnému uživateli.
 
 Po úspěšném uploadu klient zavolá `complete`. Do budoucna je vhodné doplnit serverovou kontrolu objektu přes `HEAD`, AV/obsahovou kontrolu a generování náhledů.
 Po dokončení má příloha `contentUrl`; detail komunitního prvku může zobrazit obrázek, přehrát video přes HTML5 `video` a otevřít PDF. Webový klient zobrazuje média v galerii na celou obrazovku. Galerie sdružuje média reportů ve stejné skupině, aby se uživatel dostal k informacím přes mapu i přes konverzaci. Pokud médium není pro aktuálního uživatele dostupné, detail zůstane viditelný, ale galerie zobrazí chráněný stav bez URL objektu.
@@ -193,6 +202,10 @@ COP_MEDIA_S3_SECRET_ACCESS_KEY=...
 COP_MEDIA_UPLOAD_EXPIRES_SECONDS=900
 COP_MEDIA_MAX_ATTACHMENT_BYTES=536870912
 COP_API_BODY_LIMIT_BYTES=536870912
+COP_MEDIA_SPATIAL_CONVERSION_ENABLED=true
+COP_MEDIA_SPATIAL_FFMPEG_PATH=ffmpeg
+COP_MEDIA_SPATIAL_CONVERSION_MAX_CONCURRENT=1
+COP_MEDIA_SPATIAL_CONVERSION_TIMEOUT_MS=600000
 ```
 
 Pro produkci doporučuji samostatný bucket `cop-community-media` a samostatné S3 credentials jen pro COP.

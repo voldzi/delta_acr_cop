@@ -1,7 +1,7 @@
 import React from "react";
 import { Lock, LogIn, MessageCircle, Pin, PinOff, Plus, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
-import { createMatrixMessagingSession } from "./matrixClient";
+import { clearMatrixMessagingDeviceState, createMatrixMessagingSession } from "./matrixClient";
 import type { MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage, MessagingPanelProps } from "./types";
 
 type Tone = "ok" | "warn" | "neutral";
@@ -24,11 +24,13 @@ export function MessagingPanel({
   session,
   status,
   onAddGroupMember,
+  onBindMatrixRoom,
   onClose,
   onCreateGroup,
   onLogin,
   onPinnedChange,
-  onRefresh
+  onRefresh,
+  onResolveMatrixIdentities
 }: MessagingPanelProps) {
   const [bootstrapError, setBootstrapError] = React.useState<string | null>(null);
   const [bootstrapLoading, setBootstrapLoading] = React.useState(false);
@@ -50,6 +52,33 @@ export function MessagingPanel({
   }, [matrixSession]);
 
   React.useEffect(() => {
+    if (authenticated) {
+      return;
+    }
+    matrixSession?.stop();
+    setMatrixSession(null);
+    setRooms([]);
+    setSelectedRoomId(null);
+    setTimeline([]);
+    void clearMatrixMessagingDeviceState();
+  }, [authenticated]);
+
+  React.useEffect(() => {
+    if (!authenticated || !authToken || !matrixSession?.bootstrap.expiresAt) {
+      return undefined;
+    }
+    const expiresAt = Date.parse(matrixSession.bootstrap.expiresAt);
+    if (!Number.isFinite(expiresAt)) {
+      return undefined;
+    }
+    const delayMs = Math.max(30_000, expiresAt - Date.now() - 60_000);
+    const timer = window.setTimeout(() => {
+      void renewMatrixSession();
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [authenticated, authToken, matrixSession?.bootstrap.expiresAt]);
+
+  React.useEffect(() => {
     if (!matrixSession || !selectedRoomId) {
       setTimeline([]);
       return;
@@ -62,7 +91,7 @@ export function MessagingPanel({
   const e2eeRequired = status?.features?.endToEndEncryptionRequired === true;
   const matrixBootstrapReady = status?.features?.matrixTokenBootstrap === true;
   const selectedGroup = communityGroups.find((group) => group.groupId === selectedGroupId) ?? communityGroups[0] ?? null;
-  const selectedConversation = conversations.find((conversation) => conversation.conversationId === selectedRoomId) ?? null;
+  const selectedConversation = conversations.find((conversation) => conversation.conversationId === selectedRoomId || conversation.matrix?.roomId === selectedRoomId) ?? null;
 
   async function createGroup() {
     const name = newGroupName.trim();
@@ -73,11 +102,16 @@ export function MessagingPanel({
     setGroupActionLoading(true);
     setGroupActionError(null);
     try {
-      const group = await onCreateGroup(name, newGroupVisibility);
+      const { conversation, group } = await onCreateGroup(name, newGroupVisibility);
       setSelectedGroupId(group.groupId);
       setNewGroupName("");
-      if (matrixSession) {
-        const roomId = await matrixSession.createGroupRoom(group.name);
+      if (matrixSession && conversation) {
+        const inviteUserIds = await resolveConversationMatrixUsers(conversation);
+        const roomId = await matrixSession.createGroupRoom(group.name, inviteUserIds);
+        const binding = await onBindMatrixRoom(conversation.conversationId, roomId, true);
+        if (binding.conversation) {
+          onRefresh();
+        }
         const nextRooms = ensureRoomSummary(matrixSession.getRooms(), {
           encrypted: true,
           name: group.name,
@@ -146,24 +180,44 @@ export function MessagingPanel({
         setBootstrapError(bootstrap.detail ?? bootstrap.warnings[0] ?? "Matrix token bootstrap není připravený.");
         return;
       }
-      matrixSession?.stop();
-      const nextSession = await createMatrixMessagingSession(bootstrap, {
-        onRoomsChanged: (nextRooms) => {
-          setRooms(nextRooms);
-          setSelectedRoomId((current) => current ?? nextRooms[0]?.roomId ?? null);
-        },
-        onSyncState: setSyncState
-      });
-      const nextRooms = nextSession.getRooms();
-      setMatrixSession(nextSession);
-      setRooms(nextRooms);
-      setSelectedRoomId(nextRooms[0]?.roomId ?? null);
-      setSyncState("starting");
+      await startMatrixSession(bootstrap);
     } catch (caught) {
       setBootstrapError(caught instanceof Error ? caught.message : "Matrix klient se nepodařilo spustit.");
     } finally {
       setBootstrapLoading(false);
     }
+  }
+
+  async function renewMatrixSession() {
+    if (!authToken || !authenticated || !matrixSession) {
+      return;
+    }
+    try {
+      const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, matrixSession.bootstrap.deviceId ?? getOrCreateMatrixDeviceId());
+      if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
+        setBootstrapError(bootstrap.detail ?? bootstrap.warnings[0] ?? "Matrix token se nepodařilo obnovit.");
+        return;
+      }
+      await startMatrixSession(bootstrap, selectedRoomId);
+    } catch (caught) {
+      setBootstrapError(caught instanceof Error ? caught.message : "Matrix session se nepodařilo obnovit.");
+    }
+  }
+
+  async function startMatrixSession(bootstrap: Awaited<ReturnType<typeof fetchMessagingBootstrap>>, preferredRoomId?: string | null) {
+    matrixSession?.stop();
+    const nextSession = await createMatrixMessagingSession(bootstrap, {
+      onRoomsChanged: (nextRooms) => {
+        setRooms(nextRooms);
+        setSelectedRoomId((current) => current ?? preferredRoomId ?? nextRooms[0]?.roomId ?? null);
+      },
+      onSyncState: setSyncState
+    });
+    const nextRooms = nextSession.getRooms();
+    setMatrixSession(nextSession);
+    setRooms(nextRooms);
+    setSelectedRoomId(preferredRoomId && nextRooms.some((room) => room.roomId === preferredRoomId) ? preferredRoomId : nextRooms[0]?.roomId ?? null);
+    setSyncState("starting");
   }
 
   async function sendMessage() {
@@ -183,7 +237,12 @@ export function MessagingPanel({
     }
     setBootstrapError(null);
     try {
-      const roomId = await matrixSession.createGroupRoom(conversation.title);
+      const inviteUserIds = await resolveConversationMatrixUsers(conversation);
+      const roomId = await matrixSession.createGroupRoom(conversation.title, inviteUserIds);
+      const binding = await onBindMatrixRoom(conversation.conversationId, roomId, true);
+      if (binding.conversation) {
+        onRefresh();
+      }
       const nextRooms = ensureRoomSummary(matrixSession.getRooms(), {
         encrypted: true,
         name: conversation.title,
@@ -195,6 +254,20 @@ export function MessagingPanel({
     } catch (caught) {
       setBootstrapError(caught instanceof Error ? caught.message : "Chatovou místnost se nepodařilo založit.");
     }
+  }
+
+  async function resolveConversationMatrixUsers(conversation: MessagingPanelProps["conversations"][number]): Promise<string[]> {
+    const userIds = (conversation.members ?? [])
+      .map((member) => member.userId)
+      .filter((userId) => userId && userId !== session.profile?.subjectId);
+    if (userIds.length === 0) {
+      return [];
+    }
+    const result = await onResolveMatrixIdentities(userIds);
+    if (result.status !== "online") {
+      setBootstrapError(result.warnings[0] ?? "Některé členy se nepodařilo pozvat do Matrix místnosti.");
+    }
+    return Array.from(new Set(result.identities.map((identity) => identity.matrixUserId).filter(Boolean)));
   }
 
   return (
@@ -246,7 +319,10 @@ export function MessagingPanel({
           selectedRoomId={selectedRoomId}
           timeline={timeline}
           onComposerChange={setComposerText}
-          onConversationSelect={(conversationId) => setSelectedRoomId(conversationId)}
+          onConversationSelect={(conversationId) => {
+            const conversation = conversations.find((item) => item.conversationId === conversationId);
+            setSelectedRoomId(conversation?.matrix?.roomId ?? conversationId);
+          }}
           onRoomSelect={setSelectedRoomId}
           onSend={() => void sendMessage()}
           onStartRoom={(conversationId) => void startRoomForConversation(conversationId)}
@@ -446,8 +522,8 @@ function MatrixChatShell({
         {rooms.length === 0 && conversations.length === 0 ? <div className="empty-mini">Zatím nemáte žádnou konverzaci. Založte skupinu níže.</div> : null}
         {conversations.map((conversation) => (
           <button
-            aria-pressed={conversation.conversationId === selectedRoomId}
-            className={conversation.conversationId === selectedRoomId ? "active" : ""}
+            aria-pressed={conversation.conversationId === selectedRoomId || conversation.matrix?.roomId === selectedRoomId}
+            className={conversation.conversationId === selectedRoomId || conversation.matrix?.roomId === selectedRoomId ? "active" : ""}
             key={conversation.conversationId}
             onClick={() => onConversationSelect(conversation.conversationId)}
             type="button"

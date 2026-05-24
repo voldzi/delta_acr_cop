@@ -3,6 +3,8 @@ import type {
   CommunityGroup,
   CommunityGroupVisibility,
   MessagingBootstrapResponse,
+  MessagingMatrixIdentityResolutionResponse,
+  MessagingMatrixRoomBindingResponse,
   MessagingConversationSummary,
   MessagingStatusResponse
 } from "../cop-data";
@@ -22,11 +24,13 @@ export interface MessagingPanelProps {
   session: AuthSession;
   status: MessagingStatusResponse | null;
   onAddGroupMember: (groupId: string, subjectId: string, displayName?: string) => Promise<CommunityGroup>;
+  onBindMatrixRoom: (conversationId: string, roomId: string, encrypted: boolean) => Promise<MessagingMatrixRoomBindingResponse>;
   onClose: () => void;
-  onCreateGroup: (name: string, visibility: CommunityGroupVisibility) => Promise<CommunityGroup>;
+  onCreateGroup: (name: string, visibility: CommunityGroupVisibility) => Promise<{ conversation?: MessagingConversationSummary; group: CommunityGroup }>;
   onLogin: () => void;
   onPinnedChange: (pinned: boolean) => void;
   onRefresh: () => void;
+  onResolveMatrixIdentities: (userIds: string[]) => Promise<MessagingMatrixIdentityResolutionResponse>;
 }
 
 export interface MatrixRoomSummary {

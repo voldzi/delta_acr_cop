@@ -20,7 +20,7 @@ FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV COP_API_PORT=4310
-RUN corepack enable
+RUN apk add --no-cache ffmpeg && corepack enable
 COPY --from=build /app ./
 EXPOSE 4310
 CMD ["pnpm", "--filter", "@cop/cop-api", "start"]

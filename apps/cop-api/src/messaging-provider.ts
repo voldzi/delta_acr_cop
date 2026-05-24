@@ -107,12 +107,43 @@ export interface MessagingConversationCreateResponse {
   warnings: string[];
 }
 
+export interface MessagingMatrixIdentity {
+  displayName?: string;
+  matrixUserId: string;
+  userId: string;
+}
+
+export interface MessagingMatrixIdentityResolution {
+  contractVersion: "cop-messaging-identities-v1";
+  enabled: boolean;
+  identities: MessagingMatrixIdentity[];
+  providerId: "csm.messaging";
+  status: MessagingIntegrationRuntimeStatus;
+  warnings: string[];
+}
+
+export interface MessagingMatrixRoomBindingRequest {
+  encrypted?: boolean;
+  roomId: string;
+}
+
+export interface MessagingMatrixRoomBindingResponse {
+  contractVersion: "cop-messaging-room-binding-v1";
+  conversation?: MessagingConversationSummary;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: MessagingIntegrationRuntimeStatus;
+  warnings: string[];
+}
+
 export interface MessagingProvider {
   readonly config: MessagingProviderConfig;
   fetchStatus(requestNow: Date): Promise<MessagingProviderStatus>;
   fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date, deviceId?: string): Promise<MessagingMatrixBootstrap>;
   fetchConversations(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingConversationList>;
   createConversation(actor: AuthenticatedActor, requestNow: Date, input: MessagingConversationCreateRequest): Promise<MessagingConversationCreateResponse>;
+  bindMatrixRoom(actor: AuthenticatedActor, requestNow: Date, conversationId: string, input: MessagingMatrixRoomBindingRequest): Promise<MessagingMatrixRoomBindingResponse>;
+  resolveMatrixIdentities(actor: AuthenticatedActor, requestNow: Date, userIds: string[]): Promise<MessagingMatrixIdentityResolution>;
 }
 
 interface CsmMessagingCapabilities {
@@ -153,6 +184,19 @@ interface CsmMessagingConversationListResponse {
 }
 
 interface CsmMessagingConversationCreateProviderResponse {
+  contractVersion?: string;
+  conversation?: unknown;
+  providerId?: string;
+}
+
+interface CsmMessagingIdentityResolutionProviderResponse {
+  contractVersion?: string;
+  identities?: unknown[];
+  items?: unknown[];
+  providerId?: string;
+}
+
+interface CsmMessagingRoomBindingProviderResponse {
   contractVersion?: string;
   conversation?: unknown;
   providerId?: string;
@@ -265,7 +309,11 @@ export class CsmMessagingProvider implements MessagingProvider {
         this.config,
         requestNow,
         {
-          headers: actorHeaders(actor, deviceId),
+          ...(deviceId ? { body: JSON.stringify({ deviceId }) } : {}),
+          headers: {
+            ...actorHeaders(actor, deviceId),
+            ...(deviceId ? { "Content-Type": "application/json" } : {})
+          },
           method: "POST"
         }
       );
@@ -395,6 +443,89 @@ export class CsmMessagingProvider implements MessagingProvider {
       return degradedConversationCreate(errorMessage(error));
     }
   }
+
+  async resolveMatrixIdentities(actor: AuthenticatedActor, requestNow: Date, userIds: string[]): Promise<MessagingMatrixIdentityResolution> {
+    if (!this.config.enabled) {
+      return disabledIdentityResolution();
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/matrix/identities/resolve`),
+        this.config,
+        requestNow,
+        {
+          body: JSON.stringify({ userIds }),
+          headers: {
+            ...actorHeaders(actor),
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        }
+      );
+      if (!isRecord(result.body)) {
+        return degradedIdentityResolution("Messaging identity resolution response is not valid JSON.");
+      }
+      const normalized = normalizeIdentityResolutionResponse(result.body);
+      const warnings = [
+        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging identity resolution contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging identity resolution provider id is ${normalized.providerId ?? "unknown"}.`])
+      ];
+      return {
+        contractVersion: "cop-messaging-identities-v1",
+        enabled: true,
+        identities: normalized.identities ?? [],
+        providerId: "csm.messaging",
+        status: result.ok ? "online" : "degraded",
+        warnings
+      };
+    } catch (error) {
+      return degradedIdentityResolution(errorMessage(error));
+    }
+  }
+
+  async bindMatrixRoom(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    conversationId: string,
+    input: MessagingMatrixRoomBindingRequest
+  ): Promise<MessagingMatrixRoomBindingResponse> {
+    if (!this.config.enabled) {
+      return disabledRoomBinding();
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/conversations/${encodeURIComponent(conversationId)}/matrix-room`),
+        this.config,
+        requestNow,
+        {
+          body: JSON.stringify(input),
+          headers: {
+            ...actorHeaders(actor),
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        }
+      );
+      if (!isRecord(result.body)) {
+        return degradedRoomBinding("Messaging matrix-room binding response is not valid JSON.");
+      }
+      const normalized = normalizeRoomBindingResponse(result.body);
+      const warnings = [
+        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging room binding contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging room binding provider id is ${normalized.providerId ?? "unknown"}.`])
+      ];
+      return {
+        contractVersion: "cop-messaging-room-binding-v1",
+        ...(normalized.conversation ? { conversation: normalized.conversation } : {}),
+        enabled: true,
+        providerId: "csm.messaging",
+        status: result.ok && normalized.conversation ? "online" : "degraded",
+        warnings
+      };
+    } catch (error) {
+      return degradedRoomBinding(errorMessage(error));
+    }
+  }
 }
 
 export function disabledMessagingStatus(requestNow: Date, config: MessagingProviderConfig = defaultConfig): MessagingProviderStatus {
@@ -497,6 +628,48 @@ function degradedConversationCreate(detail: string): MessagingConversationCreate
   };
 }
 
+function disabledIdentityResolution(): MessagingMatrixIdentityResolution {
+  return {
+    contractVersion: "cop-messaging-identities-v1",
+    enabled: false,
+    identities: [],
+    providerId: "csm.messaging",
+    status: "disabled",
+    warnings: ["Messaging provider is disabled."]
+  };
+}
+
+function degradedIdentityResolution(detail: string): MessagingMatrixIdentityResolution {
+  return {
+    contractVersion: "cop-messaging-identities-v1",
+    enabled: true,
+    identities: [],
+    providerId: "csm.messaging",
+    status: "degraded",
+    warnings: [detail]
+  };
+}
+
+function disabledRoomBinding(): MessagingMatrixRoomBindingResponse {
+  return {
+    contractVersion: "cop-messaging-room-binding-v1",
+    enabled: false,
+    providerId: "csm.messaging",
+    status: "disabled",
+    warnings: ["Messaging provider is disabled."]
+  };
+}
+
+function degradedRoomBinding(detail: string): MessagingMatrixRoomBindingResponse {
+  return {
+    contractVersion: "cop-messaging-room-binding-v1",
+    enabled: true,
+    providerId: "csm.messaging",
+    status: "degraded",
+    warnings: [detail]
+  };
+}
+
 async function fetchJsonWithStatus(
   url: URL,
   config: MessagingProviderConfig,
@@ -590,6 +763,44 @@ function normalizeConversationCreateResponse(value: Record<string, unknown>): Cs
     conversation: normalizeConversationSummary(value.conversation)[0],
     providerId: optionalString(value.providerId)
   };
+}
+
+function normalizeIdentityResolutionResponse(value: Record<string, unknown>): CsmMessagingIdentityResolutionProviderResponse & { identities?: MessagingMatrixIdentity[] } {
+  const values = Array.isArray(value.identities)
+    ? value.identities
+    : Array.isArray(value.items)
+      ? value.items
+      : [];
+  return {
+    contractVersion: optionalString(value.contractVersion),
+    identities: values.flatMap(normalizeMatrixIdentity),
+    items: undefined,
+    providerId: optionalString(value.providerId)
+  };
+}
+
+function normalizeRoomBindingResponse(value: Record<string, unknown>): CsmMessagingRoomBindingProviderResponse & { conversation?: MessagingConversationSummary } {
+  return {
+    contractVersion: optionalString(value.contractVersion),
+    conversation: normalizeConversationSummary(value.conversation)[0],
+    providerId: optionalString(value.providerId)
+  };
+}
+
+function normalizeMatrixIdentity(value: unknown): MessagingMatrixIdentity[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const userId = optionalString(value.userId) ?? optionalString(value.csmUserId) ?? optionalString(value.subjectId);
+  const matrixUserId = optionalString(value.matrixUserId) ?? optionalString(value.matrixId);
+  if (!userId || !matrixUserId) {
+    return [];
+  }
+  return [{
+    ...(optionalString(value.displayName) ? { displayName: optionalString(value.displayName) } : {}),
+    matrixUserId,
+    userId
+  }];
 }
 
 function normalizeConversationSummary(value: unknown): MessagingConversationSummary[] {

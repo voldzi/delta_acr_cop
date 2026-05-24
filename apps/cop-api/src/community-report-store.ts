@@ -170,6 +170,12 @@ export interface CompleteCommunityAttachmentInput {
   subjectId: string;
 }
 
+export interface UpdateCommunityAttachmentMetadataInput {
+  attachmentId: string;
+  metadata: Record<string, unknown>;
+  reportId: string;
+}
+
 export interface CommunityReportQuery {
   bbox?: {
     east: number;
@@ -200,6 +206,7 @@ export interface CommunityReportStore {
   listReports(query: CommunityReportQuery): Promise<CommunityReportRecord[]>;
   requestGroupMembership(groupId: string, actor: CommunityReportActor, now: Date): Promise<CommunityGroupRecord | null>;
   submitReport(reportId: string, subjectId: string, now: Date): Promise<CommunityReportRecord | null>;
+  updateAttachmentMetadata(input: UpdateCommunityAttachmentMetadataInput): Promise<CommunityReportAttachmentRecord | null>;
   updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null>;
   upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null>;
 }
@@ -469,6 +476,19 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
       ...(input.checksumSha256 ? { checksumSha256: input.checksumSha256 } : {}),
       status: "uploaded",
       uploadedAt: input.completedAt
+    };
+    this.attachments.set(input.attachmentId, updated);
+    return updated;
+  }
+
+  async updateAttachmentMetadata(input: UpdateCommunityAttachmentMetadataInput): Promise<CommunityReportAttachmentRecord | null> {
+    const attachment = this.attachments.get(input.attachmentId);
+    if (!attachment || attachment.reportId !== input.reportId) {
+      return null;
+    }
+    const updated: CommunityReportAttachmentRecord = {
+      ...attachment,
+      metadata: input.metadata
     };
     this.attachments.set(input.attachmentId, updated);
     return updated;
@@ -878,6 +898,21 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
         input.byteSize ?? null,
         input.checksumSha256 ?? null,
         input.completedAt
+      ]
+    );
+    return result.rows[0] ? attachmentFromRow(result.rows[0]) : null;
+  }
+
+  async updateAttachmentMetadata(input: UpdateCommunityAttachmentMetadataInput): Promise<CommunityReportAttachmentRecord | null> {
+    const result = await this.pool.query<CommunityAttachmentRow>(
+      `UPDATE cop_community_report_attachments
+      SET metadata = $3::jsonb
+      WHERE attachment_id = $1 AND report_id = $2
+      RETURNING *`,
+      [
+        input.attachmentId,
+        input.reportId,
+        JSON.stringify(input.metadata)
       ]
     );
     return result.rows[0] ? attachmentFromRow(result.rows[0]) : null;

@@ -112,6 +112,28 @@ export async function createMatrixMessagingSession(
   };
 }
 
+export async function clearMatrixMessagingDeviceState(): Promise<void> {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.removeItem("cop.messaging.matrixDeviceId");
+  } catch {
+    // Best effort cleanup only. Matrix SDK owns the crypto store lifecycle.
+  }
+  const indexedDb = window.indexedDB;
+  const databases = typeof indexedDb?.databases === "function" ? await indexedDb.databases() : [];
+  await Promise.all(databases
+    .map((database) => database.name)
+    .filter((name): name is string => Boolean(name && /matrix|crypto|olm/iu.test(name)))
+    .map((name) => new Promise<void>((resolve) => {
+      const request = indexedDb.deleteDatabase(name);
+      request.onerror = () => resolve();
+      request.onsuccess = () => resolve();
+      request.onblocked = () => resolve();
+    })));
+}
+
 function validateBootstrap(bootstrap: MessagingBootstrapResponse): void {
   if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
     throw new Error("Matrix bootstrap neobsahuje uživatelský access token.");

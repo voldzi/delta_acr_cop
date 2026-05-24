@@ -625,6 +625,41 @@ paths:
           $ref: "#/components/responses/NotFound"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/community/reports/{reportId}/attachments/{attachmentId}/derivatives/{derivativeId}/content:
+    get:
+      tags: [Community Reports]
+      summary: Stream an authorized derived media object, such as XR side-by-side video.
+      operationId: getCommunityReportAttachmentDerivativeContent
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: derivativeId
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [xr-sbs]
+      responses:
+        "200":
+          description: Derived media content.
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Partial derived content for video range playback.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/community/groups:
     get:
       tags: [Community Reports]
@@ -1363,6 +1398,12 @@ paths:
         returns provider, service or Synapse admin tokens and does not proxy
         plaintext messages.
       operationId: createMessagingBootstrap
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessagingBootstrapRequest"
       responses:
         "200":
           description: Matrix bootstrap state for the authenticated user.
@@ -1421,6 +1462,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MessagingConversationCreateResponse"
+  /api/v1/messaging/matrix/identities/resolve:
+    post:
+      tags: [Messaging]
+      summary: Resolve COP/CSM users to Matrix user IDs through the Messaging provider.
+      description: >
+        Server-side identity resolution used only for Matrix room invitations.
+        The response never contains passwords, service tokens or Matrix access
+        tokens for other users.
+      operationId: resolveMessagingMatrixIdentities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessagingMatrixIdentityResolveRequest"
+      responses:
+        "200":
+          description: Resolved Matrix identities.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingMatrixIdentityResolution"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/messaging/conversations/{conversationId}/matrix-room:
+    post:
+      tags: [Messaging]
+      summary: Store the Matrix room binding for a Messaging conversation.
+      description: >
+        Stores Matrix room metadata only. COP still does not proxy or persist
+        plaintext chat messages and Matrix room membership is not used as media
+        authorization.
+      operationId: bindMessagingConversationMatrixRoom
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessagingMatrixRoomBindingRequest"
+      responses:
+        "200":
+          description: Bound conversation metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingMatrixRoomBindingResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: Upstream provider did not accept the room binding.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingMatrixRoomBindingResponse"
   /health/live:
     get:
       tags: [Health]
@@ -2070,6 +2176,39 @@ components:
         contentUrl:
           type: string
           description: Relative COP API URL for reading uploaded media. Present only after upload completion and only when the caller is authorized for the media object.
+        derivatives:
+          type: array
+          description: Derived media objects, for example XR side-by-side video generated from iPhone Spatial MOV.
+          items:
+            $ref: "#/components/schemas/CommunityAttachmentDerivative"
+    CommunityAttachmentDerivative:
+      type: object
+      required: [derivativeId, kind, layout, status, updatedAt]
+      properties:
+        derivativeId:
+          type: string
+          enum: [xr-sbs]
+        kind:
+          type: string
+          enum: [video]
+        layout:
+          type: string
+          enum: [side_by_side]
+        status:
+          type: string
+          enum: [queued, processing, ready, failed]
+        contentType:
+          type: string
+        byteSize:
+          type: integer
+        contentUrl:
+          type: string
+          description: Relative COP API URL for reading the derived media. Present only when ready and authorized.
+        error:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
     CommunityGroupListResponse:
       type: object
       required: [items, serverTimestamp]
@@ -4274,6 +4413,15 @@ components:
           type: array
           items:
             type: string
+    MessagingBootstrapRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        deviceId:
+          type: string
+          maxLength: 64
+          pattern: "^[A-Za-z0-9._=-]{1,64}$"
+          description: Stable per-browser Matrix device identifier generated by the client and sent in the request body and as x-csm-device-id to Messaging.
     MessagingConversationList:
       type: object
       required: [contractVersion, conversations, count, enabled, providerId, status, warnings]
@@ -4385,6 +4533,10 @@ components:
               format: uri
             serverName:
               type: string
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessagingConversationMember"
         createdAt:
           type: string
           format: date-time
@@ -4419,6 +4571,83 @@ components:
           maxItems: 4
           items:
             type: number
+    MessagingMatrixIdentityResolveRequest:
+      type: object
+      required: [userIds]
+      additionalProperties: false
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            maxLength: 160
+    MessagingMatrixIdentityResolution:
+      type: object
+      required: [contractVersion, enabled, identities, providerId, status, warnings]
+      properties:
+        contractVersion:
+          type: string
+          enum: [cop-messaging-identities-v1]
+        enabled:
+          type: boolean
+        identities:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessagingMatrixIdentity"
+        providerId:
+          type: string
+          enum: [csm.messaging]
+        status:
+          type: string
+          enum: [online, degraded, disabled]
+        warnings:
+          type: array
+          items:
+            type: string
+    MessagingMatrixIdentity:
+      type: object
+      required: [userId, matrixUserId]
+      properties:
+        userId:
+          type: string
+        matrixUserId:
+          type: string
+        displayName:
+          type: string
+    MessagingMatrixRoomBindingRequest:
+      type: object
+      required: [roomId]
+      additionalProperties: false
+      properties:
+        roomId:
+          type: string
+          maxLength: 512
+          pattern: "^![^\\s:]+:.+$"
+        encrypted:
+          type: boolean
+    MessagingMatrixRoomBindingResponse:
+      type: object
+      required: [contractVersion, enabled, providerId, status, warnings]
+      properties:
+        contractVersion:
+          type: string
+          enum: [cop-messaging-room-binding-v1]
+        conversation:
+          $ref: "#/components/schemas/MessagingConversation"
+        enabled:
+          type: boolean
+        providerId:
+          type: string
+          enum: [csm.messaging]
+        status:
+          type: string
+          enum: [online, degraded, disabled]
+        warnings:
+          type: array
+          items:
+            type: string
     DependencyHealth:
       type: object
       required: [status, dependencies]

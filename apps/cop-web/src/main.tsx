@@ -52,6 +52,7 @@ import {
   createCommunityGroup,
   createCommunityReport,
   createMessagingConversation,
+  bindMessagingConversationMatrixRoom,
   deleteCommunityReport,
   fetchCopDashboardData,
   fetchCopAlerts,
@@ -62,6 +63,7 @@ import {
   fetchMessagingStatus,
   fetchPlaceGeocode,
   fetchUserProfile,
+  resolveMessagingMatrixIdentities,
   filterObjectsByLayers,
   filterVisibleObjects,
   copLayerIds,
@@ -2194,6 +2196,14 @@ export function App() {
     visibility: "private" | "public",
     options: { anchorLocation?: CommunityReportLocation; metadata?: Record<string, unknown> } = {}
   ): Promise<CommunityGroup> {
+    return (await createCommunityGroupBundleForUi(name, visibility, options)).group;
+  }
+
+  async function createCommunityGroupBundleForUi(
+    name: string,
+    visibility: "private" | "public",
+    options: { anchorLocation?: CommunityReportLocation; metadata?: Record<string, unknown> } = {}
+  ): Promise<{ conversation?: MessagingConversationSummary; group: CommunityGroup }> {
     if (!messagingAuthenticated || !authSession.accessToken) {
       throw new Error("Pro správu skupin je potřeba přihlášení.");
     }
@@ -2204,6 +2214,7 @@ export function App() {
       visibility
     });
     setCommunityGroups((current) => [group, ...current.filter((item) => item.groupId !== group.groupId)]);
+    let conversation: MessagingConversationSummary | undefined;
     try {
       const conversationResponse = await createMessagingConversation(apiBase, authSession.accessToken, {
         metadata: {
@@ -2214,6 +2225,7 @@ export function App() {
         type: "group"
       });
       if (conversationResponse.conversation) {
+        conversation = conversationResponse.conversation;
         setMessagingConversations((current) => [
           conversationResponse.conversation as MessagingConversationSummary,
           ...current.filter((item) => item.conversationId !== conversationResponse.conversation?.conversationId)
@@ -2225,7 +2237,10 @@ export function App() {
     } catch (error) {
       setMessagingConversationsError(error instanceof Error ? error.message : "Konverzaci se nepodařilo založit.");
     }
-    return group;
+    return {
+      ...(conversation ? { conversation } : {}),
+      group
+    };
   }
 
   async function addCommunityGroupMemberForUi(groupId: string, subjectId: string, displayName?: string): Promise<CommunityGroup> {
@@ -3155,11 +3170,17 @@ export function App() {
           session={authSession}
           status={messagingStatus}
           onAddGroupMember={(groupId, subjectId, displayName) => addCommunityGroupMemberForUi(groupId, subjectId, displayName)}
+          onBindMatrixRoom={(conversationId, roomId, encrypted) =>
+            bindMessagingConversationMatrixRoom(apiBase, authSession.accessToken ?? "", conversationId, { encrypted, roomId })
+          }
           onClose={() => setMessagingOpen(false)}
-          onCreateGroup={(name, visibility) => createCommunityGroupForUi(name, visibility)}
+          onCreateGroup={(name, visibility) => createCommunityGroupBundleForUi(name, visibility)}
           onLogin={openLoginPrompt}
           onPinnedChange={setMessagingPinned}
           onRefresh={() => void loadMessagingStatus()}
+          onResolveMatrixIdentities={(userIds) =>
+            resolveMessagingMatrixIdentities(apiBase, authSession.accessToken ?? "", userIds)
+          }
         />
       ) : null}
 
@@ -3442,7 +3463,7 @@ function CommunityReportDialog({
               ))}
             </select>
             <span className="report-field-hint">
-              3D přehrání v XR podporuje side-by-side nebo over-under. iPhone Spatial MOV se uloží jako originál a v browseru má 2D náhled.
+              Side-by-side a over-under se přehrají v XR přímo. iPhone Spatial MOV se uloží jako originál a server připraví 3D XR kopii.
             </span>
           </label>
         ) : null}
@@ -3512,6 +3533,7 @@ function CommunityMediaGallery({
   const attachment = gallery.attachments[gallery.index];
   const spatialMode = attachment?.kind === "video" ? communityAttachmentSpatialMode(attachment) : "none";
   const xrVideoUrl = attachment ? buildXrVideoUrl(attachment) : null;
+  const xrDerivativeStatus = attachment ? communityAttachmentXrDerivativeStatus(attachment) : null;
   if (!attachment) {
     return null;
   }
@@ -3553,6 +3575,7 @@ function CommunityMediaGallery({
         <footer className="community-gallery-footer">
           <span>{communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}</span>
           {attachment.kind === "video" ? <span>{communityAttachmentSpatialLabel(spatialMode)}</span> : null}
+          {xrDerivativeStatus ? <span>{xrDerivativeStatus}</span> : null}
           {xrVideoUrl ? <a className="mini-button" href={xrVideoUrl} rel="noreferrer" target="_blank">Otevřít 3D v XR</a> : null}
           {attachment.contentUrl ? <a className="mini-button" href={attachment.contentUrl} rel="noreferrer" target="_blank">Otevřít soubor</a> : null}
         </footer>
@@ -5840,6 +5863,7 @@ function CommunityAttachmentPreview({
       {attachments.map((attachment, index) => {
         const spatialMode = attachment.kind === "video" ? communityAttachmentSpatialMode(attachment) : "none";
         const xrVideoUrl = buildXrVideoUrl(attachment);
+        const xrDerivativeStatus = communityAttachmentXrDerivativeStatus(attachment);
         return (
           <div className="community-media-item" key={attachment.attachmentId}>
             <div className="community-media-meta">
@@ -5869,7 +5893,7 @@ function CommunityAttachmentPreview({
                 </div>
                 {spatialMode === "apple_mv_hevc" ? (
                   <span className="community-video-note">
-                    Originální iPhone spatial MOV je uložený beze změny. Webový XR jej bez konverze přehraje jako 2D náhled.
+                    Originální iPhone spatial MOV je uložený beze změny. {xrDerivativeStatus ?? "3D XR kopie se připraví po uploadu."}
                   </span>
                 ) : null}
               </>
@@ -6397,8 +6421,41 @@ function communityAttachmentSpatialLabel(mode: CommunityVideoSpatialMode): strin
   }
 }
 
+function communityAttachmentXrDerivativeStatus(attachment: { derivatives?: NonNullable<SituationFeature["properties"]["attachments"]>[number]["derivatives"] }): string | null {
+  const derivative = attachment.derivatives?.find((item) => item.derivativeId === "xr-sbs");
+  if (!derivative) {
+    return null;
+  }
+  switch (derivative.status) {
+    case "queued":
+      return "XR kopie čeká ve frontě";
+    case "processing":
+      return "XR kopie se připravuje";
+    case "ready":
+      return "XR kopie připravena";
+    case "failed":
+      return derivative.error ? `XR konverze selhala: ${derivative.error}` : "XR konverze selhala";
+    default:
+      return null;
+  }
+}
+
 function buildXrVideoUrl(attachment: NonNullable<SituationFeature["properties"]["attachments"]>[number]): string | null {
-  if (!attachment.contentUrl || attachment.kind !== "video") {
+  if (attachment.kind !== "video") {
+    return null;
+  }
+  const xrDerivative = attachment.derivatives?.find((derivative) =>
+    derivative.derivativeId === "xr-sbs" && derivative.status === "ready" && derivative.contentUrl
+  );
+  if (xrDerivative?.contentUrl) {
+    const params = new URLSearchParams({
+      layout: "side_by_side",
+      media: xrDerivative.contentUrl,
+      title: attachment.fileName ?? "Komunitní 3D video"
+    });
+    return `/xr?${params.toString()}`;
+  }
+  if (!attachment.contentUrl) {
     return null;
   }
   const mode = communityAttachmentSpatialMode(attachment);

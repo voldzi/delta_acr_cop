@@ -18,6 +18,11 @@ export interface MediaObjectWriteRequest {
   objectKey: string;
 }
 
+export interface MediaObjectReadResult {
+  body: Buffer;
+  contentType?: string;
+}
+
 export interface MediaUploadSlot {
   bucket: string;
   expiresAt: string;
@@ -34,6 +39,7 @@ export interface MediaStorage {
   init(): Promise<void>;
   createUploadSlot(request: MediaUploadRequest, now: Date): Promise<MediaUploadSlot>;
   createReadUrl(request: MediaObjectReadRequest, now: Date): Promise<string>;
+  getObject(request: MediaObjectReadRequest, now: Date): Promise<MediaObjectReadResult>;
   putObject(request: MediaObjectWriteRequest, now: Date): Promise<void>;
 }
 
@@ -124,6 +130,19 @@ export class S3PresignedMediaStorage implements MediaStorage {
       secretAccessKey: this.config.secretAccessKey,
       timestamp: now
     });
+  }
+
+  async getObject(request: MediaObjectReadRequest, now: Date): Promise<MediaObjectReadResult> {
+    const readUrl = await this.createReadUrl(request, now);
+    const response = await fetch(readUrl);
+    if (!response.ok) {
+      throw new Error(`object read failed with HTTP ${response.status}`);
+    }
+    const contentType = response.headers.get("content-type") ?? undefined;
+    return {
+      body: Buffer.from(await response.arrayBuffer()),
+      ...(contentType ? { contentType } : {})
+    };
   }
 
   async putObject(request: MediaObjectWriteRequest, now: Date): Promise<void> {

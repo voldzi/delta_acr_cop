@@ -230,6 +230,7 @@ export interface SituationFeatureProperties {
     byteSize: number;
     contentType: string;
     contentUrl?: string;
+    derivatives?: CommunityAttachmentDerivative[];
     fileName?: string;
     kind: CommunityAttachmentKind;
     metadata?: Record<string, unknown>;
@@ -636,11 +637,24 @@ export interface CommunityReportAttachment {
   captureLocation?: CommunityReportLocation;
   contentType: string;
   contentUrl?: string;
+  derivatives?: CommunityAttachmentDerivative[];
   fileName?: string;
   kind: CommunityAttachmentKind;
   metadata?: Record<string, unknown>;
   reportId: string;
   status: "failed" | "pending_upload" | "removed" | "uploaded";
+}
+
+export interface CommunityAttachmentDerivative {
+  byteSize?: number;
+  contentType?: string;
+  contentUrl?: string;
+  derivativeId: "xr-sbs";
+  error?: string;
+  kind: "video";
+  layout: "side_by_side";
+  status: "failed" | "processing" | "queued" | "ready";
+  updatedAt: string;
 }
 
 export interface CommunityGroupMember {
@@ -999,6 +1013,11 @@ export interface MessagingConversationSummary {
     state?: string;
   };
   memberCount?: number;
+  members?: Array<{
+    displayName?: string;
+    role?: string;
+    userId: string;
+  }>;
   status?: string;
   title: string;
   type: "direct" | "group";
@@ -1017,6 +1036,28 @@ export interface MessagingConversationListResponse {
 
 export interface MessagingConversationCreateResponse {
   contractVersion: "cop-messaging-conversations-v1";
+  conversation?: MessagingConversationSummary;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: "degraded" | "disabled" | "online";
+  warnings: string[];
+}
+
+export interface MessagingMatrixIdentityResolutionResponse {
+  contractVersion: "cop-messaging-identities-v1";
+  enabled: boolean;
+  identities: Array<{
+    displayName?: string;
+    matrixUserId: string;
+    userId: string;
+  }>;
+  providerId: "csm.messaging";
+  status: "degraded" | "disabled" | "online";
+  warnings: string[];
+}
+
+export interface MessagingMatrixRoomBindingResponse {
+  contractVersion: "cop-messaging-room-binding-v1";
   conversation?: MessagingConversationSummary;
   enabled: boolean;
   providerId: "csm.messaging";
@@ -1299,6 +1340,7 @@ export async function createMessagingConversation(
   apiBase: string,
   token: string,
   payload: {
+    members?: Array<{ displayName?: string; role?: string; userId: string }>;
     metadata?: Record<string, string | number | boolean | null | Array<string | number | boolean | null>>;
     title: string;
     type?: "direct" | "group";
@@ -1312,6 +1354,40 @@ export async function createMessagingConversation(
     },
     method: "POST"
   });
+}
+
+export async function resolveMessagingMatrixIdentities(
+  apiBase: string,
+  token: string,
+  userIds: string[]
+): Promise<MessagingMatrixIdentityResolutionResponse> {
+  return fetchJson<MessagingMatrixIdentityResolutionResponse>(`${apiBase}/api/v1/messaging/matrix/identities/resolve`, {
+    body: JSON.stringify({ userIds }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function bindMessagingConversationMatrixRoom(
+  apiBase: string,
+  token: string,
+  conversationId: string,
+  payload: { encrypted?: boolean; roomId: string }
+): Promise<MessagingMatrixRoomBindingResponse> {
+  return fetchJson<MessagingMatrixRoomBindingResponse>(
+    `${apiBase}/api/v1/messaging/conversations/${encodeURIComponent(conversationId)}/matrix-room`,
+    {
+      body: JSON.stringify(payload),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    }
+  );
 }
 
 export async function createCommunityReport(

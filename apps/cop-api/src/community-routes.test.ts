@@ -691,6 +691,14 @@ class FakeMediaStorage implements MediaStorage {
     return `https://media.example.test/read/${encodeURIComponent(request.objectKey)}`;
   }
 
+  async getObject(request: MediaObjectReadRequest): Promise<{ body: Buffer; contentType?: string }> {
+    const body = this.objects.get(request.objectKey);
+    if (!body) {
+      throw new Error("object not found");
+    }
+    return { body };
+  }
+
   async putObject(request: MediaObjectWriteRequest): Promise<void> {
     this.objects.set(request.objectKey, request.body);
   }

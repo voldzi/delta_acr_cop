@@ -41,10 +41,17 @@ import {
   type FlightReferenceLayerId
 } from "./flight-data-source.js";
 import { buildMapCatalog, type MapCatalogLayer } from "./map-catalog.js";
+import {
+  createMediaConversionManagerFromEnv,
+  readSpatialDerivative,
+  type MediaConversionManager,
+  type SpatialVideoDerivativeMetadata
+} from "./media-conversion.js";
 import { createMediaStorageFromEnv, type MediaStorage } from "./media-storage.js";
 import {
   createMessagingProviderFromEnv,
   type MessagingConversationCreateRequest,
+  type MessagingMatrixRoomBindingRequest,
   type MessagingMapLink,
   type MessagingProvider
 } from "./messaging-provider.js";
@@ -119,7 +126,20 @@ type MobilePlatform = "ios" | "ipados";
 
 type CommunityAttachmentResponse = CommunityReportAttachmentRecord & {
   contentUrl?: string;
+  derivatives?: CommunityAttachmentDerivativeResponse[];
 };
+
+interface CommunityAttachmentDerivativeResponse {
+  byteSize?: number;
+  contentType?: string;
+  contentUrl?: string;
+  derivativeId: "xr-sbs";
+  error?: string;
+  kind: "video";
+  layout: "side_by_side";
+  status: SpatialVideoDerivativeMetadata["status"];
+  updatedAt: string;
+}
 
 type CommunityReportResponse = CommunityReportRecord & {
   attachments: CommunityAttachmentResponse[];
@@ -163,6 +183,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const communityReportStore = options.communityReportStore ?? createCommunityReportStoreFromEnv();
   const communityReportFallbackStore = new InMemoryCommunityReportStore("memory-fallback");
   const mediaStorage = options.mediaStorage ?? createMediaStorageFromEnv();
+  const mediaConversionManager: MediaConversionManager | undefined = createMediaConversionManagerFromEnv({
+    logger: app.log,
+    mediaStorage,
+    updateAttachmentMetadata: updateCommunityAttachmentMetadata
+  });
   const messagingProvider = options.messagingProvider ?? createMessagingProviderFromEnv();
   const placeGeocoder = options.placeGeocoder ?? createPlaceGeocoderFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
@@ -232,6 +257,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await userProfileFallbackStore.close();
     await communityReportStore?.close();
     await communityReportFallbackStore.close();
+    mediaConversionManager?.close();
     await mediaStorage?.close();
   });
 
@@ -795,6 +821,31 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function updateCommunityAttachmentMetadata(input: Parameters<CommunityReportStore["updateAttachmentMetadata"]>[0]) {
+    try {
+      return await activeCommunityReportStore().updateAttachmentMetadata(input);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.updateAttachmentMetadata(input);
+    }
+  }
+
+  async function enqueueSpatialVideoConversion(reportId: string, attachment: CommunityReportAttachmentRecord, requestNow: Date): Promise<CommunityReportAttachmentRecord> {
+    if (!mediaConversionManager) {
+      return attachment;
+    }
+    try {
+      return await mediaConversionManager.enqueueAttachment({
+        attachment,
+        reportId,
+        requestNow
+      });
+    } catch (error) {
+      app.log.error({ error, attachmentId: attachment.attachmentId, reportId }, "Spatial video conversion enqueue failed.");
+      return attachment;
+    }
+  }
+
   async function createCommunityGroup(input: Parameters<CommunityReportStore["createGroup"]>[0], requestNow: Date) {
     try {
       return await activeCommunityReportStore().createGroup(input, requestNow);
@@ -1071,7 +1122,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     const body = isRecord(request.body) ? request.body : {};
-    const deviceId = optionalTrimmedString(body.deviceId, 64);
+    const deviceId = normalizeMatrixDeviceId(body.deviceId);
+    if (body.deviceId !== undefined && !deviceId) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Matrix deviceId may contain only A-Z, a-z, 0-9, dot, underscore, equals and dash, with max length 64.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
     return messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId);
   });
 
@@ -1102,6 +1162,44 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const result = await messagingProvider.createConversation(actor, now(), conversationRequest);
     return reply.code(result.conversation ? 201 : 502).send(result);
+  });
+
+  app.post("/api/v1/messaging/matrix/identities/resolve", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const userIds = normalizeMatrixIdentityResolutionRequest(request.body);
+    if (!userIds) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Identity resolution requires userIds as a non-empty array of CSM user identifiers.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    return messagingProvider.resolveMatrixIdentities(actor, now(), userIds);
+  });
+
+  app.post("/api/v1/messaging/conversations/:conversationId/matrix-room", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { conversationId: string };
+    const binding = normalizeMatrixRoomBindingRequest(request.body);
+    if (!binding) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Matrix room binding requires a roomId and may not contain message content.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const result = await messagingProvider.bindMatrixRoom(actor, now(), params.conversationId, binding);
+    return reply.code(result.conversation ? 200 : 502).send(result);
   });
 
   app.get("/api/v1/community/groups", async (request, reply) => {
@@ -1523,11 +1621,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const params = request.params as { attachmentId: string; reportId: string };
     const body = isRecord(request.body) ? request.body : {};
+    const requestNow = now();
     const attachment = await completeCommunityAttachment({
       attachmentId: params.attachmentId,
       byteSize: optionalFiniteNumber(body.byteSize, 1, readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024)),
       checksumSha256: optionalChecksumSha256(body.checksumSha256),
-      completedAt: now().toISOString(),
+      completedAt: requestNow.toISOString(),
       reportId: params.reportId,
       subjectId: actor.subjectId
     });
@@ -1540,7 +1639,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       attachmentId: attachment.attachmentId,
       reportId: attachment.reportId
     }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return communityAttachmentResponseItem(attachment, params.reportId);
+    const convertedAttachment = await enqueueSpatialVideoConversion(params.reportId, attachment, requestNow);
+    return communityAttachmentResponseItem(convertedAttachment, params.reportId);
   });
 
   app.post("/api/v1/community/reports/:reportId/attachments/:attachmentId/upload", async (request, reply) => {
@@ -1574,16 +1674,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
     const checksumSha256 = createHash("sha256").update(uploadBody.body).digest("hex");
+    const requestNow = now();
     await mediaStorage.putObject({
       body: uploadBody.body,
       contentType: attachment.contentType,
       objectKey: attachment.objectKey
-    }, now());
+    }, requestNow);
     const completed = await completeCommunityAttachment({
       attachmentId: attachment.attachmentId,
       byteSize: uploadBody.body.length,
       checksumSha256,
-      completedAt: now().toISOString(),
+      completedAt: requestNow.toISOString(),
       reportId: report.reportId,
       subjectId: actor.subjectId
     });
@@ -1598,7 +1699,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       contentType: attachment.contentType,
       reportId: report.reportId
     }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return communityAttachmentResponseItem(completed, report.reportId);
+    const convertedAttachment = await enqueueSpatialVideoConversion(report.reportId, completed, requestNow);
+    return communityAttachmentResponseItem(convertedAttachment, report.reportId);
   });
 
   app.get("/api/v1/community/reports/:reportId/attachments/:attachmentId/content", async (request, reply) => {
@@ -1640,6 +1742,62 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       .header("Cache-Control", "private, max-age=300")
       .header("Content-Disposition", `inline; filename="${contentDispositionFileName(attachment.fileName ?? attachment.attachmentId)}"`)
       .header("Content-Type", attachment.contentType);
+    if (contentLength) {
+      reply.header("Content-Length", contentLength);
+    }
+    if (contentRange) {
+      reply.header("Content-Range", contentRange);
+    }
+    if (acceptRanges) {
+      reply.header("Accept-Ranges", acceptRanges);
+    }
+    return reply.send(Buffer.from(await mediaResponse.arrayBuffer()));
+  });
+
+  app.get("/api/v1/community/reports/:reportId/attachments/:attachmentId/derivatives/:derivativeId/content", async (request, reply) => {
+    if (!mediaStorage || mediaStorageStatus !== "ok") {
+      return sendError(
+        reply,
+        503,
+        "MEDIA_STORAGE_UNAVAILABLE",
+        "Community media storage is not configured.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const actor = actorFromRequest(request);
+    const params = request.params as { attachmentId: string; derivativeId: string; reportId: string };
+    const report = await readCommunityReport(params.reportId);
+    if (!report || !canReadCommunityReport(report, actor) || params.derivativeId !== "xr-sbs") {
+      return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+    }
+    const attachment = report.attachments.find((item) => item.attachmentId === params.attachmentId && item.status === "uploaded");
+    if (!attachment) {
+      return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+    }
+    if (!canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor))) {
+      return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+    }
+    const derivative = readSpatialDerivative(attachment);
+    if (!derivative || derivative.status !== "ready" || !derivative.objectKey) {
+      return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+    }
+    const readUrl = await mediaStorage.createReadUrl({ objectKey: derivative.objectKey }, now());
+    const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
+    const mediaResponse = await fetch(readUrl, {
+      headers: range ? { range } : undefined
+    });
+    if (!mediaResponse.ok && mediaResponse.status !== 206) {
+      return sendError(reply, 502, "MEDIA_STORAGE_ERROR", `Media storage returned HTTP ${mediaResponse.status}.`, crypto.randomUUID());
+    }
+    const contentLength = mediaResponse.headers.get("content-length");
+    const contentRange = mediaResponse.headers.get("content-range");
+    const acceptRanges = mediaResponse.headers.get("accept-ranges");
+    const baseName = contentDispositionFileName(attachment.fileName ?? attachment.attachmentId).replace(/\.[^.]+$/u, "");
+    reply
+      .code(mediaResponse.status)
+      .header("Cache-Control", "private, max-age=300")
+      .header("Content-Disposition", `inline; filename="${baseName}-xr-sbs.mp4"`)
+      .header("Content-Type", derivative.contentType ?? "video/mp4");
     if (contentLength) {
       reply.header("Content-Length", contentLength);
     }
@@ -3351,6 +3509,36 @@ function normalizeMessagingConversationCreateRequest(value: unknown): MessagingC
   };
 }
 
+function normalizeMatrixDeviceId(value: unknown): string | undefined {
+  const deviceId = optionalTrimmedString(value, 64);
+  return deviceId && /^[A-Za-z0-9._=-]{1,64}$/u.test(deviceId) ? deviceId : undefined;
+}
+
+function normalizeMatrixIdentityResolutionRequest(value: unknown): string[] | null {
+  if (!isRecord(value) || containsMessagingPlaintextKey(value) || !Array.isArray(value.userIds)) {
+    return null;
+  }
+  const userIds = Array.from(new Set(value.userIds
+    .map((item) => optionalTrimmedString(item, 160))
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 100)));
+  return userIds.length > 0 ? userIds : null;
+}
+
+function normalizeMatrixRoomBindingRequest(value: unknown): MessagingMatrixRoomBindingRequest | null {
+  if (!isRecord(value) || containsMessagingPlaintextKey(value)) {
+    return null;
+  }
+  const roomId = optionalTrimmedString(value.roomId, 512);
+  if (!roomId || !/^![^\s:]+:.+$/u.test(roomId)) {
+    return null;
+  }
+  return {
+    ...(typeof value.encrypted === "boolean" ? { encrypted: value.encrypted } : {}),
+    roomId
+  };
+}
+
 function containsMessagingPlaintextKey(value: unknown): boolean {
   if (Array.isArray(value)) {
     return value.some(containsMessagingPlaintextKey);
@@ -3620,9 +3808,36 @@ function communityReportResponseItems(
 function communityAttachmentResponseItem(attachment: CommunityReportAttachmentRecord, reportId: string, canReadMedia = true): CommunityAttachmentResponse {
   return {
     ...attachment,
+    ...communityAttachmentDerivativeResponse(attachment, reportId, canReadMedia),
     ...(attachment.status === "uploaded" && canReadMedia
       ? { contentUrl: `/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachment.attachmentId)}/content` }
       : {})
+  };
+}
+
+function communityAttachmentDerivativeResponse(
+  attachment: CommunityReportAttachmentRecord,
+  reportId: string,
+  canReadMedia: boolean
+): { derivatives?: CommunityAttachmentDerivativeResponse[] } {
+  const derivative = readSpatialDerivative(attachment);
+  if (!derivative) {
+    return {};
+  }
+  return {
+    derivatives: [{
+      ...(typeof derivative.byteSize === "number" ? { byteSize: derivative.byteSize } : {}),
+      ...(derivative.contentType ? { contentType: derivative.contentType } : {}),
+      ...(canReadMedia && derivative.status === "ready"
+        ? { contentUrl: `/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachment.attachmentId)}/derivatives/${derivative.derivativeId}/content` }
+        : {}),
+      derivativeId: derivative.derivativeId,
+      ...(derivative.error ? { error: derivative.error } : {}),
+      kind: "video",
+      layout: derivative.layout,
+      status: derivative.status,
+      updatedAt: derivative.updatedAt
+    }]
   };
 }
 
@@ -3695,6 +3910,7 @@ function communityFeatureAttachments(
   byteSize: number;
   contentType: string;
   contentUrl?: string;
+  derivatives?: CommunityAttachmentDerivativeResponse[];
   fileName?: string;
   kind: CommunityAttachmentKind;
   metadata?: Record<string, unknown>;
@@ -3718,6 +3934,7 @@ function communityFeatureAttachments(
                 : `/api/v1/community/reports/${encodeURIComponent(report.reportId)}/attachments/${encodeURIComponent(attachment.attachmentId)}/content`
             }
           : {}),
+        ...communityAttachmentDerivativeResponse(attachment, report.reportId, canReadMedia),
         ...(attachment.fileName ? { fileName: attachment.fileName } : {}),
         kind: attachment.kind,
         ...(Object.keys(attachment.metadata ?? {}).length > 0 ? { metadata: attachment.metadata } : {}),
@@ -4007,6 +4224,7 @@ function mobileEndpoints() {
     bootstrap: "/api/v1/mobile/bootstrap",
     communityReportAttachmentComplete: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete",
     communityReportAttachmentCreate: "/api/v1/community/reports/{reportId}/attachments",
+    communityReportAttachmentDerivativeContent: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/derivatives/{derivativeId}/content",
     communityReportAttachmentUpload: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload",
     communityReportDelete: "/api/v1/community/reports/{reportId}",
     communityReportDetail: "/api/v1/community/reports/{reportId}",
@@ -4020,6 +4238,8 @@ function mobileEndpoints() {
     mapCatalog: "/api/v1/map/catalog",
     messagingBootstrap: "/api/v1/messaging/bootstrap",
     messagingConversations: "/api/v1/messaging/conversations",
+    messagingMatrixIdentityResolution: "/api/v1/messaging/matrix/identities/resolve",
+    messagingMatrixRoomBinding: "/api/v1/messaging/conversations/{conversationId}/matrix-room",
     messagingStatus: "/api/v1/messaging/status",
     sourceHealth: "/api/v1/sources/health",
     sources: "/api/v1/sources",
