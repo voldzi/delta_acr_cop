@@ -82,7 +82,9 @@ server {
 
     server_name cop.zeleznalady.cz;
 
-    client_max_body_size 25m;
+    # User reports may contain photos, PDFs and videos. Keep this aligned with
+    # COP_MEDIA_MAX_ATTACHMENT_BYTES / COP_API_BODY_LIMIT_BYTES on docker.home.cz.
+    client_max_body_size 600m;
     send_timeout 120s;
     proxy_read_timeout 300s;
     proxy_connect_timeout 300s;
@@ -103,6 +105,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
+        proxy_request_buffering off;
         proxy_buffering off;
     }
 
@@ -236,7 +239,9 @@ server {
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
-    client_max_body_size 25m;
+    # User reports may contain photos, PDFs and videos. Keep this aligned with
+    # COP_MEDIA_MAX_ATTACHMENT_BYTES / COP_API_BODY_LIMIT_BYTES on docker.home.cz.
+    client_max_body_size 600m;
     send_timeout 120s;
     proxy_read_timeout 300s;
     proxy_connect_timeout 300s;
@@ -253,6 +258,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
+        proxy_request_buffering off;
         proxy_buffering off;
     }
 
@@ -314,7 +320,15 @@ curl -I http://cop.zeleznalady.cz
 curl -I https://cop.zeleznalady.cz
 curl -fsS https://cop.zeleznalady.cz/health/ready
 curl -fsS https://cop.zeleznalady.cz/metrics | grep cop_stream_clients_total
+dd if=/dev/zero bs=1M count=30 2>/dev/null | \
+  curl -sS -o /tmp/cop_upload_limit_probe.txt -w "%{http_code}\n" \
+    -X POST -H 'Content-Type: application/octet-stream' \
+    --data-binary @- https://cop.zeleznalady.cz/api/v1/upload-limit-probe
 ```
+
+Upload limit probe nesmi vratit `413` z nginxu. Ocekavane je `401`, `404`
+nebo jina aplikacni odpoved z COP API, protoze test posila data na kontrolni
+neexistujici nebo neautorizovanou cestu.
 
 V prohlizeci otevri:
 
