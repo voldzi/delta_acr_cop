@@ -555,6 +555,107 @@ paths:
           $ref: "#/components/responses/NotFound"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/community/groups:
+    get:
+      tags: [Community Reports]
+      summary: List community sharing groups visible to the authenticated user.
+      operationId: listCommunityGroups
+      responses:
+        "200":
+          description: Community sharing groups.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityGroupListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Community Reports]
+      summary: Create a community sharing group for restricted media access.
+      operationId: createCommunityGroup
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunityGroupCreateRequest"
+      responses:
+        "201":
+          description: Community group created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityGroup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/community/groups/{groupId}:
+    get:
+      tags: [Community Reports]
+      summary: Read one community sharing group.
+      operationId: getCommunityGroup
+      parameters:
+        - $ref: "#/components/parameters/CommunityGroupIdPath"
+      responses:
+        "200":
+          description: Community sharing group.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityGroup"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/community/groups/{groupId}/join-request:
+    post:
+      tags: [Community Reports]
+      summary: Request membership in a community sharing group.
+      operationId: requestCommunityGroupMembership
+      parameters:
+        - $ref: "#/components/parameters/CommunityGroupIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      responses:
+        "200":
+          description: Community group with the caller membership updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityGroup"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/community/groups/{groupId}/members:
+    post:
+      tags: [Community Reports]
+      summary: Add or approve a member in a managed community sharing group.
+      operationId: upsertCommunityGroupMember
+      parameters:
+        - $ref: "#/components/parameters/CommunityGroupIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunityGroupMemberUpsertRequest"
+      responses:
+        "200":
+          description: Updated community group.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityGroup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/ingest/events:
     post:
       tags: [Ingest]
@@ -1314,6 +1415,13 @@ components:
       schema:
         type: string
         format: uuid
+    CommunityGroupIdPath:
+      name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     HistorySecondsQuery:
       name: seconds
       in: query
@@ -1797,9 +1905,115 @@ components:
         metadata:
           type: object
           additionalProperties: true
+          description: May include media ACL under metadata.access.
+        accessDenied:
+          type: boolean
+          description: Present in map/list responses when the caller may see the report but not the media object.
         contentUrl:
           type: string
-          description: Relative COP API URL for reading uploaded media. Present only after upload completion.
+          description: Relative COP API URL for reading uploaded media. Present only after upload completion and only when the caller is authorized for the media object.
+    CommunityGroupListResponse:
+      type: object
+      required: [items, serverTimestamp]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunityGroup"
+        serverTimestamp:
+          type: string
+          format: date-time
+    CommunityGroupCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 500
+        visibility:
+          $ref: "#/components/schemas/CommunityGroupVisibility"
+    CommunityGroupMemberUpsertRequest:
+      type: object
+      required: [subjectId]
+      properties:
+        subjectId:
+          type: string
+          maxLength: 160
+        username:
+          type: string
+          maxLength: 160
+        displayName:
+          type: string
+          maxLength: 160
+        role:
+          $ref: "#/components/schemas/CommunityGroupMemberRole"
+        status:
+          $ref: "#/components/schemas/CommunityGroupMemberStatus"
+    CommunityGroup:
+      type: object
+      required: [createdAt, createdBy, groupId, members, name, updatedAt, visibility]
+      properties:
+        groupId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        visibility:
+          $ref: "#/components/schemas/CommunityGroupVisibility"
+        createdBy:
+          type: object
+          required: [displayName, subjectId, username]
+          properties:
+            displayName:
+              type: string
+            subjectId:
+              type: string
+            username:
+              type: string
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunityGroupMember"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CommunityGroupMember:
+      type: object
+      required: [displayName, role, status, subjectId, username]
+      properties:
+        subjectId:
+          type: string
+        username:
+          type: string
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/CommunityGroupMemberRole"
+        status:
+          $ref: "#/components/schemas/CommunityGroupMemberStatus"
+        joinedAt:
+          type: string
+          format: date-time
+        requestedAt:
+          type: string
+          format: date-time
+    CommunityGroupVisibility:
+      type: string
+      enum: [private, public]
+    CommunityGroupMemberRole:
+      type: string
+      enum: [owner, admin, member]
+    CommunityGroupMemberStatus:
+      type: string
+      enum: [active, pending]
     CommunityAttachmentUploadRequest:
       type: object
       required: [contentType, byteSize]

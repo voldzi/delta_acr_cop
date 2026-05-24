@@ -11,6 +11,8 @@ COP ukládá:
 - stav reportu,
 - vazbu na uživatele z Keycloak/OIDC,
 - metadata příloh,
+- přístupová pravidla k médiím,
+- uživatelské skupiny pro sdílení,
 - audit události.
 
 SeaweedFS/S3 ukládá:
@@ -43,6 +45,11 @@ Nové endpointy:
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete`
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload`
 - `GET /api/v1/community/reports/{reportId}/attachments/{attachmentId}/content`
+- `GET /api/v1/community/groups`
+- `POST /api/v1/community/groups`
+- `GET /api/v1/community/groups/{groupId}`
+- `POST /api/v1/community/groups/{groupId}/join-request`
+- `POST /api/v1/community/groups/{groupId}/members`
 
 Vytvoření reportu:
 
@@ -98,6 +105,48 @@ Video přílohy mohou nést metadata `metadata.spatialVideo`:
 Po úspěšném uploadu klient zavolá `complete`. Do budoucna je vhodné doplnit serverovou kontrolu objektu přes `HEAD`, AV/obsahovou kontrolu a generování náhledů.
 Po dokončení má příloha `contentUrl`; detail komunitního prvku může zobrazit obrázek, přehrát video přes HTML5 `video` a otevřít PDF.
 
+## Přístup k médiím
+
+Text reportu, poloha, kategorie, stupeň rizika a platnost jsou mapová informace. Po publikování se proto mohou zobrazit i uživateli bez účtu, pokud je zapnuté veřejné čtení.
+Samotné médium má oddělené přístupové pravidlo uložené v `attachment.metadata.access`.
+
+Podporované režimy:
+
+- `public`: výchozí režim, médium je dostupné všem, kteří smějí číst report;
+- `private`: médium vidí pouze autor reportu;
+- `users`: médium vidí autor a uvedení uživatelé podle Keycloak `subjectId`;
+- `groups`: médium vidí autor a aktivní členové vybraných COP komunitních skupin.
+
+Příklad omezení na skupinu:
+
+```json
+{
+  "metadata": {
+    "access": {
+      "audience": "groups",
+      "groupIds": ["b7d7e35b-9bb3-4d25-b4a7-8b56abbb9999"]
+    }
+  }
+}
+```
+
+Pokud uživatel nemá právo na médium, API stále vrátí mapový report a v příloze uvede `accessDenied: true`, ale nevrátí `contentUrl`.
+Endpoint `GET /attachments/{attachmentId}/content` u stejného média vrací záměrně `404`, aby se neprozrazovala existence nebo identita chráněného objektu.
+
+## Komunitní skupiny
+
+Skupiny jsou aplikační sharing model COP, nikoli náhrada Matrix roomů. Do budoucna mají být navázané na konverzace v CSM Messaging, ale správa přístupu k médiím zůstává v COP, protože COP je systém záznamu pro uživatelská hlášení.
+
+Vlastnosti skupiny:
+
+- `visibility: "public"`: uživatel může vstoupit bez schválení;
+- `visibility: "private"`: žádost o vstup je `pending` a správce ji musí potvrdit;
+- role členů: `owner`, `admin`, `member`;
+- stav členství: `active`, `pending`.
+
+Autor skupiny je automaticky `owner`. Pouze `owner` nebo `admin` mohou přidávat členy, potvrzovat žádosti a v další fázi měnit nastavení skupiny.
+V pilotním webu lze skupinu založit přímo při nahrávání hlášení nebo v panelu Konverzace. Pro produkci je potřeba doplnit uživatelský adresář, aby běžný uživatel nepracoval se syrovým `subjectId`.
+
 ## Poloha fotky
 
 Poloha je pro tento use-case podstatná. Ukládají se dvě různé hodnoty:
@@ -138,11 +187,12 @@ Poznámka k veřejnému provozu: `COP_MEDIA_S3_PUBLIC_ENDPOINT` musí být dosa�
 2. Aplikace získá polohu zařízení a přesnost.
 3. Uživatel pořídí fotku/video nebo vybere PDF a určí kategorii, riziko a platnost.
 4. Aplikace vytvoří `POST /api/v1/community/reports`.
-5. Aplikace požádá o upload slot přes `POST /attachments`.
-6. Aplikace nahraje přílohu na `upload.uploadUrl`; pokud to není možné, použije fallback `POST /upload`.
-7. Aplikace zavolá `POST /complete`.
-8. Aplikace zavolá `POST /submit`.
-9. Report se zobrazí v komunitní mapové vrstvě včetně přehratelných/otevíratelných příloh.
+5. Aplikace zvolí přístup k médiím: všem, jen autorovi, konkrétním uživatelům nebo skupině.
+6. Aplikace požádá o upload slot přes `POST /attachments` a předá `metadata.access`.
+7. Aplikace nahraje přílohu na `upload.uploadUrl`; pokud to není možné, použije fallback `POST /upload`.
+8. Aplikace zavolá `POST /complete`.
+9. Aplikace zavolá `POST /submit`.
+10. Report se zobrazí v komunitní mapové vrstvě. Přílohy jsou přehratelné nebo otevřitelné jen podle ACL.
 
 Offline iOS režim má držet lokální outbox a odeslat kroky až po obnovení spojení.
 

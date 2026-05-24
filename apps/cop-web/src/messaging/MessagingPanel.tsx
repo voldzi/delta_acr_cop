@@ -1,5 +1,5 @@
 import React from "react";
-import { Lock, LogIn, MessageCircle, RefreshCw, Send, ShieldCheck, X } from "lucide-react";
+import { Lock, LogIn, MessageCircle, Pin, PinOff, Plus, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
 import { createMatrixMessagingSession } from "./matrixClient";
 import type { MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage, MessagingPanelProps } from "./types";
@@ -14,12 +14,18 @@ export function MessagingPanel({
   authenticated,
   authConfig,
   authToken,
+  communityGroups,
+  communityGroupsError,
   error,
   loading,
+  pinned,
   session,
   status,
+  onAddGroupMember,
   onClose,
+  onCreateGroup,
   onLogin,
+  onPinnedChange,
   onRefresh
 }: MessagingPanelProps) {
   const [bootstrapError, setBootstrapError] = React.useState<string | null>(null);
@@ -29,6 +35,12 @@ export function MessagingPanel({
   const [selectedRoomId, setSelectedRoomId] = React.useState<string | null>(null);
   const [timeline, setTimeline] = React.useState<MatrixTimelineMessage[]>([]);
   const [composerText, setComposerText] = React.useState("");
+  const [groupActionError, setGroupActionError] = React.useState<string | null>(null);
+  const [groupActionLoading, setGroupActionLoading] = React.useState(false);
+  const [groupMemberSubjectId, setGroupMemberSubjectId] = React.useState("");
+  const [newGroupName, setNewGroupName] = React.useState("");
+  const [newGroupVisibility, setNewGroupVisibility] = React.useState<"private" | "public">("private");
+  const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [syncState, setSyncState] = React.useState("idle");
 
   React.useEffect(() => () => {
@@ -47,6 +59,60 @@ export function MessagingPanel({
   const chatReady = Boolean(status?.chatAvailable && authenticated && authToken);
   const e2eeRequired = status?.features?.endToEndEncryptionRequired === true;
   const matrixBootstrapReady = status?.features?.matrixTokenBootstrap === true;
+  const selectedGroup = communityGroups.find((group) => group.groupId === selectedGroupId) ?? communityGroups[0] ?? null;
+
+  async function createGroup() {
+    const name = newGroupName.trim();
+    if (!name) {
+      setGroupActionError("Doplňte název skupiny.");
+      return;
+    }
+    setGroupActionLoading(true);
+    setGroupActionError(null);
+    try {
+      const group = await onCreateGroup(name, newGroupVisibility);
+      setSelectedGroupId(group.groupId);
+      setNewGroupName("");
+    } catch (caught) {
+      setGroupActionError(caught instanceof Error ? caught.message : "Skupinu se nepodařilo vytvořit.");
+    } finally {
+      setGroupActionLoading(false);
+    }
+  }
+
+  async function addMember() {
+    const subjectId = groupMemberSubjectId.trim();
+    if (!selectedGroup || !subjectId) {
+      return;
+    }
+    setGroupActionLoading(true);
+    setGroupActionError(null);
+    try {
+      const group = await onAddGroupMember(selectedGroup.groupId, subjectId);
+      setSelectedGroupId(group.groupId);
+      setGroupMemberSubjectId("");
+    } catch (caught) {
+      setGroupActionError(caught instanceof Error ? caught.message : "Člena se nepodařilo přidat.");
+    } finally {
+      setGroupActionLoading(false);
+    }
+  }
+
+  async function approveMember(subjectId: string, displayName?: string) {
+    if (!selectedGroup || !subjectId) {
+      return;
+    }
+    setGroupActionLoading(true);
+    setGroupActionError(null);
+    try {
+      const group = await onAddGroupMember(selectedGroup.groupId, subjectId, displayName);
+      setSelectedGroupId(group.groupId);
+    } catch (caught) {
+      setGroupActionError(caught instanceof Error ? caught.message : "Žádost se nepodařilo potvrdit.");
+    } finally {
+      setGroupActionLoading(false);
+    }
+  }
 
   async function openConversations() {
     if (!authToken || !authenticated) {
@@ -97,24 +163,30 @@ export function MessagingPanel({
   }
 
   return (
-    <section className="messaging-panel" aria-label="Zprávy">
+    <section className={`messaging-panel ${pinned ? "pinned" : ""}`} aria-label="Konverzace">
       <div className="messaging-panel-header">
-        <div className="panel-title">
+        <div className="panel-title chat-panel-title">
           <MessageCircle size={17} />
-          <strong>Zprávy</strong>
+          <div>
+            <strong>Konverzace</strong>
+            <span>Skupiny, zprávy a sdílená média</span>
+          </div>
         </div>
-        <button aria-label="Zavřít zprávy" className="icon-button compact" onClick={onClose} title="Zavřít" type="button">
-          <X size={16} />
-        </button>
+        <div className="messaging-header-actions">
+          <button aria-label={pinned ? "Odepnout konverzace" : "Připnout konverzace"} className="icon-button compact" onClick={() => onPinnedChange(!pinned)} title={pinned ? "Odepnout od mapy" : "Připnout k mapě"} type="button">
+            {pinned ? <PinOff size={16} /> : <Pin size={16} />}
+          </button>
+          <button aria-label="Zavřít konverzace" className="icon-button compact" onClick={onClose} title="Zavřít" type="button">
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
-      <div className="messaging-status-grid">
-        <ReadinessRow label="Provider" value={status?.serviceName ?? "CSM Messaging"} tone={messagingStatusTone(providerStatus)} />
-        <ReadinessRow label="Stav" value={messagingStatusLabel(providerStatus, loading)} tone={messagingStatusTone(providerStatus)} />
-        <ReadinessRow label="Přihlášení" value={authenticated ? operatorDisplayName(session, authConfig) : "vyžaduje účet"} tone={authenticated ? "ok" : "neutral"} />
-        <ReadinessRow label="E2EE" value={e2eeRequired ? "vyžadováno" : "čeká na kontrakt"} tone={e2eeRequired ? "ok" : "neutral"} />
-        <ReadinessRow label="Bootstrap" value={matrixBootstrapReady ? "Matrix token" : "disabled"} tone={matrixBootstrapReady ? "ok" : "neutral"} />
-        <ReadinessRow label="Sync" value={matrixSession ? syncState : "neaktivní"} tone={matrixSession ? "ok" : "neutral"} />
+      <div className="chat-status-strip">
+        <span className={messagingStatusTone(providerStatus)}>{messagingStatusLabel(providerStatus, loading)}</span>
+        <span>{authenticated ? operatorDisplayName(session, authConfig) : "bez účtu"}</span>
+        <span>{matrixSession ? `sync ${syncState}` : matrixBootstrapReady ? "chat připraven" : "čeká na chat"}</span>
+        {e2eeRequired ? <span>E2EE</span> : null}
       </div>
 
       {error ? <div className="error-banner">Messaging: {error}</div> : null}
@@ -141,19 +213,38 @@ export function MessagingPanel({
         />
       ) : chatReady ? (
         <div className="messaging-empty-state">
-          <strong>Matrix/E2EE bootstrap je připraven.</strong>
-          <p>Po otevření konverzací bude web klient komunikovat přímo přes Matrix client-server API.</p>
+          <strong>Konverzace jsou připravené.</strong>
+          <p>Otevřete chat a pokračujte ve skupinách navázaných na sdílení v mapě.</p>
           <div className="messaging-security-note">
             <ShieldCheck size={15} />
-            COP zůstává pouze policy/bootstrap vrstva. Zprávy nejdou přes COP API.
+            Šifrované zprávy nejdou přes COP API.
           </div>
         </div>
       ) : (
         <div className="messaging-empty-state">
-          <strong>Chat zatím běží v integračním režimu.</strong>
-          <p>COP čte pouze server-side capability/health metadata. Obsah zpráv se přes COP ani Phoenix API neposílá jako plaintext.</p>
+          <strong>Chat zatím čeká na bezpečný bootstrap.</strong>
+          <p>Skupiny pro sdílení médií můžete připravit už teď; zprávy se zapnou po Matrix/E2EE potvrzení.</p>
         </div>
       )}
+
+      {authenticated ? (
+        <CommunityGroupsPanel
+          actionError={groupActionError ?? communityGroupsError}
+          actionLoading={groupActionLoading}
+          groups={communityGroups}
+          memberSubjectId={groupMemberSubjectId}
+          newGroupName={newGroupName}
+          newGroupVisibility={newGroupVisibility}
+          selectedGroup={selectedGroup}
+          onAddMember={() => void addMember()}
+          onApproveMember={(subjectId, displayName) => void approveMember(subjectId, displayName)}
+          onCreateGroup={() => void createGroup()}
+          onMemberSubjectIdChange={setGroupMemberSubjectId}
+          onNewGroupNameChange={setNewGroupName}
+          onNewGroupVisibilityChange={setNewGroupVisibility}
+          onSelectGroup={setSelectedGroupId}
+        />
+      ) : null}
 
       {status?.warnings.length ? (
         <div className="messaging-warning-list">
@@ -170,10 +261,114 @@ export function MessagingPanel({
         </button>
         <button className="mini-button" disabled={!chatReady || bootstrapLoading} onClick={() => void openConversations()} type="button">
           <Lock size={14} />
-          {bootstrapLoading ? "Spouštím Matrix" : matrixSession ? "Konverzace otevřeny" : "Otevřít konverzace"}
+          {bootstrapLoading ? "Spouštím chat" : matrixSession ? "Konverzace otevřeny" : "Otevřít chat"}
         </button>
       </div>
     </section>
+  );
+}
+
+function CommunityGroupsPanel({
+  actionError,
+  actionLoading,
+  groups,
+  memberSubjectId,
+  newGroupName,
+  newGroupVisibility,
+  selectedGroup,
+  onAddMember,
+  onApproveMember,
+  onCreateGroup,
+  onMemberSubjectIdChange,
+  onNewGroupNameChange,
+  onNewGroupVisibilityChange,
+  onSelectGroup
+}: {
+  actionError: string | null;
+  actionLoading: boolean;
+  groups: MessagingPanelProps["communityGroups"];
+  memberSubjectId: string;
+  newGroupName: string;
+  newGroupVisibility: "private" | "public";
+  selectedGroup: MessagingPanelProps["communityGroups"][number] | null;
+  onAddMember: () => void;
+  onApproveMember: (subjectId: string, displayName?: string) => void;
+  onCreateGroup: () => void;
+  onMemberSubjectIdChange: (value: string) => void;
+  onNewGroupNameChange: (value: string) => void;
+  onNewGroupVisibilityChange: (value: "private" | "public") => void;
+  onSelectGroup: (groupId: string) => void;
+}) {
+  const pendingMembers = selectedGroup?.members.filter((member) => member.status === "pending") ?? [];
+  return (
+    <div className="chat-groups-panel">
+      <div className="chat-groups-title">
+        <Users size={16} />
+        <strong>Skupiny</strong>
+      </div>
+      <div className="chat-group-list">
+        {groups.length === 0 ? <span className="empty-mini">Zatím nemáte žádnou skupinu.</span> : null}
+        {groups.map((group) => (
+          <button
+            className={selectedGroup?.groupId === group.groupId ? "active" : ""}
+            key={group.groupId}
+            onClick={() => onSelectGroup(group.groupId)}
+            type="button"
+          >
+            <span>{group.name}</span>
+            <small>{group.visibility === "public" ? "veřejná" : "s povolením"} · {group.members.filter((member) => member.status === "active").length} členů</small>
+          </button>
+        ))}
+      </div>
+      <div className="chat-group-create">
+        <input
+          maxLength={80}
+          placeholder="Nová skupina"
+          value={newGroupName}
+          onChange={(event) => onNewGroupNameChange(event.target.value)}
+        />
+        <select
+          value={newGroupVisibility}
+          onChange={(event) => onNewGroupVisibilityChange(event.target.value as "private" | "public")}
+        >
+          <option value="private">S povolením</option>
+          <option value="public">Veřejná</option>
+        </select>
+        <button className="mini-button" disabled={actionLoading || !newGroupName.trim()} onClick={onCreateGroup} type="button">
+          <Plus size={14} />
+          Založit
+        </button>
+      </div>
+      {selectedGroup ? (
+        <div className="chat-group-members">
+          <strong>{selectedGroup.name}</strong>
+          <span>{selectedGroup.members.filter((member) => member.status === "pending").length} žádostí čeká</span>
+          {pendingMembers.length > 0 ? (
+            <div className="chat-group-pending-list">
+              {pendingMembers.slice(0, 5).map((member) => (
+                <span key={member.subjectId}>
+                  <small>{member.displayName}</small>
+                  <button className="mini-button" disabled={actionLoading} onClick={() => onApproveMember(member.subjectId, member.displayName)} type="button">
+                    Schválit
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div>
+            <input
+              placeholder="subjectId uživatele"
+              value={memberSubjectId}
+              onChange={(event) => onMemberSubjectIdChange(event.target.value)}
+            />
+            <button className="mini-button" disabled={actionLoading || !memberSubjectId.trim()} onClick={onAddMember} type="button">
+              Přidat
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {actionError ? <div className="error-banner">{actionError}</div> : null}
+    </div>
   );
 }
 
@@ -285,15 +480,6 @@ function createMatrixDeviceId(): string {
 
 function isValidMatrixDeviceId(value: string | null): value is string {
   return Boolean(value && /^[A-Za-z0-9._=-]{1,64}$/u.test(value));
-}
-
-function ReadinessRow({ label, value, tone }: { label: string; value: string; tone: Tone }) {
-  return (
-    <div className={`readiness-row ${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
 }
 
 function messagingStatusTone(status: "degraded" | "disabled" | "online"): Tone {

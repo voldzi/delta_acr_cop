@@ -10,6 +10,12 @@ The current integration reads provider capability and health discovery and is
 ready for server-side metadata calls. It prepares the application shell for a
 chat window without turning the pilot baseline into a plaintext message proxy.
 
+The user-facing web surface intentionally uses the term **Konverzace/Chat**
+instead of technical provider names. The panel can be opened as a floating
+conversation window or pinned next to the map on larger screens. On a phone the
+pinned panel becomes the active workspace and replaces the map until the user
+closes or unpins it.
+
 ## Current Provider Contract
 
 COP reads the provider only from the API server:
@@ -155,3 +161,20 @@ The Matrix token endpoint must remain scoped to the authenticated user and must
 not grant administrative or service-level capabilities. `chatAvailable` is
 derived from provider metadata only; the actual `accessToken` is returned only
 from the authenticated bootstrap endpoint.
+
+## Relationship to COP Groups
+
+COP owns community reporting and media ACL. CSM Messaging owns conversations.
+The two concepts are deliberately separate:
+
+- COP community group: controls who can see restricted media attached to map
+  reports.
+- Messaging conversation/Matrix room: carries chat messages and future map
+  links.
+
+The current COP UI lets authenticated users create sharing groups and manage
+members in the conversation panel. A later provider contract should add a
+server-side metadata link between a COP `groupId` and a CSM conversation or
+Matrix room. Until that exists, COP must not infer media authorization from a
+Matrix room membership and must not expose protected media through chat
+messages.

@@ -1,17 +1,23 @@
 import type { AuthConfig, AuthSession } from "../auth";
-import type { MessagingBootstrapResponse, MessagingStatusResponse } from "../cop-data";
+import type { CommunityGroup, CommunityGroupVisibility, MessagingBootstrapResponse, MessagingStatusResponse } from "../cop-data";
 
 export interface MessagingPanelProps {
   apiBase: string;
   authenticated: boolean;
   authConfig: AuthConfig;
   authToken?: string;
+  communityGroups: CommunityGroup[];
+  communityGroupsError: string | null;
   error: string | null;
   loading: boolean;
+  pinned: boolean;
   session: AuthSession;
   status: MessagingStatusResponse | null;
+  onAddGroupMember: (groupId: string, subjectId: string, displayName?: string) => Promise<CommunityGroup>;
   onClose: () => void;
+  onCreateGroup: (name: string, visibility: CommunityGroupVisibility) => Promise<CommunityGroup>;
   onLogin: () => void;
+  onPinnedChange: (pinned: boolean) => void;
   onRefresh: () => void;
 }
 

@@ -49,9 +49,11 @@ import {
   acknowledgeCopAlert,
   connectCopStream,
   createCommunityAttachmentUpload,
+  createCommunityGroup,
   createCommunityReport,
   fetchCopDashboardData,
   fetchCopAlerts,
+  fetchCommunityGroups,
   fetchMapCatalog,
   fetchMapFeatures,
   fetchMessagingStatus,
@@ -67,6 +69,7 @@ import {
   isPublicFlightObject,
   saveUserProfile,
   submitCommunityReport,
+  upsertCommunityGroupMember,
   uploadCommunityAttachmentFile,
   type CopDashboardData,
   type AoiRule,
@@ -79,9 +82,12 @@ import {
   type CopStreamHealth,
   type CommunityAttachmentKind,
   type CommunityFeatureCollectionResponse,
+  type CommunityGroup,
   type CommunityReportCategory,
   type CommunityReportHazardSeverity,
   type CommunityReportLocation,
+  type CommunityMediaAccessMode,
+  type CommunityMediaAccessPolicy,
   type CommunityVideoSpatialMode,
   type FlightDataAttributes,
   type FlightReferenceFeatureCollectionResponse,
@@ -356,6 +362,8 @@ export function App() {
   const [communityReportSuccess, setCommunityReportSuccess] = React.useState<string | null>(null);
   const [communityReportLocationPickMode, setCommunityReportLocationPickMode] = React.useState(false);
   const [communityRefreshNonce, setCommunityRefreshNonce] = React.useState(0);
+  const [communityGroups, setCommunityGroups] = React.useState<CommunityGroup[]>([]);
+  const [communityGroupsError, setCommunityGroupsError] = React.useState<string | null>(null);
   const [takLayers, setTakLayers] = React.useState<TakLayer[]>([]);
   const [visibleTakLayerIds, setVisibleTakLayerIds] = React.useState<TakLayerId[]>(() => normalizeTakLayerIds(initialPreferences.takLayerIds));
   const [takFeatures, setTakFeatures] = React.useState<TakFeatureCollectionResponse | null>(null);
@@ -376,6 +384,7 @@ export function App() {
   const [profileSyncError, setProfileSyncError] = React.useState<string | null>(null);
   const [serverProfileUpdatedAt, setServerProfileUpdatedAt] = React.useState<string | null>(null);
   const [messagingOpen, setMessagingOpen] = React.useState(false);
+  const [messagingPinned, setMessagingPinned] = React.useState(false);
   const [messagingStatus, setMessagingStatus] = React.useState<MessagingStatusResponse | null>(null);
   const [messagingLoading, setMessagingLoading] = React.useState(false);
   const [messagingError, setMessagingError] = React.useState<string | null>(null);
@@ -503,6 +512,21 @@ export function App() {
       setMessagingLoading(false);
     }
   }, [authToken]);
+
+  const loadCommunityGroups = React.useCallback(async () => {
+    if (!messagingAuthenticated || !authSession.accessToken) {
+      setCommunityGroups([]);
+      setCommunityGroupsError(null);
+      return;
+    }
+    try {
+      const response = await fetchCommunityGroups(apiBase, authSession.accessToken);
+      setCommunityGroups(response.items);
+      setCommunityGroupsError(null);
+    } catch (error) {
+      setCommunityGroupsError(error instanceof Error ? error.message : "Skupiny nejsou dostupné.");
+    }
+  }, [authSession.accessToken, messagingAuthenticated]);
 
   React.useEffect(() => {
     void load();
@@ -674,7 +698,15 @@ export function App() {
       return;
     }
     void loadMessagingStatus();
-  }, [loadMessagingStatus, messagingOpen]);
+    void loadCommunityGroups();
+  }, [loadCommunityGroups, loadMessagingStatus, messagingOpen]);
+
+  React.useEffect(() => {
+    if (!communityReportOpen) {
+      return;
+    }
+    void loadCommunityGroups();
+  }, [communityReportOpen, loadCommunityGroups]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -2072,6 +2104,57 @@ export function App() {
     setLocationStatus(`Poloha hlášení: ${center.lat.toFixed(5)}, ${center.lon.toFixed(5)}`);
   }
 
+  async function handleCreateCommunityGroupFromReport() {
+    if (!messagingAuthenticated || !authSession.accessToken) {
+      openSettings("account");
+      return;
+    }
+    const name = communityReportDraft.newGroupName.trim();
+    if (!name) {
+      setCommunityReportError("Doplňte název skupiny.");
+      return;
+    }
+    try {
+      const group = await createCommunityGroupForUi(name, communityReportDraft.newGroupVisibility);
+      setCommunityReportDraft((current) => ({
+        ...current,
+        mediaAccessGroupId: group.groupId,
+        mediaAccessMode: "groups",
+        newGroupName: ""
+      }));
+      setCommunityReportError(null);
+    } catch (error) {
+      setCommunityReportError(error instanceof Error ? error.message : "Skupinu se nepodařilo vytvořit.");
+    }
+  }
+
+  async function createCommunityGroupForUi(name: string, visibility: "private" | "public"): Promise<CommunityGroup> {
+    if (!messagingAuthenticated || !authSession.accessToken) {
+      throw new Error("Pro správu skupin je potřeba přihlášení.");
+    }
+    const group = await createCommunityGroup(apiBase, authSession.accessToken, {
+      name,
+      visibility
+    });
+    setCommunityGroups((current) => [group, ...current.filter((item) => item.groupId !== group.groupId)]);
+    return group;
+  }
+
+  async function addCommunityGroupMemberForUi(groupId: string, subjectId: string, displayName?: string): Promise<CommunityGroup> {
+    if (!messagingAuthenticated || !authSession.accessToken) {
+      throw new Error("Pro správu skupin je potřeba přihlášení.");
+    }
+    const group = await upsertCommunityGroupMember(apiBase, authSession.accessToken, groupId, {
+      displayName: displayName?.trim() || subjectId,
+      role: "member",
+      status: "active",
+      subjectId,
+      username: subjectId
+    });
+    setCommunityGroups((current) => current.map((item) => item.groupId === group.groupId ? group : item));
+    return group;
+  }
+
   async function submitCommunityReportDraft() {
     if (!authToken) {
       setCommunityReportError("Pro uložení hlášení je potřeba přihlášení.");
@@ -2109,7 +2192,7 @@ export function App() {
           contentType,
           fileName: file.name || undefined,
           kind,
-          metadata: buildCommunityAttachmentMetadata(file, contentType, kind, communityReportDraft.videoSpatialMode)
+          metadata: buildCommunityAttachmentMetadata(file, contentType, kind, communityReportDraft.videoSpatialMode, communityReportAccessPolicy(communityReportDraft))
         });
         await uploadCommunityAttachmentFile(apiBase, authToken, report.reportId, file, slot);
       }
@@ -2831,7 +2914,7 @@ export function App() {
           type="button"
         >
           <MessageCircle size={20} />
-          <span>Zprávy</span>
+          <span>Chat</span>
         </button>
       ) : null}
 
@@ -2841,18 +2924,26 @@ export function App() {
           authenticated={messagingAuthenticated}
           authConfig={authConfig}
           authToken={messagingAuthenticated ? authSession.accessToken : undefined}
+          communityGroups={communityGroups}
+          communityGroupsError={communityGroupsError}
           error={messagingError}
           loading={messagingLoading}
+          pinned={messagingPinned}
           session={authSession}
           status={messagingStatus}
+          onAddGroupMember={(groupId, subjectId, displayName) => addCommunityGroupMemberForUi(groupId, subjectId, displayName)}
           onClose={() => setMessagingOpen(false)}
+          onCreateGroup={(name, visibility) => createCommunityGroupForUi(name, visibility)}
           onLogin={openLoginPrompt}
+          onPinnedChange={setMessagingPinned}
           onRefresh={() => void loadMessagingStatus()}
         />
       ) : null}
 
       {communityReportOpen ? (
         <CommunityReportDialog
+          communityGroups={communityGroups}
+          communityGroupsError={communityGroupsError}
           draft={communityReportDraft}
           error={communityReportError}
           isSubmitting={communityReportSubmitting}
@@ -2865,6 +2956,7 @@ export function App() {
           onLocationFromMap={setCommunityReportLocationFromMapCenter}
           onLocationFromMapClick={startCommunityReportMapPick}
           onLocationFromUser={setCommunityReportLocationFromUser}
+          onCreateGroup={() => void handleCreateCommunityGroupFromReport()}
           onSubmit={() => void submitCommunityReportDraft()}
         />
       ) : null}
@@ -2878,18 +2970,26 @@ interface CommunityReportDraft {
   files: File[];
   hazardSeverity: CommunityReportHazardSeverity;
   location: CommunityReportLocation;
+  mediaAccessGroupId: string;
+  mediaAccessMode: CommunityMediaAccessMode;
+  mediaAccessUserSubjectIds: string;
+  newGroupName: string;
+  newGroupVisibility: "private" | "public";
   title: string;
   validUntil: string;
   videoSpatialMode: CommunityVideoSpatialMode;
 }
 
 interface CommunityReportDialogProps {
+  communityGroups: CommunityGroup[];
+  communityGroupsError: string | null;
   draft: CommunityReportDraft;
   error: string | null;
   isSubmitting: boolean;
   success: string | null;
   onChange: React.Dispatch<React.SetStateAction<CommunityReportDraft>>;
   onClose: () => void;
+  onCreateGroup: () => void;
   onLocationFromMap: () => void;
   onLocationFromMapClick: () => void;
   onLocationFromUser: () => void;
@@ -2897,12 +2997,15 @@ interface CommunityReportDialogProps {
 }
 
 function CommunityReportDialog({
+  communityGroups,
+  communityGroupsError,
   draft,
   error,
   isSubmitting,
   success,
   onChange,
   onClose,
+  onCreateGroup,
   onLocationFromMap,
   onLocationFromMapClick,
   onLocationFromUser,
@@ -2986,6 +3089,71 @@ function CommunityReportDialog({
           <button className="mini-button" onClick={onLocationFromMap} type="button">Střed mapy</button>
           <button className="mini-button" onClick={onLocationFromMapClick} type="button">Vybrat v mapě</button>
         </div>
+
+        <section className="report-access-panel">
+          <div className="report-access-header">
+            <strong>Přístup k médiím</strong>
+            <span>{communityMediaAccessLabel(draft.mediaAccessMode)}</span>
+          </div>
+          <select
+            value={draft.mediaAccessMode}
+            onChange={(event) => onChange((current) => ({ ...current, mediaAccessMode: event.target.value as CommunityMediaAccessMode }))}
+          >
+            <option value="public">Všem</option>
+            <option value="private">Jen mně</option>
+            <option value="users">Vybraní uživatelé</option>
+            <option value="groups">Skupina</option>
+          </select>
+          {draft.mediaAccessMode === "users" ? (
+            <label className="report-field">
+              Uživatelé
+              <textarea
+                maxLength={1200}
+                placeholder="Každý řádek jeden subjectId uživatele. Později zde bude adresář kontaktů."
+                value={draft.mediaAccessUserSubjectIds}
+                onChange={(event) => onChange((current) => ({ ...current, mediaAccessUserSubjectIds: event.target.value }))}
+              />
+            </label>
+          ) : null}
+          {draft.mediaAccessMode === "groups" ? (
+            <div className="report-group-picker">
+              <label className="report-field">
+                Skupina
+                <select
+                  value={draft.mediaAccessGroupId}
+                  onChange={(event) => onChange((current) => ({ ...current, mediaAccessGroupId: event.target.value }))}
+                >
+                  <option value="">Vyberte skupinu</option>
+                  {communityGroups.map((group) => (
+                    <option key={group.groupId} value={group.groupId}>
+                      {group.name} ({group.visibility === "public" ? "veřejná" : "soukromá"})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="report-create-group">
+                <input
+                  maxLength={80}
+                  placeholder="Nová skupina, např. Povodně Vrbno"
+                  value={draft.newGroupName}
+                  onChange={(event) => onChange((current) => ({ ...current, newGroupName: event.target.value }))}
+                />
+                <select
+                  value={draft.newGroupVisibility}
+                  onChange={(event) => onChange((current) => ({ ...current, newGroupVisibility: event.target.value as "private" | "public" }))}
+                >
+                  <option value="private">S povolením vstupu</option>
+                  <option value="public">Veřejná</option>
+                </select>
+                <button className="mini-button" onClick={onCreateGroup} type="button">Vytvořit</button>
+              </div>
+              {communityGroupsError ? <span className="report-field-hint">{communityGroupsError}</span> : null}
+            </div>
+          ) : null}
+          <span className="report-field-hint">
+            Text hlášení a stupeň výstrahy zůstávají v mapě. Fotky, PDF a videa otevře jen oprávněný uživatel.
+          </span>
+        </section>
 
         <label className="report-field">
           Přílohy
@@ -5321,7 +5489,11 @@ function CommunityAttachmentPreview({
                 Otevřít PDF
               </a>
             ) : null}
-            {!attachment.contentUrl ? <span className="empty-mini">Příloha zatím nemá dostupný náhled.</span> : null}
+            {!attachment.contentUrl ? (
+              <span className="empty-mini">
+                {attachment.accessDenied ? "Médium je dostupné jen oprávněným uživatelům nebo členům skupiny." : "Příloha zatím nemá dostupný náhled."}
+              </span>
+            ) : null}
           </div>
         );
       })}
@@ -5583,6 +5755,11 @@ function createCommunityReportDraft(location = resolveCommunityReportLocation(nu
     files: [],
     hazardSeverity: "warning",
     location,
+    mediaAccessGroupId: "",
+    mediaAccessMode: "public",
+    mediaAccessUserSubjectIds: "",
+    newGroupName: "",
+    newGroupVisibility: "private",
     title: "",
     validUntil: toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000)),
     videoSpatialMode: "none"
@@ -5624,6 +5801,12 @@ function validateCommunityReportDraft(draft: CommunityReportDraft): string | nul
   }
   if (Date.parse(draft.validUntil) <= Date.now() - 60_000) {
     return "Platnost rizika musí být v budoucnosti.";
+  }
+  if (draft.mediaAccessMode === "groups" && !draft.mediaAccessGroupId) {
+    return "Vyberte skupinu pro omezení přístupu k médiím.";
+  }
+  if (draft.mediaAccessMode === "users" && parseSubjectIdList(draft.mediaAccessUserSubjectIds).length === 0) {
+    return "Doplňte alespoň jednoho uživatele pro omezení přístupu k médiím.";
   }
   const unsupported = draft.files.find((file) => !communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file)));
   if (unsupported) {
@@ -5699,13 +5882,16 @@ function buildCommunityAttachmentMetadata(
   file: File,
   contentType: string,
   kind: CommunityAttachmentKind,
-  videoSpatialMode: CommunityVideoSpatialMode
+  videoSpatialMode: CommunityVideoSpatialMode,
+  access: CommunityMediaAccessPolicy
 ): Record<string, unknown> | undefined {
+  const accessMetadata = buildCommunityMediaAccessMetadata(access);
   if (kind !== "video") {
-    return undefined;
+    return accessMetadata ? { access: accessMetadata } : undefined;
   }
   const stereoLayout = videoSpatialMode === "side_by_side" || videoSpatialMode === "over_under" ? videoSpatialMode : undefined;
   return {
+    ...(accessMetadata ? { access: accessMetadata } : {}),
     spatialVideo: {
       browserPlayback: videoSpatialMode === "apple_mv_hevc" ? "2d_fallback" : stereoLayout ? "webxr_stereo" : "html5_2d",
       contentType,
@@ -5719,6 +5905,56 @@ function buildCommunityAttachmentMetadata(
       byteSize: file.size
     }
   };
+}
+
+function communityReportAccessPolicy(draft: CommunityReportDraft): CommunityMediaAccessPolicy {
+  if (draft.mediaAccessMode === "groups") {
+    return {
+      audience: "groups",
+      groupIds: draft.mediaAccessGroupId ? [draft.mediaAccessGroupId] : []
+    };
+  }
+  if (draft.mediaAccessMode === "users") {
+    return {
+      audience: "users",
+      userSubjectIds: parseSubjectIdList(draft.mediaAccessUserSubjectIds)
+    };
+  }
+  return {
+    audience: draft.mediaAccessMode
+  };
+}
+
+function buildCommunityMediaAccessMetadata(access: CommunityMediaAccessPolicy): Record<string, unknown> | undefined {
+  if (access.audience === "public") {
+    return undefined;
+  }
+  return {
+    audience: access.audience,
+    ...(access.groupIds?.length ? { groupIds: access.groupIds } : {}),
+    ...(access.userSubjectIds?.length ? { userSubjectIds: access.userSubjectIds } : {})
+  };
+}
+
+function parseSubjectIdList(value: string): string[] {
+  return Array.from(new Set(value
+    .split(/[\s,;]+/u)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 50)));
+}
+
+function communityMediaAccessLabel(mode: CommunityMediaAccessMode): string {
+  switch (mode) {
+    case "private":
+      return "jen autor";
+    case "users":
+      return "vybraní uživatelé";
+    case "groups":
+      return "skupina";
+    default:
+      return "všem";
+  }
 }
 
 function communityAttachmentSpatialMode(attachment: { metadata?: Record<string, unknown> }): CommunityVideoSpatialMode {

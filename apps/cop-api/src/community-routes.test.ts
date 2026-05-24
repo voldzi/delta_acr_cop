@@ -189,6 +189,175 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("keeps restricted community media private while report text remains visible", async () => {
+    process.env.COP_PUBLIC_READ_ENABLED = "true";
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        category: "flood",
+        description: "Voda rychle stoupá, místo je průjezdné jen částečně.",
+        hazardSeverity: "critical",
+        location: {
+          lat: 50.12,
+          lon: 17.38,
+          source: "manual"
+        },
+        title: "Povodeň u mostu",
+        validUntil: "2026-05-20T18:00:00Z",
+        visibility: "community"
+      },
+      url: "/api/v1/community/reports"
+    });
+    const report = createResponse.json() as { reportId: string };
+    const body = Buffer.from("restricted-photo");
+    const attachmentResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        byteSize: body.length,
+        contentType: "image/jpeg",
+        fileName: "bridge.jpg",
+        kind: "photo",
+        metadata: {
+          access: {
+            audience: "private"
+          }
+        }
+      },
+      url: `/api/v1/community/reports/${report.reportId}/attachments`
+    });
+    const attachment = (attachmentResponse.json() as { attachment: { attachmentId: string } }).attachment;
+    await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        byteSize: body.length,
+        dataBase64: body.toString("base64")
+      },
+      url: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/upload`
+    });
+    await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: `/api/v1/community/reports/${report.reportId}/submit`
+    });
+
+    const anonymousListResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/community/reports?bbox=16.9,49.8,17.8,50.4"
+    });
+    expect(anonymousListResponse.statusCode).toBe(200);
+    expect(anonymousListResponse.json()).toMatchObject({
+      featureCollection: {
+        features: [
+          {
+            properties: {
+              attachments: [
+                {
+                  access: {
+                    audience: "private"
+                  },
+                  accessDenied: true,
+                  attachmentId: attachment.attachmentId,
+                  kind: "photo"
+                }
+              ],
+              description: "Voda rychle stoupá, místo je průjezdné jen částečně.",
+              hazardSeverity: "critical",
+              label: "Povodeň u mostu"
+            }
+          }
+        ]
+      }
+    });
+    const anonymousAttachment = anonymousListResponse.json().featureCollection.features[0].properties.attachments[0];
+    expect(anonymousAttachment.contentUrl).toBeUndefined();
+
+    const contentResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content`
+    });
+    expect(contentResponse.statusCode).toBe(404);
+
+    await app.close();
+  });
+
+  it("creates community sharing groups and lets the owner manage members", async () => {
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        name: "Povodně Vrbno",
+        visibility: "private"
+      },
+      url: "/api/v1/community/groups"
+    });
+    expect(createResponse.statusCode).toBe(201);
+    expect(createResponse.json()).toMatchObject({
+      members: [
+        {
+          role: "owner",
+          status: "active",
+          subjectId: "lab"
+        }
+      ],
+      name: "Povodně Vrbno",
+      visibility: "private"
+    });
+    const group = createResponse.json() as { groupId: string };
+
+    const memberResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        displayName: "Terénní hlídka",
+        role: "member",
+        status: "active",
+        subjectId: "user-123"
+      },
+      url: `/api/v1/community/groups/${group.groupId}/members`
+    });
+    expect(memberResponse.statusCode).toBe(200);
+    expect(memberResponse.json()).toMatchObject({
+      members: expect.arrayContaining([
+        expect.objectContaining({
+          displayName: "Terénní hlídka",
+          role: "member",
+          status: "active",
+          subjectId: "user-123"
+        })
+      ])
+    });
+
+    const listResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/community/groups"
+    });
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json()).toMatchObject({
+      items: [
+        {
+          groupId: group.groupId,
+          name: "Povodně Vrbno"
+        }
+      ]
+    });
+
+    await app.close();
+  });
+
   it("rejects invalid report payloads", async () => {
     const app = buildServer({ mediaStorage: new FakeMediaStorage() });
 

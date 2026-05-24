@@ -224,6 +224,8 @@ export interface SituationFeatureProperties {
   affectedAreas?: string[];
   affiliation?: string;
   attachments?: Array<{
+    access?: Record<string, unknown>;
+    accessDenied?: boolean;
     attachmentId: string;
     byteSize: number;
     contentType: string;
@@ -604,6 +606,16 @@ export type CommunityReportHazardSeverity = "advisory" | "critical" | "warning";
 export type CommunityReportVisibility = "community" | "private" | "public";
 export type CommunityAttachmentKind = "document" | "photo" | "video";
 export type CommunityVideoSpatialMode = "apple_mv_hevc" | "none" | "over_under" | "side_by_side";
+export type CommunityMediaAccessMode = "groups" | "private" | "public" | "users";
+export type CommunityGroupVisibility = "private" | "public";
+export type CommunityGroupMemberRole = "admin" | "member" | "owner";
+export type CommunityGroupMemberStatus = "active" | "pending";
+
+export interface CommunityMediaAccessPolicy {
+  audience: CommunityMediaAccessMode;
+  groupIds?: string[];
+  userSubjectIds?: string[];
+}
 
 export interface CommunityReportLocation {
   accuracyM?: number;
@@ -613,6 +625,8 @@ export interface CommunityReportLocation {
 }
 
 export interface CommunityReportAttachment {
+  access?: Record<string, unknown>;
+  accessDenied?: boolean;
   attachmentId: string;
   byteSize: number;
   captureLocation?: CommunityReportLocation;
@@ -623,6 +637,31 @@ export interface CommunityReportAttachment {
   metadata?: Record<string, unknown>;
   reportId: string;
   status: "failed" | "pending_upload" | "removed" | "uploaded";
+}
+
+export interface CommunityGroupMember {
+  displayName: string;
+  joinedAt?: string;
+  requestedAt: string;
+  role: CommunityGroupMemberRole;
+  status: CommunityGroupMemberStatus;
+  subjectId: string;
+  username: string;
+}
+
+export interface CommunityGroup {
+  createdAt: string;
+  createdBy: {
+    displayName: string;
+    subjectId: string;
+    username: string;
+  };
+  description?: string;
+  groupId: string;
+  members: CommunityGroupMember[];
+  name: string;
+  updatedAt: string;
+  visibility: CommunityGroupVisibility;
 }
 
 export interface CommunityReport {
@@ -1212,6 +1251,60 @@ export async function createCommunityReport(
       },
       visibility: payload.visibility ?? "community"
     }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function fetchCommunityGroups(apiBase: string, token: string): Promise<{ items: CommunityGroup[]; serverTimestamp: string }> {
+  return fetchJson<{ items: CommunityGroup[]; serverTimestamp: string }>(`${apiBase}/api/v1/community/groups`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function createCommunityGroup(
+  apiBase: string,
+  token: string,
+  payload: {
+    description?: string;
+    name: string;
+    visibility: CommunityGroupVisibility;
+  }
+): Promise<CommunityGroup> {
+  return fetchJson<CommunityGroup>(`${apiBase}/api/v1/community/groups`, {
+    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function requestCommunityGroupJoin(apiBase: string, token: string, groupId: string): Promise<CommunityGroup> {
+  return fetchJson<CommunityGroup>(`${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}/join-request`, {
+    headers: authHeaders(token),
+    method: "POST"
+  });
+}
+
+export async function upsertCommunityGroupMember(
+  apiBase: string,
+  token: string,
+  groupId: string,
+  payload: {
+    displayName?: string;
+    role?: CommunityGroupMemberRole;
+    status?: CommunityGroupMemberStatus;
+    subjectId: string;
+    username?: string;
+  }
+): Promise<CommunityGroup> {
+  return fetchJson<CommunityGroup>(`${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}/members`, {
+    body: JSON.stringify(payload),
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"

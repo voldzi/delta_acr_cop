@@ -19,6 +19,9 @@ export type CommunityReportVisibility = "private" | "community" | "public";
 export type CommunityLocationSource = "device" | "manual" | "photo_exif" | "unknown";
 export type CommunityAttachmentKind = "photo" | "video" | "document";
 export type CommunityAttachmentStatus = "pending_upload" | "uploaded" | "failed" | "removed";
+export type CommunityGroupVisibility = "private" | "public";
+export type CommunityGroupMemberRole = "admin" | "member" | "owner";
+export type CommunityGroupMemberStatus = "active" | "pending";
 
 export interface CommunityReportLocation {
   accuracyM?: number;
@@ -31,6 +34,31 @@ export interface CommunityReportActor {
   displayName: string;
   subjectId: string;
   username: string;
+}
+
+export interface CommunityGroupMemberRecord {
+  displayName: string;
+  joinedAt?: string;
+  requestedAt: string;
+  role: CommunityGroupMemberRole;
+  status: CommunityGroupMemberStatus;
+  subjectId: string;
+  username: string;
+}
+
+interface CommunityGroupMemberWithGroupId extends CommunityGroupMemberRecord {
+  groupId: string;
+}
+
+export interface CommunityGroupRecord {
+  createdAt: string;
+  createdBy: CommunityReportActor;
+  description?: string;
+  groupId: string;
+  members: CommunityGroupMemberRecord[];
+  name: string;
+  updatedAt: string;
+  visibility: CommunityGroupVisibility;
 }
 
 export interface CommunityReportAttachmentRecord {
@@ -82,6 +110,26 @@ export interface CreateCommunityReportInput {
   visibility: CommunityReportVisibility;
 }
 
+export interface CreateCommunityGroupInput {
+  createdBy: CommunityReportActor;
+  description?: string;
+  name: string;
+  visibility: CommunityGroupVisibility;
+}
+
+export interface CommunityGroupQuery {
+  includePublic?: boolean;
+  subjectId?: string;
+}
+
+export interface UpsertCommunityGroupMemberInput {
+  actor: CommunityReportActor;
+  groupId: string;
+  member: CommunityReportActor;
+  role?: CommunityGroupMemberRole;
+  status: CommunityGroupMemberStatus;
+}
+
 export interface CreateCommunityAttachmentInput {
   attachmentId: string;
   bucket: string;
@@ -127,12 +175,17 @@ export interface CommunityReportStore {
   close(): Promise<void>;
   completeAttachment(input: CompleteCommunityAttachmentInput): Promise<CommunityReportAttachmentRecord | null>;
   createAttachment(input: CreateCommunityAttachmentInput): Promise<CommunityReportAttachmentRecord>;
+  createGroup(input: CreateCommunityGroupInput, now: Date): Promise<CommunityGroupRecord>;
   createReport(input: CreateCommunityReportInput, now: Date): Promise<CommunityReportRecord>;
   diagnostics?(): string | undefined;
+  getGroup(groupId: string): Promise<CommunityGroupRecord | null>;
   getReport(reportId: string): Promise<CommunityReportRecord | null>;
   init(): Promise<void>;
+  listGroups(query: CommunityGroupQuery): Promise<CommunityGroupRecord[]>;
   listReports(query: CommunityReportQuery): Promise<CommunityReportRecord[]>;
+  requestGroupMembership(groupId: string, actor: CommunityReportActor, now: Date): Promise<CommunityGroupRecord | null>;
   submitReport(reportId: string, subjectId: string, now: Date): Promise<CommunityReportRecord | null>;
+  upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null>;
 }
 
 export function createCommunityReportStoreFromEnv(env: Record<string, string | undefined> = process.env): CommunityReportStore | undefined {
@@ -161,6 +214,7 @@ export function createCommunityReportStoreFromEnv(env: Record<string, string | u
 export class InMemoryCommunityReportStore implements CommunityReportStore {
   readonly name: string;
   private readonly attachments = new Map<string, CommunityReportAttachmentRecord>();
+  private readonly groups = new Map<string, CommunityGroupRecord>();
   private readonly reports = new Map<string, CommunityReportRecord>();
 
   constructor(name = "memory") {
@@ -193,6 +247,103 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
   async getReport(reportId: string): Promise<CommunityReportRecord | null> {
     const report = this.reports.get(reportId);
     return report ? { ...report, attachments: this.attachmentsForReport(reportId) } : null;
+  }
+
+  async createGroup(input: CreateCommunityGroupInput, now: Date): Promise<CommunityGroupRecord> {
+    const timestamp = now.toISOString();
+    const owner: CommunityGroupMemberRecord = {
+      displayName: input.createdBy.displayName,
+      joinedAt: timestamp,
+      requestedAt: timestamp,
+      role: "owner",
+      status: "active",
+      subjectId: input.createdBy.subjectId,
+      username: input.createdBy.username
+    };
+    const group: CommunityGroupRecord = {
+      createdAt: timestamp,
+      createdBy: input.createdBy,
+      ...(input.description ? { description: input.description } : {}),
+      groupId: randomUUID(),
+      members: [owner],
+      name: input.name,
+      updatedAt: timestamp,
+      visibility: input.visibility
+    };
+    this.groups.set(group.groupId, group);
+    return group;
+  }
+
+  async getGroup(groupId: string): Promise<CommunityGroupRecord | null> {
+    const group = this.groups.get(groupId);
+    return group ? cloneCommunityGroup(group) : null;
+  }
+
+  async listGroups(query: CommunityGroupQuery): Promise<CommunityGroupRecord[]> {
+    return Array.from(this.groups.values())
+      .filter((group) => matchesCommunityGroupQuery(group, query))
+      .sort(compareGroups)
+      .map(cloneCommunityGroup);
+  }
+
+  async requestGroupMembership(groupId: string, actor: CommunityReportActor, now: Date): Promise<CommunityGroupRecord | null> {
+    const group = this.groups.get(groupId);
+    if (!group) {
+      return null;
+    }
+    const timestamp = now.toISOString();
+    const existing = group.members.find((member) => member.subjectId === actor.subjectId);
+    const nextMembers = existing
+      ? group.members.map((member) => member.subjectId === actor.subjectId ? { ...member, requestedAt: member.requestedAt ?? timestamp } : member)
+      : [
+          ...group.members,
+          {
+            displayName: actor.displayName,
+            requestedAt: timestamp,
+            role: "member" as const,
+            status: group.visibility === "public" ? "active" as const : "pending" as const,
+            subjectId: actor.subjectId,
+            username: actor.username,
+            ...(group.visibility === "public" ? { joinedAt: timestamp } : {})
+          }
+        ];
+    const updated = { ...group, members: nextMembers, updatedAt: timestamp };
+    this.groups.set(groupId, updated);
+    return cloneCommunityGroup(updated);
+  }
+
+  async upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null> {
+    const group = this.groups.get(input.groupId);
+    if (!group || !canManageCommunityGroup(group, input.actor.subjectId)) {
+      return null;
+    }
+    const timestamp = now.toISOString();
+    const nextMembers = group.members.some((member) => member.subjectId === input.member.subjectId)
+      ? group.members.map((member) => member.subjectId === input.member.subjectId
+        ? {
+            ...member,
+            displayName: input.member.displayName,
+            role: input.role ?? member.role,
+            status: input.status,
+            username: input.member.username,
+            ...(input.status === "active" ? { joinedAt: member.joinedAt ?? timestamp } : {})
+          }
+        : member)
+      : [
+          ...group.members,
+          {
+            displayName: input.member.displayName,
+            joinedAt: input.status === "active" ? timestamp : undefined,
+            requestedAt: timestamp,
+            role: input.role ?? "member",
+            status: input.status,
+            subjectId: input.member.subjectId,
+            username: input.member.username
+          }
+        ];
+    const updated = { ...group, members: nextMembers, updatedAt: timestamp };
+    this.groups.set(input.groupId, updated);
+    return cloneCommunityGroup(updated);
   }
 
   async listReports(query: CommunityReportQuery): Promise<CommunityReportRecord[]> {
@@ -346,6 +497,138 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     return reportFromRow(row, await this.attachmentsForReports([reportId]));
   }
 
+  async createGroup(input: CreateCommunityGroupInput, now: Date): Promise<CommunityGroupRecord> {
+    const groupId = randomUUID();
+    const timestamp = now.toISOString();
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const groupResult = await client.query<CommunityGroupRow>(
+        `INSERT INTO cop_community_groups (
+          group_id, name, description, visibility, owner_subject_id, owner_username, owner_display_name, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $8::timestamptz)
+        RETURNING *`,
+        [
+          groupId,
+          input.name,
+          input.description ?? null,
+          input.visibility,
+          input.createdBy.subjectId,
+          input.createdBy.username,
+          input.createdBy.displayName,
+          timestamp
+        ]
+      );
+      await client.query(
+        `INSERT INTO cop_community_group_members (
+          group_id, subject_id, username, display_name, role, status, requested_at, joined_at
+        )
+        VALUES ($1, $2, $3, $4, 'owner', 'active', $5::timestamptz, $5::timestamptz)`,
+        [groupId, input.createdBy.subjectId, input.createdBy.username, input.createdBy.displayName, timestamp]
+      );
+      await client.query("COMMIT");
+      const row = groupResult.rows[0];
+      if (!row) {
+        throw new Error("Community group insert returned no row.");
+      }
+      return groupFromRow(row, await this.membersForGroups([groupId]));
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getGroup(groupId: string): Promise<CommunityGroupRecord | null> {
+    const result = await this.pool.query<CommunityGroupRow>("SELECT * FROM cop_community_groups WHERE group_id = $1", [groupId]);
+    const row = result.rows[0];
+    return row ? groupFromRow(row, await this.membersForGroups([groupId])) : null;
+  }
+
+  async listGroups(query: CommunityGroupQuery): Promise<CommunityGroupRecord[]> {
+    const params: unknown[] = [];
+    const clauses = buildCommunityGroupQueryClauses(query, params);
+    const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(" OR ")}` : "";
+    const result = await this.pool.query<CommunityGroupRow>(
+      `SELECT DISTINCT g.*
+      FROM cop_community_groups g
+      LEFT JOIN cop_community_group_members m ON m.group_id = g.group_id
+      ${whereClause}
+      ORDER BY g.updated_at DESC, g.name ASC
+      LIMIT 200`,
+      params
+    );
+    const members = await this.membersForGroups(result.rows.map((row) => row.group_id));
+    return result.rows.map((row) => groupFromRow(row, members));
+  }
+
+  async requestGroupMembership(groupId: string, actor: CommunityReportActor, now: Date): Promise<CommunityGroupRecord | null> {
+    const group = await this.getGroup(groupId);
+    if (!group) {
+      return null;
+    }
+    const status: CommunityGroupMemberStatus = group.visibility === "public" ? "active" : "pending";
+    const timestamp = now.toISOString();
+    await this.pool.query(
+      `INSERT INTO cop_community_group_members (
+        group_id, subject_id, username, display_name, role, status, requested_at, joined_at
+      )
+      VALUES ($1, $2, $3, $4, 'member', $5, $6::timestamptz, $7::timestamptz)
+      ON CONFLICT (group_id, subject_id)
+      DO UPDATE SET
+        username = EXCLUDED.username,
+        display_name = EXCLUDED.display_name,
+        requested_at = COALESCE(cop_community_group_members.requested_at, EXCLUDED.requested_at),
+        status = CASE WHEN cop_community_group_members.status = 'active' THEN 'active' ELSE EXCLUDED.status END,
+        joined_at = CASE
+          WHEN cop_community_group_members.status = 'active' THEN cop_community_group_members.joined_at
+          WHEN EXCLUDED.status = 'active' THEN COALESCE(cop_community_group_members.joined_at, EXCLUDED.joined_at)
+          ELSE cop_community_group_members.joined_at
+        END`,
+      [groupId, actor.subjectId, actor.username, actor.displayName, status, timestamp, status === "active" ? timestamp : null]
+    );
+    await this.touchGroup(groupId, timestamp);
+    return this.getGroup(groupId);
+  }
+
+  async upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null> {
+    const group = await this.getGroup(input.groupId);
+    if (!group || !canManageCommunityGroup(group, input.actor.subjectId)) {
+      return null;
+    }
+    const timestamp = now.toISOString();
+    await this.pool.query(
+      `INSERT INTO cop_community_group_members (
+        group_id, subject_id, username, display_name, role, status, requested_at, joined_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz)
+      ON CONFLICT (group_id, subject_id)
+      DO UPDATE SET
+        username = EXCLUDED.username,
+        display_name = EXCLUDED.display_name,
+        role = EXCLUDED.role,
+        status = EXCLUDED.status,
+        joined_at = CASE
+          WHEN EXCLUDED.status = 'active' THEN COALESCE(cop_community_group_members.joined_at, EXCLUDED.joined_at)
+          ELSE cop_community_group_members.joined_at
+        END`,
+      [
+        input.groupId,
+        input.member.subjectId,
+        input.member.username,
+        input.member.displayName,
+        input.role ?? "member",
+        input.status,
+        timestamp,
+        input.status === "active" ? timestamp : null
+      ]
+    );
+    await this.touchGroup(input.groupId, timestamp);
+    return this.getGroup(input.groupId);
+  }
+
   async listReports(query: CommunityReportQuery): Promise<CommunityReportRecord[]> {
     const params: unknown[] = [];
     const clauses = buildCommunityQueryClauses(query, params);
@@ -483,6 +766,47 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     );
     return result.rows.map(attachmentFromRow);
   }
+
+  private async membersForGroups(groupIds: string[]): Promise<CommunityGroupMemberRecord[]> {
+    if (groupIds.length === 0) {
+      return [];
+    }
+    const result = await this.pool.query<CommunityGroupMemberRow>(
+      `SELECT *
+      FROM cop_community_group_members
+      WHERE group_id = ANY($1::uuid[])
+      ORDER BY requested_at ASC`,
+      [groupIds]
+    );
+    return result.rows.map(groupMemberFromRow);
+  }
+
+  private async touchGroup(groupId: string, timestamp: string): Promise<void> {
+    await this.pool.query("UPDATE cop_community_groups SET updated_at = $2::timestamptz WHERE group_id = $1", [groupId, timestamp]);
+  }
+}
+
+interface CommunityGroupRow extends QueryResultRow {
+  created_at: Date | string;
+  description: string | null;
+  group_id: string;
+  name: string;
+  owner_display_name: string;
+  owner_subject_id: string;
+  owner_username: string;
+  updated_at: Date | string;
+  visibility: CommunityGroupVisibility;
+}
+
+interface CommunityGroupMemberRow extends QueryResultRow {
+  display_name: string;
+  group_id: string;
+  joined_at: Date | string | null;
+  requested_at: Date | string;
+  role: CommunityGroupMemberRole;
+  status: CommunityGroupMemberStatus;
+  subject_id: string;
+  username: string;
 }
 
 interface CommunityReportRow extends QueryResultRow {
@@ -612,6 +936,36 @@ CREATE INDEX IF NOT EXISTS cop_community_attachments_report_idx
 CREATE INDEX IF NOT EXISTS cop_community_attachments_capture_gix
   ON cop_community_report_attachments USING gist (capture_geom)
   WHERE capture_geom IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS cop_community_groups (
+  group_id uuid PRIMARY KEY,
+  name text NOT NULL,
+  description text,
+  visibility text NOT NULL,
+  owner_subject_id text NOT NULL,
+  owner_username text NOT NULL,
+  owner_display_name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS cop_community_group_members (
+  group_id uuid NOT NULL REFERENCES cop_community_groups(group_id) ON DELETE CASCADE,
+  subject_id text NOT NULL,
+  username text NOT NULL,
+  display_name text NOT NULL,
+  role text NOT NULL,
+  status text NOT NULL,
+  requested_at timestamptz NOT NULL DEFAULT now(),
+  joined_at timestamptz,
+  PRIMARY KEY (group_id, subject_id)
+);
+
+CREATE INDEX IF NOT EXISTS cop_community_groups_visibility_idx
+  ON cop_community_groups (visibility, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS cop_community_group_members_subject_idx
+  ON cop_community_group_members (subject_id, status);
 `;
 
 function reportFromRow(row: CommunityReportRow, attachments: CommunityReportAttachmentRecord[]): CommunityReportRecord {
@@ -679,6 +1033,56 @@ function attachmentFromRow(row: CommunityAttachmentRow): CommunityReportAttachme
   };
 }
 
+function groupFromRow(row: CommunityGroupRow, members: Array<CommunityGroupMemberRecord | CommunityGroupMemberWithGroupId>): CommunityGroupRecord {
+  const description = row.description ?? undefined;
+  return {
+    createdAt: isoString(row.created_at),
+    createdBy: {
+      displayName: row.owner_display_name,
+      subjectId: row.owner_subject_id,
+      username: row.owner_username
+    },
+    ...(description ? { description } : {}),
+    groupId: row.group_id,
+    members: members
+      .filter((member) => !("groupId" in member) || member.groupId === row.group_id)
+      .map((member) => ({
+        displayName: member.displayName,
+        ...(member.joinedAt ? { joinedAt: member.joinedAt } : {}),
+        requestedAt: member.requestedAt,
+        role: member.role,
+        status: member.status,
+        subjectId: member.subjectId,
+        username: member.username
+      })),
+    name: row.name,
+    updatedAt: isoString(row.updated_at),
+    visibility: row.visibility
+  };
+}
+
+function groupMemberFromRow(row: CommunityGroupMemberRow): CommunityGroupMemberWithGroupId {
+  const joinedAt = row.joined_at ? isoString(row.joined_at) : undefined;
+  return {
+    displayName: row.display_name,
+    groupId: row.group_id,
+    ...(joinedAt ? { joinedAt } : {}),
+    requestedAt: isoString(row.requested_at),
+    role: row.role,
+    status: row.status,
+    subjectId: row.subject_id,
+    username: row.username
+  };
+}
+
+function cloneCommunityGroup(group: CommunityGroupRecord): CommunityGroupRecord {
+  return {
+    ...group,
+    createdBy: { ...group.createdBy },
+    members: group.members.map((member) => ({ ...member }))
+  };
+}
+
 function buildCommunityQueryClauses(query: CommunityReportQuery, params: unknown[]): string[] {
   const clauses: string[] = [];
   if (query.statuses && query.statuses.length > 0) {
@@ -700,6 +1104,18 @@ function buildCommunityQueryClauses(query: CommunityReportQuery, params: unknown
     clauses.push(
       `location_geom && ST_MakeEnvelope(${westParam}, ${southParam}, ${eastParam}, ${northParam}, 4326)`
     );
+  }
+  return clauses;
+}
+
+function buildCommunityGroupQueryClauses(query: CommunityGroupQuery, params: unknown[]): string[] {
+  const clauses: string[] = [];
+  if (query.includePublic) {
+    clauses.push("g.visibility = 'public'");
+  }
+  if (query.subjectId) {
+    const subjectParam = addParam(params, query.subjectId);
+    clauses.push(`(m.subject_id = ${subjectParam} AND m.status IN ('active', 'pending'))`);
   }
   return clauses;
 }
@@ -726,8 +1142,30 @@ function matchesCommunityQuery(report: CommunityReportRecord, query: CommunityRe
   return true;
 }
 
+function matchesCommunityGroupQuery(group: CommunityGroupRecord, query: CommunityGroupQuery): boolean {
+  if (query.includePublic && group.visibility === "public") {
+    return true;
+  }
+  if (query.subjectId && group.members.some((member) => member.subjectId === query.subjectId && (member.status === "active" || member.status === "pending"))) {
+    return true;
+  }
+  return !query.includePublic && !query.subjectId;
+}
+
 function compareReports(left: CommunityReportRecord, right: CommunityReportRecord): number {
   return right.observedAt.localeCompare(left.observedAt) || right.createdAt.localeCompare(left.createdAt);
+}
+
+function compareGroups(left: CommunityGroupRecord, right: CommunityGroupRecord): number {
+  return right.updatedAt.localeCompare(left.updatedAt) || left.name.localeCompare(right.name, "cs");
+}
+
+function canManageCommunityGroup(group: CommunityGroupRecord, subjectId: string): boolean {
+  return group.members.some((member) =>
+    member.subjectId === subjectId
+    && member.status === "active"
+    && (member.role === "owner" || member.role === "admin")
+  );
 }
 
 function resolveLimit(value: number | undefined): number {
