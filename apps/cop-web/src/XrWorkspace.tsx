@@ -2,16 +2,22 @@ import React from "react";
 import * as THREE from "three";
 import { ArrowLeft, Eye, History, Layers, Play, Radar, RefreshCw, Search, Sparkles, Waypoints } from "lucide-react";
 import {
+  copLayerIds,
   fetchCopDashboardData,
+  filterObjectsByLayers,
+  filterVisibleObjects,
   isPublicFlightObject,
+  type CopLayer,
   type CopDashboardData,
   type CopObject
 } from "./cop-data";
 import { buildXrObjectModels, formatXrObjectLabel, isSimulatedObject, summarizeXrObjects, type XrObjectModel } from "./xr-model";
+import { readUserPreferences, type UserPreferences } from "./user-preferences";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? (import.meta.env.DEV ? "dev-lab-token" : "");
+const xrTileUrlTemplate = import.meta.env.VITE_COP_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const maxXrObjects = 260;
 const boardWidthM = 16;
 const boardDepthM = 9;
@@ -35,16 +41,30 @@ interface XrFilters {
 interface XrSceneHandles {
   camera: THREE.PerspectiveCamera;
   controllers: THREE.Group[];
+  input: XrInputState;
   interactive: THREE.Object3D[];
   labels: THREE.Group;
+  mapPlane: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   markers: THREE.Group;
   media: THREE.Group;
+  panel: THREE.Group;
+  panelContent: THREE.Group;
   paths: THREE.Group;
   raycaster: THREE.Raycaster;
   renderer: THREE.WebGLRenderer;
   root: THREE.Group;
   scene: THREE.Scene;
   selectObject: (objectId: string) => void;
+}
+
+interface XrInputState {
+  grabbedController: THREE.Group | null;
+  grabControllerStart: THREE.Vector3;
+  grabRootStart: THREE.Vector3;
+  panelMaxScroll: number;
+  panelScroll: number;
+  rootYaw: number;
+  zoom: number;
 }
 
 type XrSupportState = "checking" | "supported" | "unsupported";
@@ -60,21 +80,26 @@ export default function XrWorkspace() {
   const [xrActive, setXrActive] = React.useState(false);
   const [selectedObjectId, setSelectedObjectId] = React.useState<string | null>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
+  const xrPreferences = React.useMemo(() => readUserPreferences(), []);
   const [filters, setFilters] = React.useState<XrFilters>({
-    showHistory: true,
+    showHistory: xrPreferences.showHistory ?? true,
     showOtherTracks: true,
-    showPrediction: true,
+    showPrediction: xrPreferences.showPrediction ?? true,
     showPublicFlights: true,
-    showSimulated: true
+    showSimulated: xrPreferences.includeSynthetic ?? true
   });
   const xrMedia = React.useMemo(() => readXrMediaParams(), []);
 
   const objects = dashboardData?.objects ?? [];
   const sources = dashboardData?.sources ?? [];
   const trackHistory = dashboardData?.trackHistory ?? {};
+  const preferredObjects = React.useMemo(
+    () => selectXrPreferredObjects(objects, xrPreferences),
+    [objects, xrPreferences]
+  );
   const filteredObjects = React.useMemo(
-    () => filterXrObjects(objects, filters, searchQuery),
-    [filters, objects, searchQuery]
+    () => filterXrObjects(preferredObjects, filters, searchQuery),
+    [filters, preferredObjects, searchQuery]
   );
   const objectModels = React.useMemo(
     () => buildXrObjectModels(filteredObjects, trackHistory, { maxObjects: maxXrObjects }),
@@ -141,6 +166,25 @@ export default function XrWorkspace() {
       showPrediction: filters.showPrediction
     });
   }, [filters.showHistory, filters.showPrediction, objectModels, selectedObjectId]);
+
+  React.useEffect(() => {
+    if (!sceneRef.current) {
+      return;
+    }
+    renderXrMap(sceneRef.current, objectModels);
+  }, [objectModels]);
+
+  React.useEffect(() => {
+    if (!sceneRef.current) {
+      return;
+    }
+    renderXrPanel(sceneRef.current, {
+      filters,
+      models: objectModels,
+      selectedModel,
+      summary
+    });
+  }, [filters, objectModels, selectedModel, summary]);
 
   async function startXrSession() {
     const xr = readNavigatorXr();
@@ -265,8 +309,8 @@ export default function XrWorkspace() {
           <div ref={mountRef} className="xr-canvas" aria-label="3D XR situační prostor" />
           <div className="xr-stage-overlay">
             <span><Eye size={15} /> Desktop náhled: kliknutím vyberete objekt</span>
-            <span><Play size={15} /> Quest: tlačítko Spustit v brýlích</span>
-            <span><History size={15} /> Historie a predikce jsou prostorové vrstvy</span>
+            <span><Play size={15} /> Quest: oba trigery vybírají, grip posouvá mapu</span>
+            <span><History size={15} /> Páčky: pohyb, rotace, zoom, trigger + pravá páčka scroll</span>
             {xrMedia ? <span><Play size={15} /> Video: {formatXrMediaLayout(xrMedia.layout)}</span> : null}
           </div>
         </section>
@@ -309,15 +353,17 @@ function createXrScene(mount: HTMLDivElement, selectObject: (objectId: string) =
   const root = new THREE.Group();
   root.position.set(0, -1.08, -2.8);
   scene.add(root);
-  root.add(createBoard());
+  const board = createBoard();
+  root.add(board.group);
   root.add(createFloatingTitle());
 
   const markers = new THREE.Group();
   const labels = new THREE.Group();
   const paths = new THREE.Group();
+  const panelParts = createXrInfoPanel();
   const media = new THREE.Group();
   media.position.set(0, 1.25, -4.1);
-  root.add(paths, markers, labels);
+  root.add(paths, markers, labels, panelParts.panel);
   scene.add(media);
 
   scene.add(new THREE.HemisphereLight("#d7ecff", "#163126", 2.2));
@@ -326,13 +372,26 @@ function createXrScene(mount: HTMLDivElement, selectObject: (objectId: string) =
   scene.add(keyLight);
 
   const raycaster = new THREE.Raycaster();
+  const input: XrInputState = {
+    grabbedController: null,
+    grabControllerStart: new THREE.Vector3(),
+    grabRootStart: new THREE.Vector3(),
+    panelMaxScroll: 0,
+    panelScroll: 0,
+    rootYaw: 0,
+    zoom: 1
+  };
   const handles: XrSceneHandles = {
     camera,
     controllers: [],
+    input,
     interactive: [],
     labels,
+    mapPlane: board.mapPlane,
     markers,
     media,
+    panel: panelParts.panel,
+    panelContent: panelParts.content,
     paths,
     raycaster,
     renderer,
@@ -353,14 +412,25 @@ function createXrScene(mount: HTMLDivElement, selectObject: (objectId: string) =
 
   for (const index of [0, 1]) {
     const controller = renderer.xr.getController(index);
-    controller.add(createControllerRay());
-    controller.addEventListener("select", () => pickFromController(controller, handles));
+    controller.add(createControllerRay(index));
+    controller.addEventListener("selectstart", () => {
+      setControllerRayActive(controller, true);
+      pickFromController(controller, handles);
+    });
+    controller.addEventListener("selectend", () => setControllerRayActive(controller, false));
+    controller.addEventListener("squeezestart", () => beginGripDrag(controller, handles));
+    controller.addEventListener("squeezeend", () => endGripDrag(controller, handles));
     scene.add(controller);
     handles.controllers.push(controller);
   }
 
+  const clock = new THREE.Clock();
   renderer.setAnimationLoop(() => {
-    camera.lookAt(root.position.x, root.position.y, root.position.z);
+    const deltaSeconds = Math.min(clock.getDelta(), 0.05);
+    applyXrInput(handles, deltaSeconds);
+    if (!renderer.xr.isPresenting) {
+      camera.lookAt(root.position.x, root.position.y, root.position.z);
+    }
     syncXrStereoLayers(renderer, camera, media);
     renderer.render(scene, camera);
   });
@@ -383,9 +453,13 @@ function renderXrObjects(
   models.forEach((model) => {
     const marker = createMarkerMesh(model);
     marker.position.set(model.position.x, model.position.y, model.position.z);
-    marker.userData.objectId = model.objectId;
+    tagInteractiveObject(marker, model.objectId);
     handles.markers.add(marker);
-    handles.interactive.push(marker);
+    marker.traverse((object) => {
+      if ((object as THREE.Mesh).isMesh) {
+        handles.interactive.push(object);
+      }
+    });
 
     if (model.objectId === options.selectedObjectId) {
       const ring = new THREE.Mesh(
@@ -411,6 +485,84 @@ function renderXrObjects(
       handles.paths.add(createLinePath([model.position, model.prediction], "#c084fc", 0.85));
     }
   });
+}
+
+function renderXrPanel(
+  handles: XrSceneHandles,
+  options: {
+    filters: XrFilters;
+    models: XrObjectModel[];
+    selectedModel: XrObjectModel | null;
+    summary: ReturnType<typeof summarizeXrObjects>;
+  }
+) {
+  disposeGroupChildren(handles.panelContent);
+  const rows: Array<{ accent?: string; muted?: boolean; text: string }> = [
+    { accent: "#c8f08d", text: "CSM XR LIVE" },
+    { text: `${options.summary.visibleObjects} objektu | ${options.summary.publicFlights} verejnych letu | ${options.summary.simulated} simulaci` },
+    { text: options.filters.showHistory ? "Historie: zapnuta" : "Historie: vypnuta", muted: !options.filters.showHistory },
+    { text: options.filters.showPrediction ? "Predikce: zapnuta" : "Predikce: vypnuta", muted: !options.filters.showPrediction }
+  ];
+  if (options.selectedModel) {
+    rows.push(
+      { accent: options.selectedModel.color, text: "VYBRANY OBJEKT" },
+      { text: options.selectedModel.label },
+      { text: `${options.selectedModel.objectType} | ${options.selectedModel.affiliation} | ${options.selectedModel.status}` },
+      { text: `${options.selectedModel.lat.toFixed(4)}, ${options.selectedModel.lon.toFixed(4)}` }
+    );
+  }
+  rows.push({ accent: "#9dd6ff", text: "SEZNAM V XR" });
+  options.models.slice(0, 28).forEach((model, index) => {
+    rows.push({ accent: model.color, text: `${index + 1}. ${model.label.slice(0, 22)} | ${model.objectType}` });
+  });
+
+  rows.forEach((row, index) => {
+    const sprite = createTextSprite(
+      row.text,
+      row.accent ?? (row.muted ? "#6b7280" : "#dbe5ee"),
+      row.muted ? "rgba(8, 13, 18, 0.48)" : "rgba(8, 13, 18, 0.78)",
+      768,
+      112,
+      "left"
+    );
+    sprite.position.set(0, -index * 0.25, 0.02);
+    sprite.scale.set(1.92, 0.28, 1);
+    handles.panelContent.add(sprite);
+  });
+  handles.input.panelMaxScroll = Math.max(0, rows.length * 0.25 - 2.8);
+  handles.input.panelScroll = Math.min(handles.input.panelScroll, handles.input.panelMaxScroll);
+  applyPanelScroll(handles);
+}
+
+function renderXrMap(handles: XrSceneHandles, models: XrObjectModel[]) {
+  const mapSpec = createXrMapSpec(models);
+  if (handles.root.userData.mapKey === mapSpec.key) {
+    return;
+  }
+  handles.root.userData.mapKey = mapSpec.key;
+  void buildXrMapCanvas(mapSpec)
+    .then((canvas) => {
+      if (handles.root.userData.mapKey !== mapSpec.key) {
+        return;
+      }
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = Math.min(handles.renderer.capabilities.getMaxAnisotropy(), 8);
+      const previousMap = handles.mapPlane.material.map;
+      handles.mapPlane.material.map = texture;
+      handles.mapPlane.material.color.set("#ffffff");
+      handles.mapPlane.material.needsUpdate = true;
+      previousMap?.dispose();
+    })
+    .catch(() => {
+      const canvas = createMapFallbackCanvas("Mapovy podklad neni dostupny");
+      const texture = new THREE.CanvasTexture(canvas);
+      const previousMap = handles.mapPlane.material.map;
+      handles.mapPlane.material.map = texture;
+      handles.mapPlane.material.color.set("#ffffff");
+      handles.mapPlane.material.needsUpdate = true;
+      previousMap?.dispose();
+    });
 }
 
 function renderXrMedia(handles: XrSceneHandles, mediaParams: XrMediaParams | null) {
@@ -492,16 +644,12 @@ function disposeXrScene(handles: XrSceneHandles) {
   handles.renderer.domElement.remove();
 }
 
-function createBoard(): THREE.Group {
+function createBoard(): { group: THREE.Group; mapPlane: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> } {
   const board = new THREE.Group();
   const plane = new THREE.Mesh(
     new THREE.PlaneGeometry(boardWidthM, boardDepthM),
-    new THREE.MeshStandardMaterial({
+    new THREE.MeshBasicMaterial({
       color: "#101d19",
-      emissive: "#13281e",
-      emissiveIntensity: 0.38,
-      metalness: 0.05,
-      roughness: 0.86,
       transparent: true,
       opacity: 0.96
     })
@@ -520,7 +668,36 @@ function createBoard(): THREE.Group {
   );
   frame.position.y = 0.04;
   board.add(frame);
-  return board;
+  return { group: board, mapPlane: plane };
+}
+
+function createXrInfoPanel(): { content: THREE.Group; panel: THREE.Group } {
+  const panel = new THREE.Group();
+  panel.position.set(boardWidthM / 2 + 1.95, 2.05, -1.3);
+  panel.rotation.y = -0.28;
+  const backing = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.2, 3.25),
+    new THREE.MeshBasicMaterial({
+      color: "#071015",
+      opacity: 0.88,
+      transparent: true,
+      side: THREE.DoubleSide
+    })
+  );
+  backing.position.set(0, -1.2, 0);
+  panel.add(backing);
+
+  const frame = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(2.22, 3.28, 0.02)),
+    new THREE.LineBasicMaterial({ color: "#8cb6d8", transparent: true, opacity: 0.56 })
+  );
+  frame.position.copy(backing.position);
+  panel.add(frame);
+
+  const content = new THREE.Group();
+  content.position.set(-0.02, 0.16, 0.01);
+  panel.add(content);
+  return { content, panel };
 }
 
 function createFloatingTitle(): THREE.Sprite {
@@ -530,13 +707,13 @@ function createFloatingTitle(): THREE.Sprite {
   return sprite;
 }
 
-function createControllerRay(): THREE.Line {
+function createControllerRay(index: number): THREE.Line {
   const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -6)]);
-  const material = new THREE.LineBasicMaterial({ color: "#c8f08d", transparent: true, opacity: 0.8 });
+  const material = new THREE.LineBasicMaterial({ color: index === 0 ? "#9dd6ff" : "#c8f08d", transparent: true, opacity: 0.74 });
   return new THREE.Line(geometry, material);
 }
 
-function createMarkerMesh(model: XrObjectModel): THREE.Mesh {
+function createMarkerMesh(model: XrObjectModel): THREE.Object3D {
   const color = new THREE.Color(model.color);
   const material = new THREE.MeshStandardMaterial({
     color,
@@ -545,15 +722,53 @@ function createMarkerMesh(model: XrObjectModel): THREE.Mesh {
     roughness: 0.42
   });
   if (model.isPublicFlight) {
-    const mesh = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.46, 4), material);
-    mesh.rotation.x = Math.PI / 2;
-    mesh.rotation.z = THREE.MathUtils.degToRad(-(model.headingDeg ?? 0));
-    return mesh;
+    return createCivilAircraftMarker(model, material);
   }
   if (model.domain === "AIR") {
-    return new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28), material);
+    return createStandardAirMarker(model, material);
   }
   return new THREE.Mesh(new THREE.SphereGeometry(0.18, 18, 12), material);
+}
+
+function createCivilAircraftMarker(model: XrObjectModel, material: THREE.Material): THREE.Group {
+  const group = new THREE.Group();
+  const fuselage = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.58), material);
+  const wings = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.045, 0.14), material);
+  wings.position.z = -0.03;
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.08), material);
+  tail.position.z = 0.23;
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.16, 16), material);
+  nose.rotation.x = Math.PI / 2;
+  nose.position.z = -0.37;
+  group.add(fuselage, wings, tail, nose);
+  group.rotation.y = THREE.MathUtils.degToRad(model.headingDeg ?? 0);
+  return group;
+}
+
+function createStandardAirMarker(model: XrObjectModel, material: THREE.Material): THREE.Object3D {
+  if (model.affiliation === "FRIEND" || model.affiliation === "ASSUMED_FRIEND") {
+    const group = new THREE.Group();
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.19, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), material);
+    dome.scale.z = 1.18;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.055, 0.16), material);
+    base.position.y = -0.02;
+    group.add(dome, base);
+    return group;
+  }
+  if (model.affiliation === "HOSTILE" || model.affiliation === "SUSPECT") {
+    const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), material);
+    mesh.rotation.y = Math.PI / 4;
+    return mesh;
+  }
+  if (model.affiliation === "UNKNOWN") {
+    const group = new THREE.Group();
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.035, 10, 32), material);
+    ring.rotation.x = Math.PI / 2;
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 8), material);
+    group.add(ring, dot);
+    return group;
+  }
+  return new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), material);
 }
 
 function createLabelSprite(text: string, color: string): THREE.Sprite {
@@ -562,7 +777,14 @@ function createLabelSprite(text: string, color: string): THREE.Sprite {
   return sprite;
 }
 
-function createTextSprite(text: string, foreground: string, background: string, width: number, height: number): THREE.Sprite {
+function createTextSprite(
+  text: string,
+  foreground: string,
+  background: string,
+  width: number,
+  height: number,
+  align: CanvasTextAlign = "center"
+): THREE.Sprite {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -574,10 +796,10 @@ function createTextSprite(text: string, foreground: string, background: string, 
     context.lineWidth = 6;
     context.strokeRect(4, 4, width - 8, height - 8);
     context.fillStyle = "#f4f7fb";
-    context.font = "800 48px system-ui, -apple-system, Segoe UI, sans-serif";
-    context.textAlign = "center";
+    context.font = "800 46px system-ui, -apple-system, Segoe UI, sans-serif";
+    context.textAlign = align;
     context.textBaseline = "middle";
-    context.fillText(text, width / 2, height / 2 + 4, width - 40);
+    context.fillText(text, align === "left" ? 36 : width / 2, height / 2 + 4, width - 56);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -670,10 +892,135 @@ function pickFromController(controller: THREE.Group, handles: XrSceneHandles) {
 
 function pickFromRay(handles: XrSceneHandles) {
   const hit = handles.raycaster.intersectObjects(handles.interactive, false)[0];
-  const objectId = typeof hit?.object.userData.objectId === "string" ? hit.object.userData.objectId : undefined;
+  const objectId = hit ? readObjectIdFromHit(hit.object) : undefined;
   if (objectId) {
     handles.selectObject(objectId);
   }
+}
+
+function readObjectIdFromHit(object: THREE.Object3D | null): string | undefined {
+  let current: THREE.Object3D | null = object;
+  while (current) {
+    if (typeof current.userData.objectId === "string") {
+      return current.userData.objectId;
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function tagInteractiveObject(object: THREE.Object3D, objectId: string) {
+  object.userData.objectId = objectId;
+  object.traverse((child) => {
+    child.userData.objectId = objectId;
+  });
+}
+
+function setControllerRayActive(controller: THREE.Group, active: boolean) {
+  const ray = controller.children.find((child): child is THREE.Line => child.type === "Line");
+  const material = ray?.material as THREE.LineBasicMaterial | undefined;
+  if (material) {
+    material.opacity = active ? 1 : 0.74;
+  }
+}
+
+function beginGripDrag(controller: THREE.Group, handles: XrSceneHandles) {
+  handles.input.grabbedController = controller;
+  handles.input.grabControllerStart.setFromMatrixPosition(controller.matrixWorld);
+  handles.input.grabRootStart.copy(handles.root.position);
+}
+
+function endGripDrag(controller: THREE.Group, handles: XrSceneHandles) {
+  if (handles.input.grabbedController === controller) {
+    handles.input.grabbedController = null;
+  }
+}
+
+function applyXrInput(handles: XrSceneHandles, deltaSeconds: number) {
+  updateGripDrag(handles);
+  const session = handles.renderer.xr.getSession();
+  if (!session) {
+    return;
+  }
+  let handednessIndex = 0;
+  for (const source of session.inputSources) {
+    const gamepad = source.gamepad;
+    if (!gamepad) {
+      continue;
+    }
+    const axes = readXrStickAxes(gamepad);
+    const side = source.handedness === "left" || (source.handedness === "none" && handednessIndex === 0) ? "left" : "right";
+    handednessIndex += 1;
+    if (side === "left") {
+      panXrRoot(handles, axes.x, axes.y, deltaSeconds);
+    } else {
+      const triggerPressed = isXrTriggerPressed(gamepad);
+      if (triggerPressed) {
+        scrollXrPanel(handles, axes.y, deltaSeconds);
+      } else {
+        rotateAndZoomXrRoot(handles, axes.x, axes.y, deltaSeconds);
+      }
+    }
+  }
+}
+
+function updateGripDrag(handles: XrSceneHandles) {
+  const controller = handles.input.grabbedController;
+  if (!controller) {
+    return;
+  }
+  const current = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+  const delta = current.sub(handles.input.grabControllerStart);
+  handles.root.position.copy(handles.input.grabRootStart).add(delta);
+  handles.root.position.x = clampNumber(handles.root.position.x, -5.5, 5.5);
+  handles.root.position.y = clampNumber(handles.root.position.y, -2.4, 1.2);
+  handles.root.position.z = clampNumber(handles.root.position.z, -8.5, -1.2);
+}
+
+function panXrRoot(handles: XrSceneHandles, xAxis: number, yAxis: number, deltaSeconds: number) {
+  const speed = 2.3 / handles.input.zoom;
+  const forward = new THREE.Vector3(Math.sin(handles.input.rootYaw), 0, Math.cos(handles.input.rootYaw));
+  const right = new THREE.Vector3(Math.cos(handles.input.rootYaw), 0, -Math.sin(handles.input.rootYaw));
+  handles.root.position.addScaledVector(right, xAxis * speed * deltaSeconds);
+  handles.root.position.addScaledVector(forward, yAxis * speed * deltaSeconds);
+  handles.root.position.x = clampNumber(handles.root.position.x, -5.5, 5.5);
+  handles.root.position.z = clampNumber(handles.root.position.z, -8.5, -1.2);
+}
+
+function rotateAndZoomXrRoot(handles: XrSceneHandles, xAxis: number, yAxis: number, deltaSeconds: number) {
+  handles.input.rootYaw += xAxis * deltaSeconds * 1.15;
+  handles.input.zoom = clampNumber(handles.input.zoom + -yAxis * deltaSeconds * 0.8, 0.46, 2.2);
+  handles.root.rotation.y = handles.input.rootYaw;
+  handles.root.scale.setScalar(handles.input.zoom);
+}
+
+function scrollXrPanel(handles: XrSceneHandles, yAxis: number, deltaSeconds: number) {
+  handles.input.panelScroll = clampNumber(
+    handles.input.panelScroll + yAxis * deltaSeconds * 2.6,
+    0,
+    handles.input.panelMaxScroll
+  );
+  applyPanelScroll(handles);
+}
+
+function applyPanelScroll(handles: XrSceneHandles) {
+  handles.panelContent.position.y = 0.16 + handles.input.panelScroll;
+}
+
+function readXrStickAxes(gamepad: Gamepad): { x: number; y: number } {
+  const offset = gamepad.axes.length >= 4 ? gamepad.axes.length - 2 : 0;
+  return {
+    x: deadzone(gamepad.axes[offset] ?? 0),
+    y: deadzone(gamepad.axes[offset + 1] ?? 0)
+  };
+}
+
+function isXrTriggerPressed(gamepad: Gamepad): boolean {
+  return Boolean(gamepad.buttons[0]?.pressed || (gamepad.buttons[0]?.value ?? 0) > 0.35);
+}
+
+function deadzone(value: number): number {
+  return Math.abs(value) < 0.16 ? 0 : value;
 }
 
 function disposeGroupChildren(group: THREE.Object3D) {
@@ -700,6 +1047,33 @@ function disposeMaterial(material: THREE.Material | undefined) {
   const materialWithMap = material as THREE.Material & { map?: THREE.Texture };
   materialWithMap.map?.dispose();
   material.dispose();
+}
+
+function selectXrPreferredObjects(objects: CopObject[], preferences: UserPreferences): CopObject[] {
+  const visible = filterVisibleObjects(objects, {
+    includeSynthetic: preferences.includeSynthetic ?? true,
+    minConfidence: preferences.minConfidence ?? 0
+  });
+  const layers = normalizeXrTrackLayers(preferences);
+  if (layers.length === 0) {
+    return visible;
+  }
+  const layered = filterObjectsByLayers(visible, layers);
+  return layered.length > 0 ? layered : visible;
+}
+
+function normalizeXrTrackLayers(preferences: UserPreferences): CopLayer[] {
+  const explicit = preferences.trackLayerIds?.filter(isCopLayer) ?? [];
+  if (explicit.length > 0) {
+    return explicit;
+  }
+  return preferences.selectedLayer && isCopLayer(preferences.selectedLayer)
+    ? [preferences.selectedLayer]
+    : copLayerIds;
+}
+
+function isCopLayer(value: string): value is CopLayer {
+  return copLayerIds.includes(value as CopLayer);
 }
 
 function filterXrObjects(objects: CopObject[], filters: XrFilters, searchQuery: string): CopObject[] {
@@ -732,6 +1106,152 @@ function filterXrObjects(objects: CopObject[], filters: XrFilters, searchQuery: 
       object.attributes?.provenance?.sourceSystemId
     ].filter(Boolean).join(" ").toLowerCase().includes(normalizedQuery);
   });
+}
+
+interface XrMapSpec {
+  centerTileX: number;
+  centerTileY: number;
+  key: string;
+  zoom: number;
+}
+
+function createXrMapSpec(models: XrObjectModel[]): XrMapSpec {
+  const finiteModels = models.filter((model) => Number.isFinite(model.lat) && Number.isFinite(model.lon));
+  const lats = finiteModels.map((model) => model.lat);
+  const lons = finiteModels.map((model) => model.lon);
+  const centerLat = average(lats) ?? 50.08;
+  const centerLon = average(lons) ?? 14.42;
+  const latSpan = lats.length > 1 ? Math.max(...lats) - Math.min(...lats) : 0.08;
+  const lonSpan = lons.length > 1 ? Math.max(...lons) - Math.min(...lons) : 0.08;
+  const span = Math.max(latSpan, lonSpan);
+  const zoom = span < 0.04 ? 13 : span < 0.12 ? 12 : span < 0.32 ? 11 : span < 0.8 ? 10 : span < 1.8 ? 8 : 6;
+  const centerTile = lonLatToTile(centerLon, centerLat, zoom);
+  return {
+    centerTileX: centerTile.x,
+    centerTileY: centerTile.y,
+    key: `${zoom}:${Math.floor(centerTile.x * 10)}:${Math.floor(centerTile.y * 10)}:${models.length}`,
+    zoom
+  };
+}
+
+async function buildXrMapCanvas(spec: XrMapSpec): Promise<HTMLCanvasElement> {
+  const tileSize = 256;
+  const tileColumns = 5;
+  const tileRows = 3;
+  const canvas = document.createElement("canvas");
+  canvas.width = tileColumns * tileSize;
+  canvas.height = 720;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return canvas;
+  }
+  context.fillStyle = "#102016";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  const startX = Math.floor(spec.centerTileX) - Math.floor(tileColumns / 2);
+  const startY = Math.floor(spec.centerTileY) - Math.floor(tileRows / 2);
+  const verticalCrop = (tileRows * tileSize - canvas.height) / 2;
+  await Promise.all(
+    Array.from({ length: tileColumns * tileRows }, async (_, index) => {
+      const xIndex = index % tileColumns;
+      const yIndex = Math.floor(index / tileColumns);
+      const tileX = normalizeTileX(startX + xIndex, spec.zoom);
+      const tileY = startY + yIndex;
+      const maxTile = 2 ** spec.zoom;
+      if (tileY < 0 || tileY >= maxTile) {
+        return;
+      }
+      try {
+        const image = await loadTileImage(tileUrlFor(spec.zoom, tileX, tileY));
+        context.drawImage(image, xIndex * tileSize, yIndex * tileSize - verticalCrop, tileSize, tileSize);
+      } catch {
+        drawMissingMapTile(context, xIndex * tileSize, yIndex * tileSize - verticalCrop, tileSize);
+      }
+    })
+  );
+  context.fillStyle = "rgba(5, 9, 12, 0.66)";
+  context.fillRect(0, canvas.height - 42, canvas.width, 42);
+  context.fillStyle = "#dbe5ee";
+  context.font = "700 22px system-ui, -apple-system, Segoe UI, sans-serif";
+  context.fillText("© OpenStreetMap contributors | CSM XR map cache", 24, canvas.height - 15);
+  return canvas;
+}
+
+function drawMissingMapTile(context: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  context.fillStyle = "#102016";
+  context.fillRect(x, y, size, size);
+  context.strokeStyle = "rgba(200, 240, 141, 0.28)";
+  context.strokeRect(x + 1, y + 1, size - 2, size - 2);
+}
+
+function createMapFallbackCanvas(message: string): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1280;
+  canvas.height = 720;
+  const context = canvas.getContext("2d");
+  if (context) {
+    context.fillStyle = "#101d19";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = "#c8f08d";
+    context.lineWidth = 4;
+    for (let x = 0; x < canvas.width; x += 160) {
+      context.beginPath();
+      context.moveTo(x, 0);
+      context.lineTo(x, canvas.height);
+      context.stroke();
+    }
+    for (let y = 0; y < canvas.height; y += 120) {
+      context.beginPath();
+      context.moveTo(0, y);
+      context.lineTo(canvas.width, y);
+      context.stroke();
+    }
+    context.fillStyle = "#f4f7fb";
+    context.font = "900 48px system-ui, -apple-system, Segoe UI, sans-serif";
+    context.textAlign = "center";
+    context.fillText(message, canvas.width / 2, canvas.height / 2);
+  }
+  return canvas;
+}
+
+function tileUrlFor(z: number, x: number, y: number): string {
+  return xrTileUrlTemplate
+    .replace("{z}", String(z))
+    .replace("{x}", String(x))
+    .replace("{y}", String(y));
+}
+
+function loadTileImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.decoding = "async";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Map tile failed: ${url}`));
+    image.src = url;
+  });
+}
+
+function lonLatToTile(lon: number, lat: number, zoom: number): { x: number; y: number } {
+  const latRad = THREE.MathUtils.degToRad(clampNumber(lat, -85.0511, 85.0511));
+  const scale = 2 ** zoom;
+  return {
+    x: ((lon + 180) / 360) * scale,
+    y: ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * scale
+  };
+}
+
+function normalizeTileX(x: number, zoom: number): number {
+  const scale = 2 ** zoom;
+  return ((x % scale) + scale) % scale;
+}
+
+function average(values: number[]): number | undefined {
+  const finite = values.filter(Number.isFinite);
+  return finite.length > 0 ? finite.reduce((sum, value) => sum + value, 0) / finite.length : undefined;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function readXrMediaParams(): XrMediaParams | null {

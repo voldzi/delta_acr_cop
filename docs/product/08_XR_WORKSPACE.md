@@ -18,14 +18,19 @@ Implementováno:
 
 - Three.js prostorová scéna
 - WebXR session start přes uživatelské tlačítko
-- 3D operační mapová deska
+- 3D operační mapová deska s OSM tile texturou ze stejné cache jako hlavní mapa
 - COP tracky jako prostorové markery
-- veřejné lety jako samostatná barva/symbolika
+- veřejné lety jako civilní symbol letadla
+- standardní AIR tracky barevně respektují konvenci: vlastní modré, rizikové/cizí červené, neutrální zelené, neznámé žluté
 - simulované tracky jako samostatná vrstva
 - desktop výběr objektu kliknutím
-- Quest controller ray picking přes `select`
-- plovoucí detail vybraného objektu v bočním panelu
+- Quest controller ray picking přes oba trigery
+- grip ovladače posouvá celý prostorový mapový uzel
+- levá páčka posouvá mapový uzel, pravá páčka otáčí a zoomuje scénu
+- trigger + pravá páčka listuje prostorovým informačním panelem
+- plovoucí detail vybraného objektu v bočním 3D panelu
 - pravidelný refresh dat
+- respektování uživatelských preferencí track vrstev, syntetických dat, historie, predikce a minimální confidence
 
 ## Phase 2 foundations
 
@@ -36,6 +41,7 @@ Implementováno jako základ:
 - prostorová predikce z posledního směru a rychlosti
 - vyhledávání v XR objektech
 - základní metriky živého obrazu
+- v XR se zobrazují jen objekty povolené v uživatelském nastavení track vrstev
 
 Zbývá:
 
@@ -43,7 +49,18 @@ Zbývá:
 - zobrazování AOI/výstražných zón přímo v XR scéně
 - detailní práce s katalogem mapových vrstev v XR scéně
 - hand tracking UX nad rámec controller select
-- optimalizace počtu markerů a labelů pro Quest výkon
+- optimalizace počtu markerů, labelů a map tile obnovy pro Quest výkon
+
+## Quest ovládání
+
+- Levý i pravý trigger: výběr objektu přes laserový paprsek.
+- Grip: uchopení a posun prostorového mapového uzlu.
+- Levá páčka: pohyb mapového uzlu v prostoru.
+- Pravá páčka vodorovně: rotace mapy.
+- Pravá páčka svisle: zoom mapy.
+- Trigger + pravá páčka svisle: listování 3D informačního panelu.
+
+XR režim nemá vlastní nezávislé vrstvy. Převádí aktuálně povolené COP track objekty do prostorové scény a zachovává běžné civilní limity aplikace: pouze situační zobrazení, bez navádění, targeting workflow nebo doporučování zásahu.
 
 ## Další kroky
 

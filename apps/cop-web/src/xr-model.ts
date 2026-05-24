@@ -14,6 +14,8 @@ export interface XrObjectModel {
   isPublicFlight: boolean;
   isSimulated: boolean;
   label: string;
+  lat: number;
+  lon: number;
   objectId: string;
   objectType: string;
   position: { x: number; y: number; z: number };
@@ -56,6 +58,8 @@ export function buildXrObjectModels(
       isPublicFlight: isPublicFlightObject(object),
       isSimulated: isSimulatedObject(object),
       label: formatXrObjectLabel(object),
+      lat: object.position?.lat ?? 0,
+      lon: object.position?.lon ?? 0,
       objectId: object.objectId,
       objectType: object.objectType,
       position: {
