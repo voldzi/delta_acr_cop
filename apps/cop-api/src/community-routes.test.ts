@@ -241,7 +241,16 @@ describe("community report routes", () => {
         },
         contentType: "video/mp4",
         fileName: "bridge.mp4",
-        kind: "video"
+        kind: "video",
+        metadata: {
+          spatialVideo: {
+            browserPlayback: "webxr_stereo",
+            mode: "side_by_side",
+            source: "user_declared",
+            stereoLayout: "side_by_side",
+            storage: "original"
+          }
+        }
       },
       url: `/api/v1/community/reports/${report.reportId}/attachments`
     });
@@ -261,9 +270,52 @@ describe("community report routes", () => {
       contentType: "video/mp4",
       contentUrl: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content`,
       kind: "video",
+      metadata: {
+        spatialVideo: {
+          mode: "side_by_side",
+          stereoLayout: "side_by_side"
+        }
+      },
       status: "uploaded"
     });
     expect(mediaStorage.objects.get(`community-reports/${report.reportId}/${attachment.attachmentId}/bridge.mp4`)?.toString()).toBe("fake-video-data");
+
+    const submitResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: `/api/v1/community/reports/${report.reportId}/submit`
+    });
+    expect(submitResponse.statusCode).toBe(200);
+
+    const listResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/community/reports?bbox=14.0,49.8,14.8,50.3"
+    });
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json()).toMatchObject({
+      featureCollection: {
+        features: [
+          {
+            properties: {
+              attachments: [
+                {
+                  contentUrl: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content`,
+                  kind: "video",
+                  metadata: {
+                    spatialVideo: {
+                      mode: "side_by_side",
+                      stereoLayout: "side_by_side"
+                    }
+                  }
+                }
+              ],
+              videoCount: 1
+            }
+          }
+        ]
+      }
+    });
 
     await app.close();
   });

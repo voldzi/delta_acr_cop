@@ -230,6 +230,7 @@ export interface SituationFeatureProperties {
     contentUrl?: string;
     fileName?: string;
     kind: CommunityAttachmentKind;
+    metadata?: Record<string, unknown>;
     uploadedAt?: string;
   }>;
   category: string;
@@ -602,6 +603,7 @@ export type CommunityReportCategory =
 export type CommunityReportHazardSeverity = "advisory" | "critical" | "warning";
 export type CommunityReportVisibility = "community" | "private" | "public";
 export type CommunityAttachmentKind = "document" | "photo" | "video";
+export type CommunityVideoSpatialMode = "apple_mv_hevc" | "none" | "over_under" | "side_by_side";
 
 export interface CommunityReportLocation {
   accuracyM?: number;
@@ -618,6 +620,7 @@ export interface CommunityReportAttachment {
   contentUrl?: string;
   fileName?: string;
   kind: CommunityAttachmentKind;
+  metadata?: Record<string, unknown>;
   reportId: string;
   status: "failed" | "pending_upload" | "removed" | "uploaded";
 }
@@ -1227,6 +1230,7 @@ export async function createCommunityAttachmentUpload(
     contentType: string;
     fileName?: string;
     kind: CommunityAttachmentKind;
+    metadata?: Record<string, unknown>;
   }
 ): Promise<{ attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }> {
   return fetchJson<{ attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }>(

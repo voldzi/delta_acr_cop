@@ -82,6 +82,7 @@ import {
   type CommunityReportCategory,
   type CommunityReportHazardSeverity,
   type CommunityReportLocation,
+  type CommunityVideoSpatialMode,
   type FlightDataAttributes,
   type FlightReferenceFeatureCollectionResponse,
   type HealthStatus,
@@ -2107,7 +2108,8 @@ export function App() {
           captureLocation: communityReportDraft.location,
           contentType,
           fileName: file.name || undefined,
-          kind
+          kind,
+          metadata: buildCommunityAttachmentMetadata(file, contentType, kind, communityReportDraft.videoSpatialMode)
         });
         await uploadCommunityAttachmentFile(apiBase, authToken, report.reportId, file, slot);
       }
@@ -2878,6 +2880,7 @@ interface CommunityReportDraft {
   location: CommunityReportLocation;
   title: string;
   validUntil: string;
+  videoSpatialMode: CommunityVideoSpatialMode;
 }
 
 interface CommunityReportDialogProps {
@@ -2996,6 +2999,22 @@ function CommunityReportDialog({
             }}
           />
         </label>
+        {draft.files.some(isCommunityVideoFile) ? (
+          <label className="report-field">
+            Režim videa
+            <select
+              value={draft.videoSpatialMode}
+              onChange={(event) => onChange((current) => ({ ...current, videoSpatialMode: event.target.value as CommunityVideoSpatialMode }))}
+            >
+              {communityVideoSpatialOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <span className="report-field-hint">
+              3D přehrání v XR podporuje side-by-side nebo over-under. iPhone Spatial MOV se uloží jako originál a v browseru má 2D náhled.
+            </span>
+          </label>
+        ) : null}
         <div className="report-attachment-list">
           {draft.files.length === 0 ? (
             <span>Bez příloh. Lze vložit fotografii, PDF nebo video.</span>
@@ -5267,26 +5286,45 @@ function CommunityAttachmentPreview({
 }) {
   return (
     <div className="community-media-list">
-      {attachments.map((attachment) => (
-        <div className="community-media-item" key={attachment.attachmentId}>
-          <div className="community-media-meta">
-            <strong>{attachment.fileName ?? communityAttachmentKindLabel(attachment.kind)}</strong>
-            <span>{communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}</span>
+      {attachments.map((attachment) => {
+        const spatialMode = attachment.kind === "video" ? communityAttachmentSpatialMode(attachment) : "none";
+        const xrVideoUrl = buildXrVideoUrl(attachment);
+        return (
+          <div className="community-media-item" key={attachment.attachmentId}>
+            <div className="community-media-meta">
+              <strong>{attachment.fileName ?? communityAttachmentKindLabel(attachment.kind)}</strong>
+              <span>{communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}</span>
+            </div>
+            {attachment.contentUrl && attachment.kind === "photo" ? (
+              <img alt={attachment.fileName ?? "Fotografie hlášení"} src={attachment.contentUrl} />
+            ) : null}
+            {attachment.contentUrl && attachment.kind === "video" ? (
+              <>
+                <video controls playsInline preload="metadata" src={attachment.contentUrl} />
+                <div className="community-media-actions">
+                  <span className="community-spatial-badge">{communityAttachmentSpatialLabel(spatialMode)}</span>
+                  {xrVideoUrl ? (
+                    <a className="mini-button community-document-link" href={xrVideoUrl} target="_blank" rel="noreferrer">
+                      Otevřít 3D v XR
+                    </a>
+                  ) : null}
+                </div>
+                {spatialMode === "apple_mv_hevc" ? (
+                  <span className="community-video-note">
+                    Originální iPhone spatial MOV je uložený beze změny. Webový XR jej bez konverze přehraje jako 2D náhled.
+                  </span>
+                ) : null}
+              </>
+            ) : null}
+            {attachment.contentUrl && attachment.kind === "document" ? (
+              <a className="mini-button community-document-link" href={attachment.contentUrl} rel="noreferrer" target="_blank">
+                Otevřít PDF
+              </a>
+            ) : null}
+            {!attachment.contentUrl ? <span className="empty-mini">Příloha zatím nemá dostupný náhled.</span> : null}
           </div>
-          {attachment.contentUrl && attachment.kind === "photo" ? (
-            <img alt={attachment.fileName ?? "Fotografie hlášení"} src={attachment.contentUrl} />
-          ) : null}
-          {attachment.contentUrl && attachment.kind === "video" ? (
-            <video controls preload="metadata" src={attachment.contentUrl} />
-          ) : null}
-          {attachment.contentUrl && attachment.kind === "document" ? (
-            <a className="mini-button community-document-link" href={attachment.contentUrl} rel="noreferrer" target="_blank">
-              Otevřít PDF
-            </a>
-          ) : null}
-          {!attachment.contentUrl ? <span className="empty-mini">Příloha zatím nemá dostupný náhled.</span> : null}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -5531,6 +5569,13 @@ const communityReportCategoryOptions: Array<{ label: string; value: CommunityRep
   { label: "Jiné", value: "other" }
 ];
 
+const communityVideoSpatialOptions: Array<{ label: string; value: CommunityVideoSpatialMode }> = [
+  { label: "Běžné 2D video", value: "none" },
+  { label: "iPhone prostorové MOV (uložit originál)", value: "apple_mv_hevc" },
+  { label: "3D side-by-side", value: "side_by_side" },
+  { label: "3D over-under", value: "over_under" }
+];
+
 function createCommunityReportDraft(location = resolveCommunityReportLocation(null, undefined)): CommunityReportDraft {
   return {
     category: "hazard",
@@ -5539,7 +5584,8 @@ function createCommunityReportDraft(location = resolveCommunityReportLocation(nu
     hazardSeverity: "warning",
     location,
     title: "",
-    validUntil: toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000))
+    validUntil: toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000)),
+    videoSpatialMode: "none"
   };
 }
 
@@ -5643,6 +5689,76 @@ function communityAttachmentKindLabel(kind: CommunityAttachmentKind | null): str
     return "PDF";
   }
   return "soubor";
+}
+
+function isCommunityVideoFile(file: File): boolean {
+  return communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file)) === "video";
+}
+
+function buildCommunityAttachmentMetadata(
+  file: File,
+  contentType: string,
+  kind: CommunityAttachmentKind,
+  videoSpatialMode: CommunityVideoSpatialMode
+): Record<string, unknown> | undefined {
+  if (kind !== "video") {
+    return undefined;
+  }
+  const stereoLayout = videoSpatialMode === "side_by_side" || videoSpatialMode === "over_under" ? videoSpatialMode : undefined;
+  return {
+    spatialVideo: {
+      browserPlayback: videoSpatialMode === "apple_mv_hevc" ? "2d_fallback" : stereoLayout ? "webxr_stereo" : "html5_2d",
+      contentType,
+      mode: videoSpatialMode,
+      source: "user_declared",
+      storage: "original",
+      ...(stereoLayout ? { stereoLayout } : {})
+    },
+    uploadHint: {
+      fileName: file.name || undefined,
+      byteSize: file.size
+    }
+  };
+}
+
+function communityAttachmentSpatialMode(attachment: { metadata?: Record<string, unknown> }): CommunityVideoSpatialMode {
+  const maybeSpatialVideo = attachment.metadata?.spatialVideo;
+  const spatialVideo = isPlainObject(maybeSpatialVideo) ? maybeSpatialVideo : undefined;
+  const mode = spatialVideo && typeof spatialVideo.mode === "string" ? spatialVideo.mode : "none";
+  return mode === "apple_mv_hevc" || mode === "over_under" || mode === "side_by_side" ? mode : "none";
+}
+
+function communityAttachmentSpatialLabel(mode: CommunityVideoSpatialMode): string {
+  switch (mode) {
+    case "apple_mv_hevc":
+      return "iPhone Spatial MOV";
+    case "side_by_side":
+      return "3D side-by-side";
+    case "over_under":
+      return "3D over-under";
+    default:
+      return "2D video";
+  }
+}
+
+function buildXrVideoUrl(attachment: NonNullable<SituationFeature["properties"]["attachments"]>[number]): string | null {
+  if (!attachment.contentUrl || attachment.kind !== "video") {
+    return null;
+  }
+  const mode = communityAttachmentSpatialMode(attachment);
+  if (mode !== "side_by_side" && mode !== "over_under") {
+    return null;
+  }
+  const params = new URLSearchParams({
+    layout: mode,
+    media: attachment.contentUrl,
+    title: attachment.fileName ?? "Komunitní video"
+  });
+  return `/xr?${params.toString()}`;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function formatReportLocation(location: CommunityReportLocation): string {

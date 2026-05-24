@@ -16,6 +16,14 @@ const maxXrObjects = 260;
 const boardWidthM = 16;
 const boardDepthM = 9;
 
+type XrMediaLayout = "apple_mv_hevc" | "mono" | "over_under" | "side_by_side";
+
+interface XrMediaParams {
+  layout: XrMediaLayout;
+  title: string;
+  url: string;
+}
+
 interface XrFilters {
   showHistory: boolean;
   showOtherTracks: boolean;
@@ -30,6 +38,7 @@ interface XrSceneHandles {
   interactive: THREE.Object3D[];
   labels: THREE.Group;
   markers: THREE.Group;
+  media: THREE.Group;
   paths: THREE.Group;
   raycaster: THREE.Raycaster;
   renderer: THREE.WebGLRenderer;
@@ -58,6 +67,7 @@ export default function XrWorkspace() {
     showPublicFlights: true,
     showSimulated: true
   });
+  const xrMedia = React.useMemo(() => readXrMediaParams(), []);
 
   const objects = dashboardData?.objects ?? [];
   const sources = dashboardData?.sources ?? [];
@@ -114,11 +124,12 @@ export default function XrWorkspace() {
     }
     const handles = createXrScene(mount, setSelectedObjectId);
     sceneRef.current = handles;
+    renderXrMedia(handles, xrMedia);
     return () => {
       disposeXrScene(handles);
       sceneRef.current = null;
     };
-  }, []);
+  }, [xrMedia]);
 
   React.useEffect(() => {
     if (!sceneRef.current) {
@@ -145,6 +156,7 @@ export default function XrWorkspace() {
       session.addEventListener("end", () => setXrActive(false));
       await renderer.xr.setSession(session as unknown as XRSession);
       setXrActive(true);
+      await playXrMedia(sceneRef.current);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Nepodařilo se spustit XR relaci.");
     }
@@ -202,6 +214,24 @@ export default function XrWorkspace() {
             </label>
           </div>
 
+          {xrMedia ? (
+            <div className="xr-panel-section">
+              <div className="xr-section-title">
+                <Play size={17} />
+                3D video
+              </div>
+              <div className="xr-selected-card">
+                <strong>{xrMedia.title}</strong>
+                <span>{formatXrMediaLayout(xrMedia.layout)}</span>
+                <small>{xrMedia.layout === "apple_mv_hevc" ? "Originál je zachovaný, WebXR používá 2D náhled bez konverze." : "V brýlích se zobrazí oddělený obraz pro levé a pravé oko."}</small>
+              </div>
+              <button className="mini-button" type="button" onClick={() => void playXrMedia(sceneRef.current)}>
+                <Play size={14} />
+                Přehrát video
+              </button>
+            </div>
+          ) : null}
+
           <div className="xr-panel-section">
             <div className="xr-section-title">
               <Layers size={17} />
@@ -237,6 +267,7 @@ export default function XrWorkspace() {
             <span><Eye size={15} /> Desktop náhled: kliknutím vyberete objekt</span>
             <span><Play size={15} /> Quest: tlačítko Spustit v brýlích</span>
             <span><History size={15} /> Historie a predikce jsou prostorové vrstvy</span>
+            {xrMedia ? <span><Play size={15} /> Video: {formatXrMediaLayout(xrMedia.layout)}</span> : null}
           </div>
         </section>
       </section>
@@ -284,7 +315,10 @@ function createXrScene(mount: HTMLDivElement, selectObject: (objectId: string) =
   const markers = new THREE.Group();
   const labels = new THREE.Group();
   const paths = new THREE.Group();
+  const media = new THREE.Group();
+  media.position.set(0, 1.25, -4.1);
   root.add(paths, markers, labels);
+  scene.add(media);
 
   scene.add(new THREE.HemisphereLight("#d7ecff", "#163126", 2.2));
   const keyLight = new THREE.DirectionalLight("#ffffff", 1.8);
@@ -298,6 +332,7 @@ function createXrScene(mount: HTMLDivElement, selectObject: (objectId: string) =
     interactive: [],
     labels,
     markers,
+    media,
     paths,
     raycaster,
     renderer,
@@ -326,6 +361,7 @@ function createXrScene(mount: HTMLDivElement, selectObject: (objectId: string) =
 
   renderer.setAnimationLoop(() => {
     camera.lookAt(root.position.x, root.position.y, root.position.z);
+    syncXrStereoLayers(renderer, camera, media);
     renderer.render(scene, camera);
   });
 
@@ -377,12 +413,80 @@ function renderXrObjects(
   });
 }
 
+function renderXrMedia(handles: XrSceneHandles, mediaParams: XrMediaParams | null) {
+  clearXrMediaGroup(handles.media);
+  if (!mediaParams) {
+    return;
+  }
+
+  const video = document.createElement("video");
+  video.crossOrigin = "anonymous";
+  video.loop = true;
+  video.muted = false;
+  video.playsInline = true;
+  video.preload = "metadata";
+  video.src = mediaParams.url;
+  handles.media.userData.video = video;
+
+  const texture = new THREE.VideoTexture(video);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+
+  const aspect = 16 / 9;
+  const width = 4.8;
+  const height = width / aspect;
+  const geometry = new THREE.PlaneGeometry(width, height);
+
+  const monoPlane = new THREE.Mesh(geometry, createVideoMaterial(texture));
+  monoPlane.userData.monoOnly = true;
+  handles.media.add(monoPlane);
+
+  if (mediaParams.layout === "side_by_side" || mediaParams.layout === "over_under") {
+    const leftPlane = new THREE.Mesh(geometry.clone(), createVideoMaterial(createStereoVideoTexture(texture, mediaParams.layout, "left")));
+    const rightPlane = new THREE.Mesh(geometry.clone(), createVideoMaterial(createStereoVideoTexture(texture, mediaParams.layout, "right")));
+    leftPlane.layers.set(1);
+    rightPlane.layers.set(2);
+    leftPlane.userData.stereoOnly = true;
+    rightPlane.userData.stereoOnly = true;
+    leftPlane.visible = false;
+    rightPlane.visible = false;
+    handles.media.add(leftPlane, rightPlane);
+  }
+
+  const label = createTextSprite(formatXrMediaTitle(mediaParams), "#c8f08d", "rgba(4, 8, 12, 0.78)", 1024, 160);
+  label.position.set(0, height / 2 + 0.42, 0.02);
+  label.scale.set(3.2, 0.5, 1);
+  handles.media.add(label);
+}
+
+async function playXrMedia(handles: XrSceneHandles | null) {
+  const video = handles?.media.userData.video as HTMLVideoElement | undefined;
+  if (!video) {
+    return;
+  }
+  await video.play();
+}
+
+function clearXrMediaGroup(group: THREE.Group) {
+  const video = group.userData.video as HTMLVideoElement | undefined;
+  if (video) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    group.userData.video = undefined;
+  }
+  disposeGroupChildren(group);
+}
+
 function disposeXrScene(handles: XrSceneHandles) {
   const maybeResize = handles as XrSceneHandles & { resizeListener?: () => void };
   if (maybeResize.resizeListener) {
     window.removeEventListener("resize", maybeResize.resizeListener);
   }
   handles.renderer.setAnimationLoop(null);
+  clearXrMediaGroup(handles.media);
   disposeGroupChildren(handles.scene);
   handles.renderer.dispose();
   handles.renderer.domElement.remove();
@@ -486,6 +590,66 @@ function createLinePath(points: Array<{ x: number; y: number; z: number }>, colo
   return new THREE.Line(geometry, material);
 }
 
+function createVideoMaterial(texture: THREE.Texture): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
+    map: texture,
+    side: THREE.DoubleSide,
+    toneMapped: false
+  });
+}
+
+function createStereoVideoTexture(baseTexture: THREE.VideoTexture, layout: "over_under" | "side_by_side", eye: "left" | "right"): THREE.Texture {
+  const texture = baseTexture.clone();
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  if (layout === "side_by_side") {
+    texture.repeat.set(0.5, 1);
+    texture.offset.set(eye === "left" ? 0 : 0.5, 0);
+  } else {
+    texture.repeat.set(1, 0.5);
+    texture.offset.set(0, eye === "left" ? 0.5 : 0);
+  }
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function syncXrStereoLayers(renderer: THREE.WebGLRenderer, _camera: THREE.PerspectiveCamera, media: THREE.Group) {
+  const presenting = renderer.xr.isPresenting;
+  media.traverse((object) => {
+    if (object.userData.monoOnly) {
+      object.visible = !presenting;
+    }
+    if (object.userData.stereoOnly) {
+      object.visible = presenting;
+    }
+  });
+  if (!presenting) {
+    return;
+  }
+  const xrCamera = renderer.xr.getCamera() as THREE.ArrayCamera & { cameras?: THREE.Camera[] };
+  xrCamera.cameras?.[0]?.layers.enable(1);
+  xrCamera.cameras?.[1]?.layers.enable(2);
+}
+
+function formatXrMediaTitle(media: XrMediaParams): string {
+  return `${media.title.slice(0, 34)} - ${formatXrMediaLayout(media.layout)}`;
+}
+
+function formatXrMediaLayout(layout: XrMediaLayout): string {
+  switch (layout) {
+    case "side_by_side":
+      return "3D side-by-side";
+    case "over_under":
+      return "3D over-under";
+    case "apple_mv_hevc":
+      return "iPhone Spatial MOV - 2D WebXR fallback";
+    default:
+      return "2D video";
+  }
+}
+
 function pickFromDesktopPointer(event: PointerEvent, handles: XrSceneHandles) {
   const rect = handles.renderer.domElement.getBoundingClientRect();
   const pointer = new THREE.Vector2(
@@ -568,6 +732,38 @@ function filterXrObjects(objects: CopObject[], filters: XrFilters, searchQuery: 
       object.attributes?.provenance?.sourceSystemId
     ].filter(Boolean).join(" ").toLowerCase().includes(normalizedQuery);
   });
+}
+
+function readXrMediaParams(): XrMediaParams | null {
+  const params = new URLSearchParams(window.location.search);
+  const rawUrl = params.get("media")?.trim();
+  if (!rawUrl) {
+    return null;
+  }
+  const url = normalizeXrMediaUrl(rawUrl);
+  if (!url) {
+    return null;
+  }
+  const rawLayout = params.get("layout")?.trim();
+  const layout: XrMediaLayout =
+    rawLayout === "apple_mv_hevc" || rawLayout === "over_under" || rawLayout === "side_by_side" ? rawLayout : "mono";
+  return {
+    layout,
+    title: params.get("title")?.trim().slice(0, 80) || "Komunitní video",
+    url
+  };
+}
+
+function normalizeXrMediaUrl(rawUrl: string): string | null {
+  try {
+    const resolved = new URL(rawUrl, window.location.origin);
+    if (resolved.protocol !== "https:" && resolved.protocol !== "http:") {
+      return null;
+    }
+    return resolved.origin === window.location.origin ? `${resolved.pathname}${resolved.search}${resolved.hash}` : resolved.toString();
+  } catch {
+    return null;
+  }
 }
 
 function readNavigatorXr():

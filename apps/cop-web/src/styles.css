@@ -405,6 +405,14 @@ h1 {
   line-height: 1.4;
 }
 
+.report-field-hint {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-transform: none;
+}
+
 .report-coordinate-box {
   padding: 9px 10px;
   border: 1px solid rgba(140, 182, 216, 0.24);
@@ -514,6 +522,32 @@ h1 {
   max-height: 260px;
   object-fit: contain;
   background: #05090c;
+}
+
+.community-media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.community-spatial-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid rgba(200, 240, 141, 0.42);
+  background: rgba(151, 199, 104, 0.12);
+  color: var(--lime);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.community-video-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .community-document-link {

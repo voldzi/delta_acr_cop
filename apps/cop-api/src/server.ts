@@ -3035,6 +3035,7 @@ function communityFeatureAttachments(report: { attachments: Array<CommunityRepor
   contentUrl?: string;
   fileName?: string;
   kind: CommunityAttachmentKind;
+  metadata?: Record<string, unknown>;
   uploadedAt?: string;
 }> {
   return report.attachments
@@ -3043,9 +3044,12 @@ function communityFeatureAttachments(report: { attachments: Array<CommunityRepor
       attachmentId: attachment.attachmentId,
       byteSize: attachment.byteSize,
       contentType: attachment.contentType,
-      ...("contentUrl" in attachment && attachment.contentUrl ? { contentUrl: attachment.contentUrl } : {}),
+      contentUrl: "contentUrl" in attachment && attachment.contentUrl
+        ? attachment.contentUrl
+        : `/api/v1/community/reports/${encodeURIComponent(report.reportId)}/attachments/${encodeURIComponent(attachment.attachmentId)}/content`,
       ...(attachment.fileName ? { fileName: attachment.fileName } : {}),
       kind: attachment.kind,
+      ...(Object.keys(attachment.metadata ?? {}).length > 0 ? { metadata: attachment.metadata } : {}),
       ...(attachment.uploadedAt ? { uploadedAt: attachment.uploadedAt } : {})
     }));
 }

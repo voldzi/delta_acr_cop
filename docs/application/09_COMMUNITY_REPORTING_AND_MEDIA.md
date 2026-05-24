@@ -88,6 +88,13 @@ Podporované přílohy v první verzi:
 - video: `video/mp4`, `video/quicktime`,
 - dokument: `application/pdf`.
 
+Video přílohy mohou nést metadata `metadata.spatialVideo`:
+
+- `mode: "none"`: běžné 2D video, přehrání přes HTML5 `video`,
+- `mode: "side_by_side"`: stereoskopické video uložené jako jeden soubor se dvěma obrazy vedle sebe; XR režim jej v brýlích rozdělí na levé/pravé oko,
+- `mode: "over_under"`: stereoskopické video uložené jako jeden soubor s obrazy nad sebou; XR režim jej v brýlích rozdělí na levé/pravé oko,
+- `mode: "apple_mv_hevc"`: iPhone Spatial Video v MOV/MV-HEVC se ukládá jako originální soubor. Webový XR jej bez serverové konverze neumí spolehlivě rozdělit na dvě oči, proto používá 2D fallback a metadata zachovává pro budoucí konverzní pipeline nebo nativní přehrání.
+
 Po úspěšném uploadu klient zavolá `complete`. Do budoucna je vhodné doplnit serverovou kontrolu objektu přes `HEAD`, AV/obsahovou kontrolu a generování náhledů.
 Po dokončení má příloha `contentUrl`; detail komunitního prvku může zobrazit obrázek, přehrát video přes HTML5 `video` a otevřít PDF.
 
