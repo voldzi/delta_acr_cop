@@ -10,6 +10,7 @@ const basisLabels: Record<string, string> = {
   CTU_NETTEST_MEASUREMENT: "měření ČTÚ NetTest",
   CTU_STATIONARY_MEASUREMENT: "stacionární měření ČTÚ",
   CTU_STATIONARY_MOBILE_MEASUREMENT: "stacionární měření ČTÚ",
+  CTU_STATIONARY_SIGNAL_MEASUREMENT: "stacionární měření signálu ČTÚ",
   DISTANCE_PATH_LOSS_MODEL: "výpočet útlumu podle vzdálenosti",
   INFERRED_COVERAGE: "odhad pokrytí",
   NO_OPERATOR_BTS_STATUS: "bez potvrzeného operátorského stavu BTS",

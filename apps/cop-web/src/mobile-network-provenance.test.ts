@@ -19,8 +19,9 @@ describe("mobile network provenance", () => {
     expect(mobileNetworkBasisLabels([
       "PRECOMPUTED_COVERAGE_READ_MODEL",
       "OSM_INFRASTRUCTURE_HINT",
-      "NO_OPERATOR_BTS_STATUS"
-    ])).toBe("předpočítaná mapa pokrytí, referenční OSM infrastruktura, bez potvrzeného operátorského stavu BTS");
+      "NO_OPERATOR_BTS_STATUS",
+      "CTU_STATIONARY_SIGNAL_MEASUREMENT"
+    ])).toBe("předpočítaná mapa pokrytí, referenční OSM infrastruktura, bez potvrzeného operátorského stavu BTS, stacionární měření signálu ČTÚ");
   });
 
   it("explains that BTS status is not operator-confirmed", () => {
