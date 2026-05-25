@@ -149,6 +149,25 @@ Příklad omezení na skupinu:
 Pokud uživatel nemá právo na médium, API stále vrátí mapový report a v příloze uvede `accessDenied: true`, ale nevrátí `contentUrl`.
 Endpoint `GET /attachments/{attachmentId}/content` u stejného média vrací záměrně `404`, aby se neprozrazovala existence nebo identita chráněného objektu.
 
+Pro chráněná média API vrací `contentUrl` jako krátkodobý podepsaný odkaz s query parametrem `mediaToken`. Token se vydá pouze při autorizovaném API čtení reportu nebo feature kolekce a obsahuje vazbu na `reportId`, `attachmentId`, volitelný `derivativeId` a expiraci. Je to nutné proto, že HTML prvky `img`, `video`, `audio`, `iframe` a otevření PDF v novém okně neposílají aplikační `Authorization: Bearer ...` hlavičku.
+
+Podepsaný media token:
+
+- neobsahuje service token, SeaweedFS credential ani Matrix/Keycloak token;
+- je platný jen pro konkrétní přílohu nebo derivát;
+- má krátkou platnost, výchozí 10 minut;
+- po expiraci klient znovu načte metadata reportu a dostane nový `contentUrl`, pokud má stále oprávnění;
+- nemění pravidlo, že neautorizovaný uživatel nedostane `contentUrl` vůbec.
+
+Konfigurace:
+
+```env
+COP_MEDIA_ACCESS_TOKEN_SECRET=<nahodne-dlouhe-tajne-heslo>
+COP_MEDIA_ACCESS_TOKEN_TTL_SECONDS=600
+```
+
+V produkci musí být `COP_MEDIA_ACCESS_TOKEN_SECRET` stabilní napříč restarty API, jinak dříve vydané odkazy přestanou platit okamžitě po restartu. To je bezpečné, ale může to přerušit právě otevřenou galerii.
+
 ## Komunitní skupiny
 
 Skupiny jsou aplikační sharing model COP, nikoli náhrada Matrix roomů. Do budoucna mají být navázané na konverzace v CSM Messaging, ale správa přístupu k médiím zůstává v COP, protože COP je systém záznamu pro uživatelská hlášení.

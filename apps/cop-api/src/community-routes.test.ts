@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildServer } from "./server.js";
 import type { MediaObjectReadRequest, MediaObjectWriteRequest, MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
 
@@ -6,6 +6,7 @@ describe("community report routes", () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     process.env = { ...originalEnv };
   });
 
@@ -288,6 +289,129 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("issues short-lived media tickets so authorized group media can open without bearer headers", async () => {
+    process.env.COP_PUBLIC_READ_ENABLED = "true";
+    process.env.COP_MEDIA_ACCESS_TOKEN_SECRET = "test-media-ticket-secret";
+    const mediaStorage = new FakeMediaStorage();
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.startsWith("https://media.example.test/read/")) {
+        return new Response(null, { status: 404 });
+      }
+      const objectKey = decodeURIComponent(url.slice("https://media.example.test/read/".length));
+      const body = mediaStorage.objects.get(objectKey);
+      return body
+        ? new Response(new Uint8Array(body), {
+            headers: {
+              "accept-ranges": "bytes",
+              "content-length": String(body.length),
+              "content-type": "image/jpeg"
+            },
+            status: 200
+          })
+        : new Response(null, { status: 404 });
+    }));
+    const app = buildServer({
+      mediaStorage,
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const groupResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        name: "Kyjev",
+        visibility: "private"
+      },
+      url: "/api/v1/community/groups"
+    });
+    const group = groupResponse.json() as { groupId: string; name: string };
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        category: "hazard",
+        groupId: group.groupId,
+        groupName: group.name,
+        location: {
+          lat: 50.075,
+          lon: 14.438,
+          source: "manual"
+        },
+        title: "Sdílené foto",
+        visibility: "community"
+      },
+      url: "/api/v1/community/reports"
+    });
+    const report = createResponse.json() as { reportId: string };
+    const body = Buffer.from("group-photo");
+    const attachmentResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        byteSize: body.length,
+        contentType: "image/jpeg",
+        fileName: "kyjev.jpg",
+        kind: "photo",
+        metadata: {
+          access: {
+            audience: "groups",
+            groupIds: [group.groupId]
+          }
+        }
+      },
+      url: `/api/v1/community/reports/${report.reportId}/attachments`
+    });
+    const attachment = (attachmentResponse.json() as { attachment: { attachmentId: string } }).attachment;
+    await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        byteSize: body.length,
+        dataBase64: body.toString("base64")
+      },
+      url: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/upload`
+    });
+    await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: `/api/v1/community/reports/${report.reportId}/submit`
+    });
+
+    const anonymousListResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/community/reports?bbox=14.0,49.8,14.8,50.3"
+    });
+    expect(anonymousListResponse.json().featureCollection.features[0].properties.attachments[0]).toMatchObject({
+      accessDenied: true,
+      attachmentId: attachment.attachmentId
+    });
+    expect(anonymousListResponse.json().featureCollection.features[0].properties.attachments[0].contentUrl).toBeUndefined();
+
+    const authorizedListResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/community/reports?bbox=14.0,49.8,14.8,50.3"
+    });
+    const authorizedAttachment = authorizedListResponse.json().featureCollection.features[0].properties.attachments[0];
+    expect(authorizedAttachment.contentUrl).toContain("mediaToken=");
+
+    const contentWithoutBearer = await app.inject({
+      method: "GET",
+      url: authorizedAttachment.contentUrl
+    });
+    expect(contentWithoutBearer.statusCode).toBe(200);
+    expect(contentWithoutBearer.body).toBe("group-photo");
+
+    const contentWithoutTicket = await app.inject({
+      method: "GET",
+      url: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content`
+    });
+    expect(contentWithoutTicket.statusCode).toBe(404);
+
+    await app.close();
+  });
+
   it("creates community sharing groups and lets the owner manage members", async () => {
     const app = buildServer({
       mediaStorage: new FakeMediaStorage(),
@@ -554,7 +678,6 @@ describe("community report routes", () => {
     expect(uploadResponse.statusCode).toBe(200);
     expect(uploadResponse.json()).toMatchObject({
       contentType: "video/mp4",
-      contentUrl: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content`,
       kind: "video",
       metadata: {
         spatialVideo: {
@@ -564,6 +687,7 @@ describe("community report routes", () => {
       },
       status: "uploaded"
     });
+    expect(uploadResponse.json().contentUrl).toContain(`/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content?mediaToken=`);
     expect(mediaStorage.objects.get(`community-reports/${report.reportId}/${attachment.attachmentId}/bridge.mp4`)?.toString()).toBe("fake-video-data");
 
     const submitResponse = await app.inject({
@@ -586,7 +710,6 @@ describe("community report routes", () => {
             properties: {
               attachments: [
                 {
-                  contentUrl: `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content`,
                   kind: "video",
                   metadata: {
                     spatialVideo: {
@@ -602,6 +725,8 @@ describe("community report routes", () => {
         ]
       }
     });
+    expect(listResponse.json().featureCollection.features[0].properties.attachments[0].contentUrl)
+      .toContain(`/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content?mediaToken=`);
 
     await app.close();
   });

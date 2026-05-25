@@ -7,7 +7,7 @@ import { ContractValidators, formatValidationErrors } from "@cop/ingest-contract
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
 import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAlert } from "./alerts.js";
 import {
   createCommunityReportStoreFromEnv,
@@ -145,6 +145,15 @@ interface CommunityAttachmentDerivativeResponse {
 type CommunityReportResponse = CommunityReportRecord & {
   attachments: CommunityAttachmentResponse[];
 };
+
+interface CommunityMediaTicketPayload {
+  attachmentId: string;
+  derivativeId?: string;
+  exp: number;
+  reportId: string;
+  sub?: string;
+  v: 1;
+}
 
 interface MobileSnapshotQuery {
   includeAcknowledged: boolean;
@@ -1661,7 +1670,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       reportId: attachment.reportId
     }, correlationIdFrom(request.headers["x-correlation-id"]));
     const convertedAttachment = await enqueueSpatialVideoConversion(params.reportId, attachment, requestNow);
-    return communityAttachmentResponseItem(convertedAttachment, params.reportId);
+    return communityAttachmentResponseItem(convertedAttachment, params.reportId, true, actor, requestNow);
   });
 
   app.post("/api/v1/community/reports/:reportId/attachments/:attachmentId/upload", async (request, reply) => {
@@ -1721,7 +1730,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       reportId: report.reportId
     }, correlationIdFrom(request.headers["x-correlation-id"]));
     const convertedAttachment = await enqueueSpatialVideoConversion(report.reportId, completed, requestNow);
-    return communityAttachmentResponseItem(convertedAttachment, report.reportId);
+    return communityAttachmentResponseItem(convertedAttachment, report.reportId, true, actor, requestNow);
   });
 
   app.get("/api/v1/community/reports/:reportId/attachments/:attachmentId/content", async (request, reply) => {
@@ -1737,17 +1746,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const actor = actorFromRequest(request);
     const params = request.params as { attachmentId: string; reportId: string };
     const report = await readCommunityReport(params.reportId);
-    if (!report || !canReadCommunityReport(report, actor)) {
+    if (!report) {
       return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
     }
     const attachment = report.attachments.find((item) => item.attachmentId === params.attachmentId && item.status === "uploaded");
     if (!attachment) {
       return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
     }
-    if (!canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor))) {
+    const requestNow = now();
+    const hasValidTicket = hasValidCommunityMediaTicket(request.query, {
+      attachmentId: params.attachmentId,
+      reportId: params.reportId
+    }, requestNow);
+    if (!hasValidTicket && (!canReadCommunityReport(report, actor) || !canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor)))) {
       return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
     }
-    const readUrl = await mediaStorage.createReadUrl({ objectKey: attachment.objectKey }, now());
+    const readUrl = await mediaStorage.createReadUrl({ objectKey: attachment.objectKey }, requestNow);
     const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
     const mediaResponse = await fetch(readUrl, {
       headers: range ? { range } : undefined
@@ -1788,21 +1802,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const actor = actorFromRequest(request);
     const params = request.params as { attachmentId: string; derivativeId: string; reportId: string };
     const report = await readCommunityReport(params.reportId);
-    if (!report || !canReadCommunityReport(report, actor) || params.derivativeId !== "xr-sbs") {
+    if (!report || params.derivativeId !== "xr-sbs") {
       return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
     }
     const attachment = report.attachments.find((item) => item.attachmentId === params.attachmentId && item.status === "uploaded");
     if (!attachment) {
       return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
     }
-    if (!canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor))) {
+    const requestNow = now();
+    const hasValidTicket = hasValidCommunityMediaTicket(request.query, {
+      attachmentId: params.attachmentId,
+      derivativeId: params.derivativeId,
+      reportId: params.reportId
+    }, requestNow);
+    if (!hasValidTicket && (!canReadCommunityReport(report, actor) || !canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor)))) {
       return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
     }
     const derivative = readSpatialDerivative(attachment);
     if (!derivative || derivative.status !== "ready" || !derivative.objectKey) {
       return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
     }
-    const readUrl = await mediaStorage.createReadUrl({ objectKey: derivative.objectKey }, now());
+    const readUrl = await mediaStorage.createReadUrl({ objectKey: derivative.objectKey }, requestNow);
     const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
     const mediaResponse = await fetch(readUrl, {
       headers: range ? { range } : undefined
@@ -3809,7 +3829,7 @@ function communityAttachmentAccessSummary(attachment: { metadata?: Record<string
 
 function communityReportResponseItem(
   report: CommunityReportRecord,
-  _requestNow: Date,
+  requestNow: Date,
   actor: AuthenticatedActor | null,
   actorGroupIds: Set<string>
 ): CommunityReportResponse {
@@ -3819,7 +3839,9 @@ function communityReportResponseItem(
       communityAttachmentResponseItem(
         attachment,
         report.reportId,
-        canReadCommunityAttachment(report, attachment, actor, actorGroupIds)
+        canReadCommunityAttachment(report, attachment, actor, actorGroupIds),
+        actor,
+        requestNow
       )
     )
   };
@@ -3834,12 +3856,18 @@ function communityReportResponseItems(
   return reports.map((report) => communityReportResponseItem(report, requestNow, actor, actorGroupIds));
 }
 
-function communityAttachmentResponseItem(attachment: CommunityReportAttachmentRecord, reportId: string, canReadMedia = true): CommunityAttachmentResponse {
+function communityAttachmentResponseItem(
+  attachment: CommunityReportAttachmentRecord,
+  reportId: string,
+  canReadMedia = true,
+  actor: AuthenticatedActor | null = null,
+  requestNow = new Date()
+): CommunityAttachmentResponse {
   return {
     ...attachment,
-    ...communityAttachmentDerivativeResponse(attachment, reportId, canReadMedia),
+    ...communityAttachmentDerivativeResponse(attachment, reportId, canReadMedia, actor, requestNow),
     ...(attachment.status === "uploaded" && canReadMedia
-      ? { contentUrl: `/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachment.attachmentId)}/content` }
+      ? { contentUrl: communityAttachmentContentUrl(reportId, attachment.attachmentId, actor, requestNow) }
       : {})
   };
 }
@@ -3847,7 +3875,9 @@ function communityAttachmentResponseItem(attachment: CommunityReportAttachmentRe
 function communityAttachmentDerivativeResponse(
   attachment: CommunityReportAttachmentRecord,
   reportId: string,
-  canReadMedia: boolean
+  canReadMedia: boolean,
+  actor: AuthenticatedActor | null = null,
+  requestNow = new Date()
 ): { derivatives?: CommunityAttachmentDerivativeResponse[] } {
   const derivative = readSpatialDerivative(attachment);
   if (!derivative) {
@@ -3858,7 +3888,7 @@ function communityAttachmentDerivativeResponse(
       ...(typeof derivative.byteSize === "number" ? { byteSize: derivative.byteSize } : {}),
       ...(derivative.contentType ? { contentType: derivative.contentType } : {}),
       ...(canReadMedia && derivative.status === "ready"
-        ? { contentUrl: `/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachment.attachmentId)}/derivatives/${derivative.derivativeId}/content` }
+        ? { contentUrl: communityAttachmentDerivativeContentUrl(reportId, attachment.attachmentId, derivative.derivativeId, actor, requestNow) }
         : {}),
       derivativeId: derivative.derivativeId,
       ...(derivative.error ? { error: derivative.error } : {}),
@@ -3868,6 +3898,152 @@ function communityAttachmentDerivativeResponse(
       updatedAt: derivative.updatedAt
     }]
   };
+}
+
+function communityAttachmentContentUrl(
+  reportId: string,
+  attachmentId: string,
+  actor: AuthenticatedActor | null,
+  requestNow: Date
+): string {
+  const path = `/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachmentId)}/content`;
+  return appendCommunityMediaTicket(path, reportId, attachmentId, undefined, actor, requestNow);
+}
+
+function communityAttachmentDerivativeContentUrl(
+  reportId: string,
+  attachmentId: string,
+  derivativeId: string,
+  actor: AuthenticatedActor | null,
+  requestNow: Date
+): string {
+  const path = `/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachmentId)}/derivatives/${encodeURIComponent(derivativeId)}/content`;
+  return appendCommunityMediaTicket(path, reportId, attachmentId, derivativeId, actor, requestNow);
+}
+
+function appendCommunityMediaTicket(
+  path: string,
+  reportId: string,
+  attachmentId: string,
+  derivativeId: string | undefined,
+  actor: AuthenticatedActor | null,
+  requestNow: Date
+): string {
+  if (!actor) {
+    return path;
+  }
+  const mediaToken = createCommunityMediaTicket({
+    actor,
+    attachmentId,
+    derivativeId,
+    reportId,
+    requestNow
+  });
+  return `${path}?mediaToken=${encodeURIComponent(mediaToken)}`;
+}
+
+function createCommunityMediaTicket({
+  actor,
+  attachmentId,
+  derivativeId,
+  reportId,
+  requestNow
+}: {
+  actor: AuthenticatedActor;
+  attachmentId: string;
+  derivativeId?: string;
+  reportId: string;
+  requestNow: Date;
+}): string {
+  const ttlSeconds = readPositiveInteger(process.env.COP_MEDIA_ACCESS_TOKEN_TTL_SECONDS, 10 * 60);
+  const payload: CommunityMediaTicketPayload = {
+    attachmentId,
+    ...(derivativeId ? { derivativeId } : {}),
+    exp: Math.floor(requestNow.getTime() / 1000) + ttlSeconds,
+    reportId,
+    sub: actor.subjectId,
+    v: 1
+  };
+  const encodedPayload = base64UrlEncode(Buffer.from(JSON.stringify(payload), "utf8"));
+  return `${encodedPayload}.${signCommunityMediaTicket(encodedPayload)}`;
+}
+
+function hasValidCommunityMediaTicket(
+  query: unknown,
+  expected: {
+    attachmentId: string;
+    derivativeId?: string;
+    reportId: string;
+  },
+  requestNow = new Date()
+): boolean {
+  const token = isRecord(query) && typeof query.mediaToken === "string" ? query.mediaToken : undefined;
+  if (!token) {
+    return false;
+  }
+  const [encodedPayload, signature, extra] = token.split(".");
+  if (!encodedPayload || !signature || extra !== undefined) {
+    return false;
+  }
+  const expectedSignature = signCommunityMediaTicket(encodedPayload);
+  const signatureBuffer = Buffer.from(signature, "utf8");
+  const expectedBuffer = Buffer.from(expectedSignature, "utf8");
+  if (signatureBuffer.length !== expectedBuffer.length || !timingSafeEqual(signatureBuffer, expectedBuffer)) {
+    return false;
+  }
+  const payload = parseCommunityMediaTicketPayload(encodedPayload);
+  if (!payload) {
+    return false;
+  }
+  const nowSeconds = Math.floor(requestNow.getTime() / 1000);
+  return payload.v === 1
+    && payload.exp >= nowSeconds
+    && payload.reportId === expected.reportId
+    && payload.attachmentId === expected.attachmentId
+    && (payload.derivativeId ?? "") === (expected.derivativeId ?? "");
+}
+
+function parseCommunityMediaTicketPayload(encodedPayload: string): CommunityMediaTicketPayload | null {
+  try {
+    const parsed = JSON.parse(base64UrlDecode(encodedPayload).toString("utf8")) as unknown;
+    if (!isRecord(parsed)
+      || parsed.v !== 1
+      || typeof parsed.exp !== "number"
+      || typeof parsed.reportId !== "string"
+      || typeof parsed.attachmentId !== "string"
+      || (hasOwn(parsed, "derivativeId") && typeof parsed.derivativeId !== "string")) {
+      return null;
+    }
+    return {
+      attachmentId: parsed.attachmentId,
+      ...(typeof parsed.derivativeId === "string" ? { derivativeId: parsed.derivativeId } : {}),
+      exp: parsed.exp,
+      reportId: parsed.reportId,
+      ...(typeof parsed.sub === "string" ? { sub: parsed.sub } : {}),
+      v: 1
+    };
+  } catch {
+    return null;
+  }
+}
+
+function signCommunityMediaTicket(encodedPayload: string): string {
+  return base64UrlEncode(createHmac("sha256", communityMediaTicketSecret()).update(encodedPayload).digest());
+}
+
+function communityMediaTicketSecret(): string {
+  return process.env.COP_MEDIA_ACCESS_TOKEN_SECRET
+    ?? process.env.COP_LAB_TOKEN
+    ?? "dev-community-media-ticket-secret";
+}
+
+function base64UrlEncode(value: Buffer): string {
+  return value.toString("base64").replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
+}
+
+function base64UrlDecode(value: string): Buffer {
+  const padded = `${value}${"=".repeat((4 - value.length % 4) % 4)}`;
+  return Buffer.from(padded.replace(/-/gu, "+").replace(/_/gu, "/"), "base64");
 }
 
 function communityReportsFeatureCollection(
@@ -3885,7 +4061,7 @@ function communityReportsFeatureCollection(
       id: report.reportId,
       properties: {
         attachmentCount: report.attachments.length,
-        attachments: communityFeatureAttachments(report, actor, actorGroupIds),
+        attachments: communityFeatureAttachments(report, actor, actorGroupIds, requestNow),
         category: report.category,
         confidence: report.location.accuracyM ? Math.max(0.35, Math.min(0.95, 1 - report.location.accuracyM / 1000)) : 0.7,
         description: report.description ?? null,
@@ -3931,7 +4107,8 @@ function communityReportsFeatureCollection(
 function communityFeatureAttachments(
   report: CommunityReportRecord,
   actor: AuthenticatedActor | null,
-  actorGroupIds: Set<string>
+  actorGroupIds: Set<string>,
+  requestNow: Date
 ): Array<{
   access: Record<string, unknown>;
   accessDenied?: boolean;
@@ -3960,10 +4137,10 @@ function communityFeatureAttachments(
           ? {
               contentUrl: typeof existingContentUrl === "string" && existingContentUrl
                 ? existingContentUrl
-                : `/api/v1/community/reports/${encodeURIComponent(report.reportId)}/attachments/${encodeURIComponent(attachment.attachmentId)}/content`
+                : communityAttachmentContentUrl(report.reportId, attachment.attachmentId, actor, requestNow)
             }
           : {}),
-        ...communityAttachmentDerivativeResponse(attachment, report.reportId, canReadMedia),
+        ...communityAttachmentDerivativeResponse(attachment, report.reportId, canReadMedia, actor, requestNow),
         ...(attachment.fileName ? { fileName: attachment.fileName } : {}),
         kind: attachment.kind,
         ...(Object.keys(attachment.metadata ?? {}).length > 0 ? { metadata: attachment.metadata } : {}),
