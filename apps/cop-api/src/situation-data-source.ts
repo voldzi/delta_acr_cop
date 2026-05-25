@@ -126,12 +126,14 @@ export interface SituationFeatureProperties {
   providerId?: string;
   providerLayerId?: string;
   providerProperties?: Record<string, unknown>;
+  readModel?: boolean;
   resolutionM?: number;
   severity?: "advisory" | "critical" | "info" | "warning" | string;
   sourceId: string;
   stale?: boolean;
   status?: string;
   summary?: string;
+  sourceRevision?: string;
   tags?: Record<string, unknown>;
   technology?: string;
   validUntil?: string;
@@ -745,12 +747,14 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     providerId: optionalString(value.providerId),
     providerLayerId: optionalString(value.providerLayerId),
     providerProperties: isRecord(value.providerProperties) ? value.providerProperties : undefined,
+    readModel: optionalBoolean(value.readModel),
     resolutionM: optionalNumber(value.resolutionM),
     severity: optionalString(value.severity),
     sourceId,
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
     status: optionalString(value.status),
     summary: optionalString(value.summary),
+    sourceRevision: optionalString(value.sourceRevision),
     tags: isRecord(value.tags) ? value.tags : undefined,
     technology: normalizeCoverageTechnology(value.technology),
     validUntil: optionalString(value.validUntil)

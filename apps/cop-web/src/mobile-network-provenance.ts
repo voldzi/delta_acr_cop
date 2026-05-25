@@ -1,0 +1,88 @@
+export interface MobileNetworkProvenanceProperties {
+  basis?: string[];
+  dataQuality?: string;
+  metrics?: Record<string, unknown>;
+  readModel?: boolean;
+  sourceRevision?: string;
+}
+
+const basisLabels: Record<string, string> = {
+  CTU_NETTEST_MEASUREMENT: "měření ČTÚ NetTest",
+  CTU_STATIONARY_MEASUREMENT: "stacionární měření ČTÚ",
+  CTU_STATIONARY_MOBILE_MEASUREMENT: "stacionární měření ČTÚ",
+  DISTANCE_PATH_LOSS_MODEL: "výpočet útlumu podle vzdálenosti",
+  INFERRED_COVERAGE: "odhad pokrytí",
+  NO_OPERATOR_BTS_STATUS: "bez potvrzeného operátorského stavu BTS",
+  OSM_INFRASTRUCTURE_HINT: "referenční OSM infrastruktura",
+  PRECOMPUTED_COVERAGE_READ_MODEL: "předpočítaná mapa pokrytí"
+};
+
+const dataQualityLabels: Record<string, string> = {
+  mixed: "kombinovaná data",
+  modelled: "modelová data",
+  observed: "měřená data",
+  unknown: "neznámá kvalita dat"
+};
+
+export function isMobileNetworkReadModel(properties: MobileNetworkProvenanceProperties): boolean {
+  return properties.readModel === true
+    || properties.metrics?.coverageReadModel === true
+    || (properties.basis ?? []).includes("PRECOMPUTED_COVERAGE_READ_MODEL");
+}
+
+export function mobileNetworkModelLabel(properties: MobileNetworkProvenanceProperties): string {
+  return isMobileNetworkReadModel(properties) ? "Předpočítané pokrytí" : "Modelový odhad";
+}
+
+export function mobileNetworkDataQualityLabel(value: string | undefined): string {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? dataQualityLabels[normalized] ?? "jiný datový podklad" : "n/a";
+}
+
+export function mobileNetworkBasisLabels(value: string[] | undefined): string {
+  if (!value || value.length === 0) {
+    return "n/a";
+  }
+  const labels = Array.from(new Set(value.map((item) => basisLabels[item] ?? humanizeBasisCode(item))));
+  return labels.slice(0, 8).join(", ");
+}
+
+export function mobileNetworkBtsStatusNotice(value: string[] | undefined): string {
+  return value?.includes("NO_OPERATOR_BTS_STATUS")
+    ? "Nejde o potvrzený aktuální stav BTS ani výpadek operátora."
+    : "n/a";
+}
+
+export function formatMobileNetworkSourceRevision(value: string | undefined): string {
+  return value?.trim() ? value.trim() : "n/a";
+}
+
+function humanizeBasisCode(value: string): string {
+  const words = value
+    .trim()
+    .toLowerCase()
+    .split(/[_\s.-]+/)
+    .filter(Boolean)
+    .map((word) => {
+      const translations: Record<string, string> = {
+        bts: "BTS",
+        coverage: "pokrytí",
+        ctu: "ČTÚ",
+        data: "data",
+        dem: "výšková data",
+        distance: "vzdálenost",
+        inferred: "odhad",
+        measurement: "měření",
+        mobile: "mobilní",
+        model: "model",
+        no: "bez",
+        operator: "operátora",
+        osm: "OSM",
+        signal: "signál",
+        status: "stav",
+        terrain: "terén"
+      };
+      return translations[word] ?? word;
+    });
+  return words.length > 0 ? words.join(" ") : "další datový podklad";
+}

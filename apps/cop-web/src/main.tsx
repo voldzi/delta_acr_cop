@@ -198,6 +198,13 @@ import {
   normalizeCitizenSituationLayerIds,
   sanitizeCitizenSituationSourceIds
 } from "./situation-source-policy";
+import {
+  formatMobileNetworkSourceRevision,
+  mobileNetworkBasisLabels,
+  mobileNetworkBtsStatusNotice,
+  mobileNetworkDataQualityLabel,
+  mobileNetworkModelLabel
+} from "./mobile-network-provenance";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
@@ -5943,16 +5950,20 @@ function SituationFeatureDetail({
         <ObjectDetailSection title={properties.layer === "mobile_network" ? "Mobilní síť" : "Mobilní pokrytí"}>
           <DetailGrid
             rows={[
+              ["Model pokrytí", mobileNetworkModelLabel(properties)],
               ["Kvalita", mobileCoverageQualityModel(properties.quality).label],
               ["Stav", formatMobileNetworkStatus(properties.status)],
               ["Technologie", properties.technology ?? "n/a"],
               ["Operátor", properties.operator ?? "n/a"],
               ["Odhad signálu", formatOptionalNumber(properties.estimatedSignalDbm, " dBm")],
-              ["Confidence", formatOptionalPercent(properties.confidence)],
+              ["Jistota", formatOptionalPercent(properties.confidence)],
+              ["Kvalita dat", mobileNetworkDataQualityLabel(properties.dataQuality)],
               ["Shrnutí", properties.summary ?? "n/a"],
-              ["Vysvětlení dat", formatStringList(properties.basis)],
+              ["Datové podklady", mobileNetworkBasisLabels(properties.basis)],
+              ["Stav BTS", mobileNetworkBtsStatusNotice(properties.basis)],
               ["Poznámky", formatStringList(properties.notices)],
               ["Model", properties.modelVersion ?? "n/a"],
+              ["Revize modelu", formatMobileNetworkSourceRevision(properties.sourceRevision)],
               ["Vygenerováno", formatShortDateTime(properties.generatedAt)],
               ["Rozlišení", formatOptionalNumber(properties.resolutionM, " m")],
               ["DEM", properties.demSource ?? "n/a"],

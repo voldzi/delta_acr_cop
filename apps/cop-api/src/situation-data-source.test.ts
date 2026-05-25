@@ -231,20 +231,25 @@ describe("SituationDataSourceAdapter", () => {
     expect(features.features).toMatchObject([
       {
         properties: {
-          basis: ["CTU_NETTEST_MEASUREMENT", "INFERRED_COVERAGE"],
+          basis: ["PRECOMPUTED_COVERAGE_READ_MODEL", "OSM_INFRASTRUCTURE_HINT", "INFERRED_COVERAGE", "NO_OPERATOR_BTS_STATUS"],
           btsStatus: "operator_feed_unavailable",
           dataQuality: "modelled",
           disclaimer: "Inferred assessment, not guaranteed service availability.",
           featureId: "mobile_network:aggregate:4g:6-4",
           layerId: "public.mobile.network",
           layer: "mobile_network",
+          metrics: {
+            coverageReadModel: true
+          },
           notices: ["No operator BTS status feed."],
           operator: "aggregate",
           operatorStatusAvailable: false,
           providerId: "sim.situation-data",
           providerLayerId: "mobile_network",
           quality: "fair",
+          readModel: true,
           sourceId: "mobile_network_model",
+          sourceRevision: "model=coverage-v2-terrain|resolutionM=1000|antennaM=30",
           status: "degraded_possible",
           summary: "Mobilní síť je použitelná s omezením.",
           technology: "4G"
@@ -498,7 +503,7 @@ function sampleMobileNetworkFeatureCollection() {
         },
         id: "mobile_network:aggregate:4g:6-4",
         properties: {
-          basis: ["CTU_NETTEST_MEASUREMENT", "INFERRED_COVERAGE"],
+          basis: ["PRECOMPUTED_COVERAGE_READ_MODEL", "OSM_INFRASTRUCTURE_HINT", "INFERRED_COVERAGE", "NO_OPERATOR_BTS_STATUS"],
           btsStatus: "operator_feed_unavailable",
           category: "mobile_network",
           confidence: 0.62,
@@ -511,6 +516,9 @@ function sampleMobileNetworkFeatureCollection() {
           label: "4G mobile network assessment",
           layer: "mobile_network",
           layerId: "public.mobile.network",
+          metrics: {
+            coverageReadModel: true
+          },
           modelVersion: "mobile-network-v1",
           notices: ["No operator BTS status feed."],
           observedAt: "2026-05-21T16:08:56.211Z",
@@ -522,9 +530,11 @@ function sampleMobileNetworkFeatureCollection() {
             status: "degraded_possible"
           },
           quality: "fair",
+          readModel: true,
           resolutionM: 1000,
           severity: "warning",
           sourceId: "mobile_network_model",
+          sourceRevision: "model=coverage-v2-terrain|resolutionM=1000|antennaM=30",
           stale: false,
           status: "degraded_possible",
           summary: "Mobilní síť je použitelná s omezením.",

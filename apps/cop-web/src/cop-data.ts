@@ -271,12 +271,14 @@ export interface SituationFeatureProperties {
   providerLayerId?: string;
   providerProperties?: Record<string, unknown>;
   quality?: string;
+  readModel?: boolean;
   receivedAt?: string;
   recommendedAction?: string;
   reportId?: string;
   resolutionM?: number;
   severity?: string;
   sourceId: string;
+  sourceRevision?: string;
   stale?: boolean;
   status?: string;
   summary?: string;

@@ -480,3 +480,23 @@ server boundary.
 - Technical SIM inputs are visible in source health but not as normal map checkboxes.
 - Mobile network user view resolves to `mobile_network_model`, not raw `mobile`, `ctu_nettest` or `mobile_coverage`.
 - Degraded provider state affects only dependent layers.
+
+## Mobile Network Read Model Metadata
+
+The public mobile network layer remains `public.mobile.network`, backed by the
+SIM provider layer `mobile_network` and source `mobile_network_model`.
+
+When SIM returns mobile network features with `readModel: true`, COP treats them
+as a prepared coverage read model and labels the detail as precomputed coverage.
+The following provider metadata is preserved by COP:
+
+- `readModel` - prepared read-model flag,
+- `sourceRevision` - technical model/source revision for diagnostics,
+- `basis` - translated into user-readable data provenance labels,
+- `metrics.coverageReadModel` - secondary read-model indicator.
+
+COP must not expose `mobile_coverage` as a normal public layer. Diagnostic
+mobile layers such as `diagnostic.mobile.coverage`,
+`diagnostic.mobile.ctu_measurements`, and
+`diagnostic.mobile.ctu_stationary_measurements` belong only in diagnostics or
+admin views.

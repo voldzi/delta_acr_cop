@@ -3820,6 +3820,13 @@ components:
           type: string
         dataQuality:
           type: string
+          description: Data provenance quality such as modelled, observed, mixed, or unknown.
+        readModel:
+          type: boolean
+          description: True when the provider returned a prepared read model instead of an ad-hoc viewport estimate.
+        sourceRevision:
+          type: string
+          description: Provider technical model/source revision string for diagnostics.
         btsStatus:
           type: string
         btsStatusSource:
