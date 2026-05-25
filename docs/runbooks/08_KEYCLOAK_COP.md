@@ -71,7 +71,7 @@ infra/keycloak/themes/cop
 ```
 
 Theme navazuje na vizualni styl aplikace Civilni situacni mapa: tmave operacni pozadi, hranate panely, lime/cyan akcenty a stejnou aplikacni ikonu jako web.
-CSS soubor theme je verzovany v nazvu (`cop-login-YYYYMMDD.css`), aby se po nasazeni nevracela stara verze z browser/Keycloak cache.
+CSS soubor theme je verzovany v nazvu (`cop-login-YYYYMMDD*.css`), aby se po nasazeni nevracela stara verze z browser/Keycloak cache.
 
 Pokud Keycloak bezi v kontejneru, mountni theme do `/opt/keycloak/themes/cop`:
 

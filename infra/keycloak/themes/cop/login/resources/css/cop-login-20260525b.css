@@ -23,6 +23,7 @@ html {
   background: var(--cop-bg);
 }
 
+html.login-pf,
 body.login-pf {
   min-height: 100vh;
   margin: 0;
@@ -38,6 +39,14 @@ body.login-pf {
   text-rendering: optimizeLegibility;
 }
 
+html.login-pf body {
+  min-height: 100vh;
+  margin: 0;
+  background: transparent;
+}
+
+html.login-pf::before,
+html.login-pf::after,
 body.login-pf::before,
 body.login-pf::after {
   position: fixed;
@@ -46,6 +55,7 @@ body.login-pf::after {
   content: "";
 }
 
+html.login-pf::before,
 body.login-pf::before {
   opacity: 0.22;
   background:
@@ -58,6 +68,7 @@ body.login-pf::before {
   mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
 }
 
+html.login-pf::after,
 body.login-pf::after {
   inset: auto 18px 14px auto;
   padding: 6px 8px;
