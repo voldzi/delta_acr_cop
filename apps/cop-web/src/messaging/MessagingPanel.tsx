@@ -36,6 +36,14 @@ export function matrixUserIdsFromResolution(
   return Array.from(new Set(requested.flatMap((userId) => resolvedByUserId.get(userId) ?? [])));
 }
 
+export function visibleMatrixRooms(
+  rooms: MatrixRoomSummary[],
+  conversations: MessagingPanelProps["conversations"]
+): MatrixRoomSummary[] {
+  const conversationRoomIds = new Set(conversations.flatMap((conversation) => conversation.matrix?.roomId ? [conversation.matrix.roomId] : []));
+  return rooms.filter((room) => !conversationRoomIds.has(room.roomId));
+}
+
 export function MessagingPanel({
   apiBase,
   authenticated,
@@ -263,6 +271,10 @@ export function MessagingPanel({
     }
     setBootstrapError(null);
     try {
+      if (conversation.matrix?.roomId) {
+        setSelectedRoomId(conversation.matrix.roomId);
+        return;
+      }
       const inviteUserIds = await resolveConversationMatrixUsers(conversation);
       const roomId = await matrixSession.createGroupRoom(conversation.title, inviteUserIds);
       const binding = await onBindMatrixRoom(conversation.conversationId, roomId, true);
@@ -541,6 +553,7 @@ function MatrixChatShell({
   const selectedRoom = rooms.find((room) => room.roomId === selectedRoomId) ?? null;
   const conversationOnlySelected = Boolean(selectedConversation && !selectedRoom);
   const canSend = Boolean(selectedRoomId && selectedRoom);
+  const standaloneRooms = visibleMatrixRooms(rooms, conversations);
   return (
     <div className="matrix-chat-shell">
       <div className="matrix-room-list" aria-label="Konverzace">
@@ -554,10 +567,10 @@ function MatrixChatShell({
             type="button"
           >
             <strong>{conversation.title}</strong>
-            <small>{conversation.type === "group" ? "skupina" : "přímý chat"} · {conversation.memberCount ?? 1} členů · {conversation.matrix?.roomId ? "aktivní" : "připravit chat"}</small>
+            <small>{conversation.type === "group" ? "skupina" : "přímý chat"} · {conversation.memberCount ?? 1} členů · {conversation.matrix?.roomId ? "šifrovaný chat" : "připravit chat"}</small>
           </button>
         ))}
-        {rooms.map((room) => (
+        {standaloneRooms.map((room) => (
           <button
             aria-pressed={room.roomId === selectedRoomId}
             className={room.roomId === selectedRoomId ? "active" : ""}
@@ -573,17 +586,23 @@ function MatrixChatShell({
       <div className="matrix-room-view">
         <div className="matrix-room-header">
           <strong>{selectedRoom?.name ?? selectedConversation?.title ?? "Vyberte konverzaci"}</strong>
-          <small>{selectedRoom ? selectedRoom.encrypted ? "šifrováno" : "ověřuji šifrování" : selectedConversation ? "připraveno" : "čeká"}</small>
+          <small>{selectedRoom ? selectedRoom.encrypted ? "šifrováno" : "ověřuji šifrování" : selectedConversation?.matrix?.roomId ? "synchronizuji místnost" : selectedConversation ? "připraveno" : "čeká"}</small>
         </div>
         <div className="matrix-timeline" aria-live="polite">
           {conversationOnlySelected ? (
             <div className="conversation-start-card">
               <strong>{selectedConversation?.title}</strong>
-              <span>Skupina existuje pro sdílená média. Založte šifrovanou chatovou místnost a můžete začít psát.</span>
-              <button className="mini-button" onClick={() => selectedConversation ? onStartRoom(selectedConversation.conversationId) : undefined} type="button">
-                <Plus size={14} />
-                Začít chat
-              </button>
+              {selectedConversation?.matrix?.roomId ? (
+                <span>Šifrovaná místnost už existuje. Probíhá synchronizace Matrix klienta; pokud se zprávy nenačtou, obnovte stav konverzací.</span>
+              ) : (
+                <>
+                  <span>Skupina existuje pro sdílená média. Založte šifrovanou chatovou místnost a můžete začít psát.</span>
+                  <button className="mini-button" onClick={() => selectedConversation ? onStartRoom(selectedConversation.conversationId) : undefined} type="button">
+                    <Plus size={14} />
+                    Začít chat
+                  </button>
+                </>
+              )}
             </div>
           ) : timeline.length === 0 ? <div className="empty-mini">{selectedRoom ? "Zatím zde nejsou žádné zprávy." : "Vyberte nebo založte konverzaci."}</div> : null}
           {timeline.map((message) => (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertMatrixRoomBindingConfirmed, matrixUserIdsFromResolution } from "./MessagingPanel";
+import { assertMatrixRoomBindingConfirmed, matrixUserIdsFromResolution, visibleMatrixRooms } from "./MessagingPanel";
 
 describe("MessagingPanel Matrix safety gates", () => {
   it("fails closed when identity resolution is degraded", () => {
@@ -52,5 +52,21 @@ describe("MessagingPanel Matrix safety gates", () => {
       status: "degraded",
       warnings: ["binding rejected"]
     }, "!room:msg.zeleznalady.cz")).toThrow("binding rejected");
+  });
+
+  it("does not duplicate Matrix rooms already represented by conversation metadata", () => {
+    expect(visibleMatrixRooms([
+      { encrypted: true, name: "Kyjev", roomId: "!kyjev:docker.home.cz", unreadCount: 0 },
+      { encrypted: true, name: "Solo", roomId: "!solo:docker.home.cz", unreadCount: 0 }
+    ], [
+      {
+        conversationId: "conv_kyjev",
+        matrix: { roomId: "!kyjev:docker.home.cz" },
+        title: "Kyjev",
+        type: "group"
+      }
+    ])).toEqual([
+      { encrypted: true, name: "Solo", roomId: "!solo:docker.home.cz", unreadCount: 0 }
+    ]);
   });
 });
