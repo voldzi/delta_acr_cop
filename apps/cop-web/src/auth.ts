@@ -104,10 +104,16 @@ export async function initializeAuth(config: AuthConfig): Promise<AuthSession> {
 }
 
 export function getAuthorizationToken(session: AuthSession, labToken: string): string | undefined {
-  if (session.accessToken) {
+  if (isAuthSessionActive(session)) {
     return session.accessToken;
   }
   return session.status === "lab" ? labToken : undefined;
+}
+
+export function isAuthSessionActive(session: AuthSession, skewMs = 30_000): session is AuthSession & { accessToken: string } {
+  return session.status === "authenticated"
+    && Boolean(session.accessToken)
+    && (!session.expiresAt || session.expiresAt > Date.now() + skewMs);
 }
 
 export async function beginLogin(config: AuthConfig): Promise<void> {

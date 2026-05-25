@@ -40,6 +40,7 @@ import {
   endSession,
   getAuthorizationToken,
   initializeAuth,
+  isAuthSessionActive,
   isOidcEnabled,
   readAuthConfig,
   type AuthConfig,
@@ -410,9 +411,38 @@ export function App() {
   const skipNextPreferenceWriteRef = React.useRef(false);
   const notifiedProximityAlertsRef = React.useRef<Set<string>>(new Set());
   const authToken = getAuthorizationToken(authSession, labToken);
+  const authenticatedSessionActive = isAuthSessionActive(authSession);
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken);
   const profileAccessReady = Boolean(authToken);
-  const messagingAuthenticated = authSession.status === "authenticated" && Boolean(authSession.accessToken);
+  const messagingAuthenticated = authenticatedSessionActive;
+
+  React.useEffect(() => {
+    if (authSession.status !== "authenticated" || !authSession.expiresAt || !isOidcEnabled(authConfig)) {
+      return;
+    }
+    const refreshDelayMs = Math.max(0, authSession.expiresAt - Date.now() - 60_000);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      initializeAuth(authConfig)
+        .then((nextSession) => {
+          if (!cancelled) {
+            setAuthSession(nextSession);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setAuthSession({
+              error: error instanceof Error ? error.message : "Přihlášení vypršelo.",
+              status: "anonymous"
+            });
+          }
+        });
+    }, refreshDelayMs);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [authConfig, authSession.expiresAt, authSession.status]);
 
   React.useEffect(() => {
     if (!communityReportSubmitting) {
@@ -531,12 +561,22 @@ export function App() {
       setMessagingStatus(await fetchMessagingStatus(apiBase, authToken));
       setMessagingError(null);
     } catch (error) {
+      if (authToken && authConfig.publicReadEnabled && isUnauthorizedApiError(error)) {
+        try {
+          setMessagingStatus(await fetchMessagingStatus(apiBase, undefined));
+          setMessagingError("Přihlášení pro zprávy vypršelo. Stav služby zobrazuji ve veřejném režimu.");
+          setAuthSession((current) => current.status === "authenticated" ? { status: "anonymous" } : current);
+          return;
+        } catch {
+          // Fall through to the regular degraded state below.
+        }
+      }
       setMessagingStatus(null);
       setMessagingError(error instanceof Error ? error.message : "Stav messaging služby není dostupný.");
     } finally {
       setMessagingLoading(false);
     }
-  }, [authToken]);
+  }, [apiBase, authConfig.publicReadEnabled, authToken]);
 
   const loadCommunityGroups = React.useCallback(async () => {
     if (!messagingAuthenticated || !authSession.accessToken) {
@@ -556,10 +596,18 @@ export function App() {
       setCommunityGroupsError(null);
       setMessagingConversationsError(conversationsResponse.status === "online" ? null : conversationsResponse.warnings[0] ?? "Konverzace nejsou plně dostupné.");
     } catch (error) {
-      setCommunityGroupsError(error instanceof Error ? error.message : "Skupiny nejsou dostupné.");
-      setMessagingConversationsError(error instanceof Error ? error.message : "Konverzace nejsou dostupné.");
+      const message = isUnauthorizedApiError(error)
+        ? "Přihlášení pro zprávy vypršelo. Přihlaste se znovu přes Keycloak."
+        : error instanceof Error ? error.message : "Konverzace nejsou dostupné.";
+      if (isUnauthorizedApiError(error)) {
+        setAuthSession((current) => current.status === "authenticated" ? { status: "anonymous" } : current);
+      }
+      setCommunityGroups([]);
+      setMessagingConversations([]);
+      setCommunityGroupsError(message);
+      setMessagingConversationsError(message);
     }
-  }, [authSession.accessToken, messagingAuthenticated]);
+  }, [apiBase, authSession.accessToken, messagingAuthenticated]);
 
   React.useEffect(() => {
     void load();
@@ -7697,6 +7745,10 @@ function authStatusLabel(session: AuthSession, config: AuthConfig): string {
     return "chyba";
   }
   return isOidcEnabled(config) ? "bez přihlášení" : "lab režim";
+}
+
+function isUnauthorizedApiError(error: unknown): boolean {
+  return error instanceof Error && /^401(?:\s|$)/u.test(error.message);
 }
 
 function profileSyncLabel(status: ProfileSyncStatus): string {
