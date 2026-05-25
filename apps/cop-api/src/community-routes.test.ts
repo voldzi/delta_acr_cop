@@ -617,6 +617,24 @@ describe("community report routes", () => {
 
   it("uploads video and document attachments through the API proxy", async () => {
     const mediaStorage = new FakeMediaStorage();
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.startsWith("https://media.example.test/read/")) {
+        return new Response(null, { status: 404 });
+      }
+      const objectKey = decodeURIComponent(url.slice("https://media.example.test/read/".length));
+      const body = mediaStorage.objects.get(objectKey);
+      return body
+        ? new Response(new Uint8Array(body), {
+            headers: {
+              "accept-ranges": "bytes",
+              "content-length": String(body.length),
+              "content-type": "video/mp4"
+            },
+            status: 200
+          })
+        : new Response(null, { status: 404 });
+    }));
     const app = buildServer({
       mediaStorage,
       now: () => new Date("2026-05-20T12:00:00Z")
@@ -650,7 +668,7 @@ describe("community report routes", () => {
           source: "manual"
         },
         contentType: "video/mp4",
-        fileName: "bridge.mp4",
+        fileName: "svatba č. 2.mp4",
         kind: "video",
         metadata: {
           spatialVideo: {
@@ -688,7 +706,7 @@ describe("community report routes", () => {
       status: "uploaded"
     });
     expect(uploadResponse.json().contentUrl).toContain(`/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content?mediaToken=`);
-    expect(mediaStorage.objects.get(`community-reports/${report.reportId}/${attachment.attachmentId}/bridge.mp4`)?.toString()).toBe("fake-video-data");
+    expect(mediaStorage.objects.get(`community-reports/${report.reportId}/${attachment.attachmentId}/svatba č. 2.mp4`)?.toString()).toBe("fake-video-data");
 
     const submitResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
@@ -725,8 +743,18 @@ describe("community report routes", () => {
         ]
       }
     });
-    expect(listResponse.json().featureCollection.features[0].properties.attachments[0].contentUrl)
+    const listedContentUrl = listResponse.json().featureCollection.features[0].properties.attachments[0].contentUrl;
+    expect(listedContentUrl)
       .toContain(`/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content?mediaToken=`);
+    process.env.COP_PUBLIC_READ_ENABLED = "false";
+    const contentResponse = await app.inject({
+      method: "GET",
+      url: listedContentUrl
+    });
+    expect(contentResponse.statusCode).toBe(200);
+    expect(contentResponse.body).toBe("fake-video-data");
+    expect(String(contentResponse.headers["content-disposition"])).toContain('filename="svatba _. 2.mp4"');
+    expect(String(contentResponse.headers["content-disposition"])).toContain("filename*=UTF-8''svatba%20%C4%8D.%202.mp4");
 
     await app.close();
   });

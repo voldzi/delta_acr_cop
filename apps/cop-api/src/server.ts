@@ -1775,7 +1775,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     reply
       .code(mediaResponse.status)
       .header("Cache-Control", "private, max-age=300")
-      .header("Content-Disposition", `inline; filename="${contentDispositionFileName(attachment.fileName ?? attachment.attachmentId)}"`)
+      .header("Content-Disposition", contentDispositionHeader(attachment.fileName ?? attachment.attachmentId))
       .header("Content-Type", attachment.contentType);
     if (contentLength) {
       reply.header("Content-Length", contentLength);
@@ -1833,11 +1833,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const contentLength = mediaResponse.headers.get("content-length");
     const contentRange = mediaResponse.headers.get("content-range");
     const acceptRanges = mediaResponse.headers.get("accept-ranges");
-    const baseName = contentDispositionFileName(attachment.fileName ?? attachment.attachmentId).replace(/\.[^.]+$/u, "");
+    const baseName = stripFileExtension(attachment.fileName ?? attachment.attachmentId);
     reply
       .code(mediaResponse.status)
       .header("Cache-Control", "private, max-age=300")
-      .header("Content-Disposition", `inline; filename="${baseName}-xr-sbs.mp4"`)
+      .header("Content-Disposition", contentDispositionHeader(`${baseName}-xr-sbs.mp4`))
       .header("Content-Type", derivative.contentType ?? "video/mp4");
     if (contentLength) {
       reply.header("Content-Length", contentLength);
@@ -4332,8 +4332,30 @@ function isCommunityAttachmentKind(value: unknown): value is CommunityAttachment
   return value === "photo" || value === "video" || value === "document";
 }
 
-function contentDispositionFileName(value: string): string {
-  return value.replace(/["\\\r\n]/gu, "_").slice(0, 160) || "attachment";
+function contentDispositionHeader(value: string): string {
+  const fileName = sanitizeContentDispositionFileName(value);
+  const fallback = fileName
+    .replace(/[^\x20-\x7E]/gu, "_")
+    .replace(/["\\;]/gu, "_")
+    .trim()
+    .slice(0, 160) || "attachment";
+  return `inline; filename="${fallback}"; filename*=UTF-8''${encodeRfc5987FileName(fileName)}`;
+}
+
+function sanitizeContentDispositionFileName(value: string): string {
+  return value.replace(/[\u0000-\u001F\u007F]/gu, "_").slice(0, 160) || "attachment";
+}
+
+function encodeRfc5987FileName(value: string): string {
+  try {
+    return encodeURIComponent(value).replace(/['()*]/gu, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  } catch {
+    return "attachment";
+  }
+}
+
+function stripFileExtension(value: string): string {
+  return sanitizeContentDispositionFileName(value).replace(/\.[^.]+$/u, "") || "attachment";
 }
 
 function parseMobileSnapshotQuery(query: Record<string, unknown>): MobileSnapshotQuery {

@@ -182,12 +182,16 @@ function readAuthMode(): AuthMode {
 }
 
 function isPublicReadRequest(request: FastifyRequest): boolean {
+  const method = request.method.toUpperCase();
+  const path = request.url.split("?")[0] ?? request.url;
+  if ((method === "GET" || method === "HEAD") && isCommunityMediaTicketRequest(request.url, path)) {
+    return true;
+  }
+
   if (!readBoolean(process.env.COP_PUBLIC_READ_ENABLED)) {
     return false;
   }
 
-  const method = request.method.toUpperCase();
-  const path = request.url.split("?")[0] ?? request.url;
   if (path === "/api/v1/map/query" && method === "POST") {
     return true;
   }
@@ -209,6 +213,14 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
     || path === "/api/v1/messaging/status"
     || path === "/api/v1/community/reports"
     || path.startsWith("/api/v1/community/reports/");
+}
+
+function isCommunityMediaTicketRequest(url: string, path: string): boolean {
+  if (!path.startsWith("/api/v1/community/reports/") || !path.includes("/attachments/") || !path.endsWith("/content")) {
+    return false;
+  }
+  const query = url.split("?")[1] ?? "";
+  return new URLSearchParams(query).has("mediaToken");
 }
 
 function readBoolean(value: string | undefined): boolean {
