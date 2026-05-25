@@ -24,8 +24,8 @@ describe("CsmMessagingProvider", () => {
 
   it("reads provider capabilities and health server-side without exposing a browser token", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(init?.headers).not.toMatchObject({ Authorization: expect.any(String) });
       const url = String(input);
+      expect(init?.headers).not.toMatchObject({ Authorization: expect.any(String) });
       if (url.endsWith("/api/v1/capabilities")) {
         return new Response(JSON.stringify({
           architecture: {
@@ -53,6 +53,9 @@ describe("CsmMessagingProvider", () => {
           status: "online"
         }), { status: 200 });
       }
+      if (url === "https://msg.zeleznalady.cz/_matrix/client/versions") {
+        return new Response(JSON.stringify({ versions: ["v1.12"] }), { status: 200 });
+      }
       return new Response(JSON.stringify({
         checks: [],
         status: "ok"
@@ -64,12 +67,14 @@ describe("CsmMessagingProvider", () => {
       baseUrl: "http://messaging.local:4050",
       cacheTtlMs: 10000,
       enabled: true,
+      matrixHomeserverPublicUrl: "https://msg.zeleznalady.cz",
       timeoutMs: 3000
     });
     const status = await provider.fetchStatus(new Date("2026-05-22T12:00:00Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("http://messaging.local:4050/api/v1/capabilities");
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe("http://messaging.local:4050/health/ready");
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe("https://msg.zeleznalady.cz/_matrix/client/versions");
     expect(status).toMatchObject({
       architecture: { plaintextOnServer: false },
       chatAvailable: true,
@@ -80,6 +85,49 @@ describe("CsmMessagingProvider", () => {
       status: "online"
     });
     expect(JSON.stringify(status)).not.toContain("accessToken");
+  });
+
+  it("keeps chat disabled when the public Matrix homeserver URL is not reachable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/capabilities")) {
+        return new Response(JSON.stringify({
+          architecture: { plaintextOnServer: false },
+          contractVersion: "csm-messaging-provider-v1",
+          features: {
+            endToEndEncryptionRequired: true,
+            matrixIdentityResolution: true,
+            matrixRoomBinding: true,
+            matrixTokenBootstrap: true
+          },
+          providerId: "csm.messaging",
+          security: {
+            readFromBrowser: false,
+            serverSideIntegrationOnly: true
+          },
+          serviceName: "CSM Messaging",
+          status: "online"
+        }), { status: 200 });
+      }
+      if (url.endsWith("/health/ready")) {
+        return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
+      }
+      throw new TypeError("fetch failed: DNS lookup failed");
+    }));
+
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      matrixHomeserverPublicUrl: "https://msg.zeleznalady.cz",
+      timeoutMs: 3000
+    });
+
+    const status = await provider.fetchStatus(new Date("2026-05-22T12:00:00Z"));
+
+    expect(status.status).toBe("online");
+    expect(status.chatAvailable).toBe(false);
+    expect(status.warnings.join("\n")).toContain("Matrix public homeserver is not reachable");
   });
 
   it("sends the configured server token only to the messaging provider", async () => {

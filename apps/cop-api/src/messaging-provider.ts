@@ -285,7 +285,14 @@ export class CsmMessagingProvider implements MessagingProvider {
       const providerOk = capabilitiesResult.ok && isOperationalStatus(capabilities.status);
       const healthOk = healthResult.ok && isOperationalStatus(health?.status);
       const status: MessagingIntegrationRuntimeStatus = providerOk && healthOk ? "online" : "degraded";
-      const chatAvailable = isClientSafeMatrixBootstrapReady(capabilities, providerOk, healthOk);
+      let chatAvailable = isClientSafeMatrixBootstrapReady(capabilities, providerOk, healthOk);
+      if (chatAvailable) {
+        const publicHomeserverHealth = await checkPublicMatrixHomeserver(this.config);
+        if (!publicHomeserverHealth.ok) {
+          chatAvailable = false;
+          warnings.push(publicHomeserverHealth.detail);
+        }
+      }
       if (!chatAvailable) {
         warnings.push("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
       }
@@ -776,6 +783,43 @@ async function fetchJsonWithStatus(
       body: text ? JSON.parse(text) as unknown : {},
       ok: response.ok,
       status: response.status
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function checkPublicMatrixHomeserver(config: MessagingProviderConfig): Promise<{ detail: string; ok: boolean }> {
+  const baseUrl = config.matrixHomeserverPublicUrl;
+  if (!baseUrl) {
+    return {
+      detail: "Matrix public homeserver URL is not configured for browser use.",
+      ok: false
+    };
+  }
+  if (!baseUrl.startsWith("https://")) {
+    return {
+      detail: "Matrix public homeserver URL must use HTTPS for browser chat.",
+      ok: false
+    };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const response = await fetch(new URL("/_matrix/client/versions", baseUrl), {
+      headers: {
+        Accept: "application/json"
+      },
+      method: "GET",
+      signal: controller.signal
+    });
+    return response.ok
+      ? { detail: "Matrix public homeserver is reachable.", ok: true }
+      : { detail: `Matrix public homeserver returned HTTP ${response.status}.`, ok: false };
+  } catch (error) {
+    return {
+      detail: `Matrix public homeserver is not reachable from COP server: ${errorMessage(error)}`,
+      ok: false
     };
   } finally {
     clearTimeout(timeout);
