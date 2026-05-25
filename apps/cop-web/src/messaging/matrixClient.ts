@@ -38,11 +38,16 @@ export async function createMatrixMessagingSession(
   } = {}
 ): Promise<MatrixMessagingSession> {
   validateBootstrap(bootstrap);
+  const homeserverBaseUrl = bootstrap.homeserverBaseUrl;
+  if (!homeserverBaseUrl) {
+    throw new Error("Matrix bootstrap neobsahuje URL homeserveru.");
+  }
+  await assertBrowserCanReachHomeserver(homeserverBaseUrl);
   const matrixSdk = await import("matrix-js-sdk");
   const createClient = (matrixSdk as unknown as { createClient: (options: Record<string, unknown>) => MatrixClientLike }).createClient;
   const client = createClient({
     accessToken: bootstrap.accessToken,
-    baseUrl: bootstrap.homeserverBaseUrl,
+    baseUrl: homeserverBaseUrl,
     deviceId: bootstrap.deviceId,
     userId: bootstrap.userId
   });
@@ -72,19 +77,24 @@ export async function createMatrixMessagingSession(
       if (typeof client.createRoom !== "function") {
         throw new Error("Matrix SDK neumí založit konverzaci.");
       }
-      const response = await client.createRoom({
-        invite: inviteUserIds,
-        initial_state: bootstrap.e2eeRequired ? [{
-          content: {
-            algorithm: "m.megolm.v1.aes-sha2"
-          },
-          state_key: "",
-          type: "m.room.encryption"
-        }] : [],
-        name,
-        preset: inviteUserIds.length > 0 ? "private_chat" : "trusted_private_chat",
-        visibility: "private"
-      });
+      let response: { room_id?: string; roomId?: string };
+      try {
+        response = await client.createRoom({
+          invite: inviteUserIds,
+          initial_state: bootstrap.e2eeRequired ? [{
+            content: {
+              algorithm: "m.megolm.v1.aes-sha2"
+            },
+            state_key: "",
+            type: "m.room.encryption"
+          }] : [],
+          name,
+          preset: inviteUserIds.length > 0 ? "private_chat" : "trusted_private_chat",
+          visibility: "private"
+        });
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "založit chatovou místnost");
+      }
       callbacks.onRoomsChanged?.(readRooms(client));
       const roomId = response.room_id ?? response.roomId;
       if (!roomId) {
@@ -102,7 +112,11 @@ export async function createMatrixMessagingSession(
       if (typeof client.sendTextMessage !== "function") {
         throw new Error("Matrix SDK neumí odeslat textovou zprávu.");
       }
-      await client.sendTextMessage(roomId, message);
+      try {
+        await client.sendTextMessage(roomId, message);
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat zprávu");
+      }
     },
     stop: () => {
       client.off?.("sync", syncListener);
@@ -144,6 +158,51 @@ function validateBootstrap(bootstrap: MessagingBootstrapResponse): void {
   if (bootstrap.e2eeRequired !== true) {
     throw new Error("Provider nevyžaduje E2EE; COP chat proto zůstává vypnutý.");
   }
+}
+
+async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
+  if (typeof window === "undefined" || typeof window.fetch !== "function") {
+    return;
+  }
+  const versionsUrl = `${baseUrl.replace(/\/+$/u, "")}/_matrix/client/versions`;
+  try {
+    const response = await window.fetch(versionsUrl, {
+      cache: "no-store",
+      credentials: "omit",
+      mode: "cors"
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+  } catch (caught) {
+    throw formatMatrixClientError(caught, baseUrl, "ověřit Matrix server v prohlížeči");
+  }
+}
+
+export function formatMatrixClientError(caught: unknown, baseUrl: string, action: string): Error {
+  if (isLikelyBrowserNetworkError(caught)) {
+    return new Error(
+      `Nelze ${action}: prohlížeč se nedostal na Matrix server ${baseUrl}. ` +
+      `Otevřete ${baseUrl.replace(/\/+$/u, "")}/_matrix/client/versions na stejném zařízení; ` +
+      "pokud endpoint funguje, proveďte tvrdé obnovení stránky nebo vyčistěte DNS/site cache pro cop.zeleznalady.cz a msg.zeleznalady.cz."
+    );
+  }
+  return caught instanceof Error ? caught : new Error(`Nelze ${action}: ${String(caught)}`);
+}
+
+function isLikelyBrowserNetworkError(caught: unknown): boolean {
+  if (!(caught instanceof Error)) {
+    return false;
+  }
+  const message = caught.message.toLowerCase();
+  return (
+    caught.name === "ConnectionError" ||
+    message.includes("fetch failed") ||
+    message.includes("load failed") ||
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("network error")
+  );
 }
 
 function readRooms(client: MatrixClientLike): MatrixRoomSummary[] {
