@@ -19,6 +19,8 @@ import {
   MousePointer2,
   Move,
   Pause,
+  Pin,
+  PinOff,
   Plane,
   Play,
   Plus,
@@ -288,6 +290,7 @@ export function App() {
   const [domainScope, setDomainScope] = React.useState<DomainScope>(() => readInitialDomainScope(initialPreferences.domainScope));
   const [searchQuery, setSearchQuery] = React.useState("");
   const [mapSearchQuery, setMapSearchQuery] = React.useState("");
+  const [mapSearchDocked, setMapSearchDocked] = React.useState(() => readMapSearchDocked());
   const [placeSearchItems, setPlaceSearchItems] = React.useState<PlaceGeocodeResult[]>([]);
   const [placeSearchLoading, setPlaceSearchLoading] = React.useState(false);
   const [placeSearchError, setPlaceSearchError] = React.useState<string | null>(null);
@@ -597,7 +600,7 @@ export function App() {
       setMessagingConversationsError(conversationsResponse.status === "online" ? null : conversationsResponse.warnings[0] ?? "Konverzace nejsou plně dostupné.");
     } catch (error) {
       const message = isUnauthorizedApiError(error)
-        ? "Přihlášení pro zprávy vypršelo. Přihlaste se znovu přes Keycloak."
+        ? "Přihlášení pro zprávy vypršelo. Přihlaste se znovu."
         : error instanceof Error ? error.message : "Konverzace nejsou dostupné.";
       if (isUnauthorizedApiError(error)) {
         setAuthSession((current) => current.status === "authenticated" ? { status: "anonymous" } : current);
@@ -1748,7 +1751,7 @@ export function App() {
 
   async function askAi() {
     if (!authToken) {
-      setAiResult("AI asistent je dostupný po přihlášení přes Keycloak.");
+      setAiResult("AI asistent je dostupný po přihlášení.");
       return;
     }
     const response = await fetch(`${apiBase}/api/v1/ai/cop-assistant/query`, {
@@ -2030,7 +2033,7 @@ export function App() {
 
   async function acknowledgeServerAlert(alertId: string) {
     if (!authToken) {
-      setLoadError("Potvrzení serverové výstrahy je dostupné po přihlášení přes Keycloak.");
+      setLoadError("Potvrzení serverové výstrahy je dostupné po přihlášení.");
       return;
     }
     try {
@@ -2120,14 +2123,14 @@ export function App() {
   }
 
   function openLoginPrompt() {
-    openSettings("account");
+    loginOperator();
   }
 
   function startCommunityReportCapture() {
     locateUser();
     if (!profileAccessReady) {
-      setProfileSyncError("Vlastní hlášení s polohou a přílohami je dostupné po přihlášení přes Keycloak.");
-      openSettings("account");
+      setProfileSyncError("Vlastní hlášení s polohou a přílohami je dostupné po přihlášení.");
+      loginOperator();
       return;
     }
     setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(userLocation, mapView)));
@@ -2553,8 +2556,8 @@ export function App() {
 
   function saveCurrentViewProfile() {
     if (!profileAccessReady) {
-      setProfileSyncError("Uložení profilu pohledu je dostupné po přihlášení přes Keycloak.");
-      openSettings("account");
+      setProfileSyncError("Uložení profilu pohledu je dostupné po přihlášení.");
+      loginOperator();
       return;
     }
     const now = new Date();
@@ -2660,18 +2663,32 @@ export function App() {
             </span>
           </a>
           <button
-            aria-label="Operátor - otevřít nastavení"
+            aria-label={authSession.status === "authenticated" ? "Účet - otevřít nastavení" : "Přihlásit"}
             className="operator-button"
-            onClick={() => openSettings("account")}
-            title="Operátor - otevřít nastavení"
+            onClick={() => {
+              if (authSession.status === "authenticated" || !isOidcEnabled(authConfig)) {
+                openSettings("account");
+                return;
+              }
+              loginOperator();
+            }}
+            title={authSession.status === "authenticated" ? "Účet - otevřít nastavení" : "Přihlásit"}
             type="button"
           >
             <UserCircle size={19} />
-            <span>
-              Operátor
-              <strong>{operatorDisplayName(authSession, authConfig)}</strong>
-            </span>
-            <Settings size={16} />
+            {authSession.status !== "authenticated" && isOidcEnabled(authConfig) ? (
+              <span>
+                <strong>Přihlásit</strong>
+              </span>
+            ) : (
+              <>
+                <span>
+                  Operátor
+                  <strong>{operatorDisplayName(authSession, authConfig)}</strong>
+                </span>
+                <Settings size={16} />
+              </>
+            )}
           </button>
         </div>
       </header>
@@ -2714,6 +2731,25 @@ export function App() {
             />
           ) : null}
           {showMapLayerControls ? <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} /> : null}
+          {showMapLayerControls && activeWorkspace === "map" && mapSearchDocked ? (
+            <MapGlobalSearch
+              docked
+              isSearchingPlaces={placeSearchLoading}
+              placeSearchError={placeSearchError}
+              query={mapSearchQuery}
+              results={mapSearchResults}
+              onChange={setMapSearchQuery}
+              onClear={() => setMapSearchQuery("")}
+              onDockChange={(nextDocked) => {
+                setMapSearchDocked(nextDocked);
+                writeMapSearchDocked(nextDocked);
+              }}
+              onSelect={(result) => {
+                selectMapSearchResult(result);
+                setMapSearchQuery("");
+              }}
+            />
+          ) : null}
 
           {showDataControls ? (
             <>
@@ -2849,14 +2885,19 @@ export function App() {
 
         <section className={`center-column center-column-${activeWorkspace}`}>
           <section className="map-stage">
-            {activeWorkspace === "map" ? (
+            {activeWorkspace === "map" && !mapSearchDocked ? (
               <MapGlobalSearch
+                docked={false}
                 isSearchingPlaces={placeSearchLoading}
                 placeSearchError={placeSearchError}
                 query={mapSearchQuery}
                 results={mapSearchResults}
                 onChange={setMapSearchQuery}
                 onClear={() => setMapSearchQuery("")}
+                onDockChange={(nextDocked) => {
+                  setMapSearchDocked(nextDocked);
+                  writeMapSearchDocked(nextDocked);
+                }}
                 onSelect={(result) => {
                   selectMapSearchResult(result);
                   setMapSearchQuery("");
@@ -3781,7 +3822,7 @@ function AccountAccessBox({
           <p>Bez přihlášení zůstává aplikace read-only. Přihlášení odemkne ukládání profilu, potvrzování výstrah a komunitní hlášení.</p>
           <button className="primary-button secondary" onClick={onLogin} type="button">
             <LogIn size={16} />
-            Přihlásit přes Keycloak
+            Přihlásit
           </button>
         </>
       ) : null}
@@ -4738,8 +4779,6 @@ function SettingsDrawer({
               <PanelTitle icon={<UserCircle size={17} />} title="Přihlášení" />
               <ReadinessRow label="Stav" value={authStatusLabel(authSession, authConfig)} tone={authSession.status === "authenticated" ? "ok" : "neutral"} />
               <ReadinessRow label="Profil" value={authSession.profile?.name ?? "nepřihlášen"} tone="neutral" />
-              <ReadinessRow label="Provider" value={isOidcEnabled(authConfig) ? "Keycloak" : "lab token"} tone="neutral" />
-              <ReadinessRow label="Realm" value={authConfig.issuer ? authConfig.issuer.split("/").pop() ?? "n/a" : "n/a"} tone="neutral" />
               <ReadinessRow label="Veřejné čtení" value={authConfig.publicReadEnabled ? "zapnuto" : "vypnuto"} tone={authConfig.publicReadEnabled ? "ok" : "neutral"} />
               <ReadinessRow label="Serverový profil" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
               <ReadinessRow label="Uloženo" value={formatProfileUpdatedAt(serverProfileUpdatedAt)} tone="neutral" />
@@ -4755,11 +4794,11 @@ function SettingsDrawer({
                 ) : (
                   <button className="primary-button" onClick={onLogin} type="button">
                     <LogIn size={16} />
-                    Přihlásit přes Keycloak
+                    Přihlásit
                   </button>
                 )
               ) : (
-                <div className="empty-mini">Keycloak není v této build konfiguraci zapnutý. Aplikace běží v laboratorním token režimu.</div>
+                <div className="empty-mini">Přihlášení není v této konfiguraci zapnuté. Aplikace běží v laboratorním režimu.</div>
               )}
               {profileSyncError ? <div className="error-banner">Profil: {profileSyncError}</div> : null}
               {authSession.error ? <div className="error-banner">Přihlášení: {authSession.error}</div> : null}
@@ -5339,20 +5378,24 @@ function SegmentedControl({
 }
 
 function MapGlobalSearch({
+  docked = false,
   isSearchingPlaces = false,
   placeSearchError = null,
   query,
   results,
   onChange,
   onClear,
+  onDockChange,
   onSelect
 }: {
+  docked?: boolean;
   isSearchingPlaces?: boolean;
   query: string;
   placeSearchError?: string | null;
   results: MapSearchResult[];
   onChange: (value: string) => void;
   onClear: () => void;
+  onDockChange: (docked: boolean) => void;
   onSelect: (result: MapSearchResult) => void;
 }) {
   const hasQuery = query.trim().length > 0;
@@ -5397,7 +5440,7 @@ function MapGlobalSearch({
   }, [isDragging, persistPosition]);
 
   React.useEffect(() => {
-    if (!position) {
+    if (!position || docked) {
       return undefined;
     }
     const clampCurrentPosition = () => {
@@ -5423,7 +5466,7 @@ function MapGlobalSearch({
       window.cancelAnimationFrame(animationFrame);
       window.removeEventListener("resize", clampCurrentPosition);
     };
-  }, [persistPosition, position]);
+  }, [docked, persistPosition, position]);
 
   function startDrag(event: React.PointerEvent<HTMLButtonElement>) {
     if (event.pointerType === "mouse" && event.button !== 0) {
@@ -5449,9 +5492,9 @@ function MapGlobalSearch({
 
   return (
     <div
-      className={`map-global-search ${position ? "is-moved" : ""} ${isDragging ? "is-dragging" : ""}`}
+      className={`map-global-search ${docked ? "is-docked" : ""} ${position && !docked ? "is-moved" : ""} ${isDragging ? "is-dragging" : ""}`}
       ref={containerRef}
-      style={position ? {
+      style={position && !docked ? {
         left: `${position.left}px`,
         right: "auto",
         top: `${position.top}px`,
@@ -5459,15 +5502,21 @@ function MapGlobalSearch({
       } : undefined}
     >
       <div className="map-global-search-field">
-        <button
-          aria-label="Přesunout hledání"
-          className="map-global-search-drag"
-          onPointerDown={startDrag}
-          title="Přesunout hledání"
-          type="button"
-        >
-          <Move size={15} />
-        </button>
+        {docked ? (
+          <span className="map-global-search-docked-mark" aria-hidden="true">
+            <Pin size={15} />
+          </span>
+        ) : (
+          <button
+            aria-label="Přesunout hledání"
+            className="map-global-search-drag"
+            onPointerDown={startDrag}
+            title="Přesunout hledání"
+            type="button"
+          >
+            <Move size={15} />
+          </button>
+        )}
         <Search size={16} />
         <input
           aria-label="Hledat v mapě"
@@ -5478,7 +5527,16 @@ function MapGlobalSearch({
         />
       </div>
       <div className="map-global-search-actions">
-        {position ? (
+        <button
+          className="map-global-search-dock"
+          type="button"
+          aria-label={docked ? "Vrátit hledání nad mapu" : "Připnout hledání vlevo dole"}
+          onClick={() => onDockChange(!docked)}
+          title={docked ? "Vrátit nad mapu" : "Připnout vlevo dole"}
+        >
+          {docked ? <PinOff size={15} /> : <Pin size={15} />}
+        </button>
+        {position && !docked ? (
           <button className="map-global-search-reset" type="button" aria-label="Vrátit hledání na výchozí místo" onClick={() => persistPosition(null)}>
             <MousePointer2 size={15} />
           </button>
@@ -5534,6 +5592,7 @@ interface MapSearchDragState {
 }
 
 const mapSearchPositionStorageKey = "cop.mapGlobalSearch.position.v1";
+const mapSearchDockedStorageKey = "cop.mapGlobalSearch.docked.v1";
 
 function readMapSearchPosition(): MapSearchPosition | null {
   try {
@@ -5562,6 +5621,32 @@ function writeMapSearchPosition(position: MapSearchPosition | null) {
       return;
     }
     window.localStorage.setItem(mapSearchPositionStorageKey, JSON.stringify(position));
+  } catch {
+    // Non-critical personalization; ignore blocked or unavailable storage.
+  }
+}
+
+function readMapSearchDocked(): boolean {
+  try {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.localStorage.getItem(mapSearchDockedStorageKey) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeMapSearchDocked(docked: boolean) {
+  try {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (docked) {
+      window.localStorage.setItem(mapSearchDockedStorageKey, "true");
+    } else {
+      window.localStorage.removeItem(mapSearchDockedStorageKey);
+    }
   } catch {
     // Non-critical personalization; ignore blocked or unavailable storage.
   }

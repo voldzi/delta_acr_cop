@@ -1,0 +1,535 @@
+:root {
+  color-scheme: dark;
+  --cop-bg: #090d10;
+  --cop-panel: rgba(13, 18, 23, 0.94);
+  --cop-panel-2: rgba(18, 25, 31, 0.9);
+  --cop-panel-3: rgba(23, 31, 37, 0.9);
+  --cop-border: rgba(142, 157, 170, 0.24);
+  --cop-border-strong: rgba(174, 190, 203, 0.36);
+  --cop-text: #e8eef5;
+  --cop-heading: #f4f7fb;
+  --cop-muted: #93a1ad;
+  --cop-muted-2: #657582;
+  --cop-lime: #c8f08d;
+  --cop-cyan: #8cb6d8;
+  --cop-yellow: #facc15;
+  --cop-red: #ef4444;
+  --cop-shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
+  --cop-map-bg: url("https://tiles.zeleznalady.cz/osm/8/138/88.png");
+}
+
+html {
+  min-height: 100%;
+  background: var(--cop-bg);
+}
+
+body.login-pf {
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  background:
+    linear-gradient(90deg, rgba(5, 9, 12, 0.9), rgba(6, 11, 14, 0.72) 44%, rgba(5, 9, 12, 0.92)),
+    linear-gradient(180deg, rgba(11, 17, 21, 0.3), rgba(3, 7, 10, 0.82)),
+    var(--cop-map-bg) center / cover no-repeat,
+    #090d10;
+  color: var(--cop-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body.login-pf::before,
+body.login-pf::after {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+}
+
+body.login-pf::before {
+  opacity: 0.22;
+  background:
+    radial-gradient(circle at 20% 34%, rgba(200, 240, 141, 0.32) 0 2px, transparent 3px),
+    radial-gradient(circle at 66% 48%, rgba(140, 182, 216, 0.32) 0 2px, transparent 3px),
+    linear-gradient(rgba(140, 182, 216, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(140, 182, 216, 0.16) 1px, transparent 1px);
+  background-position: center;
+  background-size: auto, auto, 56px 56px, 56px 56px;
+  mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
+}
+
+body.login-pf::after {
+  inset: auto 18px 14px auto;
+  padding: 6px 8px;
+  border: 1px solid rgba(164, 210, 235, 0.2);
+  background: rgba(5, 9, 12, 0.62);
+  color: rgba(232, 238, 245, 0.62);
+  font-size: 11px;
+  font-weight: 700;
+  content: "Mapový podklad © OpenStreetMap contributors";
+}
+
+.login-pf-page {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 440px);
+  align-items: center;
+  width: min(1120px, calc(100vw - 32px));
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 48px 0;
+  gap: clamp(26px, 5vw, 64px);
+}
+
+.login-pf-page::before {
+  position: absolute;
+  top: 50%;
+  right: calc(440px + clamp(26px, 5vw, 64px));
+  z-index: -1;
+  width: min(440px, 38vw);
+  height: min(540px, 70vh);
+  transform: translateY(-50%);
+  border: 1px solid rgba(164, 210, 235, 0.28);
+  background:
+    linear-gradient(180deg, rgba(11, 18, 23, 0.58), rgba(5, 9, 12, 0.7)),
+    radial-gradient(circle at 44% 42%, rgba(200, 240, 141, 0.18), transparent 26%),
+    var(--cop-map-bg) center / cover no-repeat;
+  box-shadow: var(--cop-shadow);
+  content: "";
+}
+
+.login-pf-page::after {
+  position: absolute;
+  left: clamp(24px, 5vw, 72px);
+  bottom: clamp(44px, 9vh, 94px);
+  width: min(470px, calc(100% - 540px));
+  padding: 16px 18px;
+  border-left: 2px solid var(--cop-lime);
+  background: rgba(5, 10, 13, 0.54);
+  color: var(--cop-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  content: "Bez účtu můžete číst veřejnou mapu. Přihlášení odemkne ukládání profilu, skupiny, chat a vlastní hlášení.";
+}
+
+#kc-header {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+  margin: 0;
+  padding: 0 clamp(24px, 5vw, 72px);
+}
+
+#kc-header-wrapper {
+  display: grid;
+  max-width: 560px;
+  color: var(--cop-heading);
+  font-size: clamp(32px, 5vw, 56px);
+  font-weight: 900;
+  line-height: 1.02;
+  letter-spacing: 0;
+  text-align: left;
+  text-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+}
+
+#kc-header-wrapper::before {
+  display: block;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 18px;
+  background-image: url("../img/cop-icon.svg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  content: "";
+}
+
+#kc-header-wrapper::after {
+  display: block;
+  max-width: 460px;
+  margin-top: 14px;
+  color: var(--cop-muted);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+  content: "Rizika v okoli, vystrahy a sdilene situacni informace.";
+}
+
+#kc-content {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  width: 100%;
+}
+
+.login-pf-page > .card-pf,
+.login-pf-page > #kc-form-card {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+}
+
+#kc-content-wrapper {
+  width: 100%;
+}
+
+.card-pf,
+#kc-form-card {
+  width: 100%;
+  margin: 0;
+  padding: 30px;
+  border: 1px solid var(--cop-border);
+  border-radius: 0;
+  background: linear-gradient(180deg, rgba(15, 22, 28, 0.96), rgba(8, 13, 18, 0.96));
+  box-shadow: var(--cop-shadow);
+}
+
+#kc-page-title {
+  margin: 0 0 20px;
+  color: var(--cop-heading);
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+#kc-form,
+#kc-form-wrapper,
+#kc-reset-password-form,
+#kc-register-form,
+#kc-passwd-update-form,
+#kc-totp-settings-form,
+#kc-otp-login-form {
+  color: var(--cop-text);
+}
+
+#kc-form-login {
+  display: grid;
+  gap: 16px;
+}
+
+.form-group,
+.pf-v5-c-form__group,
+.pf-c-form__group {
+  margin-bottom: 16px;
+}
+
+.control-label,
+.pf-v5-c-form__label,
+.pf-c-form__label,
+label {
+  color: var(--cop-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.form-control,
+.pf-c-form-control,
+.pf-v5-c-form-control,
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="number"],
+select {
+  min-height: 44px;
+  border: 1px solid rgba(140, 182, 216, 0.38);
+  border-radius: 0;
+  background: rgba(22, 31, 38, 0.92);
+  color: var(--cop-text);
+  box-shadow: none;
+  font-size: 15px;
+}
+
+.form-control:focus,
+.pf-c-form-control:focus,
+.pf-v5-c-form-control:focus,
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+select:focus {
+  border-color: rgba(200, 240, 141, 0.82);
+  outline: 2px solid rgba(200, 240, 141, 0.22);
+  outline-offset: 0;
+  box-shadow: none;
+}
+
+.input-group,
+.pf-c-input-group,
+.pf-v5-c-input-group {
+  display: flex;
+}
+
+.input-group .form-control,
+.pf-c-input-group .pf-c-form-control,
+.pf-v5-c-input-group .pf-v5-c-form-control {
+  flex: 1 1 auto;
+}
+
+.input-group button,
+.pf-c-input-group button,
+.pf-v5-c-input-group button {
+  border-radius: 0;
+  border-color: rgba(140, 182, 216, 0.38);
+  background: var(--cop-panel-3);
+  color: var(--cop-cyan);
+}
+
+.checkbox label,
+.pf-c-check__label,
+.pf-v5-c-check__label {
+  color: var(--cop-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+#kc-form-options {
+  margin-bottom: 0;
+}
+
+#kc-form-options a,
+#kc-registration a,
+#kc-info a,
+#kc-terms-text a,
+.instruction a,
+a {
+  color: var(--cop-lime);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+#kc-form-options a:hover,
+#kc-registration a:hover,
+#kc-info a:hover,
+#kc-terms-text a:hover,
+.instruction a:hover,
+a:hover {
+  color: #eaffc9;
+  text-decoration: underline;
+}
+
+#kc-form-buttons {
+  margin-top: 6px;
+}
+
+.btn-primary,
+.pf-c-button.pf-m-primary,
+.pf-v5-c-button.pf-m-primary,
+input[type="submit"],
+button[type="submit"],
+#kc-login {
+  min-height: 44px;
+  border: 1px solid rgba(200, 240, 141, 0.72);
+  border-radius: 0;
+  background: var(--cop-lime);
+  color: #0f151b;
+  box-shadow: none;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.pf-c-button.pf-m-primary:hover,
+.pf-c-button.pf-m-primary:focus,
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus,
+input[type="submit"]:hover,
+button[type="submit"]:hover,
+#kc-login:hover,
+#kc-login:focus {
+  border-color: #eaffc9;
+  background: #d9f7aa;
+  color: #0f151b;
+  box-shadow: none;
+}
+
+.btn-default,
+.btn-secondary,
+.pf-c-button.pf-m-secondary,
+.pf-v5-c-button.pf-m-secondary {
+  min-height: 40px;
+  border: 1px solid rgba(140, 182, 216, 0.48);
+  border-radius: 0;
+  background: rgba(22, 31, 38, 0.92);
+  color: var(--cop-lime);
+  font-weight: 800;
+}
+
+.alert,
+.pf-c-alert,
+.pf-v5-c-alert {
+  border: 1px solid rgba(250, 204, 21, 0.5);
+  border-radius: 0;
+  background: rgba(250, 204, 21, 0.1);
+  color: #f7e7a6;
+  box-shadow: none;
+}
+
+.alert-error,
+.pf-m-danger,
+.pf-v5-m-danger {
+  border-color: rgba(239, 68, 68, 0.48);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fecaca;
+}
+
+.pf-c-alert__title,
+.pf-v5-c-alert__title {
+  color: inherit;
+}
+
+.instruction {
+  color: var(--cop-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#kc-info {
+  margin-top: 14px;
+}
+
+#kc-info-wrapper {
+  padding: 14px 0 0;
+  border-top: 1px solid rgba(142, 157, 170, 0.18);
+  background: transparent;
+  color: var(--cop-muted);
+  font-size: 13px;
+}
+
+#kc-social-providers {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(142, 157, 170, 0.18);
+}
+
+#kc-social-providers h2 {
+  color: var(--cop-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.kc-social-links,
+#kc-social-providers ul {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+}
+
+.kc-social-item,
+#kc-social-providers a,
+.zocial {
+  min-height: 40px;
+  border: 1px solid rgba(140, 182, 216, 0.38);
+  border-radius: 0;
+  background: rgba(22, 31, 38, 0.92);
+  color: var(--cop-text);
+  box-shadow: none;
+  font-weight: 800;
+}
+
+.kc-social-item:hover,
+#kc-social-providers a:hover,
+.zocial:hover {
+  border-color: rgba(200, 240, 141, 0.74);
+  background: rgba(151, 199, 104, 0.16);
+  color: var(--cop-lime);
+}
+
+#kc-locale {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 2;
+}
+
+#kc-locale-dropdown a,
+#kc-current-locale-link {
+  color: var(--cop-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+#kc-locale ul {
+  border: 1px solid var(--cop-border);
+  border-radius: 0;
+  background: var(--cop-panel-2);
+  box-shadow: var(--cop-shadow);
+}
+
+#kc-locale li a {
+  color: var(--cop-text);
+}
+
+#kc-locale li a:hover {
+  background: rgba(151, 199, 104, 0.16);
+  color: var(--cop-lime);
+}
+
+#kc-error-message {
+  color: #fecaca;
+}
+
+hr {
+  border-color: rgba(142, 157, 170, 0.18);
+}
+
+@media (max-width: 860px) {
+  .login-pf-page {
+    display: block;
+    width: min(100% - 28px, 460px);
+    min-height: auto;
+    padding: 28px 0;
+  }
+
+  .login-pf-page::before,
+  .login-pf-page::after {
+    display: none;
+  }
+
+  #kc-header {
+    margin-bottom: 18px;
+    padding: 0;
+  }
+
+  #kc-header-wrapper {
+    font-size: 28px;
+  }
+
+  #kc-header-wrapper::before {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 12px;
+  }
+
+  #kc-header-wrapper::after {
+    font-size: 13px;
+  }
+
+  .card-pf,
+  #kc-form-card {
+    padding: 22px;
+  }
+}
+
+@media (max-width: 420px) {
+  .login-pf-page {
+    width: calc(100% - 20px);
+    padding: 16px 0;
+  }
+
+  .card-pf,
+  #kc-form-card {
+    padding: 18px;
+  }
+
+  #kc-page-title {
+    font-size: 18px;
+  }
+}

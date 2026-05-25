@@ -62,6 +62,69 @@ Spust na hostu/kontejneru, kde je dostupny `kcadm.sh`. Dopln admin ucet Keycloak
 
 Uzivatele muzes vytvorit v admin UI nebo pres `kcadm.sh` a priradit mu roli `cop_operator`.
 
+## COP login theme
+
+Repo obsahuje login theme pro realm `cop` v adresari:
+
+```text
+infra/keycloak/themes/cop
+```
+
+Theme navazuje na vizualni styl aplikace Civilni situacni mapa: tmave operacni pozadi, hranate panely, lime/cyan akcenty a stejnou aplikacni ikonu jako web.
+
+Pokud Keycloak bezi v kontejneru, mountni theme do `/opt/keycloak/themes/cop`:
+
+```yaml
+services:
+  keycloak:
+    volumes:
+      - ./infra/keycloak/themes/cop:/opt/keycloak/themes/cop:ro
+```
+
+Pri instalaci primo na hostu zkopiruj theme do Keycloaku:
+
+```bash
+sudo mkdir -p /opt/keycloak/themes
+sudo cp -a infra/keycloak/themes/cop /opt/keycloak/themes/
+```
+
+Pro vyvoj muzes do prostredi Keycloaku docasne pridat vypnuti theme cache:
+
+```bash
+KC_SPI_THEME_STATIC_MAX_AGE=-1
+KC_SPI_THEME_CACHE_THEMES=false
+KC_SPI_THEME_CACHE_TEMPLATES=false
+```
+
+Alternativne pri rucnim startu:
+
+```bash
+/opt/keycloak/bin/kc.sh start \
+  --spi-theme--static-max-age=-1 \
+  --spi-theme--cache-themes=false \
+  --spi-theme--cache-templates=false
+```
+
+V produkci nech cache zapnutou a po zmene theme restartuj Keycloak.
+
+Nastaveni theme a ceske lokalizace pro realm:
+
+```bash
+/opt/keycloak/bin/kcadm.sh update realms/cop \
+  -s loginTheme=cop \
+  -s displayName="Civilní situační mapa" \
+  -s displayNameHtml="Civilní situační mapa" \
+  -s internationalizationEnabled=true \
+  -s defaultLocale=cs \
+  -s 'supportedLocales=["cs","en"]'
+```
+
+Kontrolni login URL:
+
+```text
+http://docker.home.cz:8081/realms/cop/protocol/openid-connect/auth?client_id=cop-web&response_type=code&scope=openid%20profile%20email&redirect_uri=http%3A%2F%2Fdocker.home.cz%3A4311%2F
+```
+
 ## COP .env
 
 Prechodovy rezim, kdy funguje Keycloak i lab token pro SIM/pilot:

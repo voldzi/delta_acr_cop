@@ -344,7 +344,7 @@ export function MessagingPanel({
           <p>Mapa zůstává dostupná i bez účtu, ale zprávy musí být svázané s ověřenou identitou uživatele.</p>
           <button className="primary-button secondary" onClick={onLogin} type="button">
             <LogIn size={16} />
-            Přihlásit přes Keycloak
+            Přihlásit
           </button>
         </div>
       ) : matrixSession ? (

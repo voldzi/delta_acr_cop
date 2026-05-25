@@ -196,7 +196,7 @@ describe("COP web dashboard", () => {
       headers: { Authorization: "Bearer dev-lab-token" }
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Operátor/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Nastavení" }));
     fireEvent.click(screen.getByRole("tab", { name: "Mapa" }));
     expect(screen.getByText("Čas historie")).toBeTruthy();
     expect(screen.getByRole("button", { name: "60s" }).getAttribute("aria-pressed")).toBe("true");

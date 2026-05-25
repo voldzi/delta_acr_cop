@@ -2920,6 +2920,15 @@ h1 {
   color: var(--text);
 }
 
+.map-global-search.is-docked {
+  top: auto;
+  bottom: 0;
+  left: 0;
+  width: min(420px, calc(100vw - 24px));
+  max-width: 420px;
+  z-index: 43;
+}
+
 .map-global-search.is-dragging {
   user-select: none;
 }
@@ -2930,7 +2939,7 @@ h1 {
   align-items: center;
   gap: 8px;
   min-height: 44px;
-  padding: 0 78px 0 7px;
+  padding: 0 112px 0 7px;
   border: 1px solid rgba(164, 210, 235, 0.36);
   background: rgba(9, 16, 20, 0.88);
   box-shadow: 0 14px 26px rgba(0, 0, 0, 0.34);
@@ -2947,6 +2956,16 @@ h1 {
   color: var(--accent);
   cursor: grab;
   touch-action: none;
+}
+
+.map-global-search-docked-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 30px;
+  border: 1px solid rgba(199, 244, 130, 0.34);
+  background: rgba(151, 199, 104, 0.12);
+  color: var(--lime);
 }
 
 .map-global-search-drag:active {
@@ -2982,6 +3001,7 @@ h1 {
 }
 
 .map-global-search-clear,
+.map-global-search-dock,
 .map-global-search-reset {
   display: grid;
   place-items: center;
@@ -2991,6 +3011,10 @@ h1 {
   background: rgba(21, 32, 39, 0.92);
   color: var(--text);
   cursor: pointer;
+}
+
+.map-global-search-dock {
+  color: var(--lime);
 }
 
 .map-global-search-reset {
@@ -3008,6 +3032,15 @@ h1 {
   background: rgba(9, 16, 20, 0.93);
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.38);
   backdrop-filter: blur(14px);
+}
+
+.map-global-search.is-docked .map-global-search-results {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 7px);
+  left: 0;
+  margin-top: 0;
+  max-height: min(430px, 42vh);
 }
 
 .map-search-card {
@@ -4848,6 +4881,16 @@ dd {
     top: 58px;
     left: 72px;
     width: calc(100% - 136px);
+    max-width: none;
+  }
+
+  .map-global-search.is-docked {
+    position: fixed;
+    top: auto;
+    right: 130px;
+    bottom: calc(130px + env(safe-area-inset-bottom));
+    left: 10px;
+    width: auto;
     max-width: none;
   }
 
