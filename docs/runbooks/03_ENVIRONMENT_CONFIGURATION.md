@@ -19,6 +19,7 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 - kontextové situační vrstvy ze SIM (`COP_SITUATION_DATA_ENABLED`, `COP_SITUATION_DATA_BASE_URL`, `COP_SITUATION_DATA_CACHE_TTL_MS`),
 - bezpečnostní veřejné vrstvy ze SIM (`COP_SAFETY_DATA_ENABLED`, `COP_SAFETY_DATA_BASE_URL`, `COP_SAFETY_DATA_CACHE_TTL_MS`),
 - partnerský neveřejný TAK/CoT gateway zdroj ze SIM (`COP_TAK_GATEWAY_ENABLED`, `COP_TAK_GATEWAY_BASE_URL`, `COP_TAK_GATEWAY_READ_TOKEN`),
+- prezentační Mission Arena vrstva (`COP_MISSION_ARENA_ENABLED`, `COP_MISSION_ARENA_BASE_URL`),
 - classification policy,
 - audit retention,
 - metrics/exporter nastavení,
@@ -90,6 +91,19 @@ COP_TAK_GATEWAY_TIMEOUT_MS=7000
 ```
 
 TAK Gateway je defaultně vypnutý a jeho COP endpointy vyžadují přihlášenou relaci. Vrstva `traffic` je záměrně zobrazena jako `TAK Gateway > Traffic tracks`, aby se nepletla s veřejnou dopravní vrstvou ze `situation-data`.
+
+## Mission Arena Source
+
+COP může číst prezentační stav Mission Arena eventu přes kontrakt `cop-provider-featurecollection-v1`. Jde o vrstvu pro zobrazení stavu mise/týmů a skóre dodaného poskytovatelem. COP skóre nepočítá, nevyhodnocuje správnost rozhodnutí a neukládá hlasy; pouze zobrazuje vrstvu `presentation.mission_arena`.
+
+```env
+COP_MISSION_ARENA_ENABLED=false
+COP_MISSION_ARENA_BASE_URL=https://missionarena.zeleznalady.cz
+COP_MISSION_ARENA_CACHE_TTL_MS=5000
+COP_MISSION_ARENA_TIMEOUT_MS=5000
+```
+
+Vrstva je defaultně vypnutá v katalogu, aby se nepletla s běžnými civilními situačními daty. Po zapnutí se objeví ve skupině „Prezentace a eventy“. `featureRole=mission_state` se zobrazuje jako stav mise, `featureRole=team_state` jako stav týmu; barvy a skóre jsou převzaté z Mission Arena.
 
 ## Community Report Store
 

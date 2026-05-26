@@ -139,6 +139,7 @@ export type SituationLayerId =
   | "mobile"
   | "mobile_coverage"
   | "mobile_network"
+  | "mission_arena"
   | "traffic"
   | "warnings"
   | "weather";
@@ -264,9 +265,17 @@ export interface SituationFeatureProperties {
   modelVersion?: string;
   basis?: string[];
   notices?: string[];
+  aggregate?: number;
+  aggregateDelta?: number;
+  featureRole?: "mission_state" | "team_state" | string;
+  integrationMode?: string;
+  missionId?: string;
+  missionPackId?: string;
   observedAt?: string;
   operator?: string;
   operatorStatusAvailable?: boolean;
+  participantCount?: number;
+  phase?: string;
   providerId?: string;
   providerLayerId?: string;
   providerProperties?: Record<string, unknown>;
@@ -276,16 +285,74 @@ export interface SituationFeatureProperties {
   recommendedAction?: string;
   reportId?: string;
   resolutionM?: number;
+  runtimeMode?: string;
+  score?: Record<string, number>;
+  scoreDelta?: Record<string, number>;
   severity?: string;
   sourceId: string;
   sourceRevision?: string;
   stale?: boolean;
   status?: string;
+  story?: Record<string, unknown>;
   summary?: string;
   tags?: Record<string, unknown>;
+  teamColor?: string;
+  teamId?: string;
+  teamLabel?: string;
+  teamScores?: MissionArenaTeamScore[];
   technology?: string;
+  totalVotes?: number;
   urgency?: string;
   validUntil?: string;
+  voteCount?: number;
+}
+
+export interface MissionArenaTeamScore {
+  aggregate?: number;
+  aggregateDelta?: number;
+  color?: string;
+  label: string;
+  rank?: number;
+  score?: Record<string, number>;
+  scoreDelta?: Record<string, number>;
+  teamId: string;
+  totalVotes?: number;
+}
+
+export interface MissionArenaFeatureCollectionResponse {
+  contractVersion: "cop-mission-arena-source-v1";
+  features: SituationFeature[];
+  generatedAt: string;
+  query: {
+    bbox: MapBounds;
+    layers: ["presentation.mission_arena"];
+    limit: number;
+  };
+  source: {
+    generatedAt?: string;
+    sourceId: "mission-arena-api";
+    sourceType: "MISSION_ARENA_PRESENTATION";
+  };
+  sourceHealth?: SourceHealthOverride;
+  sources: Array<{
+    baseUrl?: string;
+    enabled?: boolean;
+    label?: string;
+    layers?: ["presentation.mission_arena"];
+    mode?: string;
+    sourceId: "mission_arena_runtime";
+    updateCadenceSeconds?: number;
+  }>;
+  summary: {
+    featureCount: number;
+    missionStateCount: number;
+    sourceCount: number;
+    staleFeatureCount: number;
+    teamStateCount: number;
+    warningCount: number;
+  };
+  type: "FeatureCollection";
+  warnings: string[];
 }
 
 export interface SituationSourceDescriptor {
@@ -857,6 +924,7 @@ export interface MapFeatureQueryResponse {
   community?: CommunityFeatureCollectionResponse;
   flight?: FlightReferenceFeatureCollectionResponse;
   generatedAt: string;
+  missionArena?: MissionArenaFeatureCollectionResponse;
   query: {
     bbox: MapBounds;
     layerIds: string[];

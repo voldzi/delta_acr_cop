@@ -42,6 +42,16 @@ import {
 } from "./flight-data-source.js";
 import { buildMapCatalog, type MapCatalogLayer } from "./map-catalog.js";
 import {
+  buildMissionArenaHealth,
+  createMissionArenaSourceFromEnv,
+  emptyMissionArenaFeatureCollection,
+  unavailableMissionArenaHealth,
+  type MissionArenaFeatureCollection,
+  type MissionArenaFeatureQuery,
+  type MissionArenaLayerId,
+  type MissionArenaSource
+} from "./mission-arena-source.js";
+import {
   createMediaConversionManagerFromEnv,
   readSpatialDerivative,
   type MediaConversionManager,
@@ -108,6 +118,7 @@ export interface BuildServerOptions {
   communityReportStore?: CommunityReportStore;
   mediaStorage?: MediaStorage;
   messagingProvider?: MessagingProvider;
+  missionArenaSource?: MissionArenaSource;
   placeGeocoder?: PlaceGeocoder;
   safetyDataSource?: SafetyDataSource;
   situationDataSource?: SituationDataSource;
@@ -199,6 +210,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     updateAttachmentMetadata: updateCommunityAttachmentMetadata
   });
   const messagingProvider = options.messagingProvider ?? createMessagingProviderFromEnv();
+  const missionArenaSource = options.missionArenaSource ?? createMissionArenaSourceFromEnv();
   const placeGeocoder = options.placeGeocoder ?? createPlaceGeocoderFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
   const safetyDataSource = options.safetyDataSource ?? createSafetyDataSourceFromEnv();
@@ -228,6 +240,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
   if (takGatewaySource) {
     state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, takGatewaySource.sourceSystem);
+  }
+  if (missionArenaSource) {
+    state.sources.set(missionArenaSource.sourceSystem.sourceSystemId, missionArenaSource.sourceSystem);
   }
   void app.register(cors, { origin: true });
   void app.register(sensible);
@@ -295,6 +310,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ...(flightDataSource ? [flightDataDependency()] : []),
       ...(situationDataSource ? [situationDataDependency()] : []),
       ...(safetyDataSource ? [safetyDataDependency()] : []),
+      ...(missionArenaSource ? [missionArenaDependency()] : []),
       ...(takGatewaySource ? [takGatewayDependency()] : []),
       { name: "ai-gateway", status: "degraded", detail: "mock provider only" }
     ]
@@ -721,6 +737,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       throw new Error("TAK Gateway source is not enabled.");
     }
     return state.sources.get(takGatewaySource.sourceSystem.sourceSystemId) ?? takGatewaySource.sourceSystem;
+  }
+
+  function missionArenaDependency(): { detail: string; name: string; status: DependencyStatus } {
+    if (!missionArenaSource) {
+      return { detail: "disabled", name: "mission-arena-source", status: "disabled" };
+    }
+    const health = readMissionArenaHealth(state.sources.get(missionArenaSource.sourceSystem.sourceSystemId));
+    if (!health) {
+      return { detail: "waiting for first request", name: "mission-arena-source", status: "degraded" };
+    }
+    return {
+      detail: health.detail ?? health.lastError ?? health.health.toLowerCase(),
+      name: "mission-arena-source",
+      status: health.health === "ONLINE" ? "ok" : "degraded"
+    };
+  }
+
+  function activeMissionArenaSourceSystem(): SourceSystem {
+    if (!missionArenaSource) {
+      throw new Error("Mission Arena source is not enabled.");
+    }
+    return state.sources.get(missionArenaSource.sourceSystem.sourceSystemId) ?? missionArenaSource.sourceSystem;
   }
 
   async function readUserProfile(actor: AuthenticatedActor): Promise<UserProfileRecord | null> {
@@ -1895,6 +1933,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const situation = await readSituationCatalogProvider(requestNow, actor);
     const safety = await readSafetyCatalogProvider(requestNow);
     const flight = await readFlightCatalogProvider(requestNow);
+    const missionArena = await readMissionArenaCatalogProvider(requestNow);
     const tak = includePartner ? await readTakCatalogProvider(requestNow) : undefined;
 
     return buildMapCatalog({
@@ -1903,6 +1942,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       includeDiagnostics,
       includePartner,
       locale,
+      missionArena,
       safety,
       situation,
       tak
@@ -1943,6 +1983,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const situation = await readSituationCatalogProvider(requestNow, actor);
     const safety = await readSafetyCatalogProvider(requestNow);
     const flight = await readFlightCatalogProvider(requestNow);
+    const missionArena = await readMissionArenaCatalogProvider(requestNow);
     const tak = includePartner ? await readTakCatalogProvider(requestNow) : undefined;
     const catalog = buildMapCatalog({
       flight,
@@ -1950,6 +1991,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       includeDiagnostics,
       includePartner,
       locale: "cs-CZ",
+      missionArena,
       safety,
       situation,
       tak
@@ -1962,11 +2004,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ...(unknownLayerIds.length > 0 ? [`Unknown or unauthorized map layers ignored: ${unknownLayerIds.join(", ")}.`] : [])
     ];
 
-    const [situationCollection, safetyCollection, flightCollection, communityCollection, takCollection] = await Promise.all([
+    const [situationCollection, safetyCollection, flightCollection, communityCollection, missionArenaCollection, takCollection] = await Promise.all([
       readSituationMapQuery(providerQueries.situation, requestNow, actor, selectedLayers),
       readSafetyMapQuery(providerQueries.safety, requestNow),
       readFlightReferenceMapQuery(providerQueries.flight, requestNow),
       readCommunityMapQuery(providerQueries.community, requestNow, actor),
+      readMissionArenaMapQuery(providerQueries.missionArena, requestNow),
       includePartner ? readTakMapQuery(providerQueries.tak, requestNow) : Promise.resolve(undefined)
     ]);
 
@@ -1974,12 +2017,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       + (safetyCollection?.summary.featureCount ?? 0)
       + (flightCollection?.summary.featureCount ?? 0)
       + (communityCollection?.summary.featureCount ?? 0)
+      + (missionArenaCollection?.summary.featureCount ?? 0)
       + (takCollection?.summary.featureCount ?? 0);
     return {
       contractVersion: "cop-map-query-v1",
       community: communityCollection,
       flight: flightCollection,
       generatedAt: requestNow.toISOString(),
+      missionArena: missionArenaCollection,
       query: {
         bbox: query.bbox,
         layerIds: selectedLayers.map((layer) => layer.layerId),
@@ -2539,6 +2584,44 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function readMissionArenaCatalogProvider(requestNow: Date) {
+    if (!missionArenaSource) {
+      return {
+        layers: [],
+        sources: [],
+        status: "disabled" as const
+      };
+    }
+
+    try {
+      const [layers, sources] = await Promise.all([
+        missionArenaSource.fetchLayers(requestNow),
+        missionArenaSource.fetchSources(requestNow)
+      ]);
+      const health = buildMissionArenaHealth(layers, requestNow);
+      state.sources.set(missionArenaSource.sourceSystem.sourceSystemId, withMissionArenaHealth(activeMissionArenaSourceSystem(), health));
+      return {
+        layers,
+        sources,
+        status: "online" as const
+      };
+    } catch (error) {
+      const health = unavailableMissionArenaHealth(error, requestNow);
+      state.sources.set(missionArenaSource.sourceSystem.sourceSystemId, withMissionArenaHealth(activeMissionArenaSourceSystem(), health));
+      appendAudit(state, "MAP_CATALOG_MISSION_ARENA_PROVIDER_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: missionArenaSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Mission Arena catalog provider request failed.");
+      return {
+        layers: [],
+        sources: [],
+        status: "unavailable" as const,
+        warning: health.lastError ?? "Mission Arena catalog provider is unavailable."
+      };
+    }
+  }
+
   async function readSituationMapQuery(
     query: SituationFeatureQuery | undefined,
     requestNow: Date,
@@ -2714,6 +2797,45 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         ...communityReportsFeatureCollection([], requestNow, actor, new Set()),
         query,
         warnings: [errorMessage(error)]
+      };
+    }
+  }
+
+  async function readMissionArenaMapQuery(query: MissionArenaFeatureQuery | undefined, requestNow: Date): Promise<(MissionArenaFeatureCollection & { sourceHealth?: SourceHealthOverride }) | undefined> {
+    if (!query) {
+      return undefined;
+    }
+    if (!missionArenaSource) {
+      return {
+        ...emptyMissionArenaFeatureCollection(query, requestNow, ["Mission Arena source is disabled."]),
+        sourceHealth: {
+          detail: "disabled",
+          evaluatedAt: requestNow.toISOString(),
+          health: "WAITING" as const,
+          lastPollAt: requestNow.toISOString()
+        }
+      };
+    }
+
+    try {
+      const collection = await missionArenaSource.fetchFeatures(query, requestNow);
+      const health = buildMissionArenaHealth(collection, requestNow);
+      state.sources.set(missionArenaSource.sourceSystem.sourceSystemId, withMissionArenaHealth(activeMissionArenaSourceSystem(), health));
+      return {
+        ...collection,
+        sourceHealth: health
+      };
+    } catch (error) {
+      const health = unavailableMissionArenaHealth(error, requestNow);
+      state.sources.set(missionArenaSource.sourceSystem.sourceSystemId, withMissionArenaHealth(activeMissionArenaSourceSystem(), health));
+      appendAudit(state, "MAP_QUERY_MISSION_ARENA_PROVIDER_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: missionArenaSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Mission Arena map query failed.");
+      return {
+        ...emptyMissionArenaFeatureCollection(query, requestNow, [health.lastError ?? "Mission Arena features are unavailable."]),
+        sourceHealth: health
       };
     }
   }
@@ -2900,6 +3022,18 @@ function withTakGatewayHealth(source: SourceSystem, health: SourceHealthOverride
   };
 }
 
+function withMissionArenaHealth(source: SourceSystem, health: SourceHealthOverride): SourceSystem {
+  return {
+    ...source,
+    attributes: {
+      ...source.attributes,
+      sourceHealth: health,
+      missionArenaHealth: health
+    },
+    updatedAt: health.evaluatedAt
+  };
+}
+
 function readFlightDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
   return readSourceHealthFromAttributes(source?.attributes?.flightDataHealth);
 }
@@ -2914,6 +3048,10 @@ function readSafetyDataHealth(source: SourceSystem | undefined): SourceHealthOve
 
 function readTakGatewayHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
   return readSourceHealthFromAttributes(source?.attributes?.takGatewayHealth ?? source?.attributes?.sourceHealth);
+}
+
+function readMissionArenaHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
+  return readSourceHealthFromAttributes(source?.attributes?.missionArenaHealth ?? source?.attributes?.sourceHealth);
 }
 
 function readSourceHealthFromAttributes(value: unknown): SourceHealthOverride | undefined {
@@ -2949,6 +3087,7 @@ interface MapFeatureQueryRequest {
 interface ProviderFeatureQueries {
   community?: CommunityMapFeatureQuery;
   flight?: FlightReferenceFeatureQuery;
+  missionArena?: MissionArenaFeatureQuery;
   safety?: SafetyFeatureQuery;
   situation?: SituationFeatureQuery;
   tak?: TakGatewayFeatureQuery;
@@ -3024,6 +3163,7 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
   const situationSources = new Set<string>();
   const safetyLayers = new Set<SafetyLayerId>();
   const flightLayers = new Set<FlightReferenceLayerId>();
+  const missionArenaLayers = new Set<MissionArenaLayerId>();
   const takLayers = new Set<TakGatewayLayerId>();
   const communityLayerIds = new Set<string>();
   let situationTechnology: string | undefined;
@@ -3063,6 +3203,12 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
       }
     } else if (layer.query.providerId === "cop.community") {
       communityLayerIds.add(layer.layerId);
+    } else if (layer.query.providerId === "csm.mission-arena") {
+      for (const providerLayerId of layer.query.providerLayerIds ?? []) {
+        if (isMissionArenaLayerId(providerLayerId)) {
+          missionArenaLayers.add(providerLayerId);
+        }
+      }
     } else if (layer.query.providerId === "sim.tak-gateway") {
       for (const layerId of layer.query.providerLayerIds ?? []) {
         if (isTakGatewayLayerId(layerId)) {
@@ -3088,6 +3234,15 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
             bbox: request.bbox,
             layerIds: Array.from(communityLayerIds),
             limit: request.limit
+          }
+      }
+      : {}),
+    ...(missionArenaLayers.size > 0
+      ? {
+          missionArena: {
+            bbox: request.bbox,
+            layers: Array.from(missionArenaLayers),
+            limit: Math.min(request.limit, 50)
           }
         }
       : {}),
@@ -3176,6 +3331,10 @@ function flightReferenceLayerIdForStream(streamId: string | undefined): FlightRe
 
 function isTakGatewayLayerId(value: string): value is TakGatewayLayerId {
   return value === "ground" || value === "mobile" || value === "traffic";
+}
+
+function isMissionArenaLayerId(value: string): value is MissionArenaLayerId {
+  return value === "presentation.mission_arena";
 }
 
 function parseFlightAirportQuery(value: Record<string, unknown>): FlightAirportQuery {

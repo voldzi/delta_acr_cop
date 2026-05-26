@@ -165,6 +165,9 @@ export interface SituationContextFeatureCollection {
       coverageTechnology?: string;
       communicationTower?: boolean;
       mapPointSuppressed?: boolean;
+      missionArena?: boolean;
+      missionArenaRole?: string;
+      missionArenaTeamColor?: string;
       situationStatusColor?: string;
       situationStatusLabel?: string;
       situationStatusTone?: string;
@@ -1696,6 +1699,16 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
       takGateway: true
     };
   }
+  if (isMissionArenaFeature(feature)) {
+    return {
+      missionArena: true,
+      missionArenaRole: feature.properties.featureRole,
+      missionArenaTeamColor: feature.properties.teamColor,
+      situationStatusColor: missionArenaFeatureColor(feature),
+      situationStatusLabel: feature.properties.featureRole === "team_state" ? "TÝM" : "EVENT",
+      situationStatusTone: "info"
+    };
+  }
   if (feature.properties.layer === "flight_airports") {
     return {
       osmCategoryLabel: "Letiště",
@@ -1808,6 +1821,13 @@ function isCommunicationTowerFeature(feature: SituationFeature): boolean {
 }
 
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
+  if (isMissionArenaFeature(feature)) {
+    return {
+      color: missionArenaFeatureColor(feature),
+      label: feature.properties.featureRole === "team_state" ? (feature.properties.teamLabel ?? "TÝM") : (feature.properties.runtimeMode === "live" ? "LIVE" : "EVENT"),
+      tone: "info"
+    };
+  }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     const coverage = mobileCoverageStatus(feature.properties.quality);
     return feature.properties.stale ? { ...coverage, label: `${coverage.label} · STALE`, tone: coverage.tone === "info" ? "warning" : coverage.tone } : coverage;
@@ -2276,6 +2296,15 @@ function formatSituationFeatureTitle(feature: SituationFeature): string {
 
 function formatSituationFeatureSubtitle(feature: SituationFeature): string {
   const status = situationFeatureStatus(feature);
+  if (isMissionArenaFeature(feature)) {
+    return [
+      feature.properties.featureRole === "team_state" ? "Stav týmu" : "Stav mise",
+      feature.properties.phase,
+      feature.properties.runtimeMode,
+      feature.properties.teamLabel,
+      typeof feature.properties.aggregate === "number" ? `${Math.round(feature.properties.aggregate)} bodů` : undefined
+    ].filter(Boolean).join(" · ");
+  }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     return [
       feature.properties.layer === "mobile_network" ? "Mobilní síť" : "Technické pokrytí",
@@ -2307,6 +2336,9 @@ function situationLayerDisplayName(feature: SituationFeature): string {
   if (isTakGatewayFeature(feature)) {
     return `TAK ${feature.properties.layer}`;
   }
+  if (isMissionArenaFeature(feature)) {
+    return "Mission Arena";
+  }
   const labels: Record<string, string> = {
     air_quality: "Kvalita vzduchu",
     community: "Komunitní hlášení",
@@ -2317,6 +2349,7 @@ function situationLayerDisplayName(feature: SituationFeature): string {
     mobile: "Mobilní síť",
     mobile_coverage: "Technické pokrytí",
     mobile_network: "Mobilní síť",
+    mission_arena: "Mission Arena",
     traffic: "Doprava",
     warnings: "Výstrahy",
     weather: "Počasí"
@@ -2361,6 +2394,27 @@ function stringProperty(value: unknown): string | undefined {
 function isTakGatewayFeature(feature: SituationFeature): boolean {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
   return stringProperty(tags.dataSource) === "tak-gateway";
+}
+
+function isMissionArenaFeature(feature: SituationFeature): boolean {
+  return feature.properties.layer === "mission_arena"
+    || feature.properties.layerId === "presentation.mission_arena"
+    || feature.properties.providerId === "csm.mission-arena";
+}
+
+function missionArenaFeatureColor(feature: SituationFeature): string {
+  const teamColor = stringProperty(feature.properties.teamColor);
+  if (teamColor && /^#[0-9a-fA-F]{6}$/.test(teamColor)) {
+    return teamColor;
+  }
+  const teamId = feature.properties.teamId?.trim().toLowerCase();
+  if (teamId === "alfa" || teamId === "blue" || teamId === "modri") {
+    return "#38bdf8";
+  }
+  if (teamId === "bravo" || teamId === "red" || teamId === "cerveni") {
+    return "#f87171";
+  }
+  return feature.properties.featureRole === "team_state" ? "#a78bfa" : "#c7f77f";
 }
 
 function normalizeTakAffiliation(value: unknown): "friend" | "hostile" | "neutral" | "unknown" {

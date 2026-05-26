@@ -1,6 +1,7 @@
 import type { SafetyLayerDescriptor, SafetySourceDescriptor } from "./safety-data-source.js";
 import type { SituationLayerDescriptor, SituationSourceDescriptor } from "./situation-data-source.js";
 import type { TakGatewayLayerDescriptor, TakGatewaySourceDescriptor } from "./tak-gateway-source.js";
+import type { MissionArenaLayerDescriptor, MissionArenaSourceDescriptor } from "./mission-arena-source.js";
 import type { ProviderCatalogLayer, ProviderCatalogSource, ProviderMapCatalog } from "./provider-map-catalog.js";
 
 export type MapCatalogAudience = "admin" | "authenticated" | "diagnostic" | "partner" | "public";
@@ -104,6 +105,12 @@ export interface BuildMapCatalogInput {
     status?: MapCatalogProvider["status"];
     warning?: string;
   };
+  missionArena?: {
+    layers: MissionArenaLayerDescriptor[];
+    sources: MissionArenaSourceDescriptor[];
+    status?: MapCatalogProvider["status"];
+    warning?: string;
+  };
   safety?: {
     catalog?: ProviderMapCatalog;
     layers: SafetyLayerDescriptor[];
@@ -136,6 +143,7 @@ export function buildMapCatalog(input: BuildMapCatalogInput): MapCatalogResponse
     ...(input.safety?.catalog ? buildProviderCatalogSources(input.safety.catalog, includeDiagnostics, includePartner) : buildSafetySources(input.safety?.sources ?? [])),
     ...(input.situation?.catalog ? buildProviderCatalogSources(input.situation.catalog, includeDiagnostics, includePartner) : buildSituationSources(input.situation?.sources ?? [])),
     ...(input.flight?.catalog ? buildProviderCatalogSources(input.flight.catalog, includeDiagnostics, includePartner) : []),
+    ...buildMissionArenaSources(input.missionArena?.sources ?? []),
     ...(includePartner ? (input.tak?.catalog ? buildProviderCatalogSources(input.tak.catalog, includeDiagnostics, includePartner) : buildTakSources(input.tak?.sources ?? [])) : [])
   ];
   const allLayers = [
@@ -143,10 +151,11 @@ export function buildMapCatalog(input: BuildMapCatalogInput): MapCatalogResponse
     ...(input.situation?.catalog ? buildProviderCatalogLayers(input.situation.catalog, includeDiagnostics, includePartner) : buildSituationLayers(input.situation?.layers ?? [], input.situation?.sources ?? [])),
     ...buildCopOwnedLayers(),
     ...(input.flight?.catalog ? buildProviderCatalogLayers(input.flight.catalog, includeDiagnostics, includePartner) : []),
+    ...buildMissionArenaLayers(input.missionArena?.layers ?? [], input.missionArena?.sources ?? []),
     ...(includePartner ? (input.tak?.catalog ? buildProviderCatalogLayers(input.tak.catalog, includeDiagnostics, includePartner) : buildTakLayers(input.tak?.layers ?? [], input.tak?.sources ?? [])) : []),
     ...(includeDiagnostics ? buildDiagnosticLayers(input.situation?.layers ?? [], input.situation?.sources ?? []) : [])
   ];
-  const warnings = [input.flight?.warning, input.safety?.warning, input.situation?.warning, input.tak?.warning].filter((warning): warning is string => Boolean(warning));
+  const warnings = [input.flight?.warning, input.missionArena?.warning, input.safety?.warning, input.situation?.warning, input.tak?.warning].filter((warning): warning is string => Boolean(warning));
 
   return {
     catalogVersion: "map-catalog-v1",
@@ -192,6 +201,11 @@ function buildProviders(input: BuildMapCatalogInput): MapCatalogProvider[] {
       providerId: "cop.tracks",
       status: "online"
     },
+    {
+      label: "Mission Arena",
+      providerId: "csm.mission-arena",
+      status: input.missionArena?.status ?? "disabled"
+    },
     ...(input.includePartner === true
       ? [
           {
@@ -212,6 +226,7 @@ function defaultGroups(includeDiagnostics: boolean, includePartner: boolean): Ma
     { groupId: "infrastructure", icon: "building-2", label: "Infrastruktura", order: 40 },
     { groupId: "flight", icon: "plane", label: "Letecký provoz", order: 50 },
     { groupId: "user", icon: "map-pin", label: "Moje data", order: 60 },
+    { groupId: "presentation", icon: "sparkles", label: "Prezentace a eventy", order: 65 },
     ...(includePartner ? [{ groupId: "partner", icon: "shield-check", label: "Partnerské vrstvy", order: 70 }] : []),
     ...(includeDiagnostics ? [{ groupId: "diagnostic", icon: "database", label: "Diagnostika", order: 90 }] : [])
   ];
@@ -818,6 +833,50 @@ function buildTakLayers(layers: TakGatewayLayerDescriptor[], sources: TakGateway
   });
 }
 
+function buildMissionArenaLayers(layers: MissionArenaLayerDescriptor[], sources: MissionArenaSourceDescriptor[]): MapCatalogLayer[] {
+  const layer = findLayer(layers, "presentation.mission_arena");
+  const source = findSource(sources, "mission_arena_runtime");
+  if (!layer && !source) {
+    return [];
+  }
+  return [
+    {
+      audience: "public",
+      cacheTtlSeconds: source?.updateCadenceSeconds ?? layer?.expectedCadenceSeconds ?? 5,
+      defaultVisible: layer?.defaultVisible ?? false,
+      description: layer?.description ?? "Prezentační stav Mission Arena eventu. COP skóre nepočítá, pouze zobrazuje poskytnutý stav.",
+      geometryTypes: layer?.geometryTypes ?? ["Point", "Polygon"],
+      groupId: "presentation",
+      kind: "vector_features",
+      label: layer?.label ?? "Mission Arena",
+      layerId: "presentation.mission_arena",
+      legal: {
+        notes: [
+          "Prezentační/eventový zdroj. Nejde o reálné operační velení ani doporučení akce.",
+          "Skóre, fázi a stav týmů počítá Mission Arena; COP je pouze zobrazuje."
+        ]
+      },
+      maxZoom: 18,
+      minZoom: 5,
+      provenance: {
+        sourceIds: ["csm.mission-arena:mission_arena_runtime"]
+      },
+      query: {
+        maxFeatures: 50,
+        mode: "bbox",
+        providerId: "csm.mission-arena",
+        providerLayerIds: ["presentation.mission_arena"],
+        providerSourceIds: ["mission_arena_runtime"],
+        streamId: "export"
+      },
+      refreshSeconds: source?.updateCadenceSeconds ?? layer?.expectedCadenceSeconds ?? 5,
+      role: "overlay",
+      selectable: true,
+      styleProfile: "mission-arena-v1"
+    }
+  ];
+}
+
 function buildCopOwnedLayers(): MapCatalogLayer[] {
   return [
     {
@@ -1082,6 +1141,22 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
     default:
       return { audience: "diagnostic", feedsCatalogLayerIds: undefined, selectableInMap: false, sourceRole: "diagnostic" };
   }
+}
+
+function buildMissionArenaSources(sources: MissionArenaSourceDescriptor[]): MapCatalogSource[] {
+  return sources.map((source) => ({
+    audience: "public",
+    cacheTtlSeconds: source.updateCadenceSeconds,
+    enabled: source.enabled !== false,
+    feedsCatalogLayerIds: ["presentation.mission_arena"],
+    label: source.label ?? source.sourceId,
+    providerId: "csm.mission-arena",
+    selectableInMap: source.enabled !== false,
+    sourceId: source.sourceId,
+    sourceRole: "final",
+    updateCadenceSeconds: source.updateCadenceSeconds,
+    visibleInDiagnostics: true
+  }));
 }
 
 function buildTakSources(sources: TakGatewaySourceDescriptor[]): MapCatalogSource[] {

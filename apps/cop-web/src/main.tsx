@@ -109,6 +109,7 @@ import {
   type MapBounds,
   type MessagingConversationSummary,
   type MessagingStatusResponse,
+  type MissionArenaFeatureCollectionResponse,
   type ObjectProvenance,
   type PlaceGeocodeResult,
   type SourceHealthItem,
@@ -375,6 +376,9 @@ export function App() {
   const [communityFeatures, setCommunityFeatures] = React.useState<CommunityFeatureCollectionResponse | null>(null);
   const [communityStatus, setCommunityStatus] = React.useState<SituationLayerStatus>("online");
   const [communityWarnings, setCommunityWarnings] = React.useState<string[]>([]);
+  const [missionArenaFeatures, setMissionArenaFeatures] = React.useState<MissionArenaFeatureCollectionResponse | null>(null);
+  const [missionArenaStatus, setMissionArenaStatus] = React.useState<SituationLayerStatus>("disabled");
+  const [missionArenaWarnings, setMissionArenaWarnings] = React.useState<string[]>([]);
   const [communityReportOpen, setCommunityReportOpen] = React.useState(false);
   const [communityReportDraft, setCommunityReportDraft] = React.useState<CommunityReportDraft>(() => createCommunityReportDraft());
   const [communityReportSubmitting, setCommunityReportSubmitting] = React.useState(false);
@@ -809,6 +813,8 @@ export function App() {
       setFlightWarnings(["Pro načtení leteckých referencí je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
       setCommunityStatus("disabled");
       setCommunityWarnings(["Pro načtení komunitních hlášení je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
+      setMissionArenaStatus("disabled");
+      setMissionArenaWarnings(["Pro načtení Mission Arena vrstvy je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
       setTakLayers([]);
       setTakSources([]);
       setTakStatus("disabled");
@@ -821,6 +827,7 @@ export function App() {
     setSafetyStatus("loading");
     setFlightStatus("loading");
     setCommunityStatus("loading");
+    setMissionArenaStatus("loading");
     setTakStatus(authToken ? "loading" : "disabled");
     fetchMapCatalog(apiBase, authToken, { includePartner: Boolean(authToken) })
       .then((catalog) => {
@@ -842,11 +849,13 @@ export function App() {
         setSafetyWarnings(catalog.warnings);
         setFlightWarnings(catalog.warnings);
         setCommunityWarnings(catalog.warnings);
+        setMissionArenaWarnings(catalog.warnings);
         setTakWarnings(authToken ? catalog.warnings : ["Partnerské vrstvy vyžadují přihlášení."]);
         setSituationStatus(providerStatusFromCatalog(catalog, "sim.situation-data"));
         setSafetyStatus(providerStatusFromCatalog(catalog, "sim.safety-data"));
         setFlightStatus(providerStatusFromCatalog(catalog, "sim.flight-data"));
         setCommunityStatus(providerStatusFromCatalog(catalog, "cop.community"));
+        setMissionArenaStatus(providerStatusFromCatalog(catalog, "csm.mission-arena"));
         setTakStatus(authToken ? providerStatusFromCatalog(catalog, "sim.tak-gateway") : "disabled");
         setVisibleCatalogLayerIds((current) => {
           const availableLayerIds = new Set(selectableCatalogLayers(catalog).map((layer) => layer.layerId));
@@ -896,12 +905,14 @@ export function App() {
           setSafetyStatus("degraded");
           setFlightStatus("degraded");
           setCommunityStatus("degraded");
+          setMissionArenaStatus("degraded");
           setTakStatus("degraded");
           const message = error instanceof Error ? error.message : "Katalog mapových vrstev není dostupný.";
           setSituationWarnings([message]);
           setSafetyWarnings([message]);
           setFlightWarnings([message]);
           setCommunityWarnings([message]);
+          setMissionArenaWarnings([message]);
           setTakWarnings([message]);
         }
       });
@@ -1247,6 +1258,60 @@ export function App() {
   }, [apiBase, authToken, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
 
   React.useEffect(() => {
+    if (!dataAccessReady) {
+      return;
+    }
+    if (!mapBounds) {
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (!mapCatalog) {
+        return;
+      }
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "csm.mission-arena", visibleCatalogLayerIds);
+      if (catalogLayerIds.length === 0) {
+        setMissionArenaFeatures(null);
+        setMissionArenaStatus("disabled");
+        setMissionArenaWarnings([]);
+        return;
+      }
+      setMissionArenaStatus((current) => current === "online" ? "online" : "loading");
+      fetchMapFeatures(apiBase, authToken, {
+        bbox: mapBounds,
+        layerIds: catalogLayerIds,
+        limit: 50
+      })
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+          const collection = response.missionArena ?? null;
+          setMissionArenaFeatures(collection);
+          setMissionArenaWarnings([
+            ...response.warnings,
+            ...(collection?.warnings ?? []),
+            ...(collection?.sourceHealth?.warnings ?? [])
+          ]);
+          setMissionArenaStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setMissionArenaFeatures(null);
+            setMissionArenaStatus("degraded");
+            setMissionArenaWarnings([error instanceof Error ? error.message : "Mission Arena vrstva není dostupná."]);
+          }
+        });
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [apiBase, authToken, dataAccessReady, mapBounds, mapCatalog, visibleCatalogLayerIds, visibleCatalogLayerKey]);
+
+  React.useEffect(() => {
     if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
       return;
     }
@@ -1332,15 +1397,16 @@ export function App() {
     [scopedObjects, visibleTrackLayerIds]
   );
   const combinedSituationFeatures = React.useMemo(
-    () => mergeSituationSafetyFlightCommunityAndTakFeatures(situationFeatures, safetyFeatures, flightFeatures, communityFeatures, takFeatures),
-    [communityFeatures, flightFeatures, safetyFeatures, situationFeatures, takFeatures]
+    () => mergeSituationSafetyFlightCommunityMissionAndTakFeatures(situationFeatures, safetyFeatures, flightFeatures, communityFeatures, missionArenaFeatures, takFeatures),
+    [communityFeatures, flightFeatures, missionArenaFeatures, safetyFeatures, situationFeatures, takFeatures]
   );
   const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
-  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0 || visibleSafetyLayerIds.length > 0 || visibleTakLayerIds.length > 0 || visibleFlightLayerCount > 0 || visibleCommunityLayerCount > 0;
+  const visibleMissionArenaLayerCount = React.useMemo(() => countVisibleMissionArenaLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
+  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0 || visibleSafetyLayerIds.length > 0 || visibleTakLayerIds.length > 0 || visibleFlightLayerCount > 0 || visibleCommunityLayerCount > 0 || visibleMissionArenaLayerCount > 0;
   const mapLayerLabel = React.useMemo(
-    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds, visibleFlightLayerCount, visibleCommunityLayerCount),
-    [visibleCommunityLayerCount, visibleFlightLayerCount, visibleSafetyLayerIds, visibleSituationLayerIds, visibleTakLayerIds, visibleTrackLayerIds]
+    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds, visibleFlightLayerCount, visibleCommunityLayerCount, visibleMissionArenaLayerCount),
+    [visibleCommunityLayerCount, visibleFlightLayerCount, visibleMissionArenaLayerCount, visibleSafetyLayerIds, visibleSituationLayerIds, visibleTakLayerIds, visibleTrackLayerIds]
   );
   const mapEmptyMessage = React.useMemo(
     () =>
@@ -1995,6 +2061,9 @@ export function App() {
     if (layer.query.providerId === "cop.community") {
       return communityFeatures?.summary.featureCount ?? 0;
     }
+    if (layer.query.providerId === "csm.mission-arena") {
+      return missionArenaFeatures?.summary.featureCount ?? 0;
+    }
     if (layer.query.providerId === "sim.tak-gateway") {
       return (takFeatures?.features ?? []).filter((feature) => providerLayerIds.has(feature.properties.layer)).length;
     }
@@ -2022,6 +2091,9 @@ export function App() {
     }
     if (layer.query.providerId === "cop.community") {
       return communityStatus;
+    }
+    if (layer.query.providerId === "csm.mission-arena") {
+      return missionArenaStatus;
     }
     if (layer.query.providerId === "sim.tak-gateway") {
       return takStatus;
@@ -5946,6 +6018,8 @@ function SituationFeatureDetail({
         />
       </ObjectDetailSection>
 
+      {isMissionArenaFeature(feature) ? <MissionArenaSummary feature={feature} /> : null}
+
       {properties.layer === "mobile_coverage" || properties.layer === "mobile_network" ? (
         <ObjectDetailSection title={properties.layer === "mobile_network" ? "Mobilní síť" : "Mobilní pokrytí"}>
           <DetailGrid
@@ -6038,6 +6112,63 @@ function SituationFeatureDetail({
         {properties.severity ? <span className="warning-badge">{properties.severity.toUpperCase()}</span> : null}
       </div>
     </div>
+  );
+}
+
+function MissionArenaSummary({ feature }: { feature: SituationFeature }) {
+  const properties = feature.properties;
+  const story = isRecord(properties.story) ? properties.story : {};
+  return (
+    <>
+      <ObjectDetailSection title="Mission Arena">
+        <DetailGrid
+          rows={[
+            ["Role", properties.featureRole === "team_state" ? "Stav týmu" : "Stav mise"],
+            ["Mise", properties.missionId ?? "n/a"],
+            ["Fáze", properties.phase ?? "n/a"],
+            ["Režim", properties.runtimeMode ?? "n/a"],
+            ["Balíček", properties.missionPackId ?? "n/a"],
+            ["Integrace", properties.integrationMode ?? "presentation"],
+            ["Účastníci", formatOptionalInteger(properties.participantCount)],
+            ["Hlasování", formatOptionalInteger(properties.voteCount)],
+            ["Skóre", formatMissionArenaScore(properties.score)],
+            ["Změna skóre", formatMissionArenaScore(properties.scoreDelta)],
+            ["Tým", properties.teamLabel ?? properties.teamId ?? "n/a"],
+            ["Týmové skóre", formatOptionalNumber(properties.aggregate, "")],
+            ["Změna týmu", formatSignedOptionalNumber(properties.aggregateDelta)]
+          ]}
+        />
+      </ObjectDetailSection>
+
+      {properties.teamScores && properties.teamScores.length > 0 ? (
+        <ObjectDetailSection title="Týmy">
+          <div className="mission-team-list">
+            {properties.teamScores.slice(0, 8).map((team) => (
+              <div className="mission-team-row" key={team.teamId}>
+                <span className="mission-team-swatch" style={{ backgroundColor: team.color ?? "#9ca3af" }} />
+                <strong>{team.label}</strong>
+                <span>{team.rank ? `#${team.rank}` : "rank n/a"}</span>
+                <span>{formatOptionalNumber(team.aggregate, "")}</span>
+                <span>{formatSignedOptionalNumber(team.aggregateDelta)}</span>
+              </div>
+            ))}
+          </div>
+        </ObjectDetailSection>
+      ) : null}
+
+      {Object.keys(story).length > 0 ? (
+        <ObjectDetailSection title="Scénář">
+          <DetailGrid
+            rows={[
+              ["Akt", stringProperty(story.act) ?? "n/a"],
+              ["Rozhodnutí", stringProperty(story.commanderDecision) ?? "n/a"],
+              ["Tasking", stringProperty(story.roleTasking) ?? "n/a"],
+              ["Vizualizace", stringProperty(story.visualization) ?? "n/a"]
+            ]}
+          />
+        </ObjectDetailSection>
+      ) : null}
+    </>
   );
 }
 
@@ -6924,44 +7055,47 @@ function summarizeAlerts(serverAlerts: CopAlert[], proximityAlerts: ProximityAle
   };
 }
 
-function mergeSituationSafetyFlightCommunityAndTakFeatures(
+function mergeSituationSafetyFlightCommunityMissionAndTakFeatures(
   situation: SituationFeatureCollectionResponse | null,
   safety: SafetyFeatureCollectionResponse | null,
   flight: FlightReferenceFeatureCollectionResponse | null,
   community: CommunityFeatureCollectionResponse | null,
+  missionArena: MissionArenaFeatureCollectionResponse | null,
   tak: TakFeatureCollectionResponse | null
 ): SituationFeatureCollectionResponse | null {
-  if (!situation && !safety && !flight && !community && !tak) {
+  if (!situation && !safety && !flight && !community && !missionArena && !tak) {
     return null;
   }
   const situationFeatures = situation?.features ?? [];
   const safetyFeatures = safety?.features.map(safetyFeatureToSituationFeature) ?? [];
   const flightReferenceFeatures = flight?.features ?? [];
   const communityReportFeatures = community?.features ?? [];
+  const missionArenaFeatures = missionArena?.features.map(missionArenaFeatureToSituationFeature) ?? [];
   const takGatewayFeatures = tak?.features.map(takFeatureToSituationFeature) ?? [];
-  const features = [...situationFeatures, ...safetyFeatures, ...flightReferenceFeatures, ...communityReportFeatures, ...takGatewayFeatures];
-  const warnings = [...(situation?.warnings ?? []), ...(safety?.warnings ?? []), ...(flight?.warnings ?? []), ...(community?.warnings ?? []), ...(tak?.warnings ?? [])];
+  const features = [...situationFeatures, ...safetyFeatures, ...flightReferenceFeatures, ...communityReportFeatures, ...missionArenaFeatures, ...takGatewayFeatures];
+  const warnings = [...(situation?.warnings ?? []), ...(safety?.warnings ?? []), ...(flight?.warnings ?? []), ...(community?.warnings ?? []), ...(missionArena?.warnings ?? []), ...(tak?.warnings ?? [])];
   return {
     contractVersion: "cop-situation-source-v1",
     features,
-    generatedAt: latestTimestamp([situation?.generatedAt, safety?.generatedAt, flight?.generatedAt, community?.generatedAt, tak?.generatedAt]) ?? new Date().toISOString(),
+    generatedAt: latestTimestamp([situation?.generatedAt, safety?.generatedAt, flight?.generatedAt, community?.generatedAt, missionArena?.generatedAt, tak?.generatedAt]) ?? new Date().toISOString(),
     query: {
-      bbox: situation?.query.bbox ?? safety?.query.bbox ?? flight?.query.bbox ?? community?.query?.bbox ?? tak?.query.bbox ?? { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
+      bbox: situation?.query.bbox ?? safety?.query.bbox ?? flight?.query.bbox ?? community?.query?.bbox ?? missionArena?.query.bbox ?? tak?.query.bbox ?? { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: [
         ...(situation?.query.layers ?? []),
         ...((safety?.query.layers ?? []) as SituationLayerId[]),
         ...flightReferenceQueryLayersToSituationLayers(flight?.query.layers ?? []),
         ...(community ? ["community" as SituationLayerId] : []),
+        ...(missionArena ? ["mission_arena" as SituationLayerId] : []),
         ...((tak?.query.layers ?? []) as SituationLayerId[])
       ],
-      limit: Math.max(situation?.query.limit ?? 0, safety?.query.limit ?? 0, flight?.query.limit ?? 0, community?.query?.limit ?? 0, tak?.query.limit ?? 0, 250)
+      limit: Math.max(situation?.query.limit ?? 0, safety?.query.limit ?? 0, flight?.query.limit ?? 0, community?.query?.limit ?? 0, missionArena?.query.limit ?? 0, tak?.query.limit ?? 0, 250)
     },
     source: {
-      generatedAt: latestTimestamp([situation?.source.generatedAt, safety?.source.generatedAt, flight?.source.generatedAt, community?.source.generatedAt, tak?.source.generatedAt]),
+      generatedAt: latestTimestamp([situation?.source.generatedAt, safety?.source.generatedAt, flight?.source.generatedAt, community?.source.generatedAt, missionArena?.source.generatedAt, tak?.source.generatedAt]),
       sourceId: "situation-data-api",
       sourceType: "PUBLIC_SITUATION_AGGREGATE"
     },
-    sourceHealth: situation?.sourceHealth ?? safety?.sourceHealth ?? flight?.sourceHealth ?? tak?.sourceHealth,
+    sourceHealth: situation?.sourceHealth ?? safety?.sourceHealth ?? flight?.sourceHealth ?? missionArena?.sourceHealth ?? tak?.sourceHealth,
     sources: [
       ...(situation?.sources ?? []),
       ...((safety?.sources ?? []).map((source) => ({
@@ -6979,6 +7113,12 @@ function mergeSituationSafetyFlightCommunityAndTakFeatures(
         layers: ["community" as SituationLayerId],
         sourceId: "community_reports"
       }] : []),
+      ...(missionArena ? [{
+        enabled: true,
+        label: "Mission Arena",
+        layers: ["mission_arena" as SituationLayerId],
+        sourceId: "mission_arena_runtime"
+      }] : []),
       ...((tak?.sources ?? []).map((source) => ({
         ...source,
         label: source.label ? `TAK Gateway > ${source.label}` : "TAK Gateway",
@@ -6987,9 +7127,9 @@ function mergeSituationSafetyFlightCommunityAndTakFeatures(
     ],
     summary: {
       featureCount: features.length,
-      sourceCount: (situation?.summary.sourceCount ?? 0) + (safety?.summary.sourceCount ?? 0) + (flight?.summary.sourceCount ?? 0) + (community ? 1 : 0) + (tak?.summary.sourceCount ?? 0),
+      sourceCount: (situation?.summary.sourceCount ?? 0) + (safety?.summary.sourceCount ?? 0) + (flight?.summary.sourceCount ?? 0) + (community ? 1 : 0) + (missionArena?.summary.sourceCount ?? 0) + (tak?.summary.sourceCount ?? 0),
       staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
-      warningCount: (situation?.summary.warningCount ?? 0) + (safety?.summary.warningCount ?? 0) + (safety?.summary.criticalCount ?? 0) + (flight?.summary.warningCount ?? 0) + (community?.warnings?.length ?? 0) + (tak?.summary.warningCount ?? 0)
+      warningCount: (situation?.summary.warningCount ?? 0) + (safety?.summary.warningCount ?? 0) + (safety?.summary.criticalCount ?? 0) + (flight?.summary.warningCount ?? 0) + (community?.warnings?.length ?? 0) + (missionArena?.summary.warningCount ?? 0) + (tak?.summary.warningCount ?? 0)
     },
     type: "FeatureCollection",
     warnings
@@ -7006,6 +7146,22 @@ function safetyFeatureToSituationFeature(feature: SafetyFeature): SituationFeatu
       tags: {
         ...(isRecord(feature.properties.tags) ? feature.properties.tags : {}),
         dataSource: "safety-data"
+      }
+    },
+    type: "Feature"
+  };
+}
+
+function missionArenaFeatureToSituationFeature(feature: SituationFeature): SituationFeature {
+  return {
+    geometry: feature.geometry,
+    id: feature.id,
+    properties: {
+      ...feature.properties,
+      layer: "mission_arena",
+      tags: {
+        ...(isRecord(feature.properties.tags) ? feature.properties.tags : {}),
+        dataSource: "mission-arena"
       }
     },
     type: "Feature"
@@ -7354,6 +7510,7 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     mobile: "Mobilní síť",
     mobile_coverage: "Technické pokrytí",
     mobile_network: "Mobilní síť",
+    mission_arena: "Mission Arena",
     traffic: "Doprava",
     warnings: "Výstrahy",
     weather: "Počasí"
@@ -7400,6 +7557,12 @@ function formatTakSources(sources: TakSourceDescriptor[]): string {
 function isTakGatewayFeature(feature: SituationFeature): boolean {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
   return stringProperty(tags.dataSource) === "tak-gateway";
+}
+
+function isMissionArenaFeature(feature: SituationFeature): boolean {
+  return feature.properties.layer === "mission_arena"
+    || feature.properties.layerId === "presentation.mission_arena"
+    || feature.properties.providerId === "csm.mission-arena";
 }
 
 function isCommunicationTowerFeature(feature: SituationFeature): boolean {
@@ -7525,6 +7688,12 @@ function formatGeocodes(value: Array<{ scheme: string; value: string }> | undefi
 }
 
 function situationFeatureStatusModel(feature: SituationFeature): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } {
+  if (isMissionArenaFeature(feature)) {
+    if (feature.properties.featureRole === "team_state") {
+      return { label: feature.properties.teamLabel ?? "TÝM", tone: "neutral" };
+    }
+    return { label: feature.properties.runtimeMode === "live" ? "LIVE" : "EVENT", tone: "neutral" };
+  }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     const coverage = mobileCoverageQualityModel(feature.properties.quality);
     return feature.properties.stale && coverage.tone === "ok" ? { label: `${coverage.label} · STALE`, tone: "warn" } : coverage;
@@ -7678,6 +7847,28 @@ function mobileMetricTone(value: number | undefined, goodThreshold: number, warn
 
 function formatOptionalNumber(value: number | undefined, unit: string): string {
   return value === undefined ? "n/a" : `${Math.round(value * 10) / 10}${unit}`;
+}
+
+function formatOptionalInteger(value: number | undefined): string {
+  return value === undefined ? "n/a" : String(Math.round(value));
+}
+
+function formatSignedOptionalNumber(value: number | undefined): string {
+  if (value === undefined) {
+    return "n/a";
+  }
+  const rounded = Math.round(value * 10) / 10;
+  return rounded > 0 ? `+${rounded}` : String(rounded);
+}
+
+function formatMissionArenaScore(value: Record<string, number> | undefined): string {
+  if (!value || Object.keys(value).length === 0) {
+    return "n/a";
+  }
+  return Object.entries(value)
+    .slice(0, 6)
+    .map(([key, entry]) => `${key}: ${Math.round(entry * 10) / 10}`)
+    .join(" · ");
 }
 
 function recordNumber(record: Record<string, unknown>, key: string): number | undefined {
@@ -7942,6 +8133,8 @@ function catalogGroupIcon(icon: string | undefined, size = 19): React.ReactNode 
       return <RadioTower size={size} />;
     case "shield-check":
       return <ShieldCheck size={size} />;
+    case "sparkles":
+      return <Sparkles size={size} />;
     default:
       return <Layers size={size} />;
   }
@@ -7968,6 +8161,9 @@ function catalogLayerProviderLabel(layer: MapCatalogLayer): string {
   }
   if (layer.query.providerId === "cop.community") {
     return "Komunitní data";
+  }
+  if (layer.query.providerId === "csm.mission-arena") {
+    return "Mission Arena";
   }
   if (layer.query.providerId === "sim.tak-gateway") {
     return "Partnerský feed";
@@ -8023,7 +8219,7 @@ function isCopLayer(value: string): value is CopLayer {
   return copLayerIds.includes(value as CopLayer);
 }
 
-function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[], takLayerIds: TakLayerId[], flightLayerCount = 0, communityLayerCount = 0): string {
+function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[], takLayerIds: TakLayerId[], flightLayerCount = 0, communityLayerCount = 0, missionArenaLayerCount = 0): string {
   const parts: string[] = [];
   if (trackLayerIds.length > 0) {
     parts.push(`${trackLayerIds.length} air`);
@@ -8033,6 +8229,9 @@ function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: Situat
   }
   if (communityLayerCount > 0) {
     parts.push(`${communityLayerCount} reports`);
+  }
+  if (missionArenaLayerCount > 0) {
+    parts.push(`${missionArenaLayerCount} event`);
   }
   if (situationLayerIds.length > 0) {
     parts.push(`${situationLayerIds.length} context`);
@@ -8052,7 +8251,7 @@ function readInitialAffiliationScope(value: string | undefined): AffiliationScop
     : "all";
 }
 
-type CatalogProviderId = "cop.community" | "sim.flight-data" | "sim.safety-data" | "sim.situation-data" | "sim.tak-gateway";
+type CatalogProviderId = "cop.community" | "csm.mission-arena" | "sim.flight-data" | "sim.safety-data" | "sim.situation-data" | "sim.tak-gateway";
 
 function buildCatalogGroupViews(catalog: MapCatalogResponse | null): CatalogGroupView[] {
   if (!catalog) {
@@ -8099,6 +8298,7 @@ function catalogLayerSortKey(layer: MapCatalogLayer): number {
 function isImplementedCatalogLayer(layer: MapCatalogLayer): boolean {
   return (layer.query.mode === "bbox"
     && (layer.query.providerId === "cop.community"
+      || layer.query.providerId === "csm.mission-arena"
       || layer.query.providerId === "sim.flight-data"
       || layer.query.providerId === "sim.situation-data"
       || layer.query.providerId === "sim.safety-data"
@@ -8159,6 +8359,19 @@ function countVisibleCommunityLayers(catalog: MapCatalogResponse | null, selecte
     && isImplementedCatalogLayer(layer)
     && layer.query.mode === "bbox"
     && layer.query.providerId === "cop.community"
+  ).length;
+}
+
+function countVisibleMissionArenaLayers(catalog: MapCatalogResponse | null, selectedLayerIds: string[]): number {
+  if (!catalog) {
+    return 0;
+  }
+  const selected = new Set(selectedLayerIds);
+  return catalog.layers.filter((layer) =>
+    selected.has(layer.layerId)
+    && isImplementedCatalogLayer(layer)
+    && layer.query.mode === "bbox"
+    && layer.query.providerId === "csm.mission-arena"
   ).length;
 }
 
@@ -8510,6 +8723,7 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "mobile"
     || value === "mobile_coverage"
     || value === "mobile_network"
+    || value === "mission_arena"
     || value === "traffic"
     || value === "warnings"
     || value === "flood"

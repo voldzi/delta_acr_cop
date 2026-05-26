@@ -4086,6 +4086,27 @@ h1 {
   gap: 6px;
 }
 
+.mission-team-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mission-team-row {
+  align-items: center;
+  border: 1px solid rgba(132, 166, 190, 0.32);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 14px minmax(90px, 1fr) auto auto auto;
+  padding: 8px 10px;
+}
+
+.mission-team-swatch {
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  display: inline-block;
+  height: 12px;
+  width: 12px;
+}
+
 .public-flight-badge {
   background: #7dd3fc;
 }
