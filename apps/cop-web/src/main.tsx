@@ -5591,12 +5591,20 @@ function MapGlobalSearch({
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const dragStateRef = React.useRef<MapSearchDragState | null>(null);
   const [isDragging, setIsDragging] = React.useState(false);
+  const [dockedExpanded, setDockedExpanded] = React.useState(false);
   const [position, setPosition] = React.useState<MapSearchPosition | null>(() => readMapSearchPosition());
+  const collapsedDocked = docked && !dockedExpanded;
 
   const persistPosition = React.useCallback((nextPosition: MapSearchPosition | null) => {
     setPosition(nextPosition);
     writeMapSearchPosition(nextPosition);
   }, []);
+
+  React.useEffect(() => {
+    if (!docked) {
+      setDockedExpanded(false);
+    }
+  }, [docked]);
 
   React.useEffect(() => {
     if (!isDragging) {
@@ -5679,9 +5687,16 @@ function MapGlobalSearch({
     setIsDragging(true);
   }
 
+  function handleResultSelect(result: MapSearchResult) {
+    onSelect(result);
+    if (docked) {
+      setDockedExpanded(false);
+    }
+  }
+
   return (
     <div
-      className={`map-global-search ${docked ? "is-docked" : ""} ${position && !docked ? "is-moved" : ""} ${isDragging ? "is-dragging" : ""}`}
+      className={`map-global-search ${docked ? "is-docked" : ""} ${collapsedDocked ? "is-collapsed" : ""} ${position && !docked ? "is-moved" : ""} ${isDragging ? "is-dragging" : ""}`}
       ref={containerRef}
       style={position && !docked ? {
         left: `${position.left}px`,
@@ -5690,6 +5705,13 @@ function MapGlobalSearch({
         width: `min(${position.width}px, calc(100% - 16px))`
       } : undefined}
     >
+      {collapsedDocked ? (
+        <button className="map-global-search-launcher" type="button" onClick={() => setDockedExpanded(true)} aria-label="Otevřít hledání v mapě">
+          <Search size={17} />
+          <span>Hledání</span>
+        </button>
+      ) : (
+        <>
       <div className="map-global-search-field">
         {docked ? (
           <span className="map-global-search-docked-mark" aria-hidden="true">
@@ -5725,6 +5747,11 @@ function MapGlobalSearch({
         >
           {docked ? <PinOff size={15} /> : <Pin size={15} />}
         </button>
+        {docked ? (
+          <button className="map-global-search-reset" type="button" aria-label="Skrýt hledání" onClick={() => setDockedExpanded(false)} title="Skrýt hledání">
+            <X size={15} />
+          </button>
+        ) : null}
         {position && !docked ? (
           <button className="map-global-search-reset" type="button" aria-label="Vrátit hledání na výchozí místo" onClick={() => persistPosition(null)}>
             <MousePointer2 size={15} />
@@ -5740,7 +5767,7 @@ function MapGlobalSearch({
         <div className="map-global-search-results" role="listbox" aria-label="Výsledky hledání v mapě">
           {results.length > 0 ? (
             results.map((result) => (
-              <button className={`map-search-card map-search-card-${result.type}`} key={result.id} type="button" onClick={() => onSelect(result)}>
+              <button className={`map-search-card map-search-card-${result.type}`} key={result.id} type="button" onClick={() => handleResultSelect(result)}>
                 <span className="map-search-type">{result.typeLabel}</span>
                 <span className="map-search-main">
                   <strong>{result.label}</strong>
@@ -5763,6 +5790,8 @@ function MapGlobalSearch({
           ) : null}
         </div>
       ) : null}
+        </>
+      )}
     </div>
   );
 }

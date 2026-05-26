@@ -2929,8 +2929,35 @@ h1 {
   z-index: 43;
 }
 
+.map-global-search.is-docked.is-collapsed {
+  width: auto;
+  max-width: none;
+}
+
 .map-global-search.is-dragging {
   user-select: none;
+}
+
+.map-global-search-launcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 0 13px;
+  border: 1px solid rgba(164, 210, 235, 0.34);
+  background: rgba(9, 16, 20, 0.9);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.34);
+  cursor: pointer;
+}
+
+.map-global-search-launcher svg {
+  color: var(--accent);
 }
 
 .map-global-search-field {
@@ -4960,6 +4987,11 @@ dd {
     left: 10px;
     width: auto;
     max-width: none;
+  }
+
+  .map-global-search.is-docked.is-collapsed {
+    right: auto;
+    width: auto;
   }
 
   .map-global-search-field {
