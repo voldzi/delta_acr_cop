@@ -8,6 +8,7 @@ export interface MissionArenaSourceConfig {
   baseUrl: string;
   cacheTtlMs: number;
   enabled: boolean;
+  readToken?: string;
   timeoutMs: number;
 }
 
@@ -158,6 +159,7 @@ export function createMissionArenaSourceConfigFromEnv(env: Record<string, string
     baseUrl: trimTrailingSlash(env.COP_MISSION_ARENA_BASE_URL ?? defaultConfig.baseUrl),
     cacheTtlMs: readInteger(env.COP_MISSION_ARENA_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 60000),
     enabled: readBoolean(env.COP_MISSION_ARENA_ENABLED, defaultConfig.enabled),
+    readToken: optionalString(env.COP_MISSION_ARENA_TOKEN),
     timeoutMs: readInteger(env.COP_MISSION_ARENA_TIMEOUT_MS, defaultConfig.timeoutMs, 1000, 60000)
   };
 }
@@ -364,12 +366,20 @@ async function fetchMissionArenaExport(config: MissionArenaSourceConfig): Promis
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   const url = new URL("/api/cop/export", config.baseUrl);
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (config.readToken) {
+    headers.Authorization = `Bearer ${config.readToken}`;
+    headers["X-COP-Token"] = config.readToken;
+  }
   try {
     const response = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers,
       signal: controller.signal
     });
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("Mission Arena COP token was rejected (401). Check COP_MISSION_ARENA_TOKEN.");
+      }
       throw new Error(`Mission Arena request failed with HTTP ${response.status}`);
     }
     const value = await response.json();
@@ -598,6 +608,11 @@ function numberProperty(value: unknown): number | undefined {
 
 function stringProperty(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function optionalString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

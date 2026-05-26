@@ -8,7 +8,11 @@ describe("MissionArenaSourceAdapter", () => {
 
   it("loads Mission Arena export as presentation features without calculating score", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      expect(init?.headers).toMatchObject({ Accept: "application/json" });
+      expect(init?.headers).toMatchObject({
+        Accept: "application/json",
+        Authorization: "Bearer mission-token",
+        "X-COP-Token": "mission-token"
+      });
       return new Response(JSON.stringify(sampleMissionArenaExport()), { status: 200 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -17,6 +21,7 @@ describe("MissionArenaSourceAdapter", () => {
       baseUrl: "https://missionarena.zeleznalady.cz/",
       cacheTtlMs: 5000,
       enabled: true,
+      readToken: "mission-token",
       timeoutMs: 5000
     });
 

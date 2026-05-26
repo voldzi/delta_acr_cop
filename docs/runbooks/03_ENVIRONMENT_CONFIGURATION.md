@@ -99,11 +99,12 @@ COP může číst prezentační stav Mission Arena eventu přes kontrakt `cop-pr
 ```env
 COP_MISSION_ARENA_ENABLED=false
 COP_MISSION_ARENA_BASE_URL=https://missionarena.zeleznalady.cz
+COP_MISSION_ARENA_TOKEN=<MISSION_ARENA_COP_TOKEN>
 COP_MISSION_ARENA_CACHE_TTL_MS=5000
 COP_MISSION_ARENA_TIMEOUT_MS=5000
 ```
 
-Vrstva je defaultně vypnutá v katalogu, aby se nepletla s běžnými civilními situačními daty. Po zapnutí se objeví ve skupině „Prezentace a eventy“. `featureRole=mission_state` se zobrazuje jako stav mise, `featureRole=team_state` jako stav týmu; barvy a skóre jsou převzaté z Mission Arena.
+Vrstva je defaultně vypnutá v katalogu, aby se nepletla s běžnými civilními situačními daty. Po zapnutí se objeví ve skupině „Prezentace a eventy“. `featureRole=mission_state` se zobrazuje jako stav mise, `featureRole=team_state` jako stav týmu; barvy a skóre jsou převzaté z Mission Arena. Token zůstává pouze v `cop-api`; web klient jej nikdy nedostává.
 
 ## Community Report Store
 
