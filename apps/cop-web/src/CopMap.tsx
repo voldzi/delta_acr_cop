@@ -712,14 +712,42 @@ export function CopMap({
             ],
             "circle-opacity": ["case", ["get", "stale"], 0.52, 0.88],
             "circle-radius": [
-              "case",
-              ["==", ["get", "missionArenaRole"], "mission_state"],
-              ["interpolate", ["linear"], ["zoom"], 7, 7, 12, 10, 16, 13],
-              ["==", ["get", "missionArenaRole"], "team_state"],
-              ["interpolate", ["linear"], ["zoom"], 7, 6, 12, 9, 16, 11],
-              ["==", ["get", "missionArenaRole"], "task_state"],
-              ["interpolate", ["linear"], ["zoom"], 7, 4, 12, 5.5, 16, 7],
-              ["interpolate", ["linear"], ["zoom"], 7, 5, 12, 7, 16, 10]
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              7,
+              [
+                "case",
+                ["==", ["get", "missionArenaRole"], "mission_state"],
+                7,
+                ["==", ["get", "missionArenaRole"], "team_state"],
+                6,
+                ["==", ["get", "missionArenaRole"], "task_state"],
+                4,
+                5
+              ],
+              12,
+              [
+                "case",
+                ["==", ["get", "missionArenaRole"], "mission_state"],
+                10,
+                ["==", ["get", "missionArenaRole"], "team_state"],
+                9,
+                ["==", ["get", "missionArenaRole"], "task_state"],
+                5.5,
+                7
+              ],
+              16,
+              [
+                "case",
+                ["==", ["get", "missionArenaRole"], "mission_state"],
+                13,
+                ["==", ["get", "missionArenaRole"], "team_state"],
+                11,
+                ["==", ["get", "missionArenaRole"], "task_state"],
+                7,
+                10
+              ]
             ],
             "circle-stroke-color": "#061019",
             "circle-stroke-opacity": 0.9,
@@ -764,14 +792,47 @@ export function CopMap({
             "text-field": ["coalesce", ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Regular"],
             "text-size": [
-              "case",
-              ["==", ["get", "missionArenaRole"], "task_state"],
-              ["interpolate", ["linear"], ["zoom"], 7, 0, 11, 0, 12, 9, 16, 11],
-              ["==", ["get", "missionArenaRole"], "team_state"],
-              ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 10, 14, 12],
-              ["==", ["get", "missionArenaRole"], "mission_state"],
-              ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 11, 14, 13],
-              ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 10, 14, 12]
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              7,
+              0,
+              10,
+              [
+                "case",
+                ["==", ["get", "missionArenaRole"], "task_state"],
+                0,
+                ["==", ["get", "missionArenaRole"], "mission_state"],
+                11,
+                10
+              ],
+              12,
+              [
+                "case",
+                ["==", ["get", "missionArenaRole"], "task_state"],
+                9,
+                ["==", ["get", "missionArenaRole"], "mission_state"],
+                12,
+                11
+              ],
+              14,
+              [
+                "case",
+                ["==", ["get", "missionArenaRole"], "task_state"],
+                10,
+                ["==", ["get", "missionArenaRole"], "mission_state"],
+                13,
+                12
+              ],
+              16,
+              [
+                "case",
+                ["==", ["get", "missionArenaRole"], "task_state"],
+                11,
+                ["==", ["get", "missionArenaRole"], "mission_state"],
+                13,
+                12
+              ]
             ],
             "text-offset": [0, 1.25],
             "text-anchor": "top",
