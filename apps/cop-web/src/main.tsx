@@ -5977,11 +5977,12 @@ function SituationFeatureDetail({
   const properties = feature.properties;
   const status = situationFeatureStatusModel(feature);
   const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
+  const title = isMissionArenaFeature(feature) ? missionArenaDetailTitle(feature) : properties.headline ?? properties.label;
   return (
     <div className="object-detail situation-feature-detail">
       <div className="object-header">
         <div>
-          <strong>{properties.headline ?? properties.label}</strong>
+          <strong>{title}</strong>
           <span>{isCommunityReport ? [properties.groupName, properties.reportId].filter(Boolean).join(" · ") : properties.featureId}</span>
         </div>
         <div className="object-header-badges">
@@ -6118,12 +6119,16 @@ function SituationFeatureDetail({
 function MissionArenaSummary({ feature }: { feature: SituationFeature }) {
   const properties = feature.properties;
   const story = isRecord(properties.story) ? properties.story : {};
+  const role = missionArenaFeatureRole(feature);
+  const task = missionArenaPrimaryTask(feature);
+  const gameState = isRecord(properties.gameState) ? properties.gameState : {};
+  const animation = isRecord(properties.animation) ? properties.animation : {};
   return (
     <>
       <ObjectDetailSection title="Mission Arena">
         <DetailGrid
           rows={[
-            ["Role", properties.featureRole === "team_state" ? "Stav týmu" : "Stav mise"],
+            ["Role", role === "task_state" ? "Úkol role" : role === "team_state" ? "Stav týmu" : "Stav mise"],
             ["Mise", properties.missionId ?? "n/a"],
             ["Fáze", properties.phase ?? "n/a"],
             ["Režim", properties.runtimeMode ?? "n/a"],
@@ -6131,14 +6136,32 @@ function MissionArenaSummary({ feature }: { feature: SituationFeature }) {
             ["Integrace", properties.integrationMode ?? "presentation"],
             ["Účastníci", formatOptionalInteger(properties.participantCount)],
             ["Hlasování", formatOptionalInteger(properties.voteCount)],
+            ["Tempo", stringProperty(gameState.tempo) ?? "n/a"],
+            ["Tlak", formatOptionalNumber(numberProperty(gameState.pressure), "")],
+            ["Vliv", formatOptionalNumber(numberProperty(gameState.influence), "")],
+            ["Animace", stringProperty(animation.state) ?? "n/a"],
             ["Skóre", formatMissionArenaScore(properties.score)],
             ["Změna skóre", formatMissionArenaScore(properties.scoreDelta)],
-            ["Tým", properties.teamLabel ?? properties.teamId ?? "n/a"],
+            ["Tým", missionArenaTeamLabel(feature) ?? "n/a"],
             ["Týmové skóre", formatOptionalNumber(properties.aggregate, "")],
             ["Změna týmu", formatSignedOptionalNumber(properties.aggregateDelta)]
           ]}
         />
       </ObjectDetailSection>
+
+      {task ? (
+        <ObjectDetailSection title="Úkol">
+          <DetailGrid
+            rows={[
+              ["Role", missionArenaRoleDisplayName(stringProperty(task.toRole)) ?? stringProperty(task.toRole) ?? "n/a"],
+              ["Od", missionArenaRoleDisplayName(stringProperty(task.fromRole)) ?? stringProperty(task.fromRole) ?? "n/a"],
+              ["Priorita", stringProperty(task.priority) ?? "n/a"],
+              ["Stav", missionArenaTaskStatusLabel(stringProperty(task.status))],
+              ["Text", stringProperty(task.label) ?? properties.label]
+            ]}
+          />
+        </ObjectDetailSection>
+      ) : null}
 
       {properties.teamScores && properties.teamScores.length > 0 ? (
         <ObjectDetailSection title="Týmy">
@@ -6166,6 +6189,19 @@ function MissionArenaSummary({ feature }: { feature: SituationFeature }) {
               ["Vizualizace", stringProperty(story.visualization) ?? "n/a"]
             ]}
           />
+        </ObjectDetailSection>
+      ) : null}
+
+      {properties.eventLog && properties.eventLog.length > 0 ? (
+        <ObjectDetailSection title="Události">
+          <div className="mission-event-list">
+            {properties.eventLog.slice(0, 4).map((event, index) => (
+              <div className="mission-event-row" key={stringProperty(event.eventId) ?? index}>
+                <strong>{stringProperty(event.label) ?? "Událost"}</strong>
+                <span>{[stringProperty(event.severity), formatShortDateTime(stringProperty(event.observedAt))].filter(Boolean).join(" · ")}</span>
+              </div>
+            ))}
+          </div>
         </ObjectDetailSection>
       ) : null}
     </>
@@ -7565,6 +7601,74 @@ function isMissionArenaFeature(feature: SituationFeature): boolean {
     || feature.properties.providerId === "csm.mission-arena";
 }
 
+function missionArenaFeatureRole(feature: SituationFeature): "mission_state" | "task_state" | "team_state" {
+  return feature.properties.featureRole === "team_state" || feature.properties.featureRole === "task_state"
+    ? feature.properties.featureRole
+    : "mission_state";
+}
+
+function missionArenaDetailTitle(feature: SituationFeature): string {
+  const role = missionArenaFeatureRole(feature);
+  if (role === "task_state") {
+    const task = missionArenaPrimaryTask(feature);
+    return ["Úkol", missionArenaTeamLabel(feature), missionArenaRoleDisplayName(stringProperty(task?.toRole))].filter(Boolean).join(" · ");
+  }
+  if (role === "team_state") {
+    return [missionArenaTeamLabel(feature) ?? "Tým", feature.properties.missionId].filter(Boolean).join(" · ");
+  }
+  return feature.properties.label;
+}
+
+function missionArenaPrimaryTask(feature: SituationFeature): Record<string, unknown> | undefined {
+  return Array.isArray(feature.properties.tasking) ? feature.properties.tasking.find(isRecord) : undefined;
+}
+
+function missionArenaTeamLabel(feature: SituationFeature): string | undefined {
+  return feature.properties.teamLabel ?? missionArenaTeamIdLabel(feature.properties.teamId);
+}
+
+function missionArenaTeamIdLabel(teamId: string | undefined): string | undefined {
+  const normalized = teamId?.trim().toLowerCase();
+  if (normalized === "alfa" || normalized === "blue" || normalized === "modri") {
+    return "Modří";
+  }
+  if (normalized === "bravo" || normalized === "red" || normalized === "cerveni") {
+    return "Červení";
+  }
+  return teamId;
+}
+
+function missionArenaRoleDisplayName(role: string | undefined): string | undefined {
+  const normalized = role?.trim().toLowerCase();
+  if (normalized === "commander") {
+    return "velitel";
+  }
+  if (normalized === "staff") {
+    return "štáb";
+  }
+  if (normalized === "signals") {
+    return "spojení";
+  }
+  if (normalized === "cyber") {
+    return "kyber";
+  }
+  return role;
+}
+
+function missionArenaTaskStatusLabel(status: string | undefined): string {
+  const normalized = status?.trim().toLowerCase();
+  if (normalized === "complete" || normalized === "completed") {
+    return "splněno";
+  }
+  if (normalized === "active" || normalized === "running") {
+    return "aktivní";
+  }
+  if (normalized === "pending" || normalized === "queued") {
+    return "čeká";
+  }
+  return status ?? "úkol";
+}
+
 function isCommunicationTowerFeature(feature: SituationFeature): boolean {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
   const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
@@ -7689,8 +7793,12 @@ function formatGeocodes(value: Array<{ scheme: string; value: string }> | undefi
 
 function situationFeatureStatusModel(feature: SituationFeature): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } {
   if (isMissionArenaFeature(feature)) {
-    if (feature.properties.featureRole === "team_state") {
-      return { label: feature.properties.teamLabel ?? "TÝM", tone: "neutral" };
+    const role = missionArenaFeatureRole(feature);
+    if (role === "task_state") {
+      return { label: missionArenaTaskStatusLabel(stringProperty(missionArenaPrimaryTask(feature)?.status)), tone: "neutral" };
+    }
+    if (role === "team_state") {
+      return { label: missionArenaTeamLabel(feature) ?? "TÝM", tone: "neutral" };
     }
     return { label: feature.properties.runtimeMode === "live" ? "LIVE" : "EVENT", tone: "neutral" };
   }
@@ -7886,6 +7994,10 @@ function stringProperty(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function numberProperty(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function formatRecordValue(value: unknown): string {

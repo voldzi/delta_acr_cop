@@ -164,6 +164,7 @@ export interface SituationContextFeatureCollection {
       coverageQuality?: string;
       coverageTechnology?: string;
       communicationTower?: boolean;
+      mapLabel?: string;
       mapPointSuppressed?: boolean;
       missionArena?: boolean;
       missionArenaRole?: string;
@@ -710,10 +711,19 @@ export function CopMap({
               ]
             ],
             "circle-opacity": ["case", ["get", "stale"], 0.52, 0.88],
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 5, 12, 7, 16, 10],
+            "circle-radius": [
+              "case",
+              ["==", ["get", "missionArenaRole"], "mission_state"],
+              ["interpolate", ["linear"], ["zoom"], 7, 7, 12, 10, 16, 13],
+              ["==", ["get", "missionArenaRole"], "team_state"],
+              ["interpolate", ["linear"], ["zoom"], 7, 6, 12, 9, 16, 11],
+              ["==", ["get", "missionArenaRole"], "task_state"],
+              ["interpolate", ["linear"], ["zoom"], 7, 4, 12, 5.5, 16, 7],
+              ["interpolate", ["linear"], ["zoom"], 7, 5, 12, 7, 16, 10]
+            ],
             "circle-stroke-color": "#061019",
             "circle-stroke-opacity": 0.9,
-            "circle-stroke-width": ["case", ["get", "stale"], 1, 1.6]
+            "circle-stroke-width": ["case", ["get", "missionArena"], 2.2, ["get", "stale"], 1, 1.6]
           }
         });
 
@@ -751,9 +761,18 @@ export function CopMap({
           source: situationSourceId,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           layout: {
-            "text-field": ["get", "label"],
+            "text-field": ["coalesce", ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Regular"],
-            "text-size": ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 10, 14, 12],
+            "text-size": [
+              "case",
+              ["==", ["get", "missionArenaRole"], "task_state"],
+              ["interpolate", ["linear"], ["zoom"], 7, 0, 11, 0, 12, 9, 16, 11],
+              ["==", ["get", "missionArenaRole"], "team_state"],
+              ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 10, 14, 12],
+              ["==", ["get", "missionArenaRole"], "mission_state"],
+              ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 11, 14, 13],
+              ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 10, 14, 12]
+            ],
             "text-offset": [0, 1.25],
             "text-anchor": "top",
             "text-allow-overlap": false,
@@ -1700,12 +1719,14 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
     };
   }
   if (isMissionArenaFeature(feature)) {
+    const role = missionArenaFeatureRole(feature);
     return {
+      mapLabel: missionArenaMapLabel(feature),
       missionArena: true,
-      missionArenaRole: feature.properties.featureRole,
+      missionArenaRole: role,
       missionArenaTeamColor: feature.properties.teamColor,
       situationStatusColor: missionArenaFeatureColor(feature),
-      situationStatusLabel: feature.properties.featureRole === "team_state" ? "TÝM" : "EVENT",
+      situationStatusLabel: role === "task_state" ? "ÚKOL" : role === "team_state" ? "TÝM" : "EVENT",
       situationStatusTone: "info"
     };
   }
@@ -1822,9 +1843,14 @@ function isCommunicationTowerFeature(feature: SituationFeature): boolean {
 
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
   if (isMissionArenaFeature(feature)) {
+    const role = missionArenaFeatureRole(feature);
     return {
       color: missionArenaFeatureColor(feature),
-      label: feature.properties.featureRole === "team_state" ? (feature.properties.teamLabel ?? "TÝM") : (feature.properties.runtimeMode === "live" ? "LIVE" : "EVENT"),
+      label: role === "task_state"
+        ? missionArenaTaskRoleLabel(feature)
+        : role === "team_state"
+          ? (missionArenaTeamLabel(feature) ?? "TÝM")
+          : (feature.properties.runtimeMode === "live" ? "LIVE" : "EVENT"),
       tone: "info"
     };
   }
@@ -2291,17 +2317,24 @@ function formatTrackSelectionSubtitle(object: CopObject): string {
 }
 
 function formatSituationFeatureTitle(feature: SituationFeature): string {
+  if (isMissionArenaFeature(feature)) {
+    return missionArenaDetailTitle(feature);
+  }
   return feature.properties.headline ?? feature.properties.label;
 }
 
 function formatSituationFeatureSubtitle(feature: SituationFeature): string {
   const status = situationFeatureStatus(feature);
   if (isMissionArenaFeature(feature)) {
+    const role = missionArenaFeatureRole(feature);
+    const task = missionArenaPrimaryTask(feature);
     return [
-      feature.properties.featureRole === "team_state" ? "Stav týmu" : "Stav mise",
+      role === "task_state" ? "Úkol role" : role === "team_state" ? "Stav týmu" : "Stav mise",
       feature.properties.phase,
       feature.properties.runtimeMode,
-      feature.properties.teamLabel,
+      missionArenaTeamLabel(feature),
+      role === "task_state" ? task?.status : undefined,
+      role === "task_state" ? task?.priority : undefined,
       typeof feature.properties.aggregate === "number" ? `${Math.round(feature.properties.aggregate)} bodů` : undefined
     ].filter(Boolean).join(" · ");
   }
@@ -2402,6 +2435,110 @@ function isMissionArenaFeature(feature: SituationFeature): boolean {
     || feature.properties.providerId === "csm.mission-arena";
 }
 
+function missionArenaFeatureRole(feature: SituationFeature): "mission_state" | "task_state" | "team_state" {
+  return feature.properties.featureRole === "team_state" || feature.properties.featureRole === "task_state"
+    ? feature.properties.featureRole
+    : "mission_state";
+}
+
+function missionArenaMapLabel(feature: SituationFeature): string {
+  const role = missionArenaFeatureRole(feature);
+  if (role === "task_state") {
+    return [
+      missionArenaTeamShortLabel(feature),
+      missionArenaTaskRoleLabel(feature)
+    ].filter(Boolean).join(" ");
+  }
+  if (role === "team_state") {
+    return [
+      missionArenaTeamLabel(feature) ?? "Tým",
+      typeof feature.properties.aggregate === "number" ? Math.round(feature.properties.aggregate).toString() : undefined
+    ].filter(Boolean).join(" ");
+  }
+  return "Mise";
+}
+
+function missionArenaDetailTitle(feature: SituationFeature): string {
+  const role = missionArenaFeatureRole(feature);
+  if (role === "task_state") {
+    const task = missionArenaPrimaryTask(feature);
+    return ["Úkol", missionArenaTeamLabel(feature), missionArenaRoleDisplayName(stringProperty(task?.toRole))].filter(Boolean).join(" · ");
+  }
+  if (role === "team_state") {
+    return [missionArenaTeamLabel(feature) ?? "Tým", feature.properties.missionId].filter(Boolean).join(" · ");
+  }
+  return feature.properties.label;
+}
+
+function missionArenaPrimaryTask(feature: SituationFeature): Record<string, unknown> | undefined {
+  return Array.isArray(feature.properties.tasking) ? feature.properties.tasking.find(isRecord) : undefined;
+}
+
+function missionArenaTaskRoleLabel(feature: SituationFeature): string {
+  const task = missionArenaPrimaryTask(feature);
+  return missionArenaRoleAbbreviation(stringProperty(task?.toRole)) ?? "ÚK";
+}
+
+function missionArenaTeamLabel(feature: SituationFeature): string | undefined {
+  return feature.properties.teamLabel ?? missionArenaTeamIdLabel(feature.properties.teamId);
+}
+
+function missionArenaTeamShortLabel(feature: SituationFeature): string | undefined {
+  const teamId = feature.properties.teamId?.trim().toLowerCase();
+  if (teamId === "alfa" || teamId === "blue" || teamId === "modri") {
+    return "M";
+  }
+  if (teamId === "bravo" || teamId === "red" || teamId === "cerveni") {
+    return "Č";
+  }
+  return missionArenaTeamLabel(feature)?.slice(0, 2).toUpperCase();
+}
+
+function missionArenaTeamIdLabel(teamId: string | undefined): string | undefined {
+  const normalized = teamId?.trim().toLowerCase();
+  if (normalized === "alfa" || normalized === "blue" || normalized === "modri") {
+    return "Modří";
+  }
+  if (normalized === "bravo" || normalized === "red" || normalized === "cerveni") {
+    return "Červení";
+  }
+  return teamId;
+}
+
+function missionArenaRoleAbbreviation(role: string | undefined): string | undefined {
+  const normalized = role?.trim().toLowerCase();
+  if (normalized === "commander") {
+    return "VEL";
+  }
+  if (normalized === "staff") {
+    return "ŠTB";
+  }
+  if (normalized === "signals") {
+    return "SPO";
+  }
+  if (normalized === "cyber") {
+    return "KYB";
+  }
+  return normalized ? normalized.slice(0, 3).toUpperCase() : undefined;
+}
+
+function missionArenaRoleDisplayName(role: string | undefined): string | undefined {
+  const normalized = role?.trim().toLowerCase();
+  if (normalized === "commander") {
+    return "velitel";
+  }
+  if (normalized === "staff") {
+    return "štáb";
+  }
+  if (normalized === "signals") {
+    return "spojení";
+  }
+  if (normalized === "cyber") {
+    return "kyber";
+  }
+  return role;
+}
+
 function missionArenaFeatureColor(feature: SituationFeature): string {
   const teamColor = stringProperty(feature.properties.teamColor);
   if (teamColor && /^#[0-9a-fA-F]{6}$/.test(teamColor)) {
@@ -2414,7 +2551,8 @@ function missionArenaFeatureColor(feature: SituationFeature): string {
   if (teamId === "bravo" || teamId === "red" || teamId === "cerveni") {
     return "#f87171";
   }
-  return feature.properties.featureRole === "team_state" ? "#a78bfa" : "#c7f77f";
+  const role = missionArenaFeatureRole(feature);
+  return role === "task_state" ? "#f59e0b" : role === "team_state" ? "#a78bfa" : "#c7f77f";
 }
 
 function normalizeTakAffiliation(value: unknown): "friend" | "hostile" | "neutral" | "unknown" {

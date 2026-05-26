@@ -265,9 +265,12 @@ export interface SituationFeatureProperties {
   modelVersion?: string;
   basis?: string[];
   notices?: string[];
+  animation?: Record<string, unknown>;
   aggregate?: number;
   aggregateDelta?: number;
-  featureRole?: "mission_state" | "team_state" | string;
+  eventLog?: Array<Record<string, unknown>>;
+  featureRole?: "mission_state" | "task_state" | "team_state" | string;
+  gameState?: Record<string, unknown>;
   integrationMode?: string;
   missionId?: string;
   missionPackId?: string;
@@ -296,6 +299,7 @@ export interface SituationFeatureProperties {
   story?: Record<string, unknown>;
   summary?: string;
   tags?: Record<string, unknown>;
+  tasking?: Array<Record<string, unknown>>;
   teamColor?: string;
   teamId?: string;
   teamLabel?: string;

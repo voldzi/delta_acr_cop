@@ -39,13 +39,14 @@ describe("MissionArenaSourceAdapter", () => {
         sourceType: "MISSION_ARENA_PRESENTATION"
       },
       summary: {
-        featureCount: 2,
+        featureCount: 3,
         missionStateCount: 1,
+        taskStateCount: 1,
         teamStateCount: 1
       },
       type: "FeatureCollection"
     });
-    expect(result.features.map((feature) => feature.properties.featureRole)).toEqual(["mission_state", "team_state"]);
+    expect(result.features.map((feature) => feature.properties.featureRole)).toEqual(["mission_state", "team_state", "task_state"]);
     expect(result.features[0]?.properties).toMatchObject({
       featureRole: "mission_state",
       label: "Datové domény N/V/T",
@@ -72,6 +73,24 @@ describe("MissionArenaSourceAdapter", () => {
       aggregate: 54,
       featureRole: "team_state",
       teamColor: "#9be564",
+      teamId: "alfa",
+      teamLabel: "Modří"
+    });
+    expect(result.features[2]?.properties).toMatchObject({
+      animation: {
+        state: "active"
+      },
+      featureRole: "task_state",
+      gameState: {
+        pressure: 42
+      },
+      tasking: [
+        {
+          label: "Ověřit provider kontrakt.",
+          priority: "urgent",
+          toRole: "signals"
+        }
+      ],
       teamId: "alfa",
       teamLabel: "Modří"
     });
@@ -173,6 +192,43 @@ function sampleMissionArenaExport() {
           layerId: "presentation.mission_arena",
           teamId: "outside",
           teamLabel: "Mimo výřez"
+        },
+        type: "Feature"
+      },
+      {
+        geometry: {
+          coordinates: [15.1, 49.88],
+          type: "Point"
+        },
+        id: "task:alfa:signals",
+        properties: {
+          animation: {
+            state: "active"
+          },
+          featureRole: "task_state",
+          gameState: {
+            pressure: 42
+          },
+          label: "Modří: Ověřit provider kontrakt.",
+          layerId: "presentation.mission_arena",
+          missionId: "domain-routing",
+          tasking: [
+            {
+              label: "Ověřit provider kontrakt.",
+              priority: "urgent",
+              teamId: "alfa",
+              toRole: "signals"
+            }
+          ],
+          teamId: "alfa",
+          teamScores: [
+            {
+              aggregate: 54,
+              color: "#9be564",
+              label: "Modří",
+              teamId: "alfa"
+            }
+          ]
         },
         type: "Feature"
       }

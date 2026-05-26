@@ -2,7 +2,7 @@ import type { SourceSystem } from "@cop/canonical-model";
 import type { SourceHealthOverride } from "./types.js";
 
 export type MissionArenaLayerId = "presentation.mission_arena";
-export type MissionArenaFeatureRole = "mission_state" | "team_state";
+export type MissionArenaFeatureRole = "mission_state" | "task_state" | "team_state";
 
 export interface MissionArenaSourceConfig {
   baseUrl: string;
@@ -43,12 +43,15 @@ export type MissionArenaGeometry =
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface MissionArenaFeatureProperties {
+  animation?: Record<string, unknown>;
   aggregate?: number;
   aggregateDelta?: number;
   category: "mission_arena";
   confidence?: number;
+  eventLog?: Array<Record<string, unknown>>;
   featureId: string;
   featureRole: MissionArenaFeatureRole;
+  gameState?: Record<string, unknown>;
   generatedAt?: string;
   integrationMode?: string;
   label: string;
@@ -68,6 +71,7 @@ export interface MissionArenaFeatureProperties {
   story?: Record<string, unknown>;
   summary?: string;
   synthetic?: boolean;
+  tasking?: Array<Record<string, unknown>>;
   teamColor?: string;
   teamId?: string;
   teamLabel?: string;
@@ -103,6 +107,7 @@ export interface MissionArenaFeatureCollection {
     missionStateCount: number;
     sourceCount: number;
     staleFeatureCount: number;
+    taskStateCount: number;
     teamStateCount: number;
     warningCount: number;
   };
@@ -238,6 +243,7 @@ export class MissionArenaSourceAdapter implements MissionArenaSource {
         missionStateCount: features.filter((feature) => feature.properties.featureRole === "mission_state").length,
         sourceCount: 1,
         staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
+        taskStateCount: features.filter((feature) => feature.properties.featureRole === "task_state").length,
         teamStateCount: features.filter((feature) => feature.properties.featureRole === "team_state").length,
         warningCount: warnings.length
       },
@@ -283,7 +289,7 @@ export function buildMissionArenaHealth(response: MissionArenaFeatureCollection 
 
   const warningCount = response.warnings.length || response.summary.warningCount;
   return {
-    detail: `mission states ${response.summary.missionStateCount}, team states ${response.summary.teamStateCount}, warnings ${warningCount}`,
+    detail: `mission states ${response.summary.missionStateCount}, team states ${response.summary.teamStateCount}, tasks ${response.summary.taskStateCount}, warnings ${warningCount}`,
     evaluatedAt: requestNow.toISOString(),
     generatedAt: response.generatedAt,
     health: warningCount > 0 ? "DEGRADED" : response.summary.staleFeatureCount > 0 ? "STALE" : "ONLINE",
@@ -294,6 +300,7 @@ export function buildMissionArenaHealth(response: MissionArenaFeatureCollection 
       missionStateCount: response.summary.missionStateCount,
       sourceCount: response.summary.sourceCount,
       staleFeatureCount: response.summary.staleFeatureCount,
+      taskStateCount: response.summary.taskStateCount,
       teamStateCount: response.summary.teamStateCount,
       warningCount
     },
@@ -329,6 +336,7 @@ export function emptyMissionArenaFeatureCollection(query: MissionArenaFeatureQue
       missionStateCount: 0,
       sourceCount: 0,
       staleFeatureCount: 0,
+      taskStateCount: 0,
       teamStateCount: 0,
       warningCount: warnings.length
     },
@@ -437,9 +445,12 @@ function normalizeMissionArenaFeature(value: unknown): MissionArenaFeature[] {
     layerId,
     providerId: "csm.mission-arena",
     sourceId: "mission_arena_runtime",
+    ...(isRecord(rawProperties.animation) ? { animation: rawProperties.animation } : {}),
     ...(numberProperty(rawProperties.aggregate) !== undefined ? { aggregate: numberProperty(rawProperties.aggregate) } : {}),
     ...(numberProperty(rawProperties.aggregateDelta) !== undefined ? { aggregateDelta: numberProperty(rawProperties.aggregateDelta) } : {}),
     ...(numberProperty(rawProperties.confidence) !== undefined ? { confidence: numberProperty(rawProperties.confidence) } : {}),
+    ...(normalizeRecordArray(rawProperties.eventLog) ? { eventLog: normalizeRecordArray(rawProperties.eventLog) } : {}),
+    ...(isRecord(rawProperties.gameState) ? { gameState: rawProperties.gameState } : {}),
     ...(stringProperty(rawProperties.generatedAt) ? { generatedAt: stringProperty(rawProperties.generatedAt) } : {}),
     ...(stringProperty(rawProperties.integrationMode) ? { integrationMode: stringProperty(rawProperties.integrationMode) } : {}),
     ...(missionId ? { missionId } : {}),
@@ -454,9 +465,10 @@ function normalizeMissionArenaFeature(value: unknown): MissionArenaFeature[] {
     ...(isRecord(rawProperties.story) ? { story: rawProperties.story } : {}),
     ...(stringProperty(rawProperties.summary) ? { summary: stringProperty(rawProperties.summary) } : {}),
     ...(typeof rawProperties.synthetic === "boolean" ? { synthetic: rawProperties.synthetic } : {}),
+    ...(normalizeRecordArray(rawProperties.tasking) ? { tasking: normalizeRecordArray(rawProperties.tasking) } : {}),
     ...(stringProperty(rawProperties.teamColor) ? { teamColor: stringProperty(rawProperties.teamColor) } : {}),
     ...(teamId ? { teamId } : {}),
-    ...(stringProperty(rawProperties.teamLabel) ? { teamLabel: stringProperty(rawProperties.teamLabel) } : {}),
+    ...(deriveTeamLabel(rawProperties, teamId) ? { teamLabel: deriveTeamLabel(rawProperties, teamId) } : {}),
     ...(normalizeTeamScores(rawProperties.teamScores) ? { teamScores: normalizeTeamScores(rawProperties.teamScores) } : {}),
     ...(numberProperty(rawProperties.totalVotes) !== undefined ? { totalVotes: numberProperty(rawProperties.totalVotes) } : {}),
     ...(numberProperty(rawProperties.voteCount) !== undefined ? { voteCount: numberProperty(rawProperties.voteCount) } : {})
@@ -470,7 +482,39 @@ function normalizeMissionArenaFeature(value: unknown): MissionArenaFeature[] {
 }
 
 function normalizeFeatureRole(value: unknown): MissionArenaFeatureRole {
-  return value === "team_state" ? "team_state" : "mission_state";
+  return value === "team_state" || value === "task_state" ? value : "mission_state";
+}
+
+function normalizeRecordArray(value: unknown): Array<Record<string, unknown>> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const records = value.filter(isRecord);
+  return records.length > 0 ? records : undefined;
+}
+
+function deriveTeamLabel(rawProperties: Record<string, unknown>, teamId: string | undefined): string | undefined {
+  const direct = stringProperty(rawProperties.teamLabel);
+  if (direct) {
+    return direct;
+  }
+  const teamScores = normalizeTeamScores(rawProperties.teamScores);
+  const scoreLabel = teamScores?.find((team) => team.teamId === teamId)?.label;
+  if (scoreLabel) {
+    return scoreLabel;
+  }
+  return teamIdToLabel(teamId);
+}
+
+function teamIdToLabel(teamId: string | undefined): string | undefined {
+  const normalized = teamId?.trim().toLowerCase();
+  if (normalized === "alfa" || normalized === "blue" || normalized === "modri") {
+    return "Modří";
+  }
+  if (normalized === "bravo" || normalized === "red" || normalized === "cerveni") {
+    return "Červení";
+  }
+  return teamId;
 }
 
 function normalizeTeamScores(value: unknown): MissionArenaTeamScore[] | undefined {
