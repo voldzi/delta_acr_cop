@@ -1028,8 +1028,14 @@ export interface AoiRule {
   lat: number;
   lon: number;
   name: string;
+  polygon?: AoiPolygon;
   radiusKm: number;
   severity?: CopAlertSeverity;
+}
+
+export interface AoiPolygon {
+  type: "Polygon";
+  coordinates: Array<Array<[number, number]>>;
 }
 
 export interface ServerUserProfile {

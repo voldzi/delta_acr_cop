@@ -3372,6 +3372,9 @@ h1 {
   left: 50%;
   top: 70px;
   z-index: 6;
+  display: grid;
+  gap: 6px;
+  min-width: min(420px, calc(100% - 34px));
   padding: 9px 12px;
   border: 1px solid rgba(200, 240, 141, 0.68);
   background: rgba(8, 13, 18, 0.88);
@@ -3379,7 +3382,34 @@ h1 {
   font-size: 12px;
   font-weight: 900;
   transform: translateX(-50%);
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+.map-zone-create-hint span {
+  color: #d8e5ee;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.map-zone-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.map-zone-create-actions button {
+  min-height: 30px;
+  border: 1px solid rgba(140, 182, 216, 0.5);
+  background: rgba(21, 31, 40, 0.92);
+  color: #edf3f8;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.map-zone-create-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .legend-item {

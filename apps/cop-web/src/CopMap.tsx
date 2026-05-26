@@ -25,6 +25,7 @@ const trackPredictionSourceId = "cop-track-prediction";
 const userLocationSourceId = "cop-user-location";
 const userAlertRadiusSourceId = "cop-user-alert-radius";
 const aoiRuleSourceId = "cop-aoi-rules";
+const aoiDraftSourceId = "cop-aoi-draft";
 const alertAreaSourceId = "cop-alert-areas";
 const situationSourceId = "cop-situation-context";
 const trackHistoryLayerId = "cop-track-history-line";
@@ -33,6 +34,9 @@ const userAlertRadiusFillLayerId = "cop-user-alert-radius-fill";
 const userAlertRadiusLineLayerId = "cop-user-alert-radius-line";
 const aoiRuleFillLayerId = "cop-aoi-rule-fill";
 const aoiRuleLineLayerId = "cop-aoi-rule-line";
+const aoiDraftFillLayerId = "cop-aoi-draft-fill";
+const aoiDraftLineLayerId = "cop-aoi-draft-line";
+const aoiDraftPointLayerId = "cop-aoi-draft-point";
 const alertAreaFillLayerId = "cop-alert-area-fill";
 const alertAreaLineLayerId = "cop-alert-area-line";
 const situationFillLayerId = "cop-situation-fill";
@@ -144,6 +148,18 @@ export interface AoiRuleFeatureCollection {
   }>;
 }
 
+export interface AoiDraftFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry:
+      | { type: "LineString"; coordinates: Array<[number, number]> }
+      | { type: "Point"; coordinates: [number, number] }
+      | { type: "Polygon"; coordinates: Array<Array<[number, number]>> };
+    properties: { index?: number; kind: "area" | "line" | "point" };
+  }>;
+}
+
 export interface SituationContextFeatureCollection {
   type: "FeatureCollection";
   features: Array<{
@@ -219,7 +235,8 @@ interface CopMapProps {
   showAlertAreas: boolean;
   showProximityAlertRadius: boolean;
   zoneCreationActive?: boolean;
-  onCreateZoneAt?: (center: { lat: number; lon: number }) => void;
+  onCancelZoneCreation?: () => void;
+  onCreateZonePolygon?: (points: Array<{ lat: number; lon: number }>) => void;
   onPickReportLocation?: (center: { lat: number; lon: number }) => void;
   userLocation: UserLocation | null;
 }
@@ -266,8 +283,9 @@ export function CopMap({
   onSelectSituationFeature,
   onStartReport,
   onAutoFitChange,
+  onCancelZoneCreation,
   onClearSelection,
-  onCreateZoneAt,
+  onCreateZonePolygon,
   onPickReportLocation,
   onRequestUserLocation,
   onViewChange,
@@ -285,8 +303,9 @@ export function CopMap({
   const onSelectObjectRef = React.useRef(onSelectObject);
   const onSelectSituationFeatureRef = React.useRef(onSelectSituationFeature);
   const onAutoFitChangeRef = React.useRef(onAutoFitChange);
+  const onCancelZoneCreationRef = React.useRef(onCancelZoneCreation);
   const onClearSelectionRef = React.useRef(onClearSelection);
-  const onCreateZoneAtRef = React.useRef(onCreateZoneAt);
+  const onCreateZonePolygonRef = React.useRef(onCreateZonePolygon);
   const onPickReportLocationRef = React.useRef(onPickReportLocation);
   const onViewChangeRef = React.useRef(onViewChange);
   const reportLocationPickActiveRef = React.useRef(reportLocationPickActive);
@@ -299,6 +318,7 @@ export function CopMap({
   const [clusterInfo, setClusterInfo] = React.useState<ClusterInfo | null>(null);
   const [mapFullscreen, setMapFullscreen] = React.useState(false);
   const [hoveredObjectId, setHoveredObjectId] = React.useState<string | undefined>();
+  const [zoneDraftPoints, setZoneDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
 
   const selectedId = selectedObjectId;
   const selectedObject = React.useMemo(
@@ -349,6 +369,7 @@ export function CopMap({
     [alertRadiusKm, hasProximityAlerts, showProximityAlertRadius, userLocation]
   );
   const aoiRuleFeatureCollection = React.useMemo(() => aoiRulesToFeatureCollection(aoiRules), [aoiRules]);
+  const aoiDraftFeatureCollection = React.useMemo(() => zoneDraftToFeatureCollection(zoneDraftPoints), [zoneDraftPoints]);
   const alertAreaFeatureCollection = React.useMemo(
     () => (showAlertAreas ? alertAreasToFeatureCollection(alerts) : emptyPolygonFeatureCollection()),
     [alerts, showAlertAreas]
@@ -368,8 +389,9 @@ export function CopMap({
   onSelectObjectRef.current = onSelectObject;
   onSelectSituationFeatureRef.current = onSelectSituationFeature;
   onAutoFitChangeRef.current = onAutoFitChange;
+  onCancelZoneCreationRef.current = onCancelZoneCreation;
   onClearSelectionRef.current = onClearSelection;
-  onCreateZoneAtRef.current = onCreateZoneAt;
+  onCreateZonePolygonRef.current = onCreateZonePolygon;
   onPickReportLocationRef.current = onPickReportLocation;
   onViewChangeRef.current = onViewChange;
   reportLocationPickActiveRef.current = reportLocationPickActive;
@@ -444,6 +466,10 @@ export function CopMap({
           type: "geojson",
           data: emptyPolygonFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
         });
+        map.addSource(aoiDraftSourceId, {
+          type: "geojson",
+          data: emptyAoiDraftFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
         map.addSource(alertAreaSourceId, {
           type: "geojson",
           data: emptyPolygonFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
@@ -508,6 +534,47 @@ export function CopMap({
             "line-dasharray": [3, 2],
             "line-opacity": 0.58,
             "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1, 12, 1.7, 16, 2.3]
+          }
+        });
+
+        map.addLayer({
+          id: aoiDraftFillLayerId,
+          type: "fill",
+          source: aoiDraftSourceId,
+          filter: ["==", ["geometry-type"], "Polygon"],
+          paint: {
+            "fill-color": "#c8f08d",
+            "fill-opacity": 0.16
+          }
+        });
+
+        map.addLayer({
+          id: aoiDraftLineLayerId,
+          type: "line",
+          source: aoiDraftSourceId,
+          filter: ["in", ["geometry-type"], ["literal", ["LineString", "Polygon"]]],
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": "#c8f08d",
+            "line-dasharray": [2.5, 1.2],
+            "line-opacity": 0.9,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1.5, 12, 2.6, 16, 3.4]
+          }
+        });
+
+        map.addLayer({
+          id: aoiDraftPointLayerId,
+          type: "circle",
+          source: aoiDraftSourceId,
+          filter: ["==", ["geometry-type"], "Point"],
+          paint: {
+            "circle-color": "#c8f08d",
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 3.5, 12, 5.2, 16, 7],
+            "circle-stroke-color": "#061019",
+            "circle-stroke-width": 2
           }
         });
 
@@ -1175,6 +1242,10 @@ export function CopMap({
             onPickReportLocationRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
             return;
           }
+          if (zoneCreationActiveRef.current) {
+            setZoneDraftPoints((current) => [...current, { lat: event.lngLat.lat, lon: event.lngLat.lng }].slice(0, 80));
+            return;
+          }
           const clickedFeatures = map.queryRenderedFeatures(event.point, {
             layers: [
               trackSymbolLayerId,
@@ -1194,10 +1265,6 @@ export function CopMap({
             ]
           });
           if (clickedFeatures.length > 0) {
-            return;
-          }
-          if (zoneCreationActiveRef.current && onCreateZoneAtRef.current) {
-            onCreateZoneAtRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
             return;
           }
           onClearSelectionRef.current?.();
@@ -1352,6 +1419,19 @@ export function CopMap({
   }, [aoiRuleFeatureCollection, mapReady]);
 
   React.useEffect(() => {
+    const source = mapRef.current?.getSource(aoiDraftSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(aoiDraftFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [aoiDraftFeatureCollection, mapReady]);
+
+  React.useEffect(() => {
+    if (!zoneCreationActive) {
+      setZoneDraftPoints([]);
+    }
+  }, [zoneCreationActive]);
+
+  React.useEffect(() => {
     const source = mapRef.current?.getSource(alertAreaSourceId);
     if (mapReady && source && "setData" in source) {
       (source as GeoJSONSource).setData(alertAreaFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
@@ -1467,12 +1547,39 @@ export function CopMap({
     return () => window.cancelAnimationFrame(frame);
   }, [mapFullscreen]);
 
+  const finishZoneDraft = React.useCallback(() => {
+    if (zoneDraftPoints.length < 3) {
+      return;
+    }
+    onCreateZonePolygonRef.current?.(zoneDraftPoints);
+    setZoneDraftPoints([]);
+  }, [zoneDraftPoints]);
+
+  const removeLastZoneDraftPoint = React.useCallback(() => {
+    setZoneDraftPoints((current) => current.slice(0, -1));
+  }, []);
+
+  const cancelZoneDraft = React.useCallback(() => {
+    setZoneDraftPoints([]);
+    onCancelZoneCreationRef.current?.();
+  }, []);
+
   const missingPositionCount = objects.length - positionedObjects.length;
 
   return (
     <div className={`map-container ${mapFullscreen ? "fullscreen" : ""}`}>
       <div className="map-canvas" ref={containerRef} aria-label="Georeferencovaná situační mapa" />
-      {zoneCreationActive ? <div className="map-zone-create-hint">Kliknutím do mapy vytvoříte novou uživatelskou zónu</div> : null}
+      {zoneCreationActive ? (
+        <div className="map-zone-create-hint">
+          <strong>Kreslení zóny</strong>
+          <span>{zoneDraftPoints.length < 3 ? `Přidejte alespoň 3 body (${zoneDraftPoints.length}/3).` : `${zoneDraftPoints.length} bodů připraveno.`}</span>
+          <div className="map-zone-create-actions">
+            <button disabled={zoneDraftPoints.length < 3} onClick={finishZoneDraft} type="button">Dokončit polygon</button>
+            <button disabled={zoneDraftPoints.length === 0} onClick={removeLastZoneDraftPoint} type="button">Zpět bod</button>
+            <button onClick={cancelZoneDraft} type="button">Zrušit</button>
+          </div>
+        </div>
+      ) : null}
       {reportLocationPickActive ? <div className="map-zone-create-hint">Kliknutím do mapy určíte polohu hlášení</div> : null}
       <div className="map-overlay-stack">
         <div
@@ -1719,7 +1826,15 @@ export function aoiRulesToFeatureCollection(aoiRules: AoiRule[]): AoiRuleFeature
   return {
     type: "FeatureCollection",
     features: aoiRules.flatMap((rule) => {
-      if (!rule.enabled || !Number.isFinite(rule.lat) || !Number.isFinite(rule.lon) || !Number.isFinite(rule.radiusKm) || rule.radiusKm <= 0) {
+      if (!rule.enabled || !Number.isFinite(rule.lat) || !Number.isFinite(rule.lon) || !Number.isFinite(rule.radiusKm)) {
+        return [];
+      }
+      const polygonCoordinates = isValidAoiPolygon(rule.polygon)
+        ? rule.polygon.coordinates
+        : rule.radiusKm > 0
+          ? [buildGeodesicCircle(rule, Math.max(0.2, rule.radiusKm))]
+          : null;
+      if (!polygonCoordinates) {
         return [];
       }
       return [
@@ -1727,7 +1842,7 @@ export function aoiRulesToFeatureCollection(aoiRules: AoiRule[]): AoiRuleFeature
           type: "Feature" as const,
           geometry: {
             type: "Polygon" as const,
-            coordinates: [buildGeodesicCircle(rule, Math.max(0.2, rule.radiusKm))]
+            coordinates: polygonCoordinates
           },
           properties: {
             enabled: true,
@@ -1741,6 +1856,60 @@ export function aoiRulesToFeatureCollection(aoiRules: AoiRule[]): AoiRuleFeature
       ];
     })
   };
+}
+
+function zoneDraftToFeatureCollection(points: Array<{ lat: number; lon: number }>): AoiDraftFeatureCollection {
+  const coordinates = points.map((point): [number, number] => [point.lon, point.lat]);
+  const features: AoiDraftFeatureCollection["features"] = [];
+  if (coordinates.length >= 2) {
+    const first = coordinates[0];
+    if (!first) {
+      return { type: "FeatureCollection", features };
+    }
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: coordinates.length >= 3 ? [...coordinates, first] : coordinates },
+      properties: { kind: "line" }
+    });
+  }
+  if (coordinates.length >= 3) {
+    const first = coordinates[0];
+    if (!first) {
+      return { type: "FeatureCollection", features };
+    }
+    features.push({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[...coordinates, first]] },
+      properties: { kind: "area" }
+    });
+  }
+  coordinates.forEach((coordinate, index) => {
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: coordinate },
+      properties: { index: index + 1, kind: "point" }
+    });
+  });
+  return { type: "FeatureCollection", features };
+}
+
+function emptyAoiDraftFeatureCollection(): AoiDraftFeatureCollection {
+  return { type: "FeatureCollection", features: [] };
+}
+
+function isValidAoiPolygon(polygon: AoiRule["polygon"]): polygon is NonNullable<AoiRule["polygon"]> {
+  const ring = polygon?.coordinates?.[0];
+  if (!ring || ring.length < 4) {
+    return false;
+  }
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (!first || !last) {
+    return false;
+  }
+  return ring.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat))
+    && first[0] === last[0]
+    && first[1] === last[1];
 }
 
 function normalizeZoneColor(value: string | undefined): string {

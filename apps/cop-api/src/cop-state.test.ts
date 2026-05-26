@@ -457,6 +457,72 @@ describe("COP state temporal history", () => {
     });
   });
 
+  it("derives AOI entry alerts from polygon user profile rules", async () => {
+    const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
+
+    const preferencesResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "PUT",
+      payload: {
+        alertPreferences: {
+          aoiRules: [
+            {
+              affiliationScope: "hostile",
+              enabled: true,
+              id: "polygon-aoi",
+              lat: 50.045,
+              lon: 14.045,
+              name: "Polygon AOI",
+              polygon: {
+                type: "Polygon",
+                coordinates: [
+                  [
+                    [14.03, 50.03],
+                    [14.06, 50.03],
+                    [14.06, 50.06],
+                    [14.03, 50.06],
+                    [14.03, 50.03]
+                  ]
+                ]
+              },
+              radiusKm: 1,
+              severity: "warning"
+            }
+          ]
+        },
+        preferences: {}
+      },
+      url: "/api/v1/me/preferences"
+    });
+    expect(preferencesResponse.statusCode).toBe(200);
+
+    await ingestTrack(app, "00000000-0000-4000-8000-000000000013", "2026-05-19T08:02:00Z", 50.05, 14.05, {
+      affiliation: "HOSTILE"
+    });
+
+    const alertsResponse = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token"
+      },
+      method: "GET",
+      url: "/api/v1/cop/alerts"
+    });
+
+    expect(alertsResponse.statusCode).toBe(200);
+    const alert = (alertsResponse.json() as { items: Array<{ evidence?: Record<string, unknown>; objectId?: string; type: string }> }).items.find(
+      (item) => item.type === "AOI_ENTRY"
+    );
+    expect(alert).toMatchObject({
+      objectId: "AIR_SIM_UAV-0001"
+    });
+    expect(alert?.evidence).toMatchObject({
+      aoiName: "Polygon AOI",
+      geometryType: "Polygon"
+    });
+  });
+
   it("returns a native mobile bootstrap payload with profile, config and offline snapshot", async () => {
     const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
 

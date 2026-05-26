@@ -290,6 +290,7 @@ function normalizeAoiRule(value: unknown): AoiRule[] {
   const lon = finiteNumber(value.lon, -180, 180);
   const radiusKm = finiteNumber(value.radiusKm, 0.2, 500);
   const fillOpacity = finiteNumber(value.fillOpacity, 0.02, 0.35);
+  const polygon = normalizeAoiPolygon(value.polygon);
   if (!id || !name || lat === undefined || lon === undefined || radiusKm === undefined) {
     return [];
   }
@@ -303,10 +304,50 @@ function normalizeAoiRule(value: unknown): AoiRule[] {
       lat,
       lon,
       name,
+      ...(polygon ? { polygon } : {}),
       radiusKm,
       ...(isCopAlertSeverity(value.severity) ? { severity: value.severity } : {})
     }
   ];
+}
+
+function normalizeAoiPolygon(value: unknown): AoiRule["polygon"] | undefined {
+  if (!isRecord(value) || value.type !== "Polygon" || !Array.isArray(value.coordinates)) {
+    return undefined;
+  }
+  const rings = value.coordinates.flatMap((ring) => normalizeAoiPolygonRing(ring));
+  return rings.length > 0 ? { type: "Polygon", coordinates: rings.slice(0, 4) } : undefined;
+}
+
+function normalizeAoiPolygonRing(value: unknown): Array<Array<[number, number]>> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const points = value.flatMap((coordinate): Array<[number, number]> => {
+    if (!Array.isArray(coordinate) || coordinate.length < 2) {
+      return [];
+    }
+    const lon = finiteNumber(coordinate[0], -180, 180);
+    const lat = finiteNumber(coordinate[1], -90, 90);
+    return lon === undefined || lat === undefined ? [] : [[lon, lat]];
+  }).slice(0, 160);
+  if (points.length < 3) {
+    return [];
+  }
+  const closed = closeAoiPolygonRing(points);
+  return closed.length >= 4 ? [closed] : [];
+}
+
+function closeAoiPolygonRing(points: Array<[number, number]>): Array<[number, number]> {
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (!first || !last) {
+    return points;
+  }
+  if (first[0] === last[0] && first[1] === last[1]) {
+    return points;
+  }
+  return [...points, first];
 }
 
 function isHexColor(value: unknown): value is string {

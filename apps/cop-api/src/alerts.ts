@@ -18,8 +18,14 @@ export interface AoiRule {
   lat: number;
   lon: number;
   name: string;
+  polygon?: AoiPolygon;
   radiusKm: number;
   severity?: CopAlertSeverity;
+}
+
+export interface AoiPolygon {
+  type: "Polygon";
+  coordinates: Array<Array<[number, number]>>;
 }
 
 export interface CopAlert {
@@ -83,23 +89,30 @@ function buildAoiAlerts(
       if (!matchesAoiAffiliationScope(object.affiliation, rule.affiliationScope ?? "all")) {
         return [];
       }
+      const objectPosition = { lat: object.position!.lat, lon: object.position!.lon };
       const distanceKm = distanceBetweenKm(
-        { lat: object.position!.lat, lon: object.position!.lon },
+        objectPosition,
         { lat: rule.lat, lon: rule.lon }
       );
-      if (distanceKm > rule.radiusKm) {
+      const polygon = isValidAoiPolygon(rule.polygon) ? rule.polygon : undefined;
+      const polygonMatch = polygon ? pointInAoiPolygon(objectPosition, polygon) : false;
+      const circularMatch = distanceKm <= rule.radiusKm;
+      if (polygon ? !polygonMatch : !circularMatch) {
         return [];
       }
       return [
         withAcknowledgement(
           {
             alertId: alertId("AOI_ENTRY", object.objectId, rule.id),
-            detail: `${object.objectId} je v oblasti ${rule.name} (${distanceKm.toFixed(1)} km od středu).`,
+            detail: polygonMatch
+              ? `${object.objectId} je v polygonové oblasti ${rule.name}.`
+              : `${object.objectId} je v oblasti ${rule.name} (${distanceKm.toFixed(1)} km od středu).`,
             evidence: {
               affiliationScope: rule.affiliationScope ?? "all",
               aoiName: rule.name,
               aoiRuleId: rule.id,
               distanceKm: Number(distanceKm.toFixed(3)),
+              geometryType: polygonMatch ? "Polygon" : "Circle",
               radiusKm: rule.radiusKm
             },
             map: { lat: rule.lat, lon: rule.lon, radiusKm: rule.radiusKm },
@@ -282,7 +295,52 @@ function isActiveAoiRule(rule: AoiRule): boolean {
     && Number.isFinite(rule.lat)
     && Number.isFinite(rule.lon)
     && Number.isFinite(rule.radiusKm)
-    && rule.radiusKm > 0;
+    && (rule.radiusKm > 0 || isValidAoiPolygon(rule.polygon));
+}
+
+function isValidAoiPolygon(polygon: AoiPolygon | undefined): polygon is AoiPolygon {
+  const ring = polygon?.coordinates?.[0];
+  if (!ring || ring.length < 4) {
+    return false;
+  }
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (!first || !last) {
+    return false;
+  }
+  return ring.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat))
+    && first[0] === last[0]
+    && first[1] === last[1];
+}
+
+function pointInAoiPolygon(point: { lat: number; lon: number }, polygon: AoiPolygon): boolean {
+  const [outerRing, ...holes] = polygon.coordinates;
+  if (!outerRing) {
+    return false;
+  }
+  if (!pointInRing(point, outerRing)) {
+    return false;
+  }
+  return !holes.some((ring) => pointInRing(point, ring));
+}
+
+function pointInRing(point: { lat: number; lon: number }, ring: Array<[number, number]>): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const current = ring[i];
+    const previous = ring[j];
+    if (!current || !previous) {
+      continue;
+    }
+    const [xi, yi] = current;
+    const [xj, yj] = previous;
+    const intersects = yi > point.lat !== yj > point.lat
+      && point.lon < ((xj - xi) * (point.lat - yi)) / ((yj - yi) || Number.EPSILON) + xi;
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
 function matchesAoiAffiliationScope(affiliation: string, scope: AoiRuleAffiliationScope): boolean {

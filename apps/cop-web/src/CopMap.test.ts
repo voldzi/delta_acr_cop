@@ -832,4 +832,33 @@ describe("COP map data helpers", () => {
     });
     expect(collection.features[0]?.geometry.coordinates[0]).toHaveLength(97);
   });
+
+  it("uses stored polygon geometry for polygon AOI rules", () => {
+    const polygon = {
+      type: "Polygon" as const,
+      coordinates: [
+        [
+          [14.4, 50.1] as [number, number],
+          [14.42, 50.1] as [number, number],
+          [14.42, 50.12] as [number, number],
+          [14.4, 50.12] as [number, number],
+          [14.4, 50.1] as [number, number]
+        ]
+      ]
+    };
+    const collection = aoiRulesToFeatureCollection([
+      {
+        enabled: true,
+        id: "polygon-aoi",
+        lat: 50.11,
+        lon: 14.41,
+        name: "Polygon AOI",
+        polygon,
+        radiusKm: 2
+      }
+    ]);
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0]?.geometry.coordinates).toEqual(polygon.coordinates);
+  });
 });

@@ -1904,12 +1904,19 @@ export function App() {
     createAoiRule({ lat: userLocation.lat, lon: userLocation.lon });
   }
 
-  function handleCreateAoiRuleFromMapClick(center: { lat: number; lon: number }) {
-    createAoiRule(center);
+  function handleCreateAoiRuleFromPolygon(points: Array<{ lat: number; lon: number }>) {
+    createAoiRuleFromPolygon(points);
     setZoneCreationMode(false);
   }
 
+  function enableUserZoneLayer() {
+    if (!visibleCatalogLayerIds.includes("user.zone.alerts")) {
+      applyCatalogLayerSelection(toggleCatalogLayerId(visibleCatalogLayerIds, "user.zone.alerts", true));
+    }
+  }
+
   function createAoiRule(center: { lat: number; lon: number }) {
+    enableUserZoneLayer();
     setAlertPreferences((current) => {
       const currentRules = current.aoiRules ?? [];
       const nextIndex = currentRules.length + 1;
@@ -1928,6 +1935,39 @@ export function App() {
             lon: center.lon,
             name: `Zóna ${nextIndex}`,
             radiusKm: 10,
+            severity: "warning"
+          })
+        ]
+      };
+    });
+  }
+
+  function createAoiRuleFromPolygon(points: Array<{ lat: number; lon: number }>) {
+    const polygon = createAoiPolygonFromPoints(points);
+    if (!polygon) {
+      return;
+    }
+    const center = calculateAoiPolygonCenter(polygon);
+    enableUserZoneLayer();
+    setAlertPreferences((current) => {
+      const currentRules = current.aoiRules ?? [];
+      const nextIndex = currentRules.length + 1;
+      const color = zoneColorOptions[currentRules.length % zoneColorOptions.length];
+      return {
+        ...current,
+        aoiRules: [
+          ...currentRules,
+          normalizeClientAoiRule({
+            affiliationScope: "all",
+            color,
+            enabled: true,
+            fillOpacity: 0.14,
+            id: `user-zone-${Date.now()}`,
+            lat: center.lat,
+            lon: center.lon,
+            name: `Zóna ${nextIndex}`,
+            polygon,
+            radiusKm: calculateAoiPolygonRadiusKm(center, polygon),
             severity: "warning"
           })
         ]
@@ -2024,7 +2064,7 @@ export function App() {
     const enabled = isCatalogLayerEnabled(layer);
     if (layer.layerId === "user.zone.alerts") {
       if (aoiRules.length === 0 && !enabled) {
-        handleCreateAoiRuleFromMap();
+        setZoneCreationMode(true);
       }
       setAlertPreferences((current) => ({
         ...current,
@@ -2742,20 +2782,20 @@ export function App() {
             </span>
           </a>
           <button
-            aria-label={authSession.status === "authenticated" ? "Účet - otevřít nastavení" : "Přihlásit"}
+            aria-label={profileAccessReady ? "Účet - otevřít nastavení" : "Přihlásit"}
             className="operator-button"
             onClick={() => {
-              if (authSession.status === "authenticated" || !isOidcEnabled(authConfig)) {
+              if (profileAccessReady || !isOidcEnabled(authConfig)) {
                 openSettings("account");
                 return;
               }
               loginOperator();
             }}
-            title={authSession.status === "authenticated" ? "Účet - otevřít nastavení" : "Přihlásit"}
+            title={profileAccessReady ? "Účet - otevřít nastavení" : "Přihlásit"}
             type="button"
           >
             <UserCircle size={19} />
-            {authSession.status !== "authenticated" && isOidcEnabled(authConfig) ? (
+            {!profileAccessReady && isOidcEnabled(authConfig) ? (
               <span>
                 <strong>Přihlásit</strong>
               </span>
@@ -2807,6 +2847,15 @@ export function App() {
               onToggleLayer={toggleCatalogLayer}
               coverageTechnology={coverageTechnology}
               onCoverageTechnologyChange={setCoverageTechnology}
+              userZones={aoiRules}
+              zoneCreationMode={zoneCreationMode}
+              onUserZoneColorChange={handleAoiRuleColorChange}
+              onUserZoneCreateFromMap={handleCreateAoiRuleFromMap}
+              onUserZoneCreateFromUserLocation={handleCreateAoiRuleFromUserLocation}
+              onUserZoneDelete={handleAoiRuleDelete}
+              onUserZoneEnabledChange={handleAoiRuleEnabledChange}
+              onUserZoneRadiusChange={handleAoiRuleRadiusChange}
+              onUserZoneStartDrawing={() => setZoneCreationMode((current) => !current)}
             />
           ) : null}
           {showMapLayerControls ? <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} /> : null}
@@ -3023,7 +3072,8 @@ export function App() {
                 setSelectedObjectId(null);
                 setSelectedSituationFeatureId(null);
               }}
-              onCreateZoneAt={handleCreateAoiRuleFromMapClick}
+              onCancelZoneCreation={() => setZoneCreationMode(false)}
+              onCreateZonePolygon={handleCreateAoiRuleFromPolygon}
               onPickReportLocation={handleCommunityReportLocationPicked}
               onRequestUserLocation={locateUser}
               onViewChange={setMapView}
@@ -4911,7 +4961,16 @@ function CatalogLayerMenu({
   onCloseDrawer,
   onCoverageTechnologyChange,
   onGroupSelect,
-  onToggleLayer
+  onToggleLayer,
+  onUserZoneColorChange,
+  onUserZoneCreateFromMap,
+  onUserZoneCreateFromUserLocation,
+  onUserZoneDelete,
+  onUserZoneEnabledChange,
+  onUserZoneRadiusChange,
+  onUserZoneStartDrawing,
+  userZones,
+  zoneCreationMode
 }: {
   activeGroup: CatalogGroupView | null;
   coverageTechnology: CoverageTechnology;
@@ -4926,6 +4985,15 @@ function CatalogLayerMenu({
   onCoverageTechnologyChange: (technology: CoverageTechnology) => void;
   onGroupSelect: (groupId: string) => void;
   onToggleLayer: (layer: MapCatalogLayer) => void;
+  onUserZoneColorChange: (zoneId: string, color: string) => void;
+  onUserZoneCreateFromMap: () => void;
+  onUserZoneCreateFromUserLocation: () => void;
+  onUserZoneDelete: (zoneId: string) => void;
+  onUserZoneEnabledChange: (zoneId: string, enabled: boolean) => void;
+  onUserZoneRadiusChange: (zoneId: string, radiusKm: number) => void;
+  onUserZoneStartDrawing: () => void;
+  userZones: AoiRule[];
+  zoneCreationMode: boolean;
 }) {
   const activeLayerCount = groups.reduce((sum, view) => sum + view.layers.filter(isLayerEnabled).length, 0);
   return (
@@ -4967,6 +5035,15 @@ function CatalogLayerMenu({
           onClose={onCloseDrawer}
           onCoverageTechnologyChange={onCoverageTechnologyChange}
           onToggleLayer={onToggleLayer}
+          onUserZoneColorChange={onUserZoneColorChange}
+          onUserZoneCreateFromMap={onUserZoneCreateFromMap}
+          onUserZoneCreateFromUserLocation={onUserZoneCreateFromUserLocation}
+          onUserZoneDelete={onUserZoneDelete}
+          onUserZoneEnabledChange={onUserZoneEnabledChange}
+          onUserZoneRadiusChange={onUserZoneRadiusChange}
+          onUserZoneStartDrawing={onUserZoneStartDrawing}
+          userZones={userZones}
+          zoneCreationMode={zoneCreationMode}
         />
       ) : null}
     </div>
@@ -4983,7 +5060,16 @@ function CatalogLayerDrawer({
   loadError,
   onClose,
   onCoverageTechnologyChange,
-  onToggleLayer
+  onToggleLayer,
+  onUserZoneColorChange,
+  onUserZoneCreateFromMap,
+  onUserZoneCreateFromUserLocation,
+  onUserZoneDelete,
+  onUserZoneEnabledChange,
+  onUserZoneRadiusChange,
+  onUserZoneStartDrawing,
+  userZones,
+  zoneCreationMode
 }: {
   coverageTechnology: CoverageTechnology;
   getFeatureCount: (layer: MapCatalogLayer) => number;
@@ -4995,6 +5081,15 @@ function CatalogLayerDrawer({
   onClose: () => void;
   onCoverageTechnologyChange: (technology: CoverageTechnology) => void;
   onToggleLayer: (layer: MapCatalogLayer) => void;
+  onUserZoneColorChange: (zoneId: string, color: string) => void;
+  onUserZoneCreateFromMap: () => void;
+  onUserZoneCreateFromUserLocation: () => void;
+  onUserZoneDelete: (zoneId: string) => void;
+  onUserZoneEnabledChange: (zoneId: string, enabled: boolean) => void;
+  onUserZoneRadiusChange: (zoneId: string, radiusKm: number) => void;
+  onUserZoneStartDrawing: () => void;
+  userZones: AoiRule[];
+  zoneCreationMode: boolean;
 }) {
   const enabledCount = groupView.layers.filter(isLayerEnabled).length;
   return (
@@ -5045,6 +5140,19 @@ function CatalogLayerDrawer({
                     </button>
                   ))}
                 </div>
+              ) : null}
+              {layer.layerId === "user.zone.alerts" ? (
+                <UserZoneLayerControls
+                  creationMode={zoneCreationMode}
+                  zones={userZones}
+                  onColorChange={onUserZoneColorChange}
+                  onCreateFromMap={onUserZoneCreateFromMap}
+                  onCreateFromUserLocation={onUserZoneCreateFromUserLocation}
+                  onDelete={onUserZoneDelete}
+                  onEnabledChange={onUserZoneEnabledChange}
+                  onRadiusChange={onUserZoneRadiusChange}
+                  onStartMapClickCreation={onUserZoneStartDrawing}
+                />
               ) : null}
             </div>
           );
@@ -5365,7 +5473,7 @@ function UserZoneLayerControls({
         <PanelTitle icon={<MapPin size={17} />} title="Uživatelské zóny" />
         <span className={`situation-status ${activeCount > 0 ? "online" : "disabled"}`}>{activeCount > 0 ? `${activeCount} aktivní` : "vypnuto"}</span>
       </div>
-      {zones.length === 0 ? <div className="empty-mini">Vytvořte zónu ze středu mapy, z mojí polohy nebo kliknutím přímo do mapy.</div> : null}
+      {zones.length === 0 ? <div className="empty-mini">Zapněte kreslení polygonu a klikáním do mapy vymezte vlastní zónu. Zóny se ukládají do profilu přihlášeného uživatele.</div> : null}
       <div className="user-zone-list">
         {zones.map((zone) => (
           <div className="user-zone-row" key={zone.id}>
@@ -5373,7 +5481,7 @@ function UserZoneLayerControls({
               <input checked={zone.enabled} onChange={(event) => onEnabledChange(zone.id, event.target.checked)} type="checkbox" />
               <span style={{ background: normalizeAoiColor(zone.color) }} />
               <strong>{zone.name}</strong>
-              <small>{Math.round(zone.radiusKm)} km · {formatAoiCenter(zone)}</small>
+              <small>{formatAoiZoneGeometry(zone)} · {formatAoiCenter(zone)}</small>
             </label>
             <div className="zone-color-row" aria-label={`Barva zóny ${zone.name}`}>
               {zoneColorOptions.map((color) => (
@@ -5388,18 +5496,20 @@ function UserZoneLayerControls({
                 />
               ))}
             </div>
-            <label className="range-label compact">
-              Poloměr
-              <span>{Math.round(zone.radiusKm)} km</span>
-              <input
-                max="80"
-                min="1"
-                onChange={(event) => onRadiusChange(zone.id, Number(event.target.value))}
-                step="1"
-                type="range"
-                value={Math.round(zone.radiusKm)}
-              />
-            </label>
+            {zone.polygon ? null : (
+              <label className="range-label compact">
+                Poloměr
+                <span>{Math.round(zone.radiusKm)} km</span>
+                <input
+                  max="80"
+                  min="1"
+                  onChange={(event) => onRadiusChange(zone.id, Number(event.target.value))}
+                  step="1"
+                  type="range"
+                  value={Math.round(zone.radiusKm)}
+                />
+              </label>
+            )}
             <button className="mini-button danger wide" onClick={() => onDelete(zone.id)} type="button">
               <Trash2 size={14} />
               Smazat
@@ -5410,7 +5520,7 @@ function UserZoneLayerControls({
       <div className="zone-action-grid">
         <button className={`mini-button wide ${creationMode ? "active" : ""}`} onClick={onStartMapClickCreation} type="button">
           <MousePointer2 size={14} />
-          {creationMode ? "Klikněte do mapy" : "Vytvořit kliknutím"}
+          {creationMode ? "Dokreslit v mapě" : "Kreslit polygon"}
         </button>
         <button className="mini-button wide" onClick={onCreateFromMap} type="button">
           <Plus size={14} />
@@ -7389,6 +7499,7 @@ function createDefaultAoiRule(userLocation: UserLocation | null, mapView: MapVie
 }
 
 function normalizeClientAoiRule(rule: AoiRule): AoiRule {
+  const polygon = normalizeClientAoiPolygon(rule.polygon);
   return {
     affiliationScope: "all",
     color: normalizeAoiColor(rule.color),
@@ -7398,13 +7509,77 @@ function normalizeClientAoiRule(rule: AoiRule): AoiRule {
     lat: clamp(rule.lat, -90, 90),
     lon: clamp(rule.lon, -180, 180),
     name: rule.name.trim() || "Moje výstražná zóna",
+    ...(polygon ? { polygon } : {}),
     radiusKm: clamp(rule.radiusKm, 1, 80),
     severity: "warning"
   };
 }
 
+function createAoiPolygonFromPoints(points: Array<{ lat: number; lon: number }>): AoiRule["polygon"] | undefined {
+  const coordinates = points
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon))
+    .map((point): [number, number] => [clamp(point.lon, -180, 180), clamp(point.lat, -90, 90)]);
+  if (coordinates.length < 3) {
+    return undefined;
+  }
+  return { type: "Polygon", coordinates: [closeAoiPolygonRing(coordinates)] };
+}
+
+function normalizeClientAoiPolygon(polygon: AoiRule["polygon"]): AoiRule["polygon"] | undefined {
+  const ring = polygon?.coordinates?.[0];
+  if (!ring || ring.length < 3) {
+    return undefined;
+  }
+  const coordinates = ring
+    .filter((coordinate) => Array.isArray(coordinate) && coordinate.length >= 2)
+    .map(([lon, lat]): [number, number] => [clamp(lon, -180, 180), clamp(lat, -90, 90)])
+    .slice(0, 160);
+  if (coordinates.length < 3) {
+    return undefined;
+  }
+  return { type: "Polygon", coordinates: [closeAoiPolygonRing(coordinates)] };
+}
+
+function closeAoiPolygonRing(points: Array<[number, number]>): Array<[number, number]> {
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (!first || !last) {
+    return points;
+  }
+  if (first[0] === last[0] && first[1] === last[1]) {
+    return points;
+  }
+  return [...points, first];
+}
+
+function calculateAoiPolygonCenter(polygon: NonNullable<AoiRule["polygon"]>): { lat: number; lon: number } {
+  const ring = (polygon.coordinates[0] ?? []).slice(0, -1);
+  const sums = ring.reduce(
+    (accumulator, [lon, lat]) => ({ lat: accumulator.lat + lat, lon: accumulator.lon + lon }),
+    { lat: 0, lon: 0 }
+  );
+  return {
+    lat: clamp(sums.lat / Math.max(1, ring.length), -90, 90),
+    lon: clamp(sums.lon / Math.max(1, ring.length), -180, 180)
+  };
+}
+
+function calculateAoiPolygonRadiusKm(center: { lat: number; lon: number }, polygon: NonNullable<AoiRule["polygon"]>): number {
+  const radius = (polygon.coordinates[0] ?? [])
+    .slice(0, -1)
+    .reduce((maximum, [lon, lat]) => Math.max(maximum, distanceBetweenKm(center, { lat, lon })), 1);
+  return clamp(Math.ceil(radius), 1, 80);
+}
+
 function normalizeAoiColor(value: string | undefined): string {
   return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#8cb6d8";
+}
+
+function formatAoiZoneGeometry(rule: AoiRule): string {
+  if (!rule.polygon) {
+    return `${Math.round(rule.radiusKm)} km`;
+  }
+  return `polygon · ${Math.max(0, (rule.polygon.coordinates[0]?.length ?? 1) - 1)} bodů`;
 }
 
 function formatAoiCenter(rule: AoiRule | null): string {
@@ -7412,6 +7587,22 @@ function formatAoiCenter(rule: AoiRule | null): string {
     return `${defaultAoiCenter.lat.toFixed(3)}, ${defaultAoiCenter.lon.toFixed(3)}`;
   }
   return `${rule.lat.toFixed(3)}, ${rule.lon.toFixed(3)}`;
+}
+
+function distanceBetweenKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const earthRadiusKm = 6371.0088;
+  const deltaLat = degreesToRadians(b.lat - a.lat);
+  const deltaLon = degreesToRadians(b.lon - a.lon);
+  const startLat = degreesToRadians(a.lat);
+  const endLat = degreesToRadians(b.lat);
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2
+    + Math.cos(startLat) * Math.cos(endLat) * Math.sin(deltaLon / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.min(1, Math.sqrt(haversine)));
+}
+
+function degreesToRadians(value: number): number {
+  return (value * Math.PI) / 180;
 }
 
 function defaultSituationLayers(): SituationLayer[] {

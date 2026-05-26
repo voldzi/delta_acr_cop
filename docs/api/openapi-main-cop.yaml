@@ -1834,8 +1834,15 @@ components:
         affiliationScope:
           type: string
           enum: [all, friend, hostile, unknown]
+        color:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
         enabled:
           type: boolean
+        fillOpacity:
+          type: number
+          minimum: 0.02
+          maximum: 0.35
         id:
           type: string
         lat:
@@ -1848,6 +1855,8 @@ components:
           maximum: 180
         name:
           type: string
+        polygon:
+          $ref: "#/components/schemas/AoiPolygon"
         radiusKm:
           type: number
           minimum: 0.2
@@ -1855,6 +1864,26 @@ components:
         severity:
           type: string
           enum: [info, warning, critical]
+      additionalProperties: false
+    AoiPolygon:
+      type: object
+      required: [type, coordinates]
+      properties:
+        type:
+          type: string
+          enum: [Polygon]
+        coordinates:
+          type: array
+          minItems: 1
+          items:
+            type: array
+            minItems: 4
+            items:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+                type: number
       additionalProperties: false
     UserDisplayPreferences:
       type: object
