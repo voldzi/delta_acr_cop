@@ -1,6 +1,15 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import {
+  createColumnHelper,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type SortingState
+} from "@tanstack/react-table";
+import clsx from "clsx";
+import {
   Activity,
   AlertTriangle,
   Bot,
@@ -165,6 +174,7 @@ import {
   type ReplayWindow,
   type TrackHistory
 } from "./track-history";
+import { Tooltip } from "./ui/tooltip";
 import {
   clamp,
   normalizeMapView,
@@ -5914,6 +5924,8 @@ function ObjectSearchControl({
   );
 }
 
+const objectColumnHelper = createColumnHelper<CopObject>();
+
 function TrackTable({
   objects,
   selectedObjectId,
@@ -5923,35 +5935,99 @@ function TrackTable({
   selectedObjectId?: string;
   onSelect: (objectId: string) => void;
 }) {
+  const [sorting, setSorting] = React.useState<SortingState>([]);
+  const columns = React.useMemo(
+    () => [
+      objectColumnHelper.accessor((object) => formatObjectListLabel(object), {
+        id: "label",
+        header: "ID",
+        cell: (info) => info.getValue()
+      }),
+      objectColumnHelper.accessor("objectType", {
+        header: "Type",
+        cell: (info) => info.getValue()
+      }),
+      objectColumnHelper.accessor("affiliation", {
+        header: "Affiliation",
+        cell: ({ row }) => {
+          const affiliation = getAffiliationPresentation(row.original.affiliation);
+          return (
+            <>
+              <i className={`affiliation-dot ${affiliation.disposition}`} />
+              {row.original.affiliation}
+            </>
+          );
+        }
+      }),
+      objectColumnHelper.accessor((object) => Math.round((object.confidence ?? 0) * 100), {
+        id: "confidence",
+        header: "Confidence",
+        cell: (info) => `${info.getValue()} %`
+      })
+    ],
+    []
+  );
+  const table = useReactTable({
+    columns,
+    data: objects,
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: (object) => object.objectId,
+    getSortedRowModel: getSortedRowModel(),
+    onSortingChange: setSorting,
+    state: { sorting }
+  });
+
   if (objects.length === 0) {
     return <div className="empty-state compact">Žádné objekty neodpovídají aktivním filtrům.</div>;
   }
 
   return (
     <div className="track-table" role="table" aria-label="Seznam situačních objektů">
-      <div className="track-table-head" role="row">
-        <span>ID</span>
-        <span>Type</span>
-        <span>Affiliation</span>
-        <span>Confidence</span>
-      </div>
-      {objects.slice(0, 10).map((object) => {
-        const affiliation = getAffiliationPresentation(object.affiliation);
+      {table.getHeaderGroups().map((headerGroup) => (
+        <div className="track-table-head" key={headerGroup.id} role="row">
+          {headerGroup.headers.map((header) => {
+            const sortState = header.column.getIsSorted();
+            const sortLabel = sortState === "asc" ? "vzestupně" : sortState === "desc" ? "sestupně" : "bez řazení";
+            const ariaSort = sortState === "asc" ? "ascending" : sortState === "desc" ? "descending" : "none";
+            const label = flexRender(header.column.columnDef.header, header.getContext());
+            const content = (
+              <button
+                aria-label={`Seřadit podle sloupce ${header.column.id}`}
+                className={clsx("track-table-sort inline-flex items-center gap-1", sortState && "active")}
+                disabled={!header.column.getCanSort()}
+                onClick={header.column.getToggleSortingHandler()}
+                type="button"
+              >
+                <span>{label}</span>
+                <span aria-hidden="true" className="track-table-sort-indicator">
+                  {sortState === "asc" ? "↑" : sortState === "desc" ? "↓" : "↕"}
+                </span>
+              </button>
+            );
+            return (
+              <span aria-sort={ariaSort} key={header.id} role="columnheader">
+                <Tooltip label={`Řazení: ${sortLabel}`}>{content}</Tooltip>
+              </span>
+            );
+          })}
+        </div>
+      ))}
+      {table.getRowModel().rows.slice(0, 10).map((row) => {
+        const object = row.original;
         return (
           <button
-            className={`track-row ${object.objectId === selectedObjectId ? "selected" : ""}`}
+            className={clsx("track-row", object.objectId === selectedObjectId && "selected")}
             key={object.objectId}
             onClick={() => onSelect(object.objectId)}
+            aria-selected={object.objectId === selectedObjectId}
             role="row"
             type="button"
           >
-            <span title={object.objectId}>{formatObjectListLabel(object)}</span>
-            <span>{object.objectType}</span>
-            <span>
-              <i className={`affiliation-dot ${affiliation.disposition}`} />
-              {object.affiliation}
-            </span>
-            <span>{Math.round((object.confidence ?? 0) * 100)} %</span>
+            {row.getVisibleCells().map((cell) => (
+              <span key={cell.id} title={cell.column.id === "label" ? object.objectId : undefined}>
+                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </span>
+            ))}
           </button>
         );
       })}
