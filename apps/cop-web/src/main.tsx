@@ -174,6 +174,8 @@ import {
   type ReplayWindow,
   type TrackHistory
 } from "./track-history";
+import { ModalDialog } from "./ui/dialog";
+import { SelectField } from "./ui/select";
 import { Tooltip } from "./ui/tooltip";
 import {
   clamp,
@@ -3569,40 +3571,41 @@ function CommunityReportDialog({
   onSubmit
 }: CommunityReportDialogProps) {
   return (
-    <div className="report-dialog-backdrop" role="presentation">
-      <section className="report-dialog" aria-modal="true" role="dialog" aria-labelledby="community-report-title">
-        <div className="report-dialog-header">
-          <div>
-            <span>Komunitní hlášení</span>
-            <h2 id="community-report-title">{draft.reportId ? "Upravit hlášení" : "Nahlásit událost v okolí"}</h2>
-          </div>
-          <button aria-label="Zavřít" className="icon-button" disabled={isSubmitting} onClick={onClose} type="button">
-            <X size={18} />
+    <ModalDialog
+      actions={(
+        <>
+          <button className="ghost-button" disabled={isSubmitting} onClick={onClose} type="button">Zrušit</button>
+          <button className="primary-button" disabled={isSubmitting} onClick={onSubmit} type="button">
+            {isSubmitting ? "Ukládám..." : draft.reportId ? "Uložit změny" : "Uložit hlášení"}
           </button>
-        </div>
+        </>
+      )}
+      className="report-dialog"
+      closeDisabled={isSubmitting}
+      eyebrow="Komunitní hlášení"
+      onClose={onClose}
+      title={draft.reportId ? "Upravit hlášení" : "Nahlásit událost v okolí"}
+      titleId="community-report-title"
+    >
 
         <div className="report-form-grid">
           <label>
             Typ události
-            <select
+            <SelectField<CommunityReportCategory>
+              ariaLabel="Typ události"
+              options={communityReportCategoryOptions}
               value={draft.category}
-              onChange={(event) => onChange((current) => ({ ...current, category: event.target.value as CommunityReportCategory }))}
-            >
-              {communityReportCategoryOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+              onValueChange={(category) => onChange((current) => ({ ...current, category }))}
+            />
           </label>
           <label>
             Odhad rizika
-            <select
+            <SelectField<CommunityReportHazardSeverity>
+              ariaLabel="Odhad rizika"
+              options={communityHazardSeverityOptions}
               value={draft.hazardSeverity}
-              onChange={(event) => onChange((current) => ({ ...current, hazardSeverity: event.target.value as CommunityReportHazardSeverity }))}
-            >
-              <option value="advisory">Informace</option>
-              <option value="warning">Varování</option>
-              <option value="critical">Kritické</option>
-            </select>
+              onValueChange={(hazardSeverity) => onChange((current) => ({ ...current, hazardSeverity }))}
+            />
           </label>
         </div>
 
@@ -3656,15 +3659,12 @@ function CommunityReportDialog({
           <span className="report-field-hint">
             Každé hlášení je součástí skupiny. Skupina propojí mapový bod, konverzaci a přiložená média.
           </span>
-          <select
+          <SelectField<CommunityMediaAccessMode>
+            ariaLabel="Přístup k médiím"
+            options={communityMediaAccessOptions}
             value={draft.mediaAccessMode}
-            onChange={(event) => onChange((current) => ({ ...current, mediaAccessMode: event.target.value as CommunityMediaAccessMode }))}
-          >
-            <option value="public">Všem</option>
-            <option value="private">Jen mně</option>
-            <option value="users">Vybraní uživatelé</option>
-            <option value="groups">Skupina</option>
-          </select>
+            onValueChange={(mediaAccessMode) => onChange((current) => ({ ...current, mediaAccessMode }))}
+          />
           {draft.mediaAccessMode === "users" ? (
             <label className="report-field">
               Uživatelé
@@ -3695,17 +3695,16 @@ function CommunityReportDialog({
               <div className="report-create-group">
                 <input
                   maxLength={80}
-                placeholder="Nová skupina, např. Povodně Vrbno"
-                value={draft.newGroupName}
+                  placeholder="Nová skupina, např. Povodně Vrbno"
+                  value={draft.newGroupName}
                   onChange={(event) => onChange((current) => ({ ...current, newGroupName: event.target.value }))}
                 />
-                <select
+                <SelectField<"private" | "public">
+                  ariaLabel="Viditelnost nové skupiny"
+                  options={communityGroupVisibilityOptions}
                   value={draft.newGroupVisibility}
-                  onChange={(event) => onChange((current) => ({ ...current, newGroupVisibility: event.target.value as "private" | "public" }))}
-                >
-                  <option value="private">S povolením vstupu</option>
-                  <option value="public">Veřejná</option>
-                </select>
+                  onValueChange={(newGroupVisibility) => onChange((current) => ({ ...current, newGroupVisibility }))}
+                />
                 <button className="mini-button" onClick={onCreateGroup} type="button">Vytvořit</button>
               </div>
               {communityGroupsError ? <span className="report-field-hint">{communityGroupsError}</span> : null}
@@ -3728,14 +3727,12 @@ function CommunityReportDialog({
         {draft.files.some(isCommunityVideoFile) ? (
           <label className="report-field">
             Režim videa
-            <select
+            <SelectField<CommunityVideoSpatialMode>
+              ariaLabel="Režim videa"
+              options={communityVideoSpatialOptions}
               value={draft.videoSpatialMode}
-              onChange={(event) => onChange((current) => ({ ...current, videoSpatialMode: event.target.value as CommunityVideoSpatialMode }))}
-            >
-              {communityVideoSpatialOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+              onValueChange={(videoSpatialMode) => onChange((current) => ({ ...current, videoSpatialMode }))}
+            />
             <span className="report-field-hint">
               Side-by-side a over-under se přehrají v XR přímo. iPhone Spatial MOV se uloží jako originál a server připraví 3D XR kopii.
             </span>
@@ -3755,15 +3752,7 @@ function CommunityReportDialog({
         {uploadProgress ? <CommunityUploadProgressPanel progress={uploadProgress} /> : null}
         {error ? <div className="report-dialog-message error">{error}</div> : null}
         {success ? <div className="report-dialog-message success">{success}</div> : null}
-
-        <div className="report-dialog-actions">
-          <button className="ghost-button" disabled={isSubmitting} onClick={onClose} type="button">Zrušit</button>
-          <button className="primary-button" disabled={isSubmitting} onClick={onSubmit} type="button">
-            {isSubmitting ? "Ukládám..." : draft.reportId ? "Uložit změny" : "Uložit hlášení"}
-          </button>
-        </div>
-      </section>
-    </div>
+    </ModalDialog>
   );
 }
 
@@ -6725,6 +6714,24 @@ const communityReportCategoryOptions: Array<{ label: string; value: CommunityRep
   { label: "Výpadek služby", value: "utility_outage" },
   { label: "Riziko v okolí", value: "hazard" },
   { label: "Jiné", value: "other" }
+];
+
+const communityHazardSeverityOptions: Array<{ label: string; value: CommunityReportHazardSeverity }> = [
+  { label: "Informace", value: "advisory" },
+  { label: "Varování", value: "warning" },
+  { label: "Kritické", value: "critical" }
+];
+
+const communityMediaAccessOptions: Array<{ label: string; value: CommunityMediaAccessMode }> = [
+  { label: "Všem", value: "public" },
+  { label: "Jen mně", value: "private" },
+  { label: "Vybraní uživatelé", value: "users" },
+  { label: "Skupina", value: "groups" }
+];
+
+const communityGroupVisibilityOptions: Array<{ label: string; value: "private" | "public" }> = [
+  { label: "S povolením vstupu", value: "private" },
+  { label: "Veřejná", value: "public" }
 ];
 
 function communityReportCategoryLabelForValue(category: CommunityReportCategory): string {

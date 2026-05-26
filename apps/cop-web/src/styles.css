@@ -458,7 +458,6 @@ h1 {
 }
 
 .chat-group-create input,
-.chat-group-create select,
 .chat-group-members input {
   min-width: 0;
   min-height: 38px;
@@ -519,15 +518,21 @@ h1 {
   white-space: nowrap;
 }
 
-.report-dialog-backdrop {
+.ui-dialog-overlay {
   position: fixed;
   inset: 0;
   z-index: 90;
-  display: grid;
-  place-items: center;
-  padding: 18px;
   background: rgba(3, 8, 12, 0.62);
   backdrop-filter: blur(8px);
+}
+
+.ui-dialog-content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 91;
+  transform: translate(-50%, -50%);
+  outline: none;
 }
 
 .report-dialog {
@@ -542,28 +547,28 @@ h1 {
   box-shadow: 0 26px 80px rgba(0, 0, 0, 0.55);
 }
 
-.report-dialog-header,
-.report-dialog-actions,
+.ui-dialog-header,
+.ui-dialog-actions,
 .report-location-actions {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.report-dialog-header {
+.ui-dialog-header {
   justify-content: space-between;
   padding-bottom: 8px;
   border-bottom: 1px solid rgba(142, 157, 170, 0.2);
 }
 
-.report-dialog-header span {
+.ui-dialog-header span {
   color: var(--lime);
   font-size: 10px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.report-dialog-header h2 {
+.ui-dialog-title {
   margin: 2px 0 0;
   color: #f5f8fb;
   font-size: 22px;
@@ -636,7 +641,7 @@ h1 {
 }
 
 .report-location-actions,
-.report-dialog-actions {
+.ui-dialog-actions {
   flex-wrap: wrap;
 }
 
@@ -672,7 +677,6 @@ h1 {
   font-weight: 900;
 }
 
-.report-access-panel select,
 .report-create-group input {
   min-height: 40px;
   border: 1px solid rgba(140, 182, 216, 0.34);
@@ -698,7 +702,7 @@ h1 {
   gap: 8px;
 }
 
-.report-dialog-actions {
+.ui-dialog-actions {
   justify-content: flex-end;
 }
 
@@ -712,9 +716,103 @@ h1 {
   cursor: pointer;
 }
 
-.report-dialog-actions .primary-button {
+.ui-dialog-actions .primary-button {
   width: auto;
   padding: 0 16px;
+}
+
+.ui-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid rgba(140, 182, 216, 0.34);
+  background: rgba(17, 25, 33, 0.92);
+  color: #eef5fb;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 0 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-group-create .ui-select-trigger {
+  min-height: 38px;
+  font-size: 12px;
+}
+
+.report-create-group .ui-select-trigger {
+  flex: 0 1 190px;
+}
+
+.ui-select-trigger:hover,
+.ui-select-trigger:focus-visible,
+.ui-select-trigger[data-state="open"] {
+  border-color: rgba(200, 240, 141, 0.64);
+}
+
+.ui-select-trigger:focus-visible {
+  outline: 1px solid rgba(200, 240, 141, 0.72);
+  outline-offset: 2px;
+}
+
+.ui-select-trigger[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ui-select-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--cyan);
+}
+
+.ui-select-content {
+  z-index: 10010;
+  min-width: var(--radix-select-trigger-width);
+  max-height: min(360px, var(--radix-select-content-available-height));
+  overflow: hidden;
+  border: 1px solid rgba(140, 182, 216, 0.4);
+  background: rgba(8, 13, 18, 0.98);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.48);
+}
+
+.ui-select-viewport {
+  padding: 5px;
+}
+
+.ui-select-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 32px 0 10px;
+  color: #e8eef5;
+  font-size: 13px;
+  font-weight: 800;
+  outline: none;
+  cursor: pointer;
+}
+
+.ui-select-item[data-highlighted] {
+  background: rgba(151, 199, 104, 0.16);
+  color: var(--lime);
+}
+
+.ui-select-item[data-disabled] {
+  color: var(--muted-2);
+  cursor: not-allowed;
+}
+
+.ui-select-item-indicator {
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  color: var(--lime);
 }
 
 .report-attachment-list,
@@ -4973,28 +5071,32 @@ dd {
     grid-template-columns: 1fr;
   }
 
-  .report-dialog-backdrop {
-    align-items: end;
-    padding: 10px;
-  }
-
   .report-dialog {
     width: 100%;
     max-height: calc(100svh - 20px);
     padding: 12px;
   }
 
+  .ui-dialog-content.report-dialog {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    transform: none;
+  }
+
   .report-form-grid {
     grid-template-columns: 1fr;
   }
 
-  .report-dialog-header h2 {
+  .ui-dialog-title {
     font-size: 18px;
   }
 
   .report-location-actions .mini-button,
-  .report-dialog-actions .primary-button,
-  .report-dialog-actions .ghost-button {
+  .ui-dialog-actions .primary-button,
+  .ui-dialog-actions .ghost-button {
     flex: 1 1 130px;
   }
 

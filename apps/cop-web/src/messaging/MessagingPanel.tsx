@@ -2,10 +2,16 @@ import React from "react";
 import { Lock, LogIn, MessageCircle, Pin, PinOff, Plus, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
 import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse } from "../cop-data";
+import { SelectField } from "../ui/select";
 import { clearMatrixMessagingDeviceState, createMatrixMessagingSession } from "./matrixClient";
 import type { MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage, MessagingPanelProps } from "./types";
 
 type Tone = "ok" | "warn" | "neutral";
+
+const communityGroupVisibilityOptions: Array<{ label: string; value: "private" | "public" }> = [
+  { label: "S povolením", value: "private" },
+  { label: "Veřejná", value: "public" }
+];
 
 const matrixDeviceIdStorageKey = "cop.messaging.matrixDeviceId";
 let fallbackMatrixDeviceId: string | null = null;
@@ -480,13 +486,12 @@ function CommunityGroupsPanel({
           value={newGroupName}
           onChange={(event) => onNewGroupNameChange(event.target.value)}
         />
-        <select
+        <SelectField<"private" | "public">
+          ariaLabel="Viditelnost nové skupiny"
+          options={communityGroupVisibilityOptions}
           value={newGroupVisibility}
-          onChange={(event) => onNewGroupVisibilityChange(event.target.value as "private" | "public")}
-        >
-          <option value="private">S povolením</option>
-          <option value="public">Veřejná</option>
-        </select>
+          onValueChange={onNewGroupVisibilityChange}
+        />
         <button className="mini-button" disabled={actionLoading || !newGroupName.trim()} onClick={onCreateGroup} type="button">
           <Plus size={14} />
           Založit
