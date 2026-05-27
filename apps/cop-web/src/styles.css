@@ -574,6 +574,14 @@ h1 {
   font-size: 22px;
 }
 
+.ui-dialog-description {
+  margin: 6px 0 0;
+  color: #ccd8e3;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .report-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -719,6 +727,61 @@ h1 {
 .ui-dialog-actions .primary-button {
   width: auto;
   padding: 0 16px;
+}
+
+.login-required-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(470px, calc(100vw - 28px));
+  padding: 16px;
+  border: 1px solid rgba(140, 182, 216, 0.42);
+  background:
+    linear-gradient(145deg, rgba(16, 24, 31, 0.98), rgba(5, 10, 14, 0.98)),
+    radial-gradient(circle at 15% 0%, rgba(200, 240, 141, 0.16), transparent 34%);
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.58);
+}
+
+.login-required-body {
+  display: grid;
+  gap: 12px;
+}
+
+.login-benefit-list {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(140, 182, 216, 0.24);
+  background: rgba(22, 31, 38, 0.66);
+}
+
+.login-benefit-list span,
+.login-required-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.login-benefit-list span {
+  color: #eef5fb;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.login-benefit-list svg,
+.login-required-note svg {
+  flex: 0 0 auto;
+  color: var(--lime);
+}
+
+.login-required-note {
+  padding: 10px;
+  border-left: 3px solid var(--lime);
+  background: rgba(151, 199, 104, 0.11);
+  color: #dbe7f2;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .ui-select-trigger {

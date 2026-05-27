@@ -8,19 +8,19 @@ export function ModalDialog({
   children,
   className,
   closeDisabled = false,
+  description,
   eyebrow,
   onClose,
-  title,
-  titleId
+  title
 }: {
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
   closeDisabled?: boolean;
+  description?: string;
   eyebrow?: string;
   onClose: () => void;
   title: string;
-  titleId?: string;
 }) {
   return (
     <DialogPrimitive.Root
@@ -49,9 +49,14 @@ export function ModalDialog({
           <div className="ui-dialog-header">
             <div>
               {eyebrow ? <span>{eyebrow}</span> : null}
-              <DialogPrimitive.Title id={titleId} className="ui-dialog-title">
+              <DialogPrimitive.Title className="ui-dialog-title">
                 {title}
               </DialogPrimitive.Title>
+              {description ? (
+                <DialogPrimitive.Description className="ui-dialog-description">
+                  {description}
+                </DialogPrimitive.Description>
+              ) : null}
             </div>
             <DialogPrimitive.Close asChild>
               <button aria-label="Zavřít" className="icon-button" disabled={closeDisabled} type="button">

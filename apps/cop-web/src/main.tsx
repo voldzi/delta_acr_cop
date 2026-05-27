@@ -235,6 +235,7 @@ type OfflineSnapshotState =
   | { kind: "none" };
 type PreferenceSettings = ViewProfileSettings | UserPreferences;
 type SettingsTab = "map" | "data" | "awareness" | "account";
+type LoginPromptReason = "account" | "ai" | "alert" | "chat" | "profile" | "report";
 type ProfileSyncStatus = "disabled" | "error" | "loading" | "saving" | "synced";
 type SituationLayerStatus = "disabled" | "loading" | "online" | "degraded" | "zoom";
 type CoverageTechnology = "2G" | "4G" | "5G";
@@ -402,6 +403,7 @@ export function App() {
   const [communityGroups, setCommunityGroups] = React.useState<CommunityGroup[]>([]);
   const [communityGroupsError, setCommunityGroupsError] = React.useState<string | null>(null);
   const [communityGallery, setCommunityGallery] = React.useState<CommunityGalleryState | null>(null);
+  const [loginPromptReason, setLoginPromptReason] = React.useState<LoginPromptReason | null>(null);
   const [takLayers, setTakLayers] = React.useState<TakLayer[]>([]);
   const [visibleTakLayerIds, setVisibleTakLayerIds] = React.useState<TakLayerId[]>(() => normalizeTakLayerIds(initialPreferences.takLayerIds));
   const [takFeatures, setTakFeatures] = React.useState<TakFeatureCollectionResponse | null>(null);
@@ -2253,7 +2255,20 @@ export function App() {
     void beginLogin(authConfig);
   }
 
-  function openLoginPrompt() {
+  function openLoginPrompt(reason: LoginPromptReason = "account") {
+    if (!isOidcEnabled(authConfig)) {
+      openSettings("account");
+      return;
+    }
+    if (profileAccessReady) {
+      openSettings("account");
+      return;
+    }
+    setLoginPromptReason(reason);
+  }
+
+  function continueLoginFromPrompt() {
+    setLoginPromptReason(null);
     loginOperator();
   }
 
@@ -2261,7 +2276,7 @@ export function App() {
     locateUser();
     if (!profileAccessReady) {
       setProfileSyncError("Vlastní hlášení s polohou a přílohami je dostupné po přihlášení.");
-      loginOperator();
+      openLoginPrompt("report");
       return;
     }
     setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(userLocation, mapView)));
@@ -2346,7 +2361,7 @@ export function App() {
 
   async function handleCreateCommunityGroupFromReport() {
     if (!messagingAuthenticated || !authSession.accessToken) {
-      openSettings("account");
+      openLoginPrompt("chat");
       return;
     }
     const name = communityReportDraft.newGroupName.trim();
@@ -2489,7 +2504,7 @@ export function App() {
   async function submitCommunityReportDraft() {
     if (!authToken) {
       setCommunityReportError("Pro uložení hlášení je potřeba přihlášení.");
-      openSettings("account");
+      openLoginPrompt("report");
       return;
     }
     const validationError = validateCommunityReportDraft(communityReportDraft);
@@ -2646,7 +2661,7 @@ export function App() {
 
   async function handleDeleteCommunityReport(reportId: string) {
     if (!authToken) {
-      openSettings("account");
+      openLoginPrompt("report");
       return;
     }
     if (!window.confirm("Smazat toto hlášení včetně metadat příloh?")) {
@@ -2688,7 +2703,7 @@ export function App() {
   function saveCurrentViewProfile() {
     if (!profileAccessReady) {
       setProfileSyncError("Uložení profilu pohledu je dostupné po přihlášení.");
-      loginOperator();
+      openLoginPrompt("profile");
       return;
     }
     const now = new Date();
@@ -2801,7 +2816,7 @@ export function App() {
                 openSettings("account");
                 return;
               }
-              loginOperator();
+              openLoginPrompt("account");
             }}
             title={profileAccessReady ? "Účet - otevřít nastavení" : "Přihlásit"}
             type="button"
@@ -2899,7 +2914,7 @@ export function App() {
                 profiles={viewProfiles}
                 userScope={userStorageScope}
                 onApply={applyViewProfile}
-                onLogin={openLoginPrompt}
+                onLogin={() => openLoginPrompt("profile")}
                 onSave={saveCurrentViewProfile}
               />
 
@@ -3158,7 +3173,7 @@ export function App() {
                 alerts={serverAlerts}
                 canAcknowledge={profileAccessReady}
                 onAcknowledge={(alertId) => void acknowledgeServerAlert(alertId)}
-                onLogin={openLoginPrompt}
+                onLogin={() => openLoginPrompt("alert")}
                 onSelectObject={(objectId) => {
                   setSelectedObjectId((current) => current === objectId ? null : objectId);
                   setSelectedSituationFeatureId(null);
@@ -3316,7 +3331,7 @@ export function App() {
                 profileSyncStatus={profileSyncStatus}
                 publicReadEnabled={authConfig.publicReadEnabled}
                 session={authSession}
-                onLogin={openLoginPrompt}
+                onLogin={() => openLoginPrompt("account")}
               />
               <div className="personal-awareness-box">
                 <PanelTitle icon={<MapPin size={17} />} title="Moje poloha" />
@@ -3345,7 +3360,7 @@ export function App() {
                 Zkontrolovat kvalitu dat
               </button>
             ) : (
-              <button className="primary-button secondary" onClick={openLoginPrompt} type="button">
+              <button className="primary-button secondary" onClick={() => openLoginPrompt("ai")} type="button">
                 <LogIn size={16} />
                 Přihlásit pro AI
               </button>
@@ -3451,12 +3466,20 @@ export function App() {
           }
           onClose={() => setMessagingOpen(false)}
           onCreateGroup={(name, visibility) => createCommunityGroupBundleForUi(name, visibility)}
-          onLogin={openLoginPrompt}
+          onLogin={() => openLoginPrompt("chat")}
           onPinnedChange={setMessagingPinned}
           onRefresh={() => void loadMessagingStatus()}
           onResolveMatrixIdentities={(userIds) =>
             resolveMessagingMatrixIdentities(apiBase, authSession.accessToken ?? "", userIds)
           }
+        />
+      ) : null}
+
+      {loginPromptReason ? (
+        <LoginRequiredDialog
+          reason={loginPromptReason}
+          onClose={() => setLoginPromptReason(null)}
+          onContinue={continueLoginFromPrompt}
         />
       ) : null}
 
@@ -3582,10 +3605,10 @@ function CommunityReportDialog({
       )}
       className="report-dialog"
       closeDisabled={isSubmitting}
+      description={draft.reportId ? "Upravte text, polohu, platnost, přístup a přílohy uloženého hlášení." : "Vložte ověřené hlášení s polohou, platností rizika a volitelnými přílohami."}
       eyebrow="Komunitní hlášení"
       onClose={onClose}
       title={draft.reportId ? "Upravit hlášení" : "Nahlásit událost v okolí"}
-      titleId="community-report-title"
     >
 
         <div className="report-form-grid">
@@ -3865,6 +3888,95 @@ function ProximityAlertList({ alerts }: { alerts: ProximityAlert[] }) {
       ))}
     </div>
   );
+}
+
+function LoginRequiredDialog({
+  reason,
+  onClose,
+  onContinue
+}: {
+  reason: LoginPromptReason;
+  onClose: () => void;
+  onContinue: () => void;
+}) {
+  const content = loginPromptContent(reason);
+  return (
+    <ModalDialog
+      actions={
+        <>
+          <button className="ghost-button" onClick={onClose} type="button">
+            Zůstat na mapě
+          </button>
+          <button className="primary-button" onClick={onContinue} type="button">
+            <LogIn size={16} />
+            Přihlásit
+          </button>
+        </>
+      }
+      className="login-required-dialog"
+      description={content.description}
+      eyebrow="Přihlášení"
+      onClose={onClose}
+      title={content.title}
+    >
+      <div className="login-required-body">
+        <div className="login-benefit-list" aria-label="Co přihlášení odemkne">
+          {content.benefits.map((benefit) => (
+            <span key={benefit}>
+              <ShieldCheck size={15} />
+              {benefit}
+            </span>
+          ))}
+        </div>
+        <div className="login-required-note">
+          <UserCircle size={17} />
+          <span>Veřejná mapa a základní vrstvy zůstávají dostupné i bez účtu.</span>
+        </div>
+      </div>
+    </ModalDialog>
+  );
+}
+
+function loginPromptContent(reason: LoginPromptReason): { benefits: string[]; description: string; title: string } {
+  switch (reason) {
+    case "ai":
+      return {
+        benefits: ["AI dotazy budou svázané s ověřenou relací.", "Veřejná data zůstanou čitelná bez účtu."],
+        description: "AI asistent pracuje s osobním kontextem a proto vyžaduje přihlášeného uživatele.",
+        title: "Přihlaste se pro AI asistenta"
+      };
+    case "alert":
+      return {
+        benefits: ["Potvrzení výstrah bude auditovatelné.", "Nastavení výstrah se uloží k vašemu profilu."],
+        description: "Potvrzení nebo správa výstrah mění uživatelský stav aplikace, proto vyžaduje účet.",
+        title: "Přihlaste se pro správu výstrah"
+      };
+    case "chat":
+      return {
+        benefits: ["Konverzace bude navázaná na ověřenou identitu.", "Skupiny a média budou respektovat přístupová práva."],
+        description: "Zprávy, skupiny a chráněná média jsou přístupné jen ověřeným uživatelům.",
+        title: "Přihlaste se pro konverzace"
+      };
+    case "profile":
+      return {
+        benefits: ["Uložíte si vrstvy, zoom, zóny a rozvržení.", "Profil bude dostupný i na dalším zařízení."],
+        description: "Vlastní profily pohledu se ukládají na server k vašemu účtu.",
+        title: "Přihlaste se pro uložení profilu"
+      };
+    case "report":
+      return {
+        benefits: ["Hlášení bude obsahovat autora, polohu a platnost.", "Přílohy se uloží s řízeným přístupem ke skupině nebo veřejně."],
+        description: "Vlastní hlášení může obsahovat fotky, video, PDF a citlivou polohu, proto je potřeba ověřený účet.",
+        title: "Přihlaste se pro vložení hlášení"
+      };
+    case "account":
+    default:
+      return {
+        benefits: ["Odemkne se ukládání profilu a osobních zón.", "Zpřístupní se konverzace, skupiny, hlášení a chráněná média."],
+        description: "Přihlášení doplní veřejný režim o osobní a komunitní funkce.",
+        title: "Přihlášení k aplikaci"
+      };
+  }
 }
 
 function AlertCenterBoard({
