@@ -25,6 +25,7 @@ import type {
   FlightReferenceFeatureCollection,
   FlightReferenceFeatureQuery
 } from "./flight-data-source.js";
+import type { MessagingProvider, MessagingProviderConfig } from "./messaging-provider.js";
 import type {
   TakGatewayFeatureCollection,
   TakGatewayFeatureQuery,
@@ -153,6 +154,65 @@ describe("map catalog route", () => {
       })
     ]));
     expect(body.sources.map((source) => source.sourceId)).not.toContain("mobile_coverage_model");
+  });
+
+  it("returns a degraded catalog when a provider catalog does not answer", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    vi.stubEnv("COP_MAP_CATALOG_PROVIDER_TIMEOUT_MS", "20");
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      safetyDataSource: new FakeSafetyDataSource(),
+      situationDataSource: new HangingSituationDataSource()
+    });
+
+    const startedAt = Date.now();
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/map/catalog"
+    });
+    const durationMs = Date.now() - startedAt;
+
+    expect(response.statusCode).toBe(200);
+    expect(durationMs).toBeLessThan(1000);
+    const body = response.json() as {
+      layers: Array<{ layerId: string }>;
+      providers: Array<{ providerId: string; status: string }>;
+      warnings: string[];
+    };
+    expect(body.providers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerId: "sim.situation-data", status: "unavailable" }),
+      expect.objectContaining({ providerId: "sim.safety-data", status: "online" })
+    ]));
+    expect(body.layers.map((layer) => layer.layerId)).toContain("public.safety.warnings");
+    expect(body.warnings.join(" ")).toContain("Situation data catalog provider timed out");
+  });
+
+  it("does not let a slow messaging provider block dependency health", async () => {
+    vi.stubEnv("COP_HEALTH_DEPENDENCY_TIMEOUT_MS", "20");
+    const app = buildServer({
+      messagingProvider: new HangingMessagingProvider(),
+      now: () => new Date("2026-05-22T08:00:00Z")
+    });
+
+    const startedAt = Date.now();
+    const response = await app.inject({
+      method: "GET",
+      url: "/health/dependencies"
+    });
+    const durationMs = Date.now() - startedAt;
+
+    expect(response.statusCode).toBe(200);
+    expect(durationMs).toBeLessThan(1000);
+    const body = response.json() as {
+      dependencies: Array<{ detail?: string; name: string; status: string }>;
+    };
+    expect(body.dependencies).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "csm-messaging-provider",
+        status: "degraded"
+      })
+    ]));
+    expect(body.dependencies.find((dependency) => dependency.name === "csm-messaging-provider")?.detail).toContain("timed out");
   });
 
   it("adds diagnostic and partner groups only for authenticated catalog requests", async () => {
@@ -554,6 +614,49 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
       type: "FeatureCollection",
       warnings: []
     };
+  }
+}
+
+class HangingSituationDataSource extends FakeSituationDataSource {
+  async fetchCatalog(_requestNow: Date): Promise<ProviderMapCatalog> {
+    return new Promise<ProviderMapCatalog>(() => {});
+  }
+}
+
+class HangingMessagingProvider implements MessagingProvider {
+  readonly config: MessagingProviderConfig = {
+    baseUrl: "http://127.0.0.1:4050",
+    cacheTtlMs: 1000,
+    enabled: true,
+    timeoutMs: 1000
+  };
+
+  async fetchStatus(): Promise<never> {
+    return new Promise<never>(() => {});
+  }
+
+  async fetchMatrixBootstrap(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
+  async fetchConversations(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
+  async createConversation(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
+  async addConversationMembers(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
+  async bindMatrixRoom(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
+  async resolveMatrixIdentities(): Promise<never> {
+    throw new Error("not implemented");
   }
 }
 

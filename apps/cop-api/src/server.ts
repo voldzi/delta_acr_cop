@@ -40,7 +40,7 @@ import {
   type FlightReferenceFeatureQuery,
   type FlightReferenceLayerId
 } from "./flight-data-source.js";
-import { buildMapCatalog, type MapCatalogLayer } from "./map-catalog.js";
+import { buildMapCatalog, type BuildMapCatalogInput, type MapCatalogLayer } from "./map-catalog.js";
 import {
   buildMissionArenaHealth,
   createMissionArenaSourceFromEnv,
@@ -296,9 +296,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     timestamp: new Date().toISOString()
   }));
 
-  app.get("/health/dependencies", async () => ({
-    status: "ok",
-    dependencies: [
+  app.get("/health/dependencies", async () => {
+    const messaging = await withDependencyTimeout(
+      "csm-messaging-provider",
+      messagingDependency(),
+      {
+        detail: `Messaging provider dependency check timed out after ${healthDependencyTimeoutMs()} ms.`,
+        name: "csm-messaging-provider",
+        status: "degraded"
+      }
+    );
+    return {
+      status: "ok",
+      dependencies: [
       { name: "source-registry", status: "ok" },
       { name: "in-memory-cop-state", status: "ok" },
       { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
@@ -306,7 +316,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "community-report-store", status: communityReportStoreStatus, detail: communityReportStoreDependencyDetail() },
       { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
       { name: "place-geocoder", status: placeGeocoder ? "ok" : "disabled", detail: placeGeocoder?.diagnostics?.() ?? "disabled" },
-      await messagingDependency(),
+      messaging,
       ...(flightDataSource ? [flightDataDependency()] : []),
       ...(situationDataSource ? [situationDataDependency()] : []),
       ...(safetyDataSource ? [safetyDataDependency()] : []),
@@ -314,7 +324,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ...(takGatewaySource ? [takGatewayDependency()] : []),
       { name: "ai-gateway", status: "degraded", detail: "mock provider only" }
     ]
-  }));
+    };
+  });
 
   app.get("/metrics", async (_request, reply) => {
     const currentObjects = selectCurrentTracks(state.objects.values(), now(), trackLifecycle);
@@ -499,6 +510,48 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       name: "csm-messaging-provider",
       status: status.status === "online" ? "ok" : status.status === "disabled" ? "disabled" : "degraded"
     };
+  }
+
+  function withDependencyTimeout<T extends { detail?: string; name: string; status: DependencyStatus }>(
+    dependencyName: string,
+    operation: Promise<T>,
+    fallback: T
+  ): Promise<T> {
+    const timeoutMs = healthDependencyTimeoutMs();
+    return new Promise<T>((resolve) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        app.log.warn({ dependencyName, timeoutMs }, "Health dependency check timed out.");
+        resolve(fallback);
+      }, timeoutMs);
+
+      operation.then(
+        (value) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          resolve(value);
+        },
+        (error) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          app.log.warn({ dependencyName, error }, "Health dependency check rejected.");
+          resolve({
+            ...fallback,
+            detail: `${fallback.detail ?? "Dependency check failed"} ${errorMessage(error)}`
+          });
+        }
+      );
+    });
   }
 
   function activeUserProfileStore(): UserProfileStore {
@@ -1930,22 +1983,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const includePartner = Boolean(actor) && parseBooleanQuery(query.includePartner);
     const locale = typeof query.locale === "string" && query.locale.trim() ? query.locale.trim() : "cs-CZ";
 
-    const situation = await readSituationCatalogProvider(requestNow, actor);
-    const safety = await readSafetyCatalogProvider(requestNow);
-    const flight = await readFlightCatalogProvider(requestNow);
-    const missionArena = await readMissionArenaCatalogProvider(requestNow);
-    const tak = includePartner ? await readTakCatalogProvider(requestNow) : undefined;
+    const providers = await readMapCatalogProviders(requestNow, actor, includePartner);
 
     return buildMapCatalog({
-      flight,
+      flight: providers.flight,
       generatedAt: requestNow,
       includeDiagnostics,
       includePartner,
       locale,
-      missionArena,
-      safety,
-      situation,
-      tak
+      missionArena: providers.missionArena,
+      safety: providers.safety,
+      situation: providers.situation,
+      tak: providers.tak
     });
   });
 
@@ -1980,21 +2029,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     const includeDiagnostics = Boolean(actor) && query.includeDiagnostics;
     const includePartner = Boolean(actor) && query.includePartner;
-    const situation = await readSituationCatalogProvider(requestNow, actor);
-    const safety = await readSafetyCatalogProvider(requestNow);
-    const flight = await readFlightCatalogProvider(requestNow);
-    const missionArena = await readMissionArenaCatalogProvider(requestNow);
-    const tak = includePartner ? await readTakCatalogProvider(requestNow) : undefined;
+    const providers = await readMapCatalogProviders(requestNow, actor, includePartner);
     const catalog = buildMapCatalog({
-      flight,
+      flight: providers.flight,
       generatedAt: requestNow,
       includeDiagnostics,
       includePartner,
       locale: "cs-CZ",
-      missionArena,
-      safety,
-      situation,
-      tak
+      missionArena: providers.missionArena,
+      safety: providers.safety,
+      situation: providers.situation,
+      tak: providers.tak
     });
     const selectedLayers = catalog.layers.filter((layer) => query.layerIds.includes(layer.layerId));
     const unknownLayerIds = query.layerIds.filter((layerId) => !catalog.layers.some((layer) => layer.layerId === layerId));
@@ -2458,6 +2503,139 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         warning: errorMessage(error)
       };
     }
+  }
+
+  async function readMapCatalogProviders(requestNow: Date, actor: AuthenticatedActor | null, includePartner: boolean): Promise<{
+    flight: NonNullable<BuildMapCatalogInput["flight"]>;
+    missionArena: NonNullable<BuildMapCatalogInput["missionArena"]>;
+    safety: NonNullable<BuildMapCatalogInput["safety"]>;
+    situation: NonNullable<BuildMapCatalogInput["situation"]>;
+    tak?: NonNullable<BuildMapCatalogInput["tak"]>;
+  }> {
+    const [situation, safety, flight, missionArena, tak] = await Promise.all([
+      withCatalogProviderTimeout(
+        "sim.situation-data",
+        readSituationCatalogProvider(requestNow, actor),
+        () => unavailableSituationCatalogProvider("Situation data")
+      ),
+      withCatalogProviderTimeout(
+        "sim.safety-data",
+        readSafetyCatalogProvider(requestNow),
+        () => unavailableSafetyCatalogProvider("Safety data")
+      ),
+      withCatalogProviderTimeout(
+        "sim.flight-data",
+        readFlightCatalogProvider(requestNow),
+        () => unavailableFlightCatalogProvider("Flight data")
+      ),
+      withCatalogProviderTimeout(
+        "csm.mission-arena",
+        readMissionArenaCatalogProvider(requestNow),
+        () => unavailableMissionArenaCatalogProvider("Mission Arena")
+      ),
+      includePartner
+        ? withCatalogProviderTimeout(
+            "sim.tak-gateway",
+            readTakCatalogProvider(requestNow),
+            () => unavailableTakCatalogProvider("TAK Gateway")
+          )
+        : Promise.resolve(undefined)
+    ]);
+    return {
+      flight,
+      missionArena,
+      safety,
+      situation,
+      tak
+    };
+  }
+
+  function withCatalogProviderTimeout<T>(
+    providerId: string,
+    operation: Promise<T>,
+    fallback: () => T
+  ): Promise<T> {
+    const timeoutMs = mapCatalogProviderTimeoutMs();
+    return new Promise<T>((resolve) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        app.log.warn({ providerId, timeoutMs }, "Map catalog provider timed out; returning degraded catalog slice.");
+        appendAudit(state, "MAP_CATALOG_PROVIDER_TIMEOUT", { providerId, timeoutMs });
+        resolve(fallback());
+      }, timeoutMs);
+
+      operation.then(
+        (value) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          resolve(value);
+        },
+        (error) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          app.log.warn({ error, providerId }, "Map catalog provider rejected before timeout; returning degraded catalog slice.");
+          appendAudit(state, "MAP_CATALOG_PROVIDER_REJECTED", { error: errorMessage(error), providerId });
+          resolve(fallback());
+        }
+      );
+    });
+  }
+
+  function unavailableFlightCatalogProvider(label: string): NonNullable<BuildMapCatalogInput["flight"]> {
+    return {
+      status: "unavailable",
+      warning: catalogProviderTimeoutWarning(label)
+    };
+  }
+
+  function unavailableMissionArenaCatalogProvider(label: string): NonNullable<BuildMapCatalogInput["missionArena"]> {
+    return {
+      layers: [],
+      sources: [],
+      status: "unavailable",
+      warning: catalogProviderTimeoutWarning(label)
+    };
+  }
+
+  function unavailableSafetyCatalogProvider(label: string): NonNullable<BuildMapCatalogInput["safety"]> {
+    return {
+      layers: [],
+      sources: [],
+      status: "unavailable",
+      warning: catalogProviderTimeoutWarning(label)
+    };
+  }
+
+  function unavailableSituationCatalogProvider(label: string): NonNullable<BuildMapCatalogInput["situation"]> {
+    return {
+      layers: [],
+      sources: [],
+      status: "unavailable",
+      warning: catalogProviderTimeoutWarning(label)
+    };
+  }
+
+  function unavailableTakCatalogProvider(label: string): NonNullable<BuildMapCatalogInput["tak"]> {
+    return {
+      layers: [],
+      sources: [],
+      status: "unavailable",
+      warning: catalogProviderTimeoutWarning(label)
+    };
+  }
+
+  function catalogProviderTimeoutWarning(label: string): string {
+    return `${label} catalog provider timed out after ${mapCatalogProviderTimeoutMs()} ms.`;
   }
 
   async function readSituationCatalogProvider(requestNow: Date, actor: AuthenticatedActor | null) {
@@ -4992,6 +5170,14 @@ function readBoolean(value: string | undefined, fallback: boolean): boolean {
     return fallback;
   }
   return value === "true" || value === "1";
+}
+
+function mapCatalogProviderTimeoutMs(): number {
+  return readPositiveInteger(process.env.COP_MAP_CATALOG_PROVIDER_TIMEOUT_MS, 3500);
+}
+
+function healthDependencyTimeoutMs(): number {
+  return readPositiveInteger(process.env.COP_HEALTH_DEPENDENCY_TIMEOUT_MS, 2500);
 }
 
 function parseBooleanQuery(value: unknown): boolean {
