@@ -570,12 +570,16 @@ function safetyObservabilityDetail(baseDetail: string | undefined, observability
     return baseDetail;
   }
   const parts = [
-    `features ${result.featureCount ?? 0}`,
+    `provider last ${result.featureCount ?? 0}`,
     `stale ${result.staleFeatureCount ?? 0}`,
     `sources ${result.sourceCount ?? 0}`,
     observability.cache?.hitRate !== undefined ? `cache ${Math.round(observability.cache.hitRate * 100)}%` : undefined
   ].filter((value): value is string => Boolean(value));
-  return parts.length > 0 ? parts.join(", ") : baseDetail;
+  const observabilityDetail = parts.length > 0 ? parts.join(", ") : undefined;
+  if (!baseDetail) {
+    return observabilityDetail;
+  }
+  return observabilityDetail ? `${baseDetail}; ${observabilityDetail}` : baseDetail;
 }
 
 export function unavailableSafetyDataHealth(error: unknown, requestNow: Date): SourceHealthOverride {

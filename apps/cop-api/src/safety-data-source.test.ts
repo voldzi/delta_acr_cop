@@ -151,7 +151,7 @@ describe("SafetyDataSourceAdapter", () => {
 
     expect(health.health).toBe("DEGRADED");
     expect(health.lastError).toBeUndefined();
-    expect(health.detail).toBe("features 12, stale 3, sources 3, cache 80%");
+    expect(health.detail).toBe("features 1, critical 0, warnings 1, advisory 0, stale 0; provider last 12, stale 3, sources 3, cache 80%");
     expect(health.warnings).toEqual(expect.arrayContaining(["chmi_hydro: 2 cache errors"]));
     expect(health.summary).toMatchObject({
       observabilityStatus: "degraded",
