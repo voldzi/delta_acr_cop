@@ -2,7 +2,7 @@ import { createPublicSituationAggregateSourceSystem, type SourceSystem } from "@
 import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
 
-export type SituationLayerId = "air_quality" | "flood" | "ground" | "mobile" | "mobile_coverage" | "mobile_network" | "traffic" | "warnings" | "weather";
+export type SituationLayerId = "air_quality" | "fire" | "flood" | "ground" | "mobile" | "mobile_coverage" | "mobile_network" | "traffic" | "warnings" | "weather" | "weather_alerts";
 
 type SituationCacheStatus = "coalesced" | "hit" | "miss" | "stale";
 
@@ -168,6 +168,7 @@ const defaultConfig: SituationDataSourceConfig = {
   enabled: false,
   layerCacheTtlMs: {
     air_quality: 5 * 60 * 1000,
+    fire: 10 * 60 * 1000,
     flood: 5 * 60 * 1000,
     ground: 6 * 60 * 60 * 1000,
     mobile: 15 * 60 * 1000,
@@ -175,7 +176,8 @@ const defaultConfig: SituationDataSourceConfig = {
     mobile_network: 10 * 60 * 1000,
     traffic: 20 * 1000,
     warnings: 5 * 60 * 1000,
-    weather: 5 * 60 * 1000
+    weather: 5 * 60 * 1000,
+    weather_alerts: 5 * 60 * 1000
   },
   maxLimit: 250,
   sourceCacheTtlMs: {
@@ -189,7 +191,7 @@ const defaultConfig: SituationDataSourceConfig = {
   timeoutMs: 7000
 };
 
-const allowedLayerIds: SituationLayerId[] = ["weather", "ground", "mobile", "mobile_network", "mobile_coverage", "traffic", "warnings", "flood", "air_quality"];
+const allowedLayerIds: SituationLayerId[] = ["weather", "ground", "mobile", "mobile_network", "mobile_coverage", "traffic", "warnings", "flood", "fire", "weather_alerts", "air_quality"];
 
 export function createSituationDataSourceConfigFromEnv(env: Record<string, string | undefined> = process.env): SituationDataSourceConfig {
   const cacheTtlMs = readInteger(env.COP_SITUATION_DATA_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 300000);
@@ -200,6 +202,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
     enabled: readBoolean(env.COP_SITUATION_DATA_ENABLED, defaultConfig.enabled),
     layerCacheTtlMs: {
       air_quality: readInteger(env.COP_SITUATION_DATA_AIR_QUALITY_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      fire: readInteger(env.COP_SITUATION_DATA_FIRE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       flood: readInteger(env.COP_SITUATION_DATA_FLOOD_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       ground: readInteger(env.COP_SITUATION_DATA_GROUND_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile: readInteger(env.COP_SITUATION_DATA_MOBILE_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
@@ -207,7 +210,8 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       mobile_network: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       traffic: readInteger(env.COP_SITUATION_DATA_TRAFFIC_CACHE_TTL_MS, cacheTtlMs, 1000, 5 * 60 * 1000),
       warnings: readInteger(env.COP_SITUATION_DATA_WARNINGS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
+      weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_alerts: readInteger(env.COP_SITUATION_DATA_WEATHER_ALERTS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
     },
     maxLimit: readInteger(env.COP_SITUATION_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 1000),
     sourceCacheTtlMs: {

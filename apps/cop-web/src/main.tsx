@@ -184,6 +184,7 @@ import {
   normalizeUserPreferences,
   readUserPreferences,
   writeUserPreferences,
+  type MapBasemapMode,
   type MapViewState,
   type PublicFlightSymbolMode,
   type TrackHistoryDisplayMode,
@@ -256,6 +257,12 @@ interface CatalogGroupView {
 const historyLimitOptions = [36, 72, 120, 240, 600] as const;
 const historyWindowOptions = [30, 60, 120, 180, 300, 600] as const;
 const coverageTechnologyOptions: CoverageTechnology[] = ["2G", "4G", "5G"];
+const mapBasemapModeOptions: Array<[MapBasemapMode, string]> = [
+  ["standard", "OSM"],
+  ["civil", "Civilní"],
+  ["risk", "Rizika"],
+  ["dark", "Tmavá"]
+];
 const defaultSituationLayerIds: SituationLayerId[] = ["weather"];
 const defaultSafetyLayerIds: SafetyLayerId[] = ["warnings"];
 const defaultTakLayerIds: TakLayerId[] = [];
@@ -349,6 +356,9 @@ export function App() {
     normalizePublicFlightSymbolMode(initialPreferences.publicFlightSymbolMode)
   );
   const [mapClusterEnabled, setMapClusterEnabled] = React.useState(initialPreferences.mapClusterEnabled ?? false);
+  const [mapBasemapMode, setMapBasemapMode] = React.useState<MapBasemapMode>(() =>
+    normalizeMapBasemapMode(initialPreferences.mapBasemapMode)
+  );
   const [showAlertAreas, setShowAlertAreas] = React.useState(initialPreferences.showAlertAreas ?? false);
   const [predictionMinutes, setPredictionMinutes] = React.useState(() => clamp(initialPreferences.predictionMinutes ?? 10, 2, 20));
   const [predictionMode, setPredictionMode] = React.useState<PredictionMode>(() => readInitialPredictionMode(initialPreferences.predictionMode));
@@ -1565,6 +1575,9 @@ export function App() {
     if (settings.mapClusterEnabled !== undefined) {
       setMapClusterEnabled(settings.mapClusterEnabled);
     }
+    if (settings.mapBasemapMode !== undefined) {
+      setMapBasemapMode(normalizeMapBasemapMode(settings.mapBasemapMode));
+    }
     if (settings.catalogLayerIds !== undefined) {
       catalogSelectionInitializedRef.current = true;
       setVisibleCatalogLayerIds(normalizeCatalogLayerIds(settings.catalogLayerIds));
@@ -1631,6 +1644,7 @@ export function App() {
     domainScope,
     includeSynthetic,
     mapClusterEnabled,
+    mapBasemapMode,
     mapView,
     minConfidence,
     predictionMinutes,
@@ -1659,6 +1673,7 @@ export function App() {
     autoRefresh,
     domainScope,
     includeSynthetic,
+    mapBasemapMode,
     mapClusterEnabled,
     mapView,
     minConfidence,
@@ -2733,6 +2748,7 @@ export function App() {
         autoRefresh,
         domainScope,
         includeSynthetic,
+        mapBasemapMode,
         mapClusterEnabled,
         mapView,
         minConfidence,
@@ -3081,6 +3097,7 @@ export function App() {
               trackHistoryDisplayMode={trackHistoryDisplayMode}
               trackHistory={replayTrackHistory}
               publicFlightSymbolMode={publicFlightSymbolMode}
+              mapBasemapMode={mapBasemapMode}
               predictionMinutes={predictionMinutes}
               predictionMode={predictionMode}
               autoFit={autoFit}
@@ -3388,6 +3405,7 @@ export function App() {
           authSession={authSession}
           autoRefresh={autoRefresh}
           includeSynthetic={includeSynthetic}
+          mapBasemapMode={mapBasemapMode}
           minConfidence={minConfidence}
           predictionMinutes={predictionMinutes}
           predictionMode={predictionMode}
@@ -3422,6 +3440,7 @@ export function App() {
           onAutoRefreshChange={setAutoRefresh}
           onClose={() => setSettingsOpen(false)}
           onIncludeSyntheticChange={setIncludeSynthetic}
+          onMapBasemapModeChange={setMapBasemapMode}
           onMinConfidenceChange={setMinConfidence}
           onMapClusterEnabledChange={setMapClusterEnabled}
           onPredictionMinutesChange={setPredictionMinutes}
@@ -4787,6 +4806,7 @@ function SettingsDrawer({
   authSession,
   autoRefresh,
   includeSynthetic,
+  mapBasemapMode,
   mapClusterEnabled,
   minConfidence,
   predictionMinutes,
@@ -4811,6 +4831,7 @@ function SettingsDrawer({
   onAutoRefreshChange,
   onClose,
   onIncludeSyntheticChange,
+  onMapBasemapModeChange,
   onMapClusterEnabledChange,
   onMinConfidenceChange,
   onPredictionMinutesChange,
@@ -4835,6 +4856,7 @@ function SettingsDrawer({
   authSession: AuthSession;
   autoRefresh: boolean;
   includeSynthetic: boolean;
+  mapBasemapMode: MapBasemapMode;
   mapClusterEnabled: boolean;
   minConfidence: number;
   predictionMinutes: number;
@@ -4859,6 +4881,7 @@ function SettingsDrawer({
   onAutoRefreshChange: (value: boolean) => void;
   onClose: () => void;
   onIncludeSyntheticChange: (value: boolean) => void;
+  onMapBasemapModeChange: (value: MapBasemapMode) => void;
   onMapClusterEnabledChange: (value: boolean) => void;
   onMinConfidenceChange: (value: number) => void;
   onPredictionMinutesChange: (value: number) => void;
@@ -4917,6 +4940,13 @@ function SettingsDrawer({
                 Shlukovat objekty při oddálení
               </label>
               <p className="settings-help">Kliknutí na shluk mapu přiblíží a ukáže náhled objektů uvnitř. Po dalším přiblížení se shluky rozpadají do menších skupin a jednotlivých stop.</p>
+              <SegmentedControl
+                label="Mapový podklad"
+                options={mapBasemapModeOptions}
+                value={mapBasemapMode}
+                onChange={(value) => onMapBasemapModeChange(value as MapBasemapMode)}
+              />
+              <p className="settings-help">Civilní a rizikový podklad tlumí detailní OSM mapu, aby výstrahy, povodně a komunitní hlášení byly čitelné jako hlavní vrstva.</p>
               <SegmentedControl
                 label="Symbolika mapy"
                 options={[
@@ -7941,12 +7971,28 @@ function defaultSafetyLayers(): SafetyLayer[] {
       layerId: "warnings"
     },
     {
+      defaultVisible: false,
+      description: "Požáry, hotspoty a ověřené požární incidenty.",
+      expectedCadenceSeconds: 600,
+      geometryTypes: ["Point", "Polygon"],
+      label: "Fire",
+      layerId: "fire"
+    },
+    {
       defaultVisible: true,
       description: "Povodňový a hydrologický kontext.",
       expectedCadenceSeconds: 600,
       geometryTypes: ["Point", "Polygon"],
       label: "Flood and water levels",
       layerId: "flood"
+    },
+    {
+      defaultVisible: false,
+      description: "Meteorologické výstrahy podle území a platnosti.",
+      expectedCadenceSeconds: 300,
+      geometryTypes: ["Polygon"],
+      label: "Weather alerts",
+      layerId: "weather_alerts"
     }
   ];
 }
@@ -8014,6 +8060,7 @@ function situationLayerLabel(layerId: SituationLayerId): string {
   const labels: Record<SituationLayerId, string> = {
     air_quality: "Kvalita vzduchu",
     community: "Komunitní hlášení",
+    fire: "Požáry",
     flight_airports: "Letiště",
     flight_airspaces: "Letecké prostory",
     flood: "Povodně",
@@ -8024,6 +8071,7 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     mission_arena: "Mission Arena",
     traffic: "Doprava",
     warnings: "Výstrahy",
+    weather_alerts: "Meteorologické výstrahy",
     weather: "Počasí"
   };
   return labels[layerId];
@@ -8037,7 +8085,13 @@ function situationDisplayLayerLabel(feature: SituationFeature): string {
 }
 
 function safetyLayerLabel(layerId: SafetyLayerId): string {
-  return layerId === "flood" ? "Povodně a voda" : "Veřejné výstrahy";
+  const labels: Record<SafetyLayerId, string> = {
+    fire: "Požáry",
+    flood: "Povodně a voda",
+    warnings: "Veřejné výstrahy",
+    weather_alerts: "Meteorologické výstrahy"
+  };
+  return labels[layerId];
 }
 
 function takLayerLabel(layerId: TakLayerId): string {
@@ -9267,7 +9321,7 @@ function minCadenceSeconds(current: number | undefined, next: number | undefined
 }
 
 function isSafetySourceId(value: string): value is SafetyDataSourceId {
-  return value === "chmi_alerts" || value === "chmi_hydro" || value === "mock";
+  return value === "chmi_alerts" || value === "chmi_hydro" || value === "fire_hotspots" || value === "fire_incidents" || value === "mock" || value === "weather_alerts";
 }
 
 function readInitialDomainScope(value: string | undefined): DomainScope {
@@ -9280,6 +9334,10 @@ function readInitialPredictionMode(value: string | undefined): PredictionMode {
 
 function normalizePublicFlightSymbolMode(value: string | undefined): PublicFlightSymbolMode {
   return value === "standard" ? "standard" : "civil";
+}
+
+function normalizeMapBasemapMode(value: string | undefined): MapBasemapMode {
+  return value === "civil" || value === "risk" || value === "dark" ? value : "standard";
 }
 
 function normalizeTrackHistoryDisplayMode(value: string | undefined): TrackHistoryDisplayMode {
@@ -9320,6 +9378,7 @@ function normalizeSourceIds(value: string[] | undefined): string[] {
 function isSituationLayerId(value: string): value is SituationLayerId {
   return value === "weather"
     || value === "community"
+    || value === "fire"
     || value === "flight_airports"
     || value === "flight_airspaces"
     || value === "ground"
@@ -9329,6 +9388,7 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "mission_arena"
     || value === "traffic"
     || value === "warnings"
+    || value === "weather_alerts"
     || value === "flood"
     || value === "air_quality";
 }
@@ -9345,7 +9405,7 @@ function normalizeSafetyLayerIds(value: string[] | undefined): SafetyLayerId[] {
 }
 
 function isSafetyLayerId(value: string): value is SafetyLayerId {
-  return value === "warnings" || value === "flood";
+  return value === "warnings" || value === "flood" || value === "fire" || value === "weather_alerts";
 }
 
 function normalizeTakLayerIds(value: string[] | undefined): TakLayerId[] {

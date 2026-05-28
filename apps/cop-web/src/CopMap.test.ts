@@ -727,7 +727,7 @@ describe("COP map data helpers", () => {
     expect(collection.features[0]?.properties).toMatchObject({
       featureId: "warnings:chmi_alerts:6bmq06",
       mapPointSuppressed: true,
-      situationStatusLabel: "OMEZENÝ"
+      situationStatusLabel: "UPOZORNĚNÍ"
     });
     expect(collection.features[1]?.properties.mapPointSuppressed).toBeUndefined();
   });

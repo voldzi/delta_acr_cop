@@ -462,6 +462,8 @@ function styleProfileForCatalogLayer(layer: ProviderCatalogLayer): string {
 function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourceDescriptor[]): MapCatalogLayer[] {
   const warningLayer = findLayer(layers, "warnings");
   const floodLayer = findLayer(layers, "flood");
+  const fireLayer = findLayer(layers, "fire");
+  const weatherAlertsLayer = findLayer(layers, "weather_alerts");
   return [
     {
       audience: "public",
@@ -520,7 +522,73 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       role: "primary",
       selectable: true,
       styleProfile: "water-level-v1"
-    }
+    },
+    ...(fireLayer
+      ? [
+          {
+            audience: "public" as const,
+            cacheTtlSeconds: 600,
+            defaultVisible: fireLayer.defaultVisible,
+            description: fireLayer.description ?? "Požáry, hotspoty a ověřené požární incidenty.",
+            geometryTypes: fireLayer.geometryTypes ?? ["Point", "Polygon"],
+            groupId: "risks",
+            kind: "vector_features" as const,
+            label: "Požáry",
+            layerId: "public.safety.fire",
+            legal: legalFromSource(findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
+            maxZoom: 18,
+            minZoom: 5,
+            provenance: {
+              sourceIds: ["sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
+            },
+            query: {
+              maxFeatures: 250,
+              mode: "bbox" as const,
+              providerId: "sim.safety-data",
+              providerLayerIds: ["fire"],
+              providerSourceIds: ["fire_hotspots", "fire_incidents"],
+              streamId: "features"
+            },
+            refreshSeconds: fireLayer.expectedCadenceSeconds ?? 600,
+            role: "primary" as const,
+            selectable: true,
+            styleProfile: "fire-risk-v1"
+          }
+        ]
+      : []),
+    ...(weatherAlertsLayer
+      ? [
+          {
+            audience: "public" as const,
+            cacheTtlSeconds: 300,
+            defaultVisible: weatherAlertsLayer.defaultVisible,
+            description: weatherAlertsLayer.description ?? "Meteorologické výstrahy podle území, typu nebezpečí a platnosti.",
+            geometryTypes: weatherAlertsLayer.geometryTypes ?? ["Polygon"],
+            groupId: "risks.weather",
+            kind: "vector_features" as const,
+            label: "Meteorologické výstrahy",
+            layerId: "public.safety.weather_alerts",
+            legal: legalFromSource(findSource(sources, "weather_alerts") ?? findSource(sources, "chmi_alerts")),
+            maxZoom: 18,
+            minZoom: 5,
+            provenance: {
+              sourceIds: ["sim.safety-data:weather_alerts"]
+            },
+            query: {
+              maxFeatures: 250,
+              mode: "bbox" as const,
+              providerId: "sim.safety-data",
+              providerLayerIds: ["weather_alerts"],
+              providerSourceIds: ["weather_alerts"],
+              streamId: "features"
+            },
+            refreshSeconds: weatherAlertsLayer.expectedCadenceSeconds ?? 300,
+            role: "primary" as const,
+            selectable: true,
+            styleProfile: "weather-alert-area-v1"
+          }
+        ]
+      : [])
   ];
 }
 
@@ -1084,7 +1152,11 @@ function buildSafetySources(sources: SafetySourceDescriptor[]): MapCatalogSource
       ? ["public.safety.warnings"]
       : source.sourceId === "chmi_hydro"
         ? ["public.safety.flood"]
-        : undefined,
+        : source.sourceId === "fire_hotspots" || source.sourceId === "fire_incidents"
+          ? ["public.safety.fire"]
+          : source.sourceId === "weather_alerts"
+            ? ["public.safety.weather_alerts"]
+            : undefined,
     label: source.label ?? source.sourceId,
     providerId: "sim.safety-data",
     selectableInMap: source.enabled !== false && source.sourceId !== "mock",
@@ -1140,7 +1212,7 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
     case "pid_gtfs_rt":
       return { audience: "public", feedsCatalogLayerIds: ["public.traffic.transit"], selectableInMap: true, sourceRole: "final" };
     case "safety_data":
-      return { audience: "public", feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.flood"], selectableInMap: false, sourceRole: "projection" };
+      return { audience: "public", feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.flood", "public.safety.fire", "public.safety.weather_alerts"], selectableInMap: false, sourceRole: "projection" };
     case "ardos_partner":
       return { audience: "partner", feedsCatalogLayerIds: ["partner.ardos"], selectableInMap: false, sourceRole: "final" };
     case "mock":

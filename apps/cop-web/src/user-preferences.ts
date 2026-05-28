@@ -10,6 +10,7 @@ export interface MapViewState {
 export type MapSymbolMode = "civil" | "standard";
 // Stored under the legacy key for profile compatibility; semantically this is now the whole-map symbol mode.
 export type PublicFlightSymbolMode = MapSymbolMode;
+export type MapBasemapMode = "standard" | "civil" | "risk" | "dark";
 export type TrackHistoryDisplayMode = "all" | "selected";
 
 export interface UserPreferences {
@@ -22,6 +23,7 @@ export interface UserPreferences {
   domainScope?: string;
   includeSynthetic?: boolean;
   mapClusterEnabled?: boolean;
+  mapBasemapMode?: MapBasemapMode;
   mapView?: MapViewState;
   minConfidence?: number;
   predictionMinutes?: number;
@@ -109,6 +111,7 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     domainScope: optionalString(value.domainScope),
     includeSynthetic: optionalBoolean(value.includeSynthetic),
     mapClusterEnabled: optionalBoolean(value.mapClusterEnabled),
+    mapBasemapMode: optionalMapBasemapMode(value.mapBasemapMode),
     mapView: normalizeMapView(value.mapView),
     minConfidence: optionalFiniteNumber(value.minConfidence),
     predictionMinutes: optionalFiniteNumber(value.predictionMinutes),
@@ -155,6 +158,10 @@ function optionalStringArray(value: unknown): string[] | undefined {
 
 function optionalPublicFlightSymbolMode(value: unknown): PublicFlightSymbolMode | undefined {
   return value === "civil" || value === "standard" ? value : undefined;
+}
+
+function optionalMapBasemapMode(value: unknown): MapBasemapMode | undefined {
+  return value === "standard" || value === "civil" || value === "risk" || value === "dark" ? value : undefined;
 }
 
 function optionalTrackHistoryDisplayMode(value: unknown): TrackHistoryDisplayMode | undefined {

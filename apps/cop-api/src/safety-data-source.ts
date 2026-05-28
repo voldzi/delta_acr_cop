@@ -2,8 +2,8 @@ import { createPublicSafetyAggregateSourceSystem, type SourceSystem } from "@cop
 import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
 
-export type SafetyLayerId = "flood" | "warnings";
-export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "mock";
+export type SafetyLayerId = "fire" | "flood" | "warnings" | "weather_alerts";
+export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "mock" | "weather_alerts";
 export type SafetySeverity = "advisory" | "critical" | "info" | "warning";
 type SafetyCacheStatus = "coalesced" | "hit" | "miss" | "stale";
 
@@ -161,15 +161,17 @@ const defaultConfig: SafetyDataSourceConfig = {
   cacheTtlMs: 120000,
   enabled: false,
   layerCacheTtlMs: {
+    fire: 10 * 60 * 1000,
     flood: 5 * 60 * 1000,
-    warnings: 2 * 60 * 1000
+    warnings: 2 * 60 * 1000,
+    weather_alerts: 5 * 60 * 1000
   },
   maxLimit: 250,
   staleIfErrorMs: 20 * 60 * 1000,
   timeoutMs: 15000
 };
 
-const allowedLayerIds: SafetyLayerId[] = ["warnings", "flood"];
+const allowedLayerIds: SafetyLayerId[] = ["warnings", "flood", "fire", "weather_alerts"];
 
 export function createSafetyDataSourceConfigFromEnv(env: Record<string, string | undefined> = process.env): SafetyDataSourceConfig {
   const cacheTtlMs = readInteger(env.COP_SAFETY_DATA_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 10 * 60 * 1000);
@@ -179,8 +181,10 @@ export function createSafetyDataSourceConfigFromEnv(env: Record<string, string |
     cacheTtlMs,
     enabled: readBoolean(env.COP_SAFETY_DATA_ENABLED, defaultConfig.enabled),
     layerCacheTtlMs: {
+      fire: readInteger(env.COP_SAFETY_DATA_FIRE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       flood: readInteger(env.COP_SAFETY_DATA_FLOOD_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      warnings: readInteger(env.COP_SAFETY_DATA_WARNINGS_CACHE_TTL_MS, cacheTtlMs, 1000, 24 * 60 * 60 * 1000)
+      warnings: readInteger(env.COP_SAFETY_DATA_WARNINGS_CACHE_TTL_MS, cacheTtlMs, 1000, 24 * 60 * 60 * 1000),
+      weather_alerts: readInteger(env.COP_SAFETY_DATA_WEATHER_ALERTS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
     },
     maxLimit: readInteger(env.COP_SAFETY_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 1000),
     staleIfErrorMs: readInteger(env.COP_SAFETY_DATA_STALE_IF_ERROR_MS, defaultConfig.staleIfErrorMs ?? 1200000, 0, 24 * 60 * 60 * 1000),
@@ -994,7 +998,7 @@ function isSafetyLayerId(value: unknown): value is SafetyLayerId {
 }
 
 function isSafetyDataSourceId(value: unknown): value is SafetyDataSourceId {
-  return value === "mock" || value === "chmi_alerts" || value === "chmi_hydro";
+  return value === "mock" || value === "chmi_alerts" || value === "chmi_hydro" || value === "fire_hotspots" || value === "fire_incidents" || value === "weather_alerts";
 }
 
 function readBoolean(value: string | undefined, fallback: boolean): boolean {

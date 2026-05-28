@@ -9,7 +9,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { isPublicFlightObject, type AoiRule, type CopAlert, type CopObject, type MapBounds, type SituationFeature, type SituationFeatureCollectionResponse } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
-import type { MapViewState, PublicFlightSymbolMode, TrackHistoryDisplayMode } from "./user-preferences";
+import type { MapBasemapMode, MapViewState, PublicFlightSymbolMode, TrackHistoryDisplayMode } from "./user-preferences";
 import {
   createNatoSymbolSvg,
   getAffiliationPresentation,
@@ -53,6 +53,9 @@ const situationWeatherLabelLayerId = "cop-situation-weather-label";
 const situationOsmSymbolLayerId = "cop-situation-osm-symbol";
 const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
 const situationTrafficSymbolLayerId = "cop-situation-traffic-symbol";
+const situationRiskPointLayerId = "cop-situation-risk-point";
+const situationRiskIconLayerId = "cop-situation-risk-icon";
+const situationRiskLabelLayerId = "cop-situation-risk-label";
 const situationPointLayerId = "cop-situation-point";
 const situationLabelLayerId = "cop-situation-label";
 const userLocationAccuracyLayerId = "cop-user-location-accuracy";
@@ -84,6 +87,9 @@ const transitIconPrefix = "cop-transit";
 const osmCategoryIconPrefix = "cop-osm-category";
 const osmCategoryIconIds = ["airport", "hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "other"] as const;
 type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
+const riskIconPrefix = "cop-risk";
+const riskIconIds = ["fire", "flood", "warning", "weather", "unknown"] as const;
+type RiskIconId = (typeof riskIconIds)[number];
 
 export interface TrackFeatureProperties {
   objectId: string;
@@ -207,6 +213,10 @@ export interface SituationContextFeatureCollection {
       osmCategoryLabel?: string;
       osmPoi?: boolean;
       osmSymbolKey?: string;
+      riskFeature?: boolean;
+      riskIconKey?: string;
+      riskKind?: RiskIconId;
+      riskMapLabel?: string;
     };
   }>;
 }
@@ -225,6 +235,7 @@ interface CopMapProps {
   showPrediction: boolean;
   trackHistoryDisplayMode: TrackHistoryDisplayMode;
   trackHistory: TrackHistory;
+  mapBasemapMode: MapBasemapMode;
   publicFlightSymbolMode: PublicFlightSymbolMode;
   predictionMinutes: number;
   predictionMode: PredictionMode;
@@ -280,6 +291,7 @@ export function CopMap({
   showPrediction,
   trackHistoryDisplayMode,
   trackHistory,
+  mapBasemapMode,
   publicFlightSymbolMode,
   predictionMinutes,
   predictionMode,
@@ -641,8 +653,12 @@ export function CopMap({
                 "#22c55e",
                 "traffic",
                 "#facc15",
+                "fire",
+                "#fb923c",
                 "warnings",
                 "#ef4444",
+                "weather_alerts",
+                "#facc15",
                 "flood",
                 "#38bdf8",
                 "air_quality",
@@ -656,6 +672,8 @@ export function CopMap({
               ["case", ["get", "stale"], 0.1, 0.2],
               ["==", ["get", "layer"], "mobile_network"],
               ["case", ["get", "stale"], 0.08, 0.16],
+              ["==", ["get", "riskFeature"], true],
+              ["case", ["get", "stale"], 0.07, 0.18],
               ["get", "stale"],
               0.06,
               0.1
@@ -691,8 +709,12 @@ export function CopMap({
                 "#22c55e",
                 "traffic",
                 "#facc15",
+                "fire",
+                "#fb923c",
                 "warnings",
                 "#ef4444",
+                "weather_alerts",
+                "#facc15",
                 "flood",
                 "#38bdf8",
                 "air_quality",
@@ -743,8 +765,12 @@ export function CopMap({
                 "#22c55e",
                 "traffic",
                 "#facc15",
+                "fire",
+                "#fb923c",
                 "warnings",
                 "#ef4444",
+                "weather_alerts",
+                "#facc15",
                 "flood",
                 "#38bdf8",
                 "air_quality",
@@ -764,7 +790,7 @@ export function CopMap({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           paint: {
             "circle-color": [
               "case",
@@ -780,8 +806,12 @@ export function CopMap({
                 "#22c55e",
                 "traffic",
                 "#facc15",
+                "fire",
+                "#fb923c",
                 "warnings",
                 "#ef4444",
+                "weather_alerts",
+                "#facc15",
                 "flood",
                 "#38bdf8",
                 "air_quality",
@@ -864,6 +894,60 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationRiskPointLayerId,
+          type: "circle",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true]],
+          paint: {
+            "circle-color": ["coalesce", ["get", "situationStatusColor"], "#fb923c"],
+            "circle-opacity": ["case", ["get", "stale"], 0.48, 0.78],
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 9, 10, 15, 15, 23],
+            "circle-stroke-color": "#f8fafc",
+            "circle-stroke-opacity": 0.9,
+            "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 1.2, 12, 2.4, 16, 3]
+          }
+        });
+
+        map.addLayer({
+          id: situationRiskIconLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "riskIconKey"], getRiskIconKey("warning")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.28, 10, 0.38, 15, 0.5],
+            "icon-anchor": "center",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.72, 0.98]
+          }
+        });
+
+        map.addLayer({
+          id: situationRiskLabelLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true]],
+          layout: {
+            "text-field": ["coalesce", ["get", "riskMapLabel"], ["get", "mapLabel"], ["get", "label"]],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 5, 0, 8, 10, 12, 12, 16, 14],
+            "text-offset": [0, 1.35],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "text-color": ["coalesce", ["get", "situationStatusColor"], "#f8fafc"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.8,
+            "text-halo-blur": 0.35
+          }
+        });
+
+        map.addLayer({
           id: situationOsmSymbolLayerId,
           type: "symbol",
           source: situationSourceId,
@@ -895,7 +979,7 @@ export function CopMap({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           layout: {
             "text-field": ["coalesce", ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Regular"],
@@ -1268,6 +1352,9 @@ export function CopMap({
         map.on("click", situationOsmSymbolLayerId, handleSituationClick);
         map.on("click", situationMobileSymbolLayerId, handleSituationClick);
         map.on("click", situationTrafficSymbolLayerId, handleSituationClick);
+        map.on("click", situationRiskPointLayerId, handleSituationClick);
+        map.on("click", situationRiskIconLayerId, handleSituationClick);
+        map.on("click", situationRiskLabelLayerId, handleSituationClick);
         map.on("click", situationWeatherPointLayerId, handleSituationClick);
         map.on("click", situationWeatherLabelLayerId, handleSituationClick);
         map.on("click", situationLineLayerId, handleSituationClick);
@@ -1301,6 +1388,9 @@ export function CopMap({
               situationOsmSymbolLayerId,
               situationMobileSymbolLayerId,
               situationTrafficSymbolLayerId,
+              situationRiskPointLayerId,
+              situationRiskIconLayerId,
+              situationRiskLabelLayerId,
               situationWeatherPointLayerId,
               situationWeatherLabelLayerId,
               situationLineLayerId,
@@ -1361,6 +1451,15 @@ export function CopMap({
         map.on("mouseenter", situationTrafficSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationRiskPointLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationRiskIconLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationRiskLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationWeatherPointLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -1398,6 +1497,15 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationTrafficSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationRiskPointLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationRiskIconLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationRiskLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherPointLayerId, () => {
@@ -1445,6 +1553,14 @@ export function CopMap({
       resizeObserverRef.current = null;
     };
   }, [mapReady]);
+
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) {
+      return;
+    }
+    applyBasemapMode(map, mapBasemapMode);
+  }, [mapBasemapMode, mapReady]);
 
   React.useEffect(() => {
     const source = mapRef.current?.getSource(userLocationSourceId);
@@ -1616,7 +1732,7 @@ export function CopMap({
   const missingPositionCount = objects.length - positionedObjects.length;
 
   return (
-    <div className={`map-container ${mapFullscreen ? "fullscreen" : ""}`}>
+    <div className={`map-container basemap-${mapBasemapMode} ${mapFullscreen ? "fullscreen" : ""}`}>
       <div className="map-canvas" ref={containerRef} aria-label="Georeferencovaná situační mapa" />
       {zoneCreationActive ? (
         <div className="map-zone-create-hint">
@@ -2076,6 +2192,18 @@ function buildSituationRenderProperties(
       situationStatusTone: status.tone
     };
   }
+  if (isRiskFeature(feature)) {
+    const kind = riskIconKind(feature);
+    return {
+      riskFeature: true,
+      riskIconKey: getRiskIconKey(kind),
+      riskKind: kind,
+      riskMapLabel: formatRiskMapLabel(feature, status),
+      situationStatusColor: status.color,
+      situationStatusLabel: status.label,
+      situationStatusTone: status.tone
+    };
+  }
   if (feature.properties.layer !== "weather") {
     return {
       situationStatusColor: status.color,
@@ -2109,6 +2237,67 @@ function buildSituationRenderProperties(
 
 function isSyntheticWarningPoint(feature: SituationFeature): boolean {
   return feature.geometry.type === "Point" && feature.properties.layer === "warnings";
+}
+
+function isRiskFeature(feature: SituationFeature): boolean {
+  return feature.properties.layer === "warnings"
+    || feature.properties.layer === "weather_alerts"
+    || feature.properties.layer === "flood"
+    || feature.properties.layer === "fire"
+    || ["fire", "wildfire", "flood", "warning", "weather_alert", "storm", "risk"].includes(normalizeSituationCategory(feature.properties.category));
+}
+
+function riskIconKind(feature: SituationFeature): RiskIconId {
+  const category = normalizeSituationCategory(feature.properties.category);
+  if (feature.properties.layer === "fire" || category.includes("fire") || category.includes("wildfire")) {
+    return "fire";
+  }
+  if (feature.properties.layer === "flood" || category.includes("flood") || category.includes("hydro") || category.includes("water")) {
+    return "flood";
+  }
+  if (feature.properties.layer === "weather_alerts" || category.includes("weather") || category.includes("storm") || category.includes("wind")) {
+    return "weather";
+  }
+  if (feature.properties.layer === "warnings" || category.includes("warning")) {
+    return "warning";
+  }
+  return "unknown";
+}
+
+function formatRiskMapLabel(feature: SituationFeature, status: { label: string }): string {
+  const headline = feature.properties.headline ?? feature.properties.label;
+  const category = riskLabelForKind(riskIconKind(feature));
+  if (!headline || headline === feature.properties.featureId) {
+    return `${category}\n${status.label}`;
+  }
+  const compactHeadline = headline.replace(/\s+/g, " ").trim();
+  return `${category}\n${compactHeadline.length > 22 ? `${compactHeadline.slice(0, 21)}…` : compactHeadline}`;
+}
+
+function riskLabelForKind(kind: RiskIconId): string {
+  const labels: Record<RiskIconId, string> = {
+    fire: "Požár",
+    flood: "Povodeň",
+    unknown: "Riziko",
+    warning: "Výstraha",
+    weather: "Počasí"
+  };
+  return labels[kind];
+}
+
+function riskDefaultColor(feature: SituationFeature): string {
+  switch (riskIconKind(feature)) {
+    case "fire":
+      return "#fb923c";
+    case "flood":
+      return "#38bdf8";
+    case "weather":
+      return "#facc15";
+    case "warning":
+      return "#ef4444";
+    default:
+      return "#a78bfa";
+  }
 }
 
 function isCommunicationTowerFeature(feature: SituationFeature): boolean {
@@ -2159,6 +2348,22 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
       return { color: "#facc15", label: "OMEZENÍ", tone: "warning" };
     }
     return { color: "#38bdf8", label: "PROSTOR", tone: "info" };
+  }
+  if (isRiskFeature(feature)) {
+    const rawRisk = (feature.properties.hazardSeverity ?? feature.properties.severity ?? feature.properties.status ?? feature.properties.urgency ?? "info").trim().toLowerCase();
+    if (["critical", "extreme", "severe", "danger", "emergency", "red"].includes(rawRisk)) {
+      return { color: "#ef4444", label: "KRITICKÉ", tone: "critical" };
+    }
+    if (["warning", "high", "orange", "watch"].includes(rawRisk)) {
+      return { color: "#fb923c", label: "VÝSTRAHA", tone: "warning" };
+    }
+    if (["advisory", "moderate", "yellow", "limited"].includes(rawRisk)) {
+      return { color: "#facc15", label: "UPOZORNĚNÍ", tone: "advisory" };
+    }
+    if (["ok", "green", "info", "low"].includes(rawRisk)) {
+      return { color: riskDefaultColor(feature), label: "INFO", tone: "info" };
+    }
+    return { color: riskDefaultColor(feature), label: rawRisk.toUpperCase(), tone: "unknown" };
   }
   if (feature.properties.stale) {
     return { color: "#facc15", label: "STALE", tone: "warning" };
@@ -2462,6 +2667,10 @@ function getOsmCategoryIconKey(iconId: OsmCategoryIconId): string {
   return `${osmCategoryIconPrefix}-${iconId}`;
 }
 
+function getRiskIconKey(iconId: RiskIconId): string {
+  return `${riskIconPrefix}-${iconId}`;
+}
+
 function normalizeMobileNetworkIconTone(tone: string | undefined): MobileNetworkIconTone {
   return mobileNetworkIconTones.includes(tone as MobileNetworkIconTone) ? tone as MobileNetworkIconTone : "unknown";
 }
@@ -2715,6 +2924,7 @@ function situationLayerDisplayName(feature: SituationFeature): string {
   const labels: Record<string, string> = {
     air_quality: "Kvalita vzduchu",
     community: "Komunitní hlášení",
+    fire: "Požáry",
     flight_airports: "Letiště",
     flight_airspaces: "Letecký prostor",
     flood: "Povodně",
@@ -2725,6 +2935,7 @@ function situationLayerDisplayName(feature: SituationFeature): string {
     mission_arena: "Mission Arena",
     traffic: "Doprava",
     warnings: "Výstrahy",
+    weather_alerts: "Meteorologické výstrahy",
     weather: "Počasí"
   };
   return labels[feature.properties.layer] ?? feature.properties.layer;
@@ -3145,6 +3356,45 @@ function createRasterStyle(tiles: string, attribution: string, glyphs: string): 
   };
 }
 
+function applyBasemapMode(map: maplibregl.Map, mode: MapBasemapMode): void {
+  const settings = basemapPaintSettings(mode);
+  const style = map.getStyle();
+  const layers = (style.layers ?? []) as Array<{ id: string; type?: string }>;
+  layers
+    .filter((layer) => layer.type === "raster")
+    .forEach((layer) => {
+      try {
+        map.setPaintProperty(layer.id, "raster-opacity", settings.opacity);
+        map.setPaintProperty(layer.id, "raster-saturation", settings.saturation);
+        map.setPaintProperty(layer.id, "raster-contrast", settings.contrast);
+        map.setPaintProperty(layer.id, "raster-brightness-min", settings.brightnessMin);
+        map.setPaintProperty(layer.id, "raster-brightness-max", settings.brightnessMax);
+      } catch {
+        // External styles can contain provider-specific raster layers; keep overlays alive if one layer rejects tuning.
+      }
+    });
+}
+
+function basemapPaintSettings(mode: MapBasemapMode): {
+  brightnessMax: number;
+  brightnessMin: number;
+  contrast: number;
+  opacity: number;
+  saturation: number;
+} {
+  switch (mode) {
+    case "civil":
+      return { brightnessMax: 1, brightnessMin: 0.04, contrast: -0.08, opacity: 0.86, saturation: -0.35 };
+    case "risk":
+      return { brightnessMax: 1.03, brightnessMin: 0.14, contrast: -0.18, opacity: 0.66, saturation: -0.6 };
+    case "dark":
+      return { brightnessMax: 0.52, brightnessMin: 0, contrast: -0.05, opacity: 0.82, saturation: -0.7 };
+    case "standard":
+    default:
+      return { brightnessMax: 1, brightnessMin: 0, contrast: 0, opacity: 1, saturation: 0 };
+  }
+}
+
 export function fitMapToObjects(map: maplibregl.Map | null, objects: CopObject[]): boolean {
   const positionedObjects = objects.filter(hasPosition);
   if (!map || positionedObjects.length === 0) {
@@ -3252,6 +3502,14 @@ async function registerSituationSymbolImages(map: maplibregl.Map) {
     const key = getOsmCategoryIconKey(iconId);
     if (!map.hasImage(key)) {
       map.addImage(key, createOsmCategorySymbolImage(iconId), {
+        pixelRatio: window.devicePixelRatio || 1
+      });
+    }
+  });
+  riskIconIds.forEach((iconId) => {
+    const key = getRiskIconKey(iconId);
+    if (!map.hasImage(key)) {
+      map.addImage(key, createRiskSymbolImage(iconId), {
         pixelRatio: window.devicePixelRatio || 1
       });
     }
@@ -3593,6 +3851,138 @@ function createTransitSymbolImage(kind: TransportIconKind): ImageData {
       break;
   }
   context.restore();
+
+  return context.getImageData(0, 0, size, size);
+}
+
+function createRiskSymbolImage(iconId: RiskIconId): ImageData {
+  const canvas = document.createElement("canvas");
+  const size = 112;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+
+  context.clearRect(0, 0, size, size);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.strokeStyle = "#061019";
+  context.fillStyle = "#f8fafc";
+  context.lineWidth = 10;
+
+  const strokePath = (draw: () => void) => {
+    context.save();
+    context.strokeStyle = "rgba(6, 16, 25, 0.95)";
+    context.lineWidth = 13;
+    draw();
+    context.stroke();
+    context.restore();
+    context.save();
+    context.strokeStyle = "rgba(248, 250, 252, 0.96)";
+    context.lineWidth = 7;
+    draw();
+    context.stroke();
+    context.restore();
+  };
+
+  switch (iconId) {
+    case "fire":
+      context.save();
+      context.translate(56, 56);
+      context.beginPath();
+      context.moveTo(0, -39);
+      context.bezierCurveTo(22, -13, 18, 5, 7, 17);
+      context.bezierCurveTo(19, 4, 4, -11, 3, -24);
+      context.bezierCurveTo(-13, -9, -24, 5, -20, 22);
+      context.bezierCurveTo(-16, 43, 18, 43, 27, 16);
+      context.bezierCurveTo(31, 35, 13, 51, -9, 45);
+      context.bezierCurveTo(-38, 38, -43, 6, -17, -20);
+      context.bezierCurveTo(-7, -30, -4, -35, 0, -39);
+      context.closePath();
+      context.fillStyle = "rgba(6, 16, 25, 0.95)";
+      context.fill();
+      context.lineWidth = 5;
+      context.strokeStyle = "rgba(248, 250, 252, 0.96)";
+      context.stroke();
+      context.restore();
+      break;
+    case "flood":
+      strokePath(() => {
+        context.beginPath();
+        [34, 53, 72].forEach((y) => {
+          context.moveTo(20, y);
+          context.bezierCurveTo(32, y - 12, 44, y + 12, 56, y);
+          context.bezierCurveTo(68, y - 12, 80, y + 12, 92, y);
+        });
+      });
+      break;
+    case "weather":
+      context.save();
+      context.strokeStyle = "rgba(6, 16, 25, 0.95)";
+      context.fillStyle = "rgba(248, 250, 252, 0.96)";
+      context.lineWidth = 9;
+      context.beginPath();
+      context.arc(43, 52, 15, Math.PI * 0.85, Math.PI * 1.95);
+      context.arc(60, 43, 20, Math.PI * 0.95, Math.PI * 1.9);
+      context.arc(78, 55, 16, Math.PI * 1.35, Math.PI * 0.1);
+      context.lineTo(33, 70);
+      context.closePath();
+      context.fill();
+      context.stroke();
+      context.fillStyle = "#061019";
+      context.beginPath();
+      context.moveTo(58, 62);
+      context.lineTo(47, 96);
+      context.lineTo(68, 75);
+      context.lineTo(60, 106);
+      context.lineTo(87, 63);
+      context.closePath();
+      context.fill();
+      context.restore();
+      break;
+    case "warning":
+      context.save();
+      context.translate(56, 58);
+      context.beginPath();
+      context.moveTo(0, -42);
+      context.lineTo(40, 31);
+      context.lineTo(-40, 31);
+      context.closePath();
+      context.fillStyle = "rgba(248, 250, 252, 0.96)";
+      context.fill();
+      context.strokeStyle = "#061019";
+      context.lineWidth = 8;
+      context.stroke();
+      context.beginPath();
+      context.moveTo(0, -15);
+      context.lineTo(0, 9);
+      context.stroke();
+      context.beginPath();
+      context.arc(0, 22, 5, 0, Math.PI * 2);
+      context.fillStyle = "#061019";
+      context.fill();
+      context.restore();
+      break;
+    case "unknown":
+      context.save();
+      context.translate(56, 56);
+      context.strokeStyle = "#061019";
+      context.fillStyle = "rgba(248, 250, 252, 0.96)";
+      context.lineWidth = 9;
+      context.beginPath();
+      context.arc(0, 0, 34, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+      context.font = "800 52px system-ui, sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillStyle = "#061019";
+      context.fillText("?", 0, 2);
+      context.restore();
+      break;
+  }
 
   return context.getImageData(0, 0, size, size);
 }

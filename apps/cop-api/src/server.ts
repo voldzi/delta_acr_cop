@@ -3570,6 +3570,7 @@ function isCoverageTechnology(value: unknown): value is string {
 
 function isSituationLayerId(value: string): value is SituationLayerId {
   return value === "air_quality"
+    || value === "fire"
     || value === "flood"
     || value === "ground"
     || value === "mobile"
@@ -3577,11 +3578,12 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "mobile_network"
     || value === "traffic"
     || value === "warnings"
+    || value === "weather_alerts"
     || value === "weather";
 }
 
 function isSafetyLayerId(value: string): value is SafetyLayerId {
-  return value === "flood" || value === "warnings";
+  return value === "fire" || value === "flood" || value === "warnings" || value === "weather_alerts";
 }
 
 function isFlightReferenceLayerId(value: string): value is FlightReferenceLayerId {

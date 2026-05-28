@@ -1,6 +1,6 @@
 import type { CopLayer } from "./cop-data";
 import type { PredictionMode } from "./track-history";
-import { normalizeMapView, type MapViewState, type PublicFlightSymbolMode, type TrackHistoryDisplayMode } from "./user-preferences";
+import { normalizeMapView, type MapBasemapMode, type MapViewState, type PublicFlightSymbolMode, type TrackHistoryDisplayMode } from "./user-preferences";
 
 const customProfilesKey = "cop.user.viewProfiles.v1";
 
@@ -15,6 +15,7 @@ export interface ViewProfileSettings {
   catalogLayerIds?: string[];
   domainScope?: string;
   includeSynthetic?: boolean;
+  mapBasemapMode?: MapBasemapMode;
   mapClusterEnabled?: boolean;
   mapView?: MapViewState;
   minConfidence?: number;

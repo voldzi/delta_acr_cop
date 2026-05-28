@@ -42,6 +42,8 @@ Use dot-separated namespaced ids:
 ```text
 public.safety.warnings
 public.safety.flood
+public.safety.fire
+public.safety.weather_alerts
 public.weather.current
 public.weather.aviation
 public.mobile.network
@@ -112,6 +114,8 @@ Examples:
 | `ctu_nettest` | `input` | diagnostics and provenance |
 | `osm_postgis` communications towers | `reference` / `input` | neutral reference infrastructure; never final mobile status |
 | `chmi_alerts` | `final` | user layer `public.safety.warnings` |
+| `fire_hotspots` / `fire_incidents` | `final` | user layer `public.safety.fire` |
+| `weather_alerts` | `final` | user layer `public.safety.weather_alerts` |
 | `safety_data` projection in situation-data | `projection` | compatibility only; COP should prefer safety-data |
 
 ## Catalog API
@@ -406,6 +410,8 @@ Provider-native fields may be preserved under:
 | --- | --- | --- |
 | `public.safety.warnings` | Veřejné výstrahy | `sim.safety-data` layer `warnings`, source `chmi_alerts` |
 | `public.safety.flood` | Povodně a voda | `sim.safety-data` layer `flood`, source `chmi_hydro` |
+| `public.safety.fire` | Požáry | `sim.safety-data` layer `fire`, sources `fire_hotspots`, `fire_incidents` |
+| `public.safety.weather_alerts` | Meteorologické výstrahy | `sim.safety-data` layer `weather_alerts`, source `weather_alerts` |
 | `public.weather.current` | Počasí | `sim.situation-data` layer `weather`, source `open_meteo` |
 | `public.weather.aviation` | Letištní počasí | `sim.situation-data` layer `weather`, source `aviation_weather` |
 | `public.mobile.network` | Mobilní síť | `sim.situation-data` layer `mobile_network`, source `mobile_network_model` |
@@ -467,7 +473,7 @@ server boundary.
 
 1. Existing COP preferences using provider layers are migrated to catalog layer ids.
 2. `mobile` and `mobile_coverage` in public profiles map to `public.mobile.network`.
-3. `warnings` and `flood` should map to `public.safety.warnings` and `public.safety.flood`, preferably through `safety-data`.
+3. `warnings`, `flood`, `fire` and `weather_alerts` should map to `public.safety.warnings`, `public.safety.flood`, `public.safety.fire` and `public.safety.weather_alerts`, preferably through `safety-data`.
 4. Source ids such as `ctu_nettest`, `osm_postgis` and `mobile_coverage_model` must not remain in normal user layer preferences.
 5. Diagnostic layers are available only when the user has diagnostic/admin capability.
 

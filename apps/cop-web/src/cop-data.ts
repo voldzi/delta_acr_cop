@@ -132,6 +132,7 @@ export interface CopDashboardData {
 export type SituationLayerId =
   | "air_quality"
   | "community"
+  | "fire"
   | "flight_airports"
   | "flight_airspaces"
   | "flood"
@@ -142,10 +143,11 @@ export type SituationLayerId =
   | "mission_arena"
   | "traffic"
   | "warnings"
+  | "weather_alerts"
   | "weather";
-export type SafetyLayerId = "flood" | "warnings";
+export type SafetyLayerId = "fire" | "flood" | "warnings" | "weather_alerts";
 export type TakLayerId = "ground" | "mobile" | "traffic";
-export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "mock";
+export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "mock" | "weather_alerts";
 
 export interface MapBounds {
   east: number;
