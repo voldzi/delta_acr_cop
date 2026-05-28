@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Bot,
   Building2,
+  Bus,
   Clock3,
   CloudSun,
   Database,
@@ -4865,14 +4866,15 @@ function SettingsDrawer({
               </label>
               <p className="settings-help">Kliknutí na shluk mapu přiblíží a ukáže náhled objektů uvnitř. Po dalším přiblížení se shluky rozpadají do menších skupin a jednotlivých stop.</p>
               <SegmentedControl
-                label="Veřejné lety"
+                label="Symbolika mapy"
                 options={[
-                  ["civil", "Letadla"],
+                  ["civil", "Civilní"],
                   ["standard", "Standard"]
                 ]}
                 value={publicFlightSymbolMode}
                 onChange={(value) => onPublicFlightSymbolModeChange(value as PublicFlightSymbolMode)}
               />
+              <p className="settings-help">Civilní režim používá oborové ikony pro lety, veřejnou dopravu a civilní vrstvy. Standard drží profesionální/NATO symboliku tam, kde je pro daný objekt dostupná.</p>
               <PanelTitle icon={<History size={17} />} title="Historie a predikce" />
               <label className="toggle-row">
                 <input type="checkbox" checked={showHistory} onChange={(event) => onShowHistoryChange(event.target.checked)} />
@@ -8648,6 +8650,8 @@ function catalogGroupIcon(icon: string | undefined, size = 19): React.ReactNode 
       return <AlertTriangle size={size} />;
     case "building-2":
       return <Building2 size={size} />;
+    case "bus":
+      return <Bus size={size} />;
     case "cloud-sun":
       return <CloudSun size={size} />;
     case "database":

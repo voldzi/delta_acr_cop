@@ -222,7 +222,8 @@ function defaultGroups(includeDiagnostics: boolean, includePartner: boolean): Ma
   return [
     { groupId: "risks", icon: "alert-triangle", label: "Rizika a výstrahy", order: 10 },
     { groupId: "risks.weather", icon: "cloud-sun", label: "Počasí", order: 20, parentGroupId: "risks" },
-    { groupId: "communications", icon: "radio-tower", label: "Komunikace a doprava", order: 30 },
+    { groupId: "communications", icon: "radio-tower", label: "Komunikace", order: 30 },
+    { groupId: "transport", icon: "bus", label: "Doprava", order: 35 },
     { groupId: "infrastructure", icon: "building-2", label: "Infrastruktura", order: 40 },
     { groupId: "flight", icon: "plane", label: "Letecký provoz", order: 50 },
     { groupId: "user", icon: "map-pin", label: "Moje data", order: 60 },
@@ -366,7 +367,10 @@ function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
   if (layerId.startsWith("public.weather.")) {
     return "risks.weather";
   }
-  if (layerId.startsWith("public.mobile.") || layerId.startsWith("public.traffic.") || layerId === "reference.infrastructure.communications") {
+  if (layerId.startsWith("public.traffic.")) {
+    return "transport";
+  }
+  if (layerId.startsWith("public.mobile.") || layerId === "reference.infrastructure.communications") {
     return "communications";
   }
   if (layerId.startsWith("reference.infrastructure.")) {
@@ -391,7 +395,10 @@ function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
   if (firstCategory === "safety") {
     return "risks";
   }
-  if (firstCategory === "communications" || firstCategory === "traffic") {
+  if (firstCategory === "traffic" || firstCategory === "transport") {
+    return "transport";
+  }
+  if (firstCategory === "communications") {
     return "communications";
   }
   if (firstCategory === "reference") {
@@ -627,7 +634,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       defaultVisible: trafficLayer?.defaultVisible ?? false,
       description: trafficLayer?.description ?? "Veřejná doprava a dopravní kontext.",
       geometryTypes: trafficLayer?.geometryTypes ?? ["Point", "LineString"],
-      groupId: "communications",
+      groupId: "transport",
       kind: "vector_features",
       label: "Doprava",
       layerId: "public.traffic.transit",

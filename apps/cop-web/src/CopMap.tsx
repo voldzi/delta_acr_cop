@@ -46,6 +46,7 @@ const situationWeatherPointLayerId = "cop-situation-weather-point";
 const situationWeatherLabelLayerId = "cop-situation-weather-label";
 const situationOsmSymbolLayerId = "cop-situation-osm-symbol";
 const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
+const situationTrafficSymbolLayerId = "cop-situation-traffic-symbol";
 const situationPointLayerId = "cop-situation-point";
 const situationLabelLayerId = "cop-situation-label";
 const userLocationAccuracyLayerId = "cop-user-location-accuracy";
@@ -73,6 +74,9 @@ type MobileNetworkIconTone = (typeof mobileNetworkIconTones)[number];
 const civilAircraftIconPrefix = "cop-civil-aircraft";
 const civilAircraftIconKinds = ["jet", "turboprop", "small_aircraft", "helicopter", "glider", "uav", "unknown"] as const;
 type CivilAircraftIconKind = (typeof civilAircraftIconKinds)[number];
+const transitIconPrefix = "cop-transit";
+const transitIconKinds = ["metro", "tram", "bus", "train", "trolleybus", "ferry", "funicular", "traffic", "unknown"] as const;
+type TransitIconKind = (typeof transitIconKinds)[number];
 const osmCategoryIconPrefix = "cop-osm-category";
 const osmCategoryIconIds = ["airport", "hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "other"] as const;
 type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
@@ -189,6 +193,11 @@ export interface SituationContextFeatureCollection {
       situationStatusLabel?: string;
       situationStatusTone?: string;
       takGateway?: boolean;
+      trafficHeadingDeg?: number;
+      trafficRouteShortName?: string;
+      trafficRouteType?: string;
+      trafficSymbolKey?: string;
+      trafficTransit?: boolean;
       mobileNetworkLabel?: string;
       mobileSymbolKey?: string;
       osmCategoryLabel?: string;
@@ -375,8 +384,8 @@ export function CopMap({
     [alerts, showAlertAreas]
   );
   const situationFeatureCollection = React.useMemo(
-    () => situationFeaturesToFeatureCollection(situationFeatures, selectedSituationFeatureId),
-    [selectedSituationFeatureId, situationFeatures]
+    () => situationFeaturesToFeatureCollection(situationFeatures, selectedSituationFeatureId, publicFlightSymbolMode),
+    [publicFlightSymbolMode, selectedSituationFeatureId, situationFeatures]
   );
   const hasMobileCoverageFeatures = React.useMemo(
     () => situationFeatureCollection.features.some((feature) => feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network"),
@@ -751,7 +760,7 @@ export function CopMap({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           paint: {
             "circle-color": [
               "case",
@@ -823,6 +832,34 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationTrafficSymbolLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "trafficTransit"], true]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "trafficSymbolKey"], getTransitIconKey("traffic")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 8, 0.28, 12, 0.38, 16, 0.5],
+            "icon-anchor": "center",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+            "text-field": ["coalesce", ["get", "trafficRouteShortName"], ["get", "mapLabel"], ["get", "label"]],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 8, 9, 12, 11, 16, 13],
+            "text-offset": [0, 1.05],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.6, 0.96],
+            "text-color": ["case", ["get", "stale"], "#facc15", ["coalesce", ["get", "situationStatusColor"], "#dff8ff"]],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.7,
+            "text-halo-blur": 0.35
+          }
+        });
+
+        map.addLayer({
           id: situationOsmSymbolLayerId,
           type: "symbol",
           source: situationSourceId,
@@ -854,7 +891,7 @@ export function CopMap({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           layout: {
             "text-field": ["coalesce", ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Regular"],
@@ -1226,6 +1263,7 @@ export function CopMap({
         map.on("click", situationLabelLayerId, handleSituationClick);
         map.on("click", situationOsmSymbolLayerId, handleSituationClick);
         map.on("click", situationMobileSymbolLayerId, handleSituationClick);
+        map.on("click", situationTrafficSymbolLayerId, handleSituationClick);
         map.on("click", situationWeatherPointLayerId, handleSituationClick);
         map.on("click", situationWeatherLabelLayerId, handleSituationClick);
         map.on("click", situationLineLayerId, handleSituationClick);
@@ -1258,6 +1296,7 @@ export function CopMap({
               situationLabelLayerId,
               situationOsmSymbolLayerId,
               situationMobileSymbolLayerId,
+              situationTrafficSymbolLayerId,
               situationWeatherPointLayerId,
               situationWeatherLabelLayerId,
               situationLineLayerId,
@@ -1315,6 +1354,9 @@ export function CopMap({
         map.on("mouseenter", situationMobileSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationTrafficSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationWeatherPointLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -1349,6 +1391,9 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationMobileSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationTrafficSymbolLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherPointLayerId, () => {
@@ -1922,7 +1967,8 @@ function normalizeZoneOpacity(value: number | undefined): number {
 
 export function situationFeaturesToFeatureCollection(
   collection: SituationFeatureCollectionResponse | null,
-  selectedFeatureId?: string
+  selectedFeatureId?: string,
+  mapSymbolMode: PublicFlightSymbolMode = "civil"
 ): SituationContextFeatureCollection {
   return {
     type: "FeatureCollection",
@@ -1930,7 +1976,7 @@ export function situationFeaturesToFeatureCollection(
       geometry: feature.geometry,
       properties: {
         ...feature.properties,
-        ...buildSituationRenderProperties(feature),
+        ...buildSituationRenderProperties(feature, mapSymbolMode),
         selected: feature.properties.featureId === selectedFeatureId
       },
       type: "Feature"
@@ -1938,7 +1984,10 @@ export function situationFeaturesToFeatureCollection(
   };
 }
 
-function buildSituationRenderProperties(feature: SituationFeature): Partial<SituationContextFeatureCollection["features"][number]["properties"]> {
+function buildSituationRenderProperties(
+  feature: SituationFeature,
+  mapSymbolMode: PublicFlightSymbolMode = "civil"
+): Partial<SituationContextFeatureCollection["features"][number]["properties"]> {
   const status = situationFeatureStatus(feature);
   if (isTakGatewayFeature(feature)) {
     return {
@@ -2011,6 +2060,9 @@ function buildSituationRenderProperties(feature: SituationFeature): Partial<Situ
       situationStatusLabel: status.label,
       situationStatusTone: status.tone
     };
+  }
+  if (feature.properties.layer === "traffic") {
+    return buildTrafficRenderProperties(feature, mapSymbolMode, status);
   }
   if (isSyntheticWarningPoint(feature)) {
     return {
@@ -2314,6 +2366,132 @@ function normalizeMobileNetworkLabel(raw: string | undefined): string | undefine
   return compact.length > 0 ? compact.slice(0, 10) : undefined;
 }
 
+function buildTrafficRenderProperties(
+  feature: SituationFeature,
+  mapSymbolMode: PublicFlightSymbolMode,
+  status: { color: string; label: string; tone: string }
+): Partial<SituationContextFeatureCollection["features"][number]["properties"]> {
+  const presentation = resolveTrafficPresentation(feature);
+  if (mapSymbolMode === "standard" || !presentation) {
+    return {
+      situationStatusColor: status.color,
+      situationStatusLabel: status.label,
+      situationStatusTone: status.tone
+    };
+  }
+  const color = feature.properties.stale ? status.color : presentation.color;
+  return {
+    mapLabel: presentation.routeShortName ?? presentation.label,
+    situationStatusColor: color,
+    situationStatusLabel: presentation.label.toUpperCase(),
+    situationStatusTone: status.tone,
+    trafficHeadingDeg: presentation.headingDeg,
+    trafficRouteShortName: presentation.routeShortName ?? presentation.label,
+    trafficRouteType: presentation.kind,
+    trafficSymbolKey: getTransitIconKey(presentation.kind),
+    trafficTransit: true
+  };
+}
+
+function resolveTrafficPresentation(feature: SituationFeature): {
+  color: string;
+  headingDeg?: number;
+  kind: TransitIconKind;
+  label: string;
+  routeShortName?: string;
+} | null {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerMetrics = isRecord(providerProperties.metrics) ? providerProperties.metrics : {};
+  const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
+  const kind = normalizeTransitIconKind(
+    recordNumber(metrics, "routeTypeCode")
+      ?? recordNumber(providerMetrics, "routeTypeCode")
+      ?? recordString(tags, "transportMode")
+      ?? recordString(providerTags, "transportMode")
+      ?? recordString(tags, "routeType")
+      ?? recordString(providerTags, "routeType")
+      ?? recordString(tags, "vehicleType")
+      ?? recordString(providerTags, "vehicleType")
+      ?? feature.properties.category
+      ?? feature.properties.label
+  );
+  if (!kind) {
+    return null;
+  }
+  const routeShortName = compactTransitRouteLabel(
+    recordString(tags, "route")
+      ?? recordString(providerTags, "route")
+      ?? recordString(tags, "routeShortName")
+      ?? recordString(providerTags, "routeShortName")
+      ?? recordString(tags, "line")
+      ?? recordString(providerTags, "line")
+      ?? recordString(tags, "routeId")
+      ?? recordString(providerTags, "routeId")
+  );
+  const headingDeg = normalizeHeadingDeg(
+    recordNumber(metrics, "headingDeg")
+      ?? recordNumber(providerMetrics, "headingDeg")
+      ?? recordNumber(metrics, "bearing")
+      ?? recordNumber(providerMetrics, "bearing")
+  );
+  const labels: Record<TransitIconKind, string> = {
+    bus: "Bus",
+    ferry: "Přívoz",
+    funicular: "Lanovka",
+    metro: "Metro",
+    traffic: "Doprava",
+    train: "Vlak",
+    tram: "Tram",
+    trolleybus: "Trolejbus",
+    unknown: "Doprava"
+  };
+  return {
+    color: transitIconColor(kind),
+    headingDeg,
+    kind,
+    label: labels[kind],
+    routeShortName
+  };
+}
+
+function normalizeTransitIconKind(value: unknown): TransitIconKind | undefined {
+  if (typeof value === "number") {
+    if (value === 0) return "tram";
+    if (value === 1) return "metro";
+    if (value === 2) return "train";
+    if (value === 3) return "bus";
+    if (value === 4) return "ferry";
+    if (value === 5) return "funicular";
+    if (value === 11) return "trolleybus";
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = normalizeCompactAscii(value);
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized.includes("tram")) return "tram";
+  if (normalized.includes("metro") || normalized === "subway") return "metro";
+  if (normalized.includes("trolley")) return "trolleybus";
+  if (normalized.includes("bus")) return "bus";
+  if (normalized.includes("train") || normalized.includes("rail") || normalized.includes("vlak")) return "train";
+  if (normalized.includes("ferry") || normalized.includes("privoz")) return "ferry";
+  if (normalized.includes("funicular") || normalized.includes("lanov")) return "funicular";
+  if (normalized.includes("traffic") || normalized.includes("transport") || normalized.includes("doprava")) return "traffic";
+  return undefined;
+}
+
+function compactTransitRouteLabel(value: string | undefined): string | undefined {
+  const normalized = value?.trim().replace(/^L(?=\d)/i, "").replace(/\s+/g, " ");
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized.length > 8 ? `${normalized.slice(0, 7)}…` : normalized;
+}
+
 const genericCommunicationTowerLabels = new Set([
   "communication",
   "communications",
@@ -2395,6 +2573,21 @@ function mobileNetworkIconColor(tone: MobileNetworkIconTone): string {
   return colors[tone];
 }
 
+function transitIconColor(kind: TransitIconKind): string {
+  const colors: Record<TransitIconKind, string> = {
+    bus: "#1f6feb",
+    ferry: "#00838f",
+    funicular: "#8d6e63",
+    metro: "#0072bc",
+    traffic: "#facc15",
+    train: "#2e7d32",
+    tram: "#d71920",
+    trolleybus: "#7b3f98",
+    unknown: "#8cb6d8"
+  };
+  return colors[kind];
+}
+
 function formatWeatherMapLabel(temperatureC: number | undefined, windSpeedMps: number | undefined, precipitationMm: number | undefined): string {
   const parts: string[] = [];
   if (temperatureC !== undefined) {
@@ -2416,6 +2609,10 @@ function formatAviationWeatherMapLabel(icaoId: string | undefined, flightCategor
 function recordNumber(record: Record<string, unknown>, key: string): number | undefined {
   const value = Number(record[key]);
   return Number.isFinite(value) ? value : undefined;
+}
+
+function recordString(record: Record<string, unknown>, key: string): string | undefined {
+  return stringProperty(record[key]);
 }
 
 interface TrackFeatureOptions {
@@ -2467,6 +2664,10 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
 
 function getCivilAircraftIconKey(kind: CivilAircraftIconKind): string {
   return `${civilAircraftIconPrefix}-${kind}`;
+}
+
+function getTransitIconKey(kind: TransitIconKind): string {
+  return `${transitIconPrefix}-${kind}`;
 }
 
 function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind {
@@ -3130,6 +3331,14 @@ async function registerSituationSymbolImages(map: maplibregl.Map) {
       });
     }
   });
+  transitIconKinds.forEach((kind) => {
+    const key = getTransitIconKey(kind);
+    if (!map.hasImage(key)) {
+      map.addImage(key, createTransitSymbolImage(kind), {
+        pixelRatio: window.devicePixelRatio || 1
+      });
+    }
+  });
   osmCategoryIconIds.forEach((iconId) => {
     const key = getOsmCategoryIconKey(iconId);
     if (!map.hasImage(key)) {
@@ -3331,6 +3540,135 @@ function createMobileNetworkSymbolImage(tone: MobileNetworkIconTone): ImageData 
   drawWaves(waveColor, 7, 0.96);
   drawTower("rgba(248, 250, 252, 0.96)", 10, 0.95);
   drawTower("#061019", 5, 0.96);
+
+  return context.getImageData(0, 0, size, size);
+}
+
+function createTransitSymbolImage(kind: TransitIconKind): ImageData {
+  const canvas = document.createElement("canvas");
+  const size = 128;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+
+  const color = transitIconColor(kind);
+  context.clearRect(0, 0, size, size);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  context.save();
+  drawRoundedRect(context, 18, 18, 92, 92, kind === "metro" ? 46 : 20);
+  context.fillStyle = "rgba(6, 16, 25, 0.95)";
+  context.fill();
+  context.strokeStyle = "rgba(248, 250, 252, 0.92)";
+  context.lineWidth = 7;
+  context.stroke();
+  context.strokeStyle = color;
+  context.lineWidth = 5;
+  context.stroke();
+  context.restore();
+
+  context.save();
+  context.translate(64, 64);
+  context.strokeStyle = color;
+  context.fillStyle = color;
+  context.lineWidth = 7;
+
+  switch (kind) {
+    case "bus":
+    case "trolleybus":
+      drawRoundedRect(context, -31, -26, 62, 54, 9);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(-20, -8);
+      context.lineTo(20, -8);
+      context.moveTo(-20, 9);
+      context.lineTo(20, 9);
+      context.stroke();
+      context.beginPath();
+      context.arc(-20, 31, 5, 0, Math.PI * 2);
+      context.arc(20, 31, 5, 0, Math.PI * 2);
+      context.fill();
+      if (kind === "trolleybus") {
+        context.beginPath();
+        context.moveTo(-12, -30);
+        context.lineTo(-29, -43);
+        context.moveTo(12, -30);
+        context.lineTo(29, -43);
+        context.stroke();
+      }
+      break;
+    case "tram":
+      drawRoundedRect(context, -27, -34, 54, 62, 10);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(-14, -11);
+      context.lineTo(14, -11);
+      context.moveTo(-16, 8);
+      context.lineTo(16, 8);
+      context.moveTo(-22, 34);
+      context.lineTo(22, 34);
+      context.moveTo(-16, -36);
+      context.lineTo(0, -51);
+      context.lineTo(16, -36);
+      context.stroke();
+      break;
+    case "train":
+      drawRoundedRect(context, -29, -35, 58, 64, 13);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(-16, -11);
+      context.lineTo(16, -11);
+      context.moveTo(-14, 9);
+      context.lineTo(14, 9);
+      context.moveTo(-22, 37);
+      context.lineTo(-8, 24);
+      context.moveTo(22, 37);
+      context.lineTo(8, 24);
+      context.stroke();
+      break;
+    case "metro":
+      context.font = "700 48px system-ui, sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText("M", 0, 3);
+      break;
+    case "ferry":
+      context.beginPath();
+      context.moveTo(-35, 10);
+      context.lineTo(35, 10);
+      context.lineTo(21, 30);
+      context.lineTo(-21, 30);
+      context.closePath();
+      context.stroke();
+      context.beginPath();
+      context.moveTo(-17, 9);
+      context.lineTo(-6, -18);
+      context.lineTo(17, 9);
+      context.stroke();
+      break;
+    case "funicular":
+      drawRoundedRect(context, -27, -25, 54, 44, 9);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(-35, 34);
+      context.lineTo(35, -36);
+      context.stroke();
+      break;
+    case "traffic":
+    case "unknown":
+      context.beginPath();
+      context.arc(0, 0, 24, 0, Math.PI * 2);
+      context.stroke();
+      context.beginPath();
+      context.arc(0, 0, 9, 0, Math.PI * 2);
+      context.fill();
+      break;
+  }
+  context.restore();
 
   return context.getImageData(0, 0, size, size);
 }

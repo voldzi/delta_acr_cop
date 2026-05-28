@@ -58,7 +58,7 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
       catalogVersion: string;
-      layers: Array<{ layerId: string; query?: { providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
+      layers: Array<{ groupId?: string; layerId: string; query?: { providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
       providers: Array<{ providerId: string; status: string }>;
       sources: Array<{ feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
     };
@@ -84,6 +84,9 @@ describe("map catalog route", () => {
         providerSourceIds: ["mobile_network_model"]
       },
       selectable: true
+    });
+    expect(body.layers.find((layer) => layer.layerId === "public.traffic.transit")).toMatchObject({
+      groupId: "transport"
     });
 
     expect(body.sources).toEqual(expect.arrayContaining([

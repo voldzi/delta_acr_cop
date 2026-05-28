@@ -12,7 +12,7 @@ import {
   userAlertRadiusToFeatureCollection,
   userLocationToFeatureCollection
 } from "./CopMap";
-import type { CopObject } from "./cop-data";
+import type { CopObject, SituationFeatureCollectionResponse } from "./cop-data";
 
 describe("COP map data helpers", () => {
   it("builds GeoJSON track features from positioned COP objects", () => {
@@ -244,6 +244,67 @@ describe("COP map data helpers", () => {
       situationStatusLabel: "ZHORŠENÝ",
       situationStatusTone: "warning"
     });
+  });
+
+  it("renders public transport with civil mode-specific symbols and compact route labels", () => {
+    const trafficFeature: SituationFeatureCollectionResponse = {
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.48, 50.09], type: "Point" },
+          properties: {
+            category: "public_transport_bus",
+            confidence: 0.88,
+            featureId: "traffic:pid_gtfs_rt:service-3-4069",
+            label: "PID bus 141",
+            layer: "traffic",
+            metrics: {
+              headingDeg: 346,
+              routeTypeCode: 3
+            },
+            observedAt: "2026-05-28T07:44:08Z",
+            sourceId: "pid_gtfs_rt",
+            stale: false,
+            tags: {
+              route: "141",
+              transportMode: "bus"
+            }
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-28T07:44:08Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["traffic"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    };
+
+    expect(situationFeaturesToFeatureCollection(trafficFeature, undefined, "civil").features[0]?.properties).toMatchObject({
+      featureId: "traffic:pid_gtfs_rt:service-3-4069",
+      mapLabel: "141",
+      situationStatusColor: "#1f6feb",
+      trafficHeadingDeg: 346,
+      trafficRouteShortName: "141",
+      trafficRouteType: "bus",
+      trafficSymbolKey: "cop-transit-bus",
+      trafficTransit: true
+    });
+    expect(situationFeaturesToFeatureCollection(trafficFeature, undefined, "standard").features[0]?.properties.trafficTransit).toBeUndefined();
   });
 
   it("renders OSM communication towers with the mobile tower symbol", () => {

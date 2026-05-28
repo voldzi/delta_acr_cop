@@ -7,7 +7,9 @@ export interface MapViewState {
   pitch?: number;
 }
 
-export type PublicFlightSymbolMode = "civil" | "standard";
+export type MapSymbolMode = "civil" | "standard";
+// Stored under the legacy key for profile compatibility; semantically this is now the whole-map symbol mode.
+export type PublicFlightSymbolMode = MapSymbolMode;
 export type TrackHistoryDisplayMode = "all" | "selected";
 
 export interface UserPreferences {
