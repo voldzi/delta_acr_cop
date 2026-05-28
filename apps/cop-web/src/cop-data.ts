@@ -259,6 +259,7 @@ export interface SituationFeatureProperties {
   estimatedSignalDbm?: number;
   expiresAt?: string;
   featureId: string;
+  fireStatus?: string;
   floodStage?: number;
   generatedAt?: string;
   geocodes?: Array<{ scheme: string; value: string }>;
@@ -309,6 +310,7 @@ export interface SituationFeatureProperties {
   severity?: string;
   source?: string;
   sourceId: string;
+  sourceIncident?: string;
   sourceName?: string;
   sourceRevision?: string;
   stale?: boolean;
@@ -490,6 +492,7 @@ export interface SafetyFeatureProperties {
   effectiveAt?: string;
   expiresAt?: string;
   featureId: string;
+  fireStatus?: string;
   floodStage?: number;
   geocodes?: Array<{ scheme: string; value: string }>;
   geometryMode?: string;
@@ -509,6 +512,7 @@ export interface SafetyFeatureProperties {
   severity?: string;
   source?: string;
   sourceId: string;
+  sourceIncident?: string;
   sourceName?: string;
   stale?: boolean;
   stationId?: string;

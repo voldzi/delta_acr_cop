@@ -4357,8 +4357,17 @@ function SafetyRiskSummary({ feature }: { feature: SituationFeature }) {
     );
   }
 
+  if (properties.layer === "fire") {
+    rows.push(
+      ["Požární stav", fireStatusLabel(properties.fireStatus ?? properties.status)],
+      ["Typ zdroje", fireSourceIncidentLabel(properties.sourceIncident)],
+      ["Potvrzení", fireConfirmationLabel(properties.hazardType, properties.sourceIncident)],
+      ["Poznámka", fireRiskNotice(properties)]
+    );
+  }
+
   return (
-    <ObjectDetailSection title={properties.layer === "flood" ? "Hydrologie" : "Výstraha"}>
+    <ObjectDetailSection title={properties.layer === "flood" ? "Hydrologie" : properties.layer === "fire" ? "Požární riziko" : "Výstraha"}>
       <DetailGrid rows={rows} />
     </ObjectDetailSection>
   );
@@ -8687,6 +8696,57 @@ function floodTrendTone(value: string | undefined): "neutral" | "ok" | "warn" | 
     default:
       return "neutral";
   }
+}
+
+function fireStatusLabel(value: string | undefined): string {
+  switch (value) {
+    case "active":
+      return "aktivní požár";
+    case "confirmed":
+      return "potvrzeno";
+    case "contained":
+      return "pod kontrolou";
+    case "risk":
+      return "požární nebezpečí";
+    case "thermal_anomaly":
+      return "tepelná anomálie";
+    case "unknown":
+    case undefined:
+      return "neznámý";
+    default:
+      return value.replace(/_/g, " ");
+  }
+}
+
+function fireSourceIncidentLabel(value: string | undefined): string {
+  switch (value) {
+    case "CHMI_CAP_FIRE_DANGER":
+      return "ČHMÚ požární nebezpečí";
+    case "NASA_FIRMS_HOTSPOT":
+      return "NASA FIRMS hotspot";
+    default:
+      return value ? value.replace(/_/g, " ") : "n/a";
+  }
+}
+
+function fireConfirmationLabel(hazardType: string | undefined, sourceIncident: string | undefined): string {
+  if (hazardType === "fire_weather" || sourceIncident === "CHMI_CAP_FIRE_DANGER") {
+    return "nejde o potvrzený požár";
+  }
+  if (sourceIncident === "NASA_FIRMS_HOTSPOT") {
+    return "satelitní detekce, vyžaduje ověření";
+  }
+  return "situační kontext";
+}
+
+function fireRiskNotice(properties: SituationFeature["properties"]): string {
+  if (properties.hazardType === "fire_weather" || properties.sourceIncident === "CHMI_CAP_FIRE_DANGER") {
+    return "Oficiální výstraha ČHMÚ pro podmínky vzniku a šíření požárů.";
+  }
+  if (properties.sourceIncident === "NASA_FIRMS_HOTSPOT") {
+    return "Tepelná anomálie ze satelitu, nikoli potvrzený incident HZS.";
+  }
+  return properties.description ?? "n/a";
 }
 
 function formatDurationSeconds(value: number | undefined): string {

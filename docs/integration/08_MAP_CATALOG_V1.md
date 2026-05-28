@@ -114,7 +114,7 @@ Examples:
 | `mobile_coverage_model` | `input` / `diagnostic` | diagnostics, optional technical overlay |
 | `ctu_nettest` | `input` | diagnostics and provenance |
 | `osm_postgis` communications towers | `reference` / `input` | neutral reference infrastructure; never final mobile status |
-| `chmi_alerts` | `final` | user layer `public.safety.weather_alerts`; `public.safety.warnings` remains compatibility alias |
+| `chmi_alerts` | `final` | user layers `public.safety.weather_alerts` and `public.safety.fire` for ČHMÚ fire danger; `public.safety.warnings` remains compatibility alias |
 | `nasa_firms` / `fire_hotspots` / `fire_incidents` | `final` | user layer `public.safety.fire` |
 | `weather_alerts` | `final` | user layer `public.safety.weather_alerts` |
 | `admin_boundaries` | `reference` | user layer `public.boundary.admin` |
@@ -412,7 +412,7 @@ Provider-native fields may be preserved under:
 | --- | --- | --- |
 | `public.safety.warnings` | Veřejné výstrahy | `sim.safety-data` layer `warnings`, source `chmi_alerts` |
 | `public.safety.flood` | Povodně a voda | `sim.safety-data` layer `flood`, source `chmi_hydro` |
-| `public.safety.fire` | Požáry | `sim.safety-data` layer `fire`, sources `nasa_firms`, `fire_hotspots`, `fire_incidents` |
+| `public.safety.fire` | Požáry | `sim.safety-data` layer `fire`, sources `chmi_alerts`, `nasa_firms`, `fire_hotspots`, `fire_incidents` |
 | `public.safety.weather_alerts` | Meteorologické výstrahy | `sim.safety-data` layer `weather_alerts`, source `chmi_alerts` |
 | `public.boundary.admin` | Správní hranice | `sim.safety-data` layer `boundary_admin`, source `admin_boundaries` |
 | `public.weather.current` | Počasí | `sim.situation-data` layer `weather`, source `open_meteo` |
@@ -445,11 +445,14 @@ COP consumes the current SIM safety-data read model without parsing provider-nat
 | `source`, `sourceName`, `basis` | Source/provenance summary. Raw provider URLs may stay in `basis`, but UI should translate known tokens. |
 | `geometryMode` | `admin_boundary` means the alert is polygonized from an administrative boundary; `representative_point` is a controlled fallback. |
 | `areaName`, `adminLevel`, `affectedAreas` | Human-readable area context. |
+| `fireStatus`, `sourceIncident` | Fire-specific state and source classification. `fireStatus=risk` with `sourceIncident=CHMI_CAP_FIRE_DANGER` means fire danger conditions, not a confirmed fire. |
 | `riverName`, `stationId`, `waterLevelCm`, `discharge`, `floodStage`, `trend`, `basin`, `catchmentAreaKm2` | Hydrology-specific fields for `public.safety.flood`. |
 
 For ČHMÚ CAP alerts COP renders `Polygon`/`MultiPolygon` as the primary representation. If SIM returns `geometryMode=representative_point`, COP may still show the point, but the detail must make clear that the original administrative geometry was unavailable.
 
 For hydrology COP displays flood stage and trend as informational context. It does not infer evacuation, routing, rescue priorities, or any operational action from those values.
+
+For fire COP distinguishes confirmed/observed fire context from ČHMÚ fire danger. ČHMÚ `fire_weather`/`CHMI_CAP_FIRE_DANGER` features are shown as official fire-risk polygons, not as confirmed incident locations.
 
 ## Provider Catalog Requirements
 

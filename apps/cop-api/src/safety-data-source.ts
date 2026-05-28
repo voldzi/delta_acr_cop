@@ -97,6 +97,7 @@ export interface SafetyFeatureProperties {
   effectiveAt?: string;
   expiresAt?: string;
   featureId: string;
+  fireStatus?: string;
   floodStage?: number;
   geocodes?: Array<{ scheme: string; value: string }>;
   geometryMode?: string;
@@ -116,6 +117,7 @@ export interface SafetyFeatureProperties {
   severity?: SafetySeverity | string;
   source?: string;
   sourceId: string;
+  sourceIncident?: string;
   sourceName?: string;
   stale?: boolean;
   stationId?: string;
@@ -726,6 +728,7 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     effectiveAt: optionalString(value.effectiveAt),
     expiresAt: optionalString(value.expiresAt),
     featureId,
+    fireStatus: optionalString(value.fireStatus),
     floodStage: optionalFinite(value.floodStage) ?? optionalFinite(metrics?.floodActivityLevel),
     geocodes: normalizeGeocodes(value.geocodes),
     geometryMode: optionalString(value.geometryMode) ?? optionalString(metrics?.geometryMode) ?? optionalString(tags?.geometryMode),
@@ -745,6 +748,7 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     severity: optionalString(value.severity),
     source: optionalString(value.source),
     sourceId,
+    sourceIncident: optionalString(value.sourceIncident),
     sourceName: optionalString(value.sourceName),
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
     stationId: optionalString(value.stationId) ?? optionalString(tags?.stationId),

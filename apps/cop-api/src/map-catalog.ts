@@ -259,7 +259,7 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
       defaultVisible: layer.defaultVisible === true,
       description: layer.description,
       filters: normalizeProviderFilters(layer.filters),
-      geometryTypes: nonEmpty(layer.geometryTypes),
+      geometryTypes: geometryTypesForCatalogLayer(layer),
       groupId: groupIdForCatalogLayer(layer),
       kind,
       label: labelForCatalogLayer(layer),
@@ -286,6 +286,17 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
       styleProfile: layer.styleProfile ?? styleProfileForCatalogLayer(layer)
     }
   ];
+}
+
+function geometryTypesForCatalogLayer(layer: ProviderCatalogLayer): string[] | undefined {
+  const geometryTypes = nonEmpty(layer.geometryTypes) ?? [];
+  if (layer.recommendedCatalogLayerId === "public.safety.fire" || layer.recommendedCatalogLayerId === "public.safety.weather_alerts") {
+    return uniqueStrings([...geometryTypes, "Polygon", "MultiPolygon"]);
+  }
+  if (layer.recommendedCatalogLayerId === "public.boundary.admin") {
+    return uniqueStrings([...geometryTypes, "Polygon", "MultiPolygon"]);
+  }
+  return geometryTypes.length > 0 ? geometryTypes : undefined;
 }
 
 function buildProviderCatalogSources(catalog: ProviderMapCatalog, includeDiagnostics: boolean, includePartner: boolean): MapCatalogSource[] {
@@ -543,18 +554,18 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
             kind: "vector_features" as const,
             label: "Požáry",
             layerId: "public.safety.fire",
-            legal: legalFromSource(findSource(sources, "nasa_firms") ?? findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
+            legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "nasa_firms") ?? findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
             maxZoom: 18,
             minZoom: 5,
             provenance: {
-              sourceIds: ["sim.safety-data:nasa_firms", "sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
+              sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:nasa_firms", "sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
             },
             query: {
               maxFeatures: 250,
               mode: "bbox" as const,
               providerId: "sim.safety-data",
               providerLayerIds: ["fire"],
-              providerSourceIds: ["nasa_firms", "fire_hotspots", "fire_incidents"],
+              providerSourceIds: ["chmi_alerts", "nasa_firms", "fire_hotspots", "fire_incidents"],
               streamId: "features"
             },
             refreshSeconds: fireLayer.expectedCadenceSeconds ?? 600,
@@ -1192,7 +1203,7 @@ function buildSafetySources(sources: SafetySourceDescriptor[]): MapCatalogSource
     feedsCatalogLayerIds: source.sourceId === "admin_boundaries"
       ? ["public.boundary.admin"]
       : source.sourceId === "chmi_alerts"
-        ? ["public.safety.weather_alerts", "public.safety.warnings"]
+        ? ["public.safety.fire", "public.safety.weather_alerts", "public.safety.warnings"]
       : source.sourceId === "chmi_hydro"
         ? ["public.safety.flood"]
         : source.sourceId === "nasa_firms" || source.sourceId === "fire_hotspots" || source.sourceId === "fire_incidents"

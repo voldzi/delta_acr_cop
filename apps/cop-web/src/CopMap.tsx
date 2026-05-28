@@ -2287,7 +2287,7 @@ function riskIconKind(feature: SituationFeature): RiskIconId {
 
 function formatRiskMapLabel(feature: SituationFeature, status: { label: string }): string {
   const headline = feature.properties.headline ?? feature.properties.areaName ?? feature.properties.label;
-  const category = riskLabelForKind(riskIconKind(feature));
+  const category = riskMapCategoryLabel(feature);
   if (feature.properties.layer === "flood") {
     const floodName = feature.properties.riverName ?? feature.properties.areaName ?? headline;
     const stage = floodStageValue(feature);
@@ -2340,6 +2340,13 @@ function riskLabelForKind(kind: RiskIconId): string {
     weather: "Počasí"
   };
   return labels[kind];
+}
+
+function riskMapCategoryLabel(feature: SituationFeature): string {
+  if (feature.properties.layer === "fire" && feature.properties.hazardType === "fire_weather") {
+    return "Požární riziko";
+  }
+  return riskLabelForKind(riskIconKind(feature));
 }
 
 function riskDefaultColor(feature: SituationFeature): string {

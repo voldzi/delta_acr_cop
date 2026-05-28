@@ -3832,6 +3832,9 @@ components:
       properties:
         featureId:
           type: string
+        fireStatus:
+          type: string
+          description: Fire-specific status such as risk, thermal_anomaly, active, confirmed, contained, or unknown.
         layer:
           type: string
           enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality, flight_airports, flight_airspaces, community]
@@ -4250,6 +4253,9 @@ components:
           type: string
         source:
           type: string
+        sourceIncident:
+          type: string
+          description: Source-specific incident classification, for example CHMI_CAP_FIRE_DANGER or NASA_FIRMS_HOTSPOT.
         sourceName:
           type: string
         layerId:
