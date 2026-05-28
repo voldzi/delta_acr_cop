@@ -159,6 +159,44 @@ describe("map catalog route", () => {
     expect(body.sources.map((source) => source.sourceId)).not.toContain("mobile_coverage_model");
   });
 
+  it("prefers authoritative safety-data layers over situation-data compatibility projections", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      safetyDataSource: new FakeProviderCatalogSafetyDataSource(),
+      situationDataSource: new FakeProviderCatalogSituationDataSource()
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/map/catalog"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      layers: Array<{ compatibilityOnly?: boolean; layerId: string; preferredProviderId?: string; query: { providerId: string; providerLayerIds?: string[]; providerSourceIds?: string[] } }>;
+      sources: Array<{ compatibilityOnly?: boolean; providerId: string; sourceId: string }>;
+    };
+    const fireLayer = body.layers.find((layer) => layer.layerId === "public.safety.fire");
+    expect(fireLayer).toMatchObject({
+      query: {
+        providerId: "sim.safety-data",
+        providerLayerIds: ["fire"],
+        providerSourceIds: ["chmi_alerts", "nasa_firms"]
+      }
+    });
+    expect(fireLayer?.compatibilityOnly).toBeUndefined();
+    expect(fireLayer?.preferredProviderId).toBeUndefined();
+    expect(body.layers.filter((layer) => layer.layerId === "public.safety.fire")).toHaveLength(1);
+    expect(body.sources).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        compatibilityOnly: true,
+        providerId: "sim.situation-data",
+        sourceId: "safety_data"
+      })
+    ]));
+  });
+
   it("returns a degraded catalog when a provider catalog does not answer", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     vi.stubEnv("COP_MAP_CATALOG_PROVIDER_TIMEOUT_MS", "20");
@@ -522,6 +560,31 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           selectable: false,
           sourceIds: ["osm_postgis"],
           styleProfile: "communications-infrastructure-v1"
+        },
+        {
+          audience: "public",
+          cacheTtlSeconds: 300,
+          compatibilityOnly: true,
+          defaultVisible: false,
+          geometryTypes: ["Point", "Polygon", "MultiPolygon"],
+          kind: "vector_features",
+          label: "Požáry a požární riziko (kompatibilní projekce)",
+          preferredProviderId: "sim.safety-data",
+          providerLayerId: "fire.safety_data_projection",
+          query: {
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.situation-data",
+            providerLayerIds: ["fire"],
+            providerSourceIds: ["safety_data"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "public.safety.fire",
+          refreshSeconds: 300,
+          role: "reference",
+          selectable: false,
+          sourceIds: ["safety_data"],
+          styleProfile: "safety-fire-v1"
         }
       ],
       providerId: "sim.situation-data",
@@ -560,6 +623,18 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           sourceRole: "reference",
           updateCadenceSeconds: 21600,
           usedByCatalogLayerIds: ["public.mobile.network"],
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.safety.fire"],
+          label: "Safety Data API projection",
+          preferredProviderId: "sim.safety-data",
+          selectableInMap: false,
+          sourceId: "safety_data",
+          sourceRole: "projection",
+          updateCadenceSeconds: 300,
           visibleInDiagnostics: true
         }
       ],
@@ -872,6 +947,66 @@ class FakeSafetyDataSource implements SafetyDataSource {
         warningCount: 0
       },
       type: "FeatureCollection",
+      warnings: []
+    };
+  }
+}
+
+class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
+  async fetchCatalog(_requestNow: Date): Promise<ProviderMapCatalog> {
+    return {
+      contractVersion: "provider-map-catalog-v1",
+      layers: [
+        {
+          audience: "public",
+          cacheTtlSeconds: 600,
+          defaultVisible: false,
+          geometryTypes: ["Point", "Polygon", "MultiPolygon"],
+          kind: "vector_features",
+          label: "Požáry",
+          providerLayerId: "fire",
+          query: {
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.safety-data",
+            providerLayerIds: ["fire"],
+            providerSourceIds: ["chmi_alerts", "nasa_firms"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "public.safety.fire",
+          refreshSeconds: 600,
+          role: "primary",
+          selectable: true,
+          sourceIds: ["chmi_alerts", "nasa_firms"],
+          styleProfile: "fire-risk-v1"
+        }
+      ],
+      providerId: "sim.safety-data",
+      sources: [
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.safety.fire"],
+          label: "CHMI CAP alerts",
+          selectableInMap: false,
+          sourceId: "chmi_alerts",
+          sourceRole: "final",
+          updateCadenceSeconds: 300,
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.safety.fire"],
+          label: "NASA FIRMS",
+          selectableInMap: false,
+          sourceId: "nasa_firms",
+          sourceRole: "final",
+          updateCadenceSeconds: 600,
+          visibleInDiagnostics: true
+        }
+      ],
+      status: "online",
       warnings: []
     };
   }

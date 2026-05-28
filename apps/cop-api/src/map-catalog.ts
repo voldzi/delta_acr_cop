@@ -44,6 +44,7 @@ export interface MapCatalogQuery {
 export interface MapCatalogLayer {
   audience: MapCatalogAudience;
   cacheTtlSeconds?: number;
+  compatibilityOnly?: boolean;
   defaultVisible: boolean;
   description?: string;
   filters?: MapCatalogFilter[];
@@ -58,6 +59,7 @@ export interface MapCatalogLayer {
   };
   maxZoom?: number;
   minZoom?: number;
+  preferredProviderId?: string;
   provenance?: {
     sourceIds: string[];
     technicalInputs?: string[];
@@ -72,9 +74,11 @@ export interface MapCatalogLayer {
 export interface MapCatalogSource {
   audience: MapCatalogAudience;
   cacheTtlSeconds?: number;
+  compatibilityOnly?: boolean;
   enabled: boolean;
   feedsCatalogLayerIds?: string[];
   label: string;
+  preferredProviderId?: string;
   providerId: string;
   selectableInMap: boolean;
   sourceId: string;
@@ -138,7 +142,7 @@ export function buildMapCatalog(input: BuildMapCatalogInput): MapCatalogResponse
   const includeDiagnostics = input.includeDiagnostics === true;
   const includePartner = input.includePartner === true;
   const providers = buildProviders(input);
-  const sources = [
+  const rawSources = [
     ...buildCopSources(),
     ...(input.safety?.catalog ? buildProviderCatalogSources(input.safety.catalog, includeDiagnostics, includePartner) : buildSafetySources(input.safety?.sources ?? [])),
     ...(input.situation?.catalog ? buildProviderCatalogSources(input.situation.catalog, includeDiagnostics, includePartner) : buildSituationSources(input.situation?.sources ?? [])),
@@ -146,7 +150,7 @@ export function buildMapCatalog(input: BuildMapCatalogInput): MapCatalogResponse
     ...buildMissionArenaSources(input.missionArena?.sources ?? []),
     ...(includePartner ? (input.tak?.catalog ? buildProviderCatalogSources(input.tak.catalog, includeDiagnostics, includePartner) : buildTakSources(input.tak?.sources ?? [])) : [])
   ];
-  const allLayers = [
+  const rawLayers = [
     ...(input.safety?.catalog ? buildProviderCatalogLayers(input.safety.catalog, includeDiagnostics, includePartner) : buildSafetyLayers(input.safety?.layers ?? [], input.safety?.sources ?? [])),
     ...(input.situation?.catalog ? buildProviderCatalogLayers(input.situation.catalog, includeDiagnostics, includePartner) : buildSituationLayers(input.situation?.layers ?? [], input.situation?.sources ?? [])),
     ...buildCopOwnedLayers(),
@@ -155,16 +159,18 @@ export function buildMapCatalog(input: BuildMapCatalogInput): MapCatalogResponse
     ...(includePartner ? (input.tak?.catalog ? buildProviderCatalogLayers(input.tak.catalog, includeDiagnostics, includePartner) : buildTakLayers(input.tak?.layers ?? [], input.tak?.sources ?? [])) : []),
     ...(includeDiagnostics ? buildDiagnosticLayers(input.situation?.layers ?? [], input.situation?.sources ?? []) : [])
   ];
+  const layers = dedupeLayers(filterCompatibilityLayers(rawLayers, providers));
+  const sources = dedupeSources(filterCompatibilitySources(rawSources, layers, providers));
   const warnings = [input.flight?.warning, input.missionArena?.warning, input.safety?.warning, input.situation?.warning, input.tak?.warning].filter((warning): warning is string => Boolean(warning));
 
   return {
     catalogVersion: "map-catalog-v1",
     generatedAt: input.generatedAt.toISOString(),
     groups: defaultGroups(includeDiagnostics, includePartner),
-    layers: dedupeLayers(allLayers),
+    layers,
     locale: input.locale ?? "cs-CZ",
     providers,
-    sources: dedupeSources(sources),
+    sources,
     warnings
   };
 }
@@ -256,6 +262,7 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
     {
       audience,
       cacheTtlSeconds: layer.cacheTtlSeconds,
+      ...(layer.compatibilityOnly === true ? { compatibilityOnly: true } : {}),
       defaultVisible: layer.defaultVisible === true,
       description: layer.description,
       filters: normalizeProviderFilters(layer.filters),
@@ -267,6 +274,7 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
       legal: layer.legal,
       maxZoom: layer.maxZoom,
       minZoom: layer.minZoom,
+      preferredProviderId: layer.preferredProviderId,
       provenance: {
         sourceIds: uniqueStrings((layer.sourceIds ?? providerSourceIds).map((sourceId) => `${providerId}:${sourceId}`)),
         ...(layer.technicalInputs && layer.technicalInputs.length > 0 ? { technicalInputs: layer.technicalInputs.map((sourceId) => `${providerId}:${sourceId}`) } : {})
@@ -310,9 +318,11 @@ function providerCatalogSourceToMapSource(providerId: string, source: ProviderCa
     {
       audience: normalizeAudience(source.audience),
       cacheTtlSeconds: source.cacheTtlSeconds,
+      ...(source.compatibilityOnly === true || (normalizeSourceRole(source.sourceRole) === "projection" && Boolean(source.preferredProviderId)) ? { compatibilityOnly: true } : {}),
       enabled: source.enabled === true,
       feedsCatalogLayerIds: nonEmpty(source.feedsCatalogLayerIds) ?? nonEmpty(source.feedsLayerIds),
       label: source.label ?? source.sourceId,
+      preferredProviderId: source.preferredProviderId,
       providerId,
       selectableInMap: source.selectableInMap === true,
       sourceId: source.sourceId,
@@ -1335,6 +1345,40 @@ function nonEmpty<T>(value: T[] | undefined): T[] | undefined {
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function filterCompatibilityLayers(layers: MapCatalogLayer[], providers: MapCatalogProvider[]): MapCatalogLayer[] {
+  return layers.filter((layer) => {
+    if (layer.compatibilityOnly !== true || !layer.preferredProviderId || !providerIsOnline(providers, layer.preferredProviderId)) {
+      return true;
+    }
+    return !layers.some((candidate) =>
+      candidate.layerId === layer.layerId
+      && candidate.query.providerId === layer.preferredProviderId
+      && candidate.compatibilityOnly !== true
+    );
+  });
+}
+
+function filterCompatibilitySources(sources: MapCatalogSource[], layers: MapCatalogLayer[], providers: MapCatalogProvider[]): MapCatalogSource[] {
+  return sources.filter((source) => {
+    if (source.compatibilityOnly !== true || !source.preferredProviderId || !providerIsOnline(providers, source.preferredProviderId)) {
+      return true;
+    }
+    const feedsCatalogLayerIds = source.feedsCatalogLayerIds ?? [];
+    if (feedsCatalogLayerIds.length === 0) {
+      return false;
+    }
+    return layers.some((layer) =>
+      layer.compatibilityOnly === true
+      && layer.query.providerId === source.providerId
+      && feedsCatalogLayerIds.includes(layer.layerId)
+    );
+  });
+}
+
+function providerIsOnline(providers: MapCatalogProvider[], providerId: string): boolean {
+  return providers.some((provider) => provider.providerId === providerId && provider.status === "online");
 }
 
 function dedupeLayers(layers: MapCatalogLayer[]): MapCatalogLayer[] {

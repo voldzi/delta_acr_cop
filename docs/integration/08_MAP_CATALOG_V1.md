@@ -120,6 +120,13 @@ Examples:
 | `admin_boundaries` | `reference` | user layer `public.boundary.admin` |
 | `safety_data` projection in situation-data | `projection` | compatibility only; COP should prefer safety-data |
 
+Compatibility provider metadata:
+
+- `compatibilityOnly=true` marks a layer/source as a fallback projection, not a normal user-facing copy of the same data.
+- `preferredProviderId` tells COP which provider is authoritative. For SIM safety projections in `situation-data`, this is `sim.safety-data`.
+- When the preferred provider is online and exposes the same catalog `layerId`, COP hides the compatibility layer/source from the normal catalog and uses the preferred provider query.
+- When the preferred provider is unavailable or does not expose the layer, COP may keep the compatibility projection as a degraded fallback.
+
 ## Catalog API
 
 COP exposes one source-neutral catalog endpoint to web and native clients:

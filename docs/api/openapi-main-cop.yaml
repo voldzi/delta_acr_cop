@@ -2633,6 +2633,9 @@ components:
         cacheTtlSeconds:
           type: integer
           minimum: 0
+        compatibilityOnly:
+          type: boolean
+          description: True when the layer is only a fallback/compatibility projection and should be hidden while preferredProviderId is online with the same layerId.
         defaultVisible:
           type: boolean
         description:
@@ -2667,6 +2670,9 @@ components:
           type: integer
         minZoom:
           type: integer
+        preferredProviderId:
+          type: string
+          description: Provider that should be preferred over this compatibility layer when available.
         provenance:
           type: object
           properties:
@@ -2742,6 +2748,9 @@ components:
         cacheTtlSeconds:
           type: integer
           minimum: 0
+        compatibilityOnly:
+          type: boolean
+          description: True when the source is only a fallback/compatibility projection for a preferred provider.
         enabled:
           type: boolean
         feedsCatalogLayerIds:
@@ -2750,6 +2759,9 @@ components:
             type: string
         label:
           type: string
+        preferredProviderId:
+          type: string
+          description: Provider that should be preferred over this compatibility source when available.
         providerId:
           type: string
         selectableInMap:

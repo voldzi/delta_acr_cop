@@ -11,6 +11,7 @@ export interface ProviderMapCatalog {
 export interface ProviderCatalogLayer {
   audience?: string;
   cacheTtlSeconds?: number;
+  compatibilityOnly?: boolean;
   categories?: string[];
   categoryPath?: string[];
   defaultVisible?: boolean;
@@ -26,6 +27,7 @@ export interface ProviderCatalogLayer {
   maxZoom?: number;
   minZoom?: number;
   providerLayerId: string;
+  preferredProviderId?: string;
   query?: ProviderCatalogQuery;
   recommendedCatalogLayerId: string;
   refreshSeconds?: number;
@@ -58,11 +60,13 @@ export interface ProviderCatalogQuery {
 export interface ProviderCatalogSource {
   audience?: string;
   cacheTtlSeconds?: number;
+  compatibilityOnly?: boolean;
   enabled?: boolean;
   feedsCatalogLayerIds?: string[];
   feedsLayerIds?: string[];
   label?: string;
   layers?: string[];
+  preferredProviderId?: string;
   sourceId: string;
   sourceRole?: string;
   updateCadenceSeconds?: number;
@@ -104,6 +108,7 @@ function normalizeProviderCatalogLayer(value: unknown): ProviderCatalogLayer[] {
     {
       audience: optionalString(value.audience),
       cacheTtlSeconds: optionalNumber(value.cacheTtlSeconds),
+      compatibilityOnly: value.compatibilityOnly === true,
       categories: stringList(value.categories),
       categoryPath: stringList(value.categoryPath),
       defaultVisible: value.defaultVisible === true,
@@ -116,6 +121,7 @@ function normalizeProviderCatalogLayer(value: unknown): ProviderCatalogLayer[] {
       maxZoom: optionalNumber(value.maxZoom),
       minZoom: optionalNumber(value.minZoom),
       providerLayerId,
+      preferredProviderId: optionalString(value.preferredProviderId),
       query: normalizeProviderCatalogQuery(value.query),
       recommendedCatalogLayerId,
       refreshSeconds: optionalNumber(value.refreshSeconds),
@@ -177,11 +183,13 @@ function normalizeProviderCatalogSource(value: unknown): ProviderCatalogSource[]
     {
       audience: optionalString(value.audience),
       cacheTtlSeconds: optionalNumber(value.cacheTtlSeconds),
+      compatibilityOnly: value.compatibilityOnly === true,
       enabled: value.enabled === true,
       feedsCatalogLayerIds: stringList(value.feedsCatalogLayerIds),
       feedsLayerIds: stringList(value.feedsLayerIds),
       label: optionalString(value.label),
       layers: stringList(value.layers),
+      preferredProviderId: optionalString(value.preferredProviderId),
       sourceId,
       sourceRole: optionalString(value.sourceRole),
       updateCadenceSeconds: optionalNumber(value.updateCadenceSeconds),
