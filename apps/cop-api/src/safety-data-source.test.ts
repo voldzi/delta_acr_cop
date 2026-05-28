@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SafetyDataSourceAdapter } from "./safety-data-source.js";
+import { buildSafetyDataHealth, SafetyDataSourceAdapter } from "./safety-data-source.js";
 
 describe("SafetyDataSourceAdapter", () => {
   afterEach(() => {
@@ -15,6 +15,9 @@ describe("SafetyDataSourceAdapter", () => {
       }
       if (url.endsWith("/config")) {
         return new Response(JSON.stringify(sampleConfigResponse()), { status: 200 });
+      }
+      if (url.endsWith("/observability")) {
+        return new Response(JSON.stringify(sampleObservabilityResponse()), { status: 200 });
       }
       return new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 });
     });
@@ -32,6 +35,7 @@ describe("SafetyDataSourceAdapter", () => {
     const layers = await adapter.fetchLayers(requestNow);
     const sources = await adapter.fetchSources(requestNow);
     const config = await adapter.fetchConfig(requestNow);
+    const observability = await adapter.fetchObservability(requestNow);
     const features = await adapter.fetchFeatures({
       bbox: { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: ["warnings", "flood"],
@@ -41,6 +45,9 @@ describe("SafetyDataSourceAdapter", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/catalog");
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/config");
     expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
+      "https://sim.zeleznalady.cz/safety-data/api/v1/observability"
+    );
+    expect(String(fetchMock.mock.calls[3]?.[0])).toBe(
       "https://sim.zeleznalady.cz/safety-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=warnings%2Cflood&limit=20"
     );
     expect(layers).toMatchObject([
@@ -52,6 +59,25 @@ describe("SafetyDataSourceAdapter", () => {
     ]);
     expect(sources).toMatchObject([{ enabled: true, sourceId: "chmi_alerts" }]);
     expect(config).toMatchObject({ enabledSources: ["chmi_alerts", "chmi_hydro"] });
+    expect(observability).toMatchObject({
+      lastResult: {
+        featureCount: 12,
+        layerCounts: {
+          flood: 3,
+          weather_alerts: 4
+        }
+      },
+      sourceCaches: [
+        {
+          cache: {
+            errors: 0,
+            hitRate: 0.75
+          },
+          sourceId: "chmi_alerts"
+        }
+      ],
+      status: "ok"
+    });
     expect(features).toMatchObject({
       contractVersion: "cop-safety-source-v1",
       features: [
@@ -79,6 +105,61 @@ describe("SafetyDataSourceAdapter", () => {
       upstreamBbox: { east: 15.75, north: 50.75, south: 49.5, west: 13.5 }
     });
     expect(features.query.bbox).toEqual({ east: 15.35, north: 50.45, south: 49.65, west: 13.85 });
+  });
+
+  it("uses safety-data observability as source health without treating degraded external data as an outage", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/observability")) {
+        return new Response(JSON.stringify({
+          ...sampleObservabilityResponse(),
+          status: "degraded",
+          sourceCaches: [
+            {
+              sourceId: "chmi_hydro",
+              cache: {
+                entries: 4,
+                errors: 2,
+                hitRate: 0.5,
+                staleHits: 1
+              }
+            }
+          ]
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SafetyDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/safety-data/api/v1",
+      cacheTtlMs: 120000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+    const requestNow = new Date("2026-05-20T10:00:06Z");
+    const [features, observability] = await Promise.all([
+      adapter.fetchFeatures({
+        bbox: { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
+        layers: ["warnings"],
+        limit: 20
+      }, requestNow),
+      adapter.fetchObservability(requestNow)
+    ]);
+    const health = buildSafetyDataHealth(features, requestNow, observability);
+
+    expect(health.health).toBe("DEGRADED");
+    expect(health.lastError).toBeUndefined();
+    expect(health.detail).toBe("features 12, stale 3, sources 3, cache 80%");
+    expect(health.warnings).toEqual(expect.arrayContaining(["chmi_hydro: 2 cache errors"]));
+    expect(health.summary).toMatchObject({
+      observabilityStatus: "degraded",
+      lastResult: {
+        featureCount: 12,
+        staleFeatureCount: 3
+      }
+    });
   });
 
   it("reuses canonical viewport cache for small map pans", async () => {
@@ -232,5 +313,47 @@ function sampleFeatureCollection() {
     },
     type: "FeatureCollection",
     warnings: []
+  };
+}
+
+function sampleObservabilityResponse() {
+  return {
+    status: "ok",
+    cache: {
+      entries: 12,
+      errors: 0,
+      hitRate: 0.8,
+      hits: 8,
+      misses: 2,
+      staleHits: 0
+    },
+    sourceCaches: [
+      {
+        sourceId: "chmi_alerts",
+        cache: {
+          entries: 4,
+          errors: 0,
+          hitRate: 0.75,
+          hits: 3,
+          misses: 1,
+          staleHits: 0
+        }
+      }
+    ],
+    dataFreshness: {},
+    lastResult: {
+      generatedAt: "2026-05-20T10:00:00Z",
+      generatedAgeSeconds: 23,
+      featureCount: 12,
+      sourceCount: 3,
+      staleFeatureCount: 3,
+      responseWarningCount: 0,
+      layerCounts: {
+        weather_alerts: 4,
+        fire: 2,
+        flood: 3,
+        boundary_admin: 3
+      }
+    }
   };
 }

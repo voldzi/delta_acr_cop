@@ -26,6 +26,7 @@ export interface SafetyDataSourceConfig {
   enabled: boolean;
   layerCacheTtlMs?: Partial<Record<SafetyLayerId, number>>;
   maxLimit: number;
+  observabilityCacheTtlMs?: number;
   staleIfErrorMs?: number;
   timeoutMs: number;
 }
@@ -74,6 +75,34 @@ export interface SafetySourceDescriptor {
   priority?: number;
   sourceId: SafetyDataSourceId;
   updateCadenceSeconds?: number;
+}
+
+export interface SafetyDataObservability {
+  cache?: SafetyObservabilityCache;
+  dataFreshness?: Record<string, unknown>;
+  lastResult?: {
+    featureCount?: number;
+    generatedAgeSeconds?: number;
+    generatedAt?: string;
+    layerCounts?: Record<string, number>;
+    responseWarningCount?: number;
+    sourceCount?: number;
+    staleFeatureCount?: number;
+  };
+  sourceCaches: Array<{
+    cache?: SafetyObservabilityCache;
+    sourceId: string;
+  }>;
+  status: "degraded" | "ok" | string;
+}
+
+export interface SafetyObservabilityCache {
+  entries?: number;
+  errors?: number;
+  hitRate?: number;
+  hits?: number;
+  misses?: number;
+  staleHits?: number;
 }
 
 export type SafetyGeometry =
@@ -181,6 +210,7 @@ export interface SafetyDataSource {
   fetchConfig(requestNow: Date): Promise<SafetyDataPublicConfig>;
   fetchFeatures(query: SafetyFeatureQuery, requestNow: Date): Promise<SafetyFeatureCollection>;
   fetchLayers(requestNow: Date): Promise<SafetyLayerDescriptor[]>;
+  fetchObservability?(requestNow: Date): Promise<SafetyDataObservability>;
   fetchSources(requestNow: Date): Promise<SafetySourceDescriptor[]>;
 }
 
@@ -197,6 +227,7 @@ const defaultConfig: SafetyDataSourceConfig = {
     weather_alerts: 5 * 60 * 1000
   },
   maxLimit: 250,
+  observabilityCacheTtlMs: 60000,
   staleIfErrorMs: 20 * 60 * 1000,
   timeoutMs: 15000
 };
@@ -218,6 +249,7 @@ export function createSafetyDataSourceConfigFromEnv(env: Record<string, string |
       weather_alerts: readInteger(env.COP_SAFETY_DATA_WEATHER_ALERTS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
     },
     maxLimit: readInteger(env.COP_SAFETY_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 1000),
+    observabilityCacheTtlMs: readInteger(env.COP_SAFETY_DATA_OBSERVABILITY_CACHE_TTL_MS, defaultConfig.observabilityCacheTtlMs ?? 60000, 10000, 10 * 60 * 1000),
     staleIfErrorMs: readInteger(env.COP_SAFETY_DATA_STALE_IF_ERROR_MS, defaultConfig.staleIfErrorMs ?? 1200000, 0, 24 * 60 * 60 * 1000),
     timeoutMs: readInteger(env.COP_SAFETY_DATA_TIMEOUT_MS, defaultConfig.timeoutMs, 1000, 60000)
   };
@@ -235,6 +267,8 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
   private catalogInflight: Promise<ProviderMapCatalog> | null = null;
   private configCache: { expiresAtMs: number; value: SafetyDataPublicConfig } | null = null;
   private layerCache: { expiresAtMs: number; value: SafetyLayerDescriptor[] } | null = null;
+  private observabilityCache: { expiresAtMs: number; value: SafetyDataObservability } | null = null;
+  private observabilityInflight: Promise<SafetyDataObservability> | null = null;
   private sourceCache: { expiresAtMs: number; value: SafetySourceDescriptor[] } | null = null;
 
   constructor(readonly config: SafetyDataSourceConfig) {
@@ -291,6 +325,26 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
       value
     };
     return value;
+  }
+
+  async fetchObservability(requestNow: Date): Promise<SafetyDataObservability> {
+    if (this.observabilityCache && this.observabilityCache.expiresAtMs > requestNow.getTime()) {
+      return this.observabilityCache.value;
+    }
+    if (this.observabilityInflight) {
+      return this.observabilityInflight;
+    }
+    this.observabilityInflight = fetchSafetyObservability(this.config, requestNow);
+    try {
+      const value = await this.observabilityInflight;
+      this.observabilityCache = {
+        expiresAtMs: requestNow.getTime() + observabilityCacheTtlMs(this.config),
+        value
+      };
+      return value;
+    } finally {
+      this.observabilityInflight = null;
+    }
   }
 
   async fetchSources(requestNow: Date): Promise<SafetySourceDescriptor[]> {
@@ -426,9 +480,13 @@ class ManagedSafetyCache<T> {
   }
 }
 
-export function buildSafetyDataHealth(response: SafetyFeatureCollection | SafetyLayerDescriptor[] | SafetySourceDescriptor[], requestNow: Date): SourceHealthOverride {
+export function buildSafetyDataHealth(
+  response: SafetyFeatureCollection | SafetyLayerDescriptor[] | SafetySourceDescriptor[],
+  requestNow: Date,
+  observability?: SafetyDataObservability
+): SourceHealthOverride {
   if (Array.isArray(response)) {
-    return {
+    return enrichSafetyDataHealth({
       detail: `metadata ${response.length}`,
       evaluatedAt: requestNow.toISOString(),
       health: response.length > 0 ? "ONLINE" : "WAITING",
@@ -437,7 +495,7 @@ export function buildSafetyDataHealth(response: SafetyFeatureCollection | Safety
       summary: {
         itemCount: response.length
       }
-    };
+    }, observability);
   }
 
   const warningCount = response.warnings.length;
@@ -446,7 +504,7 @@ export function buildSafetyDataHealth(response: SafetyFeatureCollection | Safety
     : response.summary.staleFeatureCount > 0
       ? "STALE"
       : "ONLINE";
-  return {
+  return enrichSafetyDataHealth({
     detail: `features ${response.summary.featureCount}, critical ${response.summary.criticalCount}, warnings ${response.summary.warningCount}, advisory ${response.summary.advisoryCount}, stale ${response.summary.staleFeatureCount}`,
     evaluatedAt: requestNow.toISOString(),
     generatedAt: response.generatedAt,
@@ -462,7 +520,62 @@ export function buildSafetyDataHealth(response: SafetyFeatureCollection | Safety
       warningCount: response.summary.warningCount
     },
     warnings: response.warnings
+  }, observability);
+}
+
+function enrichSafetyDataHealth(health: SourceHealthOverride, observability: SafetyDataObservability | undefined): SourceHealthOverride {
+  if (!observability) {
+    return health;
+  }
+  const sourceErrorWarnings = observability.sourceCaches.flatMap((source) => {
+    const errors = source.cache?.errors ?? 0;
+    return errors > 0 ? [`${source.sourceId}: ${errors} cache error${errors === 1 ? "" : "s"}`] : [];
+  });
+  const responseWarnings = observability.lastResult?.responseWarningCount ?? 0;
+  const warnings = uniqueStrings([
+    ...(health.warnings ?? []),
+    ...sourceErrorWarnings,
+    ...(responseWarnings > 0 ? [`SIM safety-data returned ${responseWarnings} response warning${responseWarnings === 1 ? "" : "s"}.`] : [])
+  ]);
+  const summary = {
+    ...(health.summary ?? {}),
+    observabilityStatus: observability.status,
+    ...(observability.cache ? { cache: observability.cache } : {}),
+    ...(observability.lastResult ? { lastResult: observability.lastResult } : {}),
+    ...(observability.sourceCaches.length > 0
+      ? {
+          sourceCaches: observability.sourceCaches.map((source) => ({
+            errors: source.cache?.errors ?? 0,
+            hitRate: source.cache?.hitRate,
+            sourceId: source.sourceId,
+            staleHits: source.cache?.staleHits ?? 0
+          }))
+        }
+      : {})
   };
+  const healthStatus = observability.status === "degraded" && health.health === "ONLINE" ? "DEGRADED" : health.health;
+  return {
+    ...health,
+    detail: safetyObservabilityDetail(health.detail, observability),
+    generatedAt: observability.lastResult?.generatedAt ?? health.generatedAt,
+    health: healthStatus,
+    summary,
+    ...(warnings.length > 0 ? { warnings } : {})
+  };
+}
+
+function safetyObservabilityDetail(baseDetail: string | undefined, observability: SafetyDataObservability): string | undefined {
+  const result = observability.lastResult;
+  if (!result) {
+    return baseDetail;
+  }
+  const parts = [
+    `features ${result.featureCount ?? 0}`,
+    `stale ${result.staleFeatureCount ?? 0}`,
+    `sources ${result.sourceCount ?? 0}`,
+    observability.cache?.hitRate !== undefined ? `cache ${Math.round(observability.cache.hitRate * 100)}%` : undefined
+  ].filter((value): value is string => Boolean(value));
+  return parts.length > 0 ? parts.join(", ") : baseDetail;
 }
 
 export function unavailableSafetyDataHealth(error: unknown, requestNow: Date): SourceHealthOverride {
@@ -592,6 +705,10 @@ async function fetchSafetyFeatures(config: SafetyDataSourceConfig, query: Safety
 
 async function fetchSafetyCatalog(config: SafetyDataSourceConfig, requestNow: Date): Promise<ProviderMapCatalog> {
   return normalizeProviderMapCatalog(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/catalog`), config, requestNow), "sim.safety-data");
+}
+
+async function fetchSafetyObservability(config: SafetyDataSourceConfig, requestNow: Date): Promise<SafetyDataObservability> {
+  return normalizeSafetyObservability(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/observability`), config, requestNow));
 }
 
 function safetyLayersFromProviderCatalog(catalog: ProviderMapCatalog): SafetyLayerDescriptor[] {
@@ -816,6 +933,63 @@ function normalizeSafetyConfig(value: unknown): SafetyDataPublicConfig {
   };
 }
 
+function normalizeSafetyObservability(value: unknown): SafetyDataObservability {
+  if (!isRecord(value)) {
+    throw new Error("Safety data observability response is not valid.");
+  }
+  const status = optionalString(value.status) ?? "degraded";
+  return {
+    cache: normalizeObservabilityCache(value.cache),
+    dataFreshness: isRecord(value.dataFreshness) ? value.dataFreshness : undefined,
+    lastResult: normalizeSafetyLastResult(value.lastResult),
+    sourceCaches: Array.isArray(value.sourceCaches) ? value.sourceCaches.flatMap(normalizeSafetySourceCache) : [],
+    status
+  };
+}
+
+function normalizeSafetyLastResult(value: unknown): SafetyDataObservability["lastResult"] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const layerCounts = isRecord(value.layerCounts)
+    ? Object.fromEntries(Object.entries(value.layerCounts).flatMap(([key, count]) => {
+        const parsed = optionalNumber(count);
+        return parsed === undefined ? [] : [[key, parsed]];
+      }))
+    : undefined;
+  return {
+    featureCount: optionalNumber(value.featureCount),
+    generatedAgeSeconds: optionalNumber(value.generatedAgeSeconds),
+    generatedAt: optionalString(value.generatedAt),
+    layerCounts,
+    responseWarningCount: optionalNumber(value.responseWarningCount),
+    sourceCount: optionalNumber(value.sourceCount),
+    staleFeatureCount: optionalNumber(value.staleFeatureCount)
+  };
+}
+
+function normalizeSafetySourceCache(value: unknown): SafetyDataObservability["sourceCaches"] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const sourceId = optionalString(value.sourceId);
+  return sourceId ? [{ cache: normalizeObservabilityCache(value.cache), sourceId }] : [];
+}
+
+function normalizeObservabilityCache(value: unknown): SafetyObservabilityCache | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return {
+    entries: optionalNumber(value.entries),
+    errors: optionalNumber(value.errors),
+    hitRate: optionalNumber(value.hitRate),
+    hits: optionalNumber(value.hits),
+    misses: optionalNumber(value.misses),
+    staleHits: optionalNumber(value.staleHits)
+  };
+}
+
 function normalizeSafetyProvider(value: unknown): Array<{ authConfigured?: boolean; baseUrl?: string; sourceId: SafetyDataSourceId }> {
   if (!isRecord(value) || !isSafetyDataSourceId(value.sourceId)) {
     return [];
@@ -959,6 +1133,10 @@ function cacheMaxEntries(config: SafetyDataSourceConfig): number {
 
 function staleIfErrorMs(config: SafetyDataSourceConfig): number {
   return Math.max(0, Math.trunc(config.staleIfErrorMs ?? defaultConfig.staleIfErrorMs ?? 1200000));
+}
+
+function observabilityCacheTtlMs(config: SafetyDataSourceConfig): number {
+  return Math.max(10000, Math.trunc(config.observabilityCacheTtlMs ?? defaultConfig.observabilityCacheTtlMs ?? 60000));
 }
 
 function gridSizeDegreesForBbox(bbox: SafetyBbox): number {

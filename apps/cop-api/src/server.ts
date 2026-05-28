@@ -2780,12 +2780,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     try {
-      const [catalog, layers, sources] = await Promise.all([
+      const [catalog, layers, sources, observability] = await Promise.all([
         safetyDataSource.fetchCatalog ? safetyDataSource.fetchCatalog(requestNow) : Promise.resolve(undefined),
         safetyDataSource.fetchLayers(requestNow),
-        safetyDataSource.fetchSources(requestNow)
+        safetyDataSource.fetchSources(requestNow),
+        readSafetyObservability(requestNow)
       ]);
-      const health = buildSafetyDataHealth(layers, requestNow);
+      const health = buildSafetyDataHealth(layers, requestNow, observability);
       state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
       return {
         catalog,
@@ -2807,6 +2808,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         status: "unavailable" as const,
         warning: health.lastError ?? "Safety data catalog provider is unavailable."
       };
+    }
+  }
+
+  async function readSafetyObservability(requestNow: Date) {
+    if (!safetyDataSource?.fetchObservability) {
+      return undefined;
+    }
+    try {
+      return await safetyDataSource.fetchObservability(requestNow);
+    } catch (error) {
+      app.log.warn({ error }, "Safety data observability request failed.");
+      return undefined;
     }
   }
 
@@ -2960,8 +2973,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     try {
-      const collection = await safetyDataSource.fetchFeatures(query, requestNow);
-      const health = buildSafetyDataHealth(collection, requestNow);
+      const [collection, observability] = await Promise.all([
+        safetyDataSource.fetchFeatures(query, requestNow),
+        readSafetyObservability(requestNow)
+      ]);
+      const health = buildSafetyDataHealth(collection, requestNow, observability);
       state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
       return {
         ...collection,

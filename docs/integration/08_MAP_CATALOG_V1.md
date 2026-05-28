@@ -461,6 +461,8 @@ For hydrology COP displays flood stage and trend as informational context. It do
 
 For fire COP distinguishes confirmed/observed fire context from ČHMÚ fire danger. ČHMÚ `fire_weather`/`CHMI_CAP_FIRE_DANGER` features are shown as official fire-risk polygons, not as confirmed incident locations.
 
+COP reads SIM safety operations only server-side through `GET /safety-data/api/v1/observability`. The response is sanitized operational metadata, not a user map layer. COP maps it into provider health: stale feature counts and source-cache errors become operational warnings, while `status=degraded` is displayed as reduced external data quality rather than a map or SIM outage. Public clients must keep using `/api/v1/map/catalog` and `/api/v1/map/query`; they must not query SIM `/observability` or `/metrics` directly.
+
 ## Provider Catalog Requirements
 
 Providers should expose metadata that COP can translate into the map catalog.

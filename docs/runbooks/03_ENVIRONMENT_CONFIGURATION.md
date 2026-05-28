@@ -71,10 +71,13 @@ COP_SAFETY_DATA_CACHE_TTL_MS=120000
 COP_SAFETY_DATA_WARNINGS_CACHE_TTL_MS=120000
 COP_SAFETY_DATA_FLOOD_CACHE_TTL_MS=300000
 COP_SAFETY_DATA_MAX_LIMIT=250
+COP_SAFETY_DATA_OBSERVABILITY_CACHE_TTL_MS=60000
 COP_SAFETY_DATA_TIMEOUT_MS=15000
 ```
 
 Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora, slučuje malé posuny mapy do kanonického bbox cache klíče a při výpadku vrací prázdný degraded `FeatureCollection`.
+
+COP také server-side čte `GET /safety-data/api/v1/observability`. Tento endpoint se nepoužívá jako mapová vrstva; promítá se jen do Source Health jako provozní kvalita safety provideru, cache hit-rate, stale feature count a varování zdrojových cache. `status=degraded` znamená sníženou kvalitu externích dat, ne výpadek SIM.
 
 ## TAK Gateway Source
 
