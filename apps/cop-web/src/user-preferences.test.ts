@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { clamp, normalizeMapView, readUserPreferences, writeUserPreferences } from "./user-preferences";
+import { clamp, normalizeMapView, normalizeUserPreferences, readUserPreferences, writeUserPreferences } from "./user-preferences";
 
 beforeEach(() => {
   installLocalStorageMock();
@@ -32,6 +32,17 @@ describe("user preferences helpers", () => {
 
     expect(readUserPreferences("operator-a").selectedLayer).toBe("uav");
     expect(readUserPreferences("operator-b").selectedLayer).toBe("foreign");
+  });
+
+  it("normalizes language and outline basemap preferences", () => {
+    expect(normalizeUserPreferences({ language: "en", mapBasemapMode: "outline" })).toMatchObject({
+      language: "en",
+      mapBasemapMode: "outline"
+    });
+    expect(normalizeUserPreferences({ language: "de", mapBasemapMode: "satellite" })).toMatchObject({
+      language: undefined,
+      mapBasemapMode: undefined
+    });
   });
 });
 

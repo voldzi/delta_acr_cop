@@ -11,9 +11,9 @@ describe("object detail model", () => {
     const model = buildObjectDetailModel({ historyPoints: [], object, sourceHealth });
 
     expect(model.sidc).toBe("SFAPMFQ--------");
-    expect(model.lineage.map((step) => step.label)).toContain("APP-6 rendering");
-    expect(model.confidenceFactors.some((factor) => factor.label === "Score" && factor.tone === "warn")).toBe(true);
-    expect(model.confidenceFactors.some((factor) => factor.detail.includes("Synthetic/SIM"))).toBe(true);
+    expect(model.lineage.map((step) => step.label)).toContain("APP-6 zobrazení");
+    expect(model.confidenceFactors.some((factor) => factor.label === "Skóre" && factor.tone === "warn")).toBe(true);
+    expect(model.confidenceFactors.some((factor) => factor.detail.includes("Syntetický/SIM"))).toBe(true);
   });
 
   it("flags source position variance from recent multi-source history", () => {
@@ -29,7 +29,7 @@ describe("object detail model", () => {
       sourceHealth: [buildSourceHealth({ health: "ONLINE" })]
     });
 
-    expect(model.conflicts.some((conflict) => conflict.title === "Position variance")).toBe(true);
+    expect(model.conflicts.some((conflict) => conflict.title === "Rozdílná poloha")).toBe(true);
   });
 
   it("marks degraded source health as a data conflict", () => {
@@ -41,7 +41,7 @@ describe("object detail model", () => {
       sourceHealth: [buildSourceHealth({ health: "STALE" })]
     });
 
-    expect(model.conflicts.some((conflict) => conflict.title === "Source degraded")).toBe(true);
+    expect(model.conflicts.some((conflict) => conflict.title === "Zdroj omezen")).toBe(true);
   });
 
   it("prefers server conflict evidence when it is present on the object", () => {

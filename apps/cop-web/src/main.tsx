@@ -21,6 +21,7 @@ import {
   Gauge,
   History,
   Layers,
+  Languages,
   ListFilter,
   LogIn,
   LogOut,
@@ -184,6 +185,7 @@ import {
   normalizeUserPreferences,
   readUserPreferences,
   writeUserPreferences,
+  type AppLanguage,
   type MapBasemapMode,
   type MapViewState,
   type PublicFlightSymbolMode,
@@ -261,7 +263,12 @@ const mapBasemapModeOptions: Array<[MapBasemapMode, string]> = [
   ["standard", "OSM"],
   ["civil", "Civilní"],
   ["risk", "Rizika"],
-  ["dark", "Tmavá"]
+  ["dark", "Tmavá"],
+  ["outline", "Hranice"]
+];
+const appLanguageOptions: Array<[AppLanguage, string]> = [
+  ["cs", "Čeština"],
+  ["en", "English"]
 ];
 const defaultSituationLayerIds: SituationLayerId[] = ["weather"];
 const defaultSafetyLayerIds: SafetyLayerId[] = ["warnings"];
@@ -355,6 +362,7 @@ export function App() {
   const [publicFlightSymbolMode, setPublicFlightSymbolMode] = React.useState<PublicFlightSymbolMode>(() =>
     normalizePublicFlightSymbolMode(initialPreferences.publicFlightSymbolMode)
   );
+  const [language, setLanguage] = React.useState<AppLanguage>(() => normalizeAppLanguage(initialPreferences.language));
   const [mapClusterEnabled, setMapClusterEnabled] = React.useState(initialPreferences.mapClusterEnabled ?? false);
   const [mapBasemapMode, setMapBasemapMode] = React.useState<MapBasemapMode>(() =>
     normalizeMapBasemapMode(initialPreferences.mapBasemapMode)
@@ -862,7 +870,7 @@ export function App() {
     setCommunityStatus("loading");
     setMissionArenaStatus("loading");
     setTakStatus(authToken ? "loading" : "disabled");
-    fetchMapCatalog(apiBase, authToken, { includePartner: Boolean(authToken) })
+    fetchMapCatalog(apiBase, authToken, { includePartner: Boolean(authToken), locale: appLanguageToLocale(language) })
       .then((catalog) => {
         if (cancelled) {
           return;
@@ -953,9 +961,15 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiBase, authToken, dataAccessReady, initialPreferences.safetyLayerIds, initialPreferences.situationLayerIds]);
+  }, [apiBase, authToken, dataAccessReady, initialPreferences.safetyLayerIds, initialPreferences.situationLayerIds, language]);
 
+  const effectiveVisibleCatalogLayerIds = React.useMemo(
+    () => withOutlineBoundaryLayer(visibleCatalogLayerIds, mapBasemapMode, mapCatalog),
+    [mapBasemapMode, mapCatalog, visibleCatalogLayerIds]
+  );
   const visibleCatalogLayerKey = visibleCatalogLayerIds.join(",");
+  const effectiveVisibleCatalogLayerKey = effectiveVisibleCatalogLayerIds.join(",");
+  const outlineBoundaryLayerEnabled = effectiveVisibleCatalogLayerIds.includes("public.boundary.admin") && !visibleCatalogLayerIds.includes("public.boundary.admin");
 
   React.useEffect(() => {
     if (!mapCatalog) {
@@ -995,7 +1009,7 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.situation-data", visibleCatalogLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.situation-data", effectiveVisibleCatalogLayerIds);
       if (catalogLayerIds.length === 0) {
         setSituationFeatures(null);
         setSituationStatus("disabled");
@@ -1035,13 +1049,14 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, coverageTechnology, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
+  }, [apiBase, authToken, coverageTechnology, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
       return;
     }
-    if (visibleSafetyLayerIds.length === 0) {
+    const catalogLayerIds = mapCatalog ? catalogLayerIdsForProviderSelection(mapCatalog, "sim.safety-data", effectiveVisibleCatalogLayerIds) : [];
+    if (catalogLayerIds.length === 0) {
       setSafetyFeatures(null);
       setSafetyStatus("disabled");
       setSafetyWarnings([]);
@@ -1060,13 +1075,6 @@ export function App() {
     let cancelled = false;
     const timer = window.setTimeout(() => {
       if (!mapCatalog) {
-        return;
-      }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.safety-data", visibleCatalogLayerIds);
-      if (catalogLayerIds.length === 0) {
-        setSafetyFeatures(null);
-        setSafetyStatus("disabled");
-        setSafetyWarnings([]);
         return;
       }
       setSafetyStatus((current) => current === "online" ? "online" : "loading");
@@ -1101,7 +1109,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
+  }, [apiBase, authToken, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -1122,7 +1130,7 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.flight-data", visibleCatalogLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.flight-data", effectiveVisibleCatalogLayerIds);
       if (catalogLayerIds.length === 0) {
         setFlightFeatures(null);
         setFlightStatus("disabled");
@@ -1161,7 +1169,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, communityRefreshNonce, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
+  }, [apiBase, authToken, communityRefreshNonce, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
 
   React.useEffect(() => {
     if (!authToken) {
@@ -1189,7 +1197,7 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.tak-gateway", visibleCatalogLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.tak-gateway", effectiveVisibleCatalogLayerIds);
       if (catalogLayerIds.length === 0) {
         setTakFeatures(null);
         setTakStatus("disabled");
@@ -1229,7 +1237,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authToken, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
+  }, [apiBase, authToken, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -1250,7 +1258,7 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "cop.community", visibleCatalogLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "cop.community", effectiveVisibleCatalogLayerIds);
       if (catalogLayerIds.length === 0) {
         setCommunityFeatures(null);
         setCommunityStatus("disabled");
@@ -1288,7 +1296,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, dataAccessReady, mapBounds, mapCatalog, mapView?.zoom, visibleCatalogLayerIds, visibleCatalogLayerKey]);
+  }, [apiBase, authToken, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -1303,7 +1311,7 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "csm.mission-arena", visibleCatalogLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "csm.mission-arena", effectiveVisibleCatalogLayerIds);
       if (catalogLayerIds.length === 0) {
         setMissionArenaFeatures(null);
         setMissionArenaStatus("disabled");
@@ -1342,7 +1350,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, dataAccessReady, mapBounds, mapCatalog, visibleCatalogLayerIds, visibleCatalogLayerKey]);
+  }, [apiBase, authToken, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog]);
 
   React.useEffect(() => {
     if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
@@ -1436,10 +1444,16 @@ export function App() {
   const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleMissionArenaLayerCount = React.useMemo(() => countVisibleMissionArenaLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
-  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0 || visibleSafetyLayerIds.length > 0 || visibleTakLayerIds.length > 0 || visibleFlightLayerCount > 0 || visibleCommunityLayerCount > 0 || visibleMissionArenaLayerCount > 0;
+  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0
+    || visibleSafetyLayerIds.length > 0
+    || visibleTakLayerIds.length > 0
+    || visibleFlightLayerCount > 0
+    || visibleCommunityLayerCount > 0
+    || visibleMissionArenaLayerCount > 0
+    || outlineBoundaryLayerEnabled;
   const mapLayerLabel = React.useMemo(
-    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds, visibleFlightLayerCount, visibleCommunityLayerCount, visibleMissionArenaLayerCount),
-    [visibleCommunityLayerCount, visibleFlightLayerCount, visibleMissionArenaLayerCount, visibleSafetyLayerIds, visibleSituationLayerIds, visibleTakLayerIds, visibleTrackLayerIds]
+    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds, visibleFlightLayerCount, visibleCommunityLayerCount, visibleMissionArenaLayerCount, outlineBoundaryLayerEnabled),
+    [outlineBoundaryLayerEnabled, visibleCommunityLayerCount, visibleFlightLayerCount, visibleMissionArenaLayerCount, visibleSafetyLayerIds, visibleSituationLayerIds, visibleTakLayerIds, visibleTrackLayerIds]
   );
   const mapEmptyMessage = React.useMemo(
     () =>
@@ -1483,7 +1497,7 @@ export function App() {
     setPlaceSearchLoading(true);
     setPlaceSearchError(null);
     const timer = window.setTimeout(() => {
-      fetchPlaceGeocode(apiBase, authToken, query, { language: "cs,en", limit: 5 })
+      fetchPlaceGeocode(apiBase, authToken, query, { language: appLanguageToGeocodeLanguage(language), limit: 5 })
         .then((response) => {
           if (cancelled) {
             return;
@@ -1505,7 +1519,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, dataAccessReady, mapSearchQuery]);
+  }, [apiBase, authToken, dataAccessReady, language, mapSearchQuery]);
 
   const metrics = React.useMemo(() => buildMetrics(scopedObjects, sources), [scopedObjects, sources]);
   const eventStream = React.useMemo(() => buildEventStream(visibleObjects), [visibleObjects]);
@@ -1550,6 +1564,9 @@ export function App() {
     }
     if (settings.includeSynthetic !== undefined) {
       setIncludeSynthetic(settings.includeSynthetic);
+    }
+    if (settings.language !== undefined) {
+      setLanguage(normalizeAppLanguage(settings.language));
     }
     if (settings.minConfidence !== undefined) {
       setMinConfidence(clamp(settings.minConfidence, 0, 1));
@@ -1643,6 +1660,7 @@ export function App() {
     catalogLayerIds: visibleCatalogLayerIds,
     domainScope,
     includeSynthetic,
+    language,
     mapClusterEnabled,
     mapBasemapMode,
     mapView,
@@ -1673,6 +1691,7 @@ export function App() {
     autoRefresh,
     domainScope,
     includeSynthetic,
+    language,
     mapBasemapMode,
     mapClusterEnabled,
     mapView,
@@ -3405,6 +3424,7 @@ export function App() {
           authSession={authSession}
           autoRefresh={autoRefresh}
           includeSynthetic={includeSynthetic}
+          language={language}
           mapBasemapMode={mapBasemapMode}
           minConfidence={minConfidence}
           predictionMinutes={predictionMinutes}
@@ -3440,6 +3460,7 @@ export function App() {
           onAutoRefreshChange={setAutoRefresh}
           onClose={() => setSettingsOpen(false)}
           onIncludeSyntheticChange={setIncludeSynthetic}
+          onLanguageChange={setLanguage}
           onMapBasemapModeChange={setMapBasemapMode}
           onMinConfidenceChange={setMinConfidence}
           onMapClusterEnabledChange={setMapClusterEnabled}
@@ -4855,6 +4876,7 @@ function SettingsDrawer({
   authSession,
   autoRefresh,
   includeSynthetic,
+  language,
   mapBasemapMode,
   mapClusterEnabled,
   minConfidence,
@@ -4880,6 +4902,7 @@ function SettingsDrawer({
   onAutoRefreshChange,
   onClose,
   onIncludeSyntheticChange,
+  onLanguageChange,
   onMapBasemapModeChange,
   onMapClusterEnabledChange,
   onMinConfidenceChange,
@@ -4905,6 +4928,7 @@ function SettingsDrawer({
   authSession: AuthSession;
   autoRefresh: boolean;
   includeSynthetic: boolean;
+  language: AppLanguage;
   mapBasemapMode: MapBasemapMode;
   mapClusterEnabled: boolean;
   minConfidence: number;
@@ -4930,6 +4954,7 @@ function SettingsDrawer({
   onAutoRefreshChange: (value: boolean) => void;
   onClose: () => void;
   onIncludeSyntheticChange: (value: boolean) => void;
+  onLanguageChange: (value: AppLanguage) => void;
   onMapBasemapModeChange: (value: MapBasemapMode) => void;
   onMapClusterEnabledChange: (value: boolean) => void;
   onMinConfidenceChange: (value: number) => void;
@@ -4995,7 +5020,7 @@ function SettingsDrawer({
                 value={mapBasemapMode}
                 onChange={(value) => onMapBasemapModeChange(value as MapBasemapMode)}
               />
-              <p className="settings-help">Civilní a rizikový podklad tlumí detailní OSM mapu, aby výstrahy, povodně a komunitní hlášení byly čitelné jako hlavní vrstva.</p>
+              <p className="settings-help">Civilní a rizikový podklad tlumí detailní OSM mapu. Režim Hranice automaticky přidá správní hranice ze SIM a použije výrazně zjednodušený podklad.</p>
               <SegmentedControl
                 label="Symbolika mapy"
                 options={[
@@ -5149,6 +5174,14 @@ function SettingsDrawer({
 
           {activeTab === "account" ? (
             <section className="settings-section">
+              <PanelTitle icon={<Languages size={17} />} title="Jazyk aplikace" />
+              <SegmentedControl
+                label="Jazyk"
+                options={appLanguageOptions}
+                value={language}
+                onChange={(value) => onLanguageChange(value as AppLanguage)}
+              />
+              <p className="settings-help">Jazyk se ukládá do profilu uživatele. Zároveň se podle něj dotazuje katalog vrstev a vyhledávání míst.</p>
               <PanelTitle icon={<UserCircle size={17} />} title="Přihlášení" />
               <ReadinessRow label="Stav" value={authStatusLabel(authSession, authConfig)} tone={authSession.status === "authenticated" ? "ok" : "neutral"} />
               <ReadinessRow label="Profil" value={authSession.profile?.name ?? "nepřihlášen"} tone="neutral" />
@@ -6320,10 +6353,10 @@ function ObjectDetail({
       <ObjectDetailSection title="Identita">
         <DetailGrid
           rows={[
-            ["Affiliation", <><span className={`affiliation-chip ${model.affiliation.disposition}`}>{model.affiliation.label}</span>{object.affiliation}</>],
-            ["Domain", object.domain],
-            ["Status", replayActive ? `${object.status} / replay` : object.status],
-            ["Confidence", `${Math.round((object.confidence ?? 0) * 100)} %`]
+            ["Příslušnost", <><span className={`affiliation-chip ${model.affiliation.disposition}`}>{model.affiliation.label}</span>{object.affiliation}</>],
+            ["Doména", object.domain],
+            ["Stav", replayActive ? `${object.status} / replay` : object.status],
+            ["Jistota", `${Math.round((object.confidence ?? 0) * 100)} %`]
           ]}
         />
       </ObjectDetailSection>
@@ -6331,10 +6364,10 @@ function ObjectDetail({
       <ObjectDetailSection title="Poloha">
         <DetailGrid
           rows={[
-            ["Position", formatPosition(object)],
-            ["Movement", formatMovement(object)],
-            ["Age", formatAge(object.lastUpdatedAt)],
-            ["History points", String(historyPoints.length)]
+            ["Souřadnice", formatPosition(object)],
+            ["Pohyb", formatMovement(object)],
+            ["Stáří dat", formatAge(object.lastUpdatedAt)],
+            ["Body historie", String(historyPoints.length)]
           ]}
         />
       </ObjectDetailSection>
@@ -6344,7 +6377,7 @@ function ObjectDetail({
           rows={[
             ["NATO symbol", model.symbolCode],
             ["SIDC", model.sidc],
-            ["Resolution", `${object.objectType} / ${object.affiliation} / ${object.status}`]
+            ["Vyhodnocení", `${object.objectType} / ${object.affiliation} / ${object.status}`]
           ]}
         />
       </ObjectDetailSection>
@@ -6352,38 +6385,38 @@ function ObjectDetail({
       <ObjectDetailSection title="Zdroj">
         <DetailGrid
           rows={[
-            ["Source", model.provenance?.sourceSystemId ?? "n/a"],
+            ["Zdroj", model.provenance?.sourceSystemId ?? "n/a"],
             ["Adapter", formatAdapter(model.provenance)],
-            ["Producer time", formatShortDateTime(model.provenance?.producerTimestamp)],
-            ["Ingest time", formatShortDateTime(model.provenance?.ingestTimestamp)],
-            ["Latency", formatLatency(model.provenance?.latencyMs)],
-            ["Reliability", formatReliability(model.provenance)]
+            ["Čas zdroje", formatShortDateTime(model.provenance?.producerTimestamp)],
+            ["Čas příjmu", formatShortDateTime(model.provenance?.ingestTimestamp)],
+            ["Latence", formatLatency(model.provenance?.latencyMs)],
+            ["Spolehlivost", formatReliability(model.provenance)]
           ]}
         />
       </ObjectDetailSection>
 
       {flightData ? (
-        <ObjectDetailSection title="Flight data">
+        <ObjectDetailSection title="Letová data">
           <DetailGrid
             rows={[
               ["ICAO24", flightData.icao24 ?? "n/a"],
               ["Callsign", flightData.callsign ?? "n/a"],
-              ["Registration", flightData.registration ?? "n/a"],
-              ["Aircraft", formatFlightAircraft(flightData)],
-              ["Origin", flightData.originCountry ?? "n/a"],
-              ["Providers", formatFlightProviders(flightData)],
-              ["License", formatFlightLicenses(flightData)],
-              ["Quality", formatFlightQuality(flightData)]
+              ["Registrace", flightData.registration ?? "n/a"],
+              ["Letadlo", formatFlightAircraft(flightData)],
+              ["Původ", flightData.originCountry ?? "n/a"],
+              ["Poskytovatelé", formatFlightProviders(flightData)],
+              ["Licence", formatFlightLicenses(flightData)],
+              ["Kvalita", formatFlightQuality(flightData)]
             ]}
           />
         </ObjectDetailSection>
       ) : null}
 
-      <ObjectDetailSection title="Confidence">
+      <ObjectDetailSection title="Jistota">
         <ConfidenceFactorList factors={model.confidenceFactors} />
       </ObjectDetailSection>
 
-      <ObjectDetailSection title="Data lineage">
+      <ObjectDetailSection title="Původ dat">
         <LineageList steps={model.lineage} />
       </ObjectDetailSection>
 
@@ -6391,7 +6424,7 @@ function ObjectDetail({
         <ConflictList conflicts={model.conflicts} />
       </ObjectDetailSection>
 
-      <ObjectDetailSection title="Source history">
+      <ObjectDetailSection title="Historie zdroje">
         <ObjectHistoryList history={model.history} />
       </ObjectDetailSection>
 
@@ -9129,25 +9162,28 @@ function isCopLayer(value: string): value is CopLayer {
   return copLayerIds.includes(value as CopLayer);
 }
 
-function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[], takLayerIds: TakLayerId[], flightLayerCount = 0, communityLayerCount = 0, missionArenaLayerCount = 0): string {
+function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[], takLayerIds: TakLayerId[], flightLayerCount = 0, communityLayerCount = 0, missionArenaLayerCount = 0, outlineBoundaryLayerEnabled = false): string {
   const parts: string[] = [];
   if (trackLayerIds.length > 0) {
-    parts.push(`${trackLayerIds.length} air`);
+    parts.push(`${trackLayerIds.length} letecká`);
   }
   if (flightLayerCount > 0) {
-    parts.push(`${flightLayerCount} flight ref`);
+    parts.push(`${flightLayerCount} veřejné lety`);
   }
   if (communityLayerCount > 0) {
-    parts.push(`${communityLayerCount} reports`);
+    parts.push(`${communityLayerCount} hlášení`);
   }
   if (missionArenaLayerCount > 0) {
-    parts.push(`${missionArenaLayerCount} event`);
+    parts.push(`${missionArenaLayerCount} mise`);
   }
   if (situationLayerIds.length > 0) {
-    parts.push(`${situationLayerIds.length} context`);
+    parts.push(`${situationLayerIds.length} kontext`);
   }
   if (safetyLayerIds.length > 0) {
-    parts.push(`${safetyLayerIds.length} safety`);
+    parts.push(`${safetyLayerIds.length} rizika`);
+  }
+  if (outlineBoundaryLayerEnabled) {
+    parts.push("hranice");
   }
   if (takLayerIds.length > 0) {
     parts.push(`${takLayerIds.length} TAK`);
@@ -9240,6 +9276,17 @@ function catalogLayerIdsForProviderSelection(catalog: MapCatalogResponse, provid
     .filter((layer) => selected.has(layer.layerId) && isImplementedCatalogLayer(layer))
     .filter((layer) => layer.query.mode === "bbox" && layer.query.providerId === providerId)
     .map((layer) => layer.layerId);
+}
+
+function withOutlineBoundaryLayer(selectedLayerIds: string[], mode: MapBasemapMode, catalog: MapCatalogResponse | null): string[] {
+  if (mode !== "outline" || !catalog) {
+    return selectedLayerIds;
+  }
+  const hasBoundaryLayer = catalog.layers.some((layer) => layer.layerId === "public.boundary.admin" && isImplementedCatalogLayer(layer));
+  if (!hasBoundaryLayer || selectedLayerIds.includes("public.boundary.admin")) {
+    return selectedLayerIds;
+  }
+  return [...selectedLayerIds, "public.boundary.admin"];
 }
 
 function hasMobileCatalogSelection(layerIds: string[]): boolean {
@@ -9597,7 +9644,19 @@ function normalizePublicFlightSymbolMode(value: string | undefined): PublicFligh
 }
 
 function normalizeMapBasemapMode(value: string | undefined): MapBasemapMode {
-  return value === "civil" || value === "risk" || value === "dark" ? value : "standard";
+  return value === "civil" || value === "risk" || value === "dark" || value === "outline" ? value : "standard";
+}
+
+function normalizeAppLanguage(value: string | undefined): AppLanguage {
+  return value === "en" ? "en" : "cs";
+}
+
+function appLanguageToLocale(value: AppLanguage): string {
+  return value === "en" ? "en-US" : "cs-CZ";
+}
+
+function appLanguageToGeocodeLanguage(value: AppLanguage): string {
+  return value === "en" ? "en,cs" : "cs,en";
 }
 
 function normalizeTrackHistoryDisplayMode(value: string | undefined): TrackHistoryDisplayMode {

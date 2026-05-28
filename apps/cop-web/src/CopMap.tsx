@@ -748,11 +748,32 @@ export function CopMap({
               ["linear"],
               ["zoom"],
               7,
-              ["case", ["==", ["get", "layer"], "mobile_network"], 0.65, 1.1],
+              [
+                "case",
+                ["==", ["get", "boundaryReference"], true],
+                ["case", ["<=", ["coalesce", ["get", "adminLevel"], 99], 2], 1.8, 1.2],
+                ["==", ["get", "layer"], "mobile_network"],
+                0.65,
+                1.1
+              ],
               12,
-              ["case", ["==", ["get", "layer"], "mobile_network"], 1.05, 1.8],
+              [
+                "case",
+                ["==", ["get", "boundaryReference"], true],
+                ["case", ["<=", ["coalesce", ["get", "adminLevel"], 99], 2], 2.8, 1.9],
+                ["==", ["get", "layer"], "mobile_network"],
+                1.05,
+                1.8
+              ],
               16,
-              ["case", ["==", ["get", "layer"], "mobile_network"], 1.45, 2.6]
+              [
+                "case",
+                ["==", ["get", "boundaryReference"], true],
+                ["case", ["<=", ["coalesce", ["get", "adminLevel"], 99], 2], 3.4, 2.4],
+                ["==", ["get", "layer"], "mobile_network"],
+                1.45,
+                2.6
+              ]
             ]
           }
         });
@@ -1538,7 +1559,11 @@ export function CopMap({
       });
     });
     map.on("error", (event) => {
-      setMapError(event.error?.message ?? "Mapový podklad není dostupný.");
+      const message = event.error?.message ?? "Mapový podklad není dostupný.";
+      if (isRecoverableRasterStyleError(message)) {
+        return;
+      }
+      setMapError(message);
     });
 
     return () => {
@@ -3463,8 +3488,8 @@ function createRasterStyle(tiles: string, attribution: string, glyphs: string): 
 
 function applyBasemapMode(map: maplibregl.Map, mode: MapBasemapMode): void {
   const settings = basemapPaintSettings(mode);
-  const brightnessMin = Math.max(0, Math.min(1, settings.brightnessMin));
-  const brightnessMax = Math.max(brightnessMin, Math.min(1, settings.brightnessMax));
+  const brightnessMin = clampRasterBrightness(settings.brightnessMin);
+  const brightnessMax = Math.max(brightnessMin, clampRasterBrightnessMax(settings.brightnessMax));
   const style = map.getStyle();
   const layers = (style.layers ?? []) as Array<{ id: string; type?: string }>;
   layers
@@ -3496,10 +3521,24 @@ function basemapPaintSettings(mode: MapBasemapMode): {
       return { brightnessMax: 1, brightnessMin: 0.14, contrast: -0.18, opacity: 0.66, saturation: -0.6 };
     case "dark":
       return { brightnessMax: 0.52, brightnessMin: 0, contrast: -0.05, opacity: 0.82, saturation: -0.7 };
+    case "outline":
+      return { brightnessMax: 0.76, brightnessMin: 0.12, contrast: -0.32, opacity: 0.26, saturation: -1 };
     case "standard":
     default:
-      return { brightnessMax: 1, brightnessMin: 0, contrast: 0, opacity: 1, saturation: 0 };
+      return { brightnessMax: 0.99, brightnessMin: 0, contrast: 0, opacity: 1, saturation: 0 };
   }
+}
+
+function clampRasterBrightness(value: number): number {
+  return Math.max(0, Math.min(0.99, Number.isFinite(value) ? value : 0));
+}
+
+function clampRasterBrightnessMax(value: number): number {
+  return Math.max(0, Math.min(0.99, Number.isFinite(value) ? value : 0.99));
+}
+
+function isRecoverableRasterStyleError(message: string): boolean {
+  return message.includes("raster-brightness-max") && message.includes("maximum value 1");
 }
 
 export function fitMapToObjects(map: maplibregl.Map | null, objects: CopObject[]): boolean {

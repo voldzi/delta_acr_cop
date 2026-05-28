@@ -94,9 +94,9 @@ function conflictsFromServerEvidence(evidence: ObjectConflictEvidence | undefine
   if (evidence.signals.length === 0) {
     return [
       {
-        detail: `Server fusion evaluated this object at ${evidence.evaluatedAt}; no conflicting evidence is currently visible.`,
+        detail: `Serverová fúze vyhodnotila objekt v ${evidence.evaluatedAt}; aktuálně není vidět konfliktní evidence.`,
         severity: "neutral",
-        title: "No conflict detected"
+        title: "Bez konfliktu"
       }
     ];
   }
@@ -117,33 +117,33 @@ function buildConfidenceFactors(
   const ageSeconds = object.lastUpdatedAt ? secondsSince(object.lastUpdatedAt) : undefined;
   return [
     {
-      detail: `${Math.round(confidence * 100)} % current object confidence`,
-      label: "Score",
+      detail: `${Math.round(confidence * 100)} % aktuální jistota objektu`,
+      label: "Skóre",
       tone: confidence >= 0.75 ? "ok" : confidence >= 0.5 ? "neutral" : "warn"
     },
     {
       detail: reliabilityExplanation(provenance?.sourceReliability),
-      label: "Source reliability",
+      label: "Spolehlivost zdroje",
       tone: provenance?.sourceReliability && !["E", "F", "UNKNOWN"].includes(provenance.sourceReliability) ? "ok" : "neutral"
     },
     {
       detail: credibilityExplanation(provenance?.informationCredibility),
-      label: "Information credibility",
+      label: "Věrohodnost informace",
       tone: provenance?.informationCredibility && !["5", "6", "UNKNOWN"].includes(provenance.informationCredibility) ? "ok" : "neutral"
     },
     {
-      detail: ageSeconds === undefined ? "No object timestamp available" : `${ageSeconds}s since last object update`,
-      label: "Data age",
+      detail: ageSeconds === undefined ? "Objekt nemá časovou značku." : `${ageSeconds}s od poslední aktualizace objektu`,
+      label: "Stáří dat",
       tone: ageSeconds === undefined ? "neutral" : ageSeconds > 120 ? "warn" : "ok"
     },
     {
-      detail: sourceHealth ? `${sourceHealth.health.toLowerCase()} source, ${sourceHealth.currentTracks} current tracks` : "No source health record linked",
-      label: "Source health",
+      detail: sourceHealth ? `Zdroj ${sourceHealth.health.toLowerCase()}, aktuální objekty: ${sourceHealth.currentTracks}` : "Není navázán provozní stav zdroje.",
+      label: "Stav zdroje",
       tone: sourceHealth?.health === "ONLINE" ? "ok" : sourceHealth ? "warn" : "neutral"
     },
     {
-      detail: object.synthetic || provenance?.synthetic ? "Synthetic/SIM origin is explicitly marked" : "No synthetic marker on this object",
-      label: "Origin",
+      detail: object.synthetic || provenance?.synthetic ? "Syntetický/SIM původ je explicitně označen." : "Objekt nemá příznak syntetického původu.",
+      label: "Původ",
       tone: object.synthetic || provenance?.synthetic ? "neutral" : "ok"
     }
   ];
@@ -158,13 +158,13 @@ function buildLineage(
   return [
     {
       detail: provenance?.eventId ?? "event id n/a",
-      label: "Source event",
+      label: "Zdrojová událost",
       status: provenance?.sourceSystemId ?? "source n/a"
     },
     {
       detail: provenance?.adapterVersion ? `${provenance.adapterId ?? "adapter"} ${provenance.adapterVersion}` : provenance?.adapterId ?? "adapter n/a",
-      label: "Adapter transform",
-      status: provenance?.producerTimestamp ?? "producer time n/a"
+      label: "Transformace adaptéru",
+      status: provenance?.producerTimestamp ?? "čas zdroje n/a"
     },
     {
       detail: `${object.domain} / ${object.status} / confidence ${Math.round((object.confidence ?? 0) * 100)} %`,
@@ -173,7 +173,7 @@ function buildLineage(
     },
     {
       detail: `${sidc} -> ${symbolCode}`,
-      label: "APP-6 rendering",
+      label: "APP-6 zobrazení",
       status: `${object.objectType} / ${object.affiliation}`
     }
   ];
@@ -187,9 +187,9 @@ function detectObjectConflicts(
   const conflicts: ObjectConflict[] = [];
   if (object.status === "CONFLICTED") {
     conflicts.push({
-      detail: "Object status is marked CONFLICTED in the situation state.",
+      detail: "Objekt má v situačním stavu příznak CONFLICTED.",
       severity: "warn",
-      title: "State conflict"
+      title: "Konflikt stavu"
     });
   }
 
@@ -197,18 +197,18 @@ function detectObjectConflicts(
   const affiliations = new Set(recentPoints.map((point) => point.affiliation).filter(Boolean));
   if (affiliations.size > 1) {
     conflicts.push({
-      detail: `Recent history contains ${affiliations.size} affiliation values: ${Array.from(affiliations).join(", ")}.`,
+      detail: `Nedávná historie obsahuje ${affiliations.size} hodnot příslušnosti: ${Array.from(affiliations).join(", ")}.`,
       severity: "warn",
-      title: "Affiliation variance"
+      title: "Rozdílná příslušnost"
     });
   }
 
   const statusValues = new Set(recentPoints.map((point) => point.status).filter(Boolean));
   if (statusValues.size > 2) {
     conflicts.push({
-      detail: `Recent history contains changing lifecycle states: ${Array.from(statusValues).join(", ")}.`,
+      detail: `Nedávná historie obsahuje měnící se stavy životního cyklu: ${Array.from(statusValues).join(", ")}.`,
       severity: "warn",
-      title: "Status variance"
+      title: "Rozdílný stav"
     });
   }
 
@@ -216,25 +216,25 @@ function detectObjectConflicts(
   const maxDistanceKm = maxSourceDistanceKm(sourcePositions);
   if (maxDistanceKm > sourceDistanceConflictKm) {
     conflicts.push({
-      detail: `Latest positions from sources differ by up to ${maxDistanceKm.toFixed(1)} km.`,
+      detail: `Poslední polohy ze zdrojů se liší až o ${maxDistanceKm.toFixed(1)} km.`,
       severity: "warn",
-      title: "Position variance"
+      title: "Rozdílná poloha"
     });
   }
 
   if (sourceHealth && sourceHealth.health !== "ONLINE") {
     conflicts.push({
-      detail: `Linked source health is ${sourceHealth.health.toLowerCase()}; last observation age may affect confidence.`,
+      detail: `Navázaný zdroj je ve stavu ${sourceHealth.health.toLowerCase()}; stáří posledního pozorování může snížit jistotu.`,
       severity: "warn",
-      title: "Source degraded"
+      title: "Zdroj omezen"
     });
   }
 
   if (conflicts.length === 0) {
     conflicts.push({
-      detail: "No source conflict is visible in the current object snapshot and recent history.",
+      detail: "V aktuálním snapshotu a nedávné historii není vidět zdrojový konflikt.",
       severity: "neutral",
-      title: "No conflict detected"
+      title: "Bez konfliktu"
     });
   }
   return conflicts;
@@ -292,26 +292,26 @@ function secondsSince(value: string): number | undefined {
 
 function reliabilityExplanation(value: string | undefined): string {
   const labels: Record<string, string> = {
-    A: "A - completely reliable",
-    B: "B - usually reliable",
-    C: "C - fairly reliable",
-    D: "D - not usually reliable",
-    E: "E - unreliable",
-    F: "F - reliability cannot be judged",
-    UNKNOWN: "unknown reliability"
+    A: "A - zcela spolehlivý",
+    B: "B - obvykle spolehlivý",
+    C: "C - poměrně spolehlivý",
+    D: "D - obvykle nespolehlivý",
+    E: "E - nespolehlivý",
+    F: "F - spolehlivost nelze posoudit",
+    UNKNOWN: "spolehlivost neznámá"
   };
-  return value ? labels[value] ?? value : "not supplied";
+  return value ? labels[value] ?? value : "nedodáno";
 }
 
 function credibilityExplanation(value: string | undefined): string {
   const labels: Record<string, string> = {
-    "1": "1 - confirmed by other sources",
-    "2": "2 - probably true",
-    "3": "3 - possibly true",
-    "4": "4 - doubtful",
-    "5": "5 - improbable",
-    "6": "6 - cannot be judged",
-    UNKNOWN: "unknown credibility"
+    "1": "1 - potvrzeno dalšími zdroji",
+    "2": "2 - pravděpodobně pravdivé",
+    "3": "3 - možná pravdivé",
+    "4": "4 - pochybné",
+    "5": "5 - nepravděpodobné",
+    "6": "6 - nelze posoudit",
+    UNKNOWN: "věrohodnost neznámá"
   };
-  return value ? labels[value] ?? value : "not supplied";
+  return value ? labels[value] ?? value : "nedodáno";
 }
