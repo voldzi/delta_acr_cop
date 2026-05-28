@@ -163,12 +163,12 @@ export interface SituationDataSource {
 }
 
 const defaultConfig: SituationDataSourceConfig = {
-  baseUrl: "https://sim.zeleznalady.cz/situation-data/api/v1",
+  baseUrl: "http://docker.home.cz:5020/situation-data/api/v1",
   cacheMaxEntries: 5000,
   cacheTtlMs: 20000,
   enabled: false,
   layerCacheTtlMs: {
-    air_quality: 5 * 60 * 1000,
+    air_quality: 15 * 60 * 1000,
     fire: 10 * 60 * 1000,
     flood: 5 * 60 * 1000,
     ground: 6 * 60 * 60 * 1000,
@@ -184,6 +184,8 @@ const defaultConfig: SituationDataSourceConfig = {
   sourceCacheTtlMs: {
     ardos_partner: 10 * 1000,
     aviation_weather: 120 * 1000,
+    chmi_air_quality: 15 * 60 * 1000,
+    chmi_weather_stations: 10 * 60 * 1000,
     mobile_coverage_model: 10 * 60 * 1000,
     mobile_network_model: 10 * 60 * 1000,
     osm_postgis: 6 * 60 * 60 * 1000
@@ -202,7 +204,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
     cacheTtlMs,
     enabled: readBoolean(env.COP_SITUATION_DATA_ENABLED, defaultConfig.enabled),
     layerCacheTtlMs: {
-      air_quality: readInteger(env.COP_SITUATION_DATA_AIR_QUALITY_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      air_quality: readInteger(env.COP_SITUATION_DATA_AIR_QUALITY_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       fire: readInteger(env.COP_SITUATION_DATA_FIRE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       flood: readInteger(env.COP_SITUATION_DATA_FLOOD_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       ground: readInteger(env.COP_SITUATION_DATA_GROUND_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
@@ -218,6 +220,8 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
     sourceCacheTtlMs: {
       ardos_partner: readInteger(env.COP_SITUATION_DATA_ARDOS_CACHE_TTL_MS, 10 * 1000, 1000, 5 * 60 * 1000),
       aviation_weather: readInteger(env.COP_SITUATION_DATA_AVIATION_WEATHER_CACHE_TTL_MS, 120 * 1000, 1000, 24 * 60 * 60 * 1000),
+      chmi_air_quality: readInteger(env.COP_SITUATION_DATA_CHMI_AIR_QUALITY_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      chmi_weather_stations: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_coverage_model: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_network_model: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       osm_postgis: readInteger(env.COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)

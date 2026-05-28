@@ -33,7 +33,7 @@ COP čte veřejné nebo licencované letové tracky pouze přes agregovaný SIM 
 
 ```env
 COP_FLIGHT_DATA_ENABLED=true
-COP_FLIGHT_DATA_BASE_URL=https://sim.zeleznalady.cz/flight-data
+COP_FLIGHT_DATA_BASE_URL=http://docker.home.cz:5020/flight-data
 COP_FLIGHT_DATA_SOURCE=mock
 COP_FLIGHT_DATA_LIMIT=500
 COP_FLIGHT_DATA_INCLUDE_STALE=true
@@ -49,12 +49,14 @@ COP čte situační kontext ze SIM kontraktu `cop-situation-source-v1` přes vla
 
 ```env
 COP_SITUATION_DATA_ENABLED=true
-COP_SITUATION_DATA_BASE_URL=https://sim.zeleznalady.cz/situation-data/api/v1
+COP_SITUATION_DATA_BASE_URL=http://docker.home.cz:5020/situation-data/api/v1
 COP_SITUATION_DATA_CACHE_TTL_MS=20000
 COP_SITUATION_DATA_MAX_LIMIT=250
 COP_SITUATION_DATA_TIMEOUT_MS=15000
 COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS=21600000
 COP_SITUATION_DATA_MOBILE_NETWORK_CACHE_TTL_MS=600000
+COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS=600000
+COP_SITUATION_DATA_CHMI_AIR_QUALITY_CACHE_TTL_MS=900000
 COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS=600000
 ```
 
@@ -66,7 +68,7 @@ COP čte veřejná bezpečnostní data ze SIM kontraktu `cop-safety-source-v1` p
 
 ```env
 COP_SAFETY_DATA_ENABLED=true
-COP_SAFETY_DATA_BASE_URL=https://sim.zeleznalady.cz/safety-data/api/v1
+COP_SAFETY_DATA_BASE_URL=http://docker.home.cz:5020/safety-data/api/v1
 COP_SAFETY_DATA_CACHE_TTL_MS=120000
 COP_SAFETY_DATA_WARNINGS_CACHE_TTL_MS=120000
 COP_SAFETY_DATA_FLOOD_CACHE_TTL_MS=300000
@@ -85,7 +87,7 @@ COP čte neveřejná partnerská TAK/CoT data ze SIM kontraktu `cop-tak-source-v
 
 ```env
 COP_TAK_GATEWAY_ENABLED=false
-COP_TAK_GATEWAY_BASE_URL=https://sim.zeleznalady.cz/tak-gateway/api/v1
+COP_TAK_GATEWAY_BASE_URL=http://docker.home.cz:5020/tak-gateway/api/v1
 COP_TAK_GATEWAY_READ_TOKEN=<tajny-token-ze-SIM>
 COP_TAK_GATEWAY_CACHE_TTL_MS=5000
 COP_TAK_GATEWAY_STALE_IF_ERROR_MS=60000

@@ -423,7 +423,9 @@ Provider-native fields may be preserved under:
 | `public.safety.weather_alerts` | Meteorologické výstrahy | `sim.safety-data` layer `weather_alerts`, source `chmi_alerts` |
 | `public.boundary.admin` | Správní hranice | `sim.safety-data` layer `boundary_admin`, source `admin_boundaries` |
 | `public.weather.current` | Počasí | `sim.situation-data` layer `weather`, source `open_meteo` |
+| `public.weather.observations` | Měřené počasí ČHMÚ | `sim.situation-data` layer `weather`, source `chmi_weather_stations` |
 | `public.weather.aviation` | Letištní počasí | `sim.situation-data` layer `weather`, source `aviation_weather` |
+| `public.safety.air_quality` | Kvalita ovzduší | `sim.situation-data` layer `air_quality`, source `chmi_air_quality` |
 | `public.mobile.network` | Mobilní síť | `sim.situation-data` layer `mobile_network`, source `mobile_network_model` |
 | `public.traffic.transit` | Doprava | `sim.situation-data` layer `traffic`, source `pid_gtfs_rt` |
 | `reference.infrastructure.healthcare` | Zdravotnictví | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `hospital`, `clinic`, `doctors`, `pharmacy` |

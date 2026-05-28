@@ -136,7 +136,7 @@ export interface TakGatewaySource {
 }
 
 const defaultConfig: TakGatewaySourceConfig = {
-  baseUrl: "https://sim.zeleznalady.cz/tak-gateway/api/v1",
+  baseUrl: "http://docker.home.cz:5020/tak-gateway/api/v1",
   cacheMaxEntries: 5000,
   cacheTtlMs: 5000,
   enabled: false,

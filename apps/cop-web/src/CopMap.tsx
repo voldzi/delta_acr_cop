@@ -48,8 +48,13 @@ const alertAreaLineLayerId = "cop-alert-area-line";
 const situationFillLayerId = "cop-situation-fill";
 const situationLineLayerId = "cop-situation-line";
 const situationPointSelectedLayerId = "cop-situation-point-selected";
+const situationWeatherHeatLayerId = "cop-situation-weather-heat";
 const situationWeatherPointLayerId = "cop-situation-weather-point";
+const situationWeatherWindLayerId = "cop-situation-weather-wind";
 const situationWeatherLabelLayerId = "cop-situation-weather-label";
+const situationAirQualityHeatLayerId = "cop-situation-air-quality-heat";
+const situationAirQualityPointLayerId = "cop-situation-air-quality-point";
+const situationAirQualityLabelLayerId = "cop-situation-air-quality-label";
 const situationOsmSymbolLayerId = "cop-situation-osm-symbol";
 const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
 const situationTrafficSymbolLayerId = "cop-situation-traffic-symbol";
@@ -90,6 +95,7 @@ type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
 const riskIconPrefix = "cop-risk";
 const riskIconIds = ["fire", "flood", "warning", "weather", "unknown"] as const;
 type RiskIconId = (typeof riskIconIds)[number];
+const weatherWindIconKey = "cop-weather-wind-arrow";
 
 export interface TrackFeatureProperties {
   objectId: string;
@@ -181,9 +187,15 @@ export interface SituationContextFeatureCollection {
     geometry: SituationFeature["geometry"];
     properties: SituationFeature["properties"] & {
       selected: boolean;
+      airQualityDominantPollutant?: string;
+      airQualityFeature?: boolean;
+      airQualityIndex?: number;
+      airQualityLabel?: string;
+      airQualityLevel?: string;
       weatherCloudCoverPercent?: number;
       weatherFlightCategoryColor?: string;
       weatherLabel?: string;
+      weatherObservation?: boolean;
       weatherPrecipitationMm?: number;
       weatherStationIcao?: string;
       weatherTemperatureC?: number;
@@ -779,6 +791,98 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationWeatherHeatLayerId,
+          type: "heatmap",
+          source: situationSourceId,
+          maxzoom: 13,
+          minzoom: 5,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["has", "weatherTemperatureC"]],
+          paint: {
+            "heatmap-color": [
+              "interpolate",
+              ["linear"],
+              ["heatmap-density"],
+              0,
+              "rgba(14, 165, 233, 0)",
+              0.16,
+              "rgba(56, 189, 248, 0.24)",
+              0.34,
+              "rgba(34, 197, 94, 0.28)",
+              0.56,
+              "rgba(250, 204, 21, 0.34)",
+              0.78,
+              "rgba(251, 146, 60, 0.38)",
+              1,
+              "rgba(239, 68, 68, 0.42)"
+            ],
+            "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 5, 0.6, 9, 1.05, 13, 0.7],
+            "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.42, 11, 0.56, 13, 0],
+            "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, 22, 9, 52, 13, 78],
+            "heatmap-weight": [
+              "interpolate",
+              ["linear"],
+              ["coalesce", ["get", "weatherTemperatureC"], 10],
+              -15,
+              0.12,
+              0,
+              0.26,
+              15,
+              0.52,
+              25,
+              0.78,
+              35,
+              1
+            ]
+          }
+        });
+
+        map.addLayer({
+          id: situationAirQualityHeatLayerId,
+          type: "heatmap",
+          source: situationSourceId,
+          maxzoom: 13,
+          minzoom: 5,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "airQualityFeature"], true], ["has", "airQualityIndex"]],
+          paint: {
+            "heatmap-color": [
+              "interpolate",
+              ["linear"],
+              ["heatmap-density"],
+              0,
+              "rgba(34, 197, 94, 0)",
+              0.18,
+              "rgba(34, 197, 94, 0.24)",
+              0.38,
+              "rgba(250, 204, 21, 0.34)",
+              0.58,
+              "rgba(251, 146, 60, 0.4)",
+              0.78,
+              "rgba(239, 68, 68, 0.42)",
+              1,
+              "rgba(168, 85, 247, 0.48)"
+            ],
+            "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 5, 0.55, 9, 1.0, 13, 0.72],
+            "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.4, 11, 0.54, 13, 0],
+            "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, 20, 9, 48, 13, 72],
+            "heatmap-weight": [
+              "interpolate",
+              ["linear"],
+              ["coalesce", ["get", "airQualityIndex"], 1],
+              1,
+              0.18,
+              2,
+              0.38,
+              3,
+              0.58,
+              4,
+              0.78,
+              5,
+              1
+            ]
+          }
+        });
+
+        map.addLayer({
           id: situationPointSelectedLayerId,
           type: "circle",
           source: situationSourceId,
@@ -821,7 +925,7 @@ export function CopMap({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           paint: {
             "circle-color": [
               "case",
@@ -1010,7 +1114,7 @@ export function CopMap({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           layout: {
             "text-field": ["coalesce", ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Regular"],
@@ -1140,6 +1244,25 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationWeatherWindLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], [">=", ["coalesce", ["get", "weatherWindSpeedMps"], 0], 0.5]],
+          layout: {
+            "icon-image": weatherWindIconKey,
+            "icon-rotate": ["+", ["coalesce", ["get", "weatherWindDirectionDeg"], 0], 180],
+            "icon-rotation-alignment": "map",
+            "icon-size": ["interpolate", ["linear"], ["coalesce", ["get", "weatherWindSpeedMps"], 0], 0.5, 0.18, 5, 0.3, 14, 0.48, 28, 0.62],
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+            "icon-anchor": "center"
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.44, 0.72]
+          }
+        });
+
+        map.addLayer({
           id: situationWeatherLabelLayerId,
           type: "symbol",
           source: situationSourceId,
@@ -1158,6 +1281,43 @@ export function CopMap({
             "text-halo-color": "rgba(244, 247, 251, 0.88)",
             "text-halo-width": 1.3,
             "text-halo-blur": 0.2
+          }
+        });
+
+        map.addLayer({
+          id: situationAirQualityPointLayerId,
+          type: "circle",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "airQualityFeature"], true]],
+          paint: {
+            "circle-color": ["coalesce", ["get", "situationStatusColor"], "#22c55e"],
+            "circle-opacity": ["case", ["get", "stale"], 0.5, 0.82],
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 7, 9, 11, 13, 16, 16, 22],
+            "circle-stroke-color": "#061019",
+            "circle-stroke-opacity": 0.92,
+            "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 1.2, 12, 2.2, 16, 3]
+          }
+        });
+
+        map.addLayer({
+          id: situationAirQualityLabelLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "airQualityFeature"], true]],
+          layout: {
+            "text-field": ["get", "airQualityLabel"],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 5, 0, 8, 9, 12, 11, 16, 13],
+            "text-allow-overlap": false,
+            "text-optional": true,
+            "text-offset": [0, 1.35],
+            "text-anchor": "top"
+          },
+          paint: {
+            "text-color": ["coalesce", ["get", "situationStatusColor"], "#dff8ff"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.7,
+            "text-halo-blur": 0.35
           }
         });
 
@@ -1387,7 +1547,10 @@ export function CopMap({
         map.on("click", situationRiskIconLayerId, handleSituationClick);
         map.on("click", situationRiskLabelLayerId, handleSituationClick);
         map.on("click", situationWeatherPointLayerId, handleSituationClick);
+        map.on("click", situationWeatherWindLayerId, handleSituationClick);
         map.on("click", situationWeatherLabelLayerId, handleSituationClick);
+        map.on("click", situationAirQualityPointLayerId, handleSituationClick);
+        map.on("click", situationAirQualityLabelLayerId, handleSituationClick);
         map.on("click", situationLineLayerId, handleSituationClick);
         map.on("click", situationFillLayerId, handleSituationClick);
         map.on("click", trackClusterCircleLayerId, handleClusterClick);
@@ -1423,7 +1586,10 @@ export function CopMap({
               situationRiskIconLayerId,
               situationRiskLabelLayerId,
               situationWeatherPointLayerId,
+              situationWeatherWindLayerId,
               situationWeatherLabelLayerId,
+              situationAirQualityPointLayerId,
+              situationAirQualityLabelLayerId,
               situationLineLayerId,
               situationFillLayerId
             ]
@@ -1494,7 +1660,16 @@ export function CopMap({
         map.on("mouseenter", situationWeatherPointLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationWeatherWindLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationWeatherLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationAirQualityPointLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationAirQualityLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
         map.on("mouseenter", situationLineLayerId, () => {
@@ -1542,7 +1717,16 @@ export function CopMap({
         map.on("mouseleave", situationWeatherPointLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
+        map.on("mouseleave", situationWeatherWindLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
         map.on("mouseleave", situationWeatherLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationAirQualityPointLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationAirQualityLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationLineLayerId, () => {
@@ -2249,6 +2433,26 @@ function buildSituationRenderProperties(
       situationStatusTone: status.tone
     };
   }
+  if (feature.properties.layer === "air_quality") {
+    const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+    const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+    const airQualityIndex = recordNumber(metrics, "airQualityIndex");
+    const airQualityLevel = recordString(tags, "airQualityLevel") ?? stringProperty(feature.properties.status) ?? stringProperty(feature.properties.quality);
+    const dominantPollutant = recordString(tags, "dominantPollutant");
+    const color = airQualityColor(airQualityIndex, airQualityLevel, status.color);
+    const label = formatAirQualityMapLabel(airQualityIndex, dominantPollutant, airQualityLevel);
+    return {
+      airQualityDominantPollutant: dominantPollutant,
+      airQualityFeature: true,
+      airQualityIndex,
+      airQualityLabel: label,
+      airQualityLevel,
+      mapLabel: label,
+      situationStatusColor: color,
+      situationStatusLabel: formatAirQualityStatusLabel(airQualityIndex, airQualityLevel, status.label),
+      situationStatusTone: airQualityTone(airQualityIndex, airQualityLevel, status.tone)
+    };
+  }
   if (feature.properties.layer !== "weather") {
     return {
       situationStatusColor: status.color,
@@ -2262,13 +2466,16 @@ function buildSituationRenderProperties(
   const temperatureC = recordNumber(metrics, "temperatureC");
   const windSpeedMps = recordNumber(metrics, "windSpeedMps");
   const windDirectionDeg = recordNumber(metrics, "windDirectionDeg");
-  const precipitationMm = recordNumber(metrics, "precipitationMm");
+  const precipitationMm = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
   const cloudCoverPercent = recordNumber(metrics, "cloudCoverPercent");
   const stationIcao = stringProperty(tags.icaoId);
+  const providerLayerId = stringProperty(feature.properties.providerLayerId);
+  const weatherObservation = feature.properties.sourceId === "chmi_weather_stations" || providerLayerId?.includes("chmi_station") === true;
   return {
     weatherCloudCoverPercent: cloudCoverPercent,
     weatherFlightCategoryColor: aviationCategory ? aviationCategory.color : undefined,
     weatherLabel: aviationCategory ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label) : formatWeatherMapLabel(temperatureC, windSpeedMps, precipitationMm),
+    weatherObservation,
     weatherPrecipitationMm: precipitationMm,
     weatherStationIcao: stationIcao,
     weatherTemperatureC: temperatureC,
@@ -2831,9 +3038,146 @@ function formatAviationWeatherMapLabel(icaoId: string | undefined, flightCategor
   return [icaoId, flightCategory].filter(Boolean).join("\n") || "METAR";
 }
 
+function formatAirQualityMapLabel(index: number | undefined, pollutant: string | undefined, level: string | undefined): string {
+  const normalizedPollutant = pollutant?.trim().toUpperCase();
+  if (index !== undefined) {
+    return normalizedPollutant ? `AQI ${Math.round(index)}\n${normalizedPollutant}` : `AQI ${Math.round(index)}`;
+  }
+  const label = formatAirQualityStatusLabel(index, level, "");
+  return label || "AQ";
+}
+
+function formatAirQualityStatusLabel(index: number | undefined, level: string | undefined, fallback: string): string {
+  if (index !== undefined) {
+    if (index <= 1.5) {
+      return "DOBRÁ";
+    }
+    if (index <= 2.5) {
+      return "PŘIJATELNÁ";
+    }
+    if (index <= 3.5) {
+      return "ZHORŠENÁ";
+    }
+    if (index <= 4.5) {
+      return "ŠPATNÁ";
+    }
+    return "VELMI ŠPATNÁ";
+  }
+  const normalized = normalizeAirQualityLevel(level);
+  if (normalized === "good") {
+    return "DOBRÁ";
+  }
+  if (normalized === "fair") {
+    return "PŘIJATELNÁ";
+  }
+  if (normalized === "moderate") {
+    return "ZHORŠENÁ";
+  }
+  if (normalized === "poor") {
+    return "ŠPATNÁ";
+  }
+  if (normalized === "very_poor") {
+    return "VELMI ŠPATNÁ";
+  }
+  return fallback;
+}
+
+function airQualityColor(index: number | undefined, level: string | undefined, fallback: string): string {
+  if (index !== undefined) {
+    if (index <= 1.5) {
+      return "#22c55e";
+    }
+    if (index <= 2.5) {
+      return "#a3e635";
+    }
+    if (index <= 3.5) {
+      return "#facc15";
+    }
+    if (index <= 4.5) {
+      return "#fb923c";
+    }
+    return "#ef4444";
+  }
+  switch (normalizeAirQualityLevel(level)) {
+    case "good":
+      return "#22c55e";
+    case "fair":
+      return "#a3e635";
+    case "moderate":
+      return "#facc15";
+    case "poor":
+      return "#fb923c";
+    case "very_poor":
+      return "#ef4444";
+    default:
+      return fallback;
+  }
+}
+
+function airQualityTone(index: number | undefined, level: string | undefined, fallback: string): string {
+  if (index !== undefined) {
+    if (index <= 2.5) {
+      return "info";
+    }
+    if (index <= 3.5) {
+      return "advisory";
+    }
+    if (index <= 4.5) {
+      return "warning";
+    }
+    return "critical";
+  }
+  switch (normalizeAirQualityLevel(level)) {
+    case "good":
+    case "fair":
+      return "info";
+    case "moderate":
+      return "advisory";
+    case "poor":
+      return "warning";
+    case "very_poor":
+      return "critical";
+    default:
+      return fallback;
+  }
+}
+
+function normalizeAirQualityLevel(level: string | undefined): "fair" | "good" | "moderate" | "poor" | "very_poor" | "unknown" {
+  const normalized = level?.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (!normalized) {
+    return "unknown";
+  }
+  if (["good", "excellent", "low"].includes(normalized)) {
+    return "good";
+  }
+  if (["fair", "acceptable", "ok"].includes(normalized)) {
+    return "fair";
+  }
+  if (["moderate", "medium", "elevated"].includes(normalized)) {
+    return "moderate";
+  }
+  if (["poor", "bad", "high", "unhealthy"].includes(normalized)) {
+    return "poor";
+  }
+  if (["very_poor", "very_bad", "very_high", "hazardous"].includes(normalized)) {
+    return "very_poor";
+  }
+  return "unknown";
+}
+
 function recordNumber(record: Record<string, unknown>, key: string): number | undefined {
   const value = Number(record[key]);
   return Number.isFinite(value) ? value : undefined;
+}
+
+function firstRecordNumber(record: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = recordNumber(record, key);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function numberProperty(value: unknown): number | undefined {
@@ -3660,6 +4004,11 @@ async function registerSituationSymbolImages(map: maplibregl.Map) {
       });
     }
   });
+  if (!map.hasImage(weatherWindIconKey)) {
+    map.addImage(weatherWindIconKey, createWeatherWindArrowImage(), {
+      pixelRatio: window.devicePixelRatio || 1
+    });
+  }
 }
 
 function createCivilAircraftSymbolImage(kind: CivilAircraftIconKind): ImageData {
@@ -3996,6 +4345,46 @@ function createTransitSymbolImage(kind: TransportIconKind): ImageData {
       context.fill();
       break;
   }
+  context.restore();
+
+  return context.getImageData(0, 0, size, size);
+}
+
+function createWeatherWindArrowImage(): ImageData {
+  const canvas = document.createElement("canvas");
+  const size = 96;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+
+  context.clearRect(0, 0, size, size);
+  context.save();
+  context.translate(48, 48);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.strokeStyle = "rgba(6, 16, 25, 0.92)";
+  context.lineWidth = 11;
+  context.beginPath();
+  context.moveTo(0, 34);
+  context.lineTo(0, -28);
+  context.moveTo(0, -28);
+  context.lineTo(-17, -9);
+  context.moveTo(0, -28);
+  context.lineTo(17, -9);
+  context.stroke();
+  context.strokeStyle = "rgba(226, 246, 255, 0.92)";
+  context.lineWidth = 5;
+  context.beginPath();
+  context.moveTo(0, 34);
+  context.lineTo(0, -28);
+  context.moveTo(0, -28);
+  context.lineTo(-17, -9);
+  context.moveTo(0, -28);
+  context.lineTo(17, -9);
+  context.stroke();
   context.restore();
 
   return context.getImageData(0, 0, size, size);

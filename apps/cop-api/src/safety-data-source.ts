@@ -215,7 +215,7 @@ export interface SafetyDataSource {
 }
 
 const defaultConfig: SafetyDataSourceConfig = {
-  baseUrl: "https://sim.zeleznalady.cz/safety-data/api/v1",
+  baseUrl: "http://docker.home.cz:5020/safety-data/api/v1",
   cacheMaxEntries: 5000,
   cacheTtlMs: 120000,
   enabled: false,

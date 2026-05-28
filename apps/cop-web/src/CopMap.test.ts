@@ -188,6 +188,91 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("adds ČHMÚ weather observation and air quality render metadata", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.42, 50.08], type: "Point" },
+          properties: {
+            category: "weather",
+            confidence: 0.92,
+            featureId: "weather:chmi:praha",
+            label: "Praha-Karlov",
+            layer: "weather",
+            metrics: {
+              precipitation10mMm: 0.2,
+              temperatureC: 21.2,
+              windDirectionDeg: 245,
+              windSpeedMps: 4.8
+            },
+            observedAt: "2026-05-28T10:00:00Z",
+            providerLayerId: "weather.chmi_station_observations",
+            sourceId: "chmi_weather_stations",
+            stale: false
+          },
+          type: "Feature"
+        },
+        {
+          geometry: { coordinates: [14.43, 50.09], type: "Point" },
+          properties: {
+            category: "air_quality",
+            confidence: 0.88,
+            featureId: "air-quality:chmi:praha",
+            label: "Praha 2-Legerova",
+            layer: "air_quality",
+            metrics: {
+              airQualityIndex: 4,
+              pm10UgM3: 54
+            },
+            observedAt: "2026-05-28T10:00:00Z",
+            sourceId: "chmi_air_quality",
+            stale: false,
+            tags: {
+              airQualityLevel: "poor",
+              dominantPollutant: "PM10"
+            }
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-28T10:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["weather", "air_quality"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 2,
+        sourceCount: 2,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      featureId: "weather:chmi:praha",
+      weatherLabel: "21°C\n5 m/s",
+      weatherObservation: true,
+      weatherPrecipitationMm: 0.2,
+      weatherWindDirectionDeg: 245
+    });
+    expect(collection.features[1]?.properties).toMatchObject({
+      airQualityFeature: true,
+      airQualityIndex: 4,
+      airQualityLabel: "AQI 4\nPM10",
+      situationStatusColor: "#fb923c",
+      situationStatusLabel: "ŠPATNÁ"
+    });
+  });
+
   it("adds mobile network tower render metadata from status and radio technology", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",

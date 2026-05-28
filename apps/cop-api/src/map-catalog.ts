@@ -383,6 +383,9 @@ function labelForCatalogLayer(layer: ProviderCatalogLayer): string {
 
 function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
   const layerId = layer.recommendedCatalogLayerId;
+  if (layerId === "public.safety.air_quality") {
+    return "risks.weather";
+  }
   if (layerId.startsWith("public.safety.")) {
     return "risks";
   }
@@ -706,6 +709,64 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       role: "reference",
       selectable: true,
       styleProfile: "aviation-weather-v1"
+    },
+    {
+      audience: "public",
+      cacheTtlSeconds: 600,
+      defaultVisible: false,
+      description: "Měřené meteorologické stanice ČHMÚ pro zobrazený výřez mapy.",
+      geometryTypes: ["Point"],
+      groupId: "risks.weather",
+      kind: "vector_features",
+      label: "Měřené počasí ČHMÚ",
+      layerId: "public.weather.observations",
+      legal: legalFromSource(findSource(sources, "chmi_weather_stations")),
+      maxZoom: 18,
+      minZoom: 5,
+      provenance: {
+        sourceIds: ["sim.situation-data:chmi_weather_stations"]
+      },
+      query: {
+        maxFeatures: 150,
+        mode: "bbox",
+        providerId: "sim.situation-data",
+        providerLayerIds: ["weather"],
+        providerSourceIds: ["chmi_weather_stations"],
+        streamId: "features"
+      },
+      refreshSeconds: findSource(sources, "chmi_weather_stations")?.updateCadenceSeconds ?? 600,
+      role: "overlay",
+      selectable: true,
+      styleProfile: "weather-observations-v1"
+    },
+    {
+      audience: "public",
+      cacheTtlSeconds: 900,
+      defaultVisible: false,
+      description: "Měřená kvalita ovzduší ČHMÚ, včetně indexu kvality a dominantní znečišťující látky.",
+      geometryTypes: ["Point"],
+      groupId: "risks.weather",
+      kind: "vector_features",
+      label: "Kvalita ovzduší",
+      layerId: "public.safety.air_quality",
+      legal: legalFromSource(findSource(sources, "chmi_air_quality")),
+      maxZoom: 18,
+      minZoom: 5,
+      provenance: {
+        sourceIds: ["sim.situation-data:chmi_air_quality"]
+      },
+      query: {
+        maxFeatures: 150,
+        mode: "bbox",
+        providerId: "sim.situation-data",
+        providerLayerIds: ["air_quality"],
+        providerSourceIds: ["chmi_air_quality"],
+        streamId: "features"
+      },
+      refreshSeconds: findSource(sources, "chmi_air_quality")?.updateCadenceSeconds ?? 900,
+      role: "overlay",
+      selectable: true,
+      styleProfile: "air-quality-observations-v1"
     },
     {
       audience: "public",
@@ -1245,6 +1306,10 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
       return { audience: "public", feedsCatalogLayerIds: ["public.weather.current"], selectableInMap: true, sourceRole: "final" };
     case "aviation_weather":
       return { audience: "public", feedsCatalogLayerIds: ["public.weather.aviation"], selectableInMap: true, sourceRole: "final" };
+    case "chmi_weather_stations":
+      return { audience: "public", feedsCatalogLayerIds: ["public.weather.observations"], selectableInMap: true, sourceRole: "final" };
+    case "chmi_air_quality":
+      return { audience: "public", feedsCatalogLayerIds: ["public.safety.air_quality"], selectableInMap: true, sourceRole: "final" };
     case "mobile_network_model":
       return { audience: "public", feedsCatalogLayerIds: ["public.mobile.network"], selectableInMap: true, sourceRole: "aggregate" };
     case "mobile_coverage_model":

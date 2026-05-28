@@ -214,7 +214,7 @@ interface FlightTrack {
 
 const defaultConfig: FlightDataSourceConfig = {
   airportCacheTtlMs: 60 * 60 * 1000,
-  baseUrl: "https://sim.zeleznalady.cz/flight-data",
+  baseUrl: "http://docker.home.cz:5020/flight-data",
   enabled: false,
   includeStale: true,
   limit: 500,

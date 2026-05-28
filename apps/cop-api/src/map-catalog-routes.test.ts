@@ -71,6 +71,8 @@ describe("map catalog route", () => {
     expect(body.layers.map((layer) => layer.layerId)).toEqual(expect.arrayContaining([
       "public.mobile.network",
       "public.weather.current",
+      "public.weather.observations",
+      "public.safety.air_quality",
       "public.boundary.admin",
       "public.safety.fire",
       "public.safety.weather_alerts",
@@ -444,6 +446,7 @@ class FakeSituationDataSource implements SituationDataSource {
   async fetchLayers(_requestNow: Date): Promise<SituationLayerDescriptor[]> {
     return [
       { defaultVisible: true, expectedCadenceSeconds: 600, geometryTypes: ["Point"], label: "Weather", layerId: "weather" },
+      { defaultVisible: false, expectedCadenceSeconds: 900, geometryTypes: ["Point"], label: "Air quality", layerId: "air_quality" },
       { defaultVisible: false, expectedCadenceSeconds: 3600, geometryTypes: ["Polygon"], label: "Unified mobile network", layerId: "mobile_network" },
       { defaultVisible: false, expectedCadenceSeconds: 21600, geometryTypes: ["Polygon"], label: "Mobile coverage", layerId: "mobile_coverage" },
       { defaultVisible: false, expectedCadenceSeconds: 3600, geometryTypes: ["Point"], label: "Mobile measurements", layerId: "mobile" },
@@ -455,6 +458,8 @@ class FakeSituationDataSource implements SituationDataSource {
   async fetchSources(_requestNow: Date): Promise<SituationSourceDescriptor[]> {
     return [
       { enabled: true, label: "Open-Meteo", layers: ["weather"], sourceId: "open_meteo", updateCadenceSeconds: 600 },
+      { enabled: true, label: "ČHMÚ měřené počasí", layers: ["weather"], sourceId: "chmi_weather_stations", updateCadenceSeconds: 600 },
+      { enabled: true, label: "ČHMÚ kvalita ovzduší", layers: ["air_quality"], sourceId: "chmi_air_quality", updateCadenceSeconds: 900 },
       { enabled: true, label: "Unified mobile network assessment", layers: ["mobile_network"], sourceId: "mobile_network_model", updateCadenceSeconds: 3600 },
       { enabled: true, label: "Mobile coverage estimate model", layers: ["mobile_coverage"], sourceId: "mobile_coverage_model", updateCadenceSeconds: 21600 },
       { enabled: true, label: "CTU NetTest mobile measurements", layers: ["mobile"], sourceId: "ctu_nettest", updateCadenceSeconds: 3600 },
