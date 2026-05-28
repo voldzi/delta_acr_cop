@@ -227,6 +227,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let mediaStorageDetail = mediaStorage ? `${mediaStorage.name}: initializing` : "disabled";
   let restoredCurrentTrackCount = 0;
   let flightDataPollTimer: ReturnType<typeof setInterval> | undefined;
+  let trackPersistenceFlushTimer: ReturnType<typeof setTimeout> | undefined;
+  let trackPersistenceFlushInFlight = false;
+  let droppedTrackHistoryPoints = 0;
+  const trackPersistenceBatchSize = readPositiveInteger(process.env.COP_INGEST_PERSISTENCE_BATCH_SIZE, 250);
+  const trackPersistenceFlushMs = readPositiveInteger(process.env.COP_INGEST_PERSISTENCE_FLUSH_MS, 100);
+  const maxQueuedTrackHistoryPoints = readPositiveInteger(process.env.COP_INGEST_PERSISTENCE_MAX_HISTORY_QUEUE, 20000);
+  const pendingCurrentTrackPersistence = new Map<string, { event: CanonicalEventEnvelope; object: ObservedObject }>();
+  const pendingTrackHistoryPersistence: TrackHistoryPoint[] = [];
 
   app.decorate("copState", state);
   if (flightDataSource) {
@@ -276,6 +284,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.addHook("onClose", async () => {
     if (flightDataPollTimer) {
       clearInterval(flightDataPollTimer);
+    }
+    if (trackPersistenceFlushTimer) {
+      clearTimeout(trackPersistenceFlushTimer);
+      trackPersistenceFlushTimer = undefined;
+    }
+    if (!trackPersistenceFlushInFlight) {
+      await flushQueuedTrackPersistence();
     }
     await trackHistoryStore?.close();
     await userProfileStore.close();
@@ -427,6 +442,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function countTrackHistoryPoints(): Promise<number> {
+    await flushQueuedTrackPersistence();
     if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
       try {
         return await trackHistoryStore.count();
@@ -438,6 +454,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function countPersistedCurrentTracks(): Promise<number> {
+    await flushQueuedTrackPersistence();
     if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
       try {
         return await trackHistoryStore.countCurrent();
@@ -589,8 +606,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           continue;
         }
         const accepted = acceptEvent(state, event);
-        await persistCurrentTrack(accepted.object, accepted.accepted);
-        await persistTrackHistoryPoint(accepted.historyPoint);
+        queueTrackPersistence(accepted.object, accepted.accepted, accepted.historyPoint);
         acceptedObjects.push(accepted.object);
       }
       if (acceptedObjects.length > 0) {
@@ -1021,6 +1037,80 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return null;
   }
 
+  function queueTrackPersistence(
+    object: ObservedObject,
+    event: CanonicalEventEnvelope,
+    historyPoint: TrackHistoryPoint | undefined
+  ): void {
+    if (!trackHistoryStore || trackHistoryStoreStatus !== "ok") {
+      return;
+    }
+    pendingCurrentTrackPersistence.set(object.objectId, { event, object });
+    if (historyPoint) {
+      pendingTrackHistoryPersistence.push(historyPoint);
+      const overflow = pendingTrackHistoryPersistence.length - maxQueuedTrackHistoryPoints;
+      if (overflow > 0) {
+        pendingTrackHistoryPersistence.splice(0, overflow);
+        droppedTrackHistoryPoints += overflow;
+        app.log.warn(
+          { droppedTrackHistoryPoints, overflow, queueSize: pendingTrackHistoryPersistence.length },
+          "Dropped oldest queued track history points because ingest persistence queue is full."
+        );
+      }
+    }
+    scheduleTrackPersistenceFlush();
+  }
+
+  function scheduleTrackPersistenceFlush(delayMs = trackPersistenceFlushMs): void {
+    if (trackPersistenceFlushTimer) {
+      return;
+    }
+    trackPersistenceFlushTimer = setTimeout(() => {
+      trackPersistenceFlushTimer = undefined;
+      void flushQueuedTrackPersistence();
+    }, delayMs);
+    trackPersistenceFlushTimer.unref?.();
+  }
+
+  async function flushQueuedTrackPersistence(): Promise<void> {
+    if (trackPersistenceFlushInFlight) {
+      scheduleTrackPersistenceFlush();
+      return;
+    }
+    trackPersistenceFlushInFlight = true;
+    try {
+      while (pendingCurrentTrackPersistence.size > 0 || pendingTrackHistoryPersistence.length > 0) {
+        const currentBatch = takeQueuedCurrentTrackPersistence(trackPersistenceBatchSize);
+        const historyBatch = pendingTrackHistoryPersistence.splice(0, trackPersistenceBatchSize);
+        const results = await Promise.allSettled([
+          ...currentBatch.map(({ event, object }) => persistCurrentTrack(object, event)),
+          ...historyBatch.map((point) => persistTrackHistoryPoint(point))
+        ]);
+        const rejected = results.filter((result) => result.status === "rejected").length;
+        if (rejected > 0) {
+          app.log.warn({ rejected }, "Queued track persistence operations failed.");
+        }
+      }
+    } finally {
+      trackPersistenceFlushInFlight = false;
+      if (pendingCurrentTrackPersistence.size > 0 || pendingTrackHistoryPersistence.length > 0) {
+        scheduleTrackPersistenceFlush();
+      }
+    }
+  }
+
+  function takeQueuedCurrentTrackPersistence(limit: number): Array<{ event: CanonicalEventEnvelope; object: ObservedObject }> {
+    const batch: Array<{ event: CanonicalEventEnvelope; object: ObservedObject }> = [];
+    for (const [objectId, value] of pendingCurrentTrackPersistence.entries()) {
+      batch.push(value);
+      pendingCurrentTrackPersistence.delete(objectId);
+      if (batch.length >= limit) {
+        break;
+      }
+    }
+    return batch;
+  }
+
   async function persistTrackHistoryPoint(point: TrackHistoryPoint | undefined): Promise<void> {
     if (!trackHistoryStore || !point || trackHistoryStoreStatus !== "ok") {
       return;
@@ -1047,6 +1137,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     query: ReturnType<typeof parseTrackHistoryQuery>,
     requestNow: Date
   ): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>> {
+    await flushQueuedTrackPersistence();
     if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
       try {
         return await trackHistoryStore.query(query, requestNow);
@@ -2177,8 +2268,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       request.headers,
       reply,
       correlationId,
-      persistCurrentTrack,
-      persistTrackHistoryPoint,
+      queueTrackPersistence,
       publishCurrentTracks
     );
   });
@@ -2205,8 +2295,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
 
       const result = acceptEvent(state, validation.data);
-      await persistCurrentTrack(result.object, result.accepted);
-      await persistTrackHistoryPoint(result.historyPoint);
+      queueTrackPersistence(result.object, result.accepted, result.historyPoint);
       acceptedObjects.push(result.object);
       items.push({ eventId: result.accepted.eventId, status: "QUEUED" });
     }
@@ -3081,8 +3170,11 @@ async function handleIngestEvent(
   headers: Record<string, string | string[] | undefined>,
   reply: FastifyReply,
   correlationId: string,
-  persistCurrentTrack: (object: ObservedObject, event: CanonicalEventEnvelope) => Promise<void>,
-  persistTrackHistoryPoint: (point: TrackHistoryPoint | undefined) => Promise<void>,
+  queueTrackPersistence: (
+    object: ObservedObject,
+    event: CanonicalEventEnvelope,
+    historyPoint: TrackHistoryPoint | undefined
+  ) => void,
   publishCurrentTracks: (objects: ObservedObject[]) => Promise<void>
 ) {
   const headerSource = headerAsString(headers["x-source-system-id"]);
@@ -3120,8 +3212,7 @@ async function handleIngestEvent(
   }
 
   const result = acceptEvent(state, event);
-  await persistCurrentTrack(result.object, result.accepted);
-  await persistTrackHistoryPoint(result.historyPoint);
+  queueTrackPersistence(result.object, result.accepted, result.historyPoint);
   await publishCurrentTracks([result.object]);
   const accepted = result.accepted;
   const response = {
