@@ -1050,10 +1050,10 @@ export function App() {
     if (!mapBounds) {
       return;
     }
-    if (shouldSkipSituationFeatureLoad(mapBounds, mapView?.zoom)) {
+    if (shouldSkipSafetyFeatureLoad(mapBounds, mapView?.zoom)) {
       setSafetyFeatures(null);
       setSafetyStatus("zoom");
-      setSafetyWarnings(["Bezpečnostní vrstvy se načítají až po přiblížení mapy na rozumný výřez."]);
+      setSafetyWarnings(["Bezpečnostní vrstvy se načítají až po přiblížení na regionální výřez."]);
       return;
     }
 
@@ -8300,11 +8300,11 @@ function situationStatusFromHealth(health: string | undefined, sourceStatus?: st
 
 function situationStatusLabel(status: SituationLayerStatus): string {
   const labels: Record<SituationLayerStatus, string> = {
-    degraded: "degraded",
-    disabled: "off",
-    loading: "loading",
+    degraded: "omezeno",
+    disabled: "vypnuto",
+    loading: "načítám",
     online: "online",
-    zoom: "zoom"
+    zoom: "přiblížit"
   };
   return labels[status];
 }
@@ -8324,7 +8324,7 @@ function formatSituationReadiness(status: SituationLayerStatus, collection: Situ
     return `${collection.summary.featureCount} features`;
   }
   if (status === "zoom") {
-    return "zoom in";
+    return "přiblížit";
   }
   return situationStatusLabel(status);
 }
@@ -9697,6 +9697,12 @@ function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefi
   const width = Math.abs(bounds.east - bounds.west);
   const height = Math.abs(bounds.north - bounds.south);
   return (zoom ?? 0) < 6 || width > 6 || height > 4;
+}
+
+function shouldSkipSafetyFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {
+  const width = Math.abs(bounds.east - bounds.west);
+  const height = Math.abs(bounds.north - bounds.south);
+  return (zoom ?? 0) < 4 || width > 16 || height > 10;
 }
 
 function readBooleanEnv(value: string | undefined, fallback = true): boolean {

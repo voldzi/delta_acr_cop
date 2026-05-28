@@ -732,6 +732,57 @@ describe("COP map data helpers", () => {
     expect(collection.features[1]?.properties.mapPointSuppressed).toBeUndefined();
   });
 
+  it("does not prefix hydrology points with a flood incident label", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.47, 50.15], type: "Point" },
+          properties: {
+            category: "hydrology",
+            confidence: 0.82,
+            featureId: "flood:chmi_hydro:labe",
+            headline: "Labe",
+            label: "Labe",
+            layer: "flood",
+            observedAt: "2026-05-28T08:11:11Z",
+            riverName: "Labe",
+            sourceId: "chmi_hydro",
+            stale: false,
+            status: "risk",
+            trend: "falling"
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-28T10:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["flood"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      riskKind: "flood",
+      riskMapLabel: "Labe klesá"
+    });
+    expect(collection.features[0]?.properties.riskMapLabel).not.toContain("Povodeň");
+  });
+
   it("parses map center from longitude and latitude env value", () => {
     expect(parseMapCenter("15.1,50.2")).toEqual([15.1, 50.2]);
     expect(parseMapCenter("invalid")).toEqual([14.42, 50.08]);

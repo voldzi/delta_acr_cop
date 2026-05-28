@@ -2295,7 +2295,7 @@ function formatRiskMapLabel(feature: SituationFeature, status: { label: string }
       typeof stage === "number" && stage > 0 ? `${Math.round(stage)}. SPA` : undefined,
       floodTrendShortLabel(feature.properties.trend)
     ].filter(Boolean).join(" · ");
-    return `${category}\n${[compactRiskHeadline(floodName), suffix].filter(Boolean).join(" ") || status.label}`;
+    return [compactRiskHeadline(floodName), suffix].filter(Boolean).join(" ") || status.label || category;
   }
   if (!headline || headline === feature.properties.featureId) {
     return `${category}\n${status.label}`;
