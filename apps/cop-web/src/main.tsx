@@ -8297,6 +8297,9 @@ function formatSituationCoordinates(feature: SituationFeature): string {
   if (feature.geometry.type === "LineString") {
     return `${feature.geometry.coordinates.length} bodů`;
   }
+  if (feature.geometry.type === "MultiPolygon") {
+    return `${feature.geometry.coordinates.length} polygonů`;
+  }
   return `${feature.geometry.coordinates.length} polygon ringů`;
 }
 

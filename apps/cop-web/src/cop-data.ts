@@ -220,6 +220,7 @@ export interface SituationFeature {
 }
 
 export type SituationGeometry =
+  | { coordinates: Array<Array<Array<[number, number]>>>; type: "MultiPolygon" }
   | { coordinates: [number, number]; type: "Point" }
   | { coordinates: Array<[number, number]>; type: "LineString" }
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
@@ -457,6 +458,7 @@ export interface SafetyFeature {
 }
 
 export type SafetyGeometry =
+  | { coordinates: Array<Array<Array<[number, number]>>>; type: "MultiPolygon" }
   | { coordinates: [number, number]; type: "Point" }
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 

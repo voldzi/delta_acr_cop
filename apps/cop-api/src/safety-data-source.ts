@@ -77,6 +77,7 @@ export interface SafetySourceDescriptor {
 }
 
 export type SafetyGeometry =
+  | { coordinates: Array<Array<Array<[number, number]>>>; type: "MultiPolygon" }
   | { coordinates: [number, number]; type: "Point" }
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
@@ -852,6 +853,25 @@ function normalizeGeometry(value: unknown): SafetyGeometry | null {
     });
     return rings.length > 0 ? { coordinates: rings, type: "Polygon" } : null;
   }
+  if (value.type === "MultiPolygon" && Array.isArray(value.coordinates)) {
+    const polygons = value.coordinates.flatMap((polygon) => {
+      if (!Array.isArray(polygon)) {
+        return [];
+      }
+      const rings = polygon.flatMap((ring) => {
+        if (!Array.isArray(ring)) {
+          return [];
+        }
+        const coordinates = ring.flatMap((item) => {
+          const point = tupleCoordinate(item);
+          return point ? [point] : [];
+        });
+        return coordinates.length >= 4 ? [coordinates] : [];
+      });
+      return rings.length > 0 ? [rings] : [];
+    });
+    return polygons.length > 0 ? { coordinates: polygons, type: "MultiPolygon" } : null;
+  }
   return null;
 }
 
@@ -963,7 +983,11 @@ function isFeatureInBbox(feature: SafetyFeature, bbox: SafetyBbox): boolean {
 }
 
 function geometryBbox(geometry: SafetyGeometry): SafetyBbox | null {
-  const coordinates = geometry.type === "Point" ? [geometry.coordinates] : geometry.coordinates.flatMap((ring) => ring);
+  const coordinates = geometry.type === "Point"
+    ? [geometry.coordinates]
+    : geometry.type === "MultiPolygon"
+      ? geometry.coordinates.flatMap((polygon) => polygon.flatMap((ring) => ring))
+      : geometry.coordinates.flatMap((ring) => ring);
   if (coordinates.length === 0) {
     return null;
   }

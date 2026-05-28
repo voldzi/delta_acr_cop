@@ -568,7 +568,7 @@ export function CopMap({
           id: aoiDraftFillLayerId,
           type: "fill",
           source: aoiDraftSourceId,
-          filter: ["==", ["geometry-type"], "Polygon"],
+          filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
           paint: {
             "fill-color": "#c8f08d",
             "fill-opacity": 0.16
@@ -579,7 +579,7 @@ export function CopMap({
           id: aoiDraftLineLayerId,
           type: "line",
           source: aoiDraftSourceId,
-          filter: ["in", ["geometry-type"], ["literal", ["LineString", "Polygon"]]],
+          filter: ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]],
           layout: {
             "line-cap": "round",
             "line-join": "round"
@@ -635,7 +635,7 @@ export function CopMap({
           id: situationFillLayerId,
           type: "fill",
           source: situationSourceId,
-          filter: ["==", ["geometry-type"], "Polygon"],
+          filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
           paint: {
             "fill-color": [
               "coalesce",
@@ -691,7 +691,7 @@ export function CopMap({
           id: situationLineLayerId,
           type: "line",
           source: situationSourceId,
-          filter: ["in", ["geometry-type"], ["literal", ["LineString", "Polygon"]]],
+          filter: ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]],
           layout: {
             "line-cap": "round",
             "line-join": "round"

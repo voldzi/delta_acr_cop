@@ -169,6 +169,9 @@ export function featureCenter(feature: SituationFeature): [number, number] | nul
   if (geometry.type === "LineString") {
     return centerOfCoordinates(geometry.coordinates);
   }
+  if (geometry.type === "MultiPolygon") {
+    return centerOfCoordinates(geometry.coordinates.flatMap((polygon) => polygon.flatMap((ring) => ring)));
+  }
   return centerOfCoordinates(geometry.coordinates[0] ?? []);
 }
 
