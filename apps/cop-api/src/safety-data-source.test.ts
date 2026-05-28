@@ -58,8 +58,10 @@ describe("SafetyDataSourceAdapter", () => {
         {
           geometry: { coordinates: [14.42, 50.08], type: "Point" },
           properties: {
+            adminLevel: "mixed",
             category: "warning.wind",
             featureId: "warning:wind:prague",
+            geometryMode: "admin_boundary",
             headline: "Silný vítr",
             layer: "warnings",
             sourceId: "chmi_alerts"
@@ -188,9 +190,13 @@ function sampleFeatureCollection() {
             attribution: "CHMI",
             name: "open data"
           },
+          metrics: {
+            geometryMode: "admin_boundary"
+          },
           observedAt: "2026-05-20T10:00:00Z",
           severity: "warning",
           sourceId: "chmi_alerts",
+          adminLevel: "mixed",
           stale: false,
           urgency: "Expected"
         },

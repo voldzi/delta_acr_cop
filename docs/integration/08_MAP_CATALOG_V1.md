@@ -434,6 +434,23 @@ Provider-native fields may be preserved under:
 | `diagnostic.mobile.coverage` | Technický odhad pokrytí | `sim.situation-data` layer `mobile_coverage`, source `mobile_coverage_model` |
 | `diagnostic.mobile.ctu_measurements` | ČTÚ měření | `sim.situation-data` layer `mobile`, source `ctu_nettest` |
 
+## Safety Read Model Fields
+
+COP consumes the current SIM safety-data read model without parsing provider-native payloads. Public safety features should carry these normalized fields when available:
+
+| Field | Meaning in COP |
+| --- | --- |
+| `hazardType`, `status`, `severity` | User-facing risk type and current state. |
+| `validFrom`, `validUntil`, `updatedAt` | Alert validity and freshness. |
+| `source`, `sourceName`, `basis` | Source/provenance summary. Raw provider URLs may stay in `basis`, but UI should translate known tokens. |
+| `geometryMode` | `admin_boundary` means the alert is polygonized from an administrative boundary; `representative_point` is a controlled fallback. |
+| `areaName`, `adminLevel`, `affectedAreas` | Human-readable area context. |
+| `riverName`, `stationId`, `waterLevelCm`, `discharge`, `floodStage`, `trend`, `basin`, `catchmentAreaKm2` | Hydrology-specific fields for `public.safety.flood`. |
+
+For ČHMÚ CAP alerts COP renders `Polygon`/`MultiPolygon` as the primary representation. If SIM returns `geometryMode=representative_point`, COP may still show the point, but the detail must make clear that the original administrative geometry was unavailable.
+
+For hydrology COP displays flood stage and trend as informational context. It does not infer evacuation, routing, rescue priorities, or any operational action from those values.
+
 ## Provider Catalog Requirements
 
 Providers should expose metadata that COP can translate into the map catalog.

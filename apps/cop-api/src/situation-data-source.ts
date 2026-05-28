@@ -95,6 +95,7 @@ export interface SituationFeature {
 }
 
 export type SituationGeometry =
+  | { coordinates: Array<Array<Array<[number, number]>>>; type: "MultiPolygon" }
   | { coordinates: [number, number]; type: "Point" }
   | { coordinates: Array<[number, number]>; type: "LineString" }
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
@@ -840,6 +841,25 @@ function normalizeGeometry(value: unknown): SituationGeometry | null {
     });
     return rings.length > 0 ? { coordinates: rings, type: "Polygon" } : null;
   }
+  if (value.type === "MultiPolygon" && Array.isArray(value.coordinates)) {
+    const polygons = value.coordinates.flatMap((polygon) => {
+      if (!Array.isArray(polygon)) {
+        return [];
+      }
+      const rings = polygon.flatMap((ring) => {
+        if (!Array.isArray(ring)) {
+          return [];
+        }
+        const coordinates = ring.flatMap((item) => {
+          const point = tupleCoordinate(item);
+          return point ? [point] : [];
+        });
+        return coordinates.length >= 4 ? [coordinates] : [];
+      });
+      return rings.length > 0 ? [rings] : [];
+    });
+    return polygons.length > 0 ? { coordinates: polygons, type: "MultiPolygon" } : null;
+  }
   return null;
 }
 
@@ -1013,6 +1033,9 @@ function geometryCoordinates(geometry: SituationGeometry): Array<[number, number
   }
   if (geometry.type === "LineString") {
     return geometry.coordinates;
+  }
+  if (geometry.type === "MultiPolygon") {
+    return geometry.coordinates.flatMap((polygon) => polygon.flatMap((ring) => ring));
   }
   return geometry.coordinates.flatMap((ring) => ring);
 }

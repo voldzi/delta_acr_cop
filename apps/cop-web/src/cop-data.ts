@@ -226,7 +226,8 @@ export type SituationGeometry =
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface SituationFeatureProperties {
-  adminLevel?: number;
+  adminLevel?: number | string;
+  affectedArea?: string;
   affectedAreas?: string[];
   areaName?: string;
   affiliation?: string;
@@ -252,13 +253,16 @@ export interface SituationFeatureProperties {
   dataQuality?: string;
   demSource?: string;
   description?: string;
+  discharge?: number;
   effectiveAt?: string;
   disclaimer?: string;
   estimatedSignalDbm?: number;
   expiresAt?: string;
   featureId: string;
+  floodStage?: number;
   generatedAt?: string;
   geocodes?: Array<{ scheme: string; value: string }>;
+  geometryMode?: string;
   groupId?: string | null;
   groupName?: string | null;
   hazardType?: string;
@@ -272,6 +276,8 @@ export interface SituationFeatureProperties {
   metrics?: Record<string, unknown>;
   modelVersion?: string;
   basis?: string[];
+  basin?: string;
+  catchmentAreaKm2?: number;
   notices?: string[];
   animation?: Record<string, unknown>;
   aggregate?: number;
@@ -296,13 +302,17 @@ export interface SituationFeatureProperties {
   recommendedAction?: string;
   reportId?: string;
   resolutionM?: number;
+  riverName?: string;
   runtimeMode?: string;
   score?: Record<string, number>;
   scoreDelta?: Record<string, number>;
   severity?: string;
+  source?: string;
   sourceId: string;
+  sourceName?: string;
   sourceRevision?: string;
   stale?: boolean;
+  stationId?: string;
   status?: string;
   story?: Record<string, unknown>;
   styleHint?: string;
@@ -315,11 +325,13 @@ export interface SituationFeatureProperties {
   teamScores?: MissionArenaTeamScore[];
   technology?: string;
   totalVotes?: number;
+  trend?: string;
   urgency?: string;
   updatedAt?: string;
   validFrom?: string;
   validUntil?: string;
   voteCount?: number;
+  waterLevelCm?: number;
 }
 
 export interface MissionArenaTeamScore {
@@ -463,18 +475,24 @@ export type SafetyGeometry =
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface SafetyFeatureProperties {
-  adminLevel?: number;
+  adminLevel?: number | string;
+  affectedArea?: string;
   affectedAreas?: string[];
   areaName?: string;
   basis?: string[];
+  basin?: string;
+  catchmentAreaKm2?: number;
   category: string;
   certainty?: string;
   confidence?: number;
   description?: string;
+  discharge?: number;
   effectiveAt?: string;
   expiresAt?: string;
   featureId: string;
+  floodStage?: number;
   geocodes?: Array<{ scheme: string; value: string }>;
+  geometryMode?: string;
   hazardType?: string;
   headline: string;
   iconHint?: string;
@@ -487,18 +505,22 @@ export interface SafetyFeatureProperties {
   providerLayerId?: string;
   providerProperties?: Record<string, unknown>;
   recommendedAction?: string;
+  riverName?: string;
   severity?: string;
   source?: string;
   sourceId: string;
   sourceName?: string;
   stale?: boolean;
+  stationId?: string;
   status?: string;
   styleHint?: string;
   tags?: Record<string, unknown>;
+  trend?: string;
   updatedAt?: string;
   urgency?: string;
   validFrom?: string;
   validUntil?: string;
+  waterLevelCm?: number;
 }
 
 export interface SafetySourceDescriptor {

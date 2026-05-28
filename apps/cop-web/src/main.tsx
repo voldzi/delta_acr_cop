@@ -4224,6 +4224,7 @@ function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
       {isCommunicationTowerFeature(feature) ? <CommunicationTowerSummary feature={feature} /> : null}
       {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {feature.properties.layer === "traffic" ? <TrafficSummary feature={feature} /> : null}
+      {isSafetyLayerId(feature.properties.layer) ? <SafetyRiskSummary feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
     </ObjectDetailSection>
   );
@@ -4321,6 +4322,45 @@ function AviationWeatherSummary({ feature }: { feature: SituationFeature }) {
       <DataMetric label="Teplota" value={formatOptionalNumber(recordNumber(metrics, "temperatureC"), " °C")} tone="neutral" />
       <DataMetric label="QNH" value={formatOptionalNumber(recordNumber(metrics, "altimeterHpa"), " hPa")} tone="neutral" />
     </div>
+  );
+}
+
+function SafetyRiskSummary({ feature }: { feature: SituationFeature }) {
+  const properties = feature.properties;
+  const metrics = isRecord(properties.metrics) ? properties.metrics : {};
+  const status = situationFeatureStatusModel(feature);
+  const rows: Array<[string, React.ReactNode]> = [
+    ["Riziko", safetyHazardLabel(properties.hazardType ?? properties.category)],
+    ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
+    ["Oblast", properties.areaName ?? properties.affectedArea ?? formatStringList(properties.affectedAreas)],
+    ["Geometrie", safetyGeometryModeLabel(properties.geometryMode, feature.geometry.type)],
+    ["Platí od", formatShortDateTime(properties.validFrom ?? properties.effectiveAt)],
+    ["Platí do", formatShortDateTime(properties.validUntil ?? properties.expiresAt)],
+    ["Zdroj", properties.sourceName ?? properties.source ?? properties.sourceId],
+    ["Podklady", safetyBasisLabel(properties.basis)]
+  ];
+
+  if (properties.layer === "flood") {
+    rows.push(
+      ["Tok", properties.riverName ?? "n/a"],
+      ["Stanice", properties.areaName ? [properties.areaName, properties.stationId].filter(Boolean).join(" · ") : properties.stationId ?? "n/a"],
+      ["SPA", floodStageLabel(safetyMetricNumber(properties, metrics, "floodStage", "floodActivityLevel"))],
+      ["Trend", <StatusBadge key="trend" label={floodTrendLabel(properties.trend)} tone={floodTrendTone(properties.trend)} />],
+      ["Hladina", formatOptionalNumber(safetyMetricNumber(properties, metrics, "waterLevelCm"), " cm")],
+      ["Průtok", formatOptionalNumber(safetyMetricNumber(properties, metrics, "discharge", "flowM3s"), " m3/s")],
+      ["Změna hladiny", formatSignedMetric(safetyMetricNumber(properties, metrics, "waterLevelDeltaCm"), " cm")],
+      ["Změna průtoku", formatSignedMetric(safetyMetricNumber(properties, metrics, "flowDeltaM3s"), " m3/s")],
+      ["Stáří měření", formatDurationSeconds(safetyMetricNumber(properties, metrics, "observationAgeSeconds"))],
+      ["Povodí", properties.basin ?? stringProperty(properties.tags?.hydrologicalOrder) ?? "n/a"],
+      ["Plocha povodí", formatOptionalNumber(safetyMetricNumber(properties, metrics, "catchmentAreaKm2"), " km2")],
+      ["Prahy SPA", formatFloodThresholds(metrics)]
+    );
+  }
+
+  return (
+    <ObjectDetailSection title={properties.layer === "flood" ? "Hydrologie" : "Výstraha"}>
+      <DetailGrid rows={rows} />
+    </ObjectDetailSection>
   );
 }
 
@@ -8505,6 +8545,14 @@ function formatOptionalNumber(value: number | undefined, unit: string): string {
   return value === undefined ? "n/a" : `${Math.round(value * 10) / 10}${unit}`;
 }
 
+function formatSignedMetric(value: number | undefined, unit: string): string {
+  if (value === undefined) {
+    return "n/a";
+  }
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded > 0 ? "+" : ""}${rounded}${unit}`;
+}
+
 function formatOptionalInteger(value: number | undefined): string {
   return value === undefined ? "n/a" : String(Math.round(value));
 }
@@ -8530,6 +8578,146 @@ function formatMissionArenaScore(value: Record<string, number> | undefined): str
 function recordNumber(record: Record<string, unknown>, key: string): number | undefined {
   const value = Number(record[key]);
   return Number.isFinite(value) ? value : undefined;
+}
+
+function safetyMetricNumber(
+  properties: SituationFeature["properties"],
+  metrics: Record<string, unknown>,
+  propertyKey: string,
+  metricKey: string = String(propertyKey)
+): number | undefined {
+  const propertyValue = numberProperty((properties as unknown as Record<string, unknown>)[propertyKey]);
+  return propertyValue ?? recordNumber(metrics, metricKey);
+}
+
+function safetyGeometryModeLabel(mode: string | undefined, geometryType: string): string {
+  switch (mode) {
+    case "admin_boundary":
+      return "územní polygon";
+    case "representative_point":
+      return "náhradní bod";
+    case undefined:
+      return geometryType;
+    default:
+      return mode.replace(/_/g, " ");
+  }
+}
+
+function safetyHazardLabel(value: string | undefined): string {
+  const normalized = (value ?? "").toLowerCase().replace(/[_-]/g, " ");
+  if (normalized.includes("fire")) {
+    return "Nebezpečí požáru";
+  }
+  if (normalized.includes("flood") || normalized.includes("hydro")) {
+    return "Povodňové riziko";
+  }
+  if (normalized.includes("wind")) {
+    return "Vítr";
+  }
+  if (normalized.includes("storm")) {
+    return "Bouřky";
+  }
+  if (normalized.includes("weather")) {
+    return "Meteorologická výstraha";
+  }
+  return value ? value.replace(/[_-]/g, " ") : "Riziko";
+}
+
+function safetyBasisLabel(value: string[] | undefined): string {
+  if (!value || value.length === 0) {
+    return "n/a";
+  }
+  const labels = value
+    .filter((item) => !item.startsWith("http://") && !item.startsWith("https://"))
+    .map((item) => {
+      switch (item) {
+        case "chmi_cap":
+          return "ČHMÚ CAP";
+        case "chmi_cap_cisorp":
+          return "ČSÚ CISORP";
+        case "osm_postgis_admin_boundary_match":
+          return "PostGIS hranice ORP";
+        case "chmi_hydro_now":
+          return "ČHMÚ hydrologie";
+        default:
+          return item.replace(/_/g, " ");
+      }
+    });
+  return labels.length > 0 ? Array.from(new Set(labels)).slice(0, 4).join(" · ") : "n/a";
+}
+
+function floodStageLabel(value: number | undefined): string {
+  if (value === undefined || value <= 0) {
+    return "bez SPA";
+  }
+  if (value === 1) {
+    return "1. SPA bdělost";
+  }
+  if (value === 2) {
+    return "2. SPA pohotovost";
+  }
+  if (value === 3) {
+    return "3. SPA ohrožení";
+  }
+  return `${Math.round(value)}. SPA`;
+}
+
+function floodTrendLabel(value: string | undefined): string {
+  switch (value) {
+    case "rising":
+      return "stoupá";
+    case "falling":
+      return "klesá";
+    case "stable":
+      return "stabilní";
+    case "unknown":
+    case undefined:
+      return "neznámý";
+    default:
+      return value;
+  }
+}
+
+function floodTrendTone(value: string | undefined): "neutral" | "ok" | "warn" | "critical" {
+  switch (value) {
+    case "rising":
+      return "warn";
+    case "falling":
+      return "ok";
+    default:
+      return "neutral";
+  }
+}
+
+function formatDurationSeconds(value: number | undefined): string {
+  if (value === undefined) {
+    return "n/a";
+  }
+  if (value < 60) {
+    return `${Math.round(value)} s`;
+  }
+  if (value < 3600) {
+    return `${Math.round(value / 60)} min`;
+  }
+  return `${Math.round((value / 3600) * 10) / 10} h`;
+}
+
+function formatFloodThresholds(metrics: Record<string, unknown>): string {
+  const thresholdRows: Array<[string, number | undefined, number | undefined]> = [
+    ["1. SPA", recordNumber(metrics, "spa1Cm"), recordNumber(metrics, "spa1FlowM3s")],
+    ["2. SPA", recordNumber(metrics, "spa2Cm"), recordNumber(metrics, "spa2FlowM3s")],
+    ["3. SPA", recordNumber(metrics, "spa3Cm"), recordNumber(metrics, "spa3FlowM3s")]
+  ];
+  const thresholds = thresholdRows
+    .map(([label, level, flow]) => {
+      const parts = [
+        typeof level === "number" ? `${level} cm` : undefined,
+        typeof flow === "number" ? `${Math.round(flow * 10) / 10} m3/s` : undefined
+      ].filter(Boolean);
+      return parts.length > 0 ? `${label}: ${parts.join(" / ")}` : undefined;
+    })
+    .filter(Boolean);
+  return thresholds.length > 0 ? thresholds.join(" · ") : "n/a";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

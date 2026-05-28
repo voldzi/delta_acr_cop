@@ -82,18 +82,24 @@ export type SafetyGeometry =
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface SafetyFeatureProperties {
-  adminLevel?: number;
+  adminLevel?: number | string;
+  affectedArea?: string;
   affectedAreas?: string[];
   areaName?: string;
   basis?: string[];
+  basin?: string;
+  catchmentAreaKm2?: number;
   category: string;
   certainty?: string;
   confidence?: number;
   description?: string;
+  discharge?: number;
   effectiveAt?: string;
   expiresAt?: string;
   featureId: string;
+  floodStage?: number;
   geocodes?: Array<{ scheme: string; value: string }>;
+  geometryMode?: string;
   hazardType?: string;
   headline: string;
   iconHint?: string;
@@ -106,18 +112,22 @@ export interface SafetyFeatureProperties {
   providerLayerId?: string;
   providerProperties?: Record<string, unknown>;
   recommendedAction?: string;
+  riverName?: string;
   severity?: SafetySeverity | string;
   source?: string;
   sourceId: string;
   sourceName?: string;
   stale?: boolean;
+  stationId?: string;
   status?: string;
   styleHint?: string;
   tags?: Record<string, unknown>;
+  trend?: string;
   updatedAt?: string;
   urgency?: string;
   validFrom?: string;
   validUntil?: string;
+  waterLevelCm?: number;
 }
 
 export interface SafetyFeature {
@@ -698,43 +708,55 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
   if (!featureId || !category || !headline || !sourceId) {
     return null;
   }
+  const metrics = isRecord(value.metrics) ? value.metrics : undefined;
+  const tags = isRecord(value.tags) ? value.tags : undefined;
   return {
-    adminLevel: optionalFinite(value.adminLevel),
+    adminLevel: optionalFinite(value.adminLevel) ?? optionalString(value.adminLevel),
+    affectedArea: optionalString(value.affectedArea),
     affectedAreas: optionalStringArray(value.affectedAreas),
     areaName: optionalString(value.areaName),
     basis: optionalStringArray(value.basis),
+    basin: optionalString(value.basin) ?? optionalString(tags?.hydrologicalOrder),
+    catchmentAreaKm2: optionalFinite(value.catchmentAreaKm2) ?? optionalFinite(metrics?.catchmentAreaKm2),
     category,
     certainty: optionalString(value.certainty),
     confidence: optionalFinite(value.confidence),
     description: optionalString(value.description),
+    discharge: optionalFinite(value.discharge) ?? optionalFinite(metrics?.flowM3s),
     effectiveAt: optionalString(value.effectiveAt),
     expiresAt: optionalString(value.expiresAt),
     featureId,
+    floodStage: optionalFinite(value.floodStage) ?? optionalFinite(metrics?.floodActivityLevel),
     geocodes: normalizeGeocodes(value.geocodes),
+    geometryMode: optionalString(value.geometryMode) ?? optionalString(metrics?.geometryMode) ?? optionalString(tags?.geometryMode),
     hazardType: optionalString(value.hazardType),
     headline,
     iconHint: optionalString(value.iconHint),
     layer: value.layer,
     layerId: optionalString(value.layerId),
     license: isRecord(value.license) ? value.license : undefined,
-    metrics: isRecord(value.metrics) ? value.metrics : undefined,
+    metrics,
     observedAt: optionalString(value.observedAt),
     providerId: optionalString(value.providerId),
     providerLayerId: optionalString(value.providerLayerId),
     providerProperties: isRecord(value.providerProperties) ? value.providerProperties : undefined,
     recommendedAction: optionalString(value.recommendedAction),
+    riverName: optionalString(value.riverName) ?? optionalString(tags?.streamName),
     severity: optionalString(value.severity),
     source: optionalString(value.source),
     sourceId,
     sourceName: optionalString(value.sourceName),
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
+    stationId: optionalString(value.stationId) ?? optionalString(tags?.stationId),
     status: optionalString(value.status),
     styleHint: optionalString(value.styleHint),
-    tags: isRecord(value.tags) ? value.tags : undefined,
+    tags,
+    trend: optionalString(value.trend),
     updatedAt: optionalString(value.updatedAt),
     urgency: optionalString(value.urgency),
     validFrom: optionalString(value.validFrom),
-    validUntil: optionalString(value.validUntil)
+    validUntil: optionalString(value.validUntil),
+    waterLevelCm: optionalFinite(value.waterLevelCm) ?? optionalFinite(metrics?.waterLevelCm)
   };
 }
 

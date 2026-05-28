@@ -2288,11 +2288,19 @@ function riskIconKind(feature: SituationFeature): RiskIconId {
 function formatRiskMapLabel(feature: SituationFeature, status: { label: string }): string {
   const headline = feature.properties.headline ?? feature.properties.areaName ?? feature.properties.label;
   const category = riskLabelForKind(riskIconKind(feature));
+  if (feature.properties.layer === "flood") {
+    const floodName = feature.properties.riverName ?? feature.properties.areaName ?? headline;
+    const stage = floodStageValue(feature);
+    const suffix = [
+      typeof stage === "number" && stage > 0 ? `${Math.round(stage)}. SPA` : undefined,
+      floodTrendShortLabel(feature.properties.trend)
+    ].filter(Boolean).join(" · ");
+    return `${category}\n${[compactRiskHeadline(floodName), suffix].filter(Boolean).join(" ") || status.label}`;
+  }
   if (!headline || headline === feature.properties.featureId) {
     return `${category}\n${status.label}`;
   }
-  const compactHeadline = headline.replace(/\s+/g, " ").trim();
-  return `${category}\n${compactHeadline.length > 22 ? `${compactHeadline.slice(0, 21)}…` : compactHeadline}`;
+  return `${category}\n${compactRiskHeadline(headline)}`;
 }
 
 function riskTokens(feature: SituationFeature): string {
@@ -2339,13 +2347,50 @@ function riskDefaultColor(feature: SituationFeature): string {
     case "fire":
       return "#fb923c";
     case "flood":
-      return "#38bdf8";
+      return floodRiskColor(feature);
     case "weather":
       return "#facc15";
     case "warning":
       return "#ef4444";
     default:
       return "#a78bfa";
+  }
+}
+
+function compactRiskHeadline(value: string | undefined): string {
+  const compact = (value ?? "").replace(/\s+/g, " ").trim();
+  return compact.length > 22 ? `${compact.slice(0, 21)}…` : compact;
+}
+
+function floodStageValue(feature: SituationFeature): number | undefined {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  return numberProperty(feature.properties.floodStage) ?? recordNumber(metrics, "floodActivityLevel");
+}
+
+function floodRiskColor(feature: SituationFeature): string {
+  const stage = floodStageValue(feature);
+  if (stage === undefined || stage <= 0) {
+    return "#38bdf8";
+  }
+  if (stage === 1) {
+    return "#facc15";
+  }
+  if (stage === 2) {
+    return "#fb923c";
+  }
+  return "#ef4444";
+}
+
+function floodTrendShortLabel(value: string | undefined): string | undefined {
+  switch (value) {
+    case "rising":
+      return "stoupá";
+    case "falling":
+      return "klesá";
+    case "stable":
+      return "stabilní";
+    default:
+      return undefined;
   }
 }
 
@@ -2757,6 +2802,10 @@ function formatAviationWeatherMapLabel(icaoId: string | undefined, flightCategor
 function recordNumber(record: Record<string, unknown>, key: string): number | undefined {
   const value = Number(record[key]);
   return Number.isFinite(value) ? value : undefined;
+}
+
+function numberProperty(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function recordString(record: Record<string, unknown>, key: string): string | undefined {
