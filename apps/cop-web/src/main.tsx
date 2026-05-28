@@ -219,6 +219,14 @@ import {
   mobileNetworkDataQualityLabel,
   mobileNetworkModelLabel
 } from "./mobile-network-provenance";
+import {
+  formatTransportCurrentStatus,
+  formatTransportDelay,
+  formatTransportHeading,
+  formatTransportOccupancy,
+  formatTransportSpeed,
+  resolveTransportPresentation
+} from "./transport-presentation";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
@@ -4196,6 +4204,7 @@ function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
       {feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network" ? <MobileCoverageSummary feature={feature} /> : null}
       {isCommunicationTowerFeature(feature) ? <CommunicationTowerSummary feature={feature} /> : null}
       {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
+      {feature.properties.layer === "traffic" ? <TrafficSummary feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
     </ObjectDetailSection>
   );
@@ -4224,6 +4233,49 @@ function MobileNetworkStatusSummary({ feature }: { feature: SituationFeature }) 
       <DataMetric label="Latence" value={formatOptionalNumber(recordNumber(metrics, "latencyMs"), " ms")} tone={mobileMetricTone(recordNumber(metrics, "latencyMs"), 75, 150, false)} />
       <DataMetric label="Signál" value={formatOptionalNumber(recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"), " dBm")} tone={mobileMetricTone(recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"), -100, -110, true)} />
     </div>
+  );
+}
+
+function TrafficSummary({ feature }: { feature: SituationFeature }) {
+  const presentation = resolveTransportPresentation(feature);
+  if (!presentation) {
+    return null;
+  }
+  return (
+    <div className="mobile-status-summary traffic-status-summary">
+      <DataMetric label="Typ" value={presentation.label} tone="neutral" />
+      <DataMetric label="Linka" value={presentation.routeShortName ?? "n/a"} tone="neutral" />
+      <DataMetric label="Stav" value={formatTransportCurrentStatus(presentation.currentStatus)} tone="neutral" />
+      <DataMetric label="Rychlost" value={formatTransportSpeed(presentation.speedMps)} tone="neutral" />
+      <DataMetric label="Zpoždění" value={formatTransportDelay(presentation.delaySeconds)} tone={trafficDelayTone(presentation.delaySeconds)} />
+    </div>
+  );
+}
+
+function TrafficDetailSection({ feature }: { feature: SituationFeature }) {
+  const presentation = resolveTransportPresentation(feature);
+  if (!presentation) {
+    return null;
+  }
+  return (
+    <ObjectDetailSection title={presentation.kind === "road_event" ? "Dopravní událost" : "Veřejná doprava"}>
+      <DetailGrid
+        rows={[
+          ["Typ", presentation.label],
+          ["Linka", presentation.routeShortName ?? "n/a"],
+          ["Směr", presentation.destination ?? "n/a"],
+          ["Stav", formatTransportCurrentStatus(presentation.currentStatus)],
+          ["Zpoždění", formatTransportDelay(presentation.delaySeconds)],
+          ["Rychlost", formatTransportSpeed(presentation.speedMps)],
+          ["Směr pohybu", formatTransportHeading(presentation.headingDeg)],
+          ["Obsazenost", formatTransportOccupancy(presentation.occupancyStatus, presentation.occupancyPercent)],
+          ["Sekvence zastávky", formatOptionalInteger(presentation.stopSequence)],
+          ["Vozidlo", presentation.vehicleId ?? "n/a"],
+          ["Spoj", presentation.tripId ?? "n/a"],
+          ["Dopravce", presentation.operator ?? "n/a"]
+        ]}
+      />
+    </ObjectDetailSection>
   );
 }
 
@@ -6295,7 +6347,12 @@ function SituationFeatureDetail({
   const properties = feature.properties;
   const status = situationFeatureStatusModel(feature);
   const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
-  const title = isMissionArenaFeature(feature) ? missionArenaDetailTitle(feature) : properties.headline ?? properties.label;
+  const trafficPresentation = properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
+  const title = isMissionArenaFeature(feature)
+    ? missionArenaDetailTitle(feature)
+    : trafficPresentation
+      ? [trafficPresentation.label, trafficPresentation.routeShortName].filter(Boolean).join(" ")
+      : properties.headline ?? properties.label;
   return (
     <div className="object-detail situation-feature-detail">
       <div className="object-header">
@@ -6381,6 +6438,7 @@ function SituationFeatureDetail({
         </ObjectDetailSection>
       ) : null}
       {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
+      {properties.layer === "traffic" ? <TrafficDetailSection feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {properties.description || properties.recommendedAction ? (
         <ObjectDetailSection title="Popis">
@@ -8368,6 +8426,20 @@ function mobileMetricTone(value: number | undefined, goodThreshold: number, warn
     return value >= goodThreshold ? "ok" : value >= warnThreshold ? "warn" : "warn";
   }
   return value <= goodThreshold ? "ok" : value <= warnThreshold ? "warn" : "warn";
+}
+
+function trafficDelayTone(value: number | undefined): "neutral" | "ok" | "warn" | "critical" {
+  if (value === undefined) {
+    return "neutral";
+  }
+  const delay = Math.abs(value);
+  if (delay < 60) {
+    return "ok";
+  }
+  if (delay < 5 * 60) {
+    return "warn";
+  }
+  return "critical";
 }
 
 function formatOptionalNumber(value: number | undefined, unit: string): string {

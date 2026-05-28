@@ -17,6 +17,12 @@ import {
   resolveCopObjectSymbol,
   type AffiliationDisposition
 } from "./symbology";
+import {
+  resolveTransportPresentation,
+  transportIconColor,
+  transportIconKinds,
+  type TransportIconKind
+} from "./transport-presentation";
 
 const trackSourceId = "cop-live-tracks";
 const trackClusterSourceId = "cop-live-track-clusters";
@@ -75,8 +81,6 @@ const civilAircraftIconPrefix = "cop-civil-aircraft";
 const civilAircraftIconKinds = ["jet", "turboprop", "small_aircraft", "helicopter", "glider", "uav", "unknown"] as const;
 type CivilAircraftIconKind = (typeof civilAircraftIconKinds)[number];
 const transitIconPrefix = "cop-transit";
-const transitIconKinds = ["metro", "tram", "bus", "train", "trolleybus", "ferry", "funicular", "traffic", "unknown"] as const;
-type TransitIconKind = (typeof transitIconKinds)[number];
 const osmCategoryIconPrefix = "cop-osm-category";
 const osmCategoryIconIds = ["airport", "hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "other"] as const;
 type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
@@ -2371,7 +2375,7 @@ function buildTrafficRenderProperties(
   mapSymbolMode: PublicFlightSymbolMode,
   status: { color: string; label: string; tone: string }
 ): Partial<SituationContextFeatureCollection["features"][number]["properties"]> {
-  const presentation = resolveTrafficPresentation(feature);
+  const presentation = resolveTransportPresentation(feature);
   if (mapSymbolMode === "standard" || !presentation) {
     return {
       situationStatusColor: status.color,
@@ -2381,115 +2385,16 @@ function buildTrafficRenderProperties(
   }
   const color = feature.properties.stale ? status.color : presentation.color;
   return {
-    mapLabel: presentation.routeShortName ?? presentation.label,
+    mapLabel: presentation.mapLabel,
     situationStatusColor: color,
     situationStatusLabel: presentation.label.toUpperCase(),
     situationStatusTone: status.tone,
     trafficHeadingDeg: presentation.headingDeg,
-    trafficRouteShortName: presentation.routeShortName ?? presentation.label,
+    trafficRouteShortName: presentation.mapLabel,
     trafficRouteType: presentation.kind,
     trafficSymbolKey: getTransitIconKey(presentation.kind),
     trafficTransit: true
   };
-}
-
-function resolveTrafficPresentation(feature: SituationFeature): {
-  color: string;
-  headingDeg?: number;
-  kind: TransitIconKind;
-  label: string;
-  routeShortName?: string;
-} | null {
-  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
-  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
-  const providerMetrics = isRecord(providerProperties.metrics) ? providerProperties.metrics : {};
-  const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
-  const kind = normalizeTransitIconKind(
-    recordNumber(metrics, "routeTypeCode")
-      ?? recordNumber(providerMetrics, "routeTypeCode")
-      ?? recordString(tags, "transportMode")
-      ?? recordString(providerTags, "transportMode")
-      ?? recordString(tags, "routeType")
-      ?? recordString(providerTags, "routeType")
-      ?? recordString(tags, "vehicleType")
-      ?? recordString(providerTags, "vehicleType")
-      ?? feature.properties.category
-      ?? feature.properties.label
-  );
-  if (!kind) {
-    return null;
-  }
-  const routeShortName = compactTransitRouteLabel(
-    recordString(tags, "route")
-      ?? recordString(providerTags, "route")
-      ?? recordString(tags, "routeShortName")
-      ?? recordString(providerTags, "routeShortName")
-      ?? recordString(tags, "line")
-      ?? recordString(providerTags, "line")
-      ?? recordString(tags, "routeId")
-      ?? recordString(providerTags, "routeId")
-  );
-  const headingDeg = normalizeHeadingDeg(
-    recordNumber(metrics, "headingDeg")
-      ?? recordNumber(providerMetrics, "headingDeg")
-      ?? recordNumber(metrics, "bearing")
-      ?? recordNumber(providerMetrics, "bearing")
-  );
-  const labels: Record<TransitIconKind, string> = {
-    bus: "Bus",
-    ferry: "Přívoz",
-    funicular: "Lanovka",
-    metro: "Metro",
-    traffic: "Doprava",
-    train: "Vlak",
-    tram: "Tram",
-    trolleybus: "Trolejbus",
-    unknown: "Doprava"
-  };
-  return {
-    color: transitIconColor(kind),
-    headingDeg,
-    kind,
-    label: labels[kind],
-    routeShortName
-  };
-}
-
-function normalizeTransitIconKind(value: unknown): TransitIconKind | undefined {
-  if (typeof value === "number") {
-    if (value === 0) return "tram";
-    if (value === 1) return "metro";
-    if (value === 2) return "train";
-    if (value === 3) return "bus";
-    if (value === 4) return "ferry";
-    if (value === 5) return "funicular";
-    if (value === 11) return "trolleybus";
-  }
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = normalizeCompactAscii(value);
-  if (!normalized) {
-    return undefined;
-  }
-  if (normalized.includes("tram")) return "tram";
-  if (normalized.includes("metro") || normalized === "subway") return "metro";
-  if (normalized.includes("trolley")) return "trolleybus";
-  if (normalized.includes("bus")) return "bus";
-  if (normalized.includes("train") || normalized.includes("rail") || normalized.includes("vlak")) return "train";
-  if (normalized.includes("ferry") || normalized.includes("privoz")) return "ferry";
-  if (normalized.includes("funicular") || normalized.includes("lanov")) return "funicular";
-  if (normalized.includes("traffic") || normalized.includes("transport") || normalized.includes("doprava")) return "traffic";
-  return undefined;
-}
-
-function compactTransitRouteLabel(value: string | undefined): string | undefined {
-  const normalized = value?.trim().replace(/^L(?=\d)/i, "").replace(/\s+/g, " ");
-  if (!normalized) {
-    return undefined;
-  }
-  return normalized.length > 8 ? `${normalized.slice(0, 7)}…` : normalized;
 }
 
 const genericCommunicationTowerLabels = new Set([
@@ -2573,21 +2478,6 @@ function mobileNetworkIconColor(tone: MobileNetworkIconTone): string {
   return colors[tone];
 }
 
-function transitIconColor(kind: TransitIconKind): string {
-  const colors: Record<TransitIconKind, string> = {
-    bus: "#1f6feb",
-    ferry: "#00838f",
-    funicular: "#8d6e63",
-    metro: "#0072bc",
-    traffic: "#facc15",
-    train: "#2e7d32",
-    tram: "#d71920",
-    trolleybus: "#7b3f98",
-    unknown: "#8cb6d8"
-  };
-  return colors[kind];
-}
-
 function formatWeatherMapLabel(temperatureC: number | undefined, windSpeedMps: number | undefined, precipitationMm: number | undefined): string {
   const parts: string[] = [];
   if (temperatureC !== undefined) {
@@ -2666,7 +2556,7 @@ function getCivilAircraftIconKey(kind: CivilAircraftIconKind): string {
   return `${civilAircraftIconPrefix}-${kind}`;
 }
 
-function getTransitIconKey(kind: TransitIconKind): string {
+function getTransitIconKey(kind: TransportIconKind): string {
   return `${transitIconPrefix}-${kind}`;
 }
 
@@ -2751,6 +2641,12 @@ function formatSituationFeatureTitle(feature: SituationFeature): string {
   if (isMissionArenaFeature(feature)) {
     return missionArenaDetailTitle(feature);
   }
+  if (feature.properties.layer === "traffic") {
+    const presentation = resolveTransportPresentation(feature);
+    if (presentation) {
+      return [presentation.label, presentation.routeShortName].filter(Boolean).join(" ");
+    }
+  }
   return feature.properties.headline ?? feature.properties.label;
 }
 
@@ -2786,6 +2682,19 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
       typeof feature.properties.confidence === "number" ? `${Math.round(feature.properties.confidence * 100)} %` : undefined,
       feature.properties.sourceId
     ].filter(Boolean).join(" · ");
+  }
+  if (feature.properties.layer === "traffic") {
+    const presentation = resolveTransportPresentation(feature);
+    if (presentation) {
+      return [
+        situationLayerDisplayName(feature),
+        presentation.currentStatus,
+        presentation.destination ? `směr ${presentation.destination}` : undefined,
+        presentation.speedMps !== undefined ? `${Math.round(presentation.speedMps * 3.6)} km/h` : undefined,
+        presentation.delaySeconds !== undefined ? `zpoždění ${Math.round(presentation.delaySeconds / 60)} min` : undefined,
+        feature.properties.sourceId
+      ].filter(Boolean).join(" · ");
+    }
   }
   return [
     situationLayerDisplayName(feature),
@@ -3331,7 +3240,7 @@ async function registerSituationSymbolImages(map: maplibregl.Map) {
       });
     }
   });
-  transitIconKinds.forEach((kind) => {
+  transportIconKinds.forEach((kind) => {
     const key = getTransitIconKey(kind);
     if (!map.hasImage(key)) {
       map.addImage(key, createTransitSymbolImage(kind), {
@@ -3544,7 +3453,7 @@ function createMobileNetworkSymbolImage(tone: MobileNetworkIconTone): ImageData 
   return context.getImageData(0, 0, size, size);
 }
 
-function createTransitSymbolImage(kind: TransitIconKind): ImageData {
+function createTransitSymbolImage(kind: TransportIconKind): ImageData {
   const canvas = document.createElement("canvas");
   const size = 128;
   canvas.width = size;
@@ -3554,7 +3463,7 @@ function createTransitSymbolImage(kind: TransitIconKind): ImageData {
     return new ImageData(size, size);
   }
 
-  const color = transitIconColor(kind);
+  const color = transportIconColor(kind);
   context.clearRect(0, 0, size, size);
   context.lineCap = "round";
   context.lineJoin = "round";
@@ -3657,6 +3566,21 @@ function createTransitSymbolImage(kind: TransitIconKind): ImageData {
       context.moveTo(-35, 34);
       context.lineTo(35, -36);
       context.stroke();
+      break;
+    case "road_event":
+      context.beginPath();
+      context.moveTo(0, -32);
+      context.lineTo(31, 25);
+      context.lineTo(-31, 25);
+      context.closePath();
+      context.stroke();
+      context.beginPath();
+      context.moveTo(0, -12);
+      context.lineTo(0, 8);
+      context.stroke();
+      context.beginPath();
+      context.arc(0, 19, 4, 0, Math.PI * 2);
+      context.fill();
       break;
     case "traffic":
     case "unknown":

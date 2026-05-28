@@ -307,6 +307,93 @@ describe("COP map data helpers", () => {
     expect(situationFeaturesToFeatureCollection(trafficFeature, undefined, "standard").features[0]?.properties.trafficTransit).toBeUndefined();
   });
 
+  it("uses civil transport presentation for metro lines and road events", () => {
+    const collection: SituationFeatureCollectionResponse = {
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.42, 50.08], type: "Point" },
+          properties: {
+            category: "public_transport_metro",
+            confidence: 0.9,
+            featureId: "traffic:pid_gtfs_rt:metro-B-31-31",
+            label: "PID metro 992",
+            layer: "traffic",
+            layerId: "public.traffic.transit",
+            metrics: {
+              headingDeg: 261,
+              routeTypeCode: 1
+            },
+            observedAt: "2026-05-28T07:44:08Z",
+            sourceId: "pid_gtfs_rt",
+            stale: false,
+            tags: {
+              route: "992",
+              transportMode: "metro",
+              vehicleId: "metro-B-31-31"
+            }
+          },
+          type: "Feature"
+        },
+        {
+          geometry: { coordinates: [14.49, 50.1], type: "Point" },
+          properties: {
+            category: "road_traffic_abnormal",
+            confidence: 0.7,
+            featureId: "traffic:road_srti_lod:event-1",
+            label: "Silniční událost: Abnormal Traffic",
+            layer: "traffic",
+            layerId: "public.traffic.road_events",
+            metrics: { ageSeconds: 48 },
+            observedAt: "2026-05-28T07:44:08Z",
+            sourceId: "road_srti_lod",
+            stale: false,
+            tags: {
+              srtiType: "Abnormal Traffic"
+            }
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-28T07:44:08Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["traffic"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 2,
+        sourceCount: 2,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    };
+
+    const features = situationFeaturesToFeatureCollection(collection, undefined, "civil").features;
+
+    expect(features[0]?.properties).toMatchObject({
+      mapLabel: "B",
+      trafficRouteShortName: "B",
+      trafficRouteType: "metro",
+      trafficSymbolKey: "cop-transit-metro",
+      trafficTransit: true
+    });
+    expect(features[1]?.properties).toMatchObject({
+      mapLabel: "Kolona",
+      trafficRouteShortName: "Kolona",
+      trafficRouteType: "road_event",
+      trafficSymbolKey: "cop-transit-road_event",
+      trafficTransit: true
+    });
+  });
+
   it("renders OSM communication towers with the mobile tower symbol", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",
