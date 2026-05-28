@@ -552,105 +552,93 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       selectable: true,
       styleProfile: "water-level-v1"
     },
-    ...(fireLayer
-      ? [
-          {
-            audience: "public" as const,
-            cacheTtlSeconds: 600,
-            defaultVisible: fireLayer.defaultVisible,
-            description: fireLayer.description ?? "Požáry, hotspoty a ověřené požární incidenty.",
-            geometryTypes: fireLayer.geometryTypes ?? ["Point", "Polygon"],
-            groupId: "risks",
-            kind: "vector_features" as const,
-            label: "Požáry",
-            layerId: "public.safety.fire",
-            legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "nasa_firms") ?? findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
-            maxZoom: 18,
-            minZoom: 5,
-            provenance: {
-              sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:nasa_firms", "sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
-            },
-            query: {
-              maxFeatures: 250,
-              mode: "bbox" as const,
-              providerId: "sim.safety-data",
-              providerLayerIds: ["fire"],
-              providerSourceIds: ["chmi_alerts", "nasa_firms", "fire_hotspots", "fire_incidents"],
-              streamId: "features"
-            },
-            refreshSeconds: fireLayer.expectedCadenceSeconds ?? 600,
-            role: "primary" as const,
-            selectable: true,
-            styleProfile: "fire-risk-v1"
-          }
-        ]
-      : []),
-    ...(weatherAlertsLayer
-      ? [
-          {
-            audience: "public" as const,
-            cacheTtlSeconds: 300,
-            defaultVisible: weatherAlertsLayer.defaultVisible,
-            description: weatherAlertsLayer.description ?? "Meteorologické výstrahy podle území, typu nebezpečí a platnosti.",
-            geometryTypes: weatherAlertsLayer.geometryTypes ?? ["Polygon"],
-            groupId: "risks.weather",
-            kind: "vector_features" as const,
-            label: "Meteorologické výstrahy",
-            layerId: "public.safety.weather_alerts",
-            legal: legalFromSource(findSource(sources, "weather_alerts") ?? findSource(sources, "chmi_alerts")),
-            maxZoom: 18,
-            minZoom: 5,
-            provenance: {
-              sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:weather_alerts"]
-            },
-            query: {
-              maxFeatures: 250,
-              mode: "bbox" as const,
-              providerId: "sim.safety-data",
-              providerLayerIds: ["weather_alerts"],
-              providerSourceIds: ["chmi_alerts", "weather_alerts"],
-              streamId: "features"
-            },
-            refreshSeconds: weatherAlertsLayer.expectedCadenceSeconds ?? 300,
-            role: "primary" as const,
-            selectable: true,
-            styleProfile: "weather-alert-area-v1"
-          }
-        ]
-      : []),
-    ...(boundaryLayer
-      ? [
-          {
-            audience: "public" as const,
-            cacheTtlSeconds: 86400,
-            defaultVisible: boundaryLayer.defaultVisible,
-            description: boundaryLayer.description ?? "Referenční hranice státu a správních území pro orientaci v mapě.",
-            geometryTypes: boundaryLayer.geometryTypes ?? ["Polygon"],
-            groupId: "boundary",
-            kind: "vector_features" as const,
-            label: "Správní hranice",
-            layerId: "public.boundary.admin",
-            legal: legalFromSource(findSource(sources, "admin_boundaries")),
-            maxZoom: 18,
-            minZoom: 4,
-            provenance: {
-              sourceIds: ["sim.safety-data:admin_boundaries"]
-            },
-            query: {
-              maxFeatures: 250,
-              mode: "bbox" as const,
-              providerId: "sim.safety-data",
-              providerLayerIds: ["boundary_admin"],
-              providerSourceIds: ["admin_boundaries"],
-              streamId: "features"
-            },
-            refreshSeconds: boundaryLayer.expectedCadenceSeconds ?? 86400,
-            role: "reference" as const,
-            selectable: true,
-            styleProfile: "boundary-admin-v1"
-          }
-        ]
-      : [])
+    {
+      audience: "public",
+      cacheTtlSeconds: 600,
+      defaultVisible: fireLayer?.defaultVisible ?? false,
+      description: fireLayer?.description ?? "Požární nebezpečí, hotspoty a dostupné ověřené požární incidenty.",
+      geometryTypes: fireLayer?.geometryTypes ?? ["Point", "Polygon", "MultiPolygon"],
+      groupId: "risks",
+      kind: "vector_features",
+      label: "Požáry",
+      layerId: "public.safety.fire",
+      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "nasa_firms") ?? findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
+      maxZoom: 18,
+      minZoom: 5,
+      provenance: {
+        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:nasa_firms", "sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
+      },
+      query: {
+        maxFeatures: 250,
+        mode: "bbox",
+        providerId: "sim.safety-data",
+        providerLayerIds: ["fire"],
+        providerSourceIds: ["chmi_alerts", "nasa_firms", "fire_hotspots", "fire_incidents"],
+        streamId: "features"
+      },
+      refreshSeconds: fireLayer?.expectedCadenceSeconds ?? 600,
+      role: "primary",
+      selectable: true,
+      styleProfile: "fire-risk-v1"
+    },
+    {
+      audience: "public",
+      cacheTtlSeconds: 300,
+      defaultVisible: weatherAlertsLayer?.defaultVisible ?? false,
+      description: weatherAlertsLayer?.description ?? "Meteorologické výstrahy podle území, typu nebezpečí a platnosti.",
+      geometryTypes: weatherAlertsLayer?.geometryTypes ?? ["Polygon", "MultiPolygon"],
+      groupId: "risks.weather",
+      kind: "vector_features",
+      label: "Meteorologické výstrahy",
+      layerId: "public.safety.weather_alerts",
+      legal: legalFromSource(findSource(sources, "weather_alerts") ?? findSource(sources, "chmi_alerts")),
+      maxZoom: 18,
+      minZoom: 5,
+      provenance: {
+        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:weather_alerts"]
+      },
+      query: {
+        maxFeatures: 250,
+        mode: "bbox",
+        providerId: "sim.safety-data",
+        providerLayerIds: ["weather_alerts"],
+        providerSourceIds: ["chmi_alerts", "weather_alerts"],
+        streamId: "features"
+      },
+      refreshSeconds: weatherAlertsLayer?.expectedCadenceSeconds ?? 300,
+      role: "primary",
+      selectable: true,
+      styleProfile: "weather-alert-area-v1"
+    },
+    {
+      audience: "public",
+      cacheTtlSeconds: 86400,
+      defaultVisible: boundaryLayer?.defaultVisible ?? false,
+      description: boundaryLayer?.description ?? "Referenční hranice státu a správních území pro orientaci v mapě.",
+      geometryTypes: boundaryLayer?.geometryTypes ?? ["Polygon", "MultiPolygon"],
+      groupId: "boundary",
+      kind: "vector_features",
+      label: "Správní hranice",
+      layerId: "public.boundary.admin",
+      legal: legalFromSource(findSource(sources, "admin_boundaries")),
+      maxZoom: 18,
+      minZoom: 4,
+      provenance: {
+        sourceIds: ["sim.safety-data:admin_boundaries"]
+      },
+      query: {
+        maxFeatures: 250,
+        mode: "bbox",
+        providerId: "sim.safety-data",
+        providerLayerIds: ["boundary_admin"],
+        providerSourceIds: ["admin_boundaries"],
+        streamId: "features"
+      },
+      refreshSeconds: boundaryLayer?.expectedCadenceSeconds ?? 86400,
+      role: "reference",
+      selectable: true,
+      styleProfile: "boundary-admin-v1"
+    }
   ];
 }
 

@@ -71,6 +71,9 @@ describe("map catalog route", () => {
     expect(body.layers.map((layer) => layer.layerId)).toEqual(expect.arrayContaining([
       "public.mobile.network",
       "public.weather.current",
+      "public.boundary.admin",
+      "public.safety.fire",
+      "public.safety.weather_alerts",
       "public.safety.warnings",
       "reference.infrastructure.healthcare"
     ]));
