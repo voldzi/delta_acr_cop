@@ -3463,6 +3463,8 @@ function createRasterStyle(tiles: string, attribution: string, glyphs: string): 
 
 function applyBasemapMode(map: maplibregl.Map, mode: MapBasemapMode): void {
   const settings = basemapPaintSettings(mode);
+  const brightnessMin = Math.max(0, Math.min(1, settings.brightnessMin));
+  const brightnessMax = Math.max(brightnessMin, Math.min(1, settings.brightnessMax));
   const style = map.getStyle();
   const layers = (style.layers ?? []) as Array<{ id: string; type?: string }>;
   layers
@@ -3472,8 +3474,8 @@ function applyBasemapMode(map: maplibregl.Map, mode: MapBasemapMode): void {
         map.setPaintProperty(layer.id, "raster-opacity", settings.opacity);
         map.setPaintProperty(layer.id, "raster-saturation", settings.saturation);
         map.setPaintProperty(layer.id, "raster-contrast", settings.contrast);
-        map.setPaintProperty(layer.id, "raster-brightness-min", settings.brightnessMin);
-        map.setPaintProperty(layer.id, "raster-brightness-max", settings.brightnessMax);
+        map.setPaintProperty(layer.id, "raster-brightness-min", brightnessMin);
+        map.setPaintProperty(layer.id, "raster-brightness-max", brightnessMax);
       } catch {
         // External styles can contain provider-specific raster layers; keep overlays alive if one layer rejects tuning.
       }
@@ -3491,7 +3493,7 @@ function basemapPaintSettings(mode: MapBasemapMode): {
     case "civil":
       return { brightnessMax: 1, brightnessMin: 0.04, contrast: -0.08, opacity: 0.86, saturation: -0.35 };
     case "risk":
-      return { brightnessMax: 1.03, brightnessMin: 0.14, contrast: -0.18, opacity: 0.66, saturation: -0.6 };
+      return { brightnessMax: 1, brightnessMin: 0.14, contrast: -0.18, opacity: 0.66, saturation: -0.6 };
     case "dark":
       return { brightnessMax: 0.52, brightnessMin: 0, contrast: -0.05, opacity: 0.82, saturation: -0.7 };
     case "standard":
