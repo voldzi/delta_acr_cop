@@ -8059,6 +8059,7 @@ function takLayerHint(layer: TakLayer): string {
 function situationLayerLabel(layerId: SituationLayerId): string {
   const labels: Record<SituationLayerId, string> = {
     air_quality: "Kvalita vzduchu",
+    boundary_admin: "Správní hranice",
     community: "Komunitní hlášení",
     fire: "Požáry",
     flight_airports: "Letiště",
@@ -8086,6 +8087,7 @@ function situationDisplayLayerLabel(feature: SituationFeature): string {
 
 function safetyLayerLabel(layerId: SafetyLayerId): string {
   const labels: Record<SafetyLayerId, string> = {
+    boundary_admin: "Správní hranice",
     fire: "Požáry",
     flood: "Povodně a voda",
     warnings: "Veřejné výstrahy",
@@ -9321,7 +9323,14 @@ function minCadenceSeconds(current: number | undefined, next: number | undefined
 }
 
 function isSafetySourceId(value: string): value is SafetyDataSourceId {
-  return value === "chmi_alerts" || value === "chmi_hydro" || value === "fire_hotspots" || value === "fire_incidents" || value === "mock" || value === "weather_alerts";
+  return value === "admin_boundaries"
+    || value === "chmi_alerts"
+    || value === "chmi_hydro"
+    || value === "fire_hotspots"
+    || value === "fire_incidents"
+    || value === "mock"
+    || value === "nasa_firms"
+    || value === "weather_alerts";
 }
 
 function readInitialDomainScope(value: string | undefined): DomainScope {
@@ -9377,6 +9386,7 @@ function normalizeSourceIds(value: string[] | undefined): string[] {
 
 function isSituationLayerId(value: string): value is SituationLayerId {
   return value === "weather"
+    || value === "boundary_admin"
     || value === "community"
     || value === "fire"
     || value === "flight_airports"
@@ -9405,7 +9415,7 @@ function normalizeSafetyLayerIds(value: string[] | undefined): SafetyLayerId[] {
 }
 
 function isSafetyLayerId(value: string): value is SafetyLayerId {
-  return value === "warnings" || value === "flood" || value === "fire" || value === "weather_alerts";
+  return value === "warnings" || value === "weather_alerts" || value === "flood" || value === "fire" || value === "boundary_admin";
 }
 
 function normalizeTakLayerIds(value: string[] | undefined): TakLayerId[] {

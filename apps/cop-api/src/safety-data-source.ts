@@ -2,8 +2,8 @@ import { createPublicSafetyAggregateSourceSystem, type SourceSystem } from "@cop
 import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
 
-export type SafetyLayerId = "fire" | "flood" | "warnings" | "weather_alerts";
-export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "mock" | "weather_alerts";
+export type SafetyLayerId = "boundary_admin" | "fire" | "flood" | "warnings" | "weather_alerts";
+export type SafetyDataSourceId = "admin_boundaries" | "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "mock" | "nasa_firms" | "weather_alerts";
 export type SafetySeverity = "advisory" | "critical" | "info" | "warning";
 type SafetyCacheStatus = "coalesced" | "hit" | "miss" | "stale";
 
@@ -81,7 +81,10 @@ export type SafetyGeometry =
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface SafetyFeatureProperties {
+  adminLevel?: number;
   affectedAreas?: string[];
+  areaName?: string;
+  basis?: string[];
   category: string;
   certainty?: string;
   confidence?: number;
@@ -90,17 +93,30 @@ export interface SafetyFeatureProperties {
   expiresAt?: string;
   featureId: string;
   geocodes?: Array<{ scheme: string; value: string }>;
+  hazardType?: string;
   headline: string;
+  iconHint?: string;
   layer: SafetyLayerId;
+  layerId?: string;
   license?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
   observedAt?: string;
+  providerId?: string;
+  providerLayerId?: string;
+  providerProperties?: Record<string, unknown>;
   recommendedAction?: string;
   severity?: SafetySeverity | string;
+  source?: string;
   sourceId: string;
+  sourceName?: string;
   stale?: boolean;
+  status?: string;
+  styleHint?: string;
   tags?: Record<string, unknown>;
+  updatedAt?: string;
   urgency?: string;
+  validFrom?: string;
+  validUntil?: string;
 }
 
 export interface SafetyFeature {
@@ -161,6 +177,7 @@ const defaultConfig: SafetyDataSourceConfig = {
   cacheTtlMs: 120000,
   enabled: false,
   layerCacheTtlMs: {
+    boundary_admin: 24 * 60 * 60 * 1000,
     fire: 10 * 60 * 1000,
     flood: 5 * 60 * 1000,
     warnings: 2 * 60 * 1000,
@@ -171,7 +188,7 @@ const defaultConfig: SafetyDataSourceConfig = {
   timeoutMs: 15000
 };
 
-const allowedLayerIds: SafetyLayerId[] = ["warnings", "flood", "fire", "weather_alerts"];
+const allowedLayerIds: SafetyLayerId[] = ["warnings", "weather_alerts", "flood", "fire", "boundary_admin"];
 
 export function createSafetyDataSourceConfigFromEnv(env: Record<string, string | undefined> = process.env): SafetyDataSourceConfig {
   const cacheTtlMs = readInteger(env.COP_SAFETY_DATA_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 10 * 60 * 1000);
@@ -181,6 +198,7 @@ export function createSafetyDataSourceConfigFromEnv(env: Record<string, string |
     cacheTtlMs,
     enabled: readBoolean(env.COP_SAFETY_DATA_ENABLED, defaultConfig.enabled),
     layerCacheTtlMs: {
+      boundary_admin: readInteger(env.COP_SAFETY_DATA_BOUNDARY_ADMIN_CACHE_TTL_MS, 24 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       fire: readInteger(env.COP_SAFETY_DATA_FIRE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       flood: readInteger(env.COP_SAFETY_DATA_FLOOD_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       warnings: readInteger(env.COP_SAFETY_DATA_WARNINGS_CACHE_TTL_MS, cacheTtlMs, 1000, 24 * 60 * 60 * 1000),
@@ -680,7 +698,10 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     return null;
   }
   return {
+    adminLevel: optionalFinite(value.adminLevel),
     affectedAreas: optionalStringArray(value.affectedAreas),
+    areaName: optionalString(value.areaName),
+    basis: optionalStringArray(value.basis),
     category,
     certainty: optionalString(value.certainty),
     confidence: optionalFinite(value.confidence),
@@ -689,17 +710,30 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     expiresAt: optionalString(value.expiresAt),
     featureId,
     geocodes: normalizeGeocodes(value.geocodes),
+    hazardType: optionalString(value.hazardType),
     headline,
+    iconHint: optionalString(value.iconHint),
     layer: value.layer,
+    layerId: optionalString(value.layerId),
     license: isRecord(value.license) ? value.license : undefined,
     metrics: isRecord(value.metrics) ? value.metrics : undefined,
     observedAt: optionalString(value.observedAt),
+    providerId: optionalString(value.providerId),
+    providerLayerId: optionalString(value.providerLayerId),
+    providerProperties: isRecord(value.providerProperties) ? value.providerProperties : undefined,
     recommendedAction: optionalString(value.recommendedAction),
     severity: optionalString(value.severity),
+    source: optionalString(value.source),
     sourceId,
+    sourceName: optionalString(value.sourceName),
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
+    status: optionalString(value.status),
+    styleHint: optionalString(value.styleHint),
     tags: isRecord(value.tags) ? value.tags : undefined,
-    urgency: optionalString(value.urgency)
+    updatedAt: optionalString(value.updatedAt),
+    urgency: optionalString(value.urgency),
+    validFrom: optionalString(value.validFrom),
+    validUntil: optionalString(value.validUntil)
   };
 }
 
@@ -998,7 +1032,14 @@ function isSafetyLayerId(value: unknown): value is SafetyLayerId {
 }
 
 function isSafetyDataSourceId(value: unknown): value is SafetyDataSourceId {
-  return value === "mock" || value === "chmi_alerts" || value === "chmi_hydro" || value === "fire_hotspots" || value === "fire_incidents" || value === "weather_alerts";
+  return value === "mock"
+    || value === "admin_boundaries"
+    || value === "chmi_alerts"
+    || value === "chmi_hydro"
+    || value === "fire_hotspots"
+    || value === "fire_incidents"
+    || value === "nasa_firms"
+    || value === "weather_alerts";
 }
 
 function readBoolean(value: string | undefined, fallback: boolean): boolean {

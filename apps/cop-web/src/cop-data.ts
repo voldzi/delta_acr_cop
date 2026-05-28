@@ -131,6 +131,7 @@ export interface CopDashboardData {
 
 export type SituationLayerId =
   | "air_quality"
+  | "boundary_admin"
   | "community"
   | "fire"
   | "flight_airports"
@@ -145,9 +146,9 @@ export type SituationLayerId =
   | "warnings"
   | "weather_alerts"
   | "weather";
-export type SafetyLayerId = "fire" | "flood" | "warnings" | "weather_alerts";
+export type SafetyLayerId = "boundary_admin" | "fire" | "flood" | "warnings" | "weather_alerts";
 export type TakLayerId = "ground" | "mobile" | "traffic";
-export type SafetyDataSourceId = "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "mock" | "weather_alerts";
+export type SafetyDataSourceId = "admin_boundaries" | "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "mock" | "nasa_firms" | "weather_alerts";
 
 export interface MapBounds {
   east: number;
@@ -224,7 +225,9 @@ export type SituationGeometry =
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface SituationFeatureProperties {
+  adminLevel?: number;
   affectedAreas?: string[];
+  areaName?: string;
   affiliation?: string;
   attachments?: Array<{
     access?: Record<string, unknown>;
@@ -257,8 +260,10 @@ export interface SituationFeatureProperties {
   geocodes?: Array<{ scheme: string; value: string }>;
   groupId?: string | null;
   groupName?: string | null;
+  hazardType?: string;
   hazardSeverity?: string;
   headline?: string;
+  iconHint?: string;
   label: string;
   layer: SituationLayerId;
   layerId?: string;
@@ -299,6 +304,7 @@ export interface SituationFeatureProperties {
   stale?: boolean;
   status?: string;
   story?: Record<string, unknown>;
+  styleHint?: string;
   summary?: string;
   tags?: Record<string, unknown>;
   tasking?: Array<Record<string, unknown>>;
@@ -309,6 +315,8 @@ export interface SituationFeatureProperties {
   technology?: string;
   totalVotes?: number;
   urgency?: string;
+  updatedAt?: string;
+  validFrom?: string;
   validUntil?: string;
   voteCount?: number;
 }
@@ -453,7 +461,10 @@ export type SafetyGeometry =
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface SafetyFeatureProperties {
+  adminLevel?: number;
   affectedAreas?: string[];
+  areaName?: string;
+  basis?: string[];
   category: string;
   certainty?: string;
   confidence?: number;
@@ -462,17 +473,30 @@ export interface SafetyFeatureProperties {
   expiresAt?: string;
   featureId: string;
   geocodes?: Array<{ scheme: string; value: string }>;
+  hazardType?: string;
   headline: string;
+  iconHint?: string;
   layer: SafetyLayerId;
+  layerId?: string;
   license?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
   observedAt?: string;
+  providerId?: string;
+  providerLayerId?: string;
+  providerProperties?: Record<string, unknown>;
   recommendedAction?: string;
   severity?: string;
+  source?: string;
   sourceId: string;
+  sourceName?: string;
   stale?: boolean;
+  status?: string;
+  styleHint?: string;
   tags?: Record<string, unknown>;
+  updatedAt?: string;
   urgency?: string;
+  validFrom?: string;
+  validUntil?: string;
 }
 
 export interface SafetySourceDescriptor {

@@ -193,6 +193,8 @@ export interface SituationContextFeatureCollection {
       coverageLabel?: string;
       coverageQuality?: string;
       coverageTechnology?: string;
+      boundaryLabel?: string;
+      boundaryReference?: boolean;
       communicationTower?: boolean;
       mapLabel?: string;
       mapPointSuppressed?: boolean;
@@ -653,6 +655,8 @@ export function CopMap({
                 "#22c55e",
                 "traffic",
                 "#facc15",
+                "boundary_admin",
+                "#8cb6d8",
                 "fire",
                 "#fb923c",
                 "warnings",
@@ -672,6 +676,8 @@ export function CopMap({
               ["case", ["get", "stale"], 0.1, 0.2],
               ["==", ["get", "layer"], "mobile_network"],
               ["case", ["get", "stale"], 0.08, 0.16],
+              ["==", ["get", "boundaryReference"], true],
+              ["case", ["get", "stale"], 0.025, 0.055],
               ["==", ["get", "riskFeature"], true],
               ["case", ["get", "stale"], 0.07, 0.18],
               ["get", "stale"],
@@ -709,6 +715,8 @@ export function CopMap({
                 "#22c55e",
                 "traffic",
                 "#facc15",
+                "boundary_admin",
+                "#8cb6d8",
                 "fire",
                 "#fb923c",
                 "warnings",
@@ -729,6 +737,8 @@ export function CopMap({
               ["case", ["get", "stale"], 0.42, 0.62],
               ["==", ["get", "layer"], "mobile_network"],
               ["case", ["get", "stale"], 0.26, 0.38],
+              ["==", ["get", "boundaryReference"], true],
+              ["case", ["get", "stale"], 0.36, 0.64],
               ["get", "stale"],
               0.48,
               0.76
@@ -2129,6 +2139,16 @@ function buildSituationRenderProperties(
       situationStatusTone: "info"
     };
   }
+  if (isBoundaryReferenceFeature(feature)) {
+    return {
+      boundaryLabel: formatBoundaryLabel(feature),
+      boundaryReference: true,
+      mapLabel: formatBoundaryLabel(feature),
+      situationStatusColor: "#8cb6d8",
+      situationStatusLabel: "HRANICE",
+      situationStatusTone: "info"
+    };
+  }
   if (feature.properties.layer === "flight_airports") {
     return {
       osmCategoryLabel: "Letiště",
@@ -2240,38 +2260,67 @@ function isSyntheticWarningPoint(feature: SituationFeature): boolean {
 }
 
 function isRiskFeature(feature: SituationFeature): boolean {
+  const tokens = riskTokens(feature);
   return feature.properties.layer === "warnings"
     || feature.properties.layer === "weather_alerts"
     || feature.properties.layer === "flood"
     || feature.properties.layer === "fire"
-    || ["fire", "wildfire", "flood", "warning", "weather_alert", "storm", "risk"].includes(normalizeSituationCategory(feature.properties.category));
+    || ["fire", "wildfire", "flood", "warning", "weather_alert", "storm", "risk"].some((token) => tokens.includes(token));
 }
 
 function riskIconKind(feature: SituationFeature): RiskIconId {
-  const category = normalizeSituationCategory(feature.properties.category);
-  if (feature.properties.layer === "fire" || category.includes("fire") || category.includes("wildfire")) {
+  const tokens = riskTokens(feature);
+  if (feature.properties.layer === "fire" || tokens.includes("fire") || tokens.includes("wildfire")) {
     return "fire";
   }
-  if (feature.properties.layer === "flood" || category.includes("flood") || category.includes("hydro") || category.includes("water")) {
+  if (feature.properties.layer === "flood" || tokens.includes("flood") || tokens.includes("hydro") || tokens.includes("water")) {
     return "flood";
   }
-  if (feature.properties.layer === "weather_alerts" || category.includes("weather") || category.includes("storm") || category.includes("wind")) {
+  if (feature.properties.layer === "weather_alerts" || tokens.includes("weather") || tokens.includes("storm") || tokens.includes("wind")) {
     return "weather";
   }
-  if (feature.properties.layer === "warnings" || category.includes("warning")) {
+  if (feature.properties.layer === "warnings" || tokens.includes("warning")) {
     return "warning";
   }
   return "unknown";
 }
 
 function formatRiskMapLabel(feature: SituationFeature, status: { label: string }): string {
-  const headline = feature.properties.headline ?? feature.properties.label;
+  const headline = feature.properties.headline ?? feature.properties.areaName ?? feature.properties.label;
   const category = riskLabelForKind(riskIconKind(feature));
   if (!headline || headline === feature.properties.featureId) {
     return `${category}\n${status.label}`;
   }
   const compactHeadline = headline.replace(/\s+/g, " ").trim();
   return `${category}\n${compactHeadline.length > 22 ? `${compactHeadline.slice(0, 21)}…` : compactHeadline}`;
+}
+
+function riskTokens(feature: SituationFeature): string {
+  return [
+    feature.properties.category,
+    feature.properties.hazardType,
+    feature.properties.iconHint,
+    feature.properties.styleHint,
+    feature.properties.status,
+    feature.properties.severity
+  ]
+    .map((value) => normalizeSituationCategory(value))
+    .filter(Boolean)
+    .join(" ");
+}
+
+function isBoundaryReferenceFeature(feature: SituationFeature): boolean {
+  return feature.properties.layer === "boundary_admin"
+    || feature.properties.layerId === "public.boundary.admin"
+    || feature.properties.providerLayerId === "boundary.admin"
+    || normalizeSituationCategory(feature.properties.category) === "admin_boundary";
+}
+
+function formatBoundaryLabel(feature: SituationFeature): string {
+  return feature.properties.areaName
+    ?? feature.properties.headline
+    ?? feature.properties.label
+    ?? "Správní hranice";
 }
 
 function riskLabelForKind(kind: RiskIconId): string {
@@ -2655,8 +2704,8 @@ function resolveOsmCategoryPresentation(feature: SituationFeature): { iconId: Os
   return { iconId: "other", label: "OSM" };
 }
 
-function normalizeSituationCategory(category: string): string {
-  return category.toLowerCase().replace(/[\s.-]+/g, "_");
+function normalizeSituationCategory(category: string | undefined): string {
+  return (category ?? "").toLowerCase().replace(/[\s.-]+/g, "_");
 }
 
 function getMobileNetworkIconKey(tone: string | undefined): string {

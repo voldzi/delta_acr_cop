@@ -225,6 +225,7 @@ function defaultGroups(includeDiagnostics: boolean, includePartner: boolean): Ma
     { groupId: "communications", icon: "radio-tower", label: "Komunikace", order: 30 },
     { groupId: "transport", icon: "bus", label: "Doprava", order: 35 },
     { groupId: "infrastructure", icon: "building-2", label: "Infrastruktura", order: 40 },
+    { groupId: "boundary", icon: "map", label: "Hranice a území", order: 45 },
     { groupId: "flight", icon: "plane", label: "Letecký provoz", order: 50 },
     { groupId: "user", icon: "map-pin", label: "Moje data", order: 60 },
     { groupId: "presentation", icon: "sparkles", label: "Prezentace a eventy", order: 65 },
@@ -364,6 +365,9 @@ function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
   if (layerId.startsWith("public.safety.")) {
     return "risks";
   }
+  if (layerId.startsWith("public.boundary.")) {
+    return "boundary";
+  }
   if (layerId.startsWith("public.weather.")) {
     return "risks.weather";
   }
@@ -394,6 +398,9 @@ function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
   }
   if (firstCategory === "safety") {
     return "risks";
+  }
+  if (firstCategory === "boundary") {
+    return "boundary";
   }
   if (firstCategory === "traffic" || firstCategory === "transport") {
     return "transport";
@@ -460,6 +467,7 @@ function styleProfileForCatalogLayer(layer: ProviderCatalogLayer): string {
 }
 
 function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourceDescriptor[]): MapCatalogLayer[] {
+  const boundaryLayer = findLayer(layers, "boundary_admin");
   const warningLayer = findLayer(layers, "warnings");
   const floodLayer = findLayer(layers, "flood");
   const fireLayer = findLayer(layers, "fire");
@@ -535,18 +543,18 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
             kind: "vector_features" as const,
             label: "Požáry",
             layerId: "public.safety.fire",
-            legal: legalFromSource(findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
+            legal: legalFromSource(findSource(sources, "nasa_firms") ?? findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
             maxZoom: 18,
             minZoom: 5,
             provenance: {
-              sourceIds: ["sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
+              sourceIds: ["sim.safety-data:nasa_firms", "sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
             },
             query: {
               maxFeatures: 250,
               mode: "bbox" as const,
               providerId: "sim.safety-data",
               providerLayerIds: ["fire"],
-              providerSourceIds: ["fire_hotspots", "fire_incidents"],
+              providerSourceIds: ["nasa_firms", "fire_hotspots", "fire_incidents"],
               streamId: "features"
             },
             refreshSeconds: fireLayer.expectedCadenceSeconds ?? 600,
@@ -572,20 +580,53 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
             maxZoom: 18,
             minZoom: 5,
             provenance: {
-              sourceIds: ["sim.safety-data:weather_alerts"]
+              sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:weather_alerts"]
             },
             query: {
               maxFeatures: 250,
               mode: "bbox" as const,
               providerId: "sim.safety-data",
               providerLayerIds: ["weather_alerts"],
-              providerSourceIds: ["weather_alerts"],
+              providerSourceIds: ["chmi_alerts", "weather_alerts"],
               streamId: "features"
             },
             refreshSeconds: weatherAlertsLayer.expectedCadenceSeconds ?? 300,
             role: "primary" as const,
             selectable: true,
             styleProfile: "weather-alert-area-v1"
+          }
+        ]
+      : []),
+    ...(boundaryLayer
+      ? [
+          {
+            audience: "public" as const,
+            cacheTtlSeconds: 86400,
+            defaultVisible: boundaryLayer.defaultVisible,
+            description: boundaryLayer.description ?? "Referenční hranice státu a správních území pro orientaci v mapě.",
+            geometryTypes: boundaryLayer.geometryTypes ?? ["Polygon"],
+            groupId: "boundary",
+            kind: "vector_features" as const,
+            label: "Správní hranice",
+            layerId: "public.boundary.admin",
+            legal: legalFromSource(findSource(sources, "admin_boundaries")),
+            maxZoom: 18,
+            minZoom: 4,
+            provenance: {
+              sourceIds: ["sim.safety-data:admin_boundaries"]
+            },
+            query: {
+              maxFeatures: 250,
+              mode: "bbox" as const,
+              providerId: "sim.safety-data",
+              providerLayerIds: ["boundary_admin"],
+              providerSourceIds: ["admin_boundaries"],
+              streamId: "features"
+            },
+            refreshSeconds: boundaryLayer.expectedCadenceSeconds ?? 86400,
+            role: "reference" as const,
+            selectable: true,
+            styleProfile: "boundary-admin-v1"
           }
         ]
       : [])
@@ -1148,11 +1189,13 @@ function buildSafetySources(sources: SafetySourceDescriptor[]): MapCatalogSource
     audience: source.sourceId === "mock" ? "diagnostic" : "public",
     cacheTtlSeconds: source.updateCadenceSeconds,
     enabled: source.enabled !== false,
-    feedsCatalogLayerIds: source.sourceId === "chmi_alerts"
-      ? ["public.safety.warnings"]
+    feedsCatalogLayerIds: source.sourceId === "admin_boundaries"
+      ? ["public.boundary.admin"]
+      : source.sourceId === "chmi_alerts"
+        ? ["public.safety.weather_alerts", "public.safety.warnings"]
       : source.sourceId === "chmi_hydro"
         ? ["public.safety.flood"]
-        : source.sourceId === "fire_hotspots" || source.sourceId === "fire_incidents"
+        : source.sourceId === "nasa_firms" || source.sourceId === "fire_hotspots" || source.sourceId === "fire_incidents"
           ? ["public.safety.fire"]
           : source.sourceId === "weather_alerts"
             ? ["public.safety.weather_alerts"]
@@ -1161,7 +1204,7 @@ function buildSafetySources(sources: SafetySourceDescriptor[]): MapCatalogSource
     providerId: "sim.safety-data",
     selectableInMap: source.enabled !== false && source.sourceId !== "mock",
     sourceId: source.sourceId,
-    sourceRole: source.sourceId === "mock" ? "mock" : "final",
+    sourceRole: source.sourceId === "mock" ? "mock" : source.sourceId === "admin_boundaries" ? "reference" : "final",
     updateCadenceSeconds: source.updateCadenceSeconds,
     visibleInDiagnostics: true
   }));
