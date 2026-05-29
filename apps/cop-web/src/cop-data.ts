@@ -872,7 +872,7 @@ export interface TakFeatureOptions {
 }
 
 export type MapCatalogAudience = "admin" | "authenticated" | "diagnostic" | "partner" | "public";
-export type MapCatalogLayerKind = "aggregate" | "mvt_tiles" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features";
+export type MapCatalogLayerKind = "aggregate" | "grid_field" | "mvt_tiles" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features" | "vector_field";
 export type MapCatalogLayerRole = "diagnostic" | "overlay" | "partner" | "primary" | "reference" | "user";
 export type MapCatalogSourceRole = "aggregate" | "diagnostic" | "final" | "input" | "mock" | "projection" | "reference";
 
@@ -901,7 +901,7 @@ export interface MapCatalogFilter {
 export interface MapCatalogQuery {
   categoryIds?: string[];
   maxFeatures?: number;
-  mode: "bbox" | "internal" | "stream" | "tile";
+  mode: "bbox" | "grid" | "internal" | "stream" | "tile";
   providerId: string;
   providerLayerIds?: string[];
   providerSourceIds?: string[];
@@ -911,6 +911,7 @@ export interface MapCatalogQuery {
 export interface MapCatalogLayer {
   audience: MapCatalogAudience;
   cacheTtlSeconds?: number;
+  compatibilityOnly?: boolean;
   defaultVisible: boolean;
   description?: string;
   filters?: MapCatalogFilter[];
@@ -925,6 +926,7 @@ export interface MapCatalogLayer {
   };
   maxZoom?: number;
   minZoom?: number;
+  preferredProviderId?: string;
   provenance?: {
     sourceIds: string[];
     technicalInputs?: string[];
@@ -939,9 +941,11 @@ export interface MapCatalogLayer {
 export interface MapCatalogSource {
   audience: MapCatalogAudience;
   cacheTtlSeconds?: number;
+  compatibilityOnly?: boolean;
   enabled: boolean;
   feedsCatalogLayerIds?: string[];
   label: string;
+  preferredProviderId?: string;
   providerId: string;
   selectableInMap: boolean;
   sourceId: string;

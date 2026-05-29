@@ -1,6 +1,6 @@
-# 01 DELTA Inspired Design Principles
+# 01 Professional Civil Design Principles
 
-Design se inspiruje veřejně popsanými principy DELTA pouze obecně. Cílem je web-first situační UI, rychlá orientace, vrstvy, realtime update, detail objektu, confidence, provenance, stáří dat, konflikty zdrojů, degraded/offline režim a timeline/replay.
+Design staví na principech profesionální civilní situační aplikace. Cílem je web-first situační UI, rychlá orientace, vrstvy, realtime update, detail objektu, confidence, provenance, stáří dat, konflikty zdrojů, degraded/offline režim a timeline/replay.
 
 ## Principy
 

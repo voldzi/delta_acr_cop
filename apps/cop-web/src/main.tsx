@@ -9220,8 +9220,10 @@ function selectableCatalogLayers(catalog: MapCatalogResponse): MapCatalogLayer[]
     layer.selectable
     && layer.audience !== "diagnostic"
     && layer.role !== "diagnostic"
+    && layer.kind !== "grid_field"
     && layer.kind !== "mvt_tiles"
     && layer.kind !== "raster_tiles"
+    && layer.kind !== "vector_field"
   );
 }
 

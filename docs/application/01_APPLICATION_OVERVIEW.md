@@ -1,9 +1,9 @@
 # 01 Application Overview
 
-Hlavní COP aplikace je modulární platforma složená z API, datové pipeline, COP state, distribuční vrstvy, webového klienta, NATO rendereru, Source Registry, AI Gateway a auditní infrastruktury.
+Civilní situační mapa je modulární aplikace složená z API serveru, source-neutral mapového katalogu, COP state, distribuční vrstvy, webového klienta, komunitních hlášení, messaging integrace, Source Registry, AI Gateway a auditní infrastruktury.
 
-Baseline neimplementuje produkční kód. Definuje moduly, hranice a kontrakty tak, aby navazující skeleton mohl vzniknout konzistentně.
+Repozitář obsahuje produkční pilotní implementaci. Dokumentace definuje moduly, hranice a kontrakty tak, aby web, nativní iOS/iPadOS klient a externí poskytovatelé dat používali stejný bezpečný model.
 
 ## Hlavní tok
 
-Externí zdroj pošle událost přes ingest API. API ověří zdroj, validuje schema, aplikuje idempotency, publikuje událost do pipeline, aktualizuje COP state a distribuuje snapshot nebo delta oprávněným klientům.
+Externí poskytovatel dat publikuje katalog a features přes provider kontrakt. COP server provider data čte server-side, aplikuje policy, normalizuje je do mapového katalogu a klientům poskytuje pouze source-neutral API. Uživatelé mohou vytvářet civilní hlášení s polohou a médii; přístup k médiím řídí COP skupiny a ACL.

@@ -1,4 +1,4 @@
-# ADR-0008: DELTA-inspired UX Without Weapon Workflow
+# ADR-0008: Professional UX Without Weapon Workflow
 
 ## Status
 
@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Zadání požaduje DELTA-inspired UX na úrovni obecných veřejných principů, ale systém nesmí implementovat targeting nebo weapon workflow.
+Zadání požaduje profesionální situační UX, ale systém nesmí implementovat targeting nebo weapon workflow.
 
 ## Decision
 

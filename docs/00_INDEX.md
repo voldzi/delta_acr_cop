@@ -1,6 +1,6 @@
 # 00 Index
 
-Tento adresář je dokumentační baseline pro hlavní COP systém **ACR COP Data Fabric / SITDATA-COP**. Projekt popisuje datovou a situační platformu pro příjem, normalizaci, korelaci a distribuci Common Operating Picture. Repozitář současně obsahuje pilotní implementaci backendu a webového klienta; produkční databázové migrace a perzistentní temporal store jsou další krok.
+Tento adresář je dokumentace pro **Civilní situační mapu (CSM/COP)**. Projekt popisuje civilní situační platformu pro příjem, normalizaci, korelaci a distribuci mapových vrstev, výstrah, uživatelských hlášení a bezpečně sdílených informací. Repozitář obsahuje produkční webový klient, API server, integrační kontrakty a dokumentaci pro navazující nativní iOS/iPadOS aplikaci.
 
 ## Základní dokumenty
 
@@ -28,11 +28,11 @@ Tento adresář je dokumentační baseline pro hlavní COP systém **ACR COP Dat
 - [ADR](adr/00_INDEX.md)
 - [Prompts](prompts/00_INDEX.md)
 
-## Vstupní dokumenty
+## Archivní vstupní dokumenty
 
-- [Zadání hlavního COP systému](zadani_codex_hlavni_cop_system_ai_delta_v1.md)
-- [Prompt pro dokumentační baseline](prompt_codex_01_cop_documentation_baseline.md)
+- [Původní zadání hlavního COP systému](zadani_codex_hlavni_cop_system_ai_delta_v1.md)
+- [Původní prompt pro dokumentační baseline](prompt_codex_01_cop_documentation_baseline.md)
 
 ## Bezpečnostní vymezení
 
-Systém je určen pro situační přehled, datovou interoperabilitu, audit, kvalitu dat a distribuci COP. Dokumentace výslovně nepokrývá targeting, navádění prostředků, řízení zbraní, doporučování použití síly ani autonomní operační rozhodování.
+Systém je určen pro civilní situační přehled, ochranu osob, sdílení informací, datovou interoperabilitu, audit a kvalitu dat. Dokumentace výslovně nepokrývá targeting, navádění prostředků, řízení zbraní, doporučování použití síly ani autonomní operační rozhodování.

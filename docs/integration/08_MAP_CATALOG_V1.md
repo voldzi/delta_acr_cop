@@ -270,6 +270,8 @@ Recommended fields:
 `kind` defines how COP obtains and renders data:
 
 - `vector_features`: bbox-based GeoJSON features.
+- `vector_field`: dense vector field derived from sampled provider data, typically rendered as arrows/isolines/streamlines.
+- `grid_field`: raster-like numeric grid or interpolated field, typically rendered as heat/contour/wind overlay.
 - `mvt_tiles`: vector tiles for dense layers.
 - `raster_tiles`: raster tile overlay.
 - `track_stream`: moving objects maintained by COP stream/state.
@@ -277,11 +279,19 @@ Recommended fields:
 - `static_reference`: slow-changing reference data.
 - `aggregate`: composed layer that fans out into several provider queries.
 
-For hundreds of layers, dense public/reference layers should move to `mvt_tiles` or server-side aggregation. Bbox GeoJSON is acceptable for low-volume overlays and detail inspection.
+For hundreds of layers, dense public/reference layers should move to `mvt_tiles`, `grid_field`, `vector_field` or server-side aggregation. Bbox GeoJSON is acceptable for low-volume overlays and detail inspection. Clients that do not yet support a kind must hide it from normal layer selection while preserving it in diagnostics/catalog inspection.
+
+`query.mode` values:
+
+- `bbox`: COP can request provider GeoJSON-like features for the current viewport.
+- `grid`: provider exposes a field/grid read model; clients need a renderer that understands the layer kind.
+- `tile`: provider exposes tiles.
+- `stream`: COP stream/state owns moving objects.
+- `internal`: COP-owned user/profile/community data.
 
 ## Universal Map Query API
 
-COP clients should use catalog ids when requesting visible data:
+COP clients should use catalog ids when requesting visible data. Provider `/layers`, `/sources` and legacy `/cop/features` endpoints are adapter details and must not be called by web or native clients.
 
 ```http
 POST /api/v1/map/query

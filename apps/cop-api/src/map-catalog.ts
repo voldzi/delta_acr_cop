@@ -5,7 +5,7 @@ import type { MissionArenaLayerDescriptor, MissionArenaSourceDescriptor } from "
 import type { ProviderCatalogLayer, ProviderCatalogSource, ProviderMapCatalog } from "./provider-map-catalog.js";
 
 export type MapCatalogAudience = "admin" | "authenticated" | "diagnostic" | "partner" | "public";
-export type MapCatalogLayerKind = "aggregate" | "mvt_tiles" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features";
+export type MapCatalogLayerKind = "aggregate" | "grid_field" | "mvt_tiles" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features" | "vector_field";
 export type MapCatalogLayerRole = "diagnostic" | "overlay" | "partner" | "primary" | "reference" | "user";
 export type MapCatalogSourceRole = "aggregate" | "diagnostic" | "final" | "input" | "mock" | "projection" | "reference";
 
@@ -34,7 +34,7 @@ export interface MapCatalogFilter {
 export interface MapCatalogQuery {
   categoryIds?: string[];
   maxFeatures?: number;
-  mode: "bbox" | "internal" | "stream" | "tile";
+  mode: "bbox" | "grid" | "internal" | "stream" | "tile";
   providerId: string;
   providerLayerIds?: string[];
   providerSourceIds?: string[];
@@ -255,8 +255,7 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
   const providerSourceIds = layer.query?.providerSourceIds?.filter(Boolean) ?? layer.sourceIds?.filter(Boolean) ?? [];
   const categoryIds = uniqueStrings([
     ...(layer.query?.categoryIds ?? []),
-    ...(layer.query?.categoryFilter ?? []),
-    ...(legacyCategoryIdsForProviderLayer(layer.recommendedCatalogLayerId, providerLayerIds, providerSourceIds))
+    ...(layer.query?.categoryFilter ?? [])
   ]);
   return [
     {
@@ -438,27 +437,8 @@ function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
   return "infrastructure";
 }
 
-function legacyCategoryIdsForProviderLayer(layerId: string, providerLayerIds: string[], providerSourceIds: string[]): string[] {
-  if (layerId === "reference.infrastructure.healthcare") {
-    return ["hospital", "clinic", "doctors", "pharmacy"];
-  }
-  if (layerId === "reference.infrastructure.emergency") {
-    return ["fire_station", "police", "ambulance_station", "shelter", "defibrillator", "siren", "assembly_point"];
-  }
-  if (layerId === "reference.infrastructure.communications" || (providerLayerIds.includes("mobile") && providerSourceIds.includes("osm_postgis"))) {
-    return ["communications_tower"];
-  }
-  if (layerId === "reference.infrastructure.civic") {
-    return ["townhall"];
-  }
-  if (layerId === "public.weather.aviation") {
-    return ["aviation_weather_station"];
-  }
-  return [];
-}
-
 function normalizeQueryMode(value: string | undefined): MapCatalogQuery["mode"] {
-  return value === "internal" || value === "stream" || value === "tile" || value === "bbox" ? value : "bbox";
+  return value === "grid" || value === "internal" || value === "stream" || value === "tile" || value === "bbox" ? value : "bbox";
 }
 
 function normalizeLayerRole(value: string | undefined): MapCatalogLayerRole {
@@ -470,7 +450,7 @@ function normalizeAudience(value: string | undefined): MapCatalogAudience {
 }
 
 function normalizeLayerKind(value: string | undefined): MapCatalogLayerKind {
-  return value === "aggregate" || value === "mvt_tiles" || value === "raster_tiles" || value === "static_reference" || value === "track_stream" || value === "user_objects" || value === "vector_features"
+  return value === "aggregate" || value === "grid_field" || value === "mvt_tiles" || value === "raster_tiles" || value === "static_reference" || value === "track_stream" || value === "user_objects" || value === "vector_features" || value === "vector_field"
     ? value
     : "vector_features";
 }

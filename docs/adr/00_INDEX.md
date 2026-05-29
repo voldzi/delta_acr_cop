@@ -8,4 +8,4 @@
 - [0005 Event Driven Architecture](0005_EVENT_DRIVEN_ARCHITECTURE.md)
 - [0006 NATO Renderer in Main COP](0006_NATO_RENDERER_IN_MAIN_COP.md)
 - [0007 AI Provider Abstraction](0007_AI_PROVIDER_ABSTRACTION.md)
-- [0008 DELTA Inspired UX Without Weapon Workflow](0008_DELTA_INSPIRED_UX_WITHOUT_WEAPON_WORKFLOW.md)
+- [0008 Professional UX Without Weapon Workflow](0008_DELTA_INSPIRED_UX_WITHOUT_WEAPON_WORKFLOW.md)

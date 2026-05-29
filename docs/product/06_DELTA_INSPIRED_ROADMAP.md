@@ -1,6 +1,6 @@
-# 06 DELTA Inspired Roadmap
+# 06 Professional Civil Map Roadmap
 
-Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplikace. Inspirace je omezena na obecné veřejně popsané principy: web-first situační obraz, vrstvy, realtime data, degraded provoz, auditovatelnost, timeline/replay a práci se zdroji. Plán nesmí zavádět targeting, navádění, weapon workflow ani doporučení použití síly.
+Tento plán převádí produktovou analýzu do bezpečného rozvoje civilní situační aplikace. Rozvoj se drží obecných principů profesionálního situačního obrazu: web-first práce, vrstvy, realtime data, degraded provoz, auditovatelnost, timeline/replay a práce se zdroji. Plán nesmí zavádět targeting, navádění, weapon workflow ani doporučení použití síly.
 
 ## Stav k 2026-05-19
 
@@ -8,7 +8,7 @@ Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplik
 | --- | --- | --- |
 | Profesionální mapové COP UI | Dokončeno v pilotu | Mapová plocha, vrstvy, detail objektu, refresh, historie/predikce, per-user nastavení, PWA metadata, offline shell, responzivní tablet/telefon režim a veřejné publikování. |
 | SIM integrace | Dokončeno v pilotu | COP přijímá a zobrazuje cíle ze SIM projektu přes ingest kontrakt, agregovaný `flight-data-api` zdroj, kontextové `situation-data-api` vrstvy a bezpečnostní `safety-data-api` vrstvy. |
-| NATO symbologie | Dokončeno v pilotu | Vlastní prvky jsou modré, cizí prvky červené, symboly jsou řešené přes renderer a UI metadata. |
+| Profesionální symbolika | Dokončeno v pilotu | Civilní režim je výchozí, profesionální režim drží konzistentní symboliku a barvy podle dostupných metadat. |
 | Lifecycle objektů | Dokončeno v pilotu | Aktivní/stale/lost stav chrání mapu před trvalým zobrazováním zastavených simulovaných dat. |
 | Proximity awareness | Dokončeno v pilotu | Uživatel může zobrazit vlastní polohu a průsvitnou varovnou vrstvu přiblížení cizích objektů. |
 | Server-side temporal history | Rozpracováno | API drží body stop, web je používá jako zdroj pro historii tras a PostgreSQL store přes HAProxy/Patroni persistuje historii i current snapshot. |
@@ -23,7 +23,7 @@ Tento plán převádí DELTA-inspired analýzu do bezpečného rozvoje COP aplik
 Status: pilotně hotovo.
 
 - mapová pracovní plocha s OpenStreetMap podkladem,
-- čitelné NATO symboly podle afiliace,
+- čitelná civilní/profesionální symbolika podle režimu zobrazení,
 - přepínače vrstev a syntetických dat,
 - volitelná frekvence refresh,
 - lifecycle stop: active, stale, lost,

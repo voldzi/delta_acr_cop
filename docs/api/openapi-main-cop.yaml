@@ -1902,11 +1902,23 @@ components:
           type: boolean
         autoRefresh:
           type: boolean
+        catalogLayerIds:
+          type: array
+          maxItems: 120
+          items:
+            type: string
+            maxLength: 140
         domainScope:
           type: string
           enum: [all, AIR, LAND, SEA, RESCUE, OTHER]
         includeSynthetic:
           type: boolean
+        language:
+          type: string
+          enum: [cs, en]
+        mapBasemapMode:
+          type: string
+          enum: [standard, civil, risk, dark, outline]
         mapClusterEnabled:
           type: boolean
         mapView:
@@ -1935,7 +1947,7 @@ components:
           type: array
           items:
             type: string
-            enum: [warnings, flood]
+            enum: [boundary_admin, fire, flood, warnings, weather_alerts]
         selectedLayer:
           type: string
           enum: [air-situation, sim-air, uav, friendly, foreign, public-flights, data-quality]
@@ -1949,7 +1961,18 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, ground, mobile, traffic]
+            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, air_quality]
+        situationSourceIds:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            maxLength: 80
+        takLayerIds:
+          type: array
+          items:
+            type: string
+            enum: [mobile, ground, traffic]
         trackLayerIds:
           type: array
           items:
@@ -2652,7 +2675,7 @@ components:
           type: string
         kind:
           type: string
-          enum: [aggregate, mvt_tiles, raster_tiles, static_reference, track_stream, user_objects, vector_features]
+          enum: [aggregate, grid_field, mvt_tiles, raster_tiles, static_reference, track_stream, user_objects, vector_features, vector_field]
         label:
           type: string
         layerId:
@@ -2725,7 +2748,7 @@ components:
           minimum: 1
         mode:
           type: string
-          enum: [bbox, internal, stream, tile]
+          enum: [bbox, grid, internal, stream, tile]
         providerId:
           type: string
         providerLayerIds:
@@ -3694,7 +3717,7 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality, flight_airports, flight_airspaces, community]
+            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality]
         limit:
           type: integer
           minimum: 1
@@ -3755,7 +3778,7 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality, flight_airports, flight_airspaces, community]
+            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality]
         license:
           type: object
           additionalProperties: true
@@ -3849,7 +3872,7 @@ components:
           description: Fire-specific status such as risk, thermal_anomaly, active, confirmed, contained, or unknown.
         layer:
           type: string
-          enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, flood, air_quality, flight_airports, flight_airspaces, community]
+          enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality]
         layerId:
           type: string
         label:

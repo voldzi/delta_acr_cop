@@ -9,4 +9,4 @@
 - [07 Data Architecture](07_DATA_ARCHITECTURE.md)
 - [08 Event Driven Architecture](08_EVENT_DRIVEN_ARCHITECTURE.md)
 - [09 Offline and Edge Architecture](09_OFFLINE_AND_EDGE_ARCHITECTURE.md)
-- [10 DELTA Inspired UX Architecture](10_DELTA_INSPIRED_UX_ARCHITECTURE.md)
+- [10 Professional Workspace UX Architecture](10_DELTA_INSPIRED_UX_ARCHITECTURE.md)

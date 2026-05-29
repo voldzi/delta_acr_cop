@@ -1,17 +1,19 @@
 # 01 Vision and Scope
 
-Vizí je hlavní COP platforma, která sjednotí situační data z různých zdrojů do auditovatelného, verzovaného a bezpečně distribuovaného situačního obrazu.
+Vizí je civilní situační platforma, která sjednotí rizika, výstrahy, veřejná data, komunitní hlášení a sdílená média do auditovatelného, verzovaného a bezpečně distribuovaného situačního obrazu.
 
 ## Scope
 
-- API ingest a batch ingest,
+- source-neutral mapový katalog a provider integrace,
 - canonical model,
 - correlation/fusion,
 - COP state a history,
-- Source Registry,
-- NATO symbol rendering,
+- komunitní hlášení, skupiny a media ACL,
+- Source Registry a provider health,
+- civilní i profesionální symbolika,
 - webový klient,
+- nativní iOS/iPadOS kontrakt,
 - AI asistence nad daty a dokumentací,
 - audit, RBAC/ABAC a offline/degraded režim.
 
-Systém je primárně datová a distribuční platforma. Mapa je důležitý klient, ale není zdrojem pravdy.
+Systém je primárně prezentační, policy a distribuční platforma. Mapa je hlavní pracovní plocha, ale zdroje pravdy pro externí data zůstávají v provider službách a pro uživatelská data v COP komunitním modulu.

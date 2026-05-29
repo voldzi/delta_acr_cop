@@ -136,7 +136,7 @@ describe("map catalog route", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      layers: Array<{ groupId: string; label: string; layerId: string; query?: { categoryIds?: string[]; providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
+      layers: Array<{ groupId: string; kind?: string; label: string; layerId: string; query?: { categoryIds?: string[]; mode?: string; providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
       sources: Array<{ feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
     };
     expect(body.layers).toEqual(expect.arrayContaining([
@@ -150,6 +150,16 @@ describe("map catalog route", () => {
           providerSourceIds: ["osm_postgis"]
         }),
         selectable: true
+      }),
+      expect.objectContaining({
+        groupId: "risks.weather",
+        kind: "grid_field",
+        layerId: "public.weather.temperature_grid",
+        query: expect.objectContaining({
+          mode: "grid",
+          providerLayerIds: ["weather.temperature_grid"],
+          providerSourceIds: ["chmi_weather_stations"]
+        })
       })
     ]));
     expect(body.layers.map((layer) => layer.layerId)).not.toContain("diagnostic.mobile.coverage");
@@ -522,6 +532,30 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           technicalInputs: ["mobile_coverage_model", "ctu_nettest", "osm_postgis"]
         },
         {
+          audience: "public",
+          cacheTtlSeconds: 600,
+          categoryPath: ["weather"],
+          defaultVisible: false,
+          geometryTypes: ["Polygon"],
+          kind: "grid_field",
+          label: "Teplotní pole",
+          providerLayerId: "weather.temperature_grid",
+          query: {
+            maxFeatures: 1,
+            mode: "grid",
+            providerId: "sim.situation-data",
+            providerLayerIds: ["weather.temperature_grid"],
+            providerSourceIds: ["chmi_weather_stations"],
+            streamId: "grid"
+          },
+          recommendedCatalogLayerId: "public.weather.temperature_grid",
+          refreshSeconds: 600,
+          role: "overlay",
+          selectable: true,
+          sourceIds: ["chmi_weather_stations"],
+          styleProfile: "weather-temperature-grid-v1"
+        },
+        {
           audience: "diagnostic",
           cacheTtlSeconds: 21600,
           defaultVisible: false,
@@ -619,6 +653,17 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           sourceRole: "input",
           updateCadenceSeconds: 21600,
           usedByCatalogLayerIds: ["public.mobile.network"],
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.weather.temperature_grid"],
+          label: "CHMI weather station read model",
+          selectableInMap: false,
+          sourceId: "chmi_weather_stations",
+          sourceRole: "final",
+          updateCadenceSeconds: 600,
           visibleInDiagnostics: true
         },
         {

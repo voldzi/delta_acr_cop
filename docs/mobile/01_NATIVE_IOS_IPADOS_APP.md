@@ -1,6 +1,6 @@
 # Native iOS/iPadOS COP App
 
-Tento dokument popisuje, co je potřeba pro samostatnou nativní aplikaci pro iPhone a iPad. Cílem je profesionální mobilní COP klient inspirovaný principy DELTA: rychlý situační obraz, vrstvy, offline/degraded provoz, alerty, zdrojová důvěryhodnost a bezpečná práce s identitou. Aplikace nesmí obsahovat targeting, navádění, weapon workflow ani doporučení použití síly.
+Tento dokument popisuje, co je potřeba pro samostatnou nativní aplikaci pro iPhone a iPad. Cílem je profesionální mobilní klient Civilní situační mapy: rychlý situační obraz, civilní vrstvy rizik, offline/degraded provoz, alerty, zdrojová důvěryhodnost a bezpečná práce s identitou. Aplikace nesmí obsahovat targeting, navádění, weapon workflow ani doporučení použití síly.
 
 ## Rozsah první verze
 
@@ -102,6 +102,29 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `POST /api/v1/ai/cop-assistant/query` pouze pro povolené informační dotazy.
 
 Nativní iOS klient má před vytvořením hlášení načíst polohu z média, pokud je dostupná. Pro fotky použít metadata z Photos/EXIF, pro video a iPhone Spatial Video preferovat AVFoundation/Photos metadata. Pokud uživatel polohu z média potvrdí, poslat `location.source="media_metadata"`. Hlášení musí být vždy přiřazené do COP skupiny; nová skupina vytvořená z hlášení má dostat `anchorLocation` z první polohy reportu.
+
+## Mapový katalog pro nativní klienty
+
+Nativní klient nesmí skládat menu vrstev z provider `/layers`, `/sources` ani z legacy `/cop/features`. Autoritativní vstup je:
+
+- `GET /api/v1/map/catalog?locale=cs-CZ`
+- `POST /api/v1/map/query`
+
+Uživatelův výběr vrstev se ukládá do `preferences.catalogLayerIds`. Jazyk aplikace se ukládá do `preferences.language` (`cs` nebo `en`). Podklad mapy se ukládá do `preferences.mapBasemapMode`.
+
+Klient musí podporovat tyto druhy katalogových vrstev:
+
+- `vector_features`: bbox GeoJSON prvky pro běžné mapové overlaye.
+- `static_reference`: pomalu se měnící referenční data.
+- `track_stream`: pohyblivé objekty přes COP stream/state.
+- `user_objects`: uživatelská hlášení, zóny a komunitní prvky.
+- `aggregate`: složená vrstva, kterou COP rozpadá na více provider dotazů.
+- `mvt_tiles` a `raster_tiles`: dlaždicové vrstvy.
+- `grid_field` a `vector_field`: hustá pole pro počasí, kvalitu ovzduší, vítr nebo podobné analytické vrstvy.
+
+Pokud aktuální verze iOS klienta neumí některý `kind` vykreslit, nesmí kvůli tomu selhat katalog. Takovou vrstvu skryje z běžného výběru, zobrazí ji maximálně v diagnostice a dál respektuje `selectable`, `audience`, `role`, `minZoom`, `maxZoom`, `filters`, `legal` a `provenance`.
+
+Provider identifikátory, sourceId a technické vstupy se v běžném UI nezobrazují jako mapové vrstvy. Patří do detailu/provenance a diagnostiky.
 
 ## Doporučená architektura iOS aplikace
 
