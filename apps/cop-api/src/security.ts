@@ -85,37 +85,57 @@ export async function requireBearerToken(request: FastifyRequest, reply: Fastify
 export async function verifyOidcToken(token: string): Promise<boolean> {
   const issuer = normalizeIssuer(process.env.COP_OIDC_ISSUER ?? "");
   if (!issuer) {
+    console.warn("[oidc-debug] no issuer configured");
     return false;
   }
 
   const decoded = decodeJwt(token);
-  if (!decoded || decoded.header.alg !== "RS256" || !decoded.header.kid) {
+  if (!decoded) {
+    console.warn("[oidc-debug] jwt decode failed - token prefix:", token.slice(0, 20));
+    return false;
+  }
+  if (decoded.header.alg !== "RS256") {
+    console.warn("[oidc-debug] wrong alg:", decoded.header.alg);
+    return false;
+  }
+  if (!decoded.header.kid) {
+    console.warn("[oidc-debug] no kid in header");
     return false;
   }
 
   const nowSeconds = Math.floor(Date.now() / 1000);
   if (decoded.payload.iss !== issuer) {
+    console.warn("[oidc-debug] iss mismatch - token:", decoded.payload.iss, "expected:", issuer);
     return false;
   }
   if (!decoded.payload.exp || decoded.payload.exp <= nowSeconds - authClockSkewSeconds) {
+    console.warn("[oidc-debug] token expired - exp:", decoded.payload.exp, "now:", nowSeconds);
     return false;
   }
   if (decoded.payload.nbf && decoded.payload.nbf > nowSeconds + authClockSkewSeconds) {
+    console.warn("[oidc-debug] token not yet valid - nbf:", decoded.payload.nbf);
     return false;
   }
   if (!matchesAllowedClient(decoded.payload)) {
+    console.warn("[oidc-debug] client not allowed - azp:", decoded.payload.azp, "aud:", decoded.payload.aud, "allowed:", process.env.COP_OIDC_ALLOWED_CLIENTS);
     return false;
   }
   if (!matchesRequiredRole(decoded.payload)) {
+    console.warn("[oidc-debug] required role missing");
     return false;
   }
 
   const key = await findJwkForToken(issuer, decoded.header.kid);
   if (!key) {
+    console.warn("[oidc-debug] no jwk found for kid:", decoded.header.kid);
     return false;
   }
 
-  return verifyJwtSignature(token, key);
+  const verified = verifyJwtSignature(token, key);
+  if (!verified) {
+    console.warn("[oidc-debug] signature verification failed");
+  }
+  return verified;
 }
 
 export function actorFromRequest(request: FastifyRequest): AuthenticatedActor | null {
