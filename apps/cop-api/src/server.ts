@@ -3586,16 +3586,29 @@ function isCoverageTechnology(value: unknown): value is string {
 
 function isSituationLayerId(value: string): value is SituationLayerId {
   return value === "air_quality"
+    || value === "air_quality_grid"
+    || value === "boundary_admin"
+    || value === "boundary_country"
+    || value === "boundary_district"
+    || value === "boundary_municipality"
+    || value === "boundary_orp"
+    || value === "boundary_region"
     || value === "fire"
     || value === "flood"
     || value === "ground"
     || value === "mobile"
     || value === "mobile_coverage"
     || value === "mobile_network"
+    || value === "place_settlements"
     || value === "traffic"
     || value === "warnings"
     || value === "weather_alerts"
-    || value === "weather";
+    || value === "weather"
+    || value === "weather_humidity_grid"
+    || value === "weather_precipitation_grid"
+    || value === "weather_pressure_grid"
+    || value === "weather_temperature_grid"
+    || value === "weather_wind_field";
 }
 
 function isSafetyLayerId(value: string): value is SafetyLayerId {
@@ -5006,7 +5019,28 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
     safetyLayerIds: optionalStringArray(value.safetyLayerIds, ["boundary_admin", "fire", "flood", "warnings", "weather_alerts"]),
-    situationLayerIds: optionalStringArray(value.situationLayerIds, ["weather", "ground", "mobile", "mobile_network", "mobile_coverage", "traffic", "air_quality"]),
+    situationLayerIds: optionalStringArray(value.situationLayerIds, [
+      "weather",
+      "weather_temperature_grid",
+      "weather_wind_field",
+      "weather_precipitation_grid",
+      "weather_humidity_grid",
+      "weather_pressure_grid",
+      "ground",
+      "mobile",
+      "mobile_network",
+      "mobile_coverage",
+      "traffic",
+      "air_quality",
+      "air_quality_grid",
+      "boundary_admin",
+      "boundary_country",
+      "boundary_region",
+      "boundary_district",
+      "boundary_orp",
+      "boundary_municipality",
+      "place_settlements"
+    ]),
     situationSourceIds: normalizeStringList(value.situationSourceIds, 32, 80),
     takLayerIds: optionalStringArray(value.takLayerIds, ["mobile", "ground", "traffic"]),
     trackLayerIds: optionalStringArray(value.trackLayerIds, ["air-situation", "sim-air", "uav", "friendly", "foreign", "public-flights", "data-quality"]),

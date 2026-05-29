@@ -19,7 +19,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
     "maplibre-gl": "^5.24.0",
-    "matrix-js-sdk": "41.5.0",
+    "matrix-js-sdk": "41.6.0",
     "milsymbol": "3.0.4",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",

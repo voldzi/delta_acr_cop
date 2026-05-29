@@ -8141,7 +8141,13 @@ function takLayerHint(layer: TakLayer): string {
 function situationLayerLabel(layerId: SituationLayerId): string {
   const labels: Record<SituationLayerId, string> = {
     air_quality: "Kvalita vzduchu",
+    air_quality_grid: "Kvalita ovzduší - plocha",
     boundary_admin: "Správní hranice",
+    boundary_country: "Stát",
+    boundary_district: "Okresy",
+    boundary_municipality: "Obce",
+    boundary_orp: "ORP",
+    boundary_region: "Kraje",
     community: "Komunitní hlášení",
     fire: "Požáry",
     flight_airports: "Letiště",
@@ -8152,10 +8158,16 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     mobile_coverage: "Technické pokrytí",
     mobile_network: "Mobilní síť",
     mission_arena: "Mission Arena",
+    place_settlements: "Sídla",
     traffic: "Doprava",
     warnings: "Výstrahy",
     weather_alerts: "Meteorologické výstrahy",
-    weather: "Počasí"
+    weather: "Počasí",
+    weather_humidity_grid: "Vlhkost",
+    weather_precipitation_grid: "Srážky",
+    weather_pressure_grid: "Tlak",
+    weather_temperature_grid: "Teplota",
+    weather_wind_field: "Vítr"
   };
   return labels[layerId];
 }
@@ -9220,10 +9232,9 @@ function selectableCatalogLayers(catalog: MapCatalogResponse): MapCatalogLayer[]
     layer.selectable
     && layer.audience !== "diagnostic"
     && layer.role !== "diagnostic"
-    && layer.kind !== "grid_field"
     && layer.kind !== "mvt_tiles"
     && layer.kind !== "raster_tiles"
-    && layer.kind !== "vector_field"
+    && isImplementedCatalogLayer(layer)
   );
 }
 
@@ -9284,11 +9295,15 @@ function withOutlineBoundaryLayer(selectedLayerIds: string[], mode: MapBasemapMo
   if (mode !== "outline" || !catalog) {
     return selectedLayerIds;
   }
-  const hasBoundaryLayer = catalog.layers.some((layer) => layer.layerId === "public.boundary.admin" && isImplementedCatalogLayer(layer));
-  if (!hasBoundaryLayer || selectedLayerIds.includes("public.boundary.admin")) {
+  const preferredBoundaryLayers = ["public.boundary.country", "public.boundary.region", "public.boundary.admin"];
+  const availableBoundaryLayers = preferredBoundaryLayers.filter((layerId) =>
+    catalog.layers.some((layer) => layer.layerId === layerId && isImplementedCatalogLayer(layer))
+  );
+  const missingBoundaryLayers = availableBoundaryLayers.filter((layerId) => !selectedLayerIds.includes(layerId));
+  if (missingBoundaryLayers.length === 0) {
     return selectedLayerIds;
   }
-  return [...selectedLayerIds, "public.boundary.admin"];
+  return [...selectedLayerIds, ...missingBoundaryLayers];
 }
 
 function hasMobileCatalogSelection(layerIds: string[]): boolean {
@@ -9698,7 +9713,17 @@ function normalizeSourceIds(value: string[] | undefined): string[] {
 
 function isSituationLayerId(value: string): value is SituationLayerId {
   return value === "weather"
+    || value === "weather_temperature_grid"
+    || value === "weather_wind_field"
+    || value === "weather_precipitation_grid"
+    || value === "weather_humidity_grid"
+    || value === "weather_pressure_grid"
     || value === "boundary_admin"
+    || value === "boundary_country"
+    || value === "boundary_region"
+    || value === "boundary_district"
+    || value === "boundary_orp"
+    || value === "boundary_municipality"
     || value === "community"
     || value === "fire"
     || value === "flight_airports"
@@ -9708,11 +9733,13 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "mobile_coverage"
     || value === "mobile_network"
     || value === "mission_arena"
+    || value === "place_settlements"
     || value === "traffic"
     || value === "warnings"
     || value === "weather_alerts"
     || value === "flood"
-    || value === "air_quality";
+    || value === "air_quality"
+    || value === "air_quality_grid";
 }
 
 function normalizeCoverageTechnology(value: string | undefined): CoverageTechnology {

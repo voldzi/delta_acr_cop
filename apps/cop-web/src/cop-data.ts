@@ -131,7 +131,13 @@ export interface CopDashboardData {
 
 export type SituationLayerId =
   | "air_quality"
+  | "air_quality_grid"
   | "boundary_admin"
+  | "boundary_country"
+  | "boundary_district"
+  | "boundary_municipality"
+  | "boundary_orp"
+  | "boundary_region"
   | "community"
   | "fire"
   | "flight_airports"
@@ -142,10 +148,16 @@ export type SituationLayerId =
   | "mobile_coverage"
   | "mobile_network"
   | "mission_arena"
+  | "place_settlements"
   | "traffic"
   | "warnings"
   | "weather_alerts"
-  | "weather";
+  | "weather"
+  | "weather_humidity_grid"
+  | "weather_precipitation_grid"
+  | "weather_pressure_grid"
+  | "weather_temperature_grid"
+  | "weather_wind_field";
 export type SafetyLayerId = "boundary_admin" | "fire" | "flood" | "warnings" | "weather_alerts";
 export type TakLayerId = "ground" | "mobile" | "traffic";
 export type SafetyDataSourceId = "admin_boundaries" | "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "mock" | "nasa_firms" | "weather_alerts";

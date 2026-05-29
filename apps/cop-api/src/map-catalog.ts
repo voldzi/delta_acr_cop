@@ -300,7 +300,9 @@ function geometryTypesForCatalogLayer(layer: ProviderCatalogLayer): string[] | u
   if (layer.recommendedCatalogLayerId === "public.safety.fire" || layer.recommendedCatalogLayerId === "public.safety.weather_alerts") {
     return uniqueStrings([...geometryTypes, "Polygon", "MultiPolygon"]);
   }
-  if (layer.recommendedCatalogLayerId === "public.boundary.admin") {
+  if (layer.recommendedCatalogLayerId === "public.boundary.admin"
+    || layer.recommendedCatalogLayerId.startsWith("public.boundary.")
+    || layer.recommendedCatalogLayerId === "public.place.settlements") {
     return uniqueStrings([...geometryTypes, "Polygon", "MultiPolygon"]);
   }
   return geometryTypes.length > 0 ? geometryTypes : undefined;
@@ -389,6 +391,9 @@ function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
     return "risks";
   }
   if (layerId.startsWith("public.boundary.")) {
+    return "boundary";
+  }
+  if (layerId.startsWith("public.place.")) {
     return "boundary";
   }
   if (layerId.startsWith("public.weather.")) {

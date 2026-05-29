@@ -44,5 +44,10 @@
     "react-dom": "^19.2.1",
     "yaml": "^2.8.2",
     "zod": "^4.1.13"
+  },
+  "pnpm": {
+    "overrides": {
+      "matrix-events-sdk": "2.0.0"
+    }
   }
 }

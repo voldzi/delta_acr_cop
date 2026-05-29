@@ -1961,7 +1961,7 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, air_quality]
+            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, ground, mobile, mobile_network, mobile_coverage, traffic, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
         situationSourceIds:
           type: array
           maxItems: 32
@@ -3717,7 +3717,7 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality]
+            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
         limit:
           type: integer
           minimum: 1
@@ -3778,7 +3778,7 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality]
+            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
         license:
           type: object
           additionalProperties: true
@@ -3872,7 +3872,7 @@ components:
           description: Fire-specific status such as risk, thermal_anomaly, active, confirmed, contained, or unknown.
         layer:
           type: string
-          enum: [weather, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality]
+          enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
         layerId:
           type: string
         label:

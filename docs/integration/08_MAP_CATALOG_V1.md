@@ -432,10 +432,22 @@ Provider-native fields may be preserved under:
 | `public.safety.fire` | Požáry | `sim.safety-data` layer `fire`, sources `chmi_alerts`, `nasa_firms`, `fire_hotspots`, `fire_incidents` |
 | `public.safety.weather_alerts` | Meteorologické výstrahy | `sim.safety-data` layer `weather_alerts`, source `chmi_alerts` |
 | `public.boundary.admin` | Správní hranice | `sim.safety-data` layer `boundary_admin`, source `admin_boundaries` |
+| `public.boundary.country` | Stát | `sim.situation-data` layer `boundary_country`, source `osm_postgis` |
+| `public.boundary.region` | Kraje | `sim.situation-data` layer `boundary_region`, source `osm_postgis` |
+| `public.boundary.district` | Okresy | `sim.situation-data` layer `boundary_district`, source `osm_postgis` |
+| `public.boundary.orp` | ORP | `sim.situation-data` layer `boundary_orp`, source `osm_postgis` |
+| `public.boundary.municipality` | Obce | `sim.situation-data` layer `boundary_municipality`, source `osm_postgis` |
+| `public.place.settlements` | Sídla | `sim.situation-data` layer `place_settlements`, source `osm_postgis` |
 | `public.weather.current` | Počasí | `sim.situation-data` layer `weather`, source `open_meteo` |
 | `public.weather.observations` | Měřené počasí ČHMÚ | `sim.situation-data` layer `weather`, source `chmi_weather_stations` |
 | `public.weather.aviation` | Letištní počasí | `sim.situation-data` layer `weather`, source `aviation_weather` |
 | `public.safety.air_quality` | Kvalita ovzduší | `sim.situation-data` layer `air_quality`, source `chmi_air_quality` |
+| `public.weather.temperature_grid` | Teplota | `sim.situation-data` layer `weather_temperature_grid`, source `chmi_weather_stations` |
+| `public.weather.wind_field` | Vítr | `sim.situation-data` layer `weather_wind_field`, source `chmi_weather_stations` |
+| `public.weather.precipitation_grid` | Srážky | `sim.situation-data` layer `weather_precipitation_grid`, source `chmi_weather_stations` |
+| `public.weather.humidity_grid` | Vlhkost | `sim.situation-data` layer `weather_humidity_grid`, source `chmi_weather_stations` |
+| `public.weather.pressure_grid` | Tlak | `sim.situation-data` layer `weather_pressure_grid`, source `chmi_weather_stations` |
+| `public.safety.air_quality_grid` | Kvalita ovzduší - plocha | `sim.situation-data` layer `air_quality_grid`, source `chmi_air_quality` |
 | `public.mobile.network` | Mobilní síť | `sim.situation-data` layer `mobile_network`, source `mobile_network_model` |
 | `public.traffic.transit` | Doprava | `sim.situation-data` layer `traffic`, source `pid_gtfs_rt` |
 | `reference.infrastructure.healthcare` | Zdravotnictví | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `hospital`, `clinic`, `doctors`, `pharmacy` |

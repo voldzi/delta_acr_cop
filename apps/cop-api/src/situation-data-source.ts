@@ -2,7 +2,31 @@ import { createPublicSituationAggregateSourceSystem, type SourceSystem } from "@
 import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
 
-export type SituationLayerId = "air_quality" | "fire" | "flood" | "ground" | "mobile" | "mobile_coverage" | "mobile_network" | "traffic" | "warnings" | "weather" | "weather_alerts";
+export type SituationLayerId =
+  | "air_quality"
+  | "air_quality_grid"
+  | "boundary_admin"
+  | "boundary_country"
+  | "boundary_district"
+  | "boundary_municipality"
+  | "boundary_orp"
+  | "boundary_region"
+  | "fire"
+  | "flood"
+  | "ground"
+  | "mobile"
+  | "mobile_coverage"
+  | "mobile_network"
+  | "place_settlements"
+  | "traffic"
+  | "warnings"
+  | "weather"
+  | "weather_alerts"
+  | "weather_humidity_grid"
+  | "weather_precipitation_grid"
+  | "weather_pressure_grid"
+  | "weather_temperature_grid"
+  | "weather_wind_field";
 
 type SituationCacheStatus = "coalesced" | "hit" | "miss" | "stale";
 
@@ -112,6 +136,7 @@ export interface SituationFeatureProperties {
   estimatedSignalDbm?: number;
   featureId: string;
   generatedAt?: string;
+  iconHint?: string;
   label: string;
   layer: SituationLayerId;
   layerId?: string;
@@ -131,8 +156,10 @@ export interface SituationFeatureProperties {
   resolutionM?: number;
   severity?: "advisory" | "critical" | "info" | "warning" | string;
   sourceId: string;
+  sourceName?: string;
   stale?: boolean;
   status?: string;
+  styleHint?: string;
   summary?: string;
   sourceRevision?: string;
   tags?: Record<string, unknown>;
@@ -169,6 +196,13 @@ const defaultConfig: SituationDataSourceConfig = {
   enabled: false,
   layerCacheTtlMs: {
     air_quality: 15 * 60 * 1000,
+    air_quality_grid: 15 * 60 * 1000,
+    boundary_admin: 6 * 60 * 60 * 1000,
+    boundary_country: 6 * 60 * 60 * 1000,
+    boundary_district: 6 * 60 * 60 * 1000,
+    boundary_municipality: 6 * 60 * 60 * 1000,
+    boundary_orp: 6 * 60 * 60 * 1000,
+    boundary_region: 6 * 60 * 60 * 1000,
     fire: 10 * 60 * 1000,
     flood: 5 * 60 * 1000,
     ground: 6 * 60 * 60 * 1000,
@@ -178,7 +212,12 @@ const defaultConfig: SituationDataSourceConfig = {
     traffic: 20 * 1000,
     warnings: 5 * 60 * 1000,
     weather: 5 * 60 * 1000,
-    weather_alerts: 5 * 60 * 1000
+    weather_alerts: 5 * 60 * 1000,
+    weather_humidity_grid: 10 * 60 * 1000,
+    weather_precipitation_grid: 10 * 60 * 1000,
+    weather_pressure_grid: 10 * 60 * 1000,
+    weather_temperature_grid: 10 * 60 * 1000,
+    weather_wind_field: 10 * 60 * 1000
   },
   maxLimit: 250,
   sourceCacheTtlMs: {
@@ -194,7 +233,32 @@ const defaultConfig: SituationDataSourceConfig = {
   timeoutMs: 7000
 };
 
-const allowedLayerIds: SituationLayerId[] = ["weather", "ground", "mobile", "mobile_network", "mobile_coverage", "traffic", "warnings", "flood", "fire", "weather_alerts", "air_quality"];
+const allowedLayerIds: SituationLayerId[] = [
+  "weather",
+  "weather_temperature_grid",
+  "weather_wind_field",
+  "weather_precipitation_grid",
+  "weather_humidity_grid",
+  "weather_pressure_grid",
+  "air_quality",
+  "air_quality_grid",
+  "ground",
+  "mobile",
+  "mobile_network",
+  "mobile_coverage",
+  "traffic",
+  "warnings",
+  "flood",
+  "fire",
+  "weather_alerts",
+  "boundary_admin",
+  "boundary_country",
+  "boundary_region",
+  "boundary_district",
+  "boundary_orp",
+  "boundary_municipality",
+  "place_settlements"
+];
 
 export function createSituationDataSourceConfigFromEnv(env: Record<string, string | undefined> = process.env): SituationDataSourceConfig {
   const cacheTtlMs = readInteger(env.COP_SITUATION_DATA_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 300000);
@@ -205,6 +269,13 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
     enabled: readBoolean(env.COP_SITUATION_DATA_ENABLED, defaultConfig.enabled),
     layerCacheTtlMs: {
       air_quality: readInteger(env.COP_SITUATION_DATA_AIR_QUALITY_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      air_quality_grid: readInteger(env.COP_SITUATION_DATA_AIR_QUALITY_GRID_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      boundary_admin: readInteger(env.COP_SITUATION_DATA_BOUNDARY_ADMIN_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      boundary_country: readInteger(env.COP_SITUATION_DATA_BOUNDARY_COUNTRY_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      boundary_district: readInteger(env.COP_SITUATION_DATA_BOUNDARY_DISTRICT_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      boundary_municipality: readInteger(env.COP_SITUATION_DATA_BOUNDARY_MUNICIPALITY_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      boundary_orp: readInteger(env.COP_SITUATION_DATA_BOUNDARY_ORP_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      boundary_region: readInteger(env.COP_SITUATION_DATA_BOUNDARY_REGION_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       fire: readInteger(env.COP_SITUATION_DATA_FIRE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       flood: readInteger(env.COP_SITUATION_DATA_FLOOD_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       ground: readInteger(env.COP_SITUATION_DATA_GROUND_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
@@ -214,7 +285,12 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       traffic: readInteger(env.COP_SITUATION_DATA_TRAFFIC_CACHE_TTL_MS, cacheTtlMs, 1000, 5 * 60 * 1000),
       warnings: readInteger(env.COP_SITUATION_DATA_WARNINGS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_alerts: readInteger(env.COP_SITUATION_DATA_WEATHER_ALERTS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
+      weather_alerts: readInteger(env.COP_SITUATION_DATA_WEATHER_ALERTS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_humidity_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_HUMIDITY_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_precipitation_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_PRECIPITATION_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_pressure_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_PRESSURE_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_temperature_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_TEMPERATURE_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_wind_field: readInteger(env.COP_SITUATION_DATA_WEATHER_WIND_FIELD_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
     },
     maxLimit: readInteger(env.COP_SITUATION_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 1000),
     sourceCacheTtlMs: {
@@ -742,6 +818,7 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     estimatedSignalDbm: optionalNumber(value.estimatedSignalDbm),
     featureId,
     generatedAt: optionalString(value.generatedAt),
+    iconHint: optionalString(value.iconHint),
     label,
     layer: value.layer,
     layerId: optionalString(value.layerId),
@@ -760,8 +837,10 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     resolutionM: optionalNumber(value.resolutionM),
     severity: optionalString(value.severity),
     sourceId,
+    sourceName: optionalString(value.sourceName),
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
     status: optionalString(value.status),
+    styleHint: optionalString(value.styleHint),
     summary: optionalString(value.summary),
     sourceRevision: optionalString(value.sourceRevision),
     tags: isRecord(value.tags) ? value.tags : undefined,

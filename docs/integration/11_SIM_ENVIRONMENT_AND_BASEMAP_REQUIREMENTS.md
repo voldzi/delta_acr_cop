@@ -348,6 +348,37 @@ Extend provider observability with environment and basemap sections:
 }
 ```
 
+## COP Integration Status
+
+COP consumes these layers through the source-neutral `/api/v1/map/catalog` and
+`/api/v1/map/query` endpoints. The current implementation supports the
+level-specific boundary and settlement layers as bbox vector features:
+
+- `public.boundary.country`
+- `public.boundary.region`
+- `public.boundary.district`
+- `public.boundary.orp`
+- `public.boundary.municipality`
+- `public.place.settlements`
+
+The simplified/outline basemap mode automatically enables `country` and
+`region` boundaries when they are available in the catalog.
+
+The environmental catalog layers are accepted by COP as bbox-backed map layers:
+
+- `public.weather.temperature_grid`
+- `public.weather.wind_field`
+- `public.weather.precipitation_grid`
+- `public.weather.humidity_grid`
+- `public.weather.pressure_grid`
+- `public.safety.air_quality_grid`
+
+If SIM reports `environmentGrid.readModel.mode=catalog_only` or returns
+zero features for those layers, COP must show an empty layer state rather than
+creating synthetic heat-map data. Full Ventusky-like rendering still needs SIM to
+materialize features, tiles or a documented grid endpoint with values,
+timestamps, provenance and cache metadata.
+
 COP will use this server-side for provider health panels. It is not a public map layer.
 
 ## Degraded Behavior

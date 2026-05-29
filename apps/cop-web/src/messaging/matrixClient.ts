@@ -43,7 +43,7 @@ export async function createMatrixMessagingSession(
     throw new Error("Matrix bootstrap neobsahuje URL homeserveru.");
   }
   await assertBrowserCanReachHomeserver(homeserverBaseUrl);
-  const matrixSdk = await import("matrix-js-sdk");
+  const matrixSdk = await import("matrix-js-sdk/lib/browser-index.js");
   const createClient = (matrixSdk as unknown as { createClient: (options: Record<string, unknown>) => MatrixClientLike }).createClient;
   const client = createClient({
     accessToken: bootstrap.accessToken,

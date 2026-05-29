@@ -925,7 +925,7 @@ export function CopMap({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "weatherObservation"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           paint: {
             "circle-color": [
               "case",
@@ -1114,7 +1114,7 @@ export function CopMap({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "weatherObservation"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           layout: {
             "text-field": ["coalesce", ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Regular"],
@@ -1206,7 +1206,7 @@ export function CopMap({
           id: situationWeatherPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "weather"]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true]],
           paint: {
             "circle-color": [
               "coalesce",
@@ -1266,7 +1266,7 @@ export function CopMap({
           id: situationWeatherLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "weather"]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["has", "weatherLabel"]],
           layout: {
             "text-field": ["get", "weatherLabel"],
             "text-font": ["Noto Sans Bold"],
@@ -2433,7 +2433,7 @@ function buildSituationRenderProperties(
       situationStatusTone: status.tone
     };
   }
-  if (feature.properties.layer === "air_quality") {
+  if (feature.properties.layer === "air_quality" || feature.properties.layer === "air_quality_grid") {
     const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
     const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
     const airQualityIndex = recordNumber(metrics, "airQualityIndex");
@@ -2453,7 +2453,7 @@ function buildSituationRenderProperties(
       situationStatusTone: airQualityTone(airQualityIndex, airQualityLevel, status.tone)
     };
   }
-  if (feature.properties.layer !== "weather") {
+  if (!isWeatherContextFeature(feature)) {
     return {
       situationStatusColor: status.color,
       situationStatusLabel: status.label,
@@ -2468,21 +2468,25 @@ function buildSituationRenderProperties(
   const windDirectionDeg = recordNumber(metrics, "windDirectionDeg");
   const precipitationMm = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
   const cloudCoverPercent = recordNumber(metrics, "cloudCoverPercent");
+  const humidityPercent = firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent");
+  const pressureHpa = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
   const stationIcao = stringProperty(tags.icaoId);
   const providerLayerId = stringProperty(feature.properties.providerLayerId);
-  const weatherObservation = feature.properties.sourceId === "chmi_weather_stations" || providerLayerId?.includes("chmi_station") === true;
+  const weatherObservation = feature.properties.layer !== "weather"
+    || feature.properties.sourceId === "chmi_weather_stations"
+    || providerLayerId?.includes("chmi_station") === true;
   return {
     weatherCloudCoverPercent: cloudCoverPercent,
     weatherFlightCategoryColor: aviationCategory ? aviationCategory.color : undefined,
-    weatherLabel: aviationCategory ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label) : formatWeatherMapLabel(temperatureC, windSpeedMps, precipitationMm),
+    weatherLabel: aviationCategory ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label) : formatWeatherContextMapLabel(feature, temperatureC, windSpeedMps, precipitationMm, humidityPercent, pressureHpa),
     weatherObservation,
     weatherPrecipitationMm: precipitationMm,
     weatherStationIcao: stationIcao,
     weatherTemperatureC: temperatureC,
     weatherWindDirectionDeg: windDirectionDeg,
     weatherWindSpeedMps: windSpeedMps,
-    situationStatusColor: status.color,
-    situationStatusLabel: status.label,
+    situationStatusColor: weatherContextColor(feature, status.color),
+    situationStatusLabel: weatherContextStatusLabel(feature, status.label),
     situationStatusTone: status.tone
   };
 }
@@ -2551,9 +2555,28 @@ function riskTokens(feature: SituationFeature): string {
 
 function isBoundaryReferenceFeature(feature: SituationFeature): boolean {
   return feature.properties.layer === "boundary_admin"
+    || feature.properties.layer === "boundary_country"
+    || feature.properties.layer === "boundary_region"
+    || feature.properties.layer === "boundary_district"
+    || feature.properties.layer === "boundary_orp"
+    || feature.properties.layer === "boundary_municipality"
+    || feature.properties.layer === "place_settlements"
     || feature.properties.layerId === "public.boundary.admin"
+    || feature.properties.layerId?.startsWith("public.boundary.") === true
+    || feature.properties.layerId === "public.place.settlements"
     || feature.properties.providerLayerId === "boundary.admin"
+    || feature.properties.providerLayerId?.startsWith("boundary.") === true
+    || feature.properties.providerLayerId === "place.settlements"
     || normalizeSituationCategory(feature.properties.category) === "admin_boundary";
+}
+
+function isWeatherContextFeature(feature: SituationFeature): boolean {
+  return feature.properties.layer === "weather"
+    || feature.properties.layer === "weather_temperature_grid"
+    || feature.properties.layer === "weather_wind_field"
+    || feature.properties.layer === "weather_precipitation_grid"
+    || feature.properties.layer === "weather_humidity_grid"
+    || feature.properties.layer === "weather_pressure_grid";
 }
 
 function formatBoundaryLabel(feature: SituationFeature): string {
@@ -3034,6 +3057,65 @@ function formatWeatherMapLabel(temperatureC: number | undefined, windSpeedMps: n
   return parts.length > 0 ? parts.slice(0, 2).join("\n") : "WX";
 }
 
+function formatWeatherContextMapLabel(
+  feature: SituationFeature,
+  temperatureC: number | undefined,
+  windSpeedMps: number | undefined,
+  precipitationMm: number | undefined,
+  humidityPercent: number | undefined,
+  pressureHpa: number | undefined
+): string {
+  switch (feature.properties.layer) {
+    case "weather_temperature_grid":
+      return temperatureC !== undefined ? `${Math.round(temperatureC)}°C` : "Teplota";
+    case "weather_wind_field":
+      return windSpeedMps !== undefined ? `${Math.round(windSpeedMps)} m/s` : "Vítr";
+    case "weather_precipitation_grid":
+      return precipitationMm !== undefined ? `${precipitationMm.toFixed(1)} mm` : "Srážky";
+    case "weather_humidity_grid":
+      return humidityPercent !== undefined ? `${Math.round(humidityPercent)} %` : "Vlhkost";
+    case "weather_pressure_grid":
+      return pressureHpa !== undefined ? `${Math.round(pressureHpa)} hPa` : "Tlak";
+    default:
+      return formatWeatherMapLabel(temperatureC, windSpeedMps, precipitationMm);
+  }
+}
+
+function weatherContextColor(feature: SituationFeature, fallback: string): string {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  switch (feature.properties.layer) {
+    case "weather_temperature_grid":
+      return temperatureColor(recordNumber(metrics, "temperatureC"), fallback);
+    case "weather_wind_field":
+      return windSpeedColor(recordNumber(metrics, "windSpeedMps"), fallback);
+    case "weather_precipitation_grid":
+      return precipitationColor(firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm"), fallback);
+    case "weather_humidity_grid":
+      return humidityColor(firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent"), fallback);
+    case "weather_pressure_grid":
+      return pressureColor(firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel"), fallback);
+    default:
+      return fallback;
+  }
+}
+
+function weatherContextStatusLabel(feature: SituationFeature, fallback: string): string {
+  switch (feature.properties.layer) {
+    case "weather_temperature_grid":
+      return "TEPLOTA";
+    case "weather_wind_field":
+      return "VÍTR";
+    case "weather_precipitation_grid":
+      return "SRÁŽKY";
+    case "weather_humidity_grid":
+      return "VLHKOST";
+    case "weather_pressure_grid":
+      return "TLAK";
+    default:
+      return fallback;
+  }
+}
+
 function formatAviationWeatherMapLabel(icaoId: string | undefined, flightCategory: string): string {
   return [icaoId, flightCategory].filter(Boolean).join("\n") || "METAR";
 }
@@ -3140,6 +3222,98 @@ function airQualityTone(index: number | undefined, level: string | undefined, fa
     default:
       return fallback;
   }
+}
+
+function temperatureColor(value: number | undefined, fallback: string): string {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (value < -5) {
+    return "#60a5fa";
+  }
+  if (value < 5) {
+    return "#38bdf8";
+  }
+  if (value < 18) {
+    return "#22c55e";
+  }
+  if (value < 27) {
+    return "#facc15";
+  }
+  if (value < 34) {
+    return "#fb923c";
+  }
+  return "#ef4444";
+}
+
+function windSpeedColor(value: number | undefined, fallback: string): string {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (value < 3) {
+    return "#8cb6d8";
+  }
+  if (value < 8) {
+    return "#38bdf8";
+  }
+  if (value < 14) {
+    return "#facc15";
+  }
+  if (value < 22) {
+    return "#fb923c";
+  }
+  return "#ef4444";
+}
+
+function precipitationColor(value: number | undefined, fallback: string): string {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (value <= 0) {
+    return "#8cb6d8";
+  }
+  if (value < 1) {
+    return "#38bdf8";
+  }
+  if (value < 5) {
+    return "#0ea5e9";
+  }
+  if (value < 15) {
+    return "#6366f1";
+  }
+  return "#a855f7";
+}
+
+function humidityColor(value: number | undefined, fallback: string): string {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (value < 30) {
+    return "#facc15";
+  }
+  if (value < 60) {
+    return "#22c55e";
+  }
+  if (value < 85) {
+    return "#38bdf8";
+  }
+  return "#0ea5e9";
+}
+
+function pressureColor(value: number | undefined, fallback: string): string {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (value < 995) {
+    return "#a855f7";
+  }
+  if (value < 1010) {
+    return "#38bdf8";
+  }
+  if (value < 1025) {
+    return "#22c55e";
+  }
+  return "#facc15";
 }
 
 function normalizeAirQualityLevel(level: string | undefined): "fair" | "good" | "moderate" | "poor" | "very_poor" | "unknown" {
