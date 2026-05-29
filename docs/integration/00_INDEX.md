@@ -11,3 +11,4 @@
 - [09 CSM Messaging Integration](09_CSM_MESSAGING_INTEGRATION.md)
 - [10 SIM Flight Data Presentation Hints](10_SIM_FLIGHT_DATA_PRESENTATION_HINTS.md)
 - [11 SIM Environment And Basemap Requirements](11_SIM_ENVIRONMENT_AND_BASEMAP_REQUIREMENTS.md)
+- [12 COP Notification Decision And Push](12_COP_NOTIFICATION_DECISION_AND_PUSH.md)

@@ -192,6 +192,25 @@ Pravidlo pro provázání mapy a chatu:
 - pokud skupina vznikne z chatu, poloha je prázdná, dokud ji uživatel nebo první mapové hlášení nenastaví;
 - CSM Messaging může mít pro stejnou věc Matrix room/konverzaci, ale media ACL se vyhodnocuje podle COP skupiny, ne podle samotné Matrix místnosti.
 
+## Notifikace
+
+Po odeslání reportu přes `POST /api/v1/community/reports/{reportId}/submit`
+COP vytvoří rozhodnutí pro `community.report` notifikaci. Dispatch do CSM
+Messaging proběhne jen tehdy, když report:
+
+- je `submitted` nebo `published`,
+- nemá prošlou `validUntil`,
+- má závažnost `advisory`, `warning` nebo `critical`,
+- má konkrétní cílovou skupinu, uživatele nebo oblast.
+
+Výchozí audience vzniká z `groupId`, protože report i média patří do COP
+skupiny. Push payload je záměrně minimální: obsahuje kategorii, bezpečný
+nadpis, deep link `csm://map/report/<reportId>` a zdrojová metadata. Neobsahuje
+fotky, videa, PDF, podepsané media URL ani plaintext chat zprávy.
+
+Přístup k médiím zůstává vždy řízený COP media ACL a podepsanými media tokeny.
+CSM Messaging řeší jen doručení notifikace a případnou konverzaci.
+
 ## Poloha fotky
 
 Poloha je pro tento use-case podstatná. Ukládají se dvě různé hodnoty:

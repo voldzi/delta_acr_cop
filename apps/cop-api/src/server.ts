@@ -66,6 +66,12 @@ import {
   type MessagingMapLink,
   type MessagingProvider
 } from "./messaging-provider.js";
+import {
+  buildCommunityReportNotificationDecision,
+  buildSafetyFeatureNotificationDecision,
+  type CopNotificationAudience,
+  type CopNotificationDecision
+} from "./notification-decision.js";
 import { createPlaceGeocoderFromEnv, type PlaceGeocoder } from "./place-geocoder.js";
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
@@ -88,6 +94,7 @@ import {
   emptySafetyFeatureCollection,
   unavailableSafetyDataHealth,
   type SafetyDataSource,
+  type SafetyFeature,
   type SafetyFeatureQuery,
   type SafetyLayerId
 } from "./safety-data-source.js";
@@ -1274,6 +1281,64 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   }
 
+  async function dispatchNotificationDecision(
+    actor: AuthenticatedActor | undefined,
+    decision: CopNotificationDecision,
+    requestNow: Date,
+    correlationId: string
+  ): Promise<{
+    decisionId: string;
+    idempotencyKey: string;
+    notificationId?: string;
+    reason: string;
+    status: "degraded" | "disabled" | "online" | "skipped";
+    warnings: string[];
+  }> {
+    if (!decision.shouldSend) {
+      appendAudit(state, "NOTIFICATION_DECISION_SKIPPED", {
+        decisionId: decision.decisionId,
+        reason: decision.reason,
+        source: decision.notification.source,
+        type: decision.notification.type
+      }, correlationId);
+      return {
+        decisionId: decision.decisionId,
+        idempotencyKey: decision.idempotencyKey,
+        reason: decision.reason,
+        status: "skipped",
+        warnings: []
+      };
+    }
+
+    const result = await messagingProvider.sendNotification(actor, requestNow, decision.idempotencyKey, decision.notification);
+    appendAudit(state, "NOTIFICATION_DISPATCH_REQUESTED", {
+      decisionId: decision.decisionId,
+      idempotencyKey: decision.idempotencyKey,
+      notificationId: result.notificationId ?? null,
+      providerStatus: result.status,
+      source: decision.notification.source,
+      type: decision.notification.type
+    }, correlationId);
+    return {
+      decisionId: decision.decisionId,
+      idempotencyKey: decision.idempotencyKey,
+      ...(result.notificationId ? { notificationId: result.notificationId } : {}),
+      reason: decision.reason,
+      status: result.status,
+      warnings: result.warnings
+    };
+  }
+
+  async function dispatchCommunityReportNotification(
+    actor: AuthenticatedActor,
+    report: CommunityReportRecord,
+    requestNow: Date,
+    correlationId: string
+  ): Promise<void> {
+    const decision = buildCommunityReportNotificationDecision(report, requestNow);
+    await dispatchNotificationDecision(actor, decision, requestNow, correlationId);
+  }
+
   function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): ObservedObject[] {
     const historyItems = objects.map((object) => ({
       objectId: object.objectId,
@@ -1412,6 +1477,55 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const result = await messagingProvider.bindMatrixRoom(actor, now(), params.conversationId, binding);
     return reply.code(result.conversation ? 200 : 502).send(result);
+  });
+
+  app.post("/api/v1/notifications/safety/evaluate", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const requestNow = now();
+    const body = isRecord(request.body) ? request.body : {};
+    const query = normalizeSafetyNotificationEvaluationRequest(body);
+    if (!query) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Safety notification evaluation requires bbox=[west,south,east,north].",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const profile = await readUserProfile(actor);
+    const collection = await readSafetyMapQuery(query.safetyQuery, requestNow);
+    const features = (collection?.features ?? []) as SafetyFeature[];
+    const decisions = features.map((feature) =>
+      buildSafetyFeatureNotificationDecision(feature, {
+        actor,
+        audience: query.audience,
+        currentLocation: query.currentLocation,
+        now: requestNow,
+        watchedAreas: profile?.alertPreferences.aoiRules ?? []
+      })
+    );
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const dispatch = query.dryRun
+      ? []
+      : await Promise.all(decisions.map((decision) => dispatchNotificationDecision(actor, decision, requestNow, correlationId)));
+    return {
+      contractVersion: "cop-notification-evaluation-v1",
+      decisions,
+      dispatch,
+      dryRun: query.dryRun,
+      query: query.safetyQuery,
+      serverTimestamp: requestNow.toISOString(),
+      summary: {
+        dispatchedCount: dispatch.filter((item) => item.status === "online").length,
+        eligibleCount: decisions.filter((decision) => decision.shouldSend).length,
+        featureCount: features.length,
+        skippedCount: decisions.filter((decision) => !decision.shouldSend).length
+      }
+    };
   });
 
   app.get("/api/v1/community/groups", async (request, reply) => {
@@ -1754,6 +1868,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       category: report.category,
       reportId: report.reportId
     }, correlationIdFrom(request.headers["x-correlation-id"]));
+    try {
+      await dispatchCommunityReportNotification(actor, report, requestNow, correlationIdFrom(request.headers["x-correlation-id"]));
+    } catch (error) {
+      appendAudit(state, "COMMUNITY_REPORT_NOTIFICATION_FAILED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        error: errorMessage(error),
+        reportId: report.reportId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      app.log.warn({ error, reportId: report.reportId }, "Community report notification dispatch failed.");
+    }
     return communityReportResponseItem(report, requestNow, actor, new Set());
   });
 
@@ -3424,6 +3549,79 @@ function parseMapQueryBbox(value: unknown): SituationFeatureQuery["bbox"] | null
     south: clampNumber(south, -90, 90),
     west: clampNumber(west, -180, 180)
   };
+}
+
+function normalizeSafetyNotificationEvaluationRequest(value: Record<string, unknown>): {
+  audience?: CopNotificationAudience;
+  currentLocation?: { lat: number; lon: number; radiusKm?: number };
+  dryRun: boolean;
+  safetyQuery: SafetyFeatureQuery;
+} | null {
+  const bbox = parseMapQueryBbox(value.bbox);
+  if (!bbox) {
+    return null;
+  }
+  const requestedLayers = normalizeMapQueryStringList(value.layers ?? value.layerIds)
+    .filter(isSafetyLayerId)
+    .filter((layerId) => layerId !== "boundary_admin");
+  const layers = requestedLayers.length > 0
+    ? requestedLayers
+    : ["weather_alerts", "warnings", "fire", "flood"] satisfies SafetyLayerId[];
+  const audience = normalizeNotificationAudience(value.audience);
+  const currentLocation = normalizeNotificationLocation(value.currentLocation);
+  return {
+    ...(audience ? { audience } : {}),
+    ...(currentLocation ? { currentLocation } : {}),
+    dryRun: value.dryRun !== false,
+    safetyQuery: {
+      bbox,
+      layers,
+      limit: optionalFiniteNumber(value.limit, 1, 500) ?? 100
+    }
+  };
+}
+
+function normalizeNotificationAudience(value: unknown): CopNotificationAudience | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const audience: CopNotificationAudience = {
+    areaIds: normalizeAudienceIds(value.areaIds),
+    groupIds: normalizeAudienceIds(value.groupIds),
+    userIds: normalizeAudienceIds(value.userIds)
+  };
+  const compactAudience: CopNotificationAudience = {
+    ...(audience.areaIds?.length ? { areaIds: audience.areaIds } : {}),
+    ...(audience.groupIds?.length ? { groupIds: audience.groupIds } : {}),
+    ...(audience.userIds?.length ? { userIds: audience.userIds } : {})
+  };
+  return Object.keys(compactAudience).length > 0 ? compactAudience : undefined;
+}
+
+function normalizeAudienceIds(value: unknown): string[] | undefined {
+  const values = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+  const normalized = Array.from(new Set(values.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim().slice(0, 160)] : []))).slice(0, 100);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeNotificationLocation(value: unknown): { lat: number; lon: number; radiusKm?: number } | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const lat = optionalFiniteNumber(value.lat, -90, 90);
+  const lon = optionalFiniteNumber(value.lon, -180, 180);
+  const radiusKm = optionalFiniteNumber(value.radiusKm, 0.2, 100);
+  return lat !== undefined && lon !== undefined
+    ? {
+        lat,
+        lon,
+        ...(radiusKm !== undefined ? { radiusKm } : {})
+      }
+    : undefined;
 }
 
 function normalizeMapQueryStringList(value: unknown): string[] {

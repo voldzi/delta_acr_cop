@@ -677,4 +677,70 @@ describe("CsmMessagingProvider", () => {
     expect(JSON.stringify(response.json())).not.toContain("provider-token");
     await app.close();
   });
+
+  it("sends notification intake server-side with mandatory idempotency and without device tokens", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/notifications");
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "Content-Type": "application/json",
+        "Idempotency-Key": "sim.safety-data:public.safety.flood:flood-1:from:until",
+        "x-csm-user-id": "lab"
+      });
+      expect(init?.method).toBe("POST");
+      expect(String(init?.body)).not.toContain("apns");
+      expect(String(init?.body)).not.toContain("deviceToken");
+      return new Response(JSON.stringify({
+        contractVersion: "csm-notification-v1",
+        deduplicated: false,
+        notificationId: "notif_1",
+        providerId: "csm.messaging",
+        status: "accepted",
+        warnings: []
+      }), { status: 202 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token"
+    });
+
+    const result = await provider.sendNotification(
+      {
+        authMode: "lab",
+        displayName: "Lab operator",
+        subjectId: "lab",
+        username: "lab"
+      },
+      new Date("2026-05-29T12:00:00Z"),
+      "sim.safety-data:public.safety.flood:flood-1:from:until",
+      {
+        audience: { groupIds: ["group-1"] },
+        body: { cs: "Otevřete CSM pro detail." },
+        deepLink: "csm://map/alert/flood-1",
+        priority: "time_sensitive",
+        severity: "warning",
+        source: {
+          featureId: "flood-1",
+          layerId: "public.safety.flood",
+          providerId: "sim.safety-data",
+          sourceName: "CHMI hydrology"
+        },
+        title: { cs: "Povodňová výstraha" },
+        type: "safety.alert"
+      }
+    );
+
+    expect(result).toMatchObject({
+      deduplicated: false,
+      enabled: true,
+      notificationId: "notif_1",
+      providerId: "csm.messaging",
+      status: "online"
+    });
+    expect(JSON.stringify(result)).not.toContain("provider-token");
+  });
 });

@@ -137,6 +137,45 @@ export interface MessagingMatrixRoomBindingResponse {
   warnings: string[];
 }
 
+export interface MessagingNotificationAudience {
+  areaIds?: string[];
+  groupIds?: string[];
+  userIds?: string[];
+}
+
+export interface MessagingLocalizedText {
+  cs: string;
+  en?: string;
+}
+
+export interface MessagingNotificationIntakeRequest {
+  audience: MessagingNotificationAudience;
+  body: MessagingLocalizedText;
+  deepLink: string;
+  expiresAt?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+  priority?: string;
+  severity: string;
+  source: {
+    featureId: string;
+    layerId: string;
+    providerId: string;
+    sourceName?: string;
+  };
+  title: MessagingLocalizedText;
+  type: string;
+}
+
+export interface MessagingNotificationIntakeResponse {
+  contractVersion: "cop-messaging-notification-v1";
+  deduplicated?: boolean;
+  enabled: boolean;
+  notificationId?: string;
+  providerId: "csm.messaging";
+  status: MessagingIntegrationRuntimeStatus;
+  warnings: string[];
+}
+
 export interface MessagingConversationMemberSyncResponse {
   contractVersion: "cop-messaging-conversations-v1";
   conversation?: MessagingConversationSummary;
@@ -155,6 +194,7 @@ export interface MessagingProvider {
   addConversationMembers(actor: AuthenticatedActor, requestNow: Date, conversationId: string, members: MessagingConversationMember[]): Promise<MessagingConversationMemberSyncResponse>;
   bindMatrixRoom(actor: AuthenticatedActor, requestNow: Date, conversationId: string, input: MessagingMatrixRoomBindingRequest): Promise<MessagingMatrixRoomBindingResponse>;
   resolveMatrixIdentities(actor: AuthenticatedActor, requestNow: Date, userIds: string[]): Promise<MessagingMatrixIdentityResolution>;
+  sendNotification(actor: AuthenticatedActor | undefined, requestNow: Date, idempotencyKey: string, input: MessagingNotificationIntakeRequest): Promise<MessagingNotificationIntakeResponse>;
 }
 
 interface CsmMessagingCapabilities {
@@ -211,6 +251,15 @@ interface CsmMessagingRoomBindingProviderResponse {
   contractVersion?: string;
   conversation?: unknown;
   providerId?: string;
+}
+
+interface CsmMessagingNotificationProviderResponse {
+  contractVersion?: string;
+  deduplicated?: boolean;
+  notificationId?: string;
+  providerId?: string;
+  status?: string;
+  warnings?: string[];
 }
 
 const defaultConfig: MessagingProviderConfig = {
@@ -591,6 +640,56 @@ export class CsmMessagingProvider implements MessagingProvider {
       return degradedRoomBinding(errorMessage(error));
     }
   }
+
+  async sendNotification(
+    actor: AuthenticatedActor | undefined,
+    requestNow: Date,
+    idempotencyKey: string,
+    input: MessagingNotificationIntakeRequest
+  ): Promise<MessagingNotificationIntakeResponse> {
+    if (!this.config.enabled) {
+      return disabledNotificationIntake();
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/notifications`),
+        this.config,
+        requestNow,
+        {
+          body: JSON.stringify(input),
+          headers: {
+            ...(actor ? actorHeaders(actor) : {}),
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey
+          },
+          method: "POST"
+        }
+      );
+      if (!isRecord(result.body)) {
+        return degradedNotificationIntake("Messaging notification response is not valid JSON.");
+      }
+      const normalized = normalizeNotificationResponse(result.body);
+      const warnings = [
+        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : normalized.contractVersion === "csm-notification-v1" ? [] : [`Messaging notification contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging notification provider id is ${normalized.providerId ?? "unknown"}.`]),
+        ...(normalized.warnings ?? []).map(sanitizeProviderWarning)
+      ];
+      if (!result.ok || !normalized.notificationId) {
+        warnings.push(`Messaging notification intake returned HTTP ${result.status}.`);
+      }
+      return {
+        contractVersion: "cop-messaging-notification-v1",
+        ...(typeof normalized.deduplicated === "boolean" ? { deduplicated: normalized.deduplicated } : {}),
+        enabled: true,
+        ...(normalized.notificationId ? { notificationId: normalized.notificationId } : {}),
+        providerId: "csm.messaging",
+        status: result.ok && normalized.notificationId ? "online" : "degraded",
+        warnings
+      };
+    } catch (error) {
+      return degradedNotificationIntake(errorMessage(error));
+    }
+  }
 }
 
 export function disabledMessagingStatus(requestNow: Date, config: MessagingProviderConfig = defaultConfig): MessagingProviderStatus {
@@ -755,6 +854,26 @@ function degradedRoomBinding(detail: string): MessagingMatrixRoomBindingResponse
   };
 }
 
+function disabledNotificationIntake(): MessagingNotificationIntakeResponse {
+  return {
+    contractVersion: "cop-messaging-notification-v1",
+    enabled: false,
+    providerId: "csm.messaging",
+    status: "disabled",
+    warnings: ["Messaging provider is disabled."]
+  };
+}
+
+function degradedNotificationIntake(detail: string): MessagingNotificationIntakeResponse {
+  return {
+    contractVersion: "cop-messaging-notification-v1",
+    enabled: true,
+    providerId: "csm.messaging",
+    status: "degraded",
+    warnings: [detail]
+  };
+}
+
 async function fetchJsonWithStatus(
   url: URL,
   config: MessagingProviderConfig,
@@ -906,6 +1025,17 @@ function normalizeRoomBindingResponse(value: Record<string, unknown>): CsmMessag
     contractVersion: optionalString(value.contractVersion),
     conversation: normalizeConversationSummary(value.conversation)[0],
     providerId: optionalString(value.providerId)
+  };
+}
+
+function normalizeNotificationResponse(value: Record<string, unknown>): CsmMessagingNotificationProviderResponse {
+  return {
+    contractVersion: optionalString(value.contractVersion),
+    deduplicated: typeof value.deduplicated === "boolean" ? value.deduplicated : undefined,
+    notificationId: optionalString(value.notificationId) ?? optionalString(value.id),
+    providerId: optionalString(value.providerId),
+    status: optionalString(value.status),
+    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
   };
 }
 

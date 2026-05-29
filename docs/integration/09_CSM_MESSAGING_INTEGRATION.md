@@ -119,6 +119,28 @@ forwards it to Messaging as `x-csm-device-id`. The web client renews the Matrix
 bootstrap before `expiresAt`; on logout it stops the Matrix client and clears
 the local Matrix device/session state best-effort.
 
+## Notification Intake
+
+CSM Messaging also owns device registry, APNs delivery and delivery audit. COP
+does not store APNs tokens and never sends push directly to APNs. When COP
+decides that a SIM safety feature or submitted community report is relevant to a
+user, group or watched area, COP calls CSM Messaging server-side:
+
+```http
+POST /api/v1/notifications
+Authorization: Bearer <COP_CSM_MESSAGING_TOKEN>
+Idempotency-Key: <stable-event-key>
+Content-Type: application/json
+```
+
+The body contains only notification metadata: type, severity, priority,
+audience, localized title/body, source, optional expiration and a deep link such
+as `csm://map/alert/<alertId>` or `csm://map/report/<reportId>`. It must not
+contain APNs tokens, Matrix tokens, media URLs or plaintext chat messages.
+
+Safety notification evaluation is documented separately in
+[12 COP Notification Decision And Push](12_COP_NOTIFICATION_DECISION_AND_PUSH.md).
+
 Authenticated clients also read and create conversation metadata through COP:
 
 ```http

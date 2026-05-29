@@ -45,6 +45,8 @@ tags:
     description: Audit and provenance query endpoints.
   - name: Messaging
     description: Server-side status bridge for the standalone CSM Messaging provider.
+  - name: Notifications
+    description: COP-side notification relevance decisions and server-to-server CSM Messaging intake.
   - name: AI
     description: Guardrailed AI assistance endpoints.
   - name: Health
@@ -273,10 +275,10 @@ paths:
       summary: Register or refresh a native mobile device session.
       operationId: registerMobileDevice
       description: >
-        Pilot endpoint for future APNS, MDM and device/session policy. The
-        server records a device session and audit event. It does not currently
-        send push notifications and does not store the raw APNS token in the
-        response.
+        Pilot endpoint for native COP device/session policy and audit. This is
+        not the APNs push registry. Production push tokens are registered with
+        CSM Messaging /api/v1/devices; COP does not send APNs pushes and does
+        not persist raw APNs tokens.
       parameters:
         - $ref: "#/components/parameters/CorrelationIdHeader"
       requestBody:
@@ -1566,6 +1568,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MessagingMatrixRoomBindingResponse"
+  /api/v1/notifications/safety/evaluate:
+    post:
+      tags: [Notifications]
+      summary: Evaluate SIM safety features for citizen push notification dispatch.
+      description: >
+        Authenticated server/operator endpoint used by COP to decide whether
+        safety features from SIM are relevant to the current user, explicit
+        audience or watched areas. By default this endpoint is a dry run. When
+        dryRun=false, COP submits only minimized notification metadata to CSM
+        Messaging through server-to-server notification intake. COP never stores
+        APNs tokens and never sends push directly.
+      operationId: evaluateSafetyNotifications
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SafetyNotificationEvaluationRequest"
+      responses:
+        "200":
+          description: Notification decisions and optional dispatch results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetyNotificationEvaluationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: CSM Messaging notification intake was degraded for one or more dispatches.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetyNotificationEvaluationResponse"
   /health/live:
     get:
       tags: [Health]
@@ -3114,7 +3153,8 @@ components:
           enum: [ios, ipados]
         pushToken:
           type: string
-          description: APNS token. Accepted for readiness; raw value is not returned by the API.
+          deprecated: true
+          description: Deprecated compatibility field. COP does not persist raw APNs tokens; CSM Messenger must register them with CSM Messaging /api/v1/devices.
     MobileDeviceRegistrationResponse:
       type: object
       required: [actor, device, policy, serverTimestamp]
@@ -4873,6 +4913,231 @@ components:
           type: array
           items:
             type: string
+    SafetyNotificationEvaluationRequest:
+      type: object
+      required: [bbox]
+      additionalProperties: false
+      properties:
+        audience:
+          $ref: "#/components/schemas/NotificationAudience"
+        bbox:
+          oneOf:
+            - type: array
+              minItems: 4
+              maxItems: 4
+              items:
+                type: number
+              description: "[west, south, east, north]"
+            - type: string
+              pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
+            - $ref: "#/components/schemas/SituationBbox"
+        currentLocation:
+          $ref: "#/components/schemas/NotificationLocation"
+        dryRun:
+          type: boolean
+          default: true
+          description: Defaults to true. Set false only when COP should call CSM Messaging notification intake.
+        layerIds:
+          type: array
+          items:
+            type: string
+            enum: [fire, flood, warnings, weather_alerts]
+          description: Alias for layers. Reference layer boundary_admin is intentionally excluded from push evaluation.
+        layers:
+          type: array
+          items:
+            type: string
+            enum: [fire, flood, warnings, weather_alerts]
+          description: Safety layers eligible for citizen notification evaluation.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 100
+    SafetyNotificationEvaluationResponse:
+      type: object
+      required: [contractVersion, decisions, dispatch, dryRun, query, serverTimestamp, summary]
+      properties:
+        contractVersion:
+          type: string
+          const: cop-notification-evaluation-v1
+        decisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationDecision"
+        dispatch:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationDispatchResult"
+        dryRun:
+          type: boolean
+        query:
+          $ref: "#/components/schemas/SafetyFeatureQuery"
+        serverTimestamp:
+          type: string
+          format: date-time
+        summary:
+          type: object
+          required: [dispatchedCount, eligibleCount, featureCount, skippedCount]
+          properties:
+            dispatchedCount:
+              type: integer
+              minimum: 0
+            eligibleCount:
+              type: integer
+              minimum: 0
+            featureCount:
+              type: integer
+              minimum: 0
+            skippedCount:
+              type: integer
+              minimum: 0
+    NotificationDecision:
+      type: object
+      required: [contractVersion, decisionId, idempotencyKey, notification, reason, relevance, shouldSend]
+      properties:
+        contractVersion:
+          type: string
+          const: cop-notification-decision-v1
+        decisionId:
+          type: string
+        idempotencyKey:
+          type: string
+          description: Stable key passed to CSM Messaging Idempotency-Key when dispatching.
+        notification:
+          $ref: "#/components/schemas/NotificationRequest"
+        reason:
+          type: string
+        relevance:
+          type: object
+          required: [matchedAoiRuleIds, source]
+          properties:
+            matchedAoiRuleIds:
+              type: array
+              items:
+                type: string
+            source:
+              type: string
+              enum: [community-group, current-location, explicit-audience, none, watched-area]
+        shouldSend:
+          type: boolean
+    NotificationRequest:
+      type: object
+      required: [audience, body, deepLink, priority, severity, source, title, type]
+      properties:
+        audience:
+          $ref: "#/components/schemas/NotificationAudience"
+        body:
+          $ref: "#/components/schemas/LocalizedNotificationText"
+        deepLink:
+          type: string
+          example: csm://map/alert/chmi-warning-123
+        expiresAt:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+              - type: "null"
+        priority:
+          type: string
+          enum: [high, low, normal, time_sensitive]
+        severity:
+          type: string
+          enum: [advisory, critical, info, warning]
+        source:
+          $ref: "#/components/schemas/NotificationSource"
+        title:
+          $ref: "#/components/schemas/LocalizedNotificationText"
+        type:
+          type: string
+          enum: [community.report, safety.alert]
+    NotificationAudience:
+      type: object
+      additionalProperties: false
+      properties:
+        areaIds:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            maxLength: 160
+        groupIds:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            maxLength: 160
+        userIds:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            maxLength: 160
+    LocalizedNotificationText:
+      type: object
+      required: [cs]
+      additionalProperties: false
+      properties:
+        cs:
+          type: string
+          maxLength: 240
+        en:
+          type: string
+          maxLength: 240
+    NotificationSource:
+      type: object
+      required: [featureId, layerId, providerId]
+      additionalProperties: false
+      properties:
+        featureId:
+          type: string
+        layerId:
+          type: string
+        providerId:
+          type: string
+        sourceName:
+          type: string
+    NotificationDispatchResult:
+      type: object
+      required: [decisionId, idempotencyKey, reason, status, warnings]
+      properties:
+        decisionId:
+          type: string
+        idempotencyKey:
+          type: string
+        notificationId:
+          type: string
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [degraded, disabled, online, skipped]
+        warnings:
+          type: array
+          items:
+            type: string
+    NotificationLocation:
+      type: object
+      required: [lat, lon]
+      additionalProperties: false
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+        radiusKm:
+          type: number
+          minimum: 0.2
+          maximum: 100
     DependencyHealth:
       type: object
       required: [status, dependencies]

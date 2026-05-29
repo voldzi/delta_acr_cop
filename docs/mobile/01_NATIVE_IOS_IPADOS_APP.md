@@ -4,7 +4,7 @@ Tento dokument popisuje, co je potřeba pro samostatnou nativní aplikaci pro iP
 
 ## Rozsah první verze
 
-První nativní verze má nahradit PWA na iPhone/iPad tam, kde je potřeba lepší offline UX, bezpečnější lokální úložiště, přesnější geolokace, příprava na MDM a budoucí push notifikace.
+První nativní verze má nahradit PWA na iPhone/iPad tam, kde je potřeba lepší offline UX, bezpečnější lokální úložiště, přesnější geolokace, příprava na MDM a napojení na push notifikace doručované přes CSM Messaging.
 
 Součástí v1:
 
@@ -18,12 +18,13 @@ Součástí v1:
 - lokální šifrovaný offline snapshot,
 - offline outbox pro uživatelská hlášení s fotkou a polohou,
 - jasný režim `ONLINE`, `DEGRADED`, `OFFLINE`,
-- auditovatelná registrace zařízení pro budoucí APNS/MDM policy.
+- auditovatelná registrace zařízení pro COP session/MDM policy,
+- deep link handling pro notifikace doručené přes CSM Messaging.
 
 Mimo v1:
 
 - editace nebo zadávání taktických úkolů,
-- push notifikace přes APNS,
+- přímé odesílání push notifikací z COP nebo ukládání APNS tokenů v COP,
 - certifikace interoperability,
 - AI mimo informační shrnutí a datovou kvalitu.
 
@@ -62,7 +63,7 @@ API endpointy se v zařízení necachují jako HTTP cache. Klient ukládá pouze
 
 ### `POST /api/v1/mobile/devices`
 
-Pilotní registrace zařízení. Server vytvoří audit event a vrátí device session policy. Raw APNS token se nevrací v odpovědi. V této fázi se push neposílá; endpoint připravuje kontrakt pro budoucí APNS/MDM.
+Pilotní registrace COP device session. Server vytvoří audit event a vrátí device session policy. Tento endpoint není push registry. Raw APNS token se v COP neukládá a COP přes něj push neposílá.
 
 Minimální payload:
 
@@ -78,7 +79,27 @@ Minimální payload:
 }
 ```
 
-Volitelně lze poslat `pushToken`; server vrátí jen `pushTokenRegistered: true`.
+Pole `pushToken` je zachováno jen kvůli kompatibilitě staršího klienta a neslouží k produkčnímu push doručování. CSM Messenger iOS musí APNs token registrovat přímo v CSM Messaging přes `POST /api/v1/devices`.
+
+## Push notifikace a CSM Messenger
+
+Push notifikace nepatří do COP mobile API. Autoritativní služba pro zařízení,
+APNs a delivery audit je CSM Messaging.
+
+CSM Messenger iOS má implementovat:
+
+- `POST /api/v1/devices` vůči CSM Messaging s APNs tokenem, platformou,
+  locale, timezone a schopnostmi zařízení;
+- obnovu registrace při změně APNs tokenu;
+- správu notifikačních preferencí pro přímé zprávy, skupinové zprávy,
+  bezpečnostní výstrahy a systémová oznámení;
+- deep linky `csm://map/alert/<alertId>`, `csm://map/report/<reportId>`,
+  `csm://chat/room/<roomId>` a `csm://message/<messageId>`.
+
+COP v tomto toku vyhodnocuje relevanci bezpečnostních a komunitních událostí a
+server-side volá CSM Messaging `POST /api/v1/notifications`. iOS klient ani
+CSM Messenger nesmí volat SIM přímo a nesmí rozhodovat, zda se SIM výstraha
+týká daného uživatele.
 
 ## Existující API používané aplikací
 
@@ -99,6 +120,7 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete` pro potvrzení uploadu,
 - `POST /api/v1/community/reports/{reportId}/submit` pro odeslání hlášení ke sdílení,
 - `GET /api/v1/sources` a `/api/v1/sources/health`,
+- `POST /api/v1/notifications/safety/evaluate` pouze pro operator/diagnostický tok vyhodnocení safety výstrah; běžný iOS push přijde přes CSM Messaging,
 - `POST /api/v1/ai/cop-assistant/query` pouze pro povolené informační dotazy.
 
 Nativní iOS klient má před vytvořením hlášení načíst polohu z média, pokud je dostupná. Pro fotky použít metadata z Photos/EXIF, pro video a iPhone Spatial Video preferovat AVFoundation/Photos metadata. Pokud uživatel polohu z média potvrdí, poslat `location.source="media_metadata"`. Hlášení musí být vždy přiřazené do COP skupiny; nová skupina vytvořená z hlášení má dostat `anchorLocation` z první polohy reportu.
@@ -188,6 +210,7 @@ Doporučení:
 - respektovat `offlineCacheTtlSeconds`,
 - po překročení TTL zobrazit snapshot jako stale, ne jako live,
 - APNS token nikdy nelogovat,
+- APNS tokeny neposílat do COP; registrují se v CSM Messaging,
 - OIDC access token neposílat do logů ani crash reportů.
 
 MDM/MAM příprava:
@@ -242,7 +265,7 @@ Pilotní konfigurace:
 - Associated Domains později pro universal links,
 - Keychain access group podle Apple Team ID,
 - background mode zatím nepovolovat pro trvalý stream; refresh dělat při foregroundu,
-- push capability zapnout až po dokončení APNS backendu.
+- push capability patří do CSM Messenger iOS a zapíná se proti CSM Messaging, ne proti COP API.
 
 Distribuce:
 
@@ -262,14 +285,14 @@ Distribuce:
 - Uživatel vytvoří report s povinnou polohou, přidá fotku a aplikace ho odešle přes presigned upload.
 - Při ztrátě sítě report zůstane v šifrovaném outboxu a odešle se později.
 - Proximity alert se zobrazuje jako průsvitný kruh na mapě.
-- Device registration API vrací policy a nezobrazuje raw APNS token.
+- COP device registration API vrací policy a nezobrazuje ani neukládá raw APNS token.
 - iPhone i iPad layout neobsahuje překryvy, které blokují mapu.
 - UI neobsahuje targeting, navádění ani weapon workflow.
 
 ## Další fáze
 
-- APNS notifikace pro informační alerty,
-- persistentní serverová evidence mobilních zařízení,
+- napojení CSM Messenger deep linků na mapu, reporty, alerty a chat,
+- persistentní evidence APNS zařízení v CSM Messaging,
 - MDM policy a device trust,
 - vector tile/offline map pack management,
 - audit AI dotazů v mobilním klientovi,

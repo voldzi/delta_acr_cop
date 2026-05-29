@@ -789,6 +789,10 @@ class HangingMessagingProvider implements MessagingProvider {
   async resolveMatrixIdentities(): Promise<never> {
     throw new Error("not implemented");
   }
+
+  async sendNotification(): Promise<never> {
+    throw new Error("not implemented");
+  }
 }
 
 class FakeFlightDataSource implements FlightDataSource {
