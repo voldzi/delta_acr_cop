@@ -549,12 +549,15 @@ export function App() {
 
     let cancelled = false;
     let authInFlight = false;
+    let authInFlightForCallback = false;
     const authenticate = () => {
-      if (authInFlight) {
+      const hasCallback = hasOidcCallbackParams();
+      if (authInFlight && (!hasCallback || authInFlightForCallback)) {
         return;
       }
       authInFlight = true;
-      setAuthSession((current) => current.status === "authenticated" && !hasOidcCallbackParams() ? current : { ...current, status: "authenticating" });
+      authInFlightForCallback = hasCallback;
+      setAuthSession((current) => current.status === "authenticated" && !hasCallback ? current : { ...current, status: "authenticating" });
       initializeAuth(authConfig)
         .then((nextSession) => {
           if (!cancelled) {
@@ -571,6 +574,7 @@ export function App() {
         })
         .finally(() => {
           authInFlight = false;
+          authInFlightForCallback = false;
         });
     };
     const resumeCallbackIfNeeded = () => {
