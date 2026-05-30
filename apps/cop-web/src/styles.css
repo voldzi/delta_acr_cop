@@ -2430,6 +2430,442 @@ h1 {
   color: #ff8f86;
 }
 
+/* Reference AppShell aligns the web shell with the target command-center layout. */
+.shell.app-shell-v2 {
+  padding: 0;
+  gap: 0;
+  background:
+    linear-gradient(180deg, rgba(6, 10, 15, 0.98), rgba(3, 7, 11, 0.99)),
+    #05090d;
+}
+
+.shell.app-shell-v2 .topbar {
+  grid-template-columns: minmax(154px, 174px) minmax(300px, 420px) minmax(280px, 1fr) auto;
+  gap: 12px;
+  min-height: 58px;
+  padding: 0 13px 0 16px;
+  border: 0;
+  border-bottom: 1px solid rgba(122, 148, 172, 0.24);
+  background:
+    linear-gradient(180deg, rgba(11, 17, 24, 0.98), rgba(6, 10, 15, 0.98)),
+    rgba(6, 10, 15, 0.98);
+  box-shadow: none;
+}
+
+.shell.app-shell-v2 .brand {
+  gap: 10px;
+  min-width: 0;
+}
+
+.shell.app-shell-v2 .brand-mark,
+.shell.app-shell-v2 .brand-mark img {
+  width: 34px;
+  height: 34px;
+}
+
+.shell.app-shell-v2 .brand-mark {
+  flex-basis: 34px;
+}
+
+.shell.app-shell-v2 h1 {
+  color: #e7f0fb;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.shell.app-shell-v2 .brand p {
+  display: none;
+}
+
+.shell.app-shell-v2 .mission-strip {
+  min-height: 36px;
+  padding: 0 12px;
+  border-width: 0 0 0 1px;
+  border-left-color: rgba(59, 130, 246, 0.42);
+  background: rgba(12, 18, 25, 0.58);
+}
+
+.shell.app-shell-v2 .mission-strip > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid rgba(239, 68, 68, 0.34);
+  background: rgba(127, 29, 29, 0.24);
+  color: #ff746d;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.shell.app-shell-v2 .mission-strip strong {
+  color: #eef4fb;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.shell.app-shell-v2 .mission-strip small {
+  color: var(--muted);
+}
+
+.shell.app-shell-v2 .event-summary-strip {
+  justify-content: start;
+  gap: 18px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.shell.app-shell-v2 .event-summary-strip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell.app-shell-v2 .event-summary-strip strong {
+  color: #7ee35c;
+}
+
+.shell.app-shell-v2 .topbar-actions {
+  gap: 7px;
+}
+
+.shell.app-shell-v2 .top-command-button,
+.shell.app-shell-v2 .operator-button {
+  min-height: 34px;
+  border-color: rgba(122, 148, 172, 0.28);
+  border-radius: 5px;
+  background: linear-gradient(180deg, rgba(20, 29, 39, 0.92), rgba(11, 17, 24, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.shell.app-shell-v2 .top-command-button {
+  padding: 0 11px;
+  font-size: 10px;
+}
+
+.shell.app-shell-v2 .top-command-button svg {
+  color: #b8c9d8;
+}
+
+.shell.app-shell-v2 .operator-button {
+  min-width: 118px;
+  padding-inline: 8px;
+}
+
+.shell.app-shell-v2 .operator-button strong {
+  color: #e7f0fb;
+}
+
+.shell.app-shell-v2 .app-shell-body {
+  grid-template-columns: 78px minmax(0, 1fr) 66px;
+  gap: 0;
+  background: #061017;
+}
+
+.shell.app-shell-v2.shell-context-hidden .app-shell-body {
+  grid-template-columns: 78px minmax(0, 1fr);
+}
+
+.shell.app-shell-v2 .workspace-nav,
+.shell.app-shell-v2 .context-rail {
+  gap: 4px;
+  padding: 8px 5px;
+  border: 0;
+  background:
+    linear-gradient(180deg, rgba(8, 14, 20, 0.98), rgba(4, 9, 14, 0.99));
+  box-shadow: none;
+}
+
+.shell.app-shell-v2 .workspace-nav {
+  border-right: 1px solid rgba(122, 148, 172, 0.22);
+}
+
+.shell.app-shell-v2 .context-rail {
+  border-left: 1px solid rgba(122, 148, 172, 0.22);
+}
+
+.shell.app-shell-v2 .workspace-tab,
+.shell.app-shell-v2 .workspace-settings-button,
+.shell.app-shell-v2 .context-rail button {
+  min-height: 64px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa8b5;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: none;
+}
+
+.shell.app-shell-v2 .workspace-tab svg,
+.shell.app-shell-v2 .workspace-settings-button svg,
+.shell.app-shell-v2 .context-rail svg {
+  color: #9eb8cc;
+}
+
+.shell.app-shell-v2 .workspace-tab:hover,
+.shell.app-shell-v2 .workspace-settings-button:hover,
+.shell.app-shell-v2 .context-rail button:hover,
+.shell.app-shell-v2 .workspace-tab.active,
+.shell.app-shell-v2 .context-rail button.active {
+  border-color: rgba(63, 131, 207, 0.28);
+  background: linear-gradient(180deg, rgba(28, 74, 126, 0.5), rgba(15, 39, 68, 0.62));
+  color: #d9eafe;
+}
+
+.shell.app-shell-v2 .workspace-tab.active svg,
+.shell.app-shell-v2 .context-rail button.active svg {
+  color: #74b9ff;
+}
+
+.shell.app-shell-v2 .workspace {
+  gap: 0;
+}
+
+.shell.app-shell-v2 .center-column {
+  gap: 0;
+}
+
+.shell.app-shell-v2 .panel,
+.shell.app-shell-v2 .map-stage,
+.shell.app-shell-v2 .operations-deck > * {
+  border-color: rgba(122, 148, 172, 0.22);
+  background: rgba(7, 12, 17, 0.9);
+  box-shadow: none;
+}
+
+.shell.app-shell-v2 .map-stage {
+  border-width: 0 1px;
+  background: #05090d;
+}
+
+.shell.app-shell-v2 .panel {
+  border-width: 0 1px 0 0;
+}
+
+.shell.app-shell-v2 .right-panel {
+  border-width: 0 0 0 1px;
+}
+
+.shell.app-shell-v2 .workspace-layout-toolbar {
+  top: auto;
+  right: 50%;
+  bottom: 16px;
+  max-width: min(560px, calc(100% - 140px));
+  transform: translateX(50%);
+  border-color: rgba(122, 148, 172, 0.28);
+  border-radius: 9px;
+  background: rgba(9, 14, 20, 0.88);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.46);
+}
+
+.shell.app-shell-v2 .workspace-layout-toolbar button {
+  min-height: 38px;
+  padding: 0 12px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #c8d4df;
+  font-size: 11px;
+}
+
+.shell.app-shell-v2 .workspace-layout-toolbar button.active {
+  border-color: rgba(74, 163, 255, 0.42);
+  background: rgba(29, 78, 137, 0.5);
+  color: #e6f2ff;
+}
+
+.shell.app-shell-v2 .map-toolbar,
+.shell.app-shell-v2 .map-legend,
+.shell.app-shell-v2 .map-selection-card,
+.shell.app-shell-v2 .map-report-button,
+.shell.app-shell-v2 .map-cluster-panel,
+.shell.app-shell-v2 .map-notice,
+.shell.app-shell-v2 .map-empty {
+  border-color: rgba(122, 148, 172, 0.28);
+  border-radius: 8px;
+  background: rgba(9, 14, 20, 0.82);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+}
+
+.shell.app-shell-v2 .map-toolbar {
+  gap: 7px;
+  padding: 8px;
+}
+
+.shell.app-shell-v2 .map-action {
+  min-height: 36px;
+  border-color: rgba(122, 148, 172, 0.28);
+  border-radius: 5px;
+  background: rgba(20, 29, 39, 0.82);
+}
+
+.shell.app-shell-v2 .app-statusbar {
+  min-height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-top: 1px solid rgba(122, 148, 172, 0.22);
+  background: linear-gradient(180deg, rgba(7, 12, 18, 0.98), rgba(4, 8, 12, 0.99));
+  box-shadow: none;
+}
+
+.shell.app-shell-v2 .app-statusbar span {
+  padding-inline: 16px;
+  border-left: 1px solid rgba(122, 148, 172, 0.18);
+}
+
+.shell.app-shell-v2 .app-statusbar span:first-child {
+  border-left: 0;
+}
+
+.shell.app-shell-v2 .messaging-launcher {
+  right: 78px;
+  bottom: 46px;
+  border-radius: 999px;
+}
+
+.shell.app-shell-v2 .messaging-panel.pinned {
+  top: 58px;
+  right: 66px;
+  bottom: 38px;
+  grid-template-columns: minmax(0, 1fr) 58px;
+  width: min(max(var(--messaging-dock-width, 640px), 560px), calc(100vw - 170px));
+  border-width: 0 0 0 1px;
+  border-color: rgba(122, 148, 172, 0.24);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(74, 163, 255, 0.09), transparent 32%),
+    linear-gradient(180deg, rgba(11, 18, 26, 0.98), rgba(6, 11, 17, 0.99));
+  box-shadow: none;
+}
+
+.shell.app-shell-v2 .messaging-panel.pinned .messaging-panel-main {
+  padding: 0;
+}
+
+.shell.app-shell-v2 .messaging-panel.pinned .matrix-chat-shell {
+  grid-template-columns: minmax(214px, var(--chat-list-width, 258px)) 1px minmax(0, 1fr);
+}
+
+.shell.app-shell-v2 .matrix-chat-split-handle {
+  width: 1px;
+  border: 0;
+  background: rgba(122, 148, 172, 0.18);
+  cursor: col-resize;
+}
+
+.shell.app-shell-v2 .matrix-chat-split-handle::after {
+  display: none;
+}
+
+.shell.app-shell-v2 .messaging-dock-tabs.rail {
+  gap: 8px;
+  padding: 10px 7px;
+  border-color: rgba(122, 148, 172, 0.2);
+  background: linear-gradient(180deg, rgba(14, 21, 30, 0.98), rgba(6, 11, 17, 0.99));
+}
+
+.shell.app-shell-v2 .messaging-dock-tabs.rail button {
+  min-height: 64px;
+  border-radius: 8px;
+}
+
+.shell.app-shell-v2 .messaging-dock-tabs.rail button.active,
+.shell.app-shell-v2 .messaging-dock-tabs.rail button:hover {
+  border-color: rgba(63, 131, 207, 0.35);
+  background: linear-gradient(180deg, rgba(31, 82, 142, 0.54), rgba(15, 42, 72, 0.68));
+  color: #eaf4ff;
+}
+
+.shell.app-shell-v2 .matrix-room-list,
+.shell.app-shell-v2 .matrix-room-view {
+  border: 0;
+  background: transparent;
+}
+
+.shell.app-shell-v2 .matrix-chat-shell.pinned .matrix-room-list {
+  padding: 14px 10px;
+  border-right: 1px solid rgba(122, 148, 172, 0.18);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(74, 163, 255, 0.1), transparent 34%),
+    rgba(8, 14, 21, 0.62);
+}
+
+.shell.app-shell-v2 .matrix-list-header {
+  min-height: 38px;
+  padding-inline: 4px;
+}
+
+.shell.app-shell-v2 .matrix-room-list button {
+  min-height: 58px;
+  padding: 8px 9px;
+  border-bottom-color: rgba(122, 148, 172, 0.14);
+  border-radius: 6px;
+  background: transparent;
+}
+
+.shell.app-shell-v2 .matrix-room-list button.active,
+.shell.app-shell-v2 .matrix-room-list button:hover {
+  border-color: rgba(74, 163, 255, 0.34);
+  background: linear-gradient(90deg, rgba(30, 91, 158, 0.58), rgba(19, 50, 86, 0.38));
+}
+
+.shell.app-shell-v2 .matrix-room-view {
+  grid-template-rows: auto auto minmax(160px, 1fr) auto auto;
+}
+
+.shell.app-shell-v2 .matrix-room-header {
+  min-height: 58px;
+  padding: 0 14px;
+  border-bottom-color: rgba(122, 148, 172, 0.18);
+  background: rgba(9, 15, 22, 0.54);
+}
+
+.shell.app-shell-v2 .matrix-pinned-note {
+  margin: 12px 14px 0;
+  border-radius: 8px;
+  background: rgba(17, 26, 36, 0.74);
+}
+
+.shell.app-shell-v2 .matrix-timeline {
+  padding: 18px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(74, 163, 255, 0.08), transparent 30%),
+    radial-gradient(circle at 86% 8%, rgba(55, 65, 81, 0.2), transparent 24%);
+}
+
+.shell.app-shell-v2 .matrix-message {
+  border-radius: 10px 10px 10px 2px;
+  background: rgba(31, 42, 54, 0.82);
+}
+
+.shell.app-shell-v2 .matrix-message.own {
+  border-color: rgba(65, 137, 255, 0.44);
+  border-radius: 10px 10px 2px 10px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.96), rgba(29, 78, 216, 0.8));
+}
+
+.shell.app-shell-v2 .matrix-attachment-shortcuts,
+.shell.app-shell-v2 .matrix-composer {
+  border-top-color: rgba(122, 148, 172, 0.18);
+  background: rgba(9, 15, 22, 0.72);
+}
+
+.shell.app-shell-v2 .matrix-attachment-shortcuts button {
+  min-height: 66px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, rgba(31, 42, 54, 0.78), rgba(18, 25, 35, 0.78));
+}
+
+.shell.app-shell-v2 .matrix-composer textarea,
+.shell.app-shell-v2 .matrix-composer input {
+  border-radius: 8px;
+  background: rgba(12, 18, 26, 0.92);
+}
+
+@media (min-width: 1181px) {
+  .shell.app-shell-v2.shell-messaging-docked {
+    padding-right: calc(max(var(--messaging-dock-width, 640px), 560px) + 66px);
+  }
+}
+
 @media (min-width: 1181px) {
   .shell.shell-messaging-docked {
     padding-right: calc(var(--messaging-dock-width, 520px) + 28px);
@@ -6818,5 +7254,145 @@ dd {
   .track-table-head,
   .track-row {
     min-width: 520px;
+  }
+}
+
+@media (max-width: 860px) {
+  .shell.app-shell-v2 {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .shell.app-shell-v2 .topbar {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .shell.app-shell-v2 .app-shell-body,
+  .shell.app-shell-v2.shell-context-hidden .app-shell-body {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+
+  .shell.app-shell-v2 .workspace-nav {
+    grid-auto-columns: minmax(108px, max-content);
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    grid-auto-rows: auto;
+    width: auto;
+    min-width: 0;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid rgba(122, 148, 172, 0.22);
+  }
+
+  .shell.app-shell-v2 .workspace-tab,
+  .shell.app-shell-v2 .workspace-settings-button {
+    min-width: 108px;
+    min-height: 44px;
+  }
+
+  .shell.app-shell-v2 .workspace,
+  .shell.app-shell-v2 .workspace-map,
+  .shell.app-shell-v2 .workspace-map.workspace-left-open,
+  .shell.app-shell-v2 .workspace-map.workspace-left-collapsed,
+  .shell.app-shell-v2 .workspace-map.workspace-left-hidden,
+  .shell.app-shell-v2 .workspace-map.workspace-right-collapsed,
+  .shell.app-shell-v2 .workspace-map.workspace-right-hidden,
+  .shell.app-shell-v2 .workspace-map.workspace-left-open.workspace-right-hidden,
+  .shell.app-shell-v2 .workspace-map.workspace-left-collapsed.workspace-right-hidden,
+  .shell.app-shell-v2 .workspace-map.workspace-left-hidden.workspace-right-hidden {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    min-width: 0;
+  }
+
+  .shell.app-shell-v2 .center-column {
+    grid-template-rows: minmax(460px, calc(100svh - 124px)) auto;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .shell.app-shell-v2 .center-column-map {
+    grid-template-rows: minmax(500px, calc(100svh - 124px));
+  }
+
+  .shell.app-shell-v2 .map-stage {
+    width: 100%;
+    min-width: 0;
+    border-width: 1px 0;
+  }
+
+  .shell.app-shell-v2 .workspace-layout-toolbar {
+    top: 8px;
+    right: 8px;
+    bottom: auto;
+    max-width: calc(100% - 16px);
+    transform: none;
+  }
+
+  .shell.app-shell-v2 .workspace-layout-toolbar button {
+    min-height: 30px;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+
+  .shell.app-shell-v2 .panel {
+    border-width: 1px 0;
+  }
+
+  .shell.app-shell-v2 .app-statusbar {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell.app-shell-v2 .topbar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+    min-height: 58px;
+    padding: 7px 8px;
+    gap: 0;
+  }
+
+  .shell.app-shell-v2 h1 {
+    font-size: 19px;
+  }
+
+  .shell.app-shell-v2 .mission-strip {
+    grid-template-columns: auto minmax(0, auto);
+    min-width: 0;
+    min-height: 34px;
+    padding: 5px 0 5px 10px;
+    background: rgba(12, 18, 25, 0.58);
+  }
+
+  .shell.app-shell-v2 .mission-strip > span {
+    display: none;
+  }
+
+  .shell.app-shell-v2 .mission-strip strong {
+    max-width: 112px;
+    font-size: 12px;
+  }
+
+  .shell.app-shell-v2 .app-statusbar {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding: 8px 10px;
+  }
+
+  .shell.app-shell-v2 .app-statusbar span {
+    padding-inline: 0;
+    border-left: 0;
+  }
+
+  .shell.app-shell-v2 .map-global-search {
+    left: 72px;
+    width: calc(100% - 136px);
+  }
+
+  .shell.app-shell-v2 .map-toolbar {
+    max-width: 100%;
   }
 }

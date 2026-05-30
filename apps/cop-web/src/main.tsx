@@ -18,6 +18,7 @@ import {
   Bus,
   Clock3,
   CloudSun,
+  ChevronDown,
   Database,
   Gauge,
   HelpCircle,
@@ -25,11 +26,13 @@ import {
   Image,
   Layers,
   Languages,
+  Link2,
   ListFilter,
   LogIn,
   LogOut,
   MapPin,
   MessageCircle,
+  MonitorUp,
   MousePointer2,
   Move,
   PanelLeftClose,
@@ -3163,6 +3166,7 @@ export function App() {
             onClick={() => void navigator.clipboard?.writeText(window.location.href)}
             type="button"
           >
+            <Link2 size={15} />
             Kopírovat odkaz
           </button>
           <button
@@ -3177,6 +3181,7 @@ export function App() {
             }}
             type="button"
           >
+            <MonitorUp size={15} />
             Sdílet
           </button>
           <a className="operator-button xr-entry-button" href="/xr" title="Otevřít prostorový XR režim">
@@ -3210,7 +3215,7 @@ export function App() {
                   Operátor
                   <strong>{operatorDisplayName(authSession, authConfig, effectiveOperatorProfile)}</strong>
                 </span>
-                <Settings size={16} />
+                <ChevronDown size={15} />
               </>
             )}
           </button>
@@ -10867,13 +10872,13 @@ function findMessagingConversationForCommunityGroup(group: CommunityGroup, conve
 
 function readMessagingDockWidth(): number {
   if (typeof window === "undefined" || typeof window.localStorage?.getItem !== "function") {
-    return 520;
+    return 640;
   }
   try {
     const stored = Number(window.localStorage.getItem(messagingDockWidthStorageKey));
-    return Number.isFinite(stored) ? clamp(stored, 420, 760) : 520;
+    return Number.isFinite(stored) ? clamp(stored, 420, 760) : 640;
   } catch {
-    return 520;
+    return 640;
   }
 }
 
