@@ -113,6 +113,11 @@ export async function initializeAuth(config: AuthConfig): Promise<AuthSession> {
   return { status: "anonymous" };
 }
 
+export function hasOidcCallbackParams(): boolean {
+  const callback = readCallbackParams();
+  return Boolean(callback.code || callback.error);
+}
+
 export function getAuthorizationToken(session: AuthSession, labToken: string): string | undefined {
   if (isAuthSessionActive(session)) {
     return session.accessToken;

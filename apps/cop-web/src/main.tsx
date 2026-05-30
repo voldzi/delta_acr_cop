@@ -52,6 +52,7 @@ import {
   createInitialAuthSession,
   endSession,
   getAuthorizationToken,
+  hasOidcCallbackParams,
   initializeAuth,
   isAuthSessionActive,
   isOidcEnabled,
@@ -546,15 +547,48 @@ export function App() {
       return;
     }
 
-    setAuthSession((current) => current.status === "authenticated" ? current : { ...current, status: "authenticating" });
-    initializeAuth(authConfig)
-      .then(setAuthSession)
-      .catch((error: unknown) => {
-        setAuthSession({
-          error: error instanceof Error ? error.message : "OIDC přihlášení selhalo.",
-          status: "error"
+    let cancelled = false;
+    let authInFlight = false;
+    const authenticate = () => {
+      if (authInFlight) {
+        return;
+      }
+      authInFlight = true;
+      setAuthSession((current) => current.status === "authenticated" && !hasOidcCallbackParams() ? current : { ...current, status: "authenticating" });
+      initializeAuth(authConfig)
+        .then((nextSession) => {
+          if (!cancelled) {
+            setAuthSession(nextSession);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setAuthSession({
+              error: error instanceof Error ? error.message : "OIDC přihlášení selhalo.",
+              status: "error"
+            });
+          }
+        })
+        .finally(() => {
+          authInFlight = false;
         });
-      });
+    };
+    const resumeCallbackIfNeeded = () => {
+      if (hasOidcCallbackParams()) {
+        authenticate();
+      }
+    };
+
+    authenticate();
+    window.addEventListener("pageshow", resumeCallbackIfNeeded);
+    window.addEventListener("focus", resumeCallbackIfNeeded);
+    window.addEventListener("popstate", resumeCallbackIfNeeded);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("pageshow", resumeCallbackIfNeeded);
+      window.removeEventListener("focus", resumeCallbackIfNeeded);
+      window.removeEventListener("popstate", resumeCallbackIfNeeded);
+    };
   }, [authConfig]);
 
   const load = React.useCallback(async () => {
