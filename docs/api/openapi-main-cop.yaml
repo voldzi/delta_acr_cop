@@ -94,6 +94,42 @@ paths:
                 $ref: "#/components/schemas/UserPreferenceProfile"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/users/search:
+    get:
+      tags: [Identity]
+      summary: Search COP user directory.
+      operationId: searchCopUsers
+      description: >
+        Authenticated operator lookup for adding COP community group members.
+        Results expose canonical OIDC subject ids plus display handles; clients
+        must persist `subjectId`, not usernames or email addresses.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 25
+            default: 10
+      responses:
+        "200":
+          description: Matching COP user profiles.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDirectorySearchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /api/v1/mobile/bootstrap:
     get:
       tags: [Mobile]
@@ -1849,6 +1885,34 @@ components:
           type:
             - string
             - "null"
+          format: date-time
+    UserDirectoryEntry:
+      type: object
+      required: [displayName, subjectId, username]
+      properties:
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+        subjectId:
+          type: string
+          description: Canonical OIDC subject id to persist in group membership.
+        username:
+          type: string
+    UserDirectorySearchResponse:
+      type: object
+      required: [contractVersion, items, serverTimestamp]
+      properties:
+        contractVersion:
+          type: string
+          const: cop-user-directory-v1
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserDirectoryEntry"
+        serverTimestamp:
+          type: string
           format: date-time
     UserAlertPreferences:
       type: object

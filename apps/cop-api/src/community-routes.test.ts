@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildServer } from "./server.js";
 import type { MediaObjectReadRequest, MediaObjectWriteRequest, MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
+import { InMemoryUserProfileStore } from "./user-profile-store.js";
 
 describe("community report routes", () => {
   const originalEnv = { ...process.env };
@@ -478,6 +479,87 @@ describe("community report routes", () => {
         }
       ]
     });
+
+    await app.close();
+  });
+
+  it("resolves community group members through the COP user profile directory", async () => {
+    const userProfileStore = new InMemoryUserProfileStore();
+    await userProfileStore.upsertProfile({
+      alertPreferences: {},
+      displayName: "COP Operator 1",
+      email: "operator1@example.test",
+      preferences: {},
+      subjectId: "000dfd66-0000-4000-8000-000000007ef1",
+      username: "cop.operator1"
+    });
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      userProfileStore
+    });
+
+    const searchResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/users/search?q=cop.operator1"
+    });
+    expect(searchResponse.statusCode).toBe(200);
+    expect(searchResponse.json()).toMatchObject({
+      items: [
+        {
+          displayName: "COP Operator 1",
+          subjectId: "000dfd66-0000-4000-8000-000000007ef1",
+          username: "cop.operator1"
+        }
+      ]
+    });
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        name: "COP",
+        visibility: "private"
+      },
+      url: "/api/v1/community/groups"
+    });
+    const group = createResponse.json() as { groupId: string };
+
+    const memberResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        role: "member",
+        status: "active",
+        subjectId: "cop.operator1",
+        username: "cop.operator1"
+      },
+      url: `/api/v1/community/groups/${group.groupId}/members`
+    });
+    expect(memberResponse.statusCode).toBe(200);
+    expect(memberResponse.json()).toMatchObject({
+      members: expect.arrayContaining([
+        expect.objectContaining({
+          displayName: "COP Operator 1",
+          role: "member",
+          status: "active",
+          subjectId: "000dfd66-0000-4000-8000-000000007ef1",
+          username: "cop.operator1"
+        })
+      ])
+    });
+
+    const unknownMemberResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        subjectId: "missing.operator",
+        username: "missing.operator"
+      },
+      url: `/api/v1/community/groups/${group.groupId}/members`
+    });
+    expect(unknownMemberResponse.statusCode).toBe(400);
 
     await app.close();
   });

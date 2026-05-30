@@ -88,6 +88,7 @@ import {
   getUavCount,
   isPublicFlightObject,
   saveUserProfile,
+  searchUserDirectory,
   submitCommunityReport,
   updateCommunityReport,
   upsertCommunityGroupMember,
@@ -3520,6 +3521,9 @@ export function App() {
           onRefresh={() => void loadMessagingStatus()}
           onResolveMatrixIdentities={(userIds) =>
             resolveMessagingMatrixIdentities(apiBase, authSession.accessToken ?? "", userIds)
+          }
+          onSearchUsers={(query) =>
+            searchUserDirectory(apiBase, authSession.accessToken ?? "", query).then((response) => response.items)
           }
         />
       ) : null}

@@ -290,3 +290,46 @@ ACL group without using Matrix room membership as a media authorization source.
 not infer media authorization from Matrix room membership and must not expose
 protected media through chat messages. Media access is evaluated from
 `attachment.metadata.access` and active COP group membership.
+
+## Canonical User Identity for Groups
+
+COP group membership and CSM Messaging conversation membership must use the same
+canonical user identifier: the OIDC `sub` claim stored as `subjectId` in
+`cop_user_profiles`. Human-readable identifiers such as `preferred_username`,
+email or display name are lookup handles only and must not be persisted as group
+membership keys.
+
+COP exposes authenticated user lookup through:
+
+```http
+GET /api/v1/users/search?q=<username-or-email>&limit=8
+```
+
+The response contains only directory fields needed by the operator UI:
+
+```json
+{
+  "contractVersion": "cop-user-directory-v1",
+  "items": [
+    {
+      "subjectId": "<oidc-sub>",
+      "username": "cop.operator1",
+      "displayName": "COP Operator 1",
+      "email": "operator1@example.test"
+    }
+  ]
+}
+```
+
+The COP web UI must add group members from this directory result. The API keeps
+a server-side safety net: if `POST /api/v1/community/groups/{groupId}/members`
+receives a username/email-like value, it attempts to resolve it to exactly one
+known COP profile and stores the canonical `subjectId`. Unknown human login
+strings fail closed with a validation error. Existing clients may still send a
+known canonical subject id directly.
+
+Operationally, every user must sign in to COP at least once so `/api/v1/me/preferences`
+can create the corresponding `cop_user_profiles` row. Historical rows where
+`cop_community_group_members.subject_id` contains `preferred_username` should be
+backfilled to OIDC `sub` before production rollout, then conversation membership
+should be resynced from the COP group.

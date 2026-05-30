@@ -29,6 +29,7 @@ export interface UserProfileStore {
   getAlertAcknowledgements(subjectId: string): Promise<Map<string, AlertAcknowledgement>>;
   getProfile(subjectId: string): Promise<UserProfileRecord | null>;
   init(): Promise<void>;
+  searchProfiles(query: string, limit?: number): Promise<UserProfileRecord[]>;
   upsertProfile(profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">): Promise<UserProfileRecord>;
 }
 
@@ -68,6 +69,22 @@ export class InMemoryUserProfileStore implements UserProfileStore {
 
   async getProfile(subjectId: string): Promise<UserProfileRecord | null> {
     return this.profiles.get(subjectId) ?? null;
+  }
+
+  async searchProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {
+    const normalized = query.trim().toLowerCase();
+    if (normalized.length < 2) {
+      return [];
+    }
+    return Array.from(this.profiles.values())
+      .filter((profile) =>
+        profile.subjectId.toLowerCase() === normalized ||
+        profile.username.toLowerCase().includes(normalized) ||
+        profile.displayName.toLowerCase().includes(normalized) ||
+        profile.email?.toLowerCase().includes(normalized) === true
+      )
+      .sort((left, right) => profileSearchRank(left, normalized) - profileSearchRank(right, normalized))
+      .slice(0, boundedProfileSearchLimit(limit));
   }
 
   async upsertProfile(profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">): Promise<UserProfileRecord> {
@@ -120,6 +137,34 @@ export class PostgresUserProfileStore implements UserProfileStore {
     );
     const row = result.rows[0];
     return row ? profileFromRow(row) : null;
+  }
+
+  async searchProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {
+    const normalized = query.trim().toLowerCase();
+    if (normalized.length < 2) {
+      return [];
+    }
+    const like = `%${escapePostgresLike(normalized)}%`;
+    const result = await this.pool.query<UserProfileRow>(
+      `SELECT subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at
+      FROM cop_user_profiles
+      WHERE lower(subject_id) = $1
+        OR lower(username) LIKE $2 ESCAPE '\\'
+        OR lower(display_name) LIKE $2 ESCAPE '\\'
+        OR lower(coalesce(email, '')) LIKE $2 ESCAPE '\\'
+      ORDER BY
+        CASE
+          WHEN lower(subject_id) = $1 THEN 0
+          WHEN lower(username) = $1 THEN 1
+          WHEN lower(coalesce(email, '')) = $1 THEN 2
+          WHEN lower(display_name) = $1 THEN 3
+          ELSE 4
+        END,
+        updated_at DESC
+      LIMIT $3`,
+      [normalized, like, boundedProfileSearchLimit(limit)]
+    );
+    return result.rows.map(profileFromRow);
   }
 
   async upsertProfile(profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">): Promise<UserProfileRecord> {
@@ -243,6 +288,13 @@ CREATE TABLE IF NOT EXISTS cop_user_alert_acknowledgements (
 
 CREATE INDEX IF NOT EXISTS cop_user_alert_ack_subject_idx
   ON cop_user_alert_acknowledgements (subject_id, acknowledged_at DESC);
+
+CREATE INDEX IF NOT EXISTS cop_user_profiles_username_lower_idx
+  ON cop_user_profiles (lower(username));
+
+CREATE INDEX IF NOT EXISTS cop_user_profiles_email_lower_idx
+  ON cop_user_profiles (lower(email))
+  WHERE email IS NOT NULL;
 `;
 
 function profileFromRow(row: UserProfileRow): UserProfileRecord {
@@ -367,6 +419,30 @@ function jsonRecord(value: Record<string, unknown> | string | null): Record<stri
     }
   }
   return isRecord(value) ? value : {};
+}
+
+function boundedProfileSearchLimit(limit: number): number {
+  return Math.max(1, Math.min(Math.round(limit), 25));
+}
+
+function escapePostgresLike(value: string): string {
+  return value.replace(/[\\%_]/gu, (match) => `\\${match}`);
+}
+
+function profileSearchRank(profile: UserProfileRecord, normalizedQuery: string): number {
+  if (profile.subjectId.toLowerCase() === normalizedQuery) {
+    return 0;
+  }
+  if (profile.username.toLowerCase() === normalizedQuery) {
+    return 1;
+  }
+  if (profile.email?.toLowerCase() === normalizedQuery) {
+    return 2;
+  }
+  if (profile.displayName.toLowerCase() === normalizedQuery) {
+    return 3;
+  }
+  return 4;
 }
 
 function isCopAlertType(value: unknown): value is CopAlertType {

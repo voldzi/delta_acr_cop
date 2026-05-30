@@ -1,7 +1,7 @@
 import React from "react";
 import { Lock, LogIn, MessageCircle, Pin, PinOff, Plus, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
-import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse } from "../cop-data";
+import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse, UserDirectoryEntry } from "../cop-data";
 import { SelectField } from "../ui/select";
 import { clearMatrixMessagingDeviceState, createMatrixMessagingSession } from "./matrixClient";
 import type { MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage, MessagingPanelProps } from "./types";
@@ -71,7 +71,8 @@ export function MessagingPanel({
   onLogin,
   onPinnedChange,
   onRefresh,
-  onResolveMatrixIdentities
+  onResolveMatrixIdentities,
+  onSearchUsers
 }: MessagingPanelProps) {
   const [bootstrapError, setBootstrapError] = React.useState<string | null>(null);
   const [bootstrapLoading, setBootstrapLoading] = React.useState(false);
@@ -82,7 +83,11 @@ export function MessagingPanel({
   const [composerText, setComposerText] = React.useState("");
   const [groupActionError, setGroupActionError] = React.useState<string | null>(null);
   const [groupActionLoading, setGroupActionLoading] = React.useState(false);
-  const [groupMemberSubjectId, setGroupMemberSubjectId] = React.useState("");
+  const [groupMemberQuery, setGroupMemberQuery] = React.useState("");
+  const [groupMemberCandidate, setGroupMemberCandidate] = React.useState<UserDirectoryEntry | null>(null);
+  const [groupMemberSuggestions, setGroupMemberSuggestions] = React.useState<UserDirectoryEntry[]>([]);
+  const [groupMemberSearchLoading, setGroupMemberSearchLoading] = React.useState(false);
+  const [groupMemberSearchError, setGroupMemberSearchError] = React.useState<string | null>(null);
   const [newGroupName, setNewGroupName] = React.useState("");
   const [newGroupVisibility, setNewGroupVisibility] = React.useState<"private" | "public">("private");
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
@@ -127,6 +132,44 @@ export function MessagingPanel({
     setTimeline(matrixSession.getTimeline(selectedRoomId));
   }, [matrixSession, rooms, selectedRoomId]);
 
+  React.useEffect(() => {
+    const query = groupMemberQuery.trim();
+    if (!authenticated || query.length < 2 || groupMemberCandidate?.subjectId === query || groupMemberCandidate?.username === query) {
+      setGroupMemberSuggestions([]);
+      setGroupMemberSearchError(null);
+      setGroupMemberSearchLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setGroupMemberSearchLoading(true);
+      setGroupMemberSearchError(null);
+      onSearchUsers(query)
+        .then((items) => {
+          if (!cancelled) {
+            setGroupMemberSuggestions(items);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setGroupMemberSuggestions([]);
+            setGroupMemberSearchError(error instanceof Error ? error.message : "Vyhledání uživatele selhalo.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setGroupMemberSearchLoading(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [authenticated, groupMemberCandidate?.subjectId, groupMemberQuery, onSearchUsers]);
+
   const providerStatus = status?.status ?? "degraded";
   const chatReady = Boolean(status?.chatAvailable && authenticated && authToken);
   const e2eeRequired = status?.features?.endToEndEncryptionRequired === true;
@@ -169,16 +212,18 @@ export function MessagingPanel({
   }
 
   async function addMember() {
-    const subjectId = groupMemberSubjectId.trim();
+    const subjectId = groupMemberCandidate?.subjectId ?? groupMemberQuery.trim();
     if (!selectedGroup || !subjectId) {
       return;
     }
     setGroupActionLoading(true);
     setGroupActionError(null);
     try {
-      const group = await onAddGroupMember(selectedGroup.groupId, subjectId);
+      const group = await onAddGroupMember(selectedGroup.groupId, subjectId, groupMemberCandidate?.displayName);
       setSelectedGroupId(group.groupId);
-      setGroupMemberSubjectId("");
+      setGroupMemberQuery("");
+      setGroupMemberCandidate(null);
+      setGroupMemberSuggestions([]);
     } catch (caught) {
       setGroupActionError(caught instanceof Error ? caught.message : "Člena se nepodařilo přidat.");
     } finally {
@@ -391,14 +436,22 @@ export function MessagingPanel({
           actionError={groupActionError ?? communityGroupsError}
           actionLoading={groupActionLoading}
           groups={communityGroups}
-          memberSubjectId={groupMemberSubjectId}
+          memberCandidate={groupMemberCandidate}
+          memberQuery={groupMemberQuery}
+          memberSearchError={groupMemberSearchError}
+          memberSearchLoading={groupMemberSearchLoading}
+          memberSuggestions={groupMemberSuggestions}
           newGroupName={newGroupName}
           newGroupVisibility={newGroupVisibility}
           selectedGroup={selectedGroup}
           onAddMember={() => void addMember()}
           onApproveMember={(subjectId, displayName) => void approveMember(subjectId, displayName)}
           onCreateGroup={() => void createGroup()}
-          onMemberSubjectIdChange={setGroupMemberSubjectId}
+          onMemberCandidateChange={setGroupMemberCandidate}
+          onMemberQueryChange={(value) => {
+            setGroupMemberQuery(value);
+            setGroupMemberCandidate(null);
+          }}
           onNewGroupNameChange={setNewGroupName}
           onNewGroupVisibilityChange={setNewGroupVisibility}
           onSelectGroup={setSelectedGroupId}
@@ -431,14 +484,19 @@ function CommunityGroupsPanel({
   actionError,
   actionLoading,
   groups,
-  memberSubjectId,
+  memberCandidate,
+  memberQuery,
+  memberSearchError,
+  memberSearchLoading,
+  memberSuggestions,
   newGroupName,
   newGroupVisibility,
   selectedGroup,
   onAddMember,
   onApproveMember,
   onCreateGroup,
-  onMemberSubjectIdChange,
+  onMemberCandidateChange,
+  onMemberQueryChange,
   onNewGroupNameChange,
   onNewGroupVisibilityChange,
   onSelectGroup
@@ -446,14 +504,19 @@ function CommunityGroupsPanel({
   actionError: string | null;
   actionLoading: boolean;
   groups: MessagingPanelProps["communityGroups"];
-  memberSubjectId: string;
+  memberCandidate: UserDirectoryEntry | null;
+  memberQuery: string;
+  memberSearchError: string | null;
+  memberSearchLoading: boolean;
+  memberSuggestions: UserDirectoryEntry[];
   newGroupName: string;
   newGroupVisibility: "private" | "public";
   selectedGroup: MessagingPanelProps["communityGroups"][number] | null;
   onAddMember: () => void;
   onApproveMember: (subjectId: string, displayName?: string) => void;
   onCreateGroup: () => void;
-  onMemberSubjectIdChange: (value: string) => void;
+  onMemberCandidateChange: (value: UserDirectoryEntry | null) => void;
+  onMemberQueryChange: (value: string) => void;
   onNewGroupNameChange: (value: string) => void;
   onNewGroupVisibilityChange: (value: "private" | "public") => void;
   onSelectGroup: (groupId: string) => void;
@@ -515,14 +578,34 @@ function CommunityGroupsPanel({
           ) : null}
           <div>
             <input
-              placeholder="subjectId uživatele"
-              value={memberSubjectId}
-              onChange={(event) => onMemberSubjectIdChange(event.target.value)}
+              placeholder="Uživatel nebo e-mail"
+              value={memberQuery}
+              onChange={(event) => onMemberQueryChange(event.target.value)}
             />
-            <button className="mini-button" disabled={actionLoading || !memberSubjectId.trim()} onClick={onAddMember} type="button">
+            <button className="mini-button" disabled={actionLoading || !memberQuery.trim()} onClick={onAddMember} type="button">
               Přidat
             </button>
           </div>
+          {memberSearchLoading ? <span>Vyhledávám...</span> : null}
+          {memberSearchError ? <span>{memberSearchError}</span> : null}
+          {memberCandidate ? <span>{memberCandidate.displayName} · {memberCandidate.username}</span> : null}
+          {memberSuggestions.length > 0 ? (
+            <div className="chat-member-search-results">
+              {memberSuggestions.slice(0, 6).map((user) => (
+                <button
+                  key={user.subjectId}
+                  onClick={() => {
+                    onMemberQueryChange(user.username);
+                    onMemberCandidateChange(user);
+                  }}
+                  type="button"
+                >
+                  <strong>{user.displayName}</strong>
+                  <small>{user.username}{user.email ? ` · ${user.email}` : ""}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {actionError ? <div className="error-banner">{actionError}</div> : null}

@@ -1115,6 +1115,19 @@ export interface ServerUserProfile {
   updatedAt: string | null;
 }
 
+export interface UserDirectoryEntry {
+  displayName: string;
+  email?: string;
+  subjectId: string;
+  username: string;
+}
+
+export interface UserDirectorySearchResponse {
+  contractVersion: "cop-user-directory-v1";
+  items: UserDirectoryEntry[];
+  serverTimestamp: string;
+}
+
 export interface MessagingStatusResponse {
   architecture?: Record<string, unknown>;
   chatAvailable: boolean;
@@ -1441,6 +1454,18 @@ export async function fetchPlaceGeocode(
 
 export async function fetchUserProfile(apiBase: string, token: string): Promise<ServerUserProfile> {
   return fetchJson<ServerUserProfile>(`${apiBase}/api/v1/me/preferences`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+}
+
+export async function searchUserDirectory(apiBase: string, token: string, query: string, limit = 8): Promise<UserDirectorySearchResponse> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    q: query
+  });
+  return fetchJson<UserDirectorySearchResponse>(`${apiBase}/api/v1/users/search?${params.toString()}`, {
     headers: {
       Authorization: `Bearer ${token}`
     }

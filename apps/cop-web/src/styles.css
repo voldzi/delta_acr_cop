@@ -518,6 +518,44 @@ h1 {
   white-space: nowrap;
 }
 
+.chat-member-search-results {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.chat-member-search-results button {
+  display: grid;
+  gap: 2px;
+  min-height: 42px;
+  padding: 7px 9px;
+  border: 1px solid rgba(70, 169, 255, 0.22);
+  background: rgba(70, 169, 255, 0.08);
+  color: #eef5fb;
+  text-align: left;
+}
+
+.chat-member-search-results button:hover {
+  border-color: rgba(70, 169, 255, 0.48);
+  background: rgba(70, 169, 255, 0.14);
+}
+
+.chat-member-search-results strong,
+.chat-member-search-results small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-member-search-results strong {
+  font-size: 12px;
+}
+
+.chat-member-search-results small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .ui-dialog-overlay {
   position: fixed;
   inset: 0;

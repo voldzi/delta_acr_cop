@@ -6,7 +6,8 @@ import type {
   MessagingMatrixIdentityResolutionResponse,
   MessagingMatrixRoomBindingResponse,
   MessagingConversationSummary,
-  MessagingStatusResponse
+  MessagingStatusResponse,
+  UserDirectoryEntry
 } from "../cop-data";
 
 export interface MessagingPanelProps {
@@ -31,6 +32,7 @@ export interface MessagingPanelProps {
   onPinnedChange: (pinned: boolean) => void;
   onRefresh: () => void;
   onResolveMatrixIdentities: (userIds: string[]) => Promise<MessagingMatrixIdentityResolutionResponse>;
+  onSearchUsers: (query: string) => Promise<UserDirectoryEntry[]>;
 }
 
 export interface MatrixRoomSummary {

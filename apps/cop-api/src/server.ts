@@ -838,11 +838,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function readUserProfile(actor: AuthenticatedActor): Promise<UserProfileRecord | null> {
+    return readUserProfileBySubject(actor.subjectId);
+  }
+
+  async function readUserProfileBySubject(subjectId: string): Promise<UserProfileRecord | null> {
     try {
-      return await activeUserProfileStore().getProfile(actor.subjectId);
+      return await activeUserProfileStore().getProfile(subjectId);
     } catch (error) {
       markUserProfileStoreDegraded(error);
-      return userProfileFallbackStore.getProfile(actor.subjectId);
+      return userProfileFallbackStore.getProfile(subjectId);
+    }
+  }
+
+  async function searchUserProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {
+    try {
+      return await activeUserProfileStore().searchProfiles(query, limit);
+    } catch (error) {
+      markUserProfileStoreDegraded(error);
+      return userProfileFallbackStore.searchProfiles(query, limit);
     }
   }
 
@@ -1359,12 +1372,44 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return reply;
     }
 
-    const profile = await readUserProfile(actor);
+    const profile = await readUserProfile(actor) ?? await upsertUserProfile({
+      alertPreferences: {},
+      displayName: actor.displayName,
+      ...(actor.email ? { email: actor.email } : {}),
+      preferences: {},
+      subjectId: actor.subjectId,
+      username: actor.username
+    });
     return {
       actor,
       alertPreferences: profile?.alertPreferences ?? {},
       preferences: profile?.preferences ?? {},
       updatedAt: profile?.updatedAt ?? null
+    };
+  });
+
+  app.get("/api/v1/users/search", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const query = request.query as Record<string, unknown>;
+    const q = optionalTrimmedString(query.q, 120);
+    if (!q || q.length < 2) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "User search requires at least two characters.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const limit = optionalFiniteNumber(query.limit, 1, 25) ?? 10;
+    const profiles = await searchUserProfiles(q, limit);
+    return {
+      contractVersion: "cop-user-directory-v1",
+      items: profiles.map(userDirectoryEntry),
+      serverTimestamp: now().toISOString()
     };
   });
 
@@ -1625,17 +1670,31 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         correlationIdFrom(request.headers["x-correlation-id"])
       );
     }
+    const resolvedMember = await resolveCommunityGroupMemberIdentity(memberRequest, {
+      readProfile: readUserProfileBySubject,
+      searchProfiles: searchUserProfiles
+    });
+    if ("error" in resolvedMember) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        resolvedMember.error,
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+
     const requestNow = now();
     const group = await upsertCommunityGroupMember({
       actor: actorToCommunityActor(actor),
       groupId: params.groupId,
       member: {
-        displayName: memberRequest.displayName,
-        subjectId: memberRequest.subjectId,
-        username: memberRequest.username
+        displayName: resolvedMember.member.displayName,
+        subjectId: resolvedMember.member.subjectId,
+        username: resolvedMember.member.username
       },
-      role: memberRequest.role,
-      status: memberRequest.status
+      role: resolvedMember.member.role,
+      status: resolvedMember.member.status
     }, requestNow);
     if (!group) {
       return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be managed by current user.", crypto.randomUUID());
@@ -1644,8 +1703,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       actorAuthMode: actor.authMode,
       actorSubjectId: actor.subjectId,
       groupId: group.groupId,
-      memberSubjectId: memberRequest.subjectId,
-      status: memberRequest.status
+      memberResolution: resolvedMember.resolution,
+      memberSubjectId: resolvedMember.member.subjectId,
+      status: resolvedMember.member.status
     }, correlationIdFrom(request.headers["x-correlation-id"]));
     return group;
   });
@@ -4104,6 +4164,93 @@ function actorToCommunityActor(actor: AuthenticatedActor) {
   };
 }
 
+function userDirectoryEntry(profile: UserProfileRecord) {
+  return {
+    displayName: profile.displayName,
+    ...(profile.email ? { email: profile.email } : {}),
+    subjectId: profile.subjectId,
+    username: profile.username
+  };
+}
+
+async function resolveCommunityGroupMemberIdentity(member: {
+  displayName: string;
+  role: CommunityGroupMemberRole;
+  status: CommunityGroupMemberStatus;
+  subjectId: string;
+  username: string;
+}, directory: {
+  readProfile: (subjectId: string) => Promise<UserProfileRecord | null>;
+  searchProfiles: (query: string, limit?: number) => Promise<UserProfileRecord[]>;
+}): Promise<
+  | {
+      member: {
+        displayName: string;
+        role: CommunityGroupMemberRole;
+        status: CommunityGroupMemberStatus;
+        subjectId: string;
+        username: string;
+      };
+      resolution: "canonical" | "profile-subject" | "profile-username";
+    }
+  | { error: string }
+> {
+  const subjectProfile = await directory.readProfile(member.subjectId);
+  if (subjectProfile) {
+    return {
+      member: {
+        displayName: subjectProfile.displayName,
+        role: member.role,
+        status: member.status,
+        subjectId: subjectProfile.subjectId,
+        username: subjectProfile.username
+      },
+      resolution: "profile-subject"
+    };
+  }
+
+  const handleProfile = await resolveProfileByHandle(member.subjectId, directory);
+  if (handleProfile) {
+    return {
+      member: {
+        displayName: handleProfile.displayName,
+        role: member.role,
+        status: member.status,
+        subjectId: handleProfile.subjectId,
+        username: handleProfile.username
+      },
+      resolution: "profile-username"
+    };
+  }
+
+  if (looksLikeHumanLogin(member.subjectId)) {
+    return {
+      error: "Community group member must resolve to a known COP user profile. Sign in as that user once or use the user search endpoint before adding the member."
+    };
+  }
+
+  return {
+    member,
+    resolution: "canonical"
+  };
+}
+
+async function resolveProfileByHandle(handle: string, directory: {
+  searchProfiles: (query: string, limit?: number) => Promise<UserProfileRecord[]>;
+}): Promise<UserProfileRecord | null> {
+  const normalized = handle.trim().toLowerCase();
+  const matches = (await directory.searchProfiles(handle, 10)).filter((profile) =>
+    profile.username.toLowerCase() === normalized ||
+    profile.email?.toLowerCase() === normalized ||
+    profile.displayName.toLowerCase() === normalized
+  );
+  return matches.length === 1 ? matches[0] ?? null : null;
+}
+
+function looksLikeHumanLogin(value: string): boolean {
+  return value.includes("@") || /^[a-z][a-z0-9_-]*\.[a-z0-9_.-]+$/iu.test(value);
+}
+
 function normalizeCommunityGroupRequest(value: unknown): {
   anchorLocation?: CommunityReportLocation;
   description?: string;
@@ -5120,6 +5267,7 @@ function mobileEndpoints() {
     mapQuery: "/api/v1/map/query",
     offlineSnapshot: "/api/v1/mobile/offline-snapshot",
     preferences: "/api/v1/me/preferences",
+    userDirectorySearch: "/api/v1/users/search",
     mapCatalog: "/api/v1/map/catalog",
     messagingBootstrap: "/api/v1/messaging/bootstrap",
     messagingConversations: "/api/v1/messaging/conversations",
