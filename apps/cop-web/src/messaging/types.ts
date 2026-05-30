@@ -55,6 +55,7 @@ export interface MatrixMessagingSession {
   createGroupRoom(name: string, inviteUserIds?: string[]): Promise<string>;
   getRooms(): MatrixRoomSummary[];
   getTimeline(roomId: string): MatrixTimelineMessage[];
+  joinInvitedRooms(): Promise<void>;
   sendMessage(roomId: string, body: string): Promise<void>;
   stop(): void;
 }
