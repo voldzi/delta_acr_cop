@@ -183,7 +183,7 @@ API uklada uzivatelske nastaveni podle identity z bearer tokenu:
 - OIDC rezim pouziva stabilni claim `sub` z Keycloaku.
 - Lab rezim pouziva sdileny subject `lab`.
 - Endpointy jsou `GET /api/v1/me/preferences` a `PUT /api/v1/me/preferences`.
-- Uklada se pouze zobrazeni, workspace, mapa, replay/historie, lokalni radius vystrah a informacni alert preference.
+- Uklada se pouze zobrazeni, workspace, mapa, replay/historie, lokalni radius vystrah, profilova karta operatora, rozlozeni plochy a informacni alert preference.
 - Potvrzeni serverovych alertu je per-user; potvrzeni jednoho operatora nezmizi ostatnim.
 
 Persistenci ridi `COP_USER_PROFILE_STORE=auto`. Pri `auto` se pouzije PostgreSQL z `COP_DATABASE_URL`; bez databaze se pouzije in-memory fallback. V pilotu s HAProxy/Patroni tedy staci mit nastaveny stejny `COP_DATABASE_URL` jako pro temporal store.

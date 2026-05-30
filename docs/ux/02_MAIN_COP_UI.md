@@ -29,7 +29,11 @@ závažností, polohou, ACL a auditem. COP UI nesmí působit jako dvě oddělen
 aplikace: map-first a chat-first workflow musí vést ke stejnému reportu,
 skupině a související konverzaci.
 
-Pravý horní roh top baru obsahuje operátorský vstup. V pilotu neslouží k autentizaci, ale otevírá centrum nastavení pro uživatelské volby mapy, dat, vlastní polohy a budoucího účtu.
+Pravý horní roh top baru obsahuje operátorský vstup. Přihlášený uživatel zde vidí avatar a jméno z `preferences.operatorProfile`; nepřihlášený uživatel vidí pouze akci `Přihlásit`. Profilová karta může obsahovat avatar, zobrazované jméno, roli, organizaci, telefon, e-mail a kontaktní poznámku.
+
+Pracovní plocha je konfigurovatelná. Levý katalogový panel, pravý inspektor, pravý kontextový rail a dolní status bar lze skrýt nebo sbalit tak, aby v krizové situaci vynikla mapa. Desktop podporuje změnu šířky levého a pravého panelu tažením za hranu. Stav se ukládá do `preferences.workspaceLayout`; bez přihlášení zůstává dostupný lokálně v prohlížeči.
+
+Manuál je součást aplikace. Hlavní vstup je v topbaru, kontextové malé otazníky jsou v nastavení a u nástrojů, které mohou vyžadovat vysvětlení. Nápověda musí používat civilní jazyk, oddělovat bezpečnostní výstrahy od technických varování a neobsahovat instrukce k použití síly.
 
 Primární aktualizace COP dat probíhá přes live SSE stream. Nastavení intervalu je proto v centru nastavení jako `Fallback synchronizace`; používá se v degraded režimu, při výpadku streamu, po obnově záložky a pro méně dynamická data.
 

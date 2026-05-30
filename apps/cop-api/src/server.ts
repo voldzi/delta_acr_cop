@@ -5355,6 +5355,7 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     mapBasemapMode: optionalString(value.mapBasemapMode, ["standard", "civil", "risk", "dark", "outline"]),
     mapView: normalizeMapViewPreference(value.mapView),
     minConfidence: optionalFiniteNumber(value.minConfidence, 0, 1),
+    operatorProfile: normalizeOperatorProfilePreference(value.operatorProfile),
     predictionMinutes: optionalFiniteNumber(value.predictionMinutes, 2, 20),
     predictionMode: optionalString(value.predictionMode, ["adaptive", "telemetry", "history", "maneuver"]),
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
@@ -5392,8 +5393,48 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     trackLayerIds: optionalStringArray(value.trackLayerIds, ["air-situation", "sim-air", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
     trackHistoryDisplayMode: optionalString(value.trackHistoryDisplayMode, ["all", "selected"]),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),
-    trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600)
+    trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600),
+    workspaceLayout: normalizeWorkspaceLayoutPreference(value.workspaceLayout)
   });
+}
+
+function normalizeOperatorProfilePreference(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return compactRecord({
+    avatarDataUrl: optionalImageDataUrl(value.avatarDataUrl),
+    contactNote: optionalTrimmedString(value.contactNote, 280),
+    displayName: optionalTrimmedString(value.displayName, 80),
+    email: optionalTrimmedString(value.email, 120),
+    organization: optionalTrimmedString(value.organization, 120),
+    phone: optionalTrimmedString(value.phone, 40),
+    publicContact: optionalBoolean(value.publicContact),
+    role: optionalTrimmedString(value.role, 80)
+  });
+}
+
+function normalizeWorkspaceLayoutPreference(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return compactRecord({
+    contextRailVisible: optionalBoolean(value.contextRailVisible),
+    leftPanelMode: optionalString(value.leftPanelMode, ["open", "collapsed", "hidden"]),
+    leftPanelWidth: optionalFiniteNumber(value.leftPanelWidth, 220, 460),
+    rightPanelMode: optionalString(value.rightPanelMode, ["open", "collapsed", "hidden"]),
+    rightPanelWidth: optionalFiniteNumber(value.rightPanelWidth, 280, 560),
+    statusbarVisible: optionalBoolean(value.statusbarVisible)
+  });
+}
+
+function optionalImageDataUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/iu.test(value) && value.length <= 250_000
+    ? value
+    : undefined;
 }
 
 function normalizeAlertPreferences(value: unknown): UserAlertPreferences {

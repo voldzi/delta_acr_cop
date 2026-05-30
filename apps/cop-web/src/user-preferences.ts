@@ -13,6 +13,27 @@ export type PublicFlightSymbolMode = MapSymbolMode;
 export type AppLanguage = "cs" | "en";
 export type MapBasemapMode = "standard" | "civil" | "risk" | "dark" | "outline";
 export type TrackHistoryDisplayMode = "all" | "selected";
+export type WorkspacePanelMode = "open" | "collapsed" | "hidden";
+
+export interface OperatorProfilePreferences {
+  avatarDataUrl?: string;
+  contactNote?: string;
+  displayName?: string;
+  email?: string;
+  organization?: string;
+  phone?: string;
+  publicContact?: boolean;
+  role?: string;
+}
+
+export interface WorkspaceLayoutPreferences {
+  contextRailVisible?: boolean;
+  leftPanelMode?: WorkspacePanelMode;
+  leftPanelWidth?: number;
+  rightPanelMode?: WorkspacePanelMode;
+  rightPanelWidth?: number;
+  statusbarVisible?: boolean;
+}
 
 export interface UserPreferences {
   activeWorkspace?: string;
@@ -28,6 +49,7 @@ export interface UserPreferences {
   mapBasemapMode?: MapBasemapMode;
   mapView?: MapViewState;
   minConfidence?: number;
+  operatorProfile?: OperatorProfilePreferences;
   predictionMinutes?: number;
   predictionMode?: string;
   proximityAlertEnabled?: boolean;
@@ -46,6 +68,7 @@ export interface UserPreferences {
   trackHistoryDisplayMode?: TrackHistoryDisplayMode;
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
+  workspaceLayout?: WorkspaceLayoutPreferences;
 }
 
 export function readUserPreferences(scope?: string): UserPreferences {
@@ -117,6 +140,7 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     mapBasemapMode: optionalMapBasemapMode(value.mapBasemapMode),
     mapView: normalizeMapView(value.mapView),
     minConfidence: optionalFiniteNumber(value.minConfidence),
+    operatorProfile: normalizeOperatorProfilePreferences(value.operatorProfile),
     predictionMinutes: optionalFiniteNumber(value.predictionMinutes),
     predictionMode: optionalString(value.predictionMode),
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
@@ -134,8 +158,41 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     trackLayerIds: optionalStringArray(value.trackLayerIds),
     trackHistoryDisplayMode: optionalTrackHistoryDisplayMode(value.trackHistoryDisplayMode),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit),
-    trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds)
+    trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds),
+    workspaceLayout: normalizeWorkspaceLayoutPreferences(value.workspaceLayout)
   };
+}
+
+export function normalizeOperatorProfilePreferences(value: unknown): OperatorProfilePreferences | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const profile: OperatorProfilePreferences = {
+    avatarDataUrl: optionalDataUrl(value.avatarDataUrl),
+    contactNote: optionalTrimmedString(value.contactNote, 280),
+    displayName: optionalTrimmedString(value.displayName, 80),
+    email: optionalTrimmedString(value.email, 120),
+    organization: optionalTrimmedString(value.organization, 120),
+    phone: optionalTrimmedString(value.phone, 40),
+    publicContact: optionalBoolean(value.publicContact),
+    role: optionalTrimmedString(value.role, 80)
+  };
+  return compactObject(profile);
+}
+
+export function normalizeWorkspaceLayoutPreferences(value: unknown): WorkspaceLayoutPreferences | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const layout: WorkspaceLayoutPreferences = {
+    contextRailVisible: optionalBoolean(value.contextRailVisible),
+    leftPanelMode: optionalWorkspacePanelMode(value.leftPanelMode),
+    leftPanelWidth: optionalClampedNumber(value.leftPanelWidth, 220, 460),
+    rightPanelMode: optionalWorkspacePanelMode(value.rightPanelMode),
+    rightPanelWidth: optionalClampedNumber(value.rightPanelWidth, 280, 560),
+    statusbarVisible: optionalBoolean(value.statusbarVisible)
+  };
+  return compactObject(layout);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -153,6 +210,28 @@ function optionalFiniteNumber(value: unknown): number | undefined {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function optionalTrimmedString(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, maxLength) : undefined;
+}
+
+function optionalClampedNumber(value: unknown, min: number, max: number): number | undefined {
+  const numberValue = optionalFiniteNumber(value);
+  return numberValue === undefined ? undefined : clamp(numberValue, min, max);
+}
+
+function optionalDataUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/iu.test(value) && value.length <= 250_000
+    ? value
+    : undefined;
 }
 
 function optionalStringArray(value: unknown): string[] | undefined {
@@ -173,6 +252,15 @@ function optionalAppLanguage(value: unknown): AppLanguage | undefined {
 
 function optionalTrackHistoryDisplayMode(value: unknown): TrackHistoryDisplayMode | undefined {
   return value === "all" || value === "selected" ? value : undefined;
+}
+
+function optionalWorkspacePanelMode(value: unknown): WorkspacePanelMode | undefined {
+  return value === "open" || value === "collapsed" || value === "hidden" ? value : undefined;
+}
+
+function compactObject<T extends object>(value: T): T | undefined {
+  const entries = Object.entries(value).filter(([, entryValue]) => entryValue !== undefined);
+  return entries.length > 0 ? Object.fromEntries(entries) as T : undefined;
 }
 
 function scopedStorageKey(baseKey: string, scope: string | undefined): string {

@@ -44,6 +44,42 @@ describe("user preferences helpers", () => {
       mapBasemapMode: undefined
     });
   });
+
+  it("normalizes workspace layout and operator profile preferences", () => {
+    expect(normalizeUserPreferences({
+      operatorProfile: {
+        avatarDataUrl: "data:image/webp;base64,AAAA",
+        contactNote: "  dostupný večer  ",
+        displayName: "Jan Novak",
+        phone: "+420 123",
+        publicContact: true
+      },
+      workspaceLayout: {
+        contextRailVisible: false,
+        leftPanelMode: "collapsed",
+        leftPanelWidth: 120,
+        rightPanelMode: "hidden",
+        rightPanelWidth: 900,
+        statusbarVisible: false
+      }
+    })).toMatchObject({
+      operatorProfile: {
+        avatarDataUrl: "data:image/webp;base64,AAAA",
+        contactNote: "dostupný večer",
+        displayName: "Jan Novak",
+        phone: "+420 123",
+        publicContact: true
+      },
+      workspaceLayout: {
+        contextRailVisible: false,
+        leftPanelMode: "collapsed",
+        leftPanelWidth: 220,
+        rightPanelMode: "hidden",
+        rightPanelWidth: 560,
+        statusbarVisible: false
+      }
+    });
+  });
 });
 
 function installLocalStorageMock() {

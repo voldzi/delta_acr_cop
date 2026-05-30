@@ -12,6 +12,7 @@ import clsx from "clsx";
 import {
   Activity,
   AlertTriangle,
+  BookOpen,
   Bot,
   Building2,
   Bus,
@@ -19,7 +20,9 @@ import {
   CloudSun,
   Database,
   Gauge,
+  HelpCircle,
   History,
+  Image,
   Layers,
   Languages,
   ListFilter,
@@ -29,6 +32,8 @@ import {
   MessageCircle,
   MousePointer2,
   Move,
+  PanelLeftClose,
+  PanelRightClose,
   Pause,
   Pin,
   PinOff,
@@ -192,9 +197,12 @@ import {
   type AppLanguage,
   type MapBasemapMode,
   type MapViewState,
+  type OperatorProfilePreferences,
   type PublicFlightSymbolMode,
   type TrackHistoryDisplayMode,
-  type UserPreferences
+  type UserPreferences,
+  type WorkspaceLayoutPreferences,
+  type WorkspacePanelMode
 } from "./user-preferences";
 import {
   builtInViewProfiles,
@@ -250,7 +258,7 @@ type OfflineSnapshotState =
   | { kind: "available"; objectCount: number; savedAt: string; sourceCount: number }
   | { kind: "none" };
 type PreferenceSettings = ViewProfileSettings | UserPreferences;
-type SettingsTab = "map" | "data" | "awareness" | "account";
+type SettingsTab = "map" | "data" | "workspace" | "awareness" | "account";
 type LoginPromptReason = "account" | "ai" | "alert" | "chat" | "profile" | "report";
 type ProfileSyncStatus = "disabled" | "error" | "loading" | "saving" | "synced";
 type SituationLayerStatus = "disabled" | "loading" | "online" | "degraded" | "zoom";
@@ -286,6 +294,17 @@ const predictionModeOptions: Array<[PredictionMode, string]> = [
 ];
 const defaultAoiCenter = { lat: 50.0755, lon: 14.4378 };
 const messagingDockWidthStorageKey = "cop.messaging.dockWidth.v1";
+const defaultWorkspaceLayout: Required<WorkspaceLayoutPreferences> = {
+  contextRailVisible: true,
+  leftPanelMode: "open",
+  leftPanelWidth: 300,
+  rightPanelMode: "open",
+  rightPanelWidth: 360,
+  statusbarVisible: true
+};
+const workspaceLeftWidthRange = { max: 460, min: 220 };
+const workspaceRightWidthRange = { max: 560, min: 280 };
+type HelpSection = "overview" | "layout" | "layers" | "profile" | "reports" | "alerts";
 
 interface DashboardMetrics {
   activeSources: number;
@@ -340,6 +359,13 @@ export function App() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [mapSearchQuery, setMapSearchQuery] = React.useState("");
   const [mapSearchDocked, setMapSearchDocked] = React.useState(() => readMapSearchDocked());
+  const [workspaceLayout, setWorkspaceLayout] = React.useState<Required<WorkspaceLayoutPreferences>>(() =>
+    normalizeWorkspaceLayout(initialPreferences.workspaceLayout)
+  );
+  const [operatorProfile, setOperatorProfile] = React.useState<OperatorProfilePreferences>(() =>
+    initialOperatorProfile(authSession, initialPreferences.operatorProfile)
+  );
+  const [helpSection, setHelpSection] = React.useState<HelpSection | null>(null);
   const [placeSearchItems, setPlaceSearchItems] = React.useState<PlaceGeocodeResult[]>([]);
   const [placeSearchLoading, setPlaceSearchLoading] = React.useState(false);
   const [placeSearchError, setPlaceSearchError] = React.useState<string | null>(null);
@@ -1618,6 +1644,9 @@ export function App() {
     if (settings.minConfidence !== undefined) {
       setMinConfidence(clamp(settings.minConfidence, 0, 1));
     }
+    if ("operatorProfile" in settings && settings.operatorProfile !== undefined) {
+      setOperatorProfile(settings.operatorProfile);
+    }
     if (settings.autoRefresh !== undefined) {
       setAutoRefresh(settings.autoRefresh);
     }
@@ -1685,6 +1714,9 @@ export function App() {
     if (settings.autoFit !== undefined) {
       setAutoFit(settings.autoFit);
     }
+    if ("workspaceLayout" in settings && settings.workspaceLayout !== undefined) {
+      setWorkspaceLayout(normalizeWorkspaceLayout(settings.workspaceLayout));
+    }
 
     const normalizedMapView = normalizeMapView(settings.mapView);
     if (normalizedMapView) {
@@ -1712,6 +1744,7 @@ export function App() {
     mapBasemapMode,
     mapView,
     minConfidence,
+    operatorProfile,
     predictionMinutes,
     predictionMode,
     proximityAlertEnabled,
@@ -1729,7 +1762,8 @@ export function App() {
     trackLayerIds: visibleTrackLayerIds,
     trackHistoryDisplayMode,
     trackHistoryLimit,
-    trackHistoryWindowSeconds
+    trackHistoryWindowSeconds,
+    workspaceLayout
   }), [
     activeWorkspace,
     affiliationScope,
@@ -1743,6 +1777,7 @@ export function App() {
     mapClusterEnabled,
     mapView,
     minConfidence,
+    operatorProfile,
     predictionMinutes,
     predictionMode,
     proximityAlertEnabled,
@@ -1761,7 +1796,8 @@ export function App() {
     visibleTrackLayerIds,
     trackHistoryDisplayMode,
     trackHistoryLimit,
-    trackHistoryWindowSeconds
+    trackHistoryWindowSeconds,
+    workspaceLayout
   ]);
 
   React.useEffect(() => {
@@ -1771,6 +1807,8 @@ export function App() {
     const scopedPreferences = readUserPreferences(userStorageScope);
     catalogSelectionInitializedRef.current = scopedPreferences.catalogLayerIds !== undefined;
     setVisibleCatalogLayerIds(normalizeCatalogLayerIds(scopedPreferences.catalogLayerIds));
+    setOperatorProfile(initialOperatorProfile(authSession, scopedPreferences.operatorProfile));
+    setWorkspaceLayout(normalizeWorkspaceLayout(scopedPreferences.workspaceLayout));
     applyPreferenceSettings(scopedPreferences, { focusMap: true });
     setViewProfiles(readViewProfiles(userStorageScope));
     setOfflineSnapshotState(initialOfflineSnapshotState(userStorageScope));
@@ -1778,7 +1816,7 @@ export function App() {
     setServerProfileUpdatedAt(null);
     setProfileSyncError(null);
     setProfileSyncStatus(profileAccessReady ? "loading" : "disabled");
-  }, [applyPreferenceSettings, profileAccessReady, userStorageScope]);
+  }, [applyPreferenceSettings, authSession, profileAccessReady, userStorageScope]);
 
   React.useEffect(() => {
     if (!profileAccessReady || !authToken) {
@@ -2967,6 +3005,59 @@ export function App() {
     ? formatShortDateTime(selectedSituationFeature.properties.validFrom ?? selectedSituationFeature.properties.effectiveAt ?? selectedSituationFeature.properties.observedAt)
     : lastLoadedAt ?? "čekám";
   const operationId = selectedSituationFeature?.properties.featureId ?? selectedObject?.objectId ?? "CSM-LAB";
+  const effectiveOperatorProfile = React.useMemo(
+    () => mergeOperatorProfile(authSession, operatorProfile),
+    [authSession, operatorProfile]
+  );
+  const shellClassName = clsx(
+    "shell",
+    "app-shell-v2",
+    messagingOpen && messagingPinned && "shell-messaging-docked",
+    !workspaceLayout.contextRailVisible && "shell-context-hidden",
+    !workspaceLayout.statusbarVisible && "shell-statusbar-hidden"
+  );
+  const workspaceClassName = clsx(
+    "workspace",
+    `workspace-${activeWorkspace}`,
+    `workspace-left-${workspaceLayout.leftPanelMode}`,
+    `workspace-right-${workspaceLayout.rightPanelMode}`
+  );
+  const shellStyle = React.useMemo(() => {
+    const style: React.CSSProperties = {
+      "--workspace-left-width": `${workspaceLayout.leftPanelWidth}px`,
+      "--workspace-right-width": `${workspaceLayout.rightPanelWidth}px`
+    } as React.CSSProperties;
+    if (messagingOpen && messagingPinned) {
+      return {
+        ...style,
+        "--messaging-dock-width": `${messagingDockWidth}px`
+      } as React.CSSProperties;
+    }
+    return style;
+  }, [messagingDockWidth, messagingOpen, messagingPinned, workspaceLayout.leftPanelWidth, workspaceLayout.rightPanelWidth]);
+
+  const updateWorkspaceLayout = React.useCallback((patch: Partial<WorkspaceLayoutPreferences>) => {
+    setWorkspaceLayout((current) => normalizeWorkspaceLayout({ ...current, ...patch }));
+  }, []);
+
+  const beginWorkspacePanelResize = React.useCallback((side: "left" | "right", event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = side === "left" ? workspaceLayout.leftPanelWidth : workspaceLayout.rightPanelWidth;
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const width = side === "left" ? startWidth + delta : startWidth - delta;
+      const range = side === "left" ? workspaceLeftWidthRange : workspaceRightWidthRange;
+      const nextWidth = clamp(width, range.min, range.max);
+      updateWorkspaceLayout(side === "left" ? { leftPanelWidth: nextWidth } : { rightPanelWidth: nextWidth });
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+  }, [updateWorkspaceLayout, workspaceLayout.leftPanelWidth, workspaceLayout.rightPanelWidth]);
 
   React.useEffect(() => {
     if (activeCatalogGroupId && !catalogGroupViews.some((view) => view.group.groupId === activeCatalogGroupId)) {
@@ -2976,8 +3067,8 @@ export function App() {
 
   return (
     <main
-      className={`shell app-shell-v2 ${messagingOpen && messagingPinned ? "shell-messaging-docked" : ""}`}
-      style={messagingOpen && messagingPinned ? ({ "--messaging-dock-width": `${messagingDockWidth}px` } as React.CSSProperties) : undefined}
+      className={shellClassName}
+      style={shellStyle}
     >
       <header className="topbar">
         <div className="brand">
@@ -3053,7 +3144,7 @@ export function App() {
             title={profileAccessReady ? "Účet - otevřít nastavení" : "Přihlásit"}
             type="button"
           >
-            <UserCircle size={19} />
+            <OperatorAvatar profile={effectiveOperatorProfile} size="small" />
             {!profileAccessReady && isOidcEnabled(authConfig) ? (
               <span>
                 <strong>Přihlásit</strong>
@@ -3062,11 +3153,18 @@ export function App() {
               <>
                 <span>
                   Operátor
-                  <strong>{operatorDisplayName(authSession, authConfig)}</strong>
+                  <strong>{operatorDisplayName(authSession, authConfig, effectiveOperatorProfile)}</strong>
                 </span>
                 <Settings size={16} />
               </>
             )}
+          </button>
+          <button className="operator-button" onClick={() => setHelpSection("overview")} title="Otevřít manuál" type="button">
+            <BookOpen size={18} />
+            <span>
+              Manuál
+              <strong>Nápověda</strong>
+            </span>
           </button>
         </div>
       </header>
@@ -3083,8 +3181,17 @@ export function App() {
           onStartReport={startCommunityReportCapture}
         />
 
-      <section className={`workspace workspace-${activeWorkspace}`}>
+      <section className={workspaceClassName}>
+        {workspaceLayout.leftPanelMode !== "hidden" ? (
         <aside className={`panel left-panel ${showMapLayerControls ? "map-catalog-panel" : ""}`}>
+          {workspaceLayout.leftPanelMode === "collapsed" ? (
+            <CollapsedPanelRail
+              icon={<Layers size={18} />}
+              label={showMapLayerControls ? "Vrstvy" : workspace.label}
+              onExpand={() => updateWorkspaceLayout({ leftPanelMode: "open" })}
+            />
+          ) : (
+            <>
           {!showMapLayerControls ? (
             <>
               <div className="refresh-row">
@@ -3278,10 +3385,29 @@ export function App() {
               <SourceHealthCenter items={sourceHealth} />
             </>
           ) : null}
+            </>
+          )}
+          {workspaceLayout.leftPanelMode === "open" && !showMapLayerControls ? (
+            <button
+              aria-label="Změnit šířku levého panelu"
+              className="panel-resize-handle right"
+              onPointerDown={(event) => beginWorkspacePanelResize("left", event)}
+              title="Táhnutím změnit šířku panelu"
+              type="button"
+            />
+          ) : null}
         </aside>
+        ) : null}
 
         <section className={`center-column center-column-${activeWorkspace}`}>
           <section className="map-stage">
+            {activeWorkspace === "map" ? (
+              <WorkspaceLayoutControls
+                layout={workspaceLayout}
+                onChange={updateWorkspaceLayout}
+                onHelp={(section) => setHelpSection(section)}
+              />
+            ) : null}
             {activeWorkspace === "map" && !mapSearchDocked ? (
               <MapGlobalSearch
                 docked={false}
@@ -3498,7 +3624,16 @@ export function App() {
           )}
         </section>
 
+        {workspaceLayout.rightPanelMode !== "hidden" ? (
         <aside className="panel right-panel">
+          {workspaceLayout.rightPanelMode === "collapsed" ? (
+            <CollapsedPanelRail
+              icon={<Database size={18} />}
+              label={selectedSituationFeature || selectedObject ? "Detail" : "Info"}
+              onExpand={() => updateWorkspaceLayout({ rightPanelMode: "open" })}
+            />
+          ) : (
+            <>
           {activeWorkspace !== "map" ? (
             <div className="workspace-context-card">
               <span>Workspace</span>
@@ -3610,10 +3745,22 @@ export function App() {
             )}
           </div>
           ) : null}
+            </>
+          )}
+          {workspaceLayout.rightPanelMode === "open" ? (
+            <button
+              aria-label="Změnit šířku pravého panelu"
+              className="panel-resize-handle left"
+              onPointerDown={(event) => beginWorkspacePanelResize("right", event)}
+              title="Táhnutím změnit šířku detailu"
+              type="button"
+            />
+          ) : null}
         </aside>
+        ) : null}
       </section>
 
-        <ContextRail
+        {workspaceLayout.contextRailVisible ? <ContextRail
           activeWorkspace={activeWorkspace}
           messagingOpen={messagingOpen}
           onOpenMessaging={() => {
@@ -3623,10 +3770,10 @@ export function App() {
           onOpenSettings={() => openSettings("map")}
           onStartReport={startCommunityReportCapture}
           onWorkspaceChange={setActiveWorkspace}
-        />
+        /> : null}
       </section>
 
-      <footer className="app-statusbar" aria-label="Provozní stav aplikace">
+      {workspaceLayout.statusbarVisible ? <footer className="app-statusbar" aria-label="Provozní stav aplikace">
         <span className={alertSummary.total > 0 ? "warn" : "ok"}>
           <AlertTriangle size={15} />
           Výstrahy {alertSummary.total > 0 ? `${alertSummary.total} aktivní` : "bez aktivních"}
@@ -3647,7 +3794,7 @@ export function App() {
           <ShieldCheck size={15} />
           Verze 0.1.0
         </span>
-      </footer>
+      </footer> : null}
 
       {settingsOpen ? (
         <SettingsDrawer
@@ -3661,6 +3808,7 @@ export function App() {
           language={language}
           mapBasemapMode={mapBasemapMode}
           minConfidence={minConfidence}
+          operatorProfile={effectiveOperatorProfile}
           predictionMinutes={predictionMinutes}
           predictionMode={predictionMode}
           publicFlightSymbolMode={publicFlightSymbolMode}
@@ -3676,6 +3824,7 @@ export function App() {
           trackHistoryDisplayMode={trackHistoryDisplayMode}
           trackHistoryLimit={trackHistoryLimit}
           trackHistoryWindowSeconds={trackHistoryWindowSeconds}
+          workspaceLayout={workspaceLayout}
           onAlertRadiusKmChange={setAlertRadiusKm}
           onAoiRuleCenterFromMap={handleCreateAoiRuleFromMap}
           onAoiRuleCenterFromUserLocation={handleCreateAoiRuleFromUserLocation}
@@ -3698,6 +3847,7 @@ export function App() {
           onMapBasemapModeChange={setMapBasemapMode}
           onMinConfidenceChange={setMinConfidence}
           onMapClusterEnabledChange={setMapClusterEnabled}
+          onOperatorProfileChange={setOperatorProfile}
           onPredictionMinutesChange={setPredictionMinutes}
           onPredictionModeChange={setPredictionMode}
           onPublicFlightSymbolModeChange={setPublicFlightSymbolMode}
@@ -3710,6 +3860,8 @@ export function App() {
           onTrackHistoryDisplayModeChange={setTrackHistoryDisplayMode}
           onTrackHistoryLimitChange={setTrackHistoryLimit}
           onTrackHistoryWindowSecondsChange={setTrackHistoryWindowSeconds}
+          onWorkspaceLayoutChange={updateWorkspaceLayout}
+          onHelp={(section) => setHelpSection(section)}
           onLogin={loginOperator}
           onLogout={logoutOperator}
         />
@@ -3778,6 +3930,14 @@ export function App() {
           reason={loginPromptReason}
           onClose={() => setLoginPromptReason(null)}
           onContinue={continueLoginFromPrompt}
+        />
+      ) : null}
+
+      {helpSection ? (
+        <ManualDialog
+          section={helpSection}
+          onClose={() => setHelpSection(null)}
+          onSectionChange={setHelpSection}
         />
       ) : null}
 
@@ -5182,6 +5342,7 @@ function SettingsDrawer({
   mapBasemapMode,
   mapClusterEnabled,
   minConfidence,
+  operatorProfile,
   predictionMinutes,
   predictionMode,
   publicFlightSymbolMode,
@@ -5196,6 +5357,7 @@ function SettingsDrawer({
   trackHistoryDisplayMode,
   trackHistoryLimit,
   trackHistoryWindowSeconds,
+  workspaceLayout,
   onAlertRadiusKmChange,
   onAoiRuleCenterFromMap,
   onAoiRuleCenterFromUserLocation,
@@ -5208,6 +5370,7 @@ function SettingsDrawer({
   onMapBasemapModeChange,
   onMapClusterEnabledChange,
   onMinConfidenceChange,
+  onOperatorProfileChange,
   onPredictionMinutesChange,
   onPredictionModeChange,
   onPublicFlightSymbolModeChange,
@@ -5220,6 +5383,8 @@ function SettingsDrawer({
   onTrackHistoryDisplayModeChange,
   onTrackHistoryLimitChange,
   onTrackHistoryWindowSecondsChange,
+  onWorkspaceLayoutChange,
+  onHelp,
   onLogin,
   onLogout
 }: {
@@ -5234,6 +5399,7 @@ function SettingsDrawer({
   mapBasemapMode: MapBasemapMode;
   mapClusterEnabled: boolean;
   minConfidence: number;
+  operatorProfile: OperatorProfilePreferences;
   predictionMinutes: number;
   predictionMode: PredictionMode;
   publicFlightSymbolMode: PublicFlightSymbolMode;
@@ -5248,6 +5414,7 @@ function SettingsDrawer({
   trackHistoryDisplayMode: TrackHistoryDisplayMode;
   trackHistoryLimit: number;
   trackHistoryWindowSeconds: number;
+  workspaceLayout: Required<WorkspaceLayoutPreferences>;
   onAlertRadiusKmChange: (value: number) => void;
   onAoiRuleCenterFromMap: () => void;
   onAoiRuleCenterFromUserLocation: () => void;
@@ -5260,6 +5427,7 @@ function SettingsDrawer({
   onMapBasemapModeChange: (value: MapBasemapMode) => void;
   onMapClusterEnabledChange: (value: boolean) => void;
   onMinConfidenceChange: (value: number) => void;
+  onOperatorProfileChange: (value: OperatorProfilePreferences) => void;
   onPredictionMinutesChange: (value: number) => void;
   onPredictionModeChange: (value: PredictionMode) => void;
   onPublicFlightSymbolModeChange: (value: PublicFlightSymbolMode) => void;
@@ -5272,6 +5440,8 @@ function SettingsDrawer({
   onTrackHistoryDisplayModeChange: (value: TrackHistoryDisplayMode) => void;
   onTrackHistoryLimitChange: (value: number) => void;
   onTrackHistoryWindowSecondsChange: (value: number) => void;
+  onWorkspaceLayoutChange: (value: Partial<WorkspaceLayoutPreferences>) => void;
+  onHelp: (section: HelpSection) => void;
   onLogin: () => void;
   onLogout: () => void;
 }) {
@@ -5291,6 +5461,7 @@ function SettingsDrawer({
           {[
             ["map", "Mapa"],
             ["data", "Data"],
+            ["workspace", "Plocha"],
             ["awareness", "Výstrahy"],
             ["account", "Účet"]
           ].map(([tab, label]) => (
@@ -5415,6 +5586,19 @@ function SettingsDrawer({
             </section>
           ) : null}
 
+          {activeTab === "workspace" ? (
+            <section className="settings-section">
+              <div className="settings-title-row">
+                <PanelTitle icon={<PanelLeftClose size={17} />} title="Plocha operátora" />
+                <HelpHint label="Jak nastavit pracovní plochu" onOpen={() => onHelp("layout")} />
+              </div>
+              <p className="settings-help">
+                Panely lze zmenšit, sbalit do ikony nebo úplně skrýt. Nastavení se ukládá do profilu přihlášeného uživatele a na tomto zařízení funguje i v offline režimu.
+              </p>
+              <WorkspaceLayoutEditor layout={workspaceLayout} onChange={onWorkspaceLayoutChange} onHelp={() => onHelp("layout")} />
+            </section>
+          ) : null}
+
           {activeTab === "awareness" ? (
             <section className="settings-section">
               <PanelTitle icon={<MapPin size={17} />} title="Výstrahy a zóny" />
@@ -5490,6 +5674,12 @@ function SettingsDrawer({
               <ReadinessRow label="Veřejné čtení" value={authConfig.publicReadEnabled ? "zapnuto" : "vypnuto"} tone={authConfig.publicReadEnabled ? "ok" : "neutral"} />
               <ReadinessRow label="Serverový profil" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
               <ReadinessRow label="Uloženo" value={formatProfileUpdatedAt(serverProfileUpdatedAt)} tone="neutral" />
+              <ProfileEditor
+                profile={operatorProfile}
+                session={authSession}
+                onChange={onOperatorProfileChange}
+                onHelp={() => onHelp("profile")}
+              />
               {authConfig.publicReadEnabled && authSession.status !== "authenticated" ? (
                 <div className="empty-mini">Mapa a veřejné vrstvy jsou dostupné bez přihlášení. Uživatelský profil, hlášení, potvrzení výstrah a AI asistent vyžadují účet.</div>
               ) : null}
@@ -5516,6 +5706,424 @@ function SettingsDrawer({
       </aside>
     </div>
   );
+}
+
+function normalizeWorkspaceLayout(value: WorkspaceLayoutPreferences | undefined): Required<WorkspaceLayoutPreferences> {
+  return {
+    contextRailVisible: value?.contextRailVisible ?? defaultWorkspaceLayout.contextRailVisible,
+    leftPanelMode: normalizeWorkspacePanelMode(value?.leftPanelMode, defaultWorkspaceLayout.leftPanelMode),
+    leftPanelWidth: clamp(value?.leftPanelWidth ?? defaultWorkspaceLayout.leftPanelWidth, workspaceLeftWidthRange.min, workspaceLeftWidthRange.max),
+    rightPanelMode: normalizeWorkspacePanelMode(value?.rightPanelMode, defaultWorkspaceLayout.rightPanelMode),
+    rightPanelWidth: clamp(value?.rightPanelWidth ?? defaultWorkspaceLayout.rightPanelWidth, workspaceRightWidthRange.min, workspaceRightWidthRange.max),
+    statusbarVisible: value?.statusbarVisible ?? defaultWorkspaceLayout.statusbarVisible
+  };
+}
+
+function normalizeWorkspacePanelMode(value: WorkspacePanelMode | undefined, fallback: WorkspacePanelMode): WorkspacePanelMode {
+  return value === "open" || value === "collapsed" || value === "hidden" ? value : fallback;
+}
+
+function initialOperatorProfile(_session: AuthSession, savedProfile: OperatorProfilePreferences | undefined): OperatorProfilePreferences {
+  return savedProfile ?? {};
+}
+
+function mergeOperatorProfile(session: AuthSession, profile: OperatorProfilePreferences): OperatorProfilePreferences {
+  const authProfile = session.status === "authenticated" ? session.profile : undefined;
+  return {
+    displayName: profile.displayName ?? authProfile?.name ?? "",
+    email: profile.email ?? authProfile?.email ?? "",
+    ...profile
+  };
+}
+
+function operatorInitials(profile: OperatorProfilePreferences): string {
+  const source = profile.displayName || profile.email || "CSM";
+  const parts = source.split(/[\s.@_-]+/u).filter(Boolean).slice(0, 2);
+  return parts.map((part) => part[0]?.toUpperCase()).join("") || "CS";
+}
+
+function OperatorAvatar({ profile, size = "normal" }: { profile: OperatorProfilePreferences; size?: "normal" | "small" }) {
+  return (
+    <span className={`operator-avatar ${size}`} aria-hidden="true">
+      {profile.avatarDataUrl ? <img alt="" src={profile.avatarDataUrl} /> : <strong>{operatorInitials(profile)}</strong>}
+    </span>
+  );
+}
+
+function CollapsedPanelRail({ icon, label, onExpand }: { icon: React.ReactNode; label: string; onExpand: () => void }) {
+  return (
+    <div className="collapsed-panel-rail">
+      {icon}
+      <span>{label}</span>
+      <button className="icon-button" onClick={onExpand} title="Rozbalit panel" type="button">
+        <Move size={15} />
+      </button>
+    </div>
+  );
+}
+
+function WorkspaceLayoutControls({
+  layout,
+  onChange,
+  onHelp
+}: {
+  layout: Required<WorkspaceLayoutPreferences>;
+  onChange: (value: Partial<WorkspaceLayoutPreferences>) => void;
+  onHelp: (section: HelpSection) => void;
+}) {
+  return (
+    <div className="workspace-layout-toolbar" aria-label="Nastavení pracovní plochy">
+      <button
+        className={layout.leftPanelMode === "hidden" ? "" : "active"}
+        onClick={() => onChange({ leftPanelMode: layout.leftPanelMode === "hidden" ? "open" : "hidden" })}
+        title={layout.leftPanelMode === "hidden" ? "Zobrazit levý panel" : "Skrýt levý panel"}
+        type="button"
+      >
+        <PanelLeftClose size={15} />
+        Vrstvy
+      </button>
+      <button
+        className={layout.rightPanelMode === "hidden" ? "" : "active"}
+        onClick={() => onChange({ rightPanelMode: layout.rightPanelMode === "hidden" ? "open" : "hidden" })}
+        title={layout.rightPanelMode === "hidden" ? "Zobrazit detail" : "Skrýt detail"}
+        type="button"
+      >
+        <PanelRightClose size={15} />
+        Detail
+      </button>
+      <button
+        className={layout.contextRailVisible ? "active" : ""}
+        onClick={() => onChange({ contextRailVisible: !layout.contextRailVisible })}
+        title="Zobrazit nebo skrýt pravou kontextovou lištu"
+        type="button"
+      >
+        <Layers size={15} />
+        Lišta
+      </button>
+      <button onClick={() => onChange(defaultWorkspaceLayout)} title="Obnovit výchozí plochu" type="button">
+        <RefreshCw size={15} />
+      </button>
+      <HelpHint label="Plocha" onOpen={() => onHelp("layout")} />
+    </div>
+  );
+}
+
+function WorkspaceLayoutEditor({
+  layout,
+  onChange,
+  onHelp
+}: {
+  layout: Required<WorkspaceLayoutPreferences>;
+  onChange: (value: Partial<WorkspaceLayoutPreferences>) => void;
+  onHelp: () => void;
+}) {
+  return (
+    <div className="workspace-layout-editor">
+      <SegmentedControl
+        label="Levý panel"
+        options={workspacePanelModeOptions}
+        value={layout.leftPanelMode}
+        onChange={(value) => onChange({ leftPanelMode: value as WorkspacePanelMode })}
+      />
+      <label className="range-label">
+        Šířka levého panelu
+        <input
+          disabled={layout.leftPanelMode !== "open"}
+          max={workspaceLeftWidthRange.max}
+          min={workspaceLeftWidthRange.min}
+          onChange={(event) => onChange({ leftPanelWidth: Number(event.target.value) })}
+          step="10"
+          type="range"
+          value={layout.leftPanelWidth}
+        />
+        <span>{layout.leftPanelWidth}px</span>
+      </label>
+      <SegmentedControl
+        label="Pravý panel"
+        options={workspacePanelModeOptions}
+        value={layout.rightPanelMode}
+        onChange={(value) => onChange({ rightPanelMode: value as WorkspacePanelMode })}
+      />
+      <label className="range-label">
+        Šířka pravého panelu
+        <input
+          disabled={layout.rightPanelMode !== "open"}
+          max={workspaceRightWidthRange.max}
+          min={workspaceRightWidthRange.min}
+          onChange={(event) => onChange({ rightPanelWidth: Number(event.target.value) })}
+          step="10"
+          type="range"
+          value={layout.rightPanelWidth}
+        />
+        <span>{layout.rightPanelWidth}px</span>
+      </label>
+      <label className="toggle-row">
+        <input type="checkbox" checked={layout.contextRailVisible} onChange={(event) => onChange({ contextRailVisible: event.target.checked })} />
+        Pravá kontextová lišta
+      </label>
+      <label className="toggle-row">
+        <input type="checkbox" checked={layout.statusbarVisible} onChange={(event) => onChange({ statusbarVisible: event.target.checked })} />
+        Dolní stavový řádek
+      </label>
+      <div className="settings-button-row">
+        <button className="mini-button" onClick={() => onChange(defaultWorkspaceLayout)} type="button">
+          <RefreshCw size={14} />
+          Výchozí rozložení
+        </button>
+        <button className="mini-button" onClick={onHelp} type="button">
+          <HelpCircle size={14} />
+          Nápověda
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const workspacePanelModeOptions: Array<[string, string]> = [
+  ["open", "Plný"],
+  ["collapsed", "Ikona"],
+  ["hidden", "Skrýt"]
+];
+
+function ProfileEditor({
+  profile,
+  session,
+  onChange,
+  onHelp
+}: {
+  profile: OperatorProfilePreferences;
+  session: AuthSession;
+  onChange: (value: OperatorProfilePreferences) => void;
+  onHelp: () => void;
+}) {
+  const fileInputId = React.useId();
+  const [avatarError, setAvatarError] = React.useState<string | null>(null);
+
+  const update = React.useCallback((patch: Partial<OperatorProfilePreferences>) => {
+    onChange({ ...profile, ...patch });
+  }, [onChange, profile]);
+
+  const handleAvatarChange = React.useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) {
+      return;
+    }
+    setAvatarError(null);
+    void readAvatarFile(file)
+      .then((avatarDataUrl) => update({ avatarDataUrl }))
+      .catch((error: unknown) => setAvatarError(error instanceof Error ? error.message : "Avatar se nepodařilo načíst."));
+  }, [update]);
+
+  return (
+    <div className="profile-editor">
+      <div className="settings-title-row">
+        <PanelTitle icon={<UserCircle size={17} />} title="Profil uživatele" />
+        <HelpHint label="Profil a kontakty" onOpen={onHelp} />
+      </div>
+      <div className="profile-editor-header">
+        <OperatorAvatar profile={profile} />
+        <div>
+          <strong>{profile.displayName || session.profile?.name || "Uživatel CSM"}</strong>
+          <span>{profile.role || "Kontakt pro krizovou komunikaci"}</span>
+        </div>
+      </div>
+      <input id={fileInputId} className="visually-hidden" accept="image/png,image/jpeg,image/webp" type="file" onChange={handleAvatarChange} />
+      <div className="settings-button-row">
+        <label className="mini-button file-like-button" htmlFor={fileInputId}>
+          <Image size={14} />
+          Vybrat avatar
+        </label>
+        {profile.avatarDataUrl ? (
+          <button className="mini-button" onClick={() => update({ avatarDataUrl: undefined })} type="button">
+            Odebrat
+          </button>
+        ) : null}
+      </div>
+      {avatarError ? <div className="error-banner">{avatarError}</div> : null}
+      <label className="text-field">
+        Zobrazované jméno
+        <input value={profile.displayName ?? ""} onChange={(event) => update({ displayName: event.target.value })} placeholder={session.profile?.name ?? "Jméno a příjmení"} />
+      </label>
+      <label className="text-field">
+        Role
+        <input value={profile.role ?? ""} onChange={(event) => update({ role: event.target.value })} placeholder="Dobrovolník, koordinátor, starosta..." />
+      </label>
+      <label className="text-field">
+        Organizace
+        <input value={profile.organization ?? ""} onChange={(event) => update({ organization: event.target.value })} placeholder="Obec, jednotka, firma, tým" />
+      </label>
+      <label className="text-field">
+        E-mail
+        <input value={profile.email ?? ""} onChange={(event) => update({ email: event.target.value })} placeholder={session.profile?.email ?? "kontakt@example.cz"} />
+      </label>
+      <label className="text-field">
+        Telefon
+        <input value={profile.phone ?? ""} onChange={(event) => update({ phone: event.target.value })} placeholder="+420 ..." />
+      </label>
+      <label className="text-field">
+        Poznámka ke kontaktu
+        <textarea value={profile.contactNote ?? ""} onChange={(event) => update({ contactNote: event.target.value })} placeholder="Kdy a jak mě kontaktovat" rows={3} />
+      </label>
+      <label className="toggle-row">
+        <input type="checkbox" checked={Boolean(profile.publicContact)} onChange={(event) => update({ publicContact: event.target.checked })} />
+        Kontakt může být viditelný členům skupin a incidentů
+      </label>
+    </div>
+  );
+}
+
+function HelpHint({ label, onOpen }: { label: string; onOpen: () => void }) {
+  return (
+    <button className="help-hint" onClick={onOpen} title={label} type="button">
+      <HelpCircle size={14} />
+    </button>
+  );
+}
+
+function ManualDialog({
+  section,
+  onClose,
+  onSectionChange
+}: {
+  section: HelpSection;
+  onClose: () => void;
+  onSectionChange: (section: HelpSection) => void;
+}) {
+  const entry = manualSections[section];
+  return (
+    <div className="ui-dialog-backdrop" role="presentation">
+      <section className="ui-dialog manual-dialog" aria-modal="true" role="dialog" aria-labelledby="manual-title">
+        <div className="ui-dialog-header">
+          <div>
+            <span>Manuál</span>
+            <strong id="manual-title">{entry.title}</strong>
+          </div>
+          <button className="icon-button" onClick={onClose} title="Zavřít manuál" type="button">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="manual-layout">
+          <nav aria-label="Sekce manuálu">
+            {Object.entries(manualSections).map(([key, item]) => (
+              <button
+                className={key === section ? "active" : ""}
+                key={key}
+                onClick={() => onSectionChange(key as HelpSection)}
+                type="button"
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+          <article>
+            <p>{entry.body}</p>
+            <ul>
+              {entry.points.map((point) => <li key={point}>{point}</li>)}
+            </ul>
+          </article>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const manualSections: Record<HelpSection, { body: string; label: string; points: string[]; title: string }> = {
+  alerts: {
+    body: "Výstrahy jsou informační pomůcka pro rozhodování občanů a koordinátorů. Technické chyby zdrojů se oddělují od bezpečnostních událostí.",
+    label: "Výstrahy",
+    points: [
+      "Sledujte platnost, zdroj a stáří výstrahy.",
+      "Uživatelské zóny pomáhají hlídat konkrétní oblast, například domov, obec nebo trasu.",
+      "Upozornění neposkytuje pokyn k zásahu; vždy respektujte místní krizové řízení."
+    ],
+    title: "Výstrahy a sledované oblasti"
+  },
+  layers: {
+    body: "Katalog vrstev je hlavní způsob, jak zapnout lety, dopravu, počasí, bezpečnostní vrstvy, uživatelské zóny nebo technické kontexty.",
+    label: "Vrstvy",
+    points: [
+      "Běžný civilní pohled zapínejte přes veřejné vrstvy, diagnostické zdroje používejte jen při kontrole dat.",
+      "Některé vrstvy mají vlastní čas obnovy; COP využívá cache SIM a nedotazuje původní zdroje přímo.",
+      "Při oddálení mohou být objekty shlukované, aby mapa zůstala čitelná."
+    ],
+    title: "Mapové vrstvy"
+  },
+  layout: {
+    body: "Pracovní plocha je konfigurovatelná. Mapa má být hlavní, proto lze postranní panely sbalit nebo skrýt podle úkolu a velikosti obrazovky.",
+    label: "Plocha",
+    points: [
+      "Táhnutím za okraj panelu upravíte jeho šířku na desktopu.",
+      "Volba Ikona ponechá panel dostupný, ale uvolní místo mapě.",
+      "U přihlášeného uživatele se rozložení ukládá do serverového profilu."
+    ],
+    title: "Pracovní plocha"
+  },
+  overview: {
+    body: "Civilní situační mapa spojuje veřejné datové vrstvy, komunitní hlášení, zprávy a osobní výstrahy do jedné pracovní plochy.",
+    label: "Přehled",
+    points: [
+      "Mapa je primární pohled pro rychlé pochopení situace v okolí.",
+      "Chat a hlášení jsou navázané na skupiny, aby bylo možné sdílet kontext a média bezpečně.",
+      "Veřejné čtení funguje bez účtu, ukládání profilu, hlášení a komunikace vyžadují přihlášení."
+    ],
+    title: "Přehled aplikace"
+  },
+  profile: {
+    body: "Profil pomáhá ostatním poznat, kdo posílá hlášení nebo komunikuje ve skupině. Kontaktní údaje se používají jen tam, kde to dává smysl pro krizovou spolupráci.",
+    label: "Profil",
+    points: [
+      "Avatar se zmenší a uloží do uživatelského profilu jako lehký obrázek.",
+      "Veřejnost kontaktu zapínejte jen tehdy, pokud má být kontakt sdílen v rámci skupin nebo incidentů.",
+      "Přihlašovací údaje spravuje identity provider; COP neukládá hesla."
+    ],
+    title: "Profil a kontakt"
+  },
+  reports: {
+    body: "Hlášení slouží k vložení informací z terénu: text, poloha, nebezpečnost, platnost a přílohy. Poloha je klíčová pro správné varování.",
+    label: "Hlášení",
+    points: [
+      "Pokud soubor nemá polohu, lze ji vybrat z mapy.",
+      "Přílohy mají přístupová práva podle skupiny nebo zvolené viditelnosti.",
+      "Velké soubory zobrazují průběh nahrávání, aby nedošlo k nechtěnému obnovení stránky."
+    ],
+    title: "Komunitní hlášení"
+  }
+};
+
+function readAvatarFile(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    return Promise.reject(new Error("Avatar musí být obrázek PNG, JPG nebo WebP."));
+  }
+  if (file.size > 5_000_000) {
+    return Promise.reject(new Error("Avatar je příliš velký. Použijte obrázek do 5 MB."));
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Avatar se nepodařilo přečíst."));
+    reader.onload = () => {
+      const image = new window.Image();
+      image.onerror = () => reject(new Error("Avatar se nepodařilo zpracovat."));
+      image.onload = () => {
+        const size = 256;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          reject(new Error("Prohlížeč nepodporuje zpracování avataru."));
+          return;
+        }
+        const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
+        const sourceX = Math.max(0, (image.naturalWidth - sourceSize) / 2);
+        const sourceY = Math.max(0, (image.naturalHeight - sourceSize) / 2);
+        context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+        resolve(canvas.toDataURL("image/webp", 0.82));
+      };
+      image.src = String(reader.result ?? "");
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function PanelTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
@@ -9263,9 +9871,9 @@ function predictionModeLabel(mode: PredictionMode): string {
   return predictionModeOptions.find(([value]) => value === mode)?.[1] ?? "Adaptivní";
 }
 
-function operatorDisplayName(session: AuthSession, config: AuthConfig): string {
+function operatorDisplayName(session: AuthSession, config: AuthConfig, profile: OperatorProfilePreferences): string {
   if (session.status === "authenticated") {
-    return session.profile?.name ?? "Přihlášen";
+    return profile.displayName ?? session.profile?.name ?? "Přihlášen";
   }
   if (session.status === "authenticating") {
     return "Ověřuji";
