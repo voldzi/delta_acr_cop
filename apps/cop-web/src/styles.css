@@ -1250,7 +1250,7 @@ h1 {
 
 .matrix-chat-shell {
   display: grid;
-  grid-template-rows: minmax(80px, 0.34fr) minmax(220px, 1fr);
+  grid-template-rows: minmax(96px, 0.34fr) minmax(240px, 1fr);
   gap: 10px;
   min-height: 420px;
 }
@@ -1259,7 +1259,7 @@ h1 {
   display: grid;
   align-content: start;
   gap: 6px;
-  max-height: 150px;
+  max-height: 180px;
   overflow: auto;
   padding: 6px;
   border: 1px solid rgba(142, 157, 170, 0.22);
@@ -1268,11 +1268,15 @@ h1 {
 
 .matrix-room-list button {
   display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
   gap: 2px;
   width: 100%;
-  padding: 8px;
+  min-height: 44px;
+  padding: 7px 8px;
   border: 1px solid rgba(142, 157, 170, 0.18);
-  background: rgba(18, 25, 31, 0.74);
+  border-radius: 8px;
+  background: rgba(18, 25, 31, 0.68);
   color: var(--text);
   text-align: left;
   cursor: pointer;
@@ -1280,8 +1284,8 @@ h1 {
 
 .matrix-room-list button.active,
 .matrix-room-list button:hover {
-  border-color: rgba(200, 240, 141, 0.58);
-  background: rgba(151, 199, 104, 0.14);
+  border-color: rgba(74, 163, 255, 0.58);
+  background: rgba(74, 163, 255, 0.16);
 }
 
 .matrix-room-list strong,
@@ -1296,12 +1300,74 @@ h1 {
   font-size: 11px;
 }
 
+.matrix-room-avatar,
+.direct-chat-results button > strong {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(116, 192, 255, 0.38);
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(74, 163, 255, 0.34), rgba(151, 199, 104, 0.18));
+  color: #eef8ff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.direct-chat-starter {
+  display: grid;
+  gap: 6px;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid rgba(142, 157, 170, 0.16);
+}
+
+.direct-chat-starter input {
+  min-height: 34px;
+  min-width: 0;
+  border: 1px solid rgba(142, 157, 170, 0.24);
+  border-radius: 999px;
+  background: rgba(9, 14, 18, 0.94);
+  color: var(--text);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.direct-chat-starter > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.direct-chat-results {
+  display: grid;
+  gap: 5px;
+}
+
+.direct-chat-results button {
+  grid-template-columns: 32px minmax(0, 1fr);
+}
+
+.direct-chat-results button span {
+  display: grid;
+  min-width: 0;
+}
+
+.direct-chat-results b {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .matrix-room-view {
   display: grid;
   grid-template-rows: auto minmax(160px, 1fr) auto;
   min-height: 0;
   border: 1px solid rgba(142, 157, 170, 0.22);
+  border-radius: 8px;
   background: rgba(8, 13, 18, 0.72);
+  overflow: hidden;
 }
 
 .matrix-room-header {
@@ -1326,6 +1392,9 @@ h1 {
   max-height: 260px;
   overflow: auto;
   padding: 10px;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(74, 163, 255, 0.08), transparent 28%),
+    rgba(8, 13, 18, 0.3);
 }
 
 .matrix-message {
@@ -1333,15 +1402,17 @@ h1 {
   gap: 3px;
   justify-self: start;
   max-width: 88%;
-  padding: 8px 9px;
+  padding: 8px 10px;
   border: 1px solid rgba(142, 157, 170, 0.18);
-  background: rgba(18, 25, 31, 0.9);
+  border-radius: 14px 14px 14px 4px;
+  background: rgba(28, 38, 47, 0.92);
 }
 
 .matrix-message.own {
   justify-self: end;
-  border-color: rgba(200, 240, 141, 0.36);
-  background: rgba(151, 199, 104, 0.14);
+  border-color: rgba(74, 163, 255, 0.44);
+  border-radius: 14px 14px 4px;
+  background: rgba(24, 111, 214, 0.78);
 }
 
 .matrix-message small {
@@ -1379,19 +1450,30 @@ h1 {
 
 .matrix-composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 36px;
   gap: 8px;
   padding: 8px;
   border-top: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(10, 16, 21, 0.78);
 }
 
 .matrix-composer input {
+  min-height: 36px;
   min-width: 0;
   border: 1px solid rgba(142, 157, 170, 0.24);
+  border-radius: 999px;
   background: rgba(9, 14, 18, 0.94);
   color: var(--text);
-  padding: 0 10px;
+  padding: 0 14px;
   font: inherit;
+}
+
+.matrix-composer button {
+  width: 36px;
+  min-width: 36px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
 }
 
 .workspace-nav {

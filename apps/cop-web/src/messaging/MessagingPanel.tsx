@@ -3,7 +3,11 @@ import { Lock, LogIn, MessageCircle, Pin, PinOff, Plus, RefreshCw, Send, ShieldC
 import { fetchMessagingBootstrap } from "../cop-data";
 import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse, UserDirectoryEntry } from "../cop-data";
 import { SelectField } from "../ui/select";
-import { clearMatrixMessagingDeviceState, createMatrixMessagingSession } from "./matrixClient";
+import {
+  clearMatrixMessagingDeviceState,
+  createMatrixMessagingSession,
+  isMatrixAccountStoreMismatchError
+} from "./matrixClient";
 import type { MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage, MessagingPanelProps } from "./types";
 
 type Tone = "ok" | "warn" | "neutral";
@@ -13,8 +17,8 @@ const communityGroupVisibilityOptions: Array<{ label: string; value: "private" |
   { label: "Veřejná", value: "public" }
 ];
 
-const matrixDeviceIdStorageKey = "cop.messaging.matrixDeviceId";
-let fallbackMatrixDeviceId: string | null = null;
+const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
+const fallbackMatrixDeviceIds = new Map<string, string>();
 
 export function assertMatrixRoomBindingConfirmed(
   binding: MessagingMatrixRoomBindingResponse,
@@ -67,6 +71,7 @@ export function MessagingPanel({
   onAddGroupMember,
   onBindMatrixRoom,
   onClose,
+  onCreateDirectConversation,
   onCreateGroup,
   onLogin,
   onPinnedChange,
@@ -81,6 +86,10 @@ export function MessagingPanel({
   const [selectedRoomId, setSelectedRoomId] = React.useState<string | null>(null);
   const [timeline, setTimeline] = React.useState<MatrixTimelineMessage[]>([]);
   const [composerText, setComposerText] = React.useState("");
+  const [directQuery, setDirectQuery] = React.useState("");
+  const [directSuggestions, setDirectSuggestions] = React.useState<UserDirectoryEntry[]>([]);
+  const [directSearchLoading, setDirectSearchLoading] = React.useState(false);
+  const [directSearchError, setDirectSearchError] = React.useState<string | null>(null);
   const [groupActionError, setGroupActionError] = React.useState<string | null>(null);
   const [groupActionLoading, setGroupActionLoading] = React.useState(false);
   const [groupMemberQuery, setGroupMemberQuery] = React.useState("");
@@ -92,6 +101,8 @@ export function MessagingPanel({
   const [newGroupVisibility, setNewGroupVisibility] = React.useState<"private" | "public">("private");
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [syncState, setSyncState] = React.useState("idle");
+  const matrixAccountOwnerId = session.profile?.subjectId ?? session.profile?.username ?? "anonymous";
+  const previousMatrixAccountOwnerRef = React.useRef<string | null>(null);
 
   React.useEffect(() => () => {
     matrixSession?.stop();
@@ -108,6 +119,25 @@ export function MessagingPanel({
     setTimeline([]);
     void clearMatrixMessagingDeviceState();
   }, [authenticated]);
+
+  React.useEffect(() => {
+    if (!authenticated) {
+      previousMatrixAccountOwnerRef.current = null;
+      return;
+    }
+    const previousOwner = previousMatrixAccountOwnerRef.current;
+    previousMatrixAccountOwnerRef.current = matrixAccountOwnerId;
+    if (!previousOwner || previousOwner === matrixAccountOwnerId) {
+      return;
+    }
+    matrixSession?.stop();
+    setMatrixSession(null);
+    setRooms([]);
+    setSelectedRoomId(null);
+    setTimeline([]);
+    setBootstrapError(null);
+    void clearMatrixMessagingDeviceState();
+  }, [authenticated, matrixAccountOwnerId]);
 
   React.useEffect(() => {
     if (!authenticated || !authToken || !matrixSession?.bootstrap.expiresAt) {
@@ -169,6 +199,44 @@ export function MessagingPanel({
       window.clearTimeout(timer);
     };
   }, [authenticated, groupMemberCandidate?.subjectId, groupMemberQuery, onSearchUsers]);
+
+  React.useEffect(() => {
+    const query = directQuery.trim();
+    if (!authenticated || query.length < 2) {
+      setDirectSuggestions([]);
+      setDirectSearchError(null);
+      setDirectSearchLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setDirectSearchLoading(true);
+      setDirectSearchError(null);
+      onSearchUsers(query)
+        .then((items) => {
+          if (!cancelled) {
+            setDirectSuggestions(items.filter((item) => item.subjectId !== session.profile?.subjectId));
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setDirectSuggestions([]);
+            setDirectSearchError(error instanceof Error ? error.message : "Vyhledání uživatele selhalo.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setDirectSearchLoading(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [authenticated, directQuery, onSearchUsers, session.profile?.subjectId]);
 
   const providerStatus = status?.status ?? "degraded";
   const chatReady = Boolean(status?.chatAvailable && authenticated && authToken);
@@ -260,7 +328,7 @@ export function MessagingPanel({
     setBootstrapLoading(true);
     setBootstrapError(null);
     try {
-      const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, getOrCreateMatrixDeviceId());
+      const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, getOrCreateMatrixDeviceId(matrixAccountOwnerId));
       if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
         setBootstrapError(bootstrap.detail ?? bootstrap.warnings[0] ?? "Matrix token bootstrap není připravený.");
         return;
@@ -278,7 +346,7 @@ export function MessagingPanel({
       return;
     }
     try {
-      const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, matrixSession.bootstrap.deviceId ?? getOrCreateMatrixDeviceId());
+      const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, matrixSession.bootstrap.deviceId ?? getOrCreateMatrixDeviceId(matrixAccountOwnerId));
       if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
         setBootstrapError(bootstrap.detail ?? bootstrap.warnings[0] ?? "Matrix token se nepodařilo obnovit.");
         return;
@@ -289,15 +357,31 @@ export function MessagingPanel({
     }
   }
 
-  async function startMatrixSession(bootstrap: Awaited<ReturnType<typeof fetchMessagingBootstrap>>, preferredRoomId?: string | null) {
+  async function startMatrixSession(
+    bootstrap: Awaited<ReturnType<typeof fetchMessagingBootstrap>>,
+    preferredRoomId?: string | null,
+    allowStoreRecovery = true
+  ) {
     matrixSession?.stop();
-    const nextSession = await createMatrixMessagingSession(bootstrap, {
-      onRoomsChanged: (nextRooms) => {
-        setRooms(nextRooms);
-        setSelectedRoomId((current) => current ?? preferredRoomId ?? nextRooms[0]?.roomId ?? null);
-      },
-      onSyncState: setSyncState
-    });
+    let nextSession: MatrixMessagingSession;
+    try {
+      nextSession = await createMatrixMessagingSession(bootstrap, {
+        onRoomsChanged: (nextRooms) => {
+          setRooms(nextRooms);
+          setSelectedRoomId((current) => current ?? preferredRoomId ?? nextRooms[0]?.roomId ?? null);
+        },
+        onSyncState: setSyncState
+      });
+    } catch (caught) {
+      if (allowStoreRecovery && authToken && isMatrixAccountStoreMismatchError(caught)) {
+        await clearMatrixMessagingDeviceState();
+        const recoveredBootstrap = await fetchMessagingBootstrap(apiBase, authToken, getOrCreateMatrixDeviceId(matrixAccountOwnerId));
+        setBootstrapError("Lokální šifrovací stav patřil předchozímu účtu. Chat byl bezpečně obnoven pro aktuální přihlášení.");
+        await startMatrixSession(recoveredBootstrap, preferredRoomId, false);
+        return;
+      }
+      throw caught;
+    }
     const nextRooms = nextSession.getRooms();
     setMatrixSession(nextSession);
     setRooms(nextRooms);
@@ -313,6 +397,40 @@ export function MessagingPanel({
     setComposerText("");
     await matrixSession.sendMessage(selectedRoomId, text);
     setTimeline(matrixSession.getTimeline(selectedRoomId));
+  }
+
+  async function startDirectConversation(user: UserDirectoryEntry) {
+    if (!matrixSession) {
+      setBootstrapError("Nejdřív otevřete šifrovaný chat.");
+      return;
+    }
+    setBootstrapError(null);
+    try {
+      const conversation = await onCreateDirectConversation(user);
+      const inviteUserIds = await resolveConversationMatrixUsers({
+        ...conversation,
+        members: [
+          ...(conversation.members ?? []),
+          { displayName: user.displayName, role: "member", userId: user.subjectId }
+        ]
+      });
+      const roomId = await matrixSession.createGroupRoom(conversation.title, inviteUserIds);
+      const binding = await onBindMatrixRoom(conversation.conversationId, roomId, true);
+      assertMatrixRoomBindingConfirmed(binding, roomId);
+      setDirectQuery("");
+      setDirectSuggestions([]);
+      onRefresh();
+      const nextRooms = ensureRoomSummary(matrixSession.getRooms(), {
+        encrypted: true,
+        name: conversation.title,
+        roomId,
+        unreadCount: 0
+      });
+      setRooms(nextRooms);
+      setSelectedRoomId(roomId);
+    } catch (caught) {
+      setBootstrapError(caught instanceof Error ? caught.message : "Přímý chat se nepodařilo založit.");
+    }
   }
 
   async function startRoomForConversation(conversationId: string) {
@@ -402,6 +520,10 @@ export function MessagingPanel({
         <MatrixChatShell
           conversations={conversations}
           composerText={composerText}
+          directQuery={directQuery}
+          directSearchError={directSearchError}
+          directSearchLoading={directSearchLoading}
+          directSuggestions={directSuggestions}
           rooms={rooms}
           selectedConversation={selectedConversation}
           selectedRoomId={selectedRoomId}
@@ -411,8 +533,10 @@ export function MessagingPanel({
             const conversation = conversations.find((item) => item.conversationId === conversationId);
             setSelectedRoomId(conversation?.matrix?.roomId ?? conversationId);
           }}
+          onDirectQueryChange={setDirectQuery}
           onRoomSelect={setSelectedRoomId}
           onSend={() => void sendMessage()}
+          onStartDirectConversation={(user) => void startDirectConversation(user)}
           onStartRoom={(conversationId) => void startRoomForConversation(conversationId)}
         />
       ) : chatReady ? (
@@ -616,26 +740,38 @@ function CommunityGroupsPanel({
 function MatrixChatShell({
   conversations,
   composerText,
+  directQuery,
+  directSearchError,
+  directSearchLoading,
+  directSuggestions,
   rooms,
   selectedConversation,
   selectedRoomId,
   timeline,
   onComposerChange,
   onConversationSelect,
+  onDirectQueryChange,
   onRoomSelect,
   onSend,
+  onStartDirectConversation,
   onStartRoom
 }: {
   conversations: MessagingPanelProps["conversations"];
   composerText: string;
+  directQuery: string;
+  directSearchError: string | null;
+  directSearchLoading: boolean;
+  directSuggestions: UserDirectoryEntry[];
   rooms: MatrixRoomSummary[];
   selectedConversation: MessagingPanelProps["conversations"][number] | null;
   selectedRoomId: string | null;
   timeline: MatrixTimelineMessage[];
   onComposerChange: (value: string) => void;
   onConversationSelect: (conversationId: string) => void;
+  onDirectQueryChange: (value: string) => void;
   onRoomSelect: (roomId: string) => void;
   onSend: () => void;
+  onStartDirectConversation: (user: UserDirectoryEntry) => void;
   onStartRoom: (conversationId: string) => void;
 }) {
   const selectedRoom = rooms.find((room) => room.roomId === selectedRoomId) ?? null;
@@ -645,6 +781,29 @@ function MatrixChatShell({
   return (
     <div className="matrix-chat-shell">
       <div className="matrix-room-list" aria-label="Konverzace">
+        <div className="direct-chat-starter">
+          <input
+            aria-label="Vyhledat uživatele pro přímý chat"
+            placeholder="Nový chat: jméno nebo e-mail"
+            value={directQuery}
+            onChange={(event) => onDirectQueryChange(event.target.value)}
+          />
+          {directSearchLoading ? <span>Vyhledávám...</span> : null}
+          {directSearchError ? <span>{directSearchError}</span> : null}
+          {directSuggestions.length > 0 ? (
+            <div className="direct-chat-results">
+              {directSuggestions.slice(0, 5).map((user) => (
+                <button key={user.subjectId} onClick={() => onStartDirectConversation(user)} type="button">
+                  <strong>{initialsFor(user.displayName || user.username)}</strong>
+                  <span>
+                    <b>{user.displayName}</b>
+                    <small>{user.username}{user.email ? ` · ${user.email}` : ""}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         {rooms.length === 0 && conversations.length === 0 ? <div className="empty-mini">Zatím nemáte žádnou konverzaci. Založte skupinu níže.</div> : null}
         {conversations.map((conversation) => (
           <button
@@ -654,8 +813,11 @@ function MatrixChatShell({
             onClick={() => onConversationSelect(conversation.conversationId)}
             type="button"
           >
-            <strong>{conversation.title}</strong>
-            <small>{conversation.type === "group" ? "skupina" : "přímý chat"} · {conversation.memberCount ?? 1} členů · {conversation.matrix?.roomId ? "šifrovaný chat" : "připravit chat"}</small>
+            <span className="matrix-room-avatar">{initialsFor(conversation.title)}</span>
+            <span>
+              <strong>{conversation.title}</strong>
+              <small>{conversation.type === "group" ? "skupina" : "přímý chat"} · {conversation.memberCount ?? 1} členů · {conversation.matrix?.roomId ? "šifrovaný chat" : "připravit chat"}</small>
+            </span>
           </button>
         ))}
         {standaloneRooms.map((room) => (
@@ -666,8 +828,11 @@ function MatrixChatShell({
             onClick={() => onRoomSelect(room.roomId)}
             type="button"
           >
-            <strong>{room.name}</strong>
-            <small>{room.encrypted ? "šifrované" : "stav šifrování neznámý"} · {room.unreadCount} nové</small>
+            <span className="matrix-room-avatar">{initialsFor(room.name)}</span>
+            <span>
+              <strong>{room.name}</strong>
+              <small>{room.encrypted ? "šifrované" : "stav šifrování neznámý"} · {room.unreadCount} nové</small>
+            </span>
           </button>
         ))}
       </div>
@@ -716,7 +881,6 @@ function MatrixChatShell({
           />
           <button className="mini-button" disabled={!canSend || !composerText.trim()} onClick={onSend} type="button">
             <Send size={14} />
-            Odeslat
           </button>
         </div>
       </div>
@@ -724,24 +888,38 @@ function MatrixChatShell({
   );
 }
 
-function getOrCreateMatrixDeviceId(): string {
+function initialsFor(value: string): string {
+  const parts = value
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean);
+  const initials = parts.length > 1
+    ? `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`
+    : value.slice(0, 2);
+  return initials.toLocaleUpperCase("cs-CZ");
+}
+
+function getOrCreateMatrixDeviceId(ownerId: string): string {
+  const storageKey = `${matrixDeviceIdStoragePrefix}.${stableStorageKey(ownerId)}`;
   if (typeof window === "undefined") {
-    fallbackMatrixDeviceId ??= createMatrixDeviceId();
-    return fallbackMatrixDeviceId;
+    const fallback = fallbackMatrixDeviceIds.get(storageKey) ?? createMatrixDeviceId();
+    fallbackMatrixDeviceIds.set(storageKey, fallback);
+    return fallback;
   }
 
   try {
-    const stored = window.localStorage.getItem(matrixDeviceIdStorageKey);
+    const stored = window.localStorage.getItem(storageKey);
     if (isValidMatrixDeviceId(stored)) {
       return stored;
     }
 
     const next = createMatrixDeviceId();
-    window.localStorage.setItem(matrixDeviceIdStorageKey, next);
+    window.localStorage.setItem(storageKey, next);
     return next;
   } catch {
-    fallbackMatrixDeviceId ??= createMatrixDeviceId();
-    return fallbackMatrixDeviceId;
+    const fallback = fallbackMatrixDeviceIds.get(storageKey) ?? createMatrixDeviceId();
+    fallbackMatrixDeviceIds.set(storageKey, fallback);
+    return fallback;
   }
 }
 
@@ -766,6 +944,14 @@ function ensureRoomSummary(rooms: MatrixRoomSummary[], room: MatrixRoomSummary):
 
 function isValidMatrixDeviceId(value: string | null): value is string {
   return Boolean(value && /^[A-Za-z0-9._=-]{1,64}$/u.test(value));
+}
+
+function stableStorageKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._=-]+/gu, "_")
+    .slice(0, 96) || "anonymous";
 }
 
 function messagingStatusTone(status: "degraded" | "disabled" | "online"): Tone {

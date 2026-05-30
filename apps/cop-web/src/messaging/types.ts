@@ -27,6 +27,7 @@ export interface MessagingPanelProps {
   onAddGroupMember: (groupId: string, subjectId: string, displayName?: string) => Promise<CommunityGroup>;
   onBindMatrixRoom: (conversationId: string, roomId: string, encrypted: boolean) => Promise<MessagingMatrixRoomBindingResponse>;
   onClose: () => void;
+  onCreateDirectConversation: (user: UserDirectoryEntry) => Promise<MessagingConversationSummary>;
   onCreateGroup: (name: string, visibility: CommunityGroupVisibility) => Promise<{ conversation?: MessagingConversationSummary; group: CommunityGroup }>;
   onLogin: () => void;
   onPinnedChange: (pinned: boolean) => void;

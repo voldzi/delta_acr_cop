@@ -142,7 +142,8 @@ import {
   type TakFeatureCollectionResponse,
   type TakLayer,
   type TakLayerId,
-  type TakSourceDescriptor
+  type TakSourceDescriptor,
+  type UserDirectoryEntry
 } from "./cop-data";
 import { CopMap, formatTrackLabel } from "./CopMap";
 import { MessagingPanel } from "./messaging/MessagingPanel";
@@ -2493,6 +2494,43 @@ export function App() {
     };
   }
 
+  async function createDirectConversationForUi(user: UserDirectoryEntry): Promise<MessagingConversationSummary> {
+    if (!messagingAuthenticated || !authSession.accessToken) {
+      throw new Error("Pro přímý chat je potřeba přihlášení.");
+    }
+    const title = user.displayName?.trim() || user.username || user.subjectId;
+    const conversationResponse = await createMessagingConversation(apiBase, authSession.accessToken, {
+      members: [{ displayName: title, role: "member", userId: user.subjectId }],
+      metadata: {
+        externalId: user.subjectId,
+        source: "cop.direct"
+      },
+      title,
+      type: "direct"
+    });
+    if (!conversationResponse.conversation) {
+      throw new Error(conversationResponse.warnings[0] ?? "Přímý chat se nepodařilo založit.");
+    }
+    const conversation = {
+      ...conversationResponse.conversation,
+      members: [
+        ...(conversationResponse.conversation.members ?? []),
+        { displayName: title, role: "member", userId: user.subjectId }
+      ],
+      metadata: {
+        ...(conversationResponse.conversation.metadata ?? {}),
+        externalId: user.subjectId,
+        source: "cop.direct"
+      }
+    };
+    setMessagingConversations((current) => [
+      conversation,
+      ...current.filter((item) => item.conversationId !== conversation.conversationId)
+    ]);
+    setMessagingConversationsError(conversationResponse.status === "online" ? null : conversationResponse.warnings[0] ?? "Přímý chat byl založen s omezením.");
+    return conversation;
+  }
+
   async function addCommunityGroupMemberForUi(groupId: string, subjectId: string, displayName?: string): Promise<CommunityGroup> {
     if (!messagingAuthenticated || !authSession.accessToken) {
       throw new Error("Pro správu skupin je potřeba přihlášení.");
@@ -3515,6 +3553,7 @@ export function App() {
             bindMessagingConversationMatrixRoom(apiBase, authSession.accessToken ?? "", conversationId, { encrypted, roomId })
           }
           onClose={() => setMessagingOpen(false)}
+          onCreateDirectConversation={(user) => createDirectConversationForUi(user)}
           onCreateGroup={(name, visibility) => createCommunityGroupBundleForUi(name, visibility)}
           onLogin={() => openLoginPrompt("chat")}
           onPinnedChange={setMessagingPinned}

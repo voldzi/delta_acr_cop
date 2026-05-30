@@ -5,7 +5,7 @@ interface MatrixClientLike {
   createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;
   getRooms?: () => unknown[];
   getUserId?: () => string | null;
-  initRustCrypto?: () => Promise<void>;
+  initRustCrypto?: (args?: { cryptoDatabasePrefix?: string }) => Promise<void>;
   isRoomEncrypted?: (roomId: string) => boolean;
   joinRoom?: (roomIdOrAlias: string) => Promise<{ room_id?: string; roomId?: string }>;
   off?: (event: string, listener: (...args: unknown[]) => void) => void;
@@ -58,7 +58,16 @@ export async function createMatrixMessagingSession(
     if (typeof client.initRustCrypto !== "function") {
       throw new Error("Matrix klient nepodporuje Rust Crypto. E2EE chat zůstává vypnutý.");
     }
-    await client.initRustCrypto();
+    try {
+      await client.initRustCrypto({
+        cryptoDatabasePrefix: matrixCryptoDatabasePrefix(bootstrap)
+      });
+    } catch (caught) {
+      if (isMatrixAccountStoreMismatch(caught)) {
+        throw new MatrixAccountStoreMismatchError(caught);
+      }
+      throw caught;
+    }
   }
 
   let inviteJoinInFlight: Promise<void> | null = null;
@@ -145,6 +154,26 @@ export async function createMatrixMessagingSession(
   };
 }
 
+export class MatrixAccountStoreMismatchError extends Error {
+  constructor(readonly cause: unknown) {
+    super("Lokální šifrovací úložiště patří jinému účtu. Chat se bezpečně obnoví pro aktuálně přihlášeného uživatele.");
+    this.name = "MatrixAccountStoreMismatchError";
+  }
+}
+
+export function isMatrixAccountStoreMismatchError(caught: unknown): caught is MatrixAccountStoreMismatchError {
+  return caught instanceof MatrixAccountStoreMismatchError;
+}
+
+function matrixCryptoDatabasePrefix(bootstrap: MessagingBootstrapResponse): string {
+  const identity = `${bootstrap.userId}.${bootstrap.deviceId}`;
+  return `cop-web-matrix-${identity
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._=-]+/gu, "_")
+    .slice(0, 140)}`;
+}
+
 async function joinInvitedRoomsOnce(client: MatrixClientLike, homeserverBaseUrl: string): Promise<void> {
   const invitedRoomIds = (client.getRooms?.() ?? [])
     .map(asRoom)
@@ -176,7 +205,11 @@ export async function clearMatrixMessagingDeviceState(): Promise<void> {
     return;
   }
   try {
-    window.localStorage.removeItem("cop.messaging.matrixDeviceId");
+    const keysToRemove = Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index))
+      .filter((key): key is string => Boolean(key?.startsWith("cop.messaging.matrixDeviceId")));
+    for (const key of keysToRemove) {
+      window.localStorage.removeItem(key);
+    }
   } catch {
     // Best effort cleanup only. Matrix SDK owns the crypto store lifecycle.
   }
@@ -233,6 +266,15 @@ export function formatMatrixClientError(caught: unknown, baseUrl: string, action
     );
   }
   return caught instanceof Error ? caught : new Error(`Nelze ${action}: ${String(caught)}`);
+}
+
+function isMatrixAccountStoreMismatch(caught: unknown): boolean {
+  if (!(caught instanceof Error)) {
+    return false;
+  }
+  const message = caught.message.toLowerCase();
+  return message.includes("account in the store doesn't match the account in the constructor") ||
+    message.includes("account in the store does not match the account in the constructor");
 }
 
 function isLikelyBrowserNetworkError(caught: unknown): boolean {
