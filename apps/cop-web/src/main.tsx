@@ -583,11 +583,15 @@ export function App() {
     window.addEventListener("pageshow", resumeCallbackIfNeeded);
     window.addEventListener("focus", resumeCallbackIfNeeded);
     window.addEventListener("popstate", resumeCallbackIfNeeded);
+    window.addEventListener("visibilitychange", resumeCallbackIfNeeded);
+    const callbackPoll = window.setInterval(resumeCallbackIfNeeded, 1000);
     return () => {
       cancelled = true;
+      window.clearInterval(callbackPoll);
       window.removeEventListener("pageshow", resumeCallbackIfNeeded);
       window.removeEventListener("focus", resumeCallbackIfNeeded);
       window.removeEventListener("popstate", resumeCallbackIfNeeded);
+      window.removeEventListener("visibilitychange", resumeCallbackIfNeeded);
     };
   }, [authConfig]);
 
