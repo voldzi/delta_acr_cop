@@ -169,7 +169,7 @@ describe("COP web dashboard", () => {
     expect(within(catalogDrawer).getByText("Simulace")).toBeTruthy();
     expect((within(catalogDrawer).getByRole("checkbox", { name: /Simulace/u }) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByRole("button", { name: /Mapa/u }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: /Data/u }));
+    fireEvent.click(screen.getByRole("button", { name: /Přehled/u }));
     expect(screen.getByText("Zobrazit simulovaná data")).toBeTruthy();
     const objectSearchInput = screen.getAllByLabelText("Hledat v zobrazených objektech")[0] as HTMLInputElement;
     fireEvent.change(objectSearchInput, { target: { value: "UAV" } });
@@ -196,7 +196,7 @@ describe("COP web dashboard", () => {
       headers: { Authorization: "Bearer dev-lab-token" }
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Nastavení" }));
+    fireEvent.click(screen.getByTitle("Nastavení operátora"));
     fireEvent.click(screen.getByRole("tab", { name: "Mapa" }));
     expect(screen.getByText("Čas historie")).toBeTruthy();
     expect(screen.getByRole("button", { name: "60s" }).getAttribute("aria-pressed")).toBe("true");

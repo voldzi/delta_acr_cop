@@ -1,5 +1,5 @@
 import React from "react";
-import { Download, FileText, Image, Info, Lock, LogIn, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Send, ShieldCheck, Users, Video, X } from "lucide-react";
+import { Download, FileText, Image, Info, Lock, LogIn, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, ShieldCheck, Star, Users, Video, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
 import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse, UserDirectoryEntry } from "../cop-data";
 import { SelectField } from "../ui/select";
@@ -1104,6 +1104,14 @@ function MatrixChatShell({
     ? ({ "--chat-list-width": `${chatListWidth}px` } as React.CSSProperties)
     : undefined;
   const mapContextLabel = mapContext.selectedFeature?.title ?? formatCoordinates(mapContext.userLocation ?? mapContext.center);
+  const activeRoomTitle = selectedRoom?.name ?? selectedConversation?.title ?? "Vyberte konverzaci";
+  const activeRoomMeta = selectedRoom
+    ? `${selectedConversation?.memberCount ?? 1} členů · ${selectedRoom.encrypted ? "šifrováno" : "ověřuji šifrování"}`
+    : selectedConversation?.matrix?.roomId
+      ? "synchronizuji šifrovanou místnost"
+      : selectedConversation
+        ? "připraveno k založení chatu"
+        : "čeká na výběr";
 
   function beginChatListResize(event: React.PointerEvent<HTMLDivElement>) {
     if (!pinned) {
@@ -1126,6 +1134,13 @@ function MatrixChatShell({
   return (
     <div className={`matrix-chat-shell ${pinned ? "pinned" : ""}`} style={shellStyle}>
       <div className="matrix-room-list" aria-label="Konverzace">
+        <div className="matrix-list-header">
+          <div>
+            <strong>Chat</strong>
+            <span>{conversations.length + standaloneRooms.length} konverzací</span>
+          </div>
+          <Search size={15} aria-hidden="true" />
+        </div>
         <div className="direct-chat-starter">
           <input
             aria-label="Vyhledat uživatele pro přímý chat"
@@ -1185,10 +1200,16 @@ function MatrixChatShell({
       <div className="matrix-room-view">
         <div className="matrix-room-header">
           <div className="matrix-room-heading">
-            <strong>{selectedRoom?.name ?? selectedConversation?.title ?? "Vyberte konverzaci"}</strong>
-            <small>{selectedRoom ? selectedRoom.encrypted ? "šifrováno" : "ověřuji šifrování" : selectedConversation?.matrix?.roomId ? "synchronizuji místnost" : selectedConversation ? "připraveno" : "čeká"}</small>
+            <strong>{activeRoomTitle}</strong>
+            <small>{activeRoomMeta}</small>
           </div>
           <div className="matrix-room-header-actions">
+            <button className="icon-button compact" disabled={!selectedRoom && !selectedConversation} title="Připnout konverzaci" type="button">
+              <Star size={14} />
+            </button>
+            <button className="icon-button compact" disabled={!selectedRoom && !selectedConversation} title="Informace o konverzaci" type="button">
+              <Info size={14} />
+            </button>
             <span className="matrix-room-context-chip" title={mapContextLabel}>
               <MapPin size={13} />
               {mapContextLabel}
@@ -1199,6 +1220,15 @@ function MatrixChatShell({
             </button>
           </div>
         </div>
+        {(selectedRoom || selectedConversation) ? (
+          <div className="matrix-pinned-note">
+            <Pin size={15} />
+            <div>
+              <strong>Připnutý kontext</strong>
+              <span>{selectedConversation ? "Skupina, média a události jsou navázané na mapu." : `Kontext mapy: ${mapContextLabel}`}</span>
+            </div>
+          </div>
+        ) : null}
         <div className="matrix-timeline" aria-live="polite">
           {conversationOnlySelected ? (
             <div className="conversation-start-card">
@@ -1222,6 +1252,24 @@ function MatrixChatShell({
               <MatrixMessageBody message={message} onDownloadAttachment={onDownloadAttachment} />
             </div>
           ))}
+        </div>
+        <div className="matrix-attachment-shortcuts" aria-label="Rychlé vložení">
+          <button disabled={!canSend || messageSending} onClick={() => onAttachmentPick("image")} type="button">
+            <Image size={18} />
+            <span>Fotografie</span>
+          </button>
+          <button disabled={!canSend || messageSending} onClick={() => onAttachmentPick("video")} type="button">
+            <Video size={18} />
+            <span>Video</span>
+          </button>
+          <button disabled={!canSend || messageSending} onClick={() => onAttachmentPick("file")} type="button">
+            <FileText size={18} />
+            <span>Soubor</span>
+          </button>
+          <button disabled={!canSend || messageSending} onClick={onShareLocation} type="button">
+            <MapPin size={18} />
+            <span>Poloha</span>
+          </button>
         </div>
         <div className="matrix-composer">
           <div className="matrix-composer-tools" aria-label="Přílohy">

@@ -128,7 +128,7 @@ h1 {
 
 .mission-strip {
   display: grid;
-  grid-template-columns: auto auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px 10px;
   min-width: 160px;
@@ -147,12 +147,19 @@ h1 {
 }
 
 .mission-strip strong {
+  min-width: 0;
+  overflow: hidden;
   color: var(--lime);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mission-strip small {
   justify-self: end;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mission-detail-compact {
@@ -352,9 +359,9 @@ h1 {
 }
 
 .messaging-panel.pinned {
-  top: 16px;
-  right: 16px;
-  bottom: 16px;
+  top: 86px;
+  right: 10px;
+  bottom: 46px;
   grid-template-columns: minmax(0, 1fr) 54px;
   grid-template-rows: minmax(0, 1fr);
   width: min(var(--messaging-dock-width, 520px), calc(100vw - 32px));
@@ -362,7 +369,7 @@ h1 {
   overflow: hidden;
   padding: 0;
   border-color: rgba(162, 185, 204, 0.48);
-  border-radius: 8px;
+  border-radius: 0;
   background: rgba(7, 11, 15, 0.97);
 }
 
@@ -378,7 +385,7 @@ h1 {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 14px;
+  padding: 12px;
 }
 
 .messaging-panel.pinned .matrix-chat-shell,
@@ -516,7 +523,7 @@ h1 {
   border: 1px solid rgba(142, 157, 170, 0.22);
   background: rgba(18, 25, 31, 0.72);
   color: #dce6ef;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   text-transform: uppercase;
 }
@@ -1541,7 +1548,41 @@ h1 {
 .matrix-chat-shell.pinned .matrix-room-list {
   max-height: none;
   border-right: 0;
-  border-radius: 8px 0 0 8px;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(74, 163, 255, 0.12), transparent 32%),
+    rgba(10, 16, 21, 0.78);
+}
+
+.matrix-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 4px 4px;
+  color: #f3f7fb;
+}
+
+.matrix-list-header div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.matrix-list-header strong {
+  color: #f5f8fb;
+  font-size: 14px;
+}
+
+.matrix-list-header span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.matrix-list-header svg {
+  color: var(--cyan);
 }
 
 .matrix-chat-split-handle {
@@ -1571,13 +1612,14 @@ h1 {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
   align-items: center;
-  gap: 2px;
+  gap: 7px;
   width: 100%;
-  min-height: 44px;
-  padding: 7px 8px;
-  border: 1px solid rgba(142, 157, 170, 0.18);
-  border-radius: 8px;
-  background: rgba(18, 25, 31, 0.68);
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-bottom-color: rgba(142, 157, 170, 0.13);
+  border-radius: 0;
+  background: rgba(18, 25, 31, 0.32);
   color: var(--text);
   text-align: left;
   cursor: pointer;
@@ -1585,8 +1627,8 @@ h1 {
 
 .matrix-room-list button.active,
 .matrix-room-list button:hover {
-  border-color: rgba(74, 163, 255, 0.58);
-  background: rgba(74, 163, 255, 0.16);
+  border-color: rgba(74, 163, 255, 0.5);
+  background: linear-gradient(90deg, rgba(74, 163, 255, 0.24), rgba(74, 163, 255, 0.08));
 }
 
 .matrix-room-list strong,
@@ -1603,6 +1645,7 @@ h1 {
 
 .matrix-room-avatar,
 .direct-chat-results button > strong {
+  position: relative;
   display: inline-grid;
   width: 28px;
   height: 28px;
@@ -1613,6 +1656,18 @@ h1 {
   color: #eef8ff;
   font-size: 10px;
   font-weight: 900;
+}
+
+.matrix-room-avatar::after {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid rgba(7, 11, 15, 0.98);
+  border-radius: 50%;
+  background: var(--lime);
+  content: "";
 }
 
 .direct-chat-starter {
@@ -1663,16 +1718,18 @@ h1 {
 
 .matrix-room-view {
   display: grid;
-  grid-template-rows: auto minmax(160px, 1fr) auto;
+  grid-template-rows: auto auto minmax(160px, 1fr) auto auto;
   min-height: 0;
   border: 1px solid rgba(142, 157, 170, 0.22);
-  border-radius: 8px;
-  background: rgba(8, 13, 18, 0.72);
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(74, 163, 255, 0.12), transparent 38%),
+    rgba(8, 13, 18, 0.78);
   overflow: hidden;
 }
 
 .matrix-chat-shell.pinned .matrix-room-view {
-  border-radius: 0 8px 8px 0;
+  border-radius: 0;
 }
 
 .matrix-room-header {
@@ -1681,7 +1738,7 @@ h1 {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 9px 12px;
   border-bottom: 1px solid rgba(142, 157, 170, 0.18);
 }
 
@@ -1694,7 +1751,7 @@ h1 {
 .matrix-room-heading strong {
   overflow: hidden;
   color: #f4f8fb;
-  font-size: 13px;
+  font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1735,6 +1792,42 @@ h1 {
   color: var(--cyan);
 }
 
+.matrix-pinned-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  margin: 10px 10px 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(140, 182, 216, 0.24);
+  background: rgba(24, 36, 47, 0.58);
+}
+
+.matrix-pinned-note svg {
+  color: #60a5fa;
+}
+
+.matrix-pinned-note div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.matrix-pinned-note strong {
+  color: #93c5fd;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.matrix-pinned-note span {
+  overflow: hidden;
+  color: #dce7f1;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .messaging-panel:not(.pinned) .matrix-room-header {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1754,7 +1847,7 @@ h1 {
   min-height: 0;
   max-height: 260px;
   overflow: auto;
-  padding: 10px;
+  padding: 14px;
   background: rgba(8, 13, 18, 0.3);
 }
 
@@ -1766,8 +1859,8 @@ h1 {
   display: grid;
   gap: 3px;
   justify-self: start;
-  max-width: 88%;
-  padding: 8px 10px;
+  max-width: 82%;
+  padding: 9px 11px;
   border: 1px solid rgba(142, 157, 170, 0.18);
   border-radius: 14px 14px 14px 4px;
   background: rgba(28, 38, 47, 0.92);
@@ -1815,9 +1908,9 @@ h1 {
 
 .matrix-composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
+  grid-template-columns: minmax(0, 1fr) 42px;
   gap: 8px;
-  padding: 8px;
+  padding: 9px 10px;
   border-top: 1px solid rgba(142, 157, 170, 0.18);
   background: rgba(10, 16, 21, 0.78);
 }
@@ -1836,7 +1929,7 @@ h1 {
 }
 
 .matrix-composer textarea {
-  height: 38px;
+  height: 42px;
   max-height: 94px;
   padding-block: 9px;
   line-height: 1.35;
@@ -1844,8 +1937,8 @@ h1 {
 }
 
 .matrix-composer button {
-  width: 36px;
-  min-width: 36px;
+  width: 42px;
+  min-width: 42px;
   justify-content: center;
   padding: 0;
   border-radius: 50%;
@@ -1856,7 +1949,7 @@ h1 {
 }
 
 .matrix-composer {
-  grid-template-columns: minmax(0, 1fr) 38px;
+  grid-template-columns: minmax(0, 1fr) 42px;
 }
 
 .matrix-composer-tools,
@@ -1869,6 +1962,42 @@ h1 {
   gap: 5px;
   min-width: 0;
   overflow-x: auto;
+}
+
+.matrix-attachment-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  padding: 10px;
+  border-top: 1px solid rgba(142, 157, 170, 0.16);
+  background: rgba(10, 16, 21, 0.56);
+}
+
+.matrix-attachment-shortcuts button {
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  min-height: 58px;
+  border: 1px solid rgba(142, 157, 170, 0.22);
+  background: linear-gradient(180deg, rgba(29, 41, 52, 0.84), rgba(18, 25, 31, 0.78));
+  color: #dbe7f2;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.matrix-attachment-shortcuts button:hover:not(:disabled) {
+  border-color: rgba(74, 163, 255, 0.55);
+  background: rgba(74, 163, 255, 0.16);
+}
+
+.matrix-attachment-shortcuts button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.matrix-attachment-shortcuts svg {
+  color: #d8e8f6;
 }
 
 .matrix-attachment-chip {
@@ -4134,9 +4263,10 @@ h1 {
   align-items: center;
   gap: 8px;
   max-width: calc(100% - 92px);
-  padding: 8px;
+  padding: 9px 10px;
   pointer-events: auto;
   touch-action: manipulation;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.28);
 }
 
 .map-overlay-stack .map-toolbar,
@@ -4171,15 +4301,20 @@ h1 {
 }
 
 .map-action {
-  min-height: 31px;
-  padding: 0 10px;
+  min-height: 34px;
+  padding: 0 12px;
   border: 1px solid rgba(142, 157, 170, 0.28);
-  background: rgba(22, 32, 43, 0.76);
+  background: linear-gradient(180deg, rgba(31, 43, 55, 0.86), rgba(18, 25, 31, 0.78));
   color: #dbe7f2;
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.map-action:hover {
+  border-color: rgba(140, 182, 216, 0.54);
+  background: rgba(74, 163, 255, 0.14);
 }
 
 .map-action.active {
@@ -4264,8 +4399,8 @@ h1 {
   gap: 8px;
   min-height: 40px;
   padding: 0 13px;
-  border-color: rgba(200, 240, 141, 0.46);
-  background: rgba(19, 31, 28, 0.9);
+  border-color: rgba(59, 130, 246, 0.46);
+  background: linear-gradient(180deg, rgba(38, 69, 104, 0.95), rgba(20, 34, 48, 0.92));
   color: #e8eef5;
   font-size: 12px;
   font-weight: 900;
@@ -4276,12 +4411,12 @@ h1 {
 }
 
 .map-report-button svg {
-  color: var(--lime);
+  color: #93c5fd;
 }
 
 .map-report-button:hover {
-  border-color: rgba(200, 240, 141, 0.86);
-  background: rgba(151, 199, 104, 0.16);
+  border-color: rgba(147, 197, 253, 0.86);
+  background: rgba(74, 163, 255, 0.22);
 }
 
 .map-legend {

@@ -15,6 +15,13 @@ Xcode: mapa si uvolní prostor, na pravém okraji je rail pro přepínání Chat
 Skupiny / Kontext a uživatel může měnit šířku celého docku i vnitřního splitu
 mezi seznamem konverzací a timeline.
 
+AppShell v2 směruje hlavní pracovní plochu ke vzhledu operační konzole:
+nahoře je stabilní operační kontext s aktuální událostí nebo vybraným objektem,
+vlevo je úzké aplikační menu, uprostřed mapa a vpravo připnutý komunikační
+panel. Chat v připnutém režimu má seznam konverzací, hlavičku aktivní místnosti,
+připnutý mapový kontext, timeline, rychlé vložení médií a composer. Zprávy i
+sdílená média zůstávají svázané s COP skupinou a mapovou událostí.
+
 Chatový composer musí podporovat text, fotku, video, soubor a polohu jako
 primární akce. Pokud má informace z chatu přejít do mapového světa, uživatel
 použije akci `Nahlásit`; tím vzniká COP komunitní hlášení s vlastní platností,

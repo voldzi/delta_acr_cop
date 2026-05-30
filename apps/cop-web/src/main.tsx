@@ -2946,6 +2946,27 @@ export function App() {
       }
     } : {})
   }), [mapView?.center, selectedSituationFeature, userLocation]);
+  const operationTitle = selectedSituationFeature
+    ? selectedSituationFeature.properties.headline
+      ?? selectedSituationFeature.properties.areaName
+      ?? selectedSituationFeature.properties.label
+      ?? selectedSituationFeature.properties.featureId
+    : selectedObject
+      ? formatObjectListLabel(selectedObject)
+      : alertSummary.total > 0
+        ? "Aktivní výstrahy v okolí"
+        : "Civilní situační mapa";
+  const operationBadge = selectedSituationFeature || alertSummary.total > 0 ? "Aktivní událost" : "Operační obraz";
+  const operationStatus = selectedSituationFeature
+    ? selectedSituationFeature.properties.status
+      ?? selectedSituationFeature.properties.severity
+      ?? selectedSituationFeature.properties.hazardSeverity
+      ?? missionModeLabel(operatingMode, offlineSnapshotState)
+    : missionModeLabel(operatingMode, offlineSnapshotState);
+  const operationStartedAt = selectedSituationFeature
+    ? formatShortDateTime(selectedSituationFeature.properties.validFrom ?? selectedSituationFeature.properties.effectiveAt ?? selectedSituationFeature.properties.observedAt)
+    : lastLoadedAt ?? "čekám";
+  const operationId = selectedSituationFeature?.properties.featureId ?? selectedObject?.objectId ?? "CSM-LAB";
 
   React.useEffect(() => {
     if (activeCatalogGroupId && !catalogGroupViews.some((view) => view.group.groupId === activeCatalogGroupId)) {
@@ -2972,18 +2993,19 @@ export function App() {
           </div>
         </div>
         <div className="mission-strip" aria-label="Civil situation map operating context">
-          <span>Aktivní provoz</span>
-          <strong>{missionModeLabel(operatingMode, offlineSnapshotState)}</strong>
+          <span>{operationBadge}</span>
+          <strong>{operationTitle}</strong>
           <small>
-            <span className="mission-detail-full">Civilní situační mapa</span>
+            <span className="mission-detail-full">Stav: {operationStatus}</span>
             <span className="mission-detail-compact">Zdroje {sources.length} · Obj. {visibleObjects.length}</span>
           </small>
         </div>
         <div className="event-summary-strip" aria-label="Aktuální provozní souhrn">
-          <span>Stav: <strong>{missionModeLabel(operatingMode, offlineSnapshotState)}</strong></span>
+          <span>Stav: <strong>{operationStatus}</strong></span>
+          <span>Zahájení: <strong>{operationStartedAt}</strong></span>
           <span>Výstrahy: <strong>{alertSummary.total}</strong></span>
           <span>Zdroje: <strong>{sources.length}</strong></span>
-          <span>ID: <strong>CSM-LAB</strong></span>
+          <span>ID: <strong>{operationId}</strong></span>
         </div>
         <div className="topbar-actions">
           <button className="top-command-button record" onClick={startCommunityReportCapture} type="button">
@@ -10078,18 +10100,26 @@ function findMessagingConversationForCommunityGroup(group: CommunityGroup, conve
 }
 
 function readMessagingDockWidth(): number {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || typeof window.localStorage?.getItem !== "function") {
     return 520;
   }
-  const stored = Number(window.localStorage.getItem(messagingDockWidthStorageKey));
-  return Number.isFinite(stored) ? clamp(stored, 420, 760) : 520;
+  try {
+    const stored = Number(window.localStorage.getItem(messagingDockWidthStorageKey));
+    return Number.isFinite(stored) ? clamp(stored, 420, 760) : 520;
+  } catch {
+    return 520;
+  }
 }
 
 function writeMessagingDockWidth(width: number): void {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || typeof window.localStorage?.setItem !== "function") {
     return;
   }
-  window.localStorage.setItem(messagingDockWidthStorageKey, String(clamp(width, 420, 760)));
+  try {
+    window.localStorage.setItem(messagingDockWidthStorageKey, String(clamp(width, 420, 760)));
+  } catch {
+    // Local storage can be disabled in private/degraded browser contexts.
+  }
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {
