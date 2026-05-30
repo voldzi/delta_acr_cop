@@ -9011,6 +9011,9 @@ function operatorDisplayName(session: AuthSession, config: AuthConfig): string {
   if (session.status === "authenticating") {
     return "Ověřuji";
   }
+  if (session.status === "error") {
+    return "Chyba přihlášení";
+  }
   if (isOidcEnabled(config)) {
     return "Přihlásit";
   }

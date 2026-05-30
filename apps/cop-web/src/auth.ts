@@ -43,7 +43,17 @@ interface StoredAuthSession {
   refreshToken?: string;
 }
 
+interface StoredCallbackState {
+  expiresAt?: number;
+  redirectUri: string;
+  returnUrl: string;
+  state: string;
+  verifier: string;
+}
+
 const callbackStateKey = "cop.oidc.callback.v1";
+const callbackStateFallbackKey = "cop.oidc.callback.fallback.v1";
+const callbackStateTtlMs = 10 * 60 * 1000;
 const sessionKey = "cop.oidc.session.v1";
 
 export function readAuthConfig(): AuthConfig {
@@ -276,21 +286,73 @@ function readCallbackParams(): { code?: string; error?: string; state?: string }
   };
 }
 
-function readCallbackState(): { redirectUri: string; returnUrl: string; state: string; verifier: string } | null {
+function readCallbackState(): StoredCallbackState | null {
+  return readCallbackStateFrom(() => window.sessionStorage, callbackStateKey)
+    ?? readCallbackStateFrom(() => window.localStorage, callbackStateFallbackKey, true);
+}
+
+function readCallbackStateFrom(getStorage: () => Storage, key: string, enforceExpiry = false): StoredCallbackState | null {
   try {
-    const raw = window.sessionStorage.getItem(callbackStateKey);
-    return raw ? JSON.parse(raw) as { redirectUri: string; returnUrl: string; state: string; verifier: string } : null;
+    const storage = getStorage();
+    const raw = storage.getItem(key);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<StoredCallbackState>;
+    if (!isStoredCallbackState(parsed)) {
+      return null;
+    }
+    if (enforceExpiry && typeof parsed.expiresAt === "number" && parsed.expiresAt < Date.now()) {
+      storage.removeItem(key);
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }
 }
 
-function writeCallbackState(value: { redirectUri: string; returnUrl: string; state: string; verifier: string }): void {
-  window.sessionStorage.setItem(callbackStateKey, JSON.stringify(value));
+function writeCallbackState(value: StoredCallbackState): void {
+  const fallbackValue = {
+    ...value,
+    expiresAt: Date.now() + callbackStateTtlMs
+  };
+  let persisted = false;
+  try {
+    window.sessionStorage.setItem(callbackStateKey, JSON.stringify(value));
+    persisted = true;
+  } catch {
+    // Continue with the bounded localStorage fallback below.
+  }
+  try {
+    window.localStorage.setItem(callbackStateFallbackKey, JSON.stringify(fallbackValue));
+    persisted = true;
+  } catch {
+    // If both browser stores are unavailable, the login cannot be completed safely.
+  }
+  if (!persisted) {
+    throw new Error("Prohlížeč neumožnil uložit dočasný stav přihlášení. Povolte site storage pro COP a zkuste to znovu.");
+  }
 }
 
 function clearCallbackState(): void {
-  window.sessionStorage.removeItem(callbackStateKey);
+  try {
+    window.sessionStorage.removeItem(callbackStateKey);
+  } catch {
+    // Best effort cleanup.
+  }
+  try {
+    window.localStorage.removeItem(callbackStateFallbackKey);
+  } catch {
+    // Best effort cleanup.
+  }
+}
+
+function isStoredCallbackState(value: Partial<StoredCallbackState>): value is StoredCallbackState {
+  return typeof value.redirectUri === "string" &&
+    typeof value.returnUrl === "string" &&
+    typeof value.state === "string" &&
+    typeof value.verifier === "string";
 }
 
 function removeCallbackParams(returnUrl?: string): void {
