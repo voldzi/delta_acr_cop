@@ -192,6 +192,26 @@ Pravidlo pro provázání mapy a chatu:
 - pokud skupina vznikne z chatu, poloha je prázdná, dokud ji uživatel nebo první mapové hlášení nenastaví;
 - CSM Messaging může mít pro stejnou věc Matrix room/konverzaci, ale media ACL se vyhodnocuje podle COP skupiny, ne podle samotné Matrix místnosti.
 
+## Chat-first hlášení
+
+Webový klient umožňuje založit komunitní hlášení přímo z chatovacího kontextu.
+Používá se ve chvíli, kdy informace sdílená v konverzaci přestává být jen
+koordinační zprávou a má se stát mapovým objektem s auditovatelným stavem,
+platností, závažností a pravidly přístupu k médiím.
+
+Předvyplnění hlášení z chatu dodává pouze bezpečná metadata:
+
+- aktivní COP skupinu nebo skupinu navázanou na konverzaci,
+- název skupiny jako zdrojový kontext,
+- polohu z posledního sdílení polohy, polohu uživatele nebo aktuální střed mapy,
+- výchozí titulek `Hlášení z chatu`.
+
+COP záměrně nekopíruje plaintext zprávy z Matrix timeline do reportu. Uživatel
+musí text hlášení potvrdit nebo upravit v reportovacím formuláři. Chatové
+přílohy zůstávají Matrix/E2EE médii; pokud mají být součástí reportu, musí být
+nahrané přes COP media flow, kde se uplatní ACL, audit, podepsané media tokeny
+a budoucí obsahová kontrola.
+
 ## Notifikace
 
 Po odeslání reportu přes `POST /api/v1/community/reports/{reportId}/submit`

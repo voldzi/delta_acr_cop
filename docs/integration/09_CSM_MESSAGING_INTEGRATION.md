@@ -173,6 +173,41 @@ After bootstrap, the browser sends and reads messages directly through
 Matrix client-server APIs using Matrix SDK and E2EE. COP must not add any
 plaintext message send/read endpoints.
 
+## Web Chat Workspace
+
+COP web exposes messaging as a first-class operational workspace rather than a
+separate popover. The panel can be floating for quick checks or pinned as a
+right-side inspector next to the map. In pinned mode the map shell reserves
+space for the panel and the user can resize the chat width. The panel uses
+workspace tabs:
+
+- **Chat** for conversations and Matrix timeline,
+- **Skupiny** for COP group membership, pending requests and member search,
+- **Kontext** for the active conversation, selected map feature, map center and
+  conversion of chat context into a community report.
+
+The browser may send:
+
+- text messages through Matrix SDK text APIs,
+- encrypted image, video and file messages through Matrix media upload and
+  Matrix `m.image`, `m.video` or `m.file` events,
+- location shares through Matrix `m.location` events with `geo:` URI metadata.
+
+Attachments are encrypted in the browser before upload using Web Crypto and
+Matrix encrypted-file metadata. COP does not receive attachment bytes through
+messaging, does not store Matrix media URLs as report media, and does not proxy
+plaintext chat payloads. If a chat message needs to become an operational
+record, the user starts a COP community report from the chat context. That
+report is then stored through COP reporting APIs with normal media ACL, audit
+and map lifecycle rules.
+
+The chat workspace therefore supports two equivalent user paths:
+
+- map-first: open a map alert/report, inspect the linked group and continue in
+  the related conversation;
+- chat-first: discuss in a group, share a location or file, then create a COP
+  report from the conversation when the information should become a map object.
+
 ## Runtime Configuration
 
 ```env
