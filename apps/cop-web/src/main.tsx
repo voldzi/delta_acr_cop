@@ -2955,7 +2955,7 @@ export function App() {
 
   return (
     <main
-      className={`shell ${messagingOpen && messagingPinned ? "shell-messaging-docked" : ""}`}
+      className={`shell app-shell-v2 ${messagingOpen && messagingPinned ? "shell-messaging-docked" : ""}`}
       style={messagingOpen && messagingPinned ? ({ "--messaging-dock-width": `${messagingDockWidth}px` } as React.CSSProperties) : undefined}
     >
       <header className="topbar">
@@ -2965,27 +2965,52 @@ export function App() {
           </div>
           <div>
             <h1>
-              <span className="brand-title-full">Civilní situační mapa</span>
+              <span className="brand-title-full">COP / CSM</span>
               <span className="brand-title-compact">CSM</span>
             </h1>
             <p>Rizika v okolí, výstrahy a sdílené informace</p>
           </div>
         </div>
         <div className="mission-strip" aria-label="Civil situation map operating context">
-          <span>LAB</span>
+          <span>Aktivní provoz</span>
           <strong>{missionModeLabel(operatingMode, offlineSnapshotState)}</strong>
           <small>
-            <span className="mission-detail-full">OpenStreetMap + situační vrstvy</span>
+            <span className="mission-detail-full">Civilní situační mapa</span>
             <span className="mission-detail-compact">Zdroje {sources.length} · Obj. {visibleObjects.length}</span>
           </small>
         </div>
-        <div className="status-strip">
-          <StatusItem icon={<Wifi size={16} />} label="Mode" value={operatingMode} tone={operatingModeTone(operatingMode)} />
-          <StatusItem icon={<Activity size={16} />} label="Stream" value={streamStatusLabel(streamStatus)} tone={streamStatusTone(streamStatus)} />
-          <StatusItem icon={<RadioTower size={16} />} label="Sources" value={String(sources.length)} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
-          <StatusItem icon={<Database size={16} />} label="Objects" value={String(visibleObjects.length)} tone="neutral" />
+        <div className="event-summary-strip" aria-label="Aktuální provozní souhrn">
+          <span>Stav: <strong>{missionModeLabel(operatingMode, offlineSnapshotState)}</strong></span>
+          <span>Výstrahy: <strong>{alertSummary.total}</strong></span>
+          <span>Zdroje: <strong>{sources.length}</strong></span>
+          <span>ID: <strong>CSM-LAB</strong></span>
         </div>
         <div className="topbar-actions">
+          <button className="top-command-button record" onClick={startCommunityReportCapture} type="button">
+            <span className="record-dot" />
+            Záznam
+          </button>
+          <button
+            className="top-command-button"
+            onClick={() => void navigator.clipboard?.writeText(window.location.href)}
+            type="button"
+          >
+            Kopírovat odkaz
+          </button>
+          <button
+            className="top-command-button"
+            onClick={() => {
+              const url = window.location.href;
+              if (navigator.share) {
+                void navigator.share({ title: "Civilní situační mapa", url }).catch(() => navigator.clipboard?.writeText(url));
+                return;
+              }
+              void navigator.clipboard?.writeText(url);
+            }}
+            type="button"
+          >
+            Sdílet
+          </button>
           <a className="operator-button xr-entry-button" href="/xr" title="Otevřít prostorový XR režim">
             <Sparkles size={18} />
             <span>
@@ -3024,7 +3049,17 @@ export function App() {
         </div>
       </header>
 
-      <WorkspaceNavigator activeWorkspace={activeWorkspace} onChange={setActiveWorkspace} onOpenSettings={() => openSettings("map")} />
+      <section className="app-shell-body">
+        <WorkspaceNavigator
+          activeWorkspace={activeWorkspace}
+          onChange={setActiveWorkspace}
+          onOpenMessaging={() => {
+            setMessagingOpen(true);
+            setMessagingPinned(true);
+          }}
+          onOpenSettings={() => openSettings("map")}
+          onStartReport={startCommunityReportCapture}
+        />
 
       <section className={`workspace workspace-${activeWorkspace}`}>
         <aside className={`panel left-panel ${showMapLayerControls ? "map-catalog-panel" : ""}`}>
@@ -3555,6 +3590,42 @@ export function App() {
           ) : null}
         </aside>
       </section>
+
+        <ContextRail
+          activeWorkspace={activeWorkspace}
+          messagingOpen={messagingOpen}
+          onOpenMessaging={() => {
+            setMessagingOpen(true);
+            setMessagingPinned(true);
+          }}
+          onOpenSettings={() => openSettings("map")}
+          onStartReport={startCommunityReportCapture}
+          onWorkspaceChange={setActiveWorkspace}
+        />
+      </section>
+
+      <footer className="app-statusbar" aria-label="Provozní stav aplikace">
+        <span className={alertSummary.total > 0 ? "warn" : "ok"}>
+          <AlertTriangle size={15} />
+          Výstrahy {alertSummary.total > 0 ? `${alertSummary.total} aktivní` : "bez aktivních"}
+        </span>
+        <span className={streamStatusTone(streamStatus)}>
+          <Activity size={15} />
+          Spojení {streamStatusLabel(streamStatus)}
+        </span>
+        <span className={operatingModeTone(operatingMode)}>
+          <Wifi size={15} />
+          Režim {operatingMode}
+        </span>
+        <span>
+          <Clock3 size={15} />
+          Poslední aktualizace {lastLoadedAt ?? "čekám"}
+        </span>
+        <span>
+          <ShieldCheck size={15} />
+          Verze 0.1.0
+        </span>
+      </footer>
 
       {settingsOpen ? (
         <SettingsDrawer
@@ -4557,15 +4628,19 @@ function StatusBadge({ label, tone }: { label: string; tone: "neutral" | "ok" | 
 function WorkspaceNavigator({
   activeWorkspace,
   onChange,
-  onOpenSettings
+  onOpenMessaging,
+  onOpenSettings,
+  onStartReport
 }: {
   activeWorkspace: WorkspaceModule;
   onChange: (workspace: WorkspaceModule) => void;
+  onOpenMessaging: () => void;
   onOpenSettings: () => void;
+  onStartReport: () => void;
 }) {
-  const modules: WorkspaceModule[] = ["map", "data", "sources", "alerts", "replay"];
+  const modules: WorkspaceModule[] = ["data", "map", "alerts", "sources", "replay"];
   return (
-    <nav className="workspace-nav" aria-label="Situační pracovní plocha">
+    <nav className="workspace-nav app-module-rail" aria-label="Situační pracovní plocha">
       {modules.map((module) => {
         const metadata = workspaceMetadata(module);
         return (
@@ -4578,15 +4653,64 @@ function WorkspaceNavigator({
             type="button"
           >
             {workspaceIcon(module)}
-            <span>{metadata.label}</span>
+            <span>{workspaceRailLabel(module)}</span>
           </button>
         );
       })}
+      <button className="workspace-tab" onClick={onOpenMessaging} title="Otevřít komunikaci" type="button">
+        <MessageCircle size={16} />
+        <span>Komunikace</span>
+      </button>
+      <button className="workspace-tab" onClick={onStartReport} title="Vložit nové hlášení" type="button">
+        <Plus size={16} />
+        <span>Nahlásit</span>
+      </button>
       <button className="workspace-settings-button" onClick={onOpenSettings} title="Nastavení operátora" type="button">
         <Settings size={16} />
         <span>Nastavení</span>
       </button>
     </nav>
+  );
+}
+
+function ContextRail({
+  activeWorkspace,
+  messagingOpen,
+  onOpenMessaging,
+  onOpenSettings,
+  onStartReport,
+  onWorkspaceChange
+}: {
+  activeWorkspace: WorkspaceModule;
+  messagingOpen: boolean;
+  onOpenMessaging: () => void;
+  onOpenSettings: () => void;
+  onStartReport: () => void;
+  onWorkspaceChange: (workspace: WorkspaceModule) => void;
+}) {
+  return (
+    <aside className="context-rail" aria-label="Rychlé akce a kontext">
+      <button className={messagingOpen ? "active" : ""} onClick={onOpenMessaging} type="button">
+        <MessageCircle size={18} />
+        <span>Chat</span>
+      </button>
+      <button className={activeWorkspace === "alerts" ? "active" : ""} onClick={() => onWorkspaceChange("alerts")} type="button">
+        <AlertTriangle size={18} />
+        <span>Událost</span>
+      </button>
+      <button className={activeWorkspace === "map" ? "active" : ""} onClick={() => onWorkspaceChange("map")} type="button">
+        <Layers size={18} />
+        <span>Vrstvy</span>
+      </button>
+      <button onClick={onStartReport} type="button">
+        <Plus size={18} />
+        <span>Nahlásit</span>
+      </button>
+      <button onClick={onOpenSettings} type="button">
+        <Settings size={18} />
+        <span>Nastavení</span>
+      </button>
+    </aside>
   );
 }
 
@@ -9209,6 +9333,19 @@ function workspaceMetadata(module: WorkspaceModule): { description: string; labe
 
 function workspaceLabel(module: WorkspaceModule): string {
   return workspaceMetadata(module).label;
+}
+
+function workspaceRailLabel(module: WorkspaceModule): string {
+  switch (module) {
+    case "data":
+      return "Přehled";
+    case "alerts":
+      return "Události";
+    case "replay":
+      return "Analýzy";
+    default:
+      return workspaceLabel(module);
+  }
 }
 
 function workspaceIcon(module: WorkspaceModule): React.ReactNode {
