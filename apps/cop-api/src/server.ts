@@ -5394,7 +5394,8 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     trackHistoryDisplayMode: optionalString(value.trackHistoryDisplayMode, ["all", "selected"]),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600),
-    workspaceLayout: normalizeWorkspaceLayoutPreference(value.workspaceLayout)
+    workspaceLayout: normalizeWorkspaceLayoutPreference(value.workspaceLayout),
+    workspaceSkin: optionalString(value.workspaceSkin, ["civil", "operations", "field"])
   });
 }
 

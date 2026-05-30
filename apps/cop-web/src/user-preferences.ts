@@ -14,6 +14,7 @@ export type AppLanguage = "cs" | "en";
 export type MapBasemapMode = "standard" | "civil" | "risk" | "dark" | "outline";
 export type TrackHistoryDisplayMode = "all" | "selected";
 export type WorkspacePanelMode = "open" | "collapsed" | "hidden";
+export type WorkspaceSkin = "civil" | "operations" | "field";
 
 export interface OperatorProfilePreferences {
   avatarDataUrl?: string;
@@ -69,6 +70,7 @@ export interface UserPreferences {
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
   workspaceLayout?: WorkspaceLayoutPreferences;
+  workspaceSkin?: WorkspaceSkin;
 }
 
 export function readUserPreferences(scope?: string): UserPreferences {
@@ -159,7 +161,8 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     trackHistoryDisplayMode: optionalTrackHistoryDisplayMode(value.trackHistoryDisplayMode),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds),
-    workspaceLayout: normalizeWorkspaceLayoutPreferences(value.workspaceLayout)
+    workspaceLayout: normalizeWorkspaceLayoutPreferences(value.workspaceLayout),
+    workspaceSkin: optionalWorkspaceSkin(value.workspaceSkin)
   };
 }
 
@@ -256,6 +259,10 @@ function optionalTrackHistoryDisplayMode(value: unknown): TrackHistoryDisplayMod
 
 function optionalWorkspacePanelMode(value: unknown): WorkspacePanelMode | undefined {
   return value === "open" || value === "collapsed" || value === "hidden" ? value : undefined;
+}
+
+function optionalWorkspaceSkin(value: unknown): WorkspaceSkin | undefined {
+  return value === "civil" || value === "operations" || value === "field" ? value : undefined;
 }
 
 function compactObject<T extends object>(value: T): T | undefined {

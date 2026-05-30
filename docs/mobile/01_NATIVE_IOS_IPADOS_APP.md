@@ -132,7 +132,7 @@ Nativní klient nesmí skládat menu vrstev z provider `/layers`, `/sources` ani
 - `GET /api/v1/map/catalog?locale=cs-CZ`
 - `POST /api/v1/map/query`
 
-Uživatelův výběr vrstev se ukládá do `preferences.catalogLayerIds`. Jazyk aplikace se ukládá do `preferences.language` (`cs` nebo `en`). Podklad mapy se ukládá do `preferences.mapBasemapMode`. Webový klient navíc ukládá rozložení pracovní plochy do `preferences.workspaceLayout` a profilovou kartu do `preferences.operatorProfile`; nativní klient může tato pole zobrazit nebo ignorovat, ale nesmí je mazat při ukládání vlastních preferencí.
+Uživatelův výběr vrstev se ukládá do `preferences.catalogLayerIds`. Jazyk aplikace se ukládá do `preferences.language` (`cs` nebo `en`). Podklad mapy se ukládá do `preferences.mapBasemapMode`. Webový klient navíc ukládá rozložení pracovní plochy do `preferences.workspaceLayout`, vizuální skin do `preferences.workspaceSkin` (`civil`, `operations`, `field`) a profilovou kartu do `preferences.operatorProfile`; nativní klient může tato pole zobrazit nebo ignorovat, ale nesmí je mazat při ukládání vlastních preferencí.
 
 Klient musí podporovat tyto druhy katalogových vrstev:
 

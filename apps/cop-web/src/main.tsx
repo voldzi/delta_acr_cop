@@ -202,7 +202,8 @@ import {
   type TrackHistoryDisplayMode,
   type UserPreferences,
   type WorkspaceLayoutPreferences,
-  type WorkspacePanelMode
+  type WorkspacePanelMode,
+  type WorkspaceSkin
 } from "./user-preferences";
 import {
   builtInViewProfiles,
@@ -259,6 +260,7 @@ type OfflineSnapshotState =
   | { kind: "none" };
 type PreferenceSettings = ViewProfileSettings | UserPreferences;
 type SettingsTab = "map" | "data" | "workspace" | "awareness" | "account";
+type WorkspaceTemplateId = "civil" | "operations" | "field";
 type LoginPromptReason = "account" | "ai" | "alert" | "chat" | "profile" | "report";
 type ProfileSyncStatus = "disabled" | "error" | "loading" | "saving" | "synced";
 type SituationLayerStatus = "disabled" | "loading" | "online" | "degraded" | "zoom";
@@ -304,6 +306,36 @@ const defaultWorkspaceLayout: Required<WorkspaceLayoutPreferences> = {
 };
 const workspaceLeftWidthRange = { max: 460, min: 220 };
 const workspaceRightWidthRange = { max: 560, min: 280 };
+const workspaceSkinOptions: Array<[WorkspaceSkin, string]> = [
+  ["civil", "Civilní"],
+  ["operations", "Operační"],
+  ["field", "Terénní"]
+];
+const workspaceTemplateCards: Array<{
+  description: string;
+  id: WorkspaceTemplateId;
+  title: string;
+  tone: string;
+}> = [
+  {
+    description: "Pro občany a veřejné sdílení: civilní ikony, čitelný podklad, méně rušivé panely.",
+    id: "civil",
+    title: "Civilní",
+    tone: "Klidný informační režim"
+  },
+  {
+    description: "Pro dispečink a krizový štáb: hustší rozložení, detail, zdroje, stav a profesionální symbolika.",
+    id: "operations",
+    title: "Operační",
+    tone: "Řídicí pracoviště"
+  },
+  {
+    description: "Pro mobilní a terénní použití: maximum mapy, sbalené panely, výraznější kontrast a výstražné vrstvy.",
+    id: "field",
+    title: "Terénní",
+    tone: "Mapa v popředí"
+  }
+];
 type HelpSection = "overview" | "layout" | "layers" | "profile" | "reports" | "alerts";
 
 interface DashboardMetrics {
@@ -361,6 +393,9 @@ export function App() {
   const [mapSearchDocked, setMapSearchDocked] = React.useState(() => readMapSearchDocked());
   const [workspaceLayout, setWorkspaceLayout] = React.useState<Required<WorkspaceLayoutPreferences>>(() =>
     normalizeWorkspaceLayout(initialPreferences.workspaceLayout)
+  );
+  const [workspaceSkin, setWorkspaceSkin] = React.useState<WorkspaceSkin>(() =>
+    normalizeWorkspaceSkin(initialPreferences.workspaceSkin)
   );
   const [operatorProfile, setOperatorProfile] = React.useState<OperatorProfilePreferences>(() =>
     initialOperatorProfile(authSession, initialPreferences.operatorProfile)
@@ -1717,6 +1752,9 @@ export function App() {
     if ("workspaceLayout" in settings && settings.workspaceLayout !== undefined) {
       setWorkspaceLayout(normalizeWorkspaceLayout(settings.workspaceLayout));
     }
+    if ("workspaceSkin" in settings && settings.workspaceSkin !== undefined) {
+      setWorkspaceSkin(normalizeWorkspaceSkin(settings.workspaceSkin));
+    }
 
     const normalizedMapView = normalizeMapView(settings.mapView);
     if (normalizedMapView) {
@@ -1763,7 +1801,8 @@ export function App() {
     trackHistoryDisplayMode,
     trackHistoryLimit,
     trackHistoryWindowSeconds,
-    workspaceLayout
+    workspaceLayout,
+    workspaceSkin
   }), [
     activeWorkspace,
     affiliationScope,
@@ -1797,7 +1836,8 @@ export function App() {
     trackHistoryDisplayMode,
     trackHistoryLimit,
     trackHistoryWindowSeconds,
-    workspaceLayout
+    workspaceLayout,
+    workspaceSkin
   ]);
 
   React.useEffect(() => {
@@ -1809,6 +1849,7 @@ export function App() {
     setVisibleCatalogLayerIds(normalizeCatalogLayerIds(scopedPreferences.catalogLayerIds));
     setOperatorProfile(initialOperatorProfile(authSession, scopedPreferences.operatorProfile));
     setWorkspaceLayout(normalizeWorkspaceLayout(scopedPreferences.workspaceLayout));
+    setWorkspaceSkin(normalizeWorkspaceSkin(scopedPreferences.workspaceSkin));
     applyPreferenceSettings(scopedPreferences, { focusMap: true });
     setViewProfiles(readViewProfiles(userStorageScope));
     setOfflineSnapshotState(initialOfflineSnapshotState(userStorageScope));
@@ -2941,7 +2982,9 @@ export function App() {
         trackLayerIds: visibleTrackLayerIds,
         trackHistoryDisplayMode,
         trackHistoryLimit,
-        trackHistoryWindowSeconds
+        trackHistoryWindowSeconds,
+        workspaceLayout,
+        workspaceSkin
       }
     };
     const nextCustomProfiles = [...viewProfiles.filter((candidate) => !candidate.builtIn), profile].slice(-12);
@@ -3012,6 +3055,7 @@ export function App() {
   const shellClassName = clsx(
     "shell",
     "app-shell-v2",
+    `app-skin-${workspaceSkin}`,
     messagingOpen && messagingPinned && "shell-messaging-docked",
     !workspaceLayout.contextRailVisible && "shell-context-hidden",
     !workspaceLayout.statusbarVisible && "shell-statusbar-hidden"
@@ -3038,6 +3082,17 @@ export function App() {
 
   const updateWorkspaceLayout = React.useCallback((patch: Partial<WorkspaceLayoutPreferences>) => {
     setWorkspaceLayout((current) => normalizeWorkspaceLayout({ ...current, ...patch }));
+  }, []);
+
+  const applyWorkspaceTemplate = React.useCallback((templateId: WorkspaceTemplateId) => {
+    const template = workspaceTemplatePreferences(templateId);
+    setWorkspaceSkin(template.workspaceSkin);
+    setWorkspaceLayout(normalizeWorkspaceLayout(template.workspaceLayout));
+    setMapBasemapMode(template.mapBasemapMode);
+    setPublicFlightSymbolMode(template.publicFlightSymbolMode);
+    setMapClusterEnabled(template.mapClusterEnabled);
+    setShowAlertAreas(template.showAlertAreas);
+    setActiveWorkspace("map");
   }, []);
 
   const beginWorkspacePanelResize = React.useCallback((side: "left" | "right", event: React.PointerEvent<HTMLButtonElement>) => {
@@ -3825,6 +3880,7 @@ export function App() {
           trackHistoryLimit={trackHistoryLimit}
           trackHistoryWindowSeconds={trackHistoryWindowSeconds}
           workspaceLayout={workspaceLayout}
+          workspaceSkin={workspaceSkin}
           onAlertRadiusKmChange={setAlertRadiusKm}
           onAoiRuleCenterFromMap={handleCreateAoiRuleFromMap}
           onAoiRuleCenterFromUserLocation={handleCreateAoiRuleFromUserLocation}
@@ -3860,6 +3916,8 @@ export function App() {
           onTrackHistoryDisplayModeChange={setTrackHistoryDisplayMode}
           onTrackHistoryLimitChange={setTrackHistoryLimit}
           onTrackHistoryWindowSecondsChange={setTrackHistoryWindowSeconds}
+          onWorkspaceSkinChange={setWorkspaceSkin}
+          onWorkspaceTemplateApply={applyWorkspaceTemplate}
           onWorkspaceLayoutChange={updateWorkspaceLayout}
           onHelp={(section) => setHelpSection(section)}
           onLogin={loginOperator}
@@ -5358,6 +5416,7 @@ function SettingsDrawer({
   trackHistoryLimit,
   trackHistoryWindowSeconds,
   workspaceLayout,
+  workspaceSkin,
   onAlertRadiusKmChange,
   onAoiRuleCenterFromMap,
   onAoiRuleCenterFromUserLocation,
@@ -5383,6 +5442,8 @@ function SettingsDrawer({
   onTrackHistoryDisplayModeChange,
   onTrackHistoryLimitChange,
   onTrackHistoryWindowSecondsChange,
+  onWorkspaceSkinChange,
+  onWorkspaceTemplateApply,
   onWorkspaceLayoutChange,
   onHelp,
   onLogin,
@@ -5415,6 +5476,7 @@ function SettingsDrawer({
   trackHistoryLimit: number;
   trackHistoryWindowSeconds: number;
   workspaceLayout: Required<WorkspaceLayoutPreferences>;
+  workspaceSkin: WorkspaceSkin;
   onAlertRadiusKmChange: (value: number) => void;
   onAoiRuleCenterFromMap: () => void;
   onAoiRuleCenterFromUserLocation: () => void;
@@ -5440,6 +5502,8 @@ function SettingsDrawer({
   onTrackHistoryDisplayModeChange: (value: TrackHistoryDisplayMode) => void;
   onTrackHistoryLimitChange: (value: number) => void;
   onTrackHistoryWindowSecondsChange: (value: number) => void;
+  onWorkspaceSkinChange: (value: WorkspaceSkin) => void;
+  onWorkspaceTemplateApply: (value: WorkspaceTemplateId) => void;
   onWorkspaceLayoutChange: (value: Partial<WorkspaceLayoutPreferences>) => void;
   onHelp: (section: HelpSection) => void;
   onLogin: () => void;
@@ -5595,6 +5659,7 @@ function SettingsDrawer({
               <p className="settings-help">
                 Panely lze zmenšit, sbalit do ikony nebo úplně skrýt. Nastavení se ukládá do profilu přihlášeného uživatele a na tomto zařízení funguje i v offline režimu.
               </p>
+              <WorkspaceSkinPicker value={workspaceSkin} onChange={onWorkspaceSkinChange} onApplyTemplate={onWorkspaceTemplateApply} />
               <WorkspaceLayoutEditor layout={workspaceLayout} onChange={onWorkspaceLayoutChange} onHelp={() => onHelp("layout")} />
             </section>
           ) : null}
@@ -5723,6 +5788,62 @@ function normalizeWorkspacePanelMode(value: WorkspacePanelMode | undefined, fall
   return value === "open" || value === "collapsed" || value === "hidden" ? value : fallback;
 }
 
+function normalizeWorkspaceSkin(value: WorkspaceSkin | undefined): WorkspaceSkin {
+  return value === "civil" || value === "operations" || value === "field" ? value : "operations";
+}
+
+function workspaceTemplatePreferences(templateId: WorkspaceTemplateId): {
+  mapBasemapMode: MapBasemapMode;
+  mapClusterEnabled: boolean;
+  publicFlightSymbolMode: PublicFlightSymbolMode;
+  showAlertAreas: boolean;
+  workspaceLayout: Required<WorkspaceLayoutPreferences>;
+  workspaceSkin: WorkspaceSkin;
+} {
+  if (templateId === "civil") {
+    return {
+      mapBasemapMode: "civil",
+      mapClusterEnabled: true,
+      publicFlightSymbolMode: "civil",
+      showAlertAreas: true,
+      workspaceLayout: {
+        contextRailVisible: true,
+        leftPanelMode: "open",
+        leftPanelWidth: 320,
+        rightPanelMode: "collapsed",
+        rightPanelWidth: 360,
+        statusbarVisible: true
+      },
+      workspaceSkin: "civil"
+    };
+  }
+  if (templateId === "field") {
+    return {
+      mapBasemapMode: "risk",
+      mapClusterEnabled: true,
+      publicFlightSymbolMode: "civil",
+      showAlertAreas: true,
+      workspaceLayout: {
+        contextRailVisible: false,
+        leftPanelMode: "collapsed",
+        leftPanelWidth: 280,
+        rightPanelMode: "hidden",
+        rightPanelWidth: 340,
+        statusbarVisible: false
+      },
+      workspaceSkin: "field"
+    };
+  }
+  return {
+    mapBasemapMode: "dark",
+    mapClusterEnabled: false,
+    publicFlightSymbolMode: "standard",
+    showAlertAreas: true,
+    workspaceLayout: defaultWorkspaceLayout,
+    workspaceSkin: "operations"
+  };
+}
+
 function initialOperatorProfile(_session: AuthSession, savedProfile: OperatorProfilePreferences | undefined): OperatorProfilePreferences {
   return savedProfile ?? {};
 }
@@ -5804,6 +5925,41 @@ function WorkspaceLayoutControls({
         <RefreshCw size={15} />
       </button>
       <HelpHint label="Plocha" onOpen={() => onHelp("layout")} />
+    </div>
+  );
+}
+
+function WorkspaceSkinPicker({
+  value,
+  onApplyTemplate,
+  onChange
+}: {
+  value: WorkspaceSkin;
+  onApplyTemplate: (value: WorkspaceTemplateId) => void;
+  onChange: (value: WorkspaceSkin) => void;
+}) {
+  return (
+    <div className="workspace-skin-editor">
+      <SegmentedControl
+        label="Skin aplikace"
+        options={workspaceSkinOptions}
+        value={value}
+        onChange={(nextValue) => onChange(nextValue as WorkspaceSkin)}
+      />
+      <div className="workspace-template-grid" aria-label="Šablony pracovní plochy">
+        {workspaceTemplateCards.map((template) => (
+          <button
+            className={`workspace-template-card ${value === template.id ? "active" : ""}`}
+            key={template.id}
+            onClick={() => onApplyTemplate(template.id)}
+            type="button"
+          >
+            <span>{template.tone}</span>
+            <strong>{template.title}</strong>
+            <small>{template.description}</small>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -6053,6 +6209,8 @@ const manualSections: Record<HelpSection, { body: string; label: string; points:
     body: "Pracovní plocha je konfigurovatelná. Mapa má být hlavní, proto lze postranní panely sbalit nebo skrýt podle úkolu a velikosti obrazovky.",
     label: "Plocha",
     points: [
+      "Skin mění vizuální charakter aplikace bez změny oprávnění nebo dat.",
+      "Šablony Civilní, Operační a Terénní jedním krokem nastaví skin, rozložení, podklad mapy a symboliku.",
       "Táhnutím za okraj panelu upravíte jeho šířku na desktopu.",
       "Volba Ikona ponechá panel dostupný, ale uvolní místo mapě.",
       "U přihlášeného uživatele se rozložení ukládá do serverového profilu."

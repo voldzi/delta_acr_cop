@@ -61,7 +61,8 @@ describe("user preferences helpers", () => {
         rightPanelMode: "hidden",
         rightPanelWidth: 900,
         statusbarVisible: false
-      }
+      },
+      workspaceSkin: "field"
     })).toMatchObject({
       operatorProfile: {
         avatarDataUrl: "data:image/webp;base64,AAAA",
@@ -77,7 +78,8 @@ describe("user preferences helpers", () => {
         rightPanelMode: "hidden",
         rightPanelWidth: 560,
         statusbarVisible: false
-      }
+      },
+      workspaceSkin: "field"
     });
   });
 });

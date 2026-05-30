@@ -62,6 +62,95 @@ button {
   transition: padding-right 160ms ease;
 }
 
+.shell.app-skin-civil {
+  --bg: #081018;
+  --panel: rgba(12, 20, 28, 0.9);
+  --panel-2: rgba(18, 30, 39, 0.86);
+  --panel-3: rgba(24, 39, 49, 0.86);
+  --border: rgba(134, 178, 207, 0.25);
+  --border-strong: rgba(151, 201, 232, 0.42);
+  --text: #eef7fb;
+  --muted: #a6b6c2;
+  --muted-2: #728797;
+  --lime: #9fe7c5;
+  --blue: #3ba2ff;
+  --cyan: #a9d9f4;
+  --shadow: 0 18px 60px rgba(0, 20, 34, 0.34);
+}
+
+.shell.app-skin-operations {
+  --bg: #070b10;
+  --panel: rgba(9, 14, 20, 0.96);
+  --panel-2: rgba(13, 20, 28, 0.94);
+  --panel-3: rgba(18, 27, 36, 0.92);
+  --border: rgba(112, 142, 166, 0.26);
+  --border-strong: rgba(151, 190, 219, 0.38);
+  --lime: #c8f08d;
+  --cyan: #8cb6d8;
+}
+
+.shell.app-skin-field {
+  --bg: #030704;
+  --panel: rgba(4, 9, 8, 0.98);
+  --panel-2: rgba(9, 18, 15, 0.95);
+  --panel-3: rgba(16, 28, 21, 0.92);
+  --border: rgba(180, 225, 129, 0.3);
+  --border-strong: rgba(219, 255, 168, 0.52);
+  --text: #f6fff2;
+  --muted: #b1bea9;
+  --muted-2: #7f8f78;
+  --lime: #d7ff75;
+  --blue: #2fb6ff;
+  --cyan: #a8f3d2;
+  --yellow: #ffe56a;
+  --shadow: 0 18px 62px rgba(0, 0, 0, 0.5);
+}
+
+.shell.app-skin-civil .topbar,
+.shell.app-skin-civil .app-statusbar {
+  background:
+    linear-gradient(180deg, rgba(14, 25, 34, 0.96), rgba(7, 14, 20, 0.96)),
+    radial-gradient(circle at 18% 0%, rgba(56, 189, 248, 0.11), transparent 34%);
+}
+
+.shell.app-skin-operations .topbar,
+.shell.app-skin-operations .app-statusbar {
+  background:
+    linear-gradient(180deg, rgba(11, 17, 24, 0.98), rgba(5, 9, 13, 0.98)),
+    linear-gradient(90deg, rgba(59, 130, 246, 0.08), transparent 36%);
+}
+
+.shell.app-skin-field .topbar,
+.shell.app-skin-field .app-statusbar {
+  background:
+    linear-gradient(180deg, rgba(6, 13, 10, 0.98), rgba(2, 6, 5, 0.98)),
+    linear-gradient(90deg, rgba(215, 255, 117, 0.13), transparent 34%);
+}
+
+.shell.app-skin-civil .mission-strip {
+  border-left-color: var(--blue);
+  background: rgba(14, 40, 52, 0.62);
+}
+
+.shell.app-skin-field .mission-strip {
+  border-left-color: var(--yellow);
+  background: rgba(24, 36, 13, 0.68);
+}
+
+.shell.app-skin-civil .panel,
+.shell.app-skin-civil .settings-drawer,
+.shell.app-skin-civil .messaging-panel {
+  background:
+    linear-gradient(180deg, rgba(13, 25, 34, 0.95), rgba(7, 13, 18, 0.95));
+}
+
+.shell.app-skin-field .panel,
+.shell.app-skin-field .settings-drawer,
+.shell.app-skin-field .messaging-panel {
+  background:
+    linear-gradient(180deg, rgba(5, 13, 9, 0.98), rgba(2, 6, 5, 0.98));
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -3946,6 +4035,7 @@ h1 {
   color: var(--lime);
 }
 
+.workspace-skin-editor,
 .workspace-layout-editor,
 .profile-editor {
   display: grid;
@@ -3953,6 +4043,50 @@ h1 {
   padding: 12px;
   border: 1px solid rgba(142, 157, 170, 0.22);
   background: rgba(5, 9, 12, 0.32);
+}
+
+.workspace-template-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-template-card {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid rgba(142, 157, 170, 0.24);
+  background:
+    linear-gradient(135deg, rgba(18, 27, 34, 0.94), rgba(8, 13, 18, 0.94));
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.workspace-template-card:hover,
+.workspace-template-card.active {
+  border-color: rgba(200, 240, 141, 0.66);
+  background:
+    linear-gradient(135deg, rgba(151, 199, 104, 0.16), rgba(12, 18, 24, 0.94));
+}
+
+.workspace-template-card span {
+  color: var(--lime);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.workspace-template-card strong {
+  color: #f4f7fb;
+  font-size: 16px;
+}
+
+.workspace-template-card small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .profile-editor-header {

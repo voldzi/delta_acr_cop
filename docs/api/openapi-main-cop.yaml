@@ -2096,6 +2096,10 @@ components:
           maximum: 3600
         workspaceLayout:
           $ref: "#/components/schemas/WorkspaceLayoutPreferences"
+        workspaceSkin:
+          type: string
+          description: Visual skin for the web workspace. Templates may set this together with layout and map preferences.
+          enum: [civil, operations, field]
       additionalProperties: false
     OperatorProfilePreferences:
       type: object

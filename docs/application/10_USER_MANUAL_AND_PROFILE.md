@@ -14,6 +14,16 @@ Mapa je primární plocha aplikace. Uživatel může:
 
 Rozložení se ukládá do `preferences.workspaceLayout`. Přihlášený uživatel ho synchronizuje přes `/api/v1/me/preferences`; nepřihlášený uživatel ho má pouze lokálně v prohlížeči.
 
+## Skiny a šablony
+
+Web podporuje tři uložené skiny v `preferences.workspaceSkin`:
+
+- `civil`: klidnější občanský vzhled pro běžné sdílení a orientaci,
+- `operations`: hustší operační vzhled pro dispečink a krizový štáb,
+- `field`: kontrastní terénní vzhled s mapou v popředí.
+
+Šablona není samostatný bezpečnostní režim. Jde o uživatelskou zkratku, která nastaví skin, rozložení panelů, mapový podklad, symboliku a zobrazení výstražných oblastí. Klient, který šablony nepodporuje, musí `workspaceSkin` zachovat při ukládání preferencí.
+
 ## Profil uživatele
 
 Profilová karta se ukládá do `preferences.operatorProfile`. Pole:
@@ -44,4 +54,4 @@ Texty musí být krátké, civilní a akční. Technické detaily zdrojů patř�
 
 ## Dopad na nativní klienty
 
-iOS/iPadOS klient může `operatorProfile` a `workspaceLayout` použít pro vlastní UI. Pokud některé pole nepodporuje, musí ho při ukládání preferencí zachovat a nesmí ho mazat. Pro iPad je vhodné mapovat `workspaceLayout` na split view a inspector; pro iPhone stačí uložit preference panelů bez desktop resize ovládání.
+iOS/iPadOS klient může `operatorProfile`, `workspaceLayout` a `workspaceSkin` použít pro vlastní UI. Pokud některé pole nepodporuje, musí ho při ukládání preferencí zachovat a nesmí ho mazat. Pro iPad je vhodné mapovat `workspaceLayout` na split view a inspector; pro iPhone stačí uložit preference panelů bez desktop resize ovládání. `workspaceSkin` může nativní klient mapovat na vlastní sadu barev a hustotu UI.

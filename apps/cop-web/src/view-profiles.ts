@@ -1,6 +1,15 @@
 import type { CopLayer } from "./cop-data";
 import type { PredictionMode } from "./track-history";
-import { normalizeMapView, type AppLanguage, type MapBasemapMode, type MapViewState, type PublicFlightSymbolMode, type TrackHistoryDisplayMode } from "./user-preferences";
+import {
+  normalizeMapView,
+  type AppLanguage,
+  type MapBasemapMode,
+  type MapViewState,
+  type PublicFlightSymbolMode,
+  type TrackHistoryDisplayMode,
+  type WorkspaceLayoutPreferences,
+  type WorkspaceSkin
+} from "./user-preferences";
 
 const customProfilesKey = "cop.user.viewProfiles.v1";
 
@@ -38,6 +47,8 @@ export interface ViewProfileSettings {
   trackHistoryDisplayMode?: TrackHistoryDisplayMode;
   trackHistoryLimit?: number;
   trackHistoryWindowSeconds?: number;
+  workspaceLayout?: WorkspaceLayoutPreferences;
+  workspaceSkin?: WorkspaceSkin;
 }
 
 export interface ViewProfile {
@@ -272,7 +283,9 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     trackLayerIds: optionalLayerArray(value.trackLayerIds),
     trackHistoryDisplayMode: normalizeTrackHistoryDisplayMode(value.trackHistoryDisplayMode),
     trackHistoryLimit: optionalNumber(value.trackHistoryLimit),
-    trackHistoryWindowSeconds: optionalNumber(value.trackHistoryWindowSeconds)
+    trackHistoryWindowSeconds: optionalNumber(value.trackHistoryWindowSeconds),
+    workspaceLayout: normalizeWorkspaceLayout(value.workspaceLayout),
+    workspaceSkin: normalizeWorkspaceSkin(value.workspaceSkin)
   };
 }
 
@@ -304,6 +317,28 @@ function normalizeTrackHistoryDisplayMode(value: unknown): TrackHistoryDisplayMo
 
 function normalizeOptionalWorkspaceModule(value: unknown): WorkspaceModule | undefined {
   return value === "map" || value === "data" || value === "sources" || value === "alerts" || value === "replay" ? value : undefined;
+}
+
+function normalizeWorkspaceSkin(value: unknown): WorkspaceSkin | undefined {
+  return value === "civil" || value === "operations" || value === "field" ? value : undefined;
+}
+
+function normalizeWorkspaceLayout(value: unknown): WorkspaceLayoutPreferences | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return {
+    contextRailVisible: optionalBoolean(value.contextRailVisible),
+    leftPanelMode: normalizeWorkspacePanelMode(value.leftPanelMode),
+    leftPanelWidth: optionalNumber(value.leftPanelWidth),
+    rightPanelMode: normalizeWorkspacePanelMode(value.rightPanelMode),
+    rightPanelWidth: optionalNumber(value.rightPanelWidth),
+    statusbarVisible: optionalBoolean(value.statusbarVisible)
+  };
+}
+
+function normalizeWorkspacePanelMode(value: unknown): WorkspaceLayoutPreferences["leftPanelMode"] {
+  return value === "open" || value === "collapsed" || value === "hidden" ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
