@@ -59,6 +59,17 @@ button {
   min-height: 0;
   padding: 16px;
   gap: 12px;
+  transition: padding-right 160ms ease;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
 }
 
 .topbar {
@@ -294,11 +305,67 @@ h1 {
 }
 
 .messaging-panel.pinned {
-  top: 132px;
+  top: 16px;
   right: 16px;
   bottom: 16px;
-  width: min(430px, calc(100vw - 32px));
+  width: min(var(--messaging-dock-width, 520px), calc(100vw - 32px));
   max-height: none;
+  overflow: hidden;
+  border-color: rgba(162, 185, 204, 0.48);
+  border-radius: 8px;
+  background: rgba(7, 11, 15, 0.97);
+}
+
+.messaging-resize-handle {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: -7px;
+  width: 13px;
+  cursor: ew-resize;
+}
+
+.messaging-resize-handle::after {
+  position: absolute;
+  top: 50%;
+  left: 5px;
+  width: 3px;
+  height: 42px;
+  content: "";
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: rgba(140, 182, 216, 0.42);
+}
+
+.messaging-dock-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(15, 21, 27, 0.82);
+}
+
+.messaging-dock-tabs button {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, auto);
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.messaging-dock-tabs button.active,
+.messaging-dock-tabs button:hover {
+  border-color: rgba(140, 182, 216, 0.38);
+  background: rgba(74, 163, 255, 0.14);
+  color: #eef5fb;
 }
 
 .messaging-panel-header,
@@ -384,14 +451,31 @@ h1 {
 .chat-groups-panel {
   display: grid;
   gap: 10px;
+  min-height: 0;
   padding: 12px;
   border: 1px solid rgba(140, 182, 216, 0.28);
   background: rgba(10, 17, 22, 0.62);
 }
 
+.chat-groups-header,
+.chat-groups-title {
+  align-items: center;
+}
+
+.chat-groups-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chat-groups-header > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .chat-groups-title {
   display: inline-flex;
-  align-items: center;
   gap: 8px;
   color: #edf5fb;
   font-size: 12px;
@@ -405,9 +489,17 @@ h1 {
 
 .chat-group-list {
   display: grid;
+  align-content: start;
   gap: 6px;
-  max-height: 140px;
+  max-height: none;
   overflow: auto;
+}
+
+.chat-groups-workspace {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.48fr) minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
 }
 
 .chat-group-list button {
@@ -447,7 +539,7 @@ h1 {
 }
 
 .chat-group-create,
-.chat-group-members div {
+.chat-group-member-search {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
@@ -477,8 +569,23 @@ h1 {
 .chat-group-members {
   display: grid;
   gap: 7px;
+  min-width: 0;
   padding-top: 8px;
   border-top: 1px solid rgba(142, 157, 170, 0.16);
+}
+
+.chat-group-members-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chat-group-members-heading span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .chat-group-members strong {
@@ -490,6 +597,50 @@ h1 {
   color: var(--muted);
   font-size: 11px;
   font-weight: 800;
+}
+
+.chat-group-member-list {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.chat-group-member-list button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 6px 8px;
+  border: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(18, 25, 31, 0.66);
+  color: #edf5fb;
+  text-align: left;
+}
+
+.chat-group-member-list button > span {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(74, 163, 255, 0.22);
+  color: #eef8ff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.chat-group-member-list strong,
+.chat-group-member-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-group-member-list small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .chat-group-pending-list {
@@ -1392,9 +1543,7 @@ h1 {
   max-height: 260px;
   overflow: auto;
   padding: 10px;
-  background:
-    radial-gradient(circle at 18% 8%, rgba(74, 163, 255, 0.08), transparent 28%),
-    rgba(8, 13, 18, 0.3);
+  background: rgba(8, 13, 18, 0.3);
 }
 
 .matrix-message {
@@ -1476,6 +1625,162 @@ h1 {
   border-radius: 50%;
 }
 
+.messaging-panel.pinned .matrix-chat-shell {
+  grid-template-columns: minmax(190px, 0.42fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: min(620px, calc(100svh - 220px));
+}
+
+.messaging-panel.pinned .matrix-room-list,
+.messaging-panel.pinned .matrix-timeline {
+  max-height: none;
+}
+
+.matrix-room-view {
+  min-width: 0;
+}
+
+.matrix-composer {
+  grid-template-columns: minmax(0, 1fr) 38px;
+}
+
+.matrix-composer-tools,
+.matrix-attachment-chip {
+  grid-column: 1 / -1;
+}
+
+.matrix-composer-tools {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.matrix-attachment-chip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 7px;
+  border: 1px solid rgba(140, 182, 216, 0.26);
+  background: rgba(22, 31, 38, 0.72);
+}
+
+.matrix-attachment-chip span {
+  overflow: hidden;
+  color: #edf5fb;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matrix-attachment-chip small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.matrix-attachment-card,
+.matrix-message-location {
+  display: grid;
+  gap: 8px;
+}
+
+.matrix-attachment-card {
+  min-width: min(240px, 100%);
+}
+
+.matrix-attachment-card img,
+.matrix-attachment-card video {
+  width: min(260px, 100%);
+  max-height: 220px;
+  object-fit: cover;
+  border: 1px solid rgba(142, 157, 170, 0.22);
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.matrix-attachment-card > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.matrix-attachment-card strong,
+.matrix-attachment-card small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matrix-attachment-card small {
+  color: rgba(232, 238, 245, 0.72);
+  font-size: 10px;
+}
+
+.matrix-message-location {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: min(260px, 100%);
+}
+
+.matrix-message-location strong,
+.matrix-message-location span {
+  display: block;
+}
+
+.matrix-message-location a {
+  color: #d9f99d;
+  font-size: 11px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.messaging-context-panel {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.messaging-context-card,
+.messaging-context-link-grid {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid rgba(142, 157, 170, 0.2);
+  background: rgba(18, 25, 31, 0.68);
+}
+
+.messaging-context-card span,
+.messaging-context-link-grid span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.messaging-context-card strong,
+.messaging-context-link-grid strong {
+  overflow: hidden;
+  color: #edf5fb;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.messaging-context-card small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.messaging-context-link-grid {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px 10px;
+}
+
 .workspace-nav {
   display: grid;
   grid-template-columns: repeat(5, minmax(92px, 1fr)) minmax(116px, auto);
@@ -1529,6 +1834,12 @@ h1 {
   gap: 12px;
   min-height: 0;
   overflow: hidden;
+}
+
+@media (min-width: 1181px) {
+  .shell.shell-messaging-docked {
+    padding-right: calc(var(--messaging-dock-width, 520px) + 28px);
+  }
 }
 
 .workspace-map {
@@ -5248,6 +5559,16 @@ dd {
     padding: 14px;
     border: 0;
     border-radius: 0;
+  }
+
+  .messaging-panel.pinned .matrix-chat-shell,
+  .chat-groups-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(260px, 1fr);
+  }
+
+  .messaging-resize-handle {
+    display: none;
   }
 
   .chat-group-create {

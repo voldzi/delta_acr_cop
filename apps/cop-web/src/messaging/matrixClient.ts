@@ -1,5 +1,14 @@
 import type { MessagingBootstrapResponse } from "../cop-data";
-import type { MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage } from "./types";
+import type {
+  MatrixAttachmentKind,
+  MatrixAttachmentUpload,
+  MatrixEncryptedFileRef,
+  MatrixLocationShare,
+  MatrixMessagingSession,
+  MatrixRoomSummary,
+  MatrixTimelineAttachment,
+  MatrixTimelineMessage
+} from "./types";
 
 interface MatrixClientLike {
   createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;
@@ -8,11 +17,14 @@ interface MatrixClientLike {
   initRustCrypto?: (args?: { cryptoDatabasePrefix?: string }) => Promise<void>;
   isRoomEncrypted?: (roomId: string) => boolean;
   joinRoom?: (roomIdOrAlias: string) => Promise<{ room_id?: string; roomId?: string }>;
+  mxcUrlToHttp?: (mxcUrl: string, width?: number, height?: number, resizeMethod?: string, allowDirectLinks?: boolean, allowRedirects?: boolean, useAuthentication?: boolean) => string | null;
   off?: (event: string, listener: (...args: unknown[]) => void) => void;
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
+  sendMessage?: (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
   sendTextMessage?: (roomId: string, body: string) => Promise<unknown>;
   startClient?: (options?: Record<string, unknown>) => Promise<void> | void;
   stopClient?: () => void;
+  uploadContent?: (file: Blob | File, opts?: Record<string, unknown>) => Promise<{ content_uri?: string; contentUri?: string }>;
 }
 
 interface MatrixRoomLike {
@@ -127,9 +139,40 @@ export async function createMatrixMessagingSession(
       }
       return roomId;
     },
+    downloadAttachment: async (message) => {
+      if (!message.attachment) {
+        throw new Error("Zpráva neobsahuje přílohu ke stažení.");
+      }
+      return downloadMatrixAttachment(client, bootstrap, homeserverBaseUrl, message.attachment);
+    },
     getRooms: () => readRooms(client),
-    getTimeline: (roomId) => readTimeline(client, roomId),
+    getTimeline: (roomId) => readTimeline(client, roomId, homeserverBaseUrl),
     joinInvitedRooms,
+    sendAttachment: async (roomId, attachment) => {
+      if (typeof client.uploadContent !== "function" || typeof client.sendMessage !== "function") {
+        throw new Error("Matrix SDK neumí bezpečně odeslat přílohu.");
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        const content = await createEncryptedAttachmentMessage(client, attachment);
+        await client.sendMessage(roomId, content);
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat šifrovanou přílohu");
+      }
+    },
+    sendLocation: async (roomId, location) => {
+      if (typeof client.sendMessage !== "function") {
+        throw new Error("Matrix SDK neumí odeslat polohu.");
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        await client.sendMessage(roomId, createLocationMessage(location));
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat polohu");
+      }
+    },
     sendMessage: async (roomId, body) => {
       const message = body.trim();
       if (!message) {
@@ -151,6 +194,164 @@ export async function createMatrixMessagingSession(
       client.off?.("Room.timeline", timelineListener);
       client.stopClient?.();
     }
+  };
+}
+
+async function createEncryptedAttachmentMessage(client: MatrixClientLike, attachment: MatrixAttachmentUpload): Promise<Record<string, unknown>> {
+  if (typeof client.uploadContent !== "function") {
+    throw new Error("Matrix SDK neumí nahrát přílohu.");
+  }
+  const encrypted = await encryptAttachmentFile(attachment.file);
+  const upload = await client.uploadContent(encrypted.blob, {
+    includeFilename: false,
+    name: "encrypted",
+    type: "application/octet-stream"
+  });
+  const contentUri = upload.content_uri ?? upload.contentUri;
+  if (!contentUri) {
+    throw new Error("Matrix server nevrátil URI nahrané přílohy.");
+  }
+  const fileName = attachment.file.name || defaultAttachmentName(attachment.kind);
+  const contentType = attachment.file.type || "application/octet-stream";
+  return {
+    body: attachment.caption?.trim() || fileName,
+    file: {
+      ...encrypted.file,
+      url: contentUri
+    },
+    filename: fileName,
+    info: {
+      mimetype: contentType,
+      size: attachment.file.size
+    },
+    msgtype: matrixMsgTypeForAttachment(attachment.kind)
+  };
+}
+
+async function encryptAttachmentFile(file: File): Promise<{ blob: Blob; file: Omit<MatrixEncryptedFileRef, "url"> }> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("Prohlížeč nepodporuje Web Crypto potřebné pro šifrované přílohy.");
+  }
+  const key = await globalThis.crypto.subtle.generateKey(
+    { length: 256, name: "AES-CTR" },
+    true,
+    ["decrypt", "encrypt"]
+  );
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const plain = await file.arrayBuffer();
+  const encrypted = await globalThis.crypto.subtle.encrypt(
+    { counter: iv, length: 64, name: "AES-CTR" },
+    key,
+    plain
+  );
+  const exported = await globalThis.crypto.subtle.exportKey("jwk", key);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", encrypted);
+  const k = typeof exported.k === "string" ? exported.k : "";
+  if (!k) {
+    throw new Error("Nepodařilo se připravit šifrovací klíč přílohy.");
+  }
+  return {
+    blob: new Blob([encrypted], { type: "application/octet-stream" }),
+    file: {
+      hashes: {
+        sha256: encodeBase64(digest)
+      },
+      iv: encodeBase64(iv),
+      key: {
+        alg: "A256CTR",
+        ext: true,
+        k,
+        key_ops: ["encrypt", "decrypt"],
+        kty: "oct"
+      },
+      v: "v2"
+    }
+  };
+}
+
+async function downloadMatrixAttachment(
+  client: MatrixClientLike,
+  bootstrap: MessagingBootstrapResponse,
+  homeserverBaseUrl: string,
+  attachment: MatrixTimelineAttachment
+): Promise<Blob> {
+  const encryptedUrl = attachment.encrypted?.url;
+  const mxcUrl = encryptedUrl ?? attachment.mediaUrl;
+  if (!mxcUrl) {
+    throw new Error("Příloha neobsahuje Matrix media URI.");
+  }
+  const downloadUrl = matrixMediaHttpUrl(client, homeserverBaseUrl, mxcUrl, true);
+  if (!downloadUrl) {
+    throw new Error("Přílohu se nepodařilo převést na download URL.");
+  }
+  const response = await fetch(downloadUrl, {
+    headers: bootstrap.accessToken ? { Authorization: `Bearer ${bootstrap.accessToken}` } : undefined
+  });
+  if (!response.ok) {
+    throw new Error(`Stažení přílohy selhalo: HTTP ${response.status}.`);
+  }
+  const payload = await response.arrayBuffer();
+  if (!attachment.encrypted) {
+    return new Blob([payload], { type: attachment.contentType || "application/octet-stream" });
+  }
+  await verifyEncryptedAttachmentHash(payload, attachment.encrypted);
+  const decrypted = await decryptAttachmentPayload(payload, attachment.encrypted);
+  return new Blob([decrypted], { type: attachment.contentType || "application/octet-stream" });
+}
+
+async function verifyEncryptedAttachmentHash(payload: ArrayBuffer, encrypted: MatrixEncryptedFileRef): Promise<void> {
+  const expected = encrypted.hashes.sha256;
+  if (!expected) {
+    return;
+  }
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", payload);
+  if (encodeBase64(digest) !== expected) {
+    throw new Error("Kontrola integrity šifrované přílohy selhala.");
+  }
+}
+
+async function decryptAttachmentPayload(payload: ArrayBuffer, encrypted: MatrixEncryptedFileRef): Promise<ArrayBuffer> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("Prohlížeč nepodporuje Web Crypto potřebné pro přílohy.");
+  }
+  const key = await globalThis.crypto.subtle.importKey(
+    "jwk",
+    encrypted.key,
+    { name: "AES-CTR" },
+    false,
+    ["decrypt"]
+  );
+  return globalThis.crypto.subtle.decrypt(
+    { counter: decodeBase64(encrypted.iv), length: 64, name: "AES-CTR" },
+    key,
+    payload
+  );
+}
+
+function createLocationMessage(location: MatrixLocationShare): Record<string, unknown> {
+  const roundedLat = Number(location.lat.toFixed(6));
+  const roundedLon = Number(location.lon.toFixed(6));
+  const geoUri = `geo:${roundedLat},${roundedLon}${typeof location.accuracyM === "number" ? `;u=${Math.max(0, Math.round(location.accuracyM))}` : ""}`;
+  const label = location.label?.trim() || (location.source === "device" ? "Moje poloha" : "Poloha v mapě");
+  return {
+    "cz.cop.location": {
+      accuracyM: location.accuracyM ?? undefined,
+      lat: roundedLat,
+      lon: roundedLon,
+      source: location.source
+    },
+    "m.asset": {
+      type: location.source === "device" ? "m.self" : "cz.cop.map"
+    },
+    "m.location": {
+      description: label,
+      uri: geoUri
+    },
+    "m.text": `${label}: ${roundedLat.toFixed(6)}, ${roundedLon.toFixed(6)}`,
+    "m.ts": Date.now(),
+    body: `${label}: ${roundedLat.toFixed(6)}, ${roundedLon.toFixed(6)}`,
+    geo_uri: geoUri,
+    msgtype: "m.location"
   };
 }
 
@@ -305,7 +506,7 @@ function readRooms(client: MatrixClientLike): MatrixRoomSummary[] {
     .sort((left, right) => left.name.localeCompare(right.name, "cs"));
 }
 
-function readTimeline(client: MatrixClientLike, roomId: string): MatrixTimelineMessage[] {
+function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUrl: string): MatrixTimelineMessage[] {
   const room = (client.getRooms?.() ?? []).map(asRoom).find((candidate) => candidate?.roomId === roomId);
   const currentUserId = client.getUserId?.() ?? undefined;
   return (room?.timeline ?? [])
@@ -314,19 +515,187 @@ function readTimeline(client: MatrixClientLike, roomId: string): MatrixTimelineM
     .flatMap((event) => {
       const content = event.getContent?.() ?? {};
       const body = typeof content.body === "string" ? content.body.trim() : "";
-      if (!body) {
+      const kind = matrixMessageKind(content);
+      const attachment = matrixAttachmentFromContent(client, homeserverBaseUrl, content);
+      const geoUri = readLocationUri(content);
+      const location = geoUri ? matrixLocationFromGeoUri(geoUri, content) : undefined;
+      if (!body && !attachment && !location) {
         return [];
       }
       const sender = event.getSender?.() ?? "";
       return [{
+        ...(attachment ? { attachment } : {}),
         body,
         eventId: event.getId?.() ?? `${sender}-${event.getTs?.() ?? Date.now()}`,
+        ...(geoUri ? { geoUri } : {}),
+        kind,
+        ...(location ? { location } : {}),
         own: Boolean(currentUserId && sender === currentUserId),
         sender,
         timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString()
       }];
     })
     .slice(-80);
+}
+
+function matrixMessageKind(content: Record<string, unknown>): MatrixTimelineMessage["kind"] {
+  if (content.msgtype === "m.image") {
+    return "image";
+  }
+  if (content.msgtype === "m.video") {
+    return "video";
+  }
+  if (content.msgtype === "m.file") {
+    return "file";
+  }
+  if (content.msgtype === "m.location") {
+    return "location";
+  }
+  return "text";
+}
+
+function matrixAttachmentFromContent(
+  client: MatrixClientLike,
+  homeserverBaseUrl: string,
+  content: Record<string, unknown>
+): MatrixTimelineAttachment | undefined {
+  const kind = matrixMessageKind(content);
+  if (kind !== "file" && kind !== "image" && kind !== "video") {
+    return undefined;
+  }
+  const info = asRecord(content.info);
+  const encrypted = asEncryptedFile(content.file);
+  const rawUrl = typeof content.url === "string" ? content.url : encrypted?.url;
+  const fileName = typeof content.filename === "string" && content.filename.trim()
+    ? content.filename.trim()
+    : typeof content.body === "string" && content.body.trim()
+      ? content.body.trim()
+      : defaultAttachmentName(kind);
+  return {
+    contentType: typeof info?.mimetype === "string" ? info.mimetype : undefined,
+    ...(encrypted ? { encrypted } : {}),
+    fileName,
+    ...(rawUrl ? { mediaUrl: encrypted ? rawUrl : matrixMediaHttpUrl(client, homeserverBaseUrl, rawUrl, false) ?? rawUrl } : {}),
+    size: typeof info?.size === "number" ? info.size : undefined
+  };
+}
+
+function readLocationUri(content: Record<string, unknown>): string | undefined {
+  if (typeof content.geo_uri === "string") {
+    return content.geo_uri;
+  }
+  const extensibleLocation = asRecord(content["m.location"]);
+  return typeof extensibleLocation?.uri === "string" ? extensibleLocation.uri : undefined;
+}
+
+function matrixLocationFromGeoUri(geoUri: string, content: Record<string, unknown>): MatrixLocationShare | undefined {
+  const match = /^geo:([-+]?\d+(?:\.\d+)?),([-+]?\d+(?:\.\d+)?)(?:[;,]u=([-+]?\d+(?:\.\d+)?))?/iu.exec(geoUri);
+  if (!match) {
+    return undefined;
+  }
+  const lat = Number(match[1]);
+  const lon = Number(match[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return undefined;
+  }
+  const extensibleLocation = asRecord(content["m.location"]);
+  const copLocation = asRecord(content["cz.cop.location"]);
+  const source = copLocation?.source === "device" ? "device" : "map";
+  return {
+    accuracyM: match[3] ? Number(match[3]) : undefined,
+    label: typeof extensibleLocation?.description === "string" ? extensibleLocation.description : undefined,
+    lat,
+    lon,
+    source
+  };
+}
+
+function asEncryptedFile(value: unknown): MatrixEncryptedFileRef | undefined {
+  const file = asRecord(value);
+  const key = asRecord(file?.key);
+  const hashes = asRecord(file?.hashes);
+  if (
+    typeof file?.url !== "string" ||
+    typeof file.iv !== "string" ||
+    typeof file.v !== "string" ||
+    typeof key?.k !== "string" ||
+    typeof hashes?.sha256 !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    hashes: Object.fromEntries(Object.entries(hashes).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
+    iv: file.iv,
+    key: {
+      alg: typeof key.alg === "string" ? key.alg : "A256CTR",
+      ext: key.ext === true,
+      k: key.k,
+      key_ops: Array.isArray(key.key_ops) ? key.key_ops.filter((item): item is string => typeof item === "string") : ["encrypt", "decrypt"],
+      kty: typeof key.kty === "string" ? key.kty : "oct"
+    },
+    url: file.url,
+    v: file.v
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
+}
+
+function matrixMsgTypeForAttachment(kind: MatrixAttachmentKind): "m.file" | "m.image" | "m.video" {
+  if (kind === "image") {
+    return "m.image";
+  }
+  if (kind === "video") {
+    return "m.video";
+  }
+  return "m.file";
+}
+
+function defaultAttachmentName(kind: MatrixAttachmentKind | MatrixTimelineMessage["kind"]): string {
+  if (kind === "image") {
+    return "fotka";
+  }
+  if (kind === "video") {
+    return "video";
+  }
+  return "soubor";
+}
+
+function matrixMediaHttpUrl(client: MatrixClientLike, homeserverBaseUrl: string, mxcUrl: string, authenticated: boolean): string | undefined {
+  if (!mxcUrl.startsWith("mxc://")) {
+    return mxcUrl;
+  }
+  return client.mxcUrlToHttp?.(mxcUrl, undefined, undefined, undefined, false, true, authenticated) ?? fallbackMxcDownloadUrl(homeserverBaseUrl, mxcUrl);
+}
+
+function fallbackMxcDownloadUrl(homeserverBaseUrl: string, mxcUrl: string): string | undefined {
+  const match = /^mxc:\/\/([^/]+)\/(.+)$/u.exec(mxcUrl);
+  if (!match) {
+    return undefined;
+  }
+  const [, serverName, mediaId] = match;
+  if (!serverName || !mediaId) {
+    return undefined;
+  }
+  return `${homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/media/v3/download/${encodeURIComponent(serverName)}/${encodeURIComponent(mediaId)}`;
+}
+
+function encodeBase64(value: ArrayBuffer | Uint8Array): string {
+  const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/=+$/u, "");
+}
+
+function decodeBase64(value: string): ArrayBuffer {
+  const normalized = value.replace(/-/gu, "+").replace(/_/gu, "/");
+  const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
 function asRoom(value: unknown): MatrixRoomLike | null {

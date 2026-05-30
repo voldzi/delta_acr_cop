@@ -19,8 +19,10 @@ export interface MessagingPanelProps {
   conversationsError: string | null;
   communityGroups: CommunityGroup[];
   communityGroupsError: string | null;
+  dockWidth: number;
   error: string | null;
   loading: boolean;
+  mapContext: MessagingMapContext;
   pinned: boolean;
   session: AuthSession;
   status: MessagingStatusResponse | null;
@@ -29,11 +31,38 @@ export interface MessagingPanelProps {
   onClose: () => void;
   onCreateDirectConversation: (user: UserDirectoryEntry) => Promise<MessagingConversationSummary>;
   onCreateGroup: (name: string, visibility: CommunityGroupVisibility) => Promise<{ conversation?: MessagingConversationSummary; group: CommunityGroup }>;
+  onCreateReportFromChat: (seed: MessagingReportSeed) => void;
+  onDockWidthChange: (width: number) => void;
   onLogin: () => void;
   onPinnedChange: (pinned: boolean) => void;
   onRefresh: () => void;
   onResolveMatrixIdentities: (userIds: string[]) => Promise<MessagingMatrixIdentityResolutionResponse>;
   onSearchUsers: (query: string) => Promise<UserDirectoryEntry[]>;
+}
+
+export interface MessagingMapContext {
+  center: {
+    lat: number;
+    lon: number;
+  };
+  selectedFeature?: {
+    id: string;
+    title: string;
+  };
+  userLocation?: {
+    accuracyM?: number | null;
+    lat: number;
+    lon: number;
+  };
+}
+
+export interface MessagingReportSeed {
+  conversationId?: string;
+  groupId?: string;
+  groupName?: string;
+  location?: MatrixLocationShare;
+  roomId?: string;
+  title?: string;
 }
 
 export interface MatrixRoomSummary {
@@ -44,19 +73,66 @@ export interface MatrixRoomSummary {
 }
 
 export interface MatrixTimelineMessage {
+  attachment?: MatrixTimelineAttachment;
   body: string;
   eventId: string;
+  geoUri?: string;
+  kind: MatrixMessageKind;
+  location?: MatrixLocationShare;
   own: boolean;
   sender: string;
   timestamp: string;
 }
 
+export type MatrixMessageKind = "file" | "image" | "location" | "text" | "video";
+
+export type MatrixAttachmentKind = "file" | "image" | "video";
+
+export interface MatrixAttachmentUpload {
+  caption?: string;
+  file: File;
+  kind: MatrixAttachmentKind;
+}
+
+export interface MatrixLocationShare {
+  accuracyM?: number | null;
+  label?: string;
+  lat: number;
+  lon: number;
+  source: "device" | "map";
+}
+
+export interface MatrixTimelineAttachment {
+  contentType?: string;
+  encrypted?: MatrixEncryptedFileRef;
+  fileName: string;
+  mediaUrl?: string;
+  size?: number;
+}
+
+export interface MatrixEncryptedFileRef {
+  hashes: Record<string, string>;
+  iv: string;
+  key: {
+    alg: string;
+    ext: boolean;
+    k: string;
+    key_ops: string[];
+    kty: string;
+  };
+  url: string;
+  v: string;
+}
+
 export interface MatrixMessagingSession {
   bootstrap: MessagingBootstrapResponse;
   createGroupRoom(name: string, inviteUserIds?: string[]): Promise<string>;
+  downloadAttachment(message: MatrixTimelineMessage): Promise<Blob>;
   getRooms(): MatrixRoomSummary[];
   getTimeline(roomId: string): MatrixTimelineMessage[];
   joinInvitedRooms(): Promise<void>;
+  sendAttachment(roomId: string, attachment: MatrixAttachmentUpload): Promise<void>;
+  sendLocation(roomId: string, location: MatrixLocationShare): Promise<void>;
   sendMessage(roomId: string, body: string): Promise<void>;
   stop(): void;
 }

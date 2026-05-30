@@ -148,6 +148,7 @@ import {
 } from "./cop-data";
 import { CopMap, formatTrackLabel } from "./CopMap";
 import { MessagingPanel } from "./messaging/MessagingPanel";
+import type { MessagingReportSeed } from "./messaging/types";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
 import {
@@ -284,6 +285,7 @@ const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["maneuver", "Manévr"]
 ];
 const defaultAoiCenter = { lat: 50.0755, lon: 14.4378 };
+const messagingDockWidthStorageKey = "cop.messaging.dockWidth.v1";
 
 interface DashboardMetrics {
   activeSources: number;
@@ -455,6 +457,7 @@ export function App() {
   const [serverProfileUpdatedAt, setServerProfileUpdatedAt] = React.useState<string | null>(null);
   const [messagingOpen, setMessagingOpen] = React.useState(false);
   const [messagingPinned, setMessagingPinned] = React.useState(false);
+  const [messagingDockWidth, setMessagingDockWidth] = React.useState(() => readMessagingDockWidth());
   const [messagingStatus, setMessagingStatus] = React.useState<MessagingStatusResponse | null>(null);
   const [messagingLoading, setMessagingLoading] = React.useState(false);
   const [messagingError, setMessagingError] = React.useState<string | null>(null);
@@ -2374,6 +2377,38 @@ export function App() {
     setLocationStatus("Sběr hlášení: doplňte popis, riziko, platnost a případné přílohy.");
   }
 
+  function startCommunityReportFromChat(seed: MessagingReportSeed) {
+    locateUser();
+    if (!profileAccessReady) {
+      setProfileSyncError("Hlášení vytvořené z chatu je dostupné po přihlášení.");
+      openLoginPrompt("report");
+      return;
+    }
+    const location: CommunityReportLocation = seed.location
+      ? {
+        ...(typeof seed.location.accuracyM === "number" ? { accuracyM: seed.location.accuracyM } : {}),
+        lat: seed.location.lat,
+        lon: seed.location.lon,
+        source: seed.location.source === "device" ? "device" : "manual"
+      }
+      : resolveCommunityReportLocation(userLocation, mapView);
+    setCommunityReportDraft({
+      ...createCommunityReportDraft(location),
+      description: seed.groupName ? `Zdroj: chat ${seed.groupName}.` : "Zdroj: chat.",
+      mediaAccessGroupId: seed.groupId ?? "",
+      mediaAccessMode: "groups",
+      newGroupName: seed.groupId ? "" : seed.groupName ?? "",
+      title: seed.title ?? "Hlášení z chatu"
+    });
+    setCommunityReportError(null);
+    setCommunityReportSuccess(null);
+    setCommunityReportLocationPickMode(false);
+    setCommunityReportOpen(true);
+    setMessagingOpen(true);
+    setMessagingPinned(true);
+    setLocationStatus("Hlášení je předvyplněné z aktuálního chatu a mapového kontextu.");
+  }
+
   function setCommunityReportLocationFromUser() {
     if (!userLocation) {
       locateUser();
@@ -2889,6 +2924,28 @@ export function App() {
   );
   const catalogGroupViews = React.useMemo(() => buildCatalogGroupViews(mapCatalog), [mapCatalog]);
   const activeCatalogGroup = catalogGroupViews.find((view) => view.group.groupId === activeCatalogGroupId) ?? null;
+  const messagingMapContext = React.useMemo(() => ({
+    center: {
+      lat: mapView?.center[1] ?? defaultAoiCenter.lat,
+      lon: mapView?.center[0] ?? defaultAoiCenter.lon
+    },
+    ...(selectedSituationFeature ? {
+      selectedFeature: {
+        id: selectedSituationFeature.properties.featureId,
+        title: selectedSituationFeature.properties.headline
+          ?? selectedSituationFeature.properties.areaName
+          ?? selectedSituationFeature.properties.label
+          ?? selectedSituationFeature.properties.featureId
+      }
+    } : {}),
+    ...(userLocation ? {
+      userLocation: {
+        accuracyM: userLocation.accuracyM,
+        lat: userLocation.lat,
+        lon: userLocation.lon
+      }
+    } : {})
+  }), [mapView?.center, selectedSituationFeature, userLocation]);
 
   React.useEffect(() => {
     if (activeCatalogGroupId && !catalogGroupViews.some((view) => view.group.groupId === activeCatalogGroupId)) {
@@ -2897,7 +2954,10 @@ export function App() {
   }, [activeCatalogGroupId, catalogGroupViews]);
 
   return (
-    <main className="shell">
+    <main
+      className={`shell ${messagingOpen && messagingPinned ? "shell-messaging-docked" : ""}`}
+      style={messagingOpen && messagingPinned ? ({ "--messaging-dock-width": `${messagingDockWidth}px` } as React.CSSProperties) : undefined}
+    >
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
@@ -3585,8 +3645,10 @@ export function App() {
           conversationsError={messagingConversationsError}
           communityGroups={communityGroups}
           communityGroupsError={communityGroupsError}
+          dockWidth={messagingDockWidth}
           error={messagingError}
           loading={messagingLoading}
+          mapContext={messagingMapContext}
           pinned={messagingPinned}
           session={authSession}
           status={messagingStatus}
@@ -3597,6 +3659,12 @@ export function App() {
           onClose={() => setMessagingOpen(false)}
           onCreateDirectConversation={(user) => createDirectConversationForUi(user)}
           onCreateGroup={(name, visibility) => createCommunityGroupBundleForUi(name, visibility)}
+          onCreateReportFromChat={startCommunityReportFromChat}
+          onDockWidthChange={(width) => {
+            const nextWidth = clamp(width, 420, 760);
+            setMessagingDockWidth(nextWidth);
+            writeMessagingDockWidth(nextWidth);
+          }}
           onLogin={() => openLoginPrompt("chat")}
           onPinnedChange={setMessagingPinned}
           onRefresh={() => void loadMessagingStatus()}
@@ -9867,6 +9935,21 @@ function communityGroupMembersToMessagingMembers(group: CommunityGroup): Array<{
 function findMessagingConversationForCommunityGroup(group: CommunityGroup, conversations: MessagingConversationSummary[]): MessagingConversationSummary | undefined {
   return conversations.find((conversation) => conversation.metadata?.externalId === group.groupId)
     ?? conversations.find((conversation) => conversation.title === group.name);
+}
+
+function readMessagingDockWidth(): number {
+  if (typeof window === "undefined") {
+    return 520;
+  }
+  const stored = Number(window.localStorage.getItem(messagingDockWidthStorageKey));
+  return Number.isFinite(stored) ? clamp(stored, 420, 760) : 520;
+}
+
+function writeMessagingDockWidth(width: number): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(messagingDockWidthStorageKey, String(clamp(width, 420, 760)));
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {

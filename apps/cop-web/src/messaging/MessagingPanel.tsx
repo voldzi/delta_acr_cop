@@ -1,5 +1,5 @@
 import React from "react";
-import { Lock, LogIn, MessageCircle, Pin, PinOff, Plus, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
+import { Download, FileText, Image, Info, Lock, LogIn, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Send, ShieldCheck, Users, Video, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
 import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse, UserDirectoryEntry } from "../cop-data";
 import { SelectField } from "../ui/select";
@@ -8,15 +8,23 @@ import {
   createMatrixMessagingSession,
   isMatrixAccountStoreMismatchError
 } from "./matrixClient";
-import type { MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage, MessagingPanelProps } from "./types";
+import type { MatrixAttachmentKind, MatrixLocationShare, MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage, MessagingPanelProps } from "./types";
 
 type Tone = "ok" | "warn" | "neutral";
+type MessagingDockTab = "chat" | "context" | "groups";
+
+interface PendingChatAttachment {
+  file: File;
+  kind: MatrixAttachmentKind;
+}
 
 const communityGroupVisibilityOptions: Array<{ label: string; value: "private" | "public" }> = [
   { label: "S povolením", value: "private" },
   { label: "Veřejná", value: "public" }
 ];
 
+const messagingDockMinWidth = 420;
+const messagingDockMaxWidth = 760;
 const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
 const fallbackMatrixDeviceIds = new Map<string, string>();
 
@@ -63,8 +71,10 @@ export function MessagingPanel({
   conversationsError,
   communityGroups,
   communityGroupsError,
+  dockWidth,
   error,
   loading,
+  mapContext,
   pinned,
   session,
   status,
@@ -73,6 +83,8 @@ export function MessagingPanel({
   onClose,
   onCreateDirectConversation,
   onCreateGroup,
+  onCreateReportFromChat,
+  onDockWidthChange,
   onLogin,
   onPinnedChange,
   onRefresh,
@@ -86,6 +98,9 @@ export function MessagingPanel({
   const [selectedRoomId, setSelectedRoomId] = React.useState<string | null>(null);
   const [timeline, setTimeline] = React.useState<MatrixTimelineMessage[]>([]);
   const [composerText, setComposerText] = React.useState("");
+  const [composerError, setComposerError] = React.useState<string | null>(null);
+  const [messageSending, setMessageSending] = React.useState(false);
+  const [pendingAttachment, setPendingAttachment] = React.useState<PendingChatAttachment | null>(null);
   const [directQuery, setDirectQuery] = React.useState("");
   const [directSuggestions, setDirectSuggestions] = React.useState<UserDirectoryEntry[]>([]);
   const [directSearchLoading, setDirectSearchLoading] = React.useState(false);
@@ -99,8 +114,10 @@ export function MessagingPanel({
   const [groupMemberSearchError, setGroupMemberSearchError] = React.useState<string | null>(null);
   const [newGroupName, setNewGroupName] = React.useState("");
   const [newGroupVisibility, setNewGroupVisibility] = React.useState<"private" | "public">("private");
+  const [activeDockTab, setActiveDockTab] = React.useState<MessagingDockTab>("chat");
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [syncState, setSyncState] = React.useState("idle");
+  const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
   const matrixAccountOwnerId = session.profile?.subjectId ?? session.profile?.username ?? "anonymous";
   const previousMatrixAccountOwnerRef = React.useRef<string | null>(null);
 
@@ -244,6 +261,9 @@ export function MessagingPanel({
   const matrixBootstrapReady = status?.features?.matrixTokenBootstrap === true;
   const selectedGroup = communityGroups.find((group) => group.groupId === selectedGroupId) ?? communityGroups[0] ?? null;
   const selectedConversation = conversations.find((conversation) => conversation.conversationId === selectedRoomId || conversation.matrix?.roomId === selectedRoomId) ?? null;
+  const selectedConversationGroup = selectedConversation
+    ? communityGroups.find((group) => group.groupId === conversationCommunityGroupId(selectedConversation)) ?? null
+    : null;
 
   async function createGroup() {
     const name = newGroupName.trim();
@@ -390,13 +410,122 @@ export function MessagingPanel({
   }
 
   async function sendMessage() {
-    if (!matrixSession || !selectedRoomId || !composerText.trim()) {
+    if (!matrixSession || !selectedRoomId || (!composerText.trim() && !pendingAttachment)) {
       return;
     }
-    const text = composerText;
-    setComposerText("");
-    await matrixSession.sendMessage(selectedRoomId, text);
-    setTimeline(matrixSession.getTimeline(selectedRoomId));
+    const text = composerText.trim();
+    const attachment = pendingAttachment;
+    setMessageSending(true);
+    setComposerError(null);
+    try {
+      if (attachment) {
+        await matrixSession.sendAttachment(selectedRoomId, {
+          caption: text || undefined,
+          file: attachment.file,
+          kind: attachment.kind
+        });
+      } else {
+        await matrixSession.sendMessage(selectedRoomId, text);
+      }
+      setComposerText("");
+      setPendingAttachment(null);
+      setTimeline(matrixSession.getTimeline(selectedRoomId));
+    } catch (caught) {
+      setComposerError(caught instanceof Error ? caught.message : "Zprávu se nepodařilo odeslat.");
+    } finally {
+      setMessageSending(false);
+    }
+  }
+
+  async function shareLocation() {
+    if (!matrixSession || !selectedRoomId) {
+      return;
+    }
+    setMessageSending(true);
+    setComposerError(null);
+    try {
+      await matrixSession.sendLocation(selectedRoomId, preferredShareLocation(mapContext));
+      setTimeline(matrixSession.getTimeline(selectedRoomId));
+    } catch (caught) {
+      setComposerError(caught instanceof Error ? caught.message : "Polohu se nepodařilo odeslat.");
+    } finally {
+      setMessageSending(false);
+    }
+  }
+
+  function pickAttachment(kind: MatrixAttachmentKind) {
+    const input = attachmentInputRef.current;
+    if (!input) {
+      return;
+    }
+    input.value = "";
+    input.accept = attachmentAcceptForKind(kind);
+    input.dataset.kind = kind;
+    input.click();
+  }
+
+  function handleAttachmentSelected(files: FileList | null) {
+    const file = files?.[0];
+    if (!file) {
+      return;
+    }
+    const requestedKind = attachmentInputRef.current?.dataset.kind as MatrixAttachmentKind | undefined;
+    setPendingAttachment({
+      file,
+      kind: normalizeAttachmentKind(file, requestedKind)
+    });
+    setComposerError(null);
+  }
+
+  async function downloadAttachment(message: MatrixTimelineMessage) {
+    if (!matrixSession || !message.attachment) {
+      return;
+    }
+    setComposerError(null);
+    try {
+      const blob = await matrixSession.downloadAttachment(message);
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = message.attachment.fileName;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 10_000);
+    } catch (caught) {
+      setComposerError(caught instanceof Error ? caught.message : "Přílohu se nepodařilo stáhnout.");
+    }
+  }
+
+  function createReportFromCurrentChat() {
+    const group = selectedConversationGroup ?? selectedGroup ?? undefined;
+    onCreateReportFromChat({
+      conversationId: selectedConversation?.conversationId,
+      groupId: group?.groupId,
+      groupName: group?.name ?? selectedConversation?.title,
+      location: preferredShareLocation(mapContext),
+      roomId: selectedRoomId ?? undefined,
+      title: selectedConversation?.title ? `Hlášení: ${selectedConversation.title}` : "Hlášení z chatu"
+    });
+  }
+
+  function beginDockResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (!pinned) {
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = dockWidth;
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const nextWidth = clampNumber(startWidth + startX - moveEvent.clientX, messagingDockMinWidth, messagingDockMaxWidth);
+      onDockWidthChange(nextWidth);
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
   }
 
   async function startDirectConversation(user: UserDirectoryEntry) {
@@ -476,8 +605,19 @@ export function MessagingPanel({
     return matrixUserIdsFromResolution(result, userIds);
   }
 
+  const panelStyle = pinned
+    ? ({ "--messaging-dock-width": `${dockWidth}px` } as React.CSSProperties)
+    : undefined;
+
   return (
-    <section className={`messaging-panel ${pinned ? "pinned" : ""}`} aria-label="Konverzace">
+    <section className={`messaging-panel ${pinned ? "pinned" : ""}`} aria-label="Konverzace" style={panelStyle}>
+      {pinned ? <div aria-label="Změnit šířku komunikačního panelu" className="messaging-resize-handle" onPointerDown={beginDockResize} role="separator" /> : null}
+      <input
+        ref={attachmentInputRef}
+        className="visually-hidden"
+        type="file"
+        onChange={(event) => handleAttachmentSelected(event.target.files)}
+      />
       <div className="messaging-panel-header">
         <div className="panel-title chat-panel-title">
           <MessageCircle size={17} />
@@ -496,6 +636,8 @@ export function MessagingPanel({
         </div>
       </div>
 
+      <MessagingDockTabs activeTab={activeDockTab} onChange={setActiveDockTab} />
+
       <div className="chat-status-strip">
         <span className={messagingStatusTone(providerStatus)}>{messagingStatusLabel(providerStatus, loading)}</span>
         <span>{authenticated ? operatorDisplayName(session, authConfig) : "bez účtu"}</span>
@@ -506,6 +648,7 @@ export function MessagingPanel({
       {error ? <div className="error-banner">Zprávy: {error}</div> : null}
       {conversationsError ? <div className="error-banner">Konverzace: {conversationsError}</div> : null}
       {bootstrapError ? <div className="error-banner">Chat: {bootstrapError}</div> : null}
+      {composerError ? <div className="error-banner">Odeslání: {composerError}</div> : null}
 
       {!authenticated ? (
         <div className="messaging-empty-state">
@@ -516,7 +659,7 @@ export function MessagingPanel({
             Přihlásit
           </button>
         </div>
-      ) : matrixSession ? (
+      ) : activeDockTab === "chat" && matrixSession ? (
         <MatrixChatShell
           conversations={conversations}
           composerText={composerText}
@@ -524,6 +667,8 @@ export function MessagingPanel({
           directSearchError={directSearchError}
           directSearchLoading={directSearchLoading}
           directSuggestions={directSuggestions}
+          messageSending={messageSending}
+          pendingAttachment={pendingAttachment}
           rooms={rooms}
           selectedConversation={selectedConversation}
           selectedRoomId={selectedRoomId}
@@ -533,13 +678,17 @@ export function MessagingPanel({
             const conversation = conversations.find((item) => item.conversationId === conversationId);
             setSelectedRoomId(conversation?.matrix?.roomId ?? conversationId);
           }}
+          onAttachmentClear={() => setPendingAttachment(null)}
+          onAttachmentPick={pickAttachment}
           onDirectQueryChange={setDirectQuery}
+          onDownloadAttachment={(message) => void downloadAttachment(message)}
           onRoomSelect={setSelectedRoomId}
           onSend={() => void sendMessage()}
+          onShareLocation={() => void shareLocation()}
           onStartDirectConversation={(user) => void startDirectConversation(user)}
           onStartRoom={(conversationId) => void startRoomForConversation(conversationId)}
         />
-      ) : chatReady ? (
+      ) : activeDockTab === "chat" && chatReady ? (
         <div className="messaging-empty-state">
           <strong>{conversations.length > 0 ? `${conversations.length} konverzací připraveno.` : "Zatím nemáte žádnou konverzaci."}</strong>
           <p>{conversations.length > 0 ? "Otevřete chat a pokračujte ve skupinách navázaných na sdílení v mapě." : "Založte skupinu níže. Bude sloužit pro zprávy i omezení přístupu k médiím."}</p>
@@ -548,14 +697,14 @@ export function MessagingPanel({
             Šifrované zprávy nejdou přes COP API.
           </div>
         </div>
-      ) : (
+      ) : activeDockTab === "chat" ? (
         <div className="messaging-empty-state">
           <strong>Chat zatím čeká na bezpečný bootstrap.</strong>
           <p>Skupiny pro sdílení médií můžete připravit už teď; zprávy se zapnou po Matrix/E2EE potvrzení.</p>
         </div>
-      )}
+      ) : null}
 
-      {authenticated ? (
+      {authenticated && activeDockTab === "groups" ? (
         <CommunityGroupsPanel
           actionError={groupActionError ?? communityGroupsError}
           actionLoading={groupActionLoading}
@@ -582,6 +731,16 @@ export function MessagingPanel({
         />
       ) : null}
 
+      {authenticated && activeDockTab === "context" ? (
+        <MessagingContextPanel
+          mapContext={mapContext}
+          selectedConversation={selectedConversation}
+          selectedGroup={selectedConversationGroup ?? selectedGroup}
+          selectedRoomId={selectedRoomId}
+          onCreateReport={createReportFromCurrentChat}
+        />
+      ) : null}
+
       {status?.warnings.length ? (
         <div className="messaging-warning-list">
           {status.warnings.slice(0, 4).map((warning) => (
@@ -601,6 +760,73 @@ export function MessagingPanel({
         </button>
       </div>
     </section>
+  );
+}
+
+function MessagingDockTabs({ activeTab, onChange }: { activeTab: MessagingDockTab; onChange: (tab: MessagingDockTab) => void }) {
+  const tabs: Array<{ icon: React.ReactNode; label: string; value: MessagingDockTab }> = [
+    { icon: <MessageCircle size={15} />, label: "Chat", value: "chat" },
+    { icon: <Users size={15} />, label: "Skupiny", value: "groups" },
+    { icon: <Info size={15} />, label: "Kontext", value: "context" }
+  ];
+  return (
+    <div className="messaging-dock-tabs" role="tablist" aria-label="Zobrazení komunikace">
+      {tabs.map((tab) => (
+        <button
+          aria-selected={activeTab === tab.value}
+          className={activeTab === tab.value ? "active" : ""}
+          key={tab.value}
+          onClick={() => onChange(tab.value)}
+          role="tab"
+          type="button"
+        >
+          {tab.icon}
+          <span>{tab.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MessagingContextPanel({
+  mapContext,
+  selectedConversation,
+  selectedGroup,
+  selectedRoomId,
+  onCreateReport
+}: {
+  mapContext: MessagingPanelProps["mapContext"];
+  selectedConversation: MessagingPanelProps["conversations"][number] | null;
+  selectedGroup: MessagingPanelProps["communityGroups"][number] | null;
+  selectedRoomId: string | null;
+  onCreateReport: () => void;
+}) {
+  const activeTitle = selectedConversation?.title ?? selectedGroup?.name ?? selectedRoomId ?? "Bez vybraného chatu";
+  return (
+    <div className="messaging-context-panel">
+      <section className="messaging-context-card">
+        <span>Aktivní prostor</span>
+        <strong>{activeTitle}</strong>
+        <small>{selectedConversation?.type === "direct" ? "přímý chat" : selectedGroup ? `${selectedGroup.members.filter((member) => member.status === "active").length} aktivních členů` : "vyberte konverzaci"}</small>
+      </section>
+      <section className="messaging-context-card">
+        <span>Mapa</span>
+        <strong>{mapContext.selectedFeature?.title ?? "Střed aktuálního pohledu"}</strong>
+        <small>{formatCoordinates(mapContext.userLocation ?? mapContext.center)}</small>
+      </section>
+      <button className="primary-button secondary wide" onClick={onCreateReport} type="button">
+        <MapPin size={16} />
+        Nahlásit z chatu
+      </button>
+      <div className="messaging-context-link-grid">
+        <span>Konverzace</span>
+        <strong>{selectedConversation?.conversationId ?? "není vybraná"}</strong>
+        <span>Matrix místnost</span>
+        <strong>{selectedRoomId ?? "čeká"}</strong>
+        <span>Skupina</span>
+        <strong>{selectedGroup?.name ?? "bez skupiny"}</strong>
+      </div>
+    </div>
   );
 }
 
@@ -646,25 +872,15 @@ function CommunityGroupsPanel({
   onSelectGroup: (groupId: string) => void;
 }) {
   const pendingMembers = selectedGroup?.members.filter((member) => member.status === "pending") ?? [];
+  const activeMembers = selectedGroup?.members.filter((member) => member.status === "active") ?? [];
   return (
     <div className="chat-groups-panel">
-      <div className="chat-groups-title">
-        <Users size={16} />
-        <strong>Skupiny</strong>
-      </div>
-      <div className="chat-group-list">
-        {groups.length === 0 ? <span className="empty-mini">Zatím nemáte žádnou skupinu.</span> : null}
-        {groups.map((group) => (
-          <button
-            className={selectedGroup?.groupId === group.groupId ? "active" : ""}
-            key={group.groupId}
-            onClick={() => onSelectGroup(group.groupId)}
-            type="button"
-          >
-            <span>{group.name}</span>
-            <small>{group.visibility === "public" ? "veřejná" : "s povolením"} · {group.members.filter((member) => member.status === "active").length} členů</small>
-          </button>
-        ))}
+      <div className="chat-groups-header">
+        <div className="chat-groups-title">
+          <Users size={16} />
+          <strong>Skupiny</strong>
+        </div>
+        <span>{groups.length} celkem</span>
       </div>
       <div className="chat-group-create">
         <input
@@ -684,54 +900,85 @@ function CommunityGroupsPanel({
           Založit
         </button>
       </div>
-      {selectedGroup ? (
-        <div className="chat-group-members">
-          <strong>{selectedGroup.name}</strong>
-          <span>{selectedGroup.members.filter((member) => member.status === "pending").length} žádostí čeká</span>
-          {pendingMembers.length > 0 ? (
-            <div className="chat-group-pending-list">
-              {pendingMembers.slice(0, 5).map((member) => (
-                <span key={member.subjectId}>
-                  <small>{member.displayName}</small>
-                  <button className="mini-button" disabled={actionLoading} onClick={() => onApproveMember(member.subjectId, member.displayName)} type="button">
-                    Schválit
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : null}
-          <div>
-            <input
-              placeholder="Uživatel nebo e-mail"
-              value={memberQuery}
-              onChange={(event) => onMemberQueryChange(event.target.value)}
-            />
-            <button className="mini-button" disabled={actionLoading || !memberQuery.trim()} onClick={onAddMember} type="button">
-              Přidat
+      <div className="chat-groups-workspace">
+        <div className="chat-group-list">
+          {groups.length === 0 ? <span className="empty-mini">Zatím nemáte žádnou skupinu.</span> : null}
+          {groups.map((group) => (
+            <button
+              className={selectedGroup?.groupId === group.groupId ? "active" : ""}
+              key={group.groupId}
+              onClick={() => onSelectGroup(group.groupId)}
+              type="button"
+            >
+              <span>{group.name}</span>
+              <small>{group.visibility === "public" ? "veřejná" : "s povolením"} · {group.members.filter((member) => member.status === "active").length} členů</small>
             </button>
-          </div>
-          {memberSearchLoading ? <span>Vyhledávám...</span> : null}
-          {memberSearchError ? <span>{memberSearchError}</span> : null}
-          {memberCandidate ? <span>{memberCandidate.displayName} · {memberCandidate.username}</span> : null}
-          {memberSuggestions.length > 0 ? (
-            <div className="chat-member-search-results">
-              {memberSuggestions.slice(0, 6).map((user) => (
+          ))}
+        </div>
+        {selectedGroup ? (
+          <div className="chat-group-members">
+            <div className="chat-group-members-heading">
+              <strong>{selectedGroup.name}</strong>
+              <span>{activeMembers.length} aktivních · {pendingMembers.length} čeká</span>
+            </div>
+            {pendingMembers.length > 0 ? (
+              <div className="chat-group-pending-list">
+                {pendingMembers.slice(0, 5).map((member) => (
+                  <span key={member.subjectId}>
+                    <small>{member.displayName}</small>
+                    <button className="mini-button" disabled={actionLoading} onClick={() => onApproveMember(member.subjectId, member.displayName)} type="button">
+                      Schválit
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <div className="chat-group-member-search">
+              <input
+                placeholder="Uživatel nebo e-mail"
+                value={memberQuery}
+                onChange={(event) => onMemberQueryChange(event.target.value)}
+              />
+              <button className="mini-button" disabled={actionLoading || !memberQuery.trim()} onClick={onAddMember} type="button">
+                Přidat
+              </button>
+            </div>
+            {memberSearchLoading ? <span>Vyhledávám...</span> : null}
+            {memberSearchError ? <span>{memberSearchError}</span> : null}
+            {memberCandidate ? <span>{memberCandidate.displayName} · {memberCandidate.username}</span> : null}
+            {memberSuggestions.length > 0 ? (
+              <div className="chat-member-search-results">
+                {memberSuggestions.slice(0, 6).map((user) => (
+                  <button
+                    key={user.subjectId}
+                    onClick={() => {
+                      onMemberQueryChange(user.username);
+                      onMemberCandidateChange(user);
+                    }}
+                    type="button"
+                  >
+                    <strong>{user.displayName}</strong>
+                    <small>{user.username}{user.email ? ` · ${user.email}` : ""}</small>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="chat-group-member-list">
+              {selectedGroup.members.map((member) => (
                 <button
-                  key={user.subjectId}
-                  onClick={() => {
-                    onMemberQueryChange(user.username);
-                    onMemberCandidateChange(user);
-                  }}
+                  className={member.status === "active" ? "active" : "pending"}
+                  key={member.subjectId}
                   type="button"
                 >
-                  <strong>{user.displayName}</strong>
-                  <small>{user.username}{user.email ? ` · ${user.email}` : ""}</small>
+                  <span>{initialsFor(member.displayName || member.username || member.subjectId)}</span>
+                  <strong>{member.displayName || member.username}</strong>
+                  <small>{member.role} · {member.status === "active" ? "aktivní" : "čeká"}</small>
                 </button>
               ))}
             </div>
-          ) : null}
-        </div>
-      ) : null}
+          </div>
+        ) : null}
+      </div>
       {actionError ? <div className="error-banner">{actionError}</div> : null}
     </div>
   );
@@ -744,15 +991,21 @@ function MatrixChatShell({
   directSearchError,
   directSearchLoading,
   directSuggestions,
+  messageSending,
+  pendingAttachment,
   rooms,
   selectedConversation,
   selectedRoomId,
   timeline,
   onComposerChange,
   onConversationSelect,
+  onAttachmentClear,
+  onAttachmentPick,
   onDirectQueryChange,
+  onDownloadAttachment,
   onRoomSelect,
   onSend,
+  onShareLocation,
   onStartDirectConversation,
   onStartRoom
 }: {
@@ -762,21 +1015,28 @@ function MatrixChatShell({
   directSearchError: string | null;
   directSearchLoading: boolean;
   directSuggestions: UserDirectoryEntry[];
+  messageSending: boolean;
+  pendingAttachment: PendingChatAttachment | null;
   rooms: MatrixRoomSummary[];
   selectedConversation: MessagingPanelProps["conversations"][number] | null;
   selectedRoomId: string | null;
   timeline: MatrixTimelineMessage[];
   onComposerChange: (value: string) => void;
   onConversationSelect: (conversationId: string) => void;
+  onAttachmentClear: () => void;
+  onAttachmentPick: (kind: MatrixAttachmentKind) => void;
   onDirectQueryChange: (value: string) => void;
+  onDownloadAttachment: (message: MatrixTimelineMessage) => void;
   onRoomSelect: (roomId: string) => void;
   onSend: () => void;
+  onShareLocation: () => void;
   onStartDirectConversation: (user: UserDirectoryEntry) => void;
   onStartRoom: (conversationId: string) => void;
 }) {
   const selectedRoom = rooms.find((room) => room.roomId === selectedRoomId) ?? null;
   const conversationOnlySelected = Boolean(selectedConversation && !selectedRoom);
   const canSend = Boolean(selectedRoomId && selectedRoom);
+  const hasDraft = Boolean(composerText.trim() || pendingAttachment);
   const standaloneRooms = visibleMatrixRooms(rooms, conversations);
   return (
     <div className="matrix-chat-shell">
@@ -861,14 +1121,38 @@ function MatrixChatShell({
           {timeline.map((message) => (
             <div className={`matrix-message ${message.own ? "own" : ""}`} key={message.eventId}>
               <small>{message.sender} · {new Date(message.timestamp).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</small>
-              <span>{message.body}</span>
+              <MatrixMessageBody message={message} onDownloadAttachment={onDownloadAttachment} />
             </div>
           ))}
         </div>
         <div className="matrix-composer">
+          <div className="matrix-composer-tools" aria-label="Přílohy">
+            <button className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("image")} title="Přiložit fotku" type="button">
+              <Image size={15} />
+            </button>
+            <button className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("video")} title="Přiložit video" type="button">
+              <Video size={15} />
+            </button>
+            <button className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("file")} title="Přiložit soubor" type="button">
+              <Paperclip size={15} />
+            </button>
+            <button className="icon-button compact" disabled={!canSend || messageSending} onClick={onShareLocation} title="Sdílet polohu" type="button">
+              <MapPin size={15} />
+            </button>
+          </div>
+          {pendingAttachment ? (
+            <div className="matrix-attachment-chip">
+              {attachmentIcon(pendingAttachment.kind)}
+              <span>{pendingAttachment.file.name || attachmentKindLabel(pendingAttachment.kind)}</span>
+              <small>{formatBytes(pendingAttachment.file.size)}</small>
+              <button aria-label="Odebrat přílohu" className="icon-button compact" disabled={messageSending} onClick={onAttachmentClear} type="button">
+                <X size={13} />
+              </button>
+            </div>
+          ) : null}
           <input
             aria-label="Text zprávy"
-            disabled={!canSend}
+            disabled={!canSend || messageSending}
             onChange={(event) => onComposerChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
@@ -879,13 +1163,58 @@ function MatrixChatShell({
             placeholder={canSend ? "Napsat zprávu..." : "Nejdřív vyberte aktivní chat"}
             value={composerText}
           />
-          <button className="mini-button" disabled={!canSend || !composerText.trim()} onClick={onSend} type="button">
+          <button className="mini-button" disabled={!canSend || !hasDraft || messageSending} onClick={onSend} type="button">
             <Send size={14} />
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+function MatrixMessageBody({ message, onDownloadAttachment }: { message: MatrixTimelineMessage; onDownloadAttachment: (message: MatrixTimelineMessage) => void }) {
+  if (message.kind === "location" && message.location) {
+    return (
+      <div className="matrix-message-location">
+        <MapPin size={15} />
+        <div>
+          <strong>{message.location.label ?? "Sdílená poloha"}</strong>
+          <span>{formatCoordinates(message.location)}</span>
+        </div>
+        {message.geoUri ? <a href={message.geoUri}>Mapa</a> : null}
+      </div>
+    );
+  }
+
+  if (message.attachment) {
+    const showCaption = Boolean(message.body && message.body !== message.attachment.fileName);
+    return (
+      <>
+        {showCaption ? <span>{message.body}</span> : null}
+        <div className="matrix-attachment-card">
+          {message.kind === "image" && message.attachment.mediaUrl?.startsWith("http") && !message.attachment.encrypted ? (
+            <img alt="" src={message.attachment.mediaUrl} />
+          ) : null}
+          {message.kind === "video" && message.attachment.mediaUrl?.startsWith("http") && !message.attachment.encrypted ? (
+            <video controls src={message.attachment.mediaUrl} />
+          ) : null}
+          <div>
+            {attachmentIcon(message.kind === "text" || message.kind === "location" ? "file" : message.kind)}
+            <span>
+              <strong>{message.attachment.fileName}</strong>
+              <small>{message.attachment.encrypted ? "E2EE příloha" : message.attachment.contentType ?? "soubor"}{message.attachment.size ? ` · ${formatBytes(message.attachment.size)}` : ""}</small>
+            </span>
+            <button className="mini-button" onClick={() => onDownloadAttachment(message)} type="button">
+              <Download size={14} />
+              Stáhnout
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return <span>{message.body}</span>;
 }
 
 function initialsFor(value: string): string {
@@ -952,6 +1281,97 @@ function stableStorageKey(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9._=-]+/gu, "_")
     .slice(0, 96) || "anonymous";
+}
+
+function preferredShareLocation(mapContext: MessagingPanelProps["mapContext"]): MatrixLocationShare {
+  if (mapContext.userLocation) {
+    return {
+      accuracyM: mapContext.userLocation.accuracyM,
+      label: "Moje poloha",
+      lat: mapContext.userLocation.lat,
+      lon: mapContext.userLocation.lon,
+      source: "device"
+    };
+  }
+  return {
+    label: mapContext.selectedFeature?.title ?? "Střed mapy",
+    lat: mapContext.center.lat,
+    lon: mapContext.center.lon,
+    source: "map"
+  };
+}
+
+function attachmentAcceptForKind(kind: MatrixAttachmentKind): string {
+  if (kind === "image") {
+    return "image/*";
+  }
+  if (kind === "video") {
+    return "video/*";
+  }
+  return "";
+}
+
+function normalizeAttachmentKind(file: File, requestedKind: MatrixAttachmentKind | undefined): MatrixAttachmentKind {
+  if (requestedKind === "image" && file.type.startsWith("image/")) {
+    return "image";
+  }
+  if (requestedKind === "video" && file.type.startsWith("video/")) {
+    return "video";
+  }
+  if (file.type.startsWith("image/")) {
+    return "image";
+  }
+  if (file.type.startsWith("video/")) {
+    return "video";
+  }
+  return "file";
+}
+
+function attachmentIcon(kind: MatrixAttachmentKind | MatrixTimelineMessage["kind"]): React.ReactNode {
+  if (kind === "image") {
+    return <Image size={15} />;
+  }
+  if (kind === "video") {
+    return <Video size={15} />;
+  }
+  return <FileText size={15} />;
+}
+
+function attachmentKindLabel(kind: MatrixAttachmentKind): string {
+  if (kind === "image") {
+    return "Fotka";
+  }
+  if (kind === "video") {
+    return "Video";
+  }
+  return "Soubor";
+}
+
+function conversationCommunityGroupId(conversation: MessagingPanelProps["conversations"][number]): string | undefined {
+  const externalId = conversation.metadata?.externalId;
+  return typeof externalId === "string" && conversation.metadata?.source === "cop.community" ? externalId : undefined;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function formatCoordinates(location: { lat: number; lon: number }): string {
+  return `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)}`;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function messagingStatusTone(status: "degraded" | "disabled" | "online"): Tone {
