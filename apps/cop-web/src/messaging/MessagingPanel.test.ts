@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assertMatrixRoomBindingConfirmed, matrixUserIdsFromResolution, visibleMatrixRooms } from "./MessagingPanel";
+import { assertMatrixRoomBindingConfirmed, linkedConversationForCommunityGroup, matrixUserIdsFromResolution, visibleMatrixRooms } from "./MessagingPanel";
+import type { CommunityGroup, MessagingConversationSummary } from "../cop-data";
 
 describe("MessagingPanel Matrix safety gates", () => {
   it("fails closed when identity resolution is degraded", () => {
@@ -69,4 +70,44 @@ describe("MessagingPanel Matrix safety gates", () => {
       { encrypted: true, name: "Solo", roomId: "!solo:docker.home.cz", unreadCount: 0 }
     ]);
   });
+
+  it("links group conversations only by stable community metadata, not duplicate names", () => {
+    const conversations: MessagingConversationSummary[] = [
+      {
+        conversationId: "conv_legacy_same_name",
+        title: "Kyjev",
+        type: "group"
+      },
+      {
+        conversationId: "conv_group_2",
+        metadata: {
+          externalId: "group_2",
+          source: "cop.community"
+        },
+        title: "Kyjev",
+        type: "group"
+      }
+    ];
+    const groupOne = minimalGroup("group_1", "Kyjev");
+    const groupTwo = minimalGroup("group_2", "Kyjev");
+
+    expect(linkedConversationForCommunityGroup(conversations, groupOne)).toBeUndefined();
+    expect(linkedConversationForCommunityGroup(conversations, groupTwo)?.conversationId).toBe("conv_group_2");
+  });
 });
+
+function minimalGroup(groupId: string, name: string): CommunityGroup {
+  return {
+    createdAt: "2026-05-30T00:00:00.000Z",
+    createdBy: {
+      displayName: "Operator",
+      subjectId: "operator-1",
+      username: "operator"
+    },
+    groupId,
+    members: [],
+    name,
+    updatedAt: "2026-05-30T00:00:00.000Z",
+    visibility: "private"
+  };
+}

@@ -178,8 +178,15 @@ plaintext message send/read endpoints.
 COP web exposes messaging as a first-class operational workspace rather than a
 separate popover. The panel can be floating for quick checks or pinned as a
 right-side inspector next to the map. In pinned mode the map shell reserves
-space for the panel and the user can resize the chat width. The panel uses
-workspace tabs:
+space for the panel and the user can resize the chat width. The pinned panel
+uses an Xcode-style right rail: the rail switches the visible inspector between
+chat, groups and map/report context without closing the map. The active chat
+surface also has a resizable split between the conversation list and the
+timeline so operators can give more room either to routing/group selection or
+to message content. Width preferences are browser-local UI state and do not
+affect server authorization or message delivery.
+
+The panel uses workspace tabs:
 
 - **Chat** for conversations and Matrix timeline,
 - **Skupiny** for COP group membership, pending requests and member search,
@@ -192,6 +199,13 @@ The browser may send:
 - encrypted image, video and file messages through Matrix media upload and
   Matrix `m.image`, `m.video` or `m.file` events,
 - location shares through Matrix `m.location` events with `geo:` URI metadata.
+
+The web composer intentionally behaves like an operational messenger: it
+supports multiline text, explicit icon actions for photo, video, generic file
+and location, and a quick **Nahlásit** action in the chat header. The quick
+report action never copies Matrix plaintext into COP. It only opens the
+community-report flow with safe context: selected group/conversation,
+selected map feature or map center, and the current location source.
 
 Attachments are encrypted in the browser before upload using Web Crypto and
 Matrix encrypted-file metadata. COP does not receive attachment bytes through
@@ -207,6 +221,14 @@ The chat workspace therefore supports two equivalent user paths:
   the related conversation;
 - chat-first: discuss in a group, share a location or file, then create a COP
   report from the conversation when the information should become a map object.
+
+Group management in the web panel is the operator-facing control surface for
+COP sharing groups. It can create a group, search users, add or approve
+members, synchronize active group members into conversation metadata and jump
+back to the linked chat. COP group membership remains the source of truth for
+community media ACL. Matrix room membership is a communication projection and
+must be kept synchronized, but it is not allowed to grant access to COP report
+media by itself.
 
 ## Runtime Configuration
 

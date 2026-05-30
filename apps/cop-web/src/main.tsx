@@ -3667,7 +3667,10 @@ export function App() {
           }}
           onLogin={() => openLoginPrompt("chat")}
           onPinnedChange={setMessagingPinned}
-          onRefresh={() => void loadMessagingStatus()}
+          onRefresh={() => {
+            void loadMessagingStatus();
+            void loadCommunityGroups();
+          }}
           onResolveMatrixIdentities={(userIds) =>
             resolveMessagingMatrixIdentities(apiBase, authSession.accessToken ?? "", userIds)
           }

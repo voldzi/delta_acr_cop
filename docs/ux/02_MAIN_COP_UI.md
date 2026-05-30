@@ -9,6 +9,19 @@ Hlavní UI má šest oblastí:
 - bottom timeline/replay panel: časový posun a změny confidence,
 - AI assistant drawer: povolené datové dotazy a vysvětlení.
 
+Komunikace je sedmá průřezová plocha, ne oddělený modul. Plovoucí chat slouží
+pro rychlou kontrolu, ale připnutý režim se chová jako pravý inspektor ve stylu
+Xcode: mapa si uvolní prostor, na pravém okraji je rail pro přepínání Chat /
+Skupiny / Kontext a uživatel může měnit šířku celého docku i vnitřního splitu
+mezi seznamem konverzací a timeline.
+
+Chatový composer musí podporovat text, fotku, video, soubor a polohu jako
+primární akce. Pokud má informace z chatu přejít do mapového světa, uživatel
+použije akci `Nahlásit`; tím vzniká COP komunitní hlášení s vlastní platností,
+závažností, polohou, ACL a auditem. COP UI nesmí působit jako dvě oddělené
+aplikace: map-first a chat-first workflow musí vést ke stejnému reportu,
+skupině a související konverzaci.
+
 Pravý horní roh top baru obsahuje operátorský vstup. V pilotu neslouží k autentizaci, ale otevírá centrum nastavení pro uživatelské volby mapy, dat, vlastní polohy a budoucího účtu.
 
 Primární aktualizace COP dat probíhá přes live SSE stream. Nastavení intervalu je proto v centru nastavení jako `Fallback synchronizace`; používá se v degraded režimu, při výpadku streamu, po obnově záložky a pro méně dynamická data.

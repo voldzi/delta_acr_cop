@@ -199,6 +199,11 @@ Používá se ve chvíli, kdy informace sdílená v konverzaci přestává být 
 koordinační zprávou a má se stát mapovým objektem s auditovatelným stavem,
 platností, závažností a pravidly přístupu k médiím.
 
+V připnutém chatovacím panelu je tato akce dostupná přímo v hlavičce aktivního
+chatu a také v panelu Kontext. Uživatel tedy nemusí opustit mapu: chat zůstává
+vpravo jako inspektor, mapový výřez zůstává uprostřed a formulář hlášení se
+otevře s předvyplněným bezpečným kontextem.
+
 Předvyplnění hlášení z chatu dodává pouze bezpečná metadata:
 
 - aktivní COP skupinu nebo skupinu navázanou na konverzaci,
@@ -211,6 +216,16 @@ musí text hlášení potvrdit nebo upravit v reportovacím formuláři. Chatov�
 přílohy zůstávají Matrix/E2EE médii; pokud mají být součástí reportu, musí být
 nahrané přes COP media flow, kde se uplatní ACL, audit, podepsané media tokeny
 a budoucí obsahová kontrola.
+
+UI proto záměrně rozlišuje dva typy média:
+
+- **chatové médium**: E2EE příloha v Matrix místnosti pro rychlou koordinaci;
+- **reportové médium**: příloha COP hlášení uložená přes media flow s ACL,
+  auditní vazbou, mapovou životností a budoucí kontrolou obsahu.
+
+Přechod z chatového média do reportového média musí být vědomá akce uživatele
+nebo moderátora. COP nesmí automaticky přebírat šifrované chatové přílohy do
+mapového záznamu bez výslovného potvrzení.
 
 ## Notifikace
 

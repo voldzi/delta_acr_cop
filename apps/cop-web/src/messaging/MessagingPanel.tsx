@@ -25,6 +25,9 @@ const communityGroupVisibilityOptions: Array<{ label: string; value: "private" |
 
 const messagingDockMinWidth = 420;
 const messagingDockMaxWidth = 760;
+const chatListMinWidth = 184;
+const chatListMaxWidth = 360;
+const chatListWidthStorageKey = "cop.messaging.chatListWidth.v1";
 const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
 const fallbackMatrixDeviceIds = new Map<string, string>();
 
@@ -60,6 +63,16 @@ export function visibleMatrixRooms(
 ): MatrixRoomSummary[] {
   const conversationRoomIds = new Set(conversations.flatMap((conversation) => conversation.matrix?.roomId ? [conversation.matrix.roomId] : []));
   return rooms.filter((room) => !conversationRoomIds.has(room.roomId));
+}
+
+export function linkedConversationForCommunityGroup(
+  conversations: MessagingPanelProps["conversations"],
+  group: MessagingPanelProps["communityGroups"][number] | null | undefined
+): MessagingPanelProps["conversations"][number] | undefined {
+  if (!group) {
+    return undefined;
+  }
+  return conversations.find((conversation) => conversationCommunityGroupId(conversation) === group.groupId);
 }
 
 export function MessagingPanel({
@@ -116,6 +129,7 @@ export function MessagingPanel({
   const [newGroupVisibility, setNewGroupVisibility] = React.useState<"private" | "public">("private");
   const [activeDockTab, setActiveDockTab] = React.useState<MessagingDockTab>("chat");
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
+  const [chatListWidth, setChatListWidth] = React.useState(() => readChatListWidth());
   const [syncState, setSyncState] = React.useState("idle");
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
   const matrixAccountOwnerId = session.profile?.subjectId ?? session.profile?.username ?? "anonymous";
@@ -528,6 +542,12 @@ export function MessagingPanel({
     window.addEventListener("pointerup", handlePointerUp);
   }
 
+  function handleChatListWidthChange(width: number) {
+    const nextWidth = clampNumber(width, chatListMinWidth, chatListMaxWidth);
+    setChatListWidth(nextWidth);
+    writeChatListWidth(nextWidth);
+  }
+
   async function startDirectConversation(user: UserDirectoryEntry) {
     if (!matrixSession) {
       setBootstrapError("Nejdřív otevřete šifrovaný chat.");
@@ -614,163 +634,182 @@ export function MessagingPanel({
       {pinned ? <div aria-label="Změnit šířku komunikačního panelu" className="messaging-resize-handle" onPointerDown={beginDockResize} role="separator" /> : null}
       <input
         ref={attachmentInputRef}
+        aria-hidden="true"
         className="visually-hidden"
+        tabIndex={-1}
         type="file"
         onChange={(event) => handleAttachmentSelected(event.target.files)}
       />
-      <div className="messaging-panel-header">
-        <div className="panel-title chat-panel-title">
-          <MessageCircle size={17} />
-          <div>
-            <strong>Konverzace</strong>
-            <span>Skupiny, zprávy a sdílená média</span>
+      <div className="messaging-panel-main">
+        <div className="messaging-panel-header">
+          <div className="panel-title chat-panel-title">
+            <MessageCircle size={17} />
+            <div>
+              <strong>Konverzace</strong>
+              <span>Skupiny, zprávy a sdílená média</span>
+            </div>
+          </div>
+          <div className="messaging-header-actions">
+            <button aria-label={pinned ? "Odepnout konverzace" : "Připnout konverzace"} className="icon-button compact" onClick={() => onPinnedChange(!pinned)} title={pinned ? "Odepnout od mapy" : "Připnout k mapě"} type="button">
+              {pinned ? <PinOff size={16} /> : <Pin size={16} />}
+            </button>
+            <button aria-label="Zavřít konverzace" className="icon-button compact" onClick={onClose} title="Zavřít" type="button">
+              <X size={16} />
+            </button>
           </div>
         </div>
-        <div className="messaging-header-actions">
-          <button aria-label={pinned ? "Odepnout konverzace" : "Připnout konverzace"} className="icon-button compact" onClick={() => onPinnedChange(!pinned)} title={pinned ? "Odepnout od mapy" : "Připnout k mapě"} type="button">
-            {pinned ? <PinOff size={16} /> : <Pin size={16} />}
-          </button>
-          <button aria-label="Zavřít konverzace" className="icon-button compact" onClick={onClose} title="Zavřít" type="button">
-            <X size={16} />
-          </button>
+
+        {!pinned ? <MessagingDockTabs activeTab={activeDockTab} onChange={setActiveDockTab} /> : null}
+
+        <div className="chat-status-strip">
+          <span className={messagingStatusTone(providerStatus)}>{messagingStatusLabel(providerStatus, loading)}</span>
+          <span>{authenticated ? operatorDisplayName(session, authConfig) : "bez účtu"}</span>
+          <span>{matrixSession ? matrixSyncLabel(syncState) : matrixBootstrapReady ? "zprávy připravené" : "čeká na zprávy"}</span>
+          {e2eeRequired ? <span>šifrováno</span> : null}
         </div>
-      </div>
 
-      <MessagingDockTabs activeTab={activeDockTab} onChange={setActiveDockTab} />
+        {error ? <div className="error-banner">Zprávy: {error}</div> : null}
+        {conversationsError ? <div className="error-banner">Konverzace: {conversationsError}</div> : null}
+        {bootstrapError ? <div className="error-banner">Chat: {bootstrapError}</div> : null}
+        {composerError ? <div className="error-banner">Odeslání: {composerError}</div> : null}
 
-      <div className="chat-status-strip">
-        <span className={messagingStatusTone(providerStatus)}>{messagingStatusLabel(providerStatus, loading)}</span>
-        <span>{authenticated ? operatorDisplayName(session, authConfig) : "bez účtu"}</span>
-        <span>{matrixSession ? matrixSyncLabel(syncState) : matrixBootstrapReady ? "zprávy připravené" : "čeká na zprávy"}</span>
-        {e2eeRequired ? <span>šifrováno</span> : null}
-      </div>
-
-      {error ? <div className="error-banner">Zprávy: {error}</div> : null}
-      {conversationsError ? <div className="error-banner">Konverzace: {conversationsError}</div> : null}
-      {bootstrapError ? <div className="error-banner">Chat: {bootstrapError}</div> : null}
-      {composerError ? <div className="error-banner">Odeslání: {composerError}</div> : null}
-
-      {!authenticated ? (
-        <div className="messaging-empty-state">
-          <strong>Komunikace je přihlášená funkce.</strong>
-          <p>Mapa zůstává dostupná i bez účtu, ale zprávy musí být svázané s ověřenou identitou uživatele.</p>
-          <button className="primary-button secondary" onClick={onLogin} type="button">
-            <LogIn size={16} />
-            Přihlásit
-          </button>
-        </div>
-      ) : activeDockTab === "chat" && matrixSession ? (
-        <MatrixChatShell
-          conversations={conversations}
-          composerText={composerText}
-          directQuery={directQuery}
-          directSearchError={directSearchError}
-          directSearchLoading={directSearchLoading}
-          directSuggestions={directSuggestions}
-          messageSending={messageSending}
-          pendingAttachment={pendingAttachment}
-          rooms={rooms}
-          selectedConversation={selectedConversation}
-          selectedRoomId={selectedRoomId}
-          timeline={timeline}
-          onComposerChange={setComposerText}
-          onConversationSelect={(conversationId) => {
-            const conversation = conversations.find((item) => item.conversationId === conversationId);
-            setSelectedRoomId(conversation?.matrix?.roomId ?? conversationId);
-          }}
-          onAttachmentClear={() => setPendingAttachment(null)}
-          onAttachmentPick={pickAttachment}
-          onDirectQueryChange={setDirectQuery}
-          onDownloadAttachment={(message) => void downloadAttachment(message)}
-          onRoomSelect={setSelectedRoomId}
-          onSend={() => void sendMessage()}
-          onShareLocation={() => void shareLocation()}
-          onStartDirectConversation={(user) => void startDirectConversation(user)}
-          onStartRoom={(conversationId) => void startRoomForConversation(conversationId)}
-        />
-      ) : activeDockTab === "chat" && chatReady ? (
-        <div className="messaging-empty-state">
-          <strong>{conversations.length > 0 ? `${conversations.length} konverzací připraveno.` : "Zatím nemáte žádnou konverzaci."}</strong>
-          <p>{conversations.length > 0 ? "Otevřete chat a pokračujte ve skupinách navázaných na sdílení v mapě." : "Založte skupinu níže. Bude sloužit pro zprávy i omezení přístupu k médiím."}</p>
-          <div className="messaging-security-note">
-            <ShieldCheck size={15} />
-            Šifrované zprávy nejdou přes COP API.
+        {!authenticated ? (
+          <div className="messaging-empty-state">
+            <strong>Komunikace je přihlášená funkce.</strong>
+            <p>Mapa zůstává dostupná i bez účtu, ale zprávy musí být svázané s ověřenou identitou uživatele.</p>
+            <button className="primary-button secondary" onClick={onLogin} type="button">
+              <LogIn size={16} />
+              Přihlásit
+            </button>
           </div>
+        ) : activeDockTab === "chat" && matrixSession ? (
+          <MatrixChatShell
+            chatListWidth={chatListWidth}
+            conversations={conversations}
+            composerText={composerText}
+            directQuery={directQuery}
+            directSearchError={directSearchError}
+            directSearchLoading={directSearchLoading}
+            directSuggestions={directSuggestions}
+            mapContext={mapContext}
+            messageSending={messageSending}
+            pendingAttachment={pendingAttachment}
+            pinned={pinned}
+            rooms={rooms}
+            selectedConversation={selectedConversation}
+            selectedRoomId={selectedRoomId}
+            timeline={timeline}
+            onChatListWidthChange={handleChatListWidthChange}
+            onComposerChange={setComposerText}
+            onConversationSelect={(conversationId) => {
+              const conversation = conversations.find((item) => item.conversationId === conversationId);
+              setSelectedRoomId(conversation?.matrix?.roomId ?? conversationId);
+            }}
+            onAttachmentClear={() => setPendingAttachment(null)}
+            onAttachmentPick={pickAttachment}
+            onCreateReport={createReportFromCurrentChat}
+            onDirectQueryChange={setDirectQuery}
+            onDownloadAttachment={(message) => void downloadAttachment(message)}
+            onRoomSelect={setSelectedRoomId}
+            onSend={() => void sendMessage()}
+            onShareLocation={() => void shareLocation()}
+            onStartDirectConversation={(user) => void startDirectConversation(user)}
+            onStartRoom={(conversationId) => void startRoomForConversation(conversationId)}
+          />
+        ) : activeDockTab === "chat" && chatReady ? (
+          <div className="messaging-empty-state">
+            <strong>{conversations.length > 0 ? `${conversations.length} konverzací připraveno.` : "Zatím nemáte žádnou konverzaci."}</strong>
+            <p>{conversations.length > 0 ? "Otevřete chat a pokračujte ve skupinách navázaných na sdílení v mapě." : "Založte skupinu níže. Bude sloužit pro zprávy i omezení přístupu k médiím."}</p>
+            <div className="messaging-security-note">
+              <ShieldCheck size={15} />
+              Šifrované zprávy nejdou přes COP API.
+            </div>
+          </div>
+        ) : activeDockTab === "chat" ? (
+          <div className="messaging-empty-state">
+            <strong>Chat zatím čeká na bezpečný bootstrap.</strong>
+            <p>Skupiny pro sdílení médií můžete připravit už teď; zprávy se zapnou po Matrix/E2EE potvrzení.</p>
+          </div>
+        ) : null}
+
+        {authenticated && activeDockTab === "groups" ? (
+          <CommunityGroupsPanel
+            actionError={groupActionError ?? communityGroupsError}
+            actionLoading={groupActionLoading}
+            conversations={conversations}
+            groups={communityGroups}
+            memberCandidate={groupMemberCandidate}
+            memberQuery={groupMemberQuery}
+            memberSearchError={groupMemberSearchError}
+            memberSearchLoading={groupMemberSearchLoading}
+            memberSuggestions={groupMemberSuggestions}
+            newGroupName={newGroupName}
+            newGroupVisibility={newGroupVisibility}
+            selectedGroup={selectedGroup}
+            onAddMember={() => void addMember()}
+            onApproveMember={(subjectId, displayName) => void approveMember(subjectId, displayName)}
+            onCreateGroup={() => void createGroup()}
+            onMemberCandidateChange={setGroupMemberCandidate}
+            onMemberQueryChange={(value) => {
+              setGroupMemberQuery(value);
+              setGroupMemberCandidate(null);
+            }}
+            onNewGroupNameChange={setNewGroupName}
+            onNewGroupVisibilityChange={setNewGroupVisibility}
+            onOpenGroupChat={(conversationId) => {
+              const conversation = conversations.find((item) => item.conversationId === conversationId);
+              setSelectedRoomId(conversation?.matrix?.roomId ?? conversationId);
+              setActiveDockTab("chat");
+              if (matrixSession) {
+                void startRoomForConversation(conversationId);
+              }
+            }}
+            onSelectGroup={setSelectedGroupId}
+          />
+        ) : null}
+
+        {authenticated && activeDockTab === "context" ? (
+          <MessagingContextPanel
+            mapContext={mapContext}
+            selectedConversation={selectedConversation}
+            selectedGroup={selectedConversationGroup ?? selectedGroup}
+            selectedRoomId={selectedRoomId}
+            onCreateReport={createReportFromCurrentChat}
+          />
+        ) : null}
+
+        {status?.warnings.length ? (
+          <div className="messaging-warning-list">
+            {status.warnings.slice(0, 4).map((warning) => (
+              <span key={warning}>{warning}</span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="messaging-panel-actions">
+          <button className="mini-button" disabled={loading} onClick={onRefresh} type="button">
+            <RefreshCw size={14} className={loading ? "spin" : ""} />
+            Obnovit stav
+          </button>
+          <button className="mini-button" disabled={!chatReady || bootstrapLoading} onClick={() => void openConversations()} type="button">
+            <Lock size={14} />
+            {bootstrapLoading ? "Spouštím chat" : matrixSession ? "Konverzace otevřeny" : "Otevřít chat"}
+          </button>
         </div>
-      ) : activeDockTab === "chat" ? (
-        <div className="messaging-empty-state">
-          <strong>Chat zatím čeká na bezpečný bootstrap.</strong>
-          <p>Skupiny pro sdílení médií můžete připravit už teď; zprávy se zapnou po Matrix/E2EE potvrzení.</p>
-        </div>
-      ) : null}
-
-      {authenticated && activeDockTab === "groups" ? (
-        <CommunityGroupsPanel
-          actionError={groupActionError ?? communityGroupsError}
-          actionLoading={groupActionLoading}
-          groups={communityGroups}
-          memberCandidate={groupMemberCandidate}
-          memberQuery={groupMemberQuery}
-          memberSearchError={groupMemberSearchError}
-          memberSearchLoading={groupMemberSearchLoading}
-          memberSuggestions={groupMemberSuggestions}
-          newGroupName={newGroupName}
-          newGroupVisibility={newGroupVisibility}
-          selectedGroup={selectedGroup}
-          onAddMember={() => void addMember()}
-          onApproveMember={(subjectId, displayName) => void approveMember(subjectId, displayName)}
-          onCreateGroup={() => void createGroup()}
-          onMemberCandidateChange={setGroupMemberCandidate}
-          onMemberQueryChange={(value) => {
-            setGroupMemberQuery(value);
-            setGroupMemberCandidate(null);
-          }}
-          onNewGroupNameChange={setNewGroupName}
-          onNewGroupVisibilityChange={setNewGroupVisibility}
-          onSelectGroup={setSelectedGroupId}
-        />
-      ) : null}
-
-      {authenticated && activeDockTab === "context" ? (
-        <MessagingContextPanel
-          mapContext={mapContext}
-          selectedConversation={selectedConversation}
-          selectedGroup={selectedConversationGroup ?? selectedGroup}
-          selectedRoomId={selectedRoomId}
-          onCreateReport={createReportFromCurrentChat}
-        />
-      ) : null}
-
-      {status?.warnings.length ? (
-        <div className="messaging-warning-list">
-          {status.warnings.slice(0, 4).map((warning) => (
-            <span key={warning}>{warning}</span>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="messaging-panel-actions">
-        <button className="mini-button" disabled={loading} onClick={onRefresh} type="button">
-          <RefreshCw size={14} className={loading ? "spin" : ""} />
-          Obnovit stav
-        </button>
-        <button className="mini-button" disabled={!chatReady || bootstrapLoading} onClick={() => void openConversations()} type="button">
-          <Lock size={14} />
-          {bootstrapLoading ? "Spouštím chat" : matrixSession ? "Konverzace otevřeny" : "Otevřít chat"}
-        </button>
       </div>
+      {pinned ? <MessagingDockTabs activeTab={activeDockTab} rail onChange={setActiveDockTab} /> : null}
     </section>
   );
 }
 
-function MessagingDockTabs({ activeTab, onChange }: { activeTab: MessagingDockTab; onChange: (tab: MessagingDockTab) => void }) {
+function MessagingDockTabs({ activeTab, onChange, rail = false }: { activeTab: MessagingDockTab; onChange: (tab: MessagingDockTab) => void; rail?: boolean }) {
   const tabs: Array<{ icon: React.ReactNode; label: string; value: MessagingDockTab }> = [
     { icon: <MessageCircle size={15} />, label: "Chat", value: "chat" },
     { icon: <Users size={15} />, label: "Skupiny", value: "groups" },
     { icon: <Info size={15} />, label: "Kontext", value: "context" }
   ];
   return (
-    <div className="messaging-dock-tabs" role="tablist" aria-label="Zobrazení komunikace">
+    <div className={`messaging-dock-tabs ${rail ? "rail" : ""}`} role="tablist" aria-label="Zobrazení komunikace">
       {tabs.map((tab) => (
         <button
           aria-selected={activeTab === tab.value}
@@ -833,6 +872,7 @@ function MessagingContextPanel({
 function CommunityGroupsPanel({
   actionError,
   actionLoading,
+  conversations,
   groups,
   memberCandidate,
   memberQuery,
@@ -849,10 +889,12 @@ function CommunityGroupsPanel({
   onMemberQueryChange,
   onNewGroupNameChange,
   onNewGroupVisibilityChange,
+  onOpenGroupChat,
   onSelectGroup
 }: {
   actionError: string | null;
   actionLoading: boolean;
+  conversations: MessagingPanelProps["conversations"];
   groups: MessagingPanelProps["communityGroups"];
   memberCandidate: UserDirectoryEntry | null;
   memberQuery: string;
@@ -869,10 +911,12 @@ function CommunityGroupsPanel({
   onMemberQueryChange: (value: string) => void;
   onNewGroupNameChange: (value: string) => void;
   onNewGroupVisibilityChange: (value: "private" | "public") => void;
+  onOpenGroupChat: (conversationId: string) => void;
   onSelectGroup: (groupId: string) => void;
 }) {
   const pendingMembers = selectedGroup?.members.filter((member) => member.status === "pending") ?? [];
   const activeMembers = selectedGroup?.members.filter((member) => member.status === "active") ?? [];
+  const linkedConversation = linkedConversationForCommunityGroup(conversations, selectedGroup);
   return (
     <div className="chat-groups-panel">
       <div className="chat-groups-header">
@@ -918,8 +962,16 @@ function CommunityGroupsPanel({
         {selectedGroup ? (
           <div className="chat-group-members">
             <div className="chat-group-members-heading">
-              <strong>{selectedGroup.name}</strong>
-              <span>{activeMembers.length} aktivních · {pendingMembers.length} čeká</span>
+              <div>
+                <strong>{selectedGroup.name}</strong>
+                <span>{activeMembers.length} aktivních · {pendingMembers.length} čeká</span>
+              </div>
+              {linkedConversation ? (
+                <button className="mini-button" disabled={actionLoading} onClick={() => onOpenGroupChat(linkedConversation.conversationId)} type="button">
+                  <MessageCircle size={14} />
+                  Chat
+                </button>
+              ) : null}
             </div>
             {pendingMembers.length > 0 ? (
               <div className="chat-group-pending-list">
@@ -985,22 +1037,27 @@ function CommunityGroupsPanel({
 }
 
 function MatrixChatShell({
+  chatListWidth,
   conversations,
   composerText,
   directQuery,
   directSearchError,
   directSearchLoading,
   directSuggestions,
+  mapContext,
   messageSending,
   pendingAttachment,
+  pinned,
   rooms,
   selectedConversation,
   selectedRoomId,
   timeline,
+  onChatListWidthChange,
   onComposerChange,
   onConversationSelect,
   onAttachmentClear,
   onAttachmentPick,
+  onCreateReport,
   onDirectQueryChange,
   onDownloadAttachment,
   onRoomSelect,
@@ -1009,22 +1066,27 @@ function MatrixChatShell({
   onStartDirectConversation,
   onStartRoom
 }: {
+  chatListWidth: number;
   conversations: MessagingPanelProps["conversations"];
   composerText: string;
   directQuery: string;
   directSearchError: string | null;
   directSearchLoading: boolean;
   directSuggestions: UserDirectoryEntry[];
+  mapContext: MessagingPanelProps["mapContext"];
   messageSending: boolean;
   pendingAttachment: PendingChatAttachment | null;
+  pinned: boolean;
   rooms: MatrixRoomSummary[];
   selectedConversation: MessagingPanelProps["conversations"][number] | null;
   selectedRoomId: string | null;
   timeline: MatrixTimelineMessage[];
+  onChatListWidthChange: (width: number) => void;
   onComposerChange: (value: string) => void;
   onConversationSelect: (conversationId: string) => void;
   onAttachmentClear: () => void;
   onAttachmentPick: (kind: MatrixAttachmentKind) => void;
+  onCreateReport: () => void;
   onDirectQueryChange: (value: string) => void;
   onDownloadAttachment: (message: MatrixTimelineMessage) => void;
   onRoomSelect: (roomId: string) => void;
@@ -1038,8 +1100,31 @@ function MatrixChatShell({
   const canSend = Boolean(selectedRoomId && selectedRoom);
   const hasDraft = Boolean(composerText.trim() || pendingAttachment);
   const standaloneRooms = visibleMatrixRooms(rooms, conversations);
+  const shellStyle = pinned
+    ? ({ "--chat-list-width": `${chatListWidth}px` } as React.CSSProperties)
+    : undefined;
+  const mapContextLabel = mapContext.selectedFeature?.title ?? formatCoordinates(mapContext.userLocation ?? mapContext.center);
+
+  function beginChatListResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (!pinned) {
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = chatListWidth;
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      onChatListWidthChange(startWidth + moveEvent.clientX - startX);
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  }
+
   return (
-    <div className="matrix-chat-shell">
+    <div className={`matrix-chat-shell ${pinned ? "pinned" : ""}`} style={shellStyle}>
       <div className="matrix-room-list" aria-label="Konverzace">
         <div className="direct-chat-starter">
           <input
@@ -1096,10 +1181,23 @@ function MatrixChatShell({
           </button>
         ))}
       </div>
+      {pinned ? <div aria-label="Změnit šířku seznamu konverzací" className="matrix-chat-split-handle" onPointerDown={beginChatListResize} role="separator" /> : null}
       <div className="matrix-room-view">
         <div className="matrix-room-header">
-          <strong>{selectedRoom?.name ?? selectedConversation?.title ?? "Vyberte konverzaci"}</strong>
-          <small>{selectedRoom ? selectedRoom.encrypted ? "šifrováno" : "ověřuji šifrování" : selectedConversation?.matrix?.roomId ? "synchronizuji místnost" : selectedConversation ? "připraveno" : "čeká"}</small>
+          <div className="matrix-room-heading">
+            <strong>{selectedRoom?.name ?? selectedConversation?.title ?? "Vyberte konverzaci"}</strong>
+            <small>{selectedRoom ? selectedRoom.encrypted ? "šifrováno" : "ověřuji šifrování" : selectedConversation?.matrix?.roomId ? "synchronizuji místnost" : selectedConversation ? "připraveno" : "čeká"}</small>
+          </div>
+          <div className="matrix-room-header-actions">
+            <span className="matrix-room-context-chip" title={mapContextLabel}>
+              <MapPin size={13} />
+              {mapContextLabel}
+            </span>
+            <button className="mini-button" disabled={!selectedRoomId && !selectedConversation} onClick={onCreateReport} type="button">
+              <MapPin size={14} />
+              Nahlásit
+            </button>
+          </div>
         </div>
         <div className="matrix-timeline" aria-live="polite">
           {conversationOnlySelected ? (
@@ -1127,16 +1225,16 @@ function MatrixChatShell({
         </div>
         <div className="matrix-composer">
           <div className="matrix-composer-tools" aria-label="Přílohy">
-            <button className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("image")} title="Přiložit fotku" type="button">
+            <button aria-label="Přiložit fotku" className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("image")} title="Přiložit fotku" type="button">
               <Image size={15} />
             </button>
-            <button className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("video")} title="Přiložit video" type="button">
+            <button aria-label="Přiložit video" className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("video")} title="Přiložit video" type="button">
               <Video size={15} />
             </button>
-            <button className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("file")} title="Přiložit soubor" type="button">
+            <button aria-label="Přiložit soubor" className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("file")} title="Přiložit soubor" type="button">
               <Paperclip size={15} />
             </button>
-            <button className="icon-button compact" disabled={!canSend || messageSending} onClick={onShareLocation} title="Sdílet polohu" type="button">
+            <button aria-label="Sdílet polohu" className="icon-button compact" disabled={!canSend || messageSending} onClick={onShareLocation} title="Sdílet polohu" type="button">
               <MapPin size={15} />
             </button>
           </div>
@@ -1150,7 +1248,7 @@ function MatrixChatShell({
               </button>
             </div>
           ) : null}
-          <input
+          <textarea
             aria-label="Text zprávy"
             disabled={!canSend || messageSending}
             onChange={(event) => onComposerChange(event.target.value)}
@@ -1161,6 +1259,7 @@ function MatrixChatShell({
               }
             }}
             placeholder={canSend ? "Napsat zprávu..." : "Nejdřív vyberte aktivní chat"}
+            rows={1}
             value={composerText}
           />
           <button className="mini-button" disabled={!canSend || !hasDraft || messageSending} onClick={onSend} type="button">
@@ -1273,6 +1372,21 @@ function ensureRoomSummary(rooms: MatrixRoomSummary[], room: MatrixRoomSummary):
 
 function isValidMatrixDeviceId(value: string | null): value is string {
   return Boolean(value && /^[A-Za-z0-9._=-]{1,64}$/u.test(value));
+}
+
+function readChatListWidth(): number {
+  if (typeof window === "undefined") {
+    return 236;
+  }
+  const stored = Number(window.localStorage.getItem(chatListWidthStorageKey));
+  return Number.isFinite(stored) ? clampNumber(stored, chatListMinWidth, chatListMaxWidth) : 236;
+}
+
+function writeChatListWidth(width: number): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(chatListWidthStorageKey, String(clampNumber(width, chatListMinWidth, chatListMaxWidth)));
 }
 
 function stableStorageKey(value: string): string {
