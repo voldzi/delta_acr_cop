@@ -65,6 +65,7 @@ import {
   isAuthSessionActive,
   isOidcEnabled,
   readAuthConfig,
+  refreshAuthSession,
   type AuthConfig,
   type AuthSession
 } from "./auth";
@@ -544,6 +545,15 @@ export function App() {
   const profileAccessReady = Boolean(authToken);
   const messagingAuthenticated = authenticatedSessionActive;
 
+  const refreshAuthSessionForRequest = React.useCallback(async (): Promise<string | undefined> => {
+    const refreshed = await refreshAuthSession(authConfig, authSession);
+    if (refreshed?.status === "authenticated" && refreshed.accessToken) {
+      setAuthSession(refreshed);
+      return refreshed.accessToken;
+    }
+    return undefined;
+  }, [authConfig, authSession]);
+
   React.useEffect(() => {
     if (authSession.status !== "authenticated" || !authSession.expiresAt || !isOidcEnabled(authConfig)) {
       return;
@@ -730,11 +740,22 @@ export function App() {
       setMessagingStatus(await fetchMessagingStatus(apiBase, authToken));
       setMessagingError(null);
     } catch (error) {
+      if (authToken && isUnauthorizedApiError(error)) {
+        const refreshedToken = await refreshAuthSessionForRequest();
+        if (refreshedToken) {
+          try {
+            setMessagingStatus(await fetchMessagingStatus(apiBase, refreshedToken));
+            setMessagingError(null);
+            return;
+          } catch {
+            // Continue into public/degraded handling below.
+          }
+        }
+      }
       if (authToken && authConfig.publicReadEnabled && isUnauthorizedApiError(error)) {
         try {
           setMessagingStatus(await fetchMessagingStatus(apiBase, undefined));
-          setMessagingError("Přihlášení pro zprávy vypršelo. Stav služby zobrazuji ve veřejném režimu.");
-          setAuthSession((current) => current.status === "authenticated" ? { status: "anonymous" } : current);
+          setMessagingError("Přihlášení pro zprávy se nepodařilo obnovit. Stav služby zobrazuji ve veřejném režimu.");
           return;
         } catch {
           // Fall through to the regular degraded state below.
@@ -745,7 +766,7 @@ export function App() {
     } finally {
       setMessagingLoading(false);
     }
-  }, [apiBase, authConfig.publicReadEnabled, authToken]);
+  }, [apiBase, authConfig.publicReadEnabled, authToken, refreshAuthSessionForRequest]);
 
   const loadCommunityGroups = React.useCallback(async () => {
     if (!messagingAuthenticated || !authSession.accessToken) {
@@ -755,28 +776,41 @@ export function App() {
       setMessagingConversationsError(null);
       return;
     }
+    const loadAuthorizedCommunityData = async (token: string) => Promise.all([
+      fetchCommunityGroups(apiBase, token),
+      fetchMessagingConversations(apiBase, token)
+    ]);
     try {
-      const [groupsResponse, conversationsResponse] = await Promise.all([
-        fetchCommunityGroups(apiBase, authSession.accessToken),
-        fetchMessagingConversations(apiBase, authSession.accessToken)
-      ]);
+      const [groupsResponse, conversationsResponse] = await loadAuthorizedCommunityData(authSession.accessToken);
       setCommunityGroups(groupsResponse.items);
       setMessagingConversations(conversationsResponse.conversations);
       setCommunityGroupsError(null);
       setMessagingConversationsError(conversationsResponse.status === "online" ? null : conversationsResponse.warnings[0] ?? "Konverzace nejsou plně dostupné.");
     } catch (error) {
-      const message = isUnauthorizedApiError(error)
-        ? "Přihlášení pro zprávy vypršelo. Přihlaste se znovu."
-        : error instanceof Error ? error.message : "Konverzace nejsou dostupné.";
       if (isUnauthorizedApiError(error)) {
-        setAuthSession((current) => current.status === "authenticated" ? { status: "anonymous" } : current);
+        const refreshedToken = await refreshAuthSessionForRequest();
+        if (refreshedToken) {
+          try {
+            const [groupsResponse, conversationsResponse] = await loadAuthorizedCommunityData(refreshedToken);
+            setCommunityGroups(groupsResponse.items);
+            setMessagingConversations(conversationsResponse.conversations);
+            setCommunityGroupsError(null);
+            setMessagingConversationsError(conversationsResponse.status === "online" ? null : conversationsResponse.warnings[0] ?? "Konverzace nejsou plně dostupné.");
+            return;
+          } catch {
+            // Continue into the user-facing degraded state below.
+          }
+        }
       }
+      const message = isUnauthorizedApiError(error)
+        ? "Přihlášení pro zprávy se nepodařilo obnovit. Zkuste stránku obnovit, případně se znovu přihlásit."
+        : error instanceof Error ? error.message : "Konverzace nejsou dostupné.";
       setCommunityGroups([]);
       setMessagingConversations([]);
       setCommunityGroupsError(message);
       setMessagingConversationsError(message);
     }
-  }, [apiBase, authSession.accessToken, messagingAuthenticated]);
+  }, [apiBase, authSession.accessToken, messagingAuthenticated, refreshAuthSessionForRequest]);
 
   React.useEffect(() => {
     void load();

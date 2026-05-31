@@ -113,6 +113,17 @@ export async function initializeAuth(config: AuthConfig): Promise<AuthSession> {
   return { status: "anonymous" };
 }
 
+export async function refreshAuthSession(config: AuthConfig, session?: AuthSession): Promise<AuthSession | null> {
+  if (!isOidcEnabled(config)) {
+    return null;
+  }
+  const refreshToken = session?.refreshToken ?? readStoredSession()?.refreshToken;
+  if (!refreshToken) {
+    return null;
+  }
+  return refreshSession(config, refreshToken);
+}
+
 export function hasOidcCallbackParams(): boolean {
   const callback = readCallbackParams();
   return Boolean(callback.code || callback.error);
@@ -235,10 +246,10 @@ async function refreshSession(config: AuthConfig, refreshToken: string): Promise
   if (!response.ok) {
     return null;
   }
-  return persistTokenResponse(await response.json() as TokenResponse);
+  return persistTokenResponse(await response.json() as TokenResponse, refreshToken);
 }
 
-function persistTokenResponse(tokenResponse: TokenResponse): AuthSession {
+function persistTokenResponse(tokenResponse: TokenResponse, fallbackRefreshToken?: string): AuthSession {
   const payload = decodeJwtPayload(tokenResponse.access_token);
   const expiresAt = Date.now() + Math.max(30, tokenResponse.expires_in ?? 300) * 1000;
   const stored: StoredAuthSession = {
@@ -246,9 +257,9 @@ function persistTokenResponse(tokenResponse: TokenResponse): AuthSession {
     expiresAt,
     idToken: tokenResponse.id_token,
     profile: profileFromPayload(payload),
-    refreshToken: tokenResponse.refresh_token
+    refreshToken: tokenResponse.refresh_token ?? fallbackRefreshToken
   };
-  window.sessionStorage.setItem(sessionKey, JSON.stringify(stored));
+  writeStoredSession(stored);
   return { ...stored, status: "authenticated" };
 }
 
@@ -264,8 +275,13 @@ function profileFromPayload(payload: Record<string, unknown>): AuthProfile {
 }
 
 function readStoredSession(): StoredAuthSession | null {
+  return readStoredSessionFrom(() => window.localStorage)
+    ?? readStoredSessionFrom(() => window.sessionStorage);
+}
+
+function readStoredSessionFrom(getStorage: () => Storage): StoredAuthSession | null {
   try {
-    const raw = window.sessionStorage.getItem(sessionKey);
+    const raw = getStorage().getItem(sessionKey);
     if (!raw) {
       return null;
     }
@@ -278,8 +294,37 @@ function readStoredSession(): StoredAuthSession | null {
   }
 }
 
+function writeStoredSession(session: StoredAuthSession): void {
+  const serialized = JSON.stringify(session);
+  let persisted = false;
+  try {
+    window.localStorage.setItem(sessionKey, serialized);
+    persisted = true;
+  } catch {
+    // Some private/browser-managed contexts can deny localStorage. Fall back to sessionStorage.
+  }
+  try {
+    window.sessionStorage.setItem(sessionKey, serialized);
+    persisted = true;
+  } catch {
+    // If both stores fail, surface the error below.
+  }
+  if (!persisted) {
+    throw new Error("Prohlížeč neumožnil uložit přihlášení. Povolte site storage pro COP a zkuste to znovu.");
+  }
+}
+
 function clearStoredSession(): void {
-  window.sessionStorage.removeItem(sessionKey);
+  try {
+    window.localStorage.removeItem(sessionKey);
+  } catch {
+    // Best effort cleanup.
+  }
+  try {
+    window.sessionStorage.removeItem(sessionKey);
+  } catch {
+    // Best effort cleanup.
+  }
 }
 
 function readCallbackParams(): { code?: string; error?: string; state?: string } {
