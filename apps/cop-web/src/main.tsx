@@ -360,6 +360,8 @@ interface AlertSummary {
   warning: number;
 }
 
+type MobileSheet = "layers" | "detail" | null;
+
 export function App() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
@@ -394,6 +396,7 @@ export function App() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [mapSearchQuery, setMapSearchQuery] = React.useState("");
   const [mapSearchDocked, setMapSearchDocked] = React.useState(() => readMapSearchDocked());
+  const [mobileSheet, setMobileSheet] = React.useState<MobileSheet>(null);
   const [workspaceLayout, setWorkspaceLayout] = React.useState<Required<WorkspaceLayoutPreferences>>(() =>
     normalizeWorkspaceLayout(initialPreferences.workspaceLayout)
   );
@@ -1983,6 +1986,12 @@ export function App() {
   }, [combinedSituationFeatures, selectedSituationFeatureId]);
 
   React.useEffect(() => {
+    if (mobileSheet === "detail" && !selectedSituationFeature && !explicitlySelectedObject) {
+      setMobileSheet(null);
+    }
+  }, [explicitlySelectedObject, mobileSheet, selectedSituationFeature]);
+
+  React.useEffect(() => {
     if (!proximityAlertEnabled || proximityAlerts.length === 0) {
       notifiedProximityAlertsRef.current.clear();
       return;
@@ -3051,6 +3060,28 @@ export function App() {
     ? formatShortDateTime(selectedSituationFeature.properties.validFrom ?? selectedSituationFeature.properties.effectiveAt ?? selectedSituationFeature.properties.observedAt)
     : lastLoadedAt ?? "čekám";
   const operationId = selectedSituationFeature?.properties.featureId ?? selectedObject?.objectId ?? "CSM-LAB";
+  const mobileDetailTitle = selectedSituationFeature
+    ? selectedSituationFeature.properties.headline
+      ?? selectedSituationFeature.properties.areaName
+      ?? selectedSituationFeature.properties.label
+      ?? selectedSituationFeature.properties.featureId
+    : explicitlySelectedObject
+      ? formatObjectListLabel(explicitlySelectedObject)
+      : null;
+  const mobileDetailMeta = selectedSituationFeature
+    ? [
+        selectedSituationFeature.properties.hazardType ?? selectedSituationFeature.properties.layer ?? selectedSituationFeature.properties.category,
+        selectedSituationFeature.properties.status ?? selectedSituationFeature.properties.severity,
+        selectedSituationFeature.properties.sourceName ?? selectedSituationFeature.properties.source
+      ].filter(Boolean).join(" · ")
+    : explicitlySelectedObject
+      ? [
+          explicitlySelectedObject.domain,
+          explicitlySelectedObject.affiliation,
+          explicitlySelectedObject.status,
+          `${Math.round((explicitlySelectedObject.confidence ?? 0) * 100)} %`
+        ].filter(Boolean).join(" · ")
+      : "";
   const effectiveOperatorProfile = React.useMemo(
     () => mergeOperatorProfile(authSession, operatorProfile),
     [authSession, operatorProfile]
@@ -3059,6 +3090,8 @@ export function App() {
     "shell",
     "app-shell-v2",
     `app-skin-${workspaceSkin}`,
+    mobileSheet && `mobile-sheet-${mobileSheet}`,
+    mobileSheet && "mobile-sheet-open",
     messagingOpen && messagingPinned && "shell-messaging-docked",
     !workspaceLayout.contextRailVisible && "shell-context-hidden",
     !workspaceLayout.statusbarVisible && "shell-statusbar-hidden"
@@ -3515,18 +3548,23 @@ export function App() {
               situationFeatures={combinedSituationFeatures}
               onBoundsChange={setMapBounds}
               onSelectObject={(object) => {
-                setSelectedObjectId((current) => current === object.objectId ? null : object.objectId);
+                const isSelected = selectedObjectId === object.objectId;
+                setSelectedObjectId(isSelected ? null : object.objectId);
                 setSelectedSituationFeatureId(null);
+                setMobileSheet(isSelected ? null : "detail");
               }}
               onSelectSituationFeature={(feature) => {
-                setSelectedSituationFeatureId((current) => current === feature.properties.featureId ? null : feature.properties.featureId);
+                const isSelected = selectedSituationFeatureId === feature.properties.featureId;
+                setSelectedSituationFeatureId(isSelected ? null : feature.properties.featureId);
                 setSelectedObjectId(null);
+                setMobileSheet(isSelected ? null : "detail");
               }}
               onStartReport={startCommunityReportCapture}
               onAutoFitChange={setAutoFit}
               onClearSelection={() => {
                 setSelectedObjectId(null);
                 setSelectedSituationFeatureId(null);
+                setMobileSheet(null);
               }}
               onCancelZoneCreation={() => setZoneCreationMode(false)}
               onCreateZonePolygon={handleCreateAoiRuleFromPolygon}
@@ -3539,6 +3577,18 @@ export function App() {
               userLocation={userLocation}
               zoneCreationActive={zoneCreationMode}
             />
+            {activeWorkspace === "map" && mobileDetailTitle ? (
+              <MobileSelectionPeek
+                meta={mobileDetailMeta}
+                title={mobileDetailTitle}
+                onClose={() => {
+                  setSelectedObjectId(null);
+                  setSelectedSituationFeatureId(null);
+                  setMobileSheet(null);
+                }}
+                onOpen={() => setMobileSheet("detail")}
+              />
+            ) : null}
           </section>
 
           {activeWorkspace === "map" ? null : activeWorkspace === "data" ? (
@@ -3559,8 +3609,10 @@ export function App() {
                   objects={visibleObjects}
                   selectedObjectId={explicitlySelectedObject?.objectId}
                   onSelect={(objectId) => {
-                    setSelectedObjectId((current) => current === objectId ? null : objectId);
+                    const isSelected = selectedObjectId === objectId;
+                    setSelectedObjectId(isSelected ? null : objectId);
                     setSelectedSituationFeatureId(null);
+                    setMobileSheet(isSelected ? null : "detail");
                   }}
                 />
               </div>
@@ -3604,8 +3656,10 @@ export function App() {
                 onAcknowledge={(alertId) => void acknowledgeServerAlert(alertId)}
                 onLogin={() => openLoginPrompt("alert")}
                 onSelectObject={(objectId) => {
-                  setSelectedObjectId((current) => current === objectId ? null : objectId);
+                  const isSelected = selectedObjectId === objectId;
+                  setSelectedObjectId(isSelected ? null : objectId);
                   setSelectedSituationFeatureId(null);
+                  setMobileSheet(isSelected ? null : "detail");
                 }}
               />
               <PersonalAlertBoard
@@ -3633,8 +3687,10 @@ export function App() {
                   objects={visibleObjects}
                   selectedObjectId={explicitlySelectedObject?.objectId}
                   onSelect={(objectId) => {
-                    setSelectedObjectId((current) => current === objectId ? null : objectId);
+                    const isSelected = selectedObjectId === objectId;
+                    setSelectedObjectId(isSelected ? null : objectId);
                     setSelectedSituationFeatureId(null);
+                    setMobileSheet(isSelected ? null : "detail");
                   }}
                 />
               </div>
@@ -3832,6 +3888,53 @@ export function App() {
           onWorkspaceChange={setActiveWorkspace}
         /> : null}
       </section>
+
+      {mobileSheet ? (
+        <button className="mobile-sheet-close" onClick={() => setMobileSheet(null)} type="button">
+          <X size={16} />
+          Zavřít
+        </button>
+      ) : null}
+
+      <MobileBottomNav
+        activeSheet={mobileSheet}
+        hasDetail={Boolean(selectedSituationFeature || explicitlySelectedObject)}
+        messagingOpen={messagingOpen}
+        onChat={() => {
+          setMobileSheet(null);
+          setMessagingOpen(true);
+          setMessagingPinned(true);
+        }}
+        onDetail={() => {
+          setActiveWorkspace("map");
+          if (!selectedSituationFeature && !explicitlySelectedObject) {
+            return;
+          }
+          if (workspaceLayout.rightPanelMode !== "open") {
+            updateWorkspaceLayout({ rightPanelMode: "open" });
+          }
+          setMobileSheet((current) => current === "detail" ? null : "detail");
+        }}
+        onLayers={() => {
+          setActiveWorkspace("map");
+          if (workspaceLayout.leftPanelMode !== "open") {
+            updateWorkspaceLayout({ leftPanelMode: "open" });
+          }
+          setMobileSheet((current) => current === "layers" ? null : "layers");
+        }}
+        onMap={() => {
+          setActiveWorkspace("map");
+          setMobileSheet(null);
+        }}
+        onMenu={() => {
+          setMobileSheet(null);
+          openSettings("map");
+        }}
+        onReport={() => {
+          setMobileSheet(null);
+          startCommunityReportCapture();
+        }}
+      />
 
       {workspaceLayout.statusbarVisible ? <footer className="app-statusbar" aria-label="Provozní stav aplikace">
         <span className={alertSummary.total > 0 ? "warn" : "ok"}>
@@ -4956,6 +5059,82 @@ function ContextRail({
         <span>Nastavení</span>
       </button>
     </aside>
+  );
+}
+
+function MobileBottomNav({
+  activeSheet,
+  hasDetail,
+  messagingOpen,
+  onChat,
+  onDetail,
+  onLayers,
+  onMap,
+  onMenu,
+  onReport
+}: {
+  activeSheet: MobileSheet;
+  hasDetail: boolean;
+  messagingOpen: boolean;
+  onChat: () => void;
+  onDetail: () => void;
+  onLayers: () => void;
+  onMap: () => void;
+  onMenu: () => void;
+  onReport: () => void;
+}) {
+  return (
+    <nav className="mobile-bottom-nav" aria-label="Mobilní navigace">
+      <button className={!activeSheet && !messagingOpen ? "active" : ""} onClick={onMap} type="button">
+        <Layers size={18} />
+        <span>Mapa</span>
+      </button>
+      <button className={activeSheet === "layers" ? "active" : ""} onClick={onLayers} type="button">
+        <ListFilter size={18} />
+        <span>Vrstvy</span>
+      </button>
+      <button className={activeSheet === "detail" ? "active" : ""} disabled={!hasDetail} onClick={onDetail} type="button">
+        <Database size={18} />
+        <span>Detail</span>
+      </button>
+      <button className={messagingOpen ? "active" : ""} onClick={onChat} type="button">
+        <MessageCircle size={18} />
+        <span>Chat</span>
+      </button>
+      <button className="report" onClick={onReport} type="button">
+        <Plus size={19} />
+        <span>Nahlásit</span>
+      </button>
+      <button onClick={onMenu} type="button">
+        <Settings size={18} />
+        <span>Menu</span>
+      </button>
+    </nav>
+  );
+}
+
+function MobileSelectionPeek({
+  meta,
+  onClose,
+  onOpen,
+  title
+}: {
+  meta: string;
+  onClose: () => void;
+  onOpen: () => void;
+  title: string;
+}) {
+  return (
+    <div className="mobile-selection-peek">
+      <button className="mobile-selection-peek-main" onClick={onOpen} type="button">
+        <span>Vybráno</span>
+        <strong>{title}</strong>
+        {meta ? <small>{meta}</small> : null}
+      </button>
+      <button aria-label="Zrušit výběr" className="mobile-selection-peek-close" onClick={onClose} type="button">
+        <X size={17} />
+      </button>
+    </div>
   );
 }
 
