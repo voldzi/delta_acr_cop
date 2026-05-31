@@ -8022,8 +8022,12 @@ function CommunityAttachmentPreview({
             ) : null}
             {attachment.contentUrl && attachment.kind === "video" ? (
               <>
-                <button className="community-media-open" onClick={() => onOpenGallery?.(attachments, index)} type="button">
-                  <video muted playsInline preload="metadata" src={attachment.contentUrl} />
+                <button className="community-media-open community-video-preview-button" onClick={() => onOpenGallery?.(attachments, index)} type="button">
+                  <video muted playsInline preload="metadata" src={communityVideoPreviewUrl(attachment.contentUrl)} />
+                  <span className="community-video-preview-overlay" aria-hidden="true">
+                    <Play size={22} />
+                    <strong>Přehrát video</strong>
+                  </span>
                 </button>
                 <div className="community-media-actions">
                   <button className="mini-button community-document-link" onClick={() => onOpenGallery?.(attachments, index)} type="button">
@@ -8582,6 +8586,13 @@ function communityAttachmentSpatialLabel(mode: CommunityVideoSpatialMode): strin
     default:
       return "2D video";
   }
+}
+
+function communityVideoPreviewUrl(contentUrl: string): string {
+  if (contentUrl.includes("#")) {
+    return contentUrl;
+  }
+  return `${contentUrl}#t=0.1`;
 }
 
 function communityAttachmentXrDerivativeStatus(attachment: { derivatives?: NonNullable<SituationFeature["properties"]["attachments"]>[number]["derivatives"] }): string | null {

@@ -1649,12 +1649,56 @@ h1 {
 }
 
 .community-media-open {
+  position: relative;
   display: block;
   width: 100%;
+  min-height: 132px;
+  overflow: hidden;
   padding: 0;
   border: 1px solid rgba(140, 182, 216, 0.24);
-  background: #05090c;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(101, 165, 219, 0.18), transparent 42%),
+    linear-gradient(135deg, rgba(10, 21, 30, 0.98), rgba(2, 5, 7, 0.98));
   cursor: zoom-in;
+}
+
+.community-video-preview-button {
+  display: grid;
+  place-items: center;
+}
+
+.community-video-preview-button video {
+  min-height: 132px;
+}
+
+.community-video-preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 16px;
+  color: #f4f8fb;
+  pointer-events: none;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85);
+}
+
+.community-video-preview-overlay svg {
+  width: 48px;
+  height: 48px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(2, 6, 9, 0.62);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.community-video-preview-overlay strong {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(2, 6, 9, 0.56);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .community-media-actions {
