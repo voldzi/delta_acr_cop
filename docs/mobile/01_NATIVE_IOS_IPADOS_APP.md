@@ -101,6 +101,16 @@ server-side volá CSM Messaging `POST /api/v1/notifications`. iOS klient ani
 CSM Messenger nesmí volat SIM přímo a nesmí rozhodovat, zda se SIM výstraha
 týká daného uživatele.
 
+Pro chat deep linky je COP autoritativní pro metadata konverzace. iOS klient po
+push notifikaci nemá stahovat celý seznam a filtrovat lokálně. Použije:
+
+- `GET /api/v1/messaging/conversations/{conversationId}`, pokud push/deep link obsahuje COP `conversationId`;
+- `GET /api/v1/messaging/conversations/resolve?roomId=<encodedRoomId>`, pokud má pouze Matrix `roomId`.
+
+Samotný `messageId` nestačí, protože COP nečte Matrix timeline a nesmí být
+plaintext ani Matrix-message proxy. Push payload pro zprávu má proto vedle
+`messageId` nést také `roomId` nebo `conversationId`.
+
 ## Existující API používané aplikací
 
 Nativní klient nemá znovu vymýšlet kontrakty. Použije:
@@ -116,6 +126,8 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `PATCH /api/v1/community/reports/{reportId}` pro úpravu vlastního hlášení,
 - `DELETE /api/v1/community/reports/{reportId}` pro smazání vlastního hlášení,
 - `GET/POST /api/v1/community/groups` pro skupiny, do kterých se hlášení a média ukládají,
+- `GET /api/v1/messaging/conversations/{conversationId}` pro detail metadata konverzace,
+- `GET /api/v1/messaging/conversations/resolve?roomId=<encodedRoomId>` pro mapování Matrix roomu na COP konverzaci,
 - `POST /api/v1/community/reports/{reportId}/attachments` pro presigned upload fotky/videa/dokumentu,
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete` pro potvrzení uploadu,
 - `POST /api/v1/community/reports/{reportId}/submit` pro odeslání hlášení ke sdílení,

@@ -774,6 +774,14 @@ class HangingMessagingProvider implements MessagingProvider {
     throw new Error("not implemented");
   }
 
+  async fetchConversation(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
+  async fetchConversationByRoomId(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
   async createConversation(): Promise<never> {
     throw new Error("not implemented");
   }

@@ -1446,6 +1446,52 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return messagingProvider.fetchConversations(actor, now());
   });
 
+  app.get("/api/v1/messaging/conversations/resolve", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const query = isRecord(request.query) ? request.query : {};
+    const conversationId = normalizeMessagingConversationId(query.conversationId);
+    const roomId = normalizeMatrixRoomId(query.roomId);
+    const messageId = optionalTrimmedString(query.messageId, 512);
+    if (!conversationId && !roomId) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        messageId
+          ? "Message-only conversation resolution is not supported by COP. Deep links must include conversationId or roomId."
+          : "Conversation resolution requires conversationId or Matrix roomId.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const result = conversationId
+      ? await messagingProvider.fetchConversation(actor, now(), conversationId)
+      : await messagingProvider.fetchConversationByRoomId(actor, now(), roomId as string);
+    return reply.code(result.conversation ? 200 : result.status === "online" ? 404 : 502).send(result);
+  });
+
+  app.get("/api/v1/messaging/conversations/:conversationId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { conversationId: string };
+    const conversationId = normalizeMessagingConversationId(params.conversationId);
+    if (!conversationId) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Messaging conversation detail requires a valid conversationId.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const result = await messagingProvider.fetchConversation(actor, now(), conversationId);
+    return reply.code(result.conversation ? 200 : result.status === "online" ? 404 : 502).send(result);
+  });
+
   app.post("/api/v1/messaging/conversations", async (request, reply) => {
     const actor = requireActor(request, reply);
     if (!actor) {
@@ -4359,6 +4405,16 @@ function normalizeMatrixDeviceId(value: unknown): string | undefined {
   return deviceId && /^[A-Za-z0-9._=-]{1,64}$/u.test(deviceId) ? deviceId : undefined;
 }
 
+function normalizeMessagingConversationId(value: unknown): string | undefined {
+  const conversationId = optionalTrimmedString(value, 160);
+  return conversationId && /^[A-Za-z0-9_.:-]{1,160}$/u.test(conversationId) ? conversationId : undefined;
+}
+
+function normalizeMatrixRoomId(value: unknown): string | undefined {
+  const roomId = optionalTrimmedString(value, 512);
+  return roomId && /^![^\s:]+:.+$/u.test(roomId) ? roomId : undefined;
+}
+
 function normalizeMatrixIdentityResolutionRequest(value: unknown): string[] | null {
   if (!isRecord(value) || containsMessagingPlaintextKey(value) || !Array.isArray(value.userIds)) {
     return null;
@@ -4382,8 +4438,8 @@ function normalizeMatrixRoomBindingRequest(value: unknown): MessagingMatrixRoomB
   if (!isRecord(value) || containsMessagingPlaintextKey(value)) {
     return null;
   }
-  const roomId = optionalTrimmedString(value.roomId, 512);
-  if (!roomId || !/^![^\s:]+:.+$/u.test(roomId)) {
+  const roomId = normalizeMatrixRoomId(value.roomId);
+  if (!roomId) {
     return null;
   }
   return {
@@ -5270,6 +5326,8 @@ function mobileEndpoints() {
     userDirectorySearch: "/api/v1/users/search",
     mapCatalog: "/api/v1/map/catalog",
     messagingBootstrap: "/api/v1/messaging/bootstrap",
+    messagingConversationDetail: "/api/v1/messaging/conversations/{conversationId}",
+    messagingConversationResolve: "/api/v1/messaging/conversations/resolve?roomId={roomId}",
     messagingConversations: "/api/v1/messaging/conversations",
     messagingMatrixIdentityResolution: "/api/v1/messaging/matrix/identities/resolve",
     messagingConversationMembers: "/api/v1/messaging/conversations/{conversationId}/members",

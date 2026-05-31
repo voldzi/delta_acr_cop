@@ -108,6 +108,15 @@ export interface MessagingConversationCreateResponse {
   warnings: string[];
 }
 
+export interface MessagingConversationDetailResponse {
+  contractVersion: "cop-messaging-conversations-v1";
+  conversation?: MessagingConversationSummary;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: MessagingIntegrationRuntimeStatus;
+  warnings: string[];
+}
+
 export interface MessagingMatrixIdentity {
   displayName?: string;
   matrixUserId: string;
@@ -190,6 +199,8 @@ export interface MessagingProvider {
   fetchStatus(requestNow: Date): Promise<MessagingProviderStatus>;
   fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date, deviceId?: string): Promise<MessagingMatrixBootstrap>;
   fetchConversations(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingConversationList>;
+  fetchConversation(actor: AuthenticatedActor, requestNow: Date, conversationId: string): Promise<MessagingConversationDetailResponse>;
+  fetchConversationByRoomId(actor: AuthenticatedActor, requestNow: Date, roomId: string): Promise<MessagingConversationDetailResponse>;
   createConversation(actor: AuthenticatedActor, requestNow: Date, input: MessagingConversationCreateRequest): Promise<MessagingConversationCreateResponse>;
   addConversationMembers(actor: AuthenticatedActor, requestNow: Date, conversationId: string, members: MessagingConversationMember[]): Promise<MessagingConversationMemberSyncResponse>;
   bindMatrixRoom(actor: AuthenticatedActor, requestNow: Date, conversationId: string, input: MessagingMatrixRoomBindingRequest): Promise<MessagingMatrixRoomBindingResponse>;
@@ -467,6 +478,82 @@ export class CsmMessagingProvider implements MessagingProvider {
     } catch (error) {
       return degradedConversationList(errorMessage(error));
     }
+  }
+
+  async fetchConversation(actor: AuthenticatedActor, requestNow: Date, conversationId: string): Promise<MessagingConversationDetailResponse> {
+    if (!this.config.enabled) {
+      return disabledConversationDetail();
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/conversations/${encodeURIComponent(conversationId)}`),
+        this.config,
+        requestNow,
+        {
+          headers: actorHeaders(actor)
+        }
+      );
+      if (isRecord(result.body)) {
+        const normalized = normalizeConversationCreateResponse(result.body);
+        if (result.ok && normalized.conversation) {
+          return {
+            contractVersion: "cop-messaging-conversations-v1",
+            conversation: normalized.conversation,
+            enabled: true,
+            providerId: "csm.messaging",
+            status: "online",
+            warnings: [
+              ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging conversation detail contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+              ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging conversation detail provider id is ${normalized.providerId ?? "unknown"}.`])
+            ]
+          };
+        }
+      }
+
+      const fallback = await this.fetchConversations(actor, requestNow);
+      const conversation = fallback.conversations.find((item) => item.conversationId === conversationId);
+      return {
+        contractVersion: "cop-messaging-conversations-v1",
+        ...(conversation ? { conversation } : {}),
+        enabled: fallback.enabled,
+        providerId: "csm.messaging",
+        status: fallback.status,
+        warnings: Array.from(new Set([
+          ...fallback.warnings,
+          ...(result.ok ? [] : [`Messaging conversation detail endpoint returned HTTP ${result.status}; COP resolved against the conversation list.`])
+        ]))
+      };
+    } catch (error) {
+      const fallback = await this.fetchConversations(actor, requestNow);
+      const conversation = fallback.conversations.find((item) => item.conversationId === conversationId);
+      return {
+        contractVersion: "cop-messaging-conversations-v1",
+        ...(conversation ? { conversation } : {}),
+        enabled: fallback.enabled,
+        providerId: "csm.messaging",
+        status: fallback.status === "online" && conversation ? "online" : fallback.status,
+        warnings: Array.from(new Set([
+          ...fallback.warnings,
+          `Messaging conversation detail fallback was used: ${errorMessage(error)}`
+        ]))
+      };
+    }
+  }
+
+  async fetchConversationByRoomId(actor: AuthenticatedActor, requestNow: Date, roomId: string): Promise<MessagingConversationDetailResponse> {
+    if (!this.config.enabled) {
+      return disabledConversationDetail();
+    }
+    const list = await this.fetchConversations(actor, requestNow);
+    const conversation = list.conversations.find((item) => item.matrix?.roomId === roomId);
+    return {
+      contractVersion: "cop-messaging-conversations-v1",
+      ...(conversation ? { conversation } : {}),
+      enabled: list.enabled,
+      providerId: "csm.messaging",
+      status: list.status,
+      warnings: list.warnings
+    };
   }
 
   async createConversation(actor: AuthenticatedActor, requestNow: Date, input: MessagingConversationCreateRequest): Promise<MessagingConversationCreateResponse> {
@@ -789,6 +876,16 @@ function degradedConversationCreate(detail: string): MessagingConversationCreate
     providerId: "csm.messaging",
     status: "degraded",
     warnings: [detail]
+  };
+}
+
+function disabledConversationDetail(): MessagingConversationDetailResponse {
+  return {
+    contractVersion: "cop-messaging-conversations-v1",
+    enabled: false,
+    providerId: "csm.messaging",
+    status: "disabled",
+    warnings: ["Messaging provider is disabled."]
   };
 }
 

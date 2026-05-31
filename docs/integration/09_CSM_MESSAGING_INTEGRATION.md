@@ -154,6 +154,8 @@ Authenticated clients also read and create conversation metadata through COP:
 
 ```http
 GET /api/v1/messaging/conversations
+GET /api/v1/messaging/conversations/{conversationId}
+GET /api/v1/messaging/conversations/resolve?roomId=<matrixRoomId>
 POST /api/v1/messaging/conversations
 Authorization: Bearer <COP user access token>
 ```
@@ -162,6 +164,15 @@ These endpoints are metadata-only. COP rejects plaintext message fields and
 forwards only safe fields such as `title`, `type`, `members`, `mapLinks` and
 approved scalar `metadata` keys. The browser still sends actual messages only
 through Matrix SDK.
+
+`GET /api/v1/messaging/conversations/{conversationId}` is the authoritative COP
+detail endpoint for clients that open a notification or deep link. It returns
+only the conversation metadata visible to the authenticated user. `resolve` is a
+server-side lookup helper for Matrix deep links and currently supports `roomId`.
+COP intentionally does not resolve a bare `messageId`, because COP does not read
+Matrix timelines and must not become a plaintext or Matrix-message proxy. Push
+deep links for messages should therefore include at least `roomId` or
+`conversationId` alongside any `messageId`.
 
 COP also exposes two authenticated metadata-only helper endpoints:
 

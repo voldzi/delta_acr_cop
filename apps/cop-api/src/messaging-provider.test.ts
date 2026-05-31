@@ -587,6 +587,145 @@ describe("CsmMessagingProvider", () => {
     await app.close();
   });
 
+  it("returns conversation detail metadata without requiring clients to list locally", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "x-csm-user-id": "lab"
+      });
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/conversations/conv_1");
+      return new Response(JSON.stringify({
+        contractVersion: "csm-messaging-provider-v1",
+        conversation: {
+          conversationId: "conv_1",
+          encrypted: true,
+          e2eeRequired: true,
+          matrix: {
+            roomId: "!room:msg.zeleznalady.cz",
+            state: "bound"
+          },
+          memberCount: 2,
+          metadata: {
+            externalId: "community-group-1",
+            source: "cop.community"
+          },
+          status: "metadata_ready",
+          title: "Povodně Vrbno",
+          type: "group"
+        },
+        providerId: "csm.messaging"
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      }),
+      now: () => new Date("2026-05-22T12:00:00Z")
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "GET",
+      url: "/api/v1/messaging/conversations/conv_1"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      conversation: {
+        conversationId: "conv_1",
+        matrix: {
+          roomId: "!room:msg.zeleznalady.cz"
+        },
+        metadata: {
+          externalId: "community-group-1"
+        },
+        title: "Povodně Vrbno"
+      },
+      status: "online"
+    });
+    expect(JSON.stringify(response.json())).not.toContain("provider-token");
+    await app.close();
+  });
+
+  it("resolves conversation metadata by Matrix room id for push deep links", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "x-csm-user-id": "lab"
+      });
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/conversations");
+      return new Response(JSON.stringify({
+        contractVersion: "csm-messaging-provider-v1",
+        conversations: [
+          {
+            conversationId: "conv_other",
+            matrix: { roomId: "!other:msg.zeleznalady.cz" },
+            title: "Jiná konverzace",
+            type: "group"
+          },
+          {
+            conversationId: "conv_1",
+            matrix: { roomId: "!room:msg.zeleznalady.cz" },
+            metadata: {
+              externalId: "community-group-1",
+              source: "cop.community"
+            },
+            title: "Povodně Vrbno",
+            type: "group"
+          }
+        ],
+        count: 2,
+        providerId: "csm.messaging"
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      }),
+      now: () => new Date("2026-05-22T12:00:00Z")
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "GET",
+      url: `/api/v1/messaging/conversations/resolve?roomId=${encodeURIComponent("!room:msg.zeleznalady.cz")}`
+    });
+    const messageOnlyResponse = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "GET",
+      url: `/api/v1/messaging/conversations/resolve?messageId=${encodeURIComponent("$event:msg.zeleznalady.cz")}`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      conversation: {
+        conversationId: "conv_1",
+        matrix: {
+          roomId: "!room:msg.zeleznalady.cz"
+        }
+      },
+      status: "online"
+    });
+    expect(messageOnlyResponse.statusCode).toBe(400);
+    expect(messageOnlyResponse.json().error.message).toContain("conversationId or roomId");
+    expect(JSON.stringify(response.json())).not.toContain("provider-token");
+    await app.close();
+  });
+
   it("syncs COP group members into Messaging conversation metadata only", async () => {
     vi.stubEnv("COP_AUTH_MODE", "lab");
     vi.stubEnv("COP_LAB_TOKEN", "lab-secret");

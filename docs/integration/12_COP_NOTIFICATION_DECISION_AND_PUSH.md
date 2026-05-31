@@ -190,6 +190,19 @@ only a COP session/capability audit endpoint for native COP clients and ignores
 raw APNs token storage. APNs keys and token delivery state belong only to CSM
 Messaging.
 
+For chat/message notifications, CSM Messaging should include either COP
+`conversationId` or Matrix `roomId` in the push metadata/deep link. iOS then
+loads COP conversation metadata through:
+
+```http
+GET /api/v1/messaging/conversations/{conversationId}
+GET /api/v1/messaging/conversations/resolve?roomId=<encodedRoomId>
+```
+
+COP does not resolve a bare Matrix `messageId`, because it does not read Matrix
+timelines and must not become a plaintext or Matrix-message proxy. If a deep
+link contains `messageId`, it should also contain `roomId` or `conversationId`.
+
 ## Security Rules
 
 - COP never sends push directly to APNs.
