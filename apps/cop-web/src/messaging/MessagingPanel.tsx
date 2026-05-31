@@ -1,5 +1,5 @@
 import React from "react";
-import { Download, FileText, Image, Info, Lock, LogIn, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, ShieldCheck, Star, Users, Video, X } from "lucide-react";
+import { CheckCircle2, Crown, Download, FileText, Globe2, Image, Info, Lock, LogIn, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, ShieldCheck, Star, UserPlus, Users, Video, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
 import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse, UserDirectoryEntry } from "../cop-data";
 import { SelectField } from "../ui/select";
@@ -127,6 +127,8 @@ export function MessagingPanel({
   const [groupMemberSearchError, setGroupMemberSearchError] = React.useState<string | null>(null);
   const [newGroupName, setNewGroupName] = React.useState("");
   const [newGroupVisibility, setNewGroupVisibility] = React.useState<"private" | "public">("private");
+  const [groupQuery, setGroupQuery] = React.useState("");
+  const [showGroupCreate, setShowGroupCreate] = React.useState(false);
   const [activeDockTab, setActiveDockTab] = React.useState<MessagingDockTab>("chat");
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [chatListWidth, setChatListWidth] = React.useState(() => readChatListWidth());
@@ -291,6 +293,7 @@ export function MessagingPanel({
       const { conversation, group } = await onCreateGroup(name, newGroupVisibility);
       setSelectedGroupId(group.groupId);
       setNewGroupName("");
+      setShowGroupCreate(false);
       if (matrixSession && conversation) {
         const inviteUserIds = await resolveConversationMatrixUsers(conversation);
         const roomId = await matrixSession.createGroupRoom(group.name, inviteUserIds);
@@ -738,6 +741,7 @@ export function MessagingPanel({
             actionLoading={groupActionLoading}
             conversations={conversations}
             groups={communityGroups}
+            groupQuery={groupQuery}
             memberCandidate={groupMemberCandidate}
             memberQuery={groupMemberQuery}
             memberSearchError={groupMemberSearchError}
@@ -746,9 +750,11 @@ export function MessagingPanel({
             newGroupName={newGroupName}
             newGroupVisibility={newGroupVisibility}
             selectedGroup={selectedGroup}
+            showGroupCreate={showGroupCreate}
             onAddMember={() => void addMember()}
             onApproveMember={(subjectId, displayName) => void approveMember(subjectId, displayName)}
             onCreateGroup={() => void createGroup()}
+            onGroupQueryChange={setGroupQuery}
             onMemberCandidateChange={setGroupMemberCandidate}
             onMemberQueryChange={(value) => {
               setGroupMemberQuery(value);
@@ -765,6 +771,7 @@ export function MessagingPanel({
               }
             }}
             onSelectGroup={setSelectedGroupId}
+            onShowGroupCreateChange={setShowGroupCreate}
           />
         ) : null}
 
@@ -874,6 +881,7 @@ function CommunityGroupsPanel({
   actionLoading,
   conversations,
   groups,
+  groupQuery,
   memberCandidate,
   memberQuery,
   memberSearchError,
@@ -882,20 +890,24 @@ function CommunityGroupsPanel({
   newGroupName,
   newGroupVisibility,
   selectedGroup,
+  showGroupCreate,
   onAddMember,
   onApproveMember,
   onCreateGroup,
+  onGroupQueryChange,
   onMemberCandidateChange,
   onMemberQueryChange,
   onNewGroupNameChange,
   onNewGroupVisibilityChange,
   onOpenGroupChat,
-  onSelectGroup
+  onSelectGroup,
+  onShowGroupCreateChange
 }: {
   actionError: string | null;
   actionLoading: boolean;
   conversations: MessagingPanelProps["conversations"];
   groups: MessagingPanelProps["communityGroups"];
+  groupQuery: string;
   memberCandidate: UserDirectoryEntry | null;
   memberQuery: string;
   memberSearchError: string | null;
@@ -904,77 +916,155 @@ function CommunityGroupsPanel({
   newGroupName: string;
   newGroupVisibility: "private" | "public";
   selectedGroup: MessagingPanelProps["communityGroups"][number] | null;
+  showGroupCreate: boolean;
   onAddMember: () => void;
   onApproveMember: (subjectId: string, displayName?: string) => void;
   onCreateGroup: () => void;
+  onGroupQueryChange: (value: string) => void;
   onMemberCandidateChange: (value: UserDirectoryEntry | null) => void;
   onMemberQueryChange: (value: string) => void;
   onNewGroupNameChange: (value: string) => void;
   onNewGroupVisibilityChange: (value: "private" | "public") => void;
   onOpenGroupChat: (conversationId: string) => void;
   onSelectGroup: (groupId: string) => void;
+  onShowGroupCreateChange: (value: boolean) => void;
 }) {
   const pendingMembers = selectedGroup?.members.filter((member) => member.status === "pending") ?? [];
   const activeMembers = selectedGroup?.members.filter((member) => member.status === "active") ?? [];
   const linkedConversation = linkedConversationForCommunityGroup(conversations, selectedGroup);
+  const normalizedGroupQuery = groupQuery.trim().toLocaleLowerCase("cs-CZ");
+  const filteredGroups = normalizedGroupQuery
+    ? groups.filter((group) => {
+      const searchable = [
+        group.name,
+        group.visibility,
+        ...group.members.flatMap((member) => [member.displayName, member.username, member.subjectId])
+      ].filter(Boolean).join(" ").toLocaleLowerCase("cs-CZ");
+      return searchable.includes(normalizedGroupQuery);
+    })
+    : groups;
+  const selectedVisibilityLabel = selectedGroup ? communityGroupVisibilityLabel(selectedGroup.visibility) : "";
+
   return (
     <div className="chat-groups-panel">
-      <div className="chat-groups-header">
+      <header className="chat-groups-header">
         <div className="chat-groups-title">
           <Users size={16} />
-          <strong>Skupiny</strong>
+          <div>
+            <strong>Skupiny</strong>
+            <span>{groups.length} celkem · {conversations.length} konverzací</span>
+          </div>
         </div>
-        <span>{groups.length} celkem</span>
-      </div>
-      <div className="chat-group-create">
-        <input
-          maxLength={80}
-          placeholder="Nová skupina"
-          value={newGroupName}
-          onChange={(event) => onNewGroupNameChange(event.target.value)}
-        />
-        <SelectField<"private" | "public">
-          ariaLabel="Viditelnost nové skupiny"
-          options={communityGroupVisibilityOptions}
-          value={newGroupVisibility}
-          onValueChange={onNewGroupVisibilityChange}
-        />
-        <button className="mini-button" disabled={actionLoading || !newGroupName.trim()} onClick={onCreateGroup} type="button">
+        <button className="mini-button primary-lite" onClick={() => onShowGroupCreateChange(!showGroupCreate)} type="button">
           <Plus size={14} />
-          Založit
+          Nová
         </button>
+      </header>
+
+      <div className="chat-groups-toolbar">
+        <label className="chat-group-search">
+          <Search size={14} />
+          <input
+            aria-label="Hledat skupinu nebo člena"
+            placeholder="Hledat skupinu nebo člena"
+            value={groupQuery}
+            onChange={(event) => onGroupQueryChange(event.target.value)}
+          />
+        </label>
+        {showGroupCreate ? (
+          <section className="chat-group-create-card" aria-label="Nová skupina">
+            <div>
+              <strong>Nová skupina</strong>
+              <span>Skupina řídí chat i přístup ke sdíleným médiím.</span>
+            </div>
+            <div className="chat-group-create">
+              <input
+                maxLength={80}
+                placeholder="Název skupiny"
+                value={newGroupName}
+                onChange={(event) => onNewGroupNameChange(event.target.value)}
+              />
+              <SelectField<"private" | "public">
+                ariaLabel="Viditelnost nové skupiny"
+                options={communityGroupVisibilityOptions}
+                value={newGroupVisibility}
+                onValueChange={onNewGroupVisibilityChange}
+              />
+              <button className="mini-button" disabled={actionLoading || !newGroupName.trim()} onClick={onCreateGroup} type="button">
+                <Plus size={14} />
+                Založit
+              </button>
+            </div>
+          </section>
+        ) : null}
       </div>
+
       <div className="chat-groups-workspace">
-        <div className="chat-group-list">
-          {groups.length === 0 ? <span className="empty-mini">Zatím nemáte žádnou skupinu.</span> : null}
-          {groups.map((group) => (
+        <aside className="chat-group-list">
+          {filteredGroups.length === 0 ? <span className="empty-mini">{groups.length === 0 ? "Zatím nemáte žádnou skupinu." : "Žádná skupina neodpovídá hledání."}</span> : null}
+          {filteredGroups.map((group) => {
+            const groupActiveMembers = group.members.filter((member) => member.status === "active").length;
+            const groupPendingMembers = group.members.filter((member) => member.status === "pending").length;
+            const groupConversation = linkedConversationForCommunityGroup(conversations, group);
+            return (
             <button
               className={selectedGroup?.groupId === group.groupId ? "active" : ""}
               key={group.groupId}
               onClick={() => onSelectGroup(group.groupId)}
               type="button"
             >
-              <span>{group.name}</span>
-              <small>{group.visibility === "public" ? "veřejná" : "s povolením"} · {group.members.filter((member) => member.status === "active").length} členů</small>
+              <span className="chat-group-row-title">
+                <strong>{group.name}</strong>
+                {group.visibility === "public" ? <Globe2 size={13} /> : <Lock size={13} />}
+              </span>
+              <small>{communityGroupVisibilityLabel(group.visibility)} · {groupActiveMembers} členů{groupPendingMembers ? ` · ${groupPendingMembers} čeká` : ""}</small>
+              <em>{groupConversation?.matrix?.roomId ? "chat aktivní" : groupConversation ? "chat připraven" : "jen média"}</em>
             </button>
-          ))}
-        </div>
+            );
+          })}
+        </aside>
         {selectedGroup ? (
           <div className="chat-group-members">
-            <div className="chat-group-members-heading">
+            <header className="chat-group-members-heading">
               <div>
                 <strong>{selectedGroup.name}</strong>
-                <span>{activeMembers.length} aktivních · {pendingMembers.length} čeká</span>
+                <span>{selectedVisibilityLabel} · {activeMembers.length} aktivních členů{pendingMembers.length ? ` · ${pendingMembers.length} čeká` : ""}</span>
               </div>
-              {linkedConversation ? (
-                <button className="mini-button" disabled={actionLoading} onClick={() => onOpenGroupChat(linkedConversation.conversationId)} type="button">
-                  <MessageCircle size={14} />
-                  Chat
-                </button>
-              ) : null}
+              <div className="chat-group-heading-actions">
+                {linkedConversation ? (
+                  <button className="mini-button" disabled={actionLoading} onClick={() => onOpenGroupChat(linkedConversation.conversationId)} type="button">
+                    <MessageCircle size={14} />
+                    Otevřít chat
+                  </button>
+                ) : (
+                  <span className="chat-group-state-pill">Chat vznikne při první konverzaci</span>
+                )}
+              </div>
+            </header>
+            <div className="chat-group-summary-grid" aria-label="Souhrn skupiny">
+              <span>
+                <Users size={14} />
+                <strong>{activeMembers.length}</strong>
+                členů
+              </span>
+              <span>
+                <ShieldCheck size={14} />
+                <strong>{selectedVisibilityLabel}</strong>
+                přístup
+              </span>
+              <span>
+                <MessageCircle size={14} />
+                <strong>{linkedConversation?.matrix?.roomId ? "Aktivní" : linkedConversation ? "Připravený" : "Čeká"}</strong>
+                chat
+              </span>
             </div>
             {pendingMembers.length > 0 ? (
-              <div className="chat-group-pending-list">
+              <section className="chat-group-section">
+                <div className="chat-group-section-title">
+                  <CheckCircle2 size={14} />
+                  <strong>Žádosti ke schválení</strong>
+                </div>
+                <div className="chat-group-pending-list">
                 {pendingMembers.slice(0, 5).map((member) => (
                   <span key={member.subjectId}>
                     <small>{member.displayName}</small>
@@ -983,53 +1073,72 @@ function CommunityGroupsPanel({
                     </button>
                   </span>
                 ))}
-              </div>
+                </div>
+              </section>
             ) : null}
-            <div className="chat-group-member-search">
-              <input
-                placeholder="Uživatel nebo e-mail"
-                value={memberQuery}
-                onChange={(event) => onMemberQueryChange(event.target.value)}
-              />
-              <button className="mini-button" disabled={actionLoading || !memberQuery.trim()} onClick={onAddMember} type="button">
-                Přidat
-              </button>
-            </div>
-            {memberSearchLoading ? <span>Vyhledávám...</span> : null}
-            {memberSearchError ? <span>{memberSearchError}</span> : null}
-            {memberCandidate ? <span>{memberCandidate.displayName} · {memberCandidate.username}</span> : null}
-            {memberSuggestions.length > 0 ? (
-              <div className="chat-member-search-results">
-                {memberSuggestions.slice(0, 6).map((user) => (
+            <section className="chat-group-section">
+              <div className="chat-group-section-title">
+                <UserPlus size={14} />
+                <strong>Přidat člena</strong>
+              </div>
+              <div className="chat-group-member-search">
+                <input
+                  placeholder="Jméno, uživatel nebo e-mail"
+                  value={memberQuery}
+                  onChange={(event) => onMemberQueryChange(event.target.value)}
+                />
+                <button className="mini-button" disabled={actionLoading || !memberQuery.trim()} onClick={onAddMember} type="button">
+                  Přidat
+                </button>
+              </div>
+              {memberSearchLoading ? <span className="chat-group-helper-text">Vyhledávám...</span> : null}
+              {memberSearchError ? <span className="chat-group-helper-text warn">{memberSearchError}</span> : null}
+              {memberCandidate ? <span className="chat-group-helper-text ok">Vybráno: {memberCandidate.displayName} · {memberCandidate.username}</span> : null}
+              {memberSuggestions.length > 0 ? (
+                <div className="chat-member-search-results">
+                  {memberSuggestions.slice(0, 6).map((user) => (
+                    <button
+                      key={user.subjectId}
+                      onClick={() => {
+                        onMemberQueryChange(user.username);
+                        onMemberCandidateChange(user);
+                      }}
+                      type="button"
+                    >
+                      <strong>{user.displayName}</strong>
+                      <small>{user.username}{user.email ? ` · ${user.email}` : ""}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+            <section className="chat-group-section chat-group-section-fill">
+              <div className="chat-group-section-title">
+                <Users size={14} />
+                <strong>Členové</strong>
+              </div>
+              <div className="chat-group-member-list">
+                {selectedGroup.members.map((member) => (
                   <button
-                    key={user.subjectId}
-                    onClick={() => {
-                      onMemberQueryChange(user.username);
-                      onMemberCandidateChange(user);
-                    }}
+                    className={member.status === "active" ? "active" : "pending"}
+                    key={member.subjectId}
                     type="button"
                   >
-                    <strong>{user.displayName}</strong>
-                    <small>{user.username}{user.email ? ` · ${user.email}` : ""}</small>
+                    <span>{initialsFor(member.displayName || member.username || member.subjectId)}</span>
+                    <strong>{member.displayName || member.username || member.subjectId}</strong>
+                    <small>{member.role === "owner" ? <Crown size={12} /> : null}{communityMemberRoleLabel(member.role)} · {member.status === "active" ? "aktivní" : "čeká"}</small>
                   </button>
                 ))}
               </div>
-            ) : null}
-            <div className="chat-group-member-list">
-              {selectedGroup.members.map((member) => (
-                <button
-                  className={member.status === "active" ? "active" : "pending"}
-                  key={member.subjectId}
-                  type="button"
-                >
-                  <span>{initialsFor(member.displayName || member.username || member.subjectId)}</span>
-                  <strong>{member.displayName || member.username}</strong>
-                  <small>{member.role} · {member.status === "active" ? "aktivní" : "čeká"}</small>
-                </button>
-              ))}
-            </div>
+            </section>
           </div>
-        ) : null}
+        ) : (
+          <div className="chat-group-empty-detail">
+            <Users size={22} />
+            <strong>Vyberte skupinu</strong>
+            <span>Skupiny propojují chat, mapová hlášení a přístup ke sdíleným médiím.</span>
+          </div>
+        )}
       </div>
       {actionError ? <div className="error-banner">{actionError}</div> : null}
     </div>
@@ -1507,6 +1616,20 @@ function attachmentKindLabel(kind: MatrixAttachmentKind): string {
     return "Video";
   }
   return "Soubor";
+}
+
+function communityGroupVisibilityLabel(visibility: "private" | "public"): string {
+  return visibility === "public" ? "veřejná" : "s povolením";
+}
+
+function communityMemberRoleLabel(role: string): string {
+  if (role === "owner") {
+    return "správce";
+  }
+  if (role === "admin") {
+    return "moderátor";
+  }
+  return "člen";
 }
 
 function conversationCommunityGroupId(conversation: MessagingPanelProps["conversations"][number]): string | undefined {

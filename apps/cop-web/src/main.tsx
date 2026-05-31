@@ -3219,7 +3219,7 @@ export function App() {
               </>
             )}
           </button>
-          <button className="operator-button" onClick={() => setHelpSection("overview")} title="Otevřít manuál" type="button">
+          <button className="operator-button help-entry-button" onClick={() => setHelpSection("overview")} title="Otevřít manuál" type="button">
             <BookOpen size={18} />
             <span>
               Manuál
