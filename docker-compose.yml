@@ -1,5 +1,6 @@
 services:
   cop-api:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -120,6 +121,7 @@ services:
       retries: 5
 
   cop-web:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile.web
