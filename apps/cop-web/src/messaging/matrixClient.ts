@@ -411,24 +411,16 @@ async function ensureJoinedRoom(client: MatrixClientLike, roomId: string, homese
   }
 }
 
-export async function clearMatrixMessagingDeviceState(): Promise<void> {
+export async function clearMatrixMessagingCryptoStateForBootstrap(bootstrap: MessagingBootstrapResponse): Promise<void> {
   if (typeof window === "undefined") {
     return;
   }
-  try {
-    const keysToRemove = Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index))
-      .filter((key): key is string => Boolean(key?.startsWith("cop.messaging.matrixDeviceId")));
-    for (const key of keysToRemove) {
-      window.localStorage.removeItem(key);
-    }
-  } catch {
-    // Best effort cleanup only. Matrix SDK owns the crypto store lifecycle.
-  }
+  const prefix = matrixCryptoDatabasePrefix(bootstrap);
   const indexedDb = window.indexedDB;
   const databases = typeof indexedDb?.databases === "function" ? await indexedDb.databases() : [];
   await Promise.all(databases
     .map((database) => database.name)
-    .filter((name): name is string => Boolean(name && /matrix|crypto|olm/iu.test(name)))
+    .filter((name): name is string => Boolean(name && (name === prefix || name.startsWith(prefix) || name.includes(prefix))))
     .map((name) => new Promise<void>((resolve) => {
       const request = indexedDb.deleteDatabase(name);
       request.onerror = () => resolve();
@@ -524,7 +516,7 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
     .filter((event): event is MatrixEventLike => Boolean(event && event.getType?.() === "m.room.message"))
     .flatMap((event) => {
       const content = event.getContent?.() ?? {};
-      const body = typeof content.body === "string" ? content.body.trim() : "";
+      const body = normalizeMatrixMessageBody(typeof content.body === "string" ? content.body.trim() : "");
       const kind = matrixMessageKind(content);
       const attachment = matrixAttachmentFromContent(client, homeserverBaseUrl, content);
       const geoUri = readLocationUri(content);
@@ -548,6 +540,16 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
       }];
     })
     .slice(-80);
+}
+
+export function normalizeMatrixMessageBody(body: string): string {
+  return isUndecryptableMatrixBody(body)
+    ? "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy."
+    : body;
+}
+
+function isUndecryptableMatrixBody(body: string): boolean {
+  return /unable to decrypt|decryptionerror|no key backup|before this device logged in/iu.test(body);
 }
 
 function displayNameForMatrixSender(room: MatrixRoomLike | undefined, sender: string): string | undefined {

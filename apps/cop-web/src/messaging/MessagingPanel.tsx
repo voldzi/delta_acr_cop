@@ -4,7 +4,7 @@ import { fetchMessagingBootstrap } from "../cop-data";
 import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse, UserDirectoryEntry } from "../cop-data";
 import { SelectField } from "../ui/select";
 import {
-  clearMatrixMessagingDeviceState,
+  clearMatrixMessagingCryptoStateForBootstrap,
   createMatrixMessagingSession,
   isMatrixAccountStoreMismatchError
 } from "./matrixClient";
@@ -150,7 +150,6 @@ export function MessagingPanel({
     setRooms([]);
     setSelectedRoomId(null);
     setTimeline([]);
-    void clearMatrixMessagingDeviceState();
   }, [authenticated]);
 
   React.useEffect(() => {
@@ -169,7 +168,6 @@ export function MessagingPanel({
     setSelectedRoomId(null);
     setTimeline([]);
     setBootstrapError(null);
-    void clearMatrixMessagingDeviceState();
   }, [authenticated, matrixAccountOwnerId]);
 
   React.useEffect(() => {
@@ -411,8 +409,12 @@ export function MessagingPanel({
       });
     } catch (caught) {
       if (allowStoreRecovery && authToken && isMatrixAccountStoreMismatchError(caught)) {
-        await clearMatrixMessagingDeviceState();
-        const recoveredBootstrap = await fetchMessagingBootstrap(apiBase, authToken, getOrCreateMatrixDeviceId(matrixAccountOwnerId));
+        await clearMatrixMessagingCryptoStateForBootstrap(bootstrap);
+        const recoveredBootstrap = await fetchMessagingBootstrap(
+          apiBase,
+          authToken,
+          bootstrap.deviceId ?? getOrCreateMatrixDeviceId(matrixAccountOwnerId)
+        );
         setBootstrapError("Lokální šifrovací stav patřil předchozímu účtu. Chat byl bezpečně obnoven pro aktuální přihlášení.");
         await startMatrixSession(recoveredBootstrap, preferredRoomId, false);
         return;
