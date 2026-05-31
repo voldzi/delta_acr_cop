@@ -75,6 +75,61 @@ const trackClusterSelectedHaloLayerId = "cop-live-track-cluster-selected-halo";
 const trackClusterSymbolLayerId = "cop-live-track-cluster-symbol";
 const trackClusterLabelLayerId = "cop-live-track-cluster-label";
 
+const mapClusterClickLayerIds = [
+  trackClusterCircleLayerId,
+  trackClusterCountLayerId
+] as const;
+
+const mapFeatureClickPriorityLayerIds = [
+  trackSymbolLayerId,
+  trackLabelLayerId,
+  trackClusterSymbolLayerId,
+  trackClusterLabelLayerId,
+  situationRiskIconLayerId,
+  situationRiskPointLayerId,
+  situationRiskLabelLayerId,
+  situationTrafficSymbolLayerId,
+  situationMobileSymbolLayerId,
+  situationWeatherLabelLayerId,
+  situationWeatherWindLayerId,
+  situationWeatherPointLayerId,
+  situationAirQualityLabelLayerId,
+  situationAirQualityPointLayerId,
+  situationOsmSymbolLayerId,
+  situationPointSelectedLayerId,
+  situationPointLayerId,
+  situationLabelLayerId,
+  situationLineLayerId,
+  situationFillLayerId
+] as const;
+
+const mapPointRaiseLayerIds = [
+  situationPointSelectedLayerId,
+  situationPointLayerId,
+  situationTrafficSymbolLayerId,
+  situationRiskPointLayerId,
+  situationRiskIconLayerId,
+  situationRiskLabelLayerId,
+  situationOsmSymbolLayerId,
+  situationMobileSymbolLayerId,
+  situationWeatherPointLayerId,
+  situationWeatherWindLayerId,
+  situationWeatherLabelLayerId,
+  situationAirQualityPointLayerId,
+  situationAirQualityLabelLayerId,
+  userLocationAccuracyLayerId,
+  userLocationLayerId,
+  trackHoverHaloLayerId,
+  trackSelectedHaloLayerId,
+  trackClusterCircleLayerId,
+  trackClusterCountLayerId,
+  trackClusterSelectedHaloLayerId,
+  trackClusterSymbolLayerId,
+  trackClusterLabelLayerId,
+  trackSymbolLayerId,
+  trackLabelLayerId
+] as const;
+
 const mapStyleUrl = import.meta.env.VITE_COP_MAP_STYLE_URL ?? "";
 const tileUrl = import.meta.env.VITE_COP_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const tileGlyphsUrl = import.meta.env.VITE_COP_TILE_GLYPHS_URL ?? "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf";
@@ -456,20 +511,21 @@ export function CopMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
-    const handleClick = (event: MapLayerMouseEvent) => {
-      const objectId = event.features?.[0]?.properties?.objectId as string | undefined;
+    const selectRenderedFeature = (renderedFeature: NonNullable<MapLayerMouseEvent["features"]>[number] | undefined) => {
+      const properties = isRecord(renderedFeature?.properties) ? renderedFeature.properties : {};
+      const objectId = stringProperty(properties.objectId);
       const object = objectsRef.current.find((candidate) => candidate.objectId === objectId);
       if (object) {
         onSelectObjectRef.current(object);
+        return true;
       }
-    };
-
-    const handleSituationClick = (event: MapLayerMouseEvent) => {
-      const featureId = event.features?.[0]?.properties?.featureId as string | undefined;
-      const feature = situationFeaturesRef.current.find((candidate) => candidate.properties.featureId === featureId);
-      if (feature) {
-        onSelectSituationFeatureRef.current(feature);
+      const featureId = stringProperty(properties.featureId);
+      const situationFeature = situationFeaturesRef.current.find((candidate) => candidate.properties.featureId === featureId);
+      if (situationFeature) {
+        onSelectSituationFeatureRef.current(situationFeature);
+        return true;
       }
+      return false;
     };
 
     map.on("load", () => {
@@ -1530,29 +1586,11 @@ export function CopMap({
         });
 
         setTrackClusterVisibility(map, clusterTracks);
+        raiseInteractivePointLayers(map);
 
         const handleClusterClick = (event: MapLayerMouseEvent) => {
           void zoomToCluster(map, event, setClusterInfo);
         };
-        map.on("click", trackSymbolLayerId, handleClick);
-        map.on("click", trackLabelLayerId, handleClick);
-        map.on("click", trackClusterSymbolLayerId, handleClick);
-        map.on("click", trackClusterLabelLayerId, handleClick);
-        map.on("click", situationPointLayerId, handleSituationClick);
-        map.on("click", situationLabelLayerId, handleSituationClick);
-        map.on("click", situationOsmSymbolLayerId, handleSituationClick);
-        map.on("click", situationMobileSymbolLayerId, handleSituationClick);
-        map.on("click", situationTrafficSymbolLayerId, handleSituationClick);
-        map.on("click", situationRiskPointLayerId, handleSituationClick);
-        map.on("click", situationRiskIconLayerId, handleSituationClick);
-        map.on("click", situationRiskLabelLayerId, handleSituationClick);
-        map.on("click", situationWeatherPointLayerId, handleSituationClick);
-        map.on("click", situationWeatherWindLayerId, handleSituationClick);
-        map.on("click", situationWeatherLabelLayerId, handleSituationClick);
-        map.on("click", situationAirQualityPointLayerId, handleSituationClick);
-        map.on("click", situationAirQualityLabelLayerId, handleSituationClick);
-        map.on("click", situationLineLayerId, handleSituationClick);
-        map.on("click", situationFillLayerId, handleSituationClick);
         map.on("click", trackClusterCircleLayerId, handleClusterClick);
         map.on("click", trackClusterCountLayerId, handleClusterClick);
         const handleUserMapInteraction = (event: maplibregl.MapLibreEvent) => {
@@ -1569,32 +1607,12 @@ export function CopMap({
             setZoneDraftPoints((current) => [...current, { lat: event.lngLat.lat, lon: event.lngLat.lng }].slice(0, 80));
             return;
           }
-          const clickedFeatures = map.queryRenderedFeatures(event.point, {
-            layers: [
-              trackSymbolLayerId,
-              trackLabelLayerId,
-              trackClusterSymbolLayerId,
-              trackClusterLabelLayerId,
-              trackClusterCircleLayerId,
-              trackClusterCountLayerId,
-              situationPointLayerId,
-              situationLabelLayerId,
-              situationOsmSymbolLayerId,
-              situationMobileSymbolLayerId,
-              situationTrafficSymbolLayerId,
-              situationRiskPointLayerId,
-              situationRiskIconLayerId,
-              situationRiskLabelLayerId,
-              situationWeatherPointLayerId,
-              situationWeatherWindLayerId,
-              situationWeatherLabelLayerId,
-              situationAirQualityPointLayerId,
-              situationAirQualityLabelLayerId,
-              situationLineLayerId,
-              situationFillLayerId
-            ]
-          });
-          if (clickedFeatures.length > 0) {
+          const clickedCluster = queryRenderedFeatureByLayerPriority(map, event.point, mapClusterClickLayerIds);
+          if (clickedCluster) {
+            return;
+          }
+          const clickedFeature = queryRenderedFeatureByLayerPriority(map, event.point, mapFeatureClickPriorityLayerIds);
+          if (selectRenderedFeature(clickedFeature)) {
             return;
           }
           onClearSelectionRef.current?.();
@@ -2156,6 +2174,31 @@ async function zoomToCluster(
     duration: 650,
     zoom: Math.min(17, Math.max(map.getZoom() + 1, zoom + 0.35))
   });
+}
+
+function raiseInteractivePointLayers(map: maplibregl.Map): void {
+  for (const layerId of mapPointRaiseLayerIds) {
+    if (map.getLayer(layerId)) {
+      map.moveLayer(layerId);
+    }
+  }
+}
+
+function queryRenderedFeatureByLayerPriority(
+  map: maplibregl.Map,
+  point: maplibregl.PointLike,
+  layerIds: readonly string[]
+): NonNullable<MapLayerMouseEvent["features"]>[number] | undefined {
+  for (const layerId of layerIds) {
+    if (!map.getLayer(layerId)) {
+      continue;
+    }
+    const feature = map.queryRenderedFeatures(point, { layers: [layerId] })[0];
+    if (feature) {
+      return feature as NonNullable<MapLayerMouseEvent["features"]>[number];
+    }
+  }
+  return undefined;
 }
 
 function extractPointCoordinates(feature: NonNullable<MapLayerMouseEvent["features"]>[number] | undefined): [number, number] | null {

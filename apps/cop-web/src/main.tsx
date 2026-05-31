@@ -11123,7 +11123,7 @@ function writeMessagingDockWidth(width: number): void {
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {
   const width = Math.abs(bounds.east - bounds.west);
   const height = Math.abs(bounds.north - bounds.south);
-  return (zoom ?? 0) < 6 || width > 6 || height > 4;
+  return (zoom ?? 0) < 5 || width > 11 || height > 7;
 }
 
 function shouldSkipSafetyFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {
