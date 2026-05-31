@@ -3156,6 +3156,13 @@ export function App() {
     }
   }, [activeCatalogGroupId, catalogGroupViews]);
 
+  React.useEffect(() => {
+    const firstCatalogGroupId = catalogGroupViews[0]?.group.groupId;
+    if (mobileSheet === "layers" && !activeCatalogGroupId && firstCatalogGroupId) {
+      setActiveCatalogGroupId(firstCatalogGroupId);
+    }
+  }, [activeCatalogGroupId, catalogGroupViews, mobileSheet]);
+
   return (
     <main
       className={shellClassName}
@@ -3307,8 +3314,13 @@ export function App() {
               groups={catalogGroupViews}
               loadError={loadError}
               statusLabel={missionModeLabel(operatingMode, offlineSnapshotState)}
-              onCloseDrawer={() => setActiveCatalogGroupId(null)}
-              onGroupSelect={(groupId) => setActiveCatalogGroupId((current) => current === groupId ? null : groupId)}
+              onCloseDrawer={() => {
+                if (mobileSheet === "layers") {
+                  setMobileSheet(null);
+                }
+                setActiveCatalogGroupId(null);
+              }}
+              onGroupSelect={(groupId) => setActiveCatalogGroupId((current) => mobileSheet === "layers" ? groupId : current === groupId ? null : groupId)}
               getFeatureCount={catalogLayerFeatureCount}
               getLayerStatus={catalogLayerStatus}
               isLayerEnabled={isCatalogLayerEnabled}
@@ -3919,6 +3931,10 @@ export function App() {
           setActiveWorkspace("map");
           if (workspaceLayout.leftPanelMode !== "open") {
             updateWorkspaceLayout({ leftPanelMode: "open" });
+          }
+          const firstCatalogGroupId = catalogGroupViews[0]?.group.groupId;
+          if (mobileSheet !== "layers" && !activeCatalogGroupId && firstCatalogGroupId) {
+            setActiveCatalogGroupId(firstCatalogGroupId);
           }
           setMobileSheet((current) => current === "layers" ? null : "layers");
         }}

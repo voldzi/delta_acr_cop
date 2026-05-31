@@ -7812,6 +7812,46 @@ dd {
     display: none;
   }
 
+  .shell.app-shell-v2.mobile-sheet-layers .catalog-layer-menu {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .shell.app-shell-v2.mobile-sheet-layers .catalog-rail-status,
+  .shell.app-shell-v2.mobile-sheet-layers .catalog-rail-button {
+    width: 42px;
+    min-height: 42px;
+  }
+
+  .shell.app-shell-v2.mobile-sheet-layers .catalog-rail-button {
+    height: 42px;
+  }
+
+  .shell.app-shell-v2.mobile-sheet-layers .catalog-layer-drawer {
+    position: static;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    width: 100%;
+    max-height: none;
+    min-width: 0;
+    overflow: visible;
+    padding: 10px;
+    box-shadow: none;
+  }
+
+  .shell.app-shell-v2.mobile-sheet-layers .catalog-empty-state {
+    grid-column: 2;
+    justify-self: stretch;
+    padding: 18px 10px;
+    border: 1px solid rgba(122, 148, 172, 0.22);
+    color: var(--muted);
+    text-align: center;
+    writing-mode: horizontal-tb;
+  }
+
   .mobile-sheet-close {
     position: fixed;
     top: max(68px, 28dvh);
