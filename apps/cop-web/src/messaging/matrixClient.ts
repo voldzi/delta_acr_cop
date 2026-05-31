@@ -28,11 +28,21 @@ interface MatrixClientLike {
 }
 
 interface MatrixRoomLike {
+  getMember?: (userId: string) => MatrixRoomMemberLike | null;
   getMyMembership?: () => string;
   getUnreadNotificationCount?: () => number;
   name?: string;
   roomId?: string;
   timeline?: unknown[];
+}
+
+interface MatrixRoomMemberLike {
+  name?: string;
+  rawDisplayName?: string;
+  user?: {
+    displayName?: string;
+  };
+  userId?: string;
 }
 
 interface MatrixEventLike {
@@ -523,6 +533,7 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
         return [];
       }
       const sender = event.getSender?.() ?? "";
+      const senderDisplayName = displayNameForMatrixSender(room ?? undefined, sender);
       return [{
         ...(attachment ? { attachment } : {}),
         body,
@@ -532,10 +543,38 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
         ...(location ? { location } : {}),
         own: Boolean(currentUserId && sender === currentUserId),
         sender,
+        ...(senderDisplayName ? { senderDisplayName } : {}),
         timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString()
       }];
     })
     .slice(-80);
+}
+
+function displayNameForMatrixSender(room: MatrixRoomLike | undefined, sender: string): string | undefined {
+  if (!sender) {
+    return undefined;
+  }
+  const member = room?.getMember?.(sender) ?? undefined;
+  const candidates = [
+    member?.rawDisplayName,
+    member?.name,
+    member?.user?.displayName
+  ];
+  return candidates
+    .map((value) => cleanMatrixDisplayName(value, sender))
+    .find((value): value is string => Boolean(value));
+}
+
+function cleanMatrixDisplayName(value: string | undefined, sender: string): string | undefined {
+  const cleaned = value?.trim();
+  if (!cleaned || cleaned === sender || looksLikeMatrixUserId(cleaned)) {
+    return undefined;
+  }
+  return cleaned.replace(/\s+\(@[^)]+:[^)]+\)$/u, "").trim() || undefined;
+}
+
+function looksLikeMatrixUserId(value: string): boolean {
+  return /^@[^:\s]+:[^:\s]+$/u.test(value);
 }
 
 function matrixMessageKind(content: Record<string, unknown>): MatrixTimelineMessage["kind"] {

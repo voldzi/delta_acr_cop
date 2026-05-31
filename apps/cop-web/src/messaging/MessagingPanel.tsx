@@ -701,6 +701,7 @@ export function MessagingPanel({
             rooms={rooms}
             selectedConversation={selectedConversation}
             selectedRoomId={selectedRoomId}
+            session={session}
             timeline={timeline}
             onChatListWidthChange={handleChatListWidthChange}
             onComposerChange={setComposerText}
@@ -1160,6 +1161,7 @@ function MatrixChatShell({
   rooms,
   selectedConversation,
   selectedRoomId,
+  session,
   timeline,
   onChatListWidthChange,
   onComposerChange,
@@ -1189,6 +1191,7 @@ function MatrixChatShell({
   rooms: MatrixRoomSummary[];
   selectedConversation: MessagingPanelProps["conversations"][number] | null;
   selectedRoomId: string | null;
+  session: MessagingPanelProps["session"];
   timeline: MatrixTimelineMessage[];
   onChatListWidthChange: (width: number) => void;
   onComposerChange: (value: string) => void;
@@ -1215,9 +1218,9 @@ function MatrixChatShell({
   const mapContextLabel = mapContext.selectedFeature?.title ?? formatCoordinates(mapContext.userLocation ?? mapContext.center);
   const activeRoomTitle = selectedRoom?.name ?? selectedConversation?.title ?? "Vyberte konverzaci";
   const activeRoomMeta = selectedRoom
-    ? `${selectedConversation?.memberCount ?? 1} členů · ${selectedRoom.encrypted ? "šifrováno" : "ověřuji šifrování"}`
+    ? `${selectedConversation?.memberCount ?? 1} členů · ${selectedRoom.encrypted ? "zabezpečeno" : "připravuji zabezpečení"}`
     : selectedConversation?.matrix?.roomId
-      ? "synchronizuji šifrovanou místnost"
+      ? "načítám zprávy"
       : selectedConversation
         ? "připraveno k založení chatu"
         : "čeká na výběr";
@@ -1285,7 +1288,7 @@ function MatrixChatShell({
             <span className="matrix-room-avatar">{initialsFor(conversation.title)}</span>
             <span>
               <strong>{conversation.title}</strong>
-              <small>{conversation.type === "group" ? "skupina" : "přímý chat"} · {conversation.memberCount ?? 1} členů · {conversation.matrix?.roomId ? "šifrovaný chat" : "připravit chat"}</small>
+              <small>{conversation.type === "group" ? "skupina" : "přímý chat"} · {conversation.memberCount ?? 1} členů · {conversation.matrix?.roomId ? "zabezpečeno" : "připravit chat"}</small>
             </span>
           </button>
         ))}
@@ -1300,7 +1303,7 @@ function MatrixChatShell({
             <span className="matrix-room-avatar">{initialsFor(room.name)}</span>
             <span>
               <strong>{room.name}</strong>
-              <small>{room.encrypted ? "šifrované" : "stav šifrování neznámý"} · {room.unreadCount} nové</small>
+              <small>{room.encrypted ? "zabezpečeno" : "připravuji zabezpečení"} · {room.unreadCount} nové</small>
             </span>
           </button>
         ))}
@@ -1357,7 +1360,10 @@ function MatrixChatShell({
           ) : timeline.length === 0 ? <div className="empty-mini">{selectedRoom ? "Zatím zde nejsou žádné zprávy." : "Vyberte nebo založte konverzaci."}</div> : null}
           {timeline.map((message) => (
             <div className={`matrix-message ${message.own ? "own" : ""}`} key={message.eventId}>
-              <small>{message.sender} · {new Date(message.timestamp).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</small>
+              <small className="matrix-message-meta">
+                <span>{matrixMessageAuthor(message, selectedConversation, session)}</span>
+                <time dateTime={message.timestamp}>{new Date(message.timestamp).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</time>
+              </small>
               <MatrixMessageBody message={message} onDownloadAttachment={onDownloadAttachment} />
             </div>
           ))}
@@ -1471,6 +1477,35 @@ function MatrixMessageBody({ message, onDownloadAttachment }: { message: MatrixT
   }
 
   return <span>{message.body}</span>;
+}
+
+function matrixMessageAuthor(
+  message: MatrixTimelineMessage,
+  conversation: MessagingPanelProps["conversations"][number] | null,
+  session: MessagingPanelProps["session"]
+): string {
+  if (message.own) {
+    return "Vy";
+  }
+  const displayName = message.senderDisplayName?.trim();
+  if (displayName) {
+    return displayName;
+  }
+  const byMatrixHint = conversation?.members?.find((member) => {
+    const normalizedSender = message.sender.toLocaleLowerCase("cs-CZ");
+    const displayName = member.displayName?.toLocaleLowerCase("cs-CZ");
+    const userId = member.userId.toLocaleLowerCase("cs-CZ");
+    return normalizedSender.includes(userId) ||
+      (displayName ? normalizedSender.includes(displayName) : false) ||
+      normalizedSender.includes(userId.replaceAll("-", ""));
+  });
+  if (byMatrixHint?.displayName) {
+    return byMatrixHint.displayName;
+  }
+  if (message.sender === session.profile?.subjectId || message.sender === session.profile?.username) {
+    return "Vy";
+  }
+  return "Člen konverzace";
 }
 
 function initialsFor(value: string): string {

@@ -81,6 +81,7 @@ export interface MatrixTimelineMessage {
   location?: MatrixLocationShare;
   own: boolean;
   sender: string;
+  senderDisplayName?: string;
   timestamp: string;
 }
 
