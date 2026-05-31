@@ -2488,13 +2488,12 @@ export function App() {
   }
 
   function startCommunityReportCapture() {
-    locateUser();
     if (!profileAccessReady) {
       setProfileSyncError("Vlastní hlášení s polohou a přílohami je dostupné po přihlášení.");
       openLoginPrompt("report");
       return;
     }
-    setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(userLocation, mapView)));
+    setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(null, mapView)));
     setCommunityReportError(null);
     setCommunityReportSuccess(null);
     setCommunityReportLocationPickMode(false);
@@ -2503,7 +2502,6 @@ export function App() {
   }
 
   function startCommunityReportFromChat(seed: MessagingReportSeed) {
-    locateUser();
     if (!profileAccessReady) {
       setProfileSyncError("Hlášení vytvořené z chatu je dostupné po přihlášení.");
       openLoginPrompt("report");
@@ -2516,7 +2514,7 @@ export function App() {
         lon: seed.location.lon,
         source: seed.location.source === "device" ? "device" : "manual"
       }
-      : resolveCommunityReportLocation(userLocation, mapView);
+      : resolveCommunityReportLocation(null, mapView);
     setCommunityReportDraft({
       ...createCommunityReportDraft(location),
       description: seed.groupName ? `Zdroj: chat ${seed.groupName}.` : "Zdroj: chat.",
@@ -2893,7 +2891,7 @@ export function App() {
         });
       }
       const submitted = await submitCommunityReport(apiBase, authToken, report.reportId);
-      setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(userLocation, mapView)));
+      setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(null, mapView)));
       setCommunityReportSuccess(communityReportDraft.reportId ? "Hlášení bylo upraveno." : "Hlášení bylo uloženo a propojeno se skupinou.");
       setCommunityReportOpen(false);
       setCommunityReportLocationPickMode(false);
