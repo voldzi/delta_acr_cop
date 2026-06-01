@@ -498,6 +498,18 @@ h1 {
   min-height: 0;
 }
 
+.messaging-error-stack {
+  display: grid;
+  gap: 6px;
+  min-height: 0;
+}
+
+.messaging-panel-body {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
 .messaging-panel.pinned .messaging-panel-main {
   display: flex;
   flex-direction: column;
@@ -509,6 +521,22 @@ h1 {
 .messaging-panel.pinned .matrix-chat-shell,
 .messaging-panel.pinned .chat-groups-panel,
 .messaging-panel.pinned .messaging-context-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.messaging-panel.pinned .messaging-panel-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.messaging-panel.pinned .messaging-panel-body > .matrix-chat-shell,
+.messaging-panel.pinned .messaging-panel-body > .chat-groups-panel,
+.messaging-panel.pinned .messaging-panel-body > .messaging-context-panel,
+.messaging-panel.pinned .messaging-panel-body > .messaging-empty-state {
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -591,6 +619,11 @@ h1 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.messaging-mobile-tabs,
+.mobile-room-back {
+  display: none;
 }
 
 .messaging-panel-header,
@@ -8311,6 +8344,9 @@ dd {
   .shell.app-shell-v2 .messaging-panel.pinned {
     inset: 0;
     z-index: 94;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     width: 100vw;
     max-width: none;
     height: 100dvh;
@@ -8323,26 +8359,169 @@ dd {
     overscroll-behavior: contain;
   }
 
+  .shell.app-shell-v2 .messaging-panel.pinned {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .shell.app-shell-v2 .messaging-resize-handle {
     display: none;
   }
 
   .shell.app-shell-v2 .messaging-panel .messaging-panel-main,
   .shell.app-shell-v2 .messaging-panel.pinned .messaging-panel-main {
+    display: grid;
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    align-content: stretch;
+    gap: 0;
+    height: 100dvh;
+    min-height: 0;
     padding: 0;
     overflow: hidden;
     pointer-events: auto;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .messaging-error-stack {
+    grid-row: 4;
+    gap: 4px;
+    max-height: 92px;
+    padding: 8px 10px;
+    overflow: auto;
+    border-bottom: 1px solid rgba(122, 148, 172, 0.16);
+    background: rgba(6, 11, 17, 0.96);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .messaging-error-stack .error-banner {
+    padding: 7px 9px;
+    font-size: 11px;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .messaging-panel-body {
+    grid-row: 5;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .shell.app-shell-v2 .messaging-panel.pinned .messaging-panel-body {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    height: 100%;
+  }
+
+  .shell.app-shell-v2 .messaging-panel-header {
+    min-height: 54px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(122, 148, 172, 0.2);
+    background: rgba(8, 14, 21, 0.96);
+  }
+
+  .shell.app-shell-v2 .chat-panel-title svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .shell.app-shell-v2 .chat-panel-title strong {
+    font-size: 14px;
+    line-height: 1.1;
+  }
+
+  .shell.app-shell-v2 .chat-panel-title span {
+    font-size: 10px;
+  }
+
+  .shell.app-shell-v2 .messaging-header-actions .icon-button:first-child {
+    display: none;
+  }
+
+  .shell.app-shell-v2 .messaging-header-actions .icon-button {
+    min-width: 42px;
+    min-height: 42px;
+  }
+
+  .messaging-mobile-tabs {
+    display: block;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(122, 148, 172, 0.18);
+    background: rgba(6, 11, 17, 0.98);
+  }
+
+  .shell.app-shell-v2 .messaging-mobile-tabs .messaging-dock-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 0;
+    background: rgba(16, 25, 35, 0.72);
+  }
+
+  .shell.app-shell-v2 .messaging-mobile-tabs .messaging-dock-tabs button {
+    min-height: 38px;
+    border-radius: 10px;
+    font-size: 10px;
+  }
+
+  .shell.app-shell-v2 .chat-status-strip {
+    display: flex;
+    gap: 6px;
+    min-height: 44px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    border-bottom: 1px solid rgba(122, 148, 172, 0.18);
+    background: rgba(6, 11, 17, 0.96);
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .shell.app-shell-v2 .chat-status-strip span {
+    flex: 0 0 auto;
+    min-height: 28px;
+    font-size: 10px;
   }
 
   .shell.app-shell-v2 .messaging-panel .matrix-chat-shell,
   .shell.app-shell-v2 .messaging-panel.pinned .matrix-chat-shell,
   .shell.app-shell-v2 .messaging-panel .chat-groups-workspace {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(160px, 34dvh) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     height: 100%;
     min-height: 0;
+    overflow: hidden;
     pointer-events: auto;
     touch-action: pan-y;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-groups-panel,
+  .shell.app-shell-v2 .messaging-panel.pinned .chat-groups-panel,
+  .shell.app-shell-v2 .messaging-panel .messaging-context-panel,
+  .shell.app-shell-v2 .messaging-panel.pinned .messaging-context-panel {
+    height: 100%;
+    min-height: 0;
+    padding: 12px 12px calc(76px + env(safe-area-inset-bottom));
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-groups-panel {
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-groups-workspace {
+    grid-template-rows: minmax(140px, 0.36fr) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-group-list,
+  .shell.app-shell-v2 .messaging-panel .chat-group-members,
+  .shell.app-shell-v2 .messaging-panel .messaging-context-panel {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-group-create,
+  .shell.app-shell-v2 .messaging-panel .chat-group-member-search {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .shell.app-shell-v2 .messaging-panel button,
@@ -8357,24 +8536,176 @@ dd {
   }
 
   .shell.app-shell-v2 .messaging-panel .matrix-room-list {
+    display: grid;
+    height: 100%;
+    max-height: none;
     min-height: 0;
+    padding: 12px 12px calc(76px + env(safe-area-inset-bottom));
     border-right: 0;
-    border-bottom: 1px solid rgba(122, 148, 172, 0.18);
+    border-bottom: 0;
     border-radius: 0;
     overflow: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
 
+  .shell.app-shell-v2 .messaging-panel .matrix-chat-shell.has-active-room .matrix-room-list {
+    display: none;
+  }
+
   .shell.app-shell-v2 .messaging-panel .matrix-room-view {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    height: 100%;
     min-height: 0;
     border-radius: 0;
+    overflow: hidden;
     pointer-events: auto;
   }
 
+  .shell.app-shell-v2 .messaging-panel .matrix-chat-shell.room-list-active .matrix-room-view {
+    display: none;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .matrix-list-header {
+    min-height: 44px;
+    padding: 2px 2px 8px;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .matrix-list-header strong {
+    font-size: 20px;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .direct-chat-starter {
+    padding: 8px 0 12px;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .direct-chat-starter input {
+    min-height: 42px;
+    font-size: 14px;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .matrix-room-list button {
+    grid-template-columns: 44px minmax(0, 1fr);
+    min-height: 70px;
+    padding: 10px;
+    border-radius: 12px;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .matrix-room-avatar,
+  .shell.app-shell-v2 .messaging-panel .direct-chat-results button > strong {
+    width: 38px;
+    height: 38px;
+    font-size: 12px;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .matrix-room-list button strong {
+    font-size: 18px;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .matrix-room-list button small {
+    font-size: 12px;
+  }
+
+  .shell.app-shell-v2 .matrix-room-header {
+    grid-template-columns: auto minmax(0, 1fr);
+    min-height: 58px;
+    padding: 8px 10px;
+  }
+
+  .mobile-room-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 40px;
+    padding: 0 10px;
+    border: 1px solid rgba(122, 148, 172, 0.3);
+    border-radius: 999px;
+    background: rgba(14, 22, 31, 0.9);
+    color: #dbeafe;
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .shell.app-shell-v2 .matrix-room-header-actions,
+  .shell.app-shell-v2 .matrix-pinned-note,
+  .shell.app-shell-v2 .matrix-attachment-shortcuts {
+    display: none;
+  }
+
+  .shell.app-shell-v2 .matrix-room-heading strong {
+    font-size: 16px;
+  }
+
+  .shell.app-shell-v2 .matrix-room-heading small {
+    font-size: 11px;
+  }
+
+  .shell.app-shell-v2 .matrix-timeline {
+    max-height: none;
+    min-height: 0;
+    padding: 14px 12px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .shell.app-shell-v2 .matrix-message {
+    max-width: 88%;
+    padding: 9px 11px;
+    border-radius: 16px 16px 16px 5px;
+  }
+
+  .shell.app-shell-v2 .matrix-message.own {
+    border-radius: 16px 16px 5px 16px;
+  }
+
+  .shell.app-shell-v2 .matrix-message .matrix-message-meta span {
+    max-width: 160px;
+  }
+
+  .shell.app-shell-v2 .matrix-message span {
+    font-size: 14px;
+  }
+
+  .shell.app-shell-v2 .matrix-composer {
+    grid-template-columns: minmax(0, 1fr) 48px;
+    gap: 8px;
+    padding: 9px 10px calc(74px + env(safe-area-inset-bottom));
+  }
+
+  .shell.app-shell-v2 .matrix-composer-tools {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+  }
+
+  .shell.app-shell-v2 .matrix-composer-tools .icon-button {
+    min-width: 42px;
+    min-height: 42px;
+    border-radius: 999px;
+  }
+
+  .shell.app-shell-v2 .matrix-composer textarea {
+    min-height: 44px;
+    border-radius: 14px;
+    font-size: 16px;
+  }
+
+  .shell.app-shell-v2 .matrix-composer > .mini-button {
+    width: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    border-radius: 999px;
+  }
+
+  .shell.app-shell-v2 .messaging-panel-actions,
+  .shell.app-shell-v2 .messaging-warning-list {
+    display: none;
+  }
+
   .shell.app-shell-v2 .messaging-dock-tabs.rail {
-    width: 54px;
-    padding: 8px 5px;
+    display: none;
   }
 }
 

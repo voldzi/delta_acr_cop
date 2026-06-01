@@ -1,5 +1,5 @@
 import React from "react";
-import { CheckCircle2, Crown, Download, FileText, Globe2, Image, Info, Lock, LogIn, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, ShieldCheck, Star, UserPlus, Users, Video, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Crown, Download, FileText, Globe2, Image, Info, Lock, LogIn, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, ShieldCheck, Star, UserPlus, Users, Video, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
 import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse, UserDirectoryEntry } from "../cop-data";
 import { SelectField } from "../ui/select";
@@ -273,6 +273,7 @@ export function MessagingPanel({
   const chatReady = Boolean(status?.chatAvailable && authenticated && authToken);
   const e2eeRequired = status?.features?.endToEndEncryptionRequired === true;
   const matrixBootstrapReady = status?.features?.matrixTokenBootstrap === true;
+  const hasMessagingErrors = Boolean(error || conversationsError || bootstrapError || composerError);
   const selectedGroup = communityGroups.find((group) => group.groupId === selectedGroupId) ?? communityGroups[0] ?? null;
   const selectedConversation = conversations.find((conversation) => conversation.conversationId === selectedRoomId || conversation.matrix?.roomId === selectedRoomId) ?? null;
   const selectedConversationGroup = selectedConversation
@@ -664,6 +665,11 @@ export function MessagingPanel({
           </div>
         </div>
 
+        {pinned ? (
+          <div className="messaging-mobile-tabs">
+            <MessagingDockTabs activeTab={activeDockTab} onChange={setActiveDockTab} />
+          </div>
+        ) : null}
         {!pinned ? <MessagingDockTabs activeTab={activeDockTab} onChange={setActiveDockTab} /> : null}
 
         <div className="chat-status-strip">
@@ -673,12 +679,17 @@ export function MessagingPanel({
           {e2eeRequired ? <span>šifrováno</span> : null}
         </div>
 
-        {error ? <div className="error-banner">Zprávy: {error}</div> : null}
-        {conversationsError ? <div className="error-banner">Konverzace: {conversationsError}</div> : null}
-        {bootstrapError ? <div className="error-banner">Chat: {bootstrapError}</div> : null}
-        {composerError ? <div className="error-banner">Odeslání: {composerError}</div> : null}
+        {hasMessagingErrors ? (
+          <div className="messaging-error-stack">
+            {error ? <div className="error-banner">Zprávy: {error}</div> : null}
+            {conversationsError ? <div className="error-banner">Konverzace: {conversationsError}</div> : null}
+            {bootstrapError ? <div className="error-banner">Chat: {bootstrapError}</div> : null}
+            {composerError ? <div className="error-banner">Odeslání: {composerError}</div> : null}
+          </div>
+        ) : null}
 
-        {!authenticated ? (
+        <div className="messaging-panel-body">
+          {!authenticated ? (
           <div className="messaging-empty-state">
             <strong>Komunikace je přihlášená funkce.</strong>
             <p>Mapa zůstává dostupná i bez účtu, ale zprávy musí být svázané s ověřenou identitou uživatele.</p>
@@ -711,6 +722,7 @@ export function MessagingPanel({
               const conversation = conversations.find((item) => item.conversationId === conversationId);
               setSelectedRoomId(conversation?.matrix?.roomId ?? conversationId);
             }}
+            onBackToList={() => setSelectedRoomId(null)}
             onAttachmentClear={() => setPendingAttachment(null)}
             onAttachmentPick={pickAttachment}
             onCreateReport={createReportFromCurrentChat}
@@ -787,6 +799,8 @@ export function MessagingPanel({
             onCreateReport={createReportFromCurrentChat}
           />
         ) : null}
+
+        </div>
 
         {status?.warnings.length ? (
           <div className="messaging-warning-list">
@@ -1168,6 +1182,7 @@ function MatrixChatShell({
   onChatListWidthChange,
   onComposerChange,
   onConversationSelect,
+  onBackToList,
   onAttachmentClear,
   onAttachmentPick,
   onCreateReport,
@@ -1198,6 +1213,7 @@ function MatrixChatShell({
   onChatListWidthChange: (width: number) => void;
   onComposerChange: (value: string) => void;
   onConversationSelect: (conversationId: string) => void;
+  onBackToList: () => void;
   onAttachmentClear: () => void;
   onAttachmentPick: (kind: MatrixAttachmentKind) => void;
   onCreateReport: () => void;
@@ -1245,8 +1261,10 @@ function MatrixChatShell({
     window.addEventListener("pointerup", handlePointerUp);
   }
 
+  const hasActiveConversation = Boolean(selectedRoom || selectedConversation);
+
   return (
-    <div className={`matrix-chat-shell ${pinned ? "pinned" : ""}`} style={shellStyle}>
+    <div className={`matrix-chat-shell ${pinned ? "pinned" : ""} ${hasActiveConversation ? "has-active-room" : "room-list-active"}`} style={shellStyle}>
       <div className="matrix-room-list" aria-label="Konverzace">
         <div className="matrix-list-header">
           <div>
@@ -1313,6 +1331,10 @@ function MatrixChatShell({
       {pinned ? <div aria-label="Změnit šířku seznamu konverzací" className="matrix-chat-split-handle" onPointerDown={beginChatListResize} role="separator" /> : null}
       <div className="matrix-room-view">
         <div className="matrix-room-header">
+          <button className="mobile-room-back" onClick={onBackToList} type="button">
+            <ArrowLeft size={17} />
+            Chaty
+          </button>
           <div className="matrix-room-heading">
             <strong>{activeRoomTitle}</strong>
             <small>{activeRoomMeta}</small>
