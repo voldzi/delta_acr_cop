@@ -126,6 +126,10 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `PATCH /api/v1/community/reports/{reportId}` pro úpravu vlastního hlášení,
 - `DELETE /api/v1/community/reports/{reportId}` pro smazání vlastního hlášení,
 - `GET/POST /api/v1/community/groups` pro skupiny, do kterých se hlášení a média ukládají,
+- `GET /api/v1/sketch/palettes` pro civilní a profesionální palety zákresů,
+- `GET /api/v1/sketch/drawings` pro zákresovou vrstvu podle aktuálního bbox mapy,
+- `POST /api/v1/sketch/drawings` pro vytvoření zákresu,
+- `GET/PATCH/DELETE /api/v1/sketch/drawings/{drawingId}` pro detail, editaci a smazání vlastního zákresu,
 - `GET /api/v1/messaging/conversations/{conversationId}` pro detail metadata konverzace,
 - `GET /api/v1/messaging/conversations/resolve?roomId=<encodedRoomId>` pro mapování Matrix roomu na COP konverzaci,
 - `POST /api/v1/community/reports/{reportId}/attachments` pro presigned upload fotky/videa/dokumentu,
@@ -186,6 +190,11 @@ Stav aplikace:
 
 Offline režim je read-only. Uživatel musí vždy vidět stáří snapshotu a že data nejsou live.
 
+Zákresy v nativním klientovi mají vlastní offline outbox. Nový nebo upravený
+zákres se lokálně ukládá šifrovaně a po obnovení spojení se odešle přes
+`/api/v1/sketch/drawings`. Při konfliktu revize klient nesmí změnu tiše
+přepsat; zobrazí konflikt a nabídne uložení jako novou úpravu.
+
 ## UI pro iPhone a iPad
 
 iPhone:
@@ -193,6 +202,7 @@ iPhone:
 - první obrazovka mapa,
 - spodní taby: `Mapa`, `Data`, `Výstrahy`, `Zdroje`, `Nastavení`,
 - detail objektu jako sheet z mapy,
+- zákresy jako samostatný mapový režim s explicitním přepnutím mezi pohybem mapy a kreslením,
 - alert banner nesmí zakrýt mapové ovládání,
 - režim `OFFLINE/DEGRADED` viditelný v horní stavové liště.
 
@@ -201,6 +211,7 @@ iPad:
 - split workspace: levý navigační sidebar, střed mapa, pravý inspector,
 - podpora landscape jako primární režim,
 - detail objektu a source health vedle mapy,
+- vlastnosti vybraného zákresu v pravém inspektoru nebo bottom sheetu,
 - replay/timeline jako spodní panel.
 - rozložení panelů má respektovat `preferences.workspaceLayout`, pokud ho nativní klient podporuje; jinak ho zachovat beze změny na serveru.
 
@@ -260,6 +271,9 @@ Modely, které musí být stabilní:
 - `CommunityReport`,
 - `CommunityReportAttachment`,
 - `CommunityUploadSlot`,
+- `SketchDrawing`,
+- `SketchDrawingCollection`,
+- `SketchPaletteResponse`,
 - `ObservedObject`,
 - `TrackHistoryPoint`,
 - `CopAlert`,

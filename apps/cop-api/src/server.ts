@@ -99,6 +99,20 @@ import {
   type SafetyLayerId
 } from "./safety-data-source.js";
 import {
+  buildSketchDrawingCollection,
+  createSketchDrawingStoreFromEnv,
+  InMemorySketchDrawingStore,
+  sketchPalettes,
+  type CreateSketchDrawingInput,
+  type SketchDrawingFeature,
+  type SketchDrawingKind,
+  type SketchDrawingQuery,
+  type SketchDrawingStore,
+  type SketchDrawingVisibility,
+  type SketchGeometry,
+  type UpdateSketchDrawingInput
+} from "./sketch-store.js";
+import {
   buildTakGatewayHealth,
   createTakGatewaySourceFromEnv,
   emptyTakGatewayFeatureCollection,
@@ -128,6 +142,7 @@ export interface BuildServerOptions {
   missionArenaSource?: MissionArenaSource;
   placeGeocoder?: PlaceGeocoder;
   safetyDataSource?: SafetyDataSource;
+  sketchDrawingStore?: SketchDrawingStore;
   situationDataSource?: SituationDataSource;
   takGatewaySource?: TakGatewaySource;
   state?: CopState;
@@ -210,6 +225,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const userProfileFallbackStore = new InMemoryUserProfileStore("memory-fallback");
   const communityReportStore = options.communityReportStore ?? createCommunityReportStoreFromEnv();
   const communityReportFallbackStore = new InMemoryCommunityReportStore("memory-fallback");
+  const sketchDrawingStore = options.sketchDrawingStore ?? createSketchDrawingStoreFromEnv();
+  const sketchDrawingFallbackStore = new InMemorySketchDrawingStore("memory-fallback");
   const mediaStorage = options.mediaStorage ?? createMediaStorageFromEnv();
   const mediaConversionManager: MediaConversionManager | undefined = createMediaConversionManagerFromEnv({
     logger: app.log,
@@ -230,6 +247,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let userProfileStoreDetail = `${userProfileStore.name}: initializing`;
   let communityReportStoreStatus: DependencyStatus = communityReportStore ? "degraded" : "disabled";
   let communityReportStoreDetail = communityReportStore ? `${communityReportStore.name}: initializing` : "disabled";
+  let sketchDrawingStoreStatus: DependencyStatus = sketchDrawingStore ? "degraded" : "disabled";
+  let sketchDrawingStoreDetail = sketchDrawingStore ? `${sketchDrawingStore.name}: initializing` : "disabled";
   let mediaStorageStatus: DependencyStatus = mediaStorage ? "degraded" : "disabled";
   let mediaStorageDetail = mediaStorage ? `${mediaStorage.name}: initializing` : "disabled";
   let restoredCurrentTrackCount = 0;
@@ -273,6 +292,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.addHook("onReady", async () => {
     await initializeUserProfileStore();
     await initializeCommunityReportStore();
+    await initializeSketchDrawingStore();
     await initializeMediaStorage();
     if (trackHistoryStore) {
       try {
@@ -304,6 +324,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await userProfileFallbackStore.close();
     await communityReportStore?.close();
     await communityReportFallbackStore.close();
+    await sketchDrawingStore?.close();
+    await sketchDrawingFallbackStore.close();
     mediaConversionManager?.close();
     await mediaStorage?.close();
   });
@@ -336,6 +358,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
       { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
       { name: "community-report-store", status: communityReportStoreStatus, detail: communityReportStoreDependencyDetail() },
+      { name: "sketch-drawing-store", status: sketchDrawingStoreStatus, detail: sketchDrawingStoreDependencyDetail() },
       { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
       { name: "place-geocoder", status: placeGeocoder ? "ok" : "disabled", detail: placeGeocoder?.diagnostics?.() ?? "disabled" },
       messaging,
@@ -433,6 +456,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function initializeSketchDrawingStore(): Promise<void> {
+    await sketchDrawingFallbackStore.init();
+    if (!sketchDrawingStore) {
+      return;
+    }
+    try {
+      await sketchDrawingStore.init();
+      sketchDrawingStoreStatus = "ok";
+      sketchDrawingStoreDetail = `${sketchDrawingStore.name}: ready`;
+    } catch (error) {
+      sketchDrawingStoreStatus = "degraded";
+      sketchDrawingStoreDetail = `${sketchDrawingStore.name}: ${errorMessage(error)}`;
+      app.log.error({ error }, "Sketch drawing store initialization failed; using in-memory fallback.");
+    }
+  }
+
   async function initializeMediaStorage(): Promise<void> {
     if (!mediaStorage) {
       return;
@@ -522,6 +561,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return diagnostics ? `${communityReportStoreDetail}; ${diagnostics}` : communityReportStoreDetail;
   }
 
+  function markSketchDrawingStoreDegraded(error: unknown): void {
+    if (!sketchDrawingStore) {
+      return;
+    }
+    sketchDrawingStoreStatus = "degraded";
+    sketchDrawingStoreDetail = `${sketchDrawingStore.name}: ${errorMessage(error)}`;
+    app.log.error({ error }, "Sketch drawing store failed; using in-memory fallback.");
+  }
+
+  function sketchDrawingStoreDependencyDetail(): string {
+    const diagnostics = sketchDrawingStore?.diagnostics?.();
+    return diagnostics ? `${sketchDrawingStoreDetail}; ${diagnostics}` : sketchDrawingStoreDetail;
+  }
+
   function mediaStorageDependencyDetail(): string {
     const diagnostics = mediaStorage?.diagnostics?.();
     return diagnostics ? `${mediaStorageDetail}; ${diagnostics}` : mediaStorageDetail;
@@ -584,6 +637,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   function activeCommunityReportStore(): CommunityReportStore {
     return communityReportStore && communityReportStoreStatus === "ok" ? communityReportStore : communityReportFallbackStore;
+  }
+
+  function activeSketchDrawingStore(): SketchDrawingStore {
+    return sketchDrawingStore && sketchDrawingStoreStatus === "ok" ? sketchDrawingStore : sketchDrawingFallbackStore;
   }
 
   async function initializeFlightDataSource(): Promise<void> {
@@ -1040,6 +1097,90 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         ? [group.groupId]
         : []
     ));
+  }
+
+  async function validateSketchDrawingWriteScope(
+    input: Pick<CreateSketchDrawingInput, "eventId" | "groupId" | "visibility">,
+    actor: AuthenticatedActor
+  ): Promise<{ code: "FORBIDDEN" | "VALIDATION_ERROR"; message: string; status: 400 | 403 } | null> {
+    if (input.visibility === "group") {
+      if (!input.groupId) {
+        return { code: "VALIDATION_ERROR", message: "Group sketch drawing requires groupId.", status: 400 };
+      }
+      const group = await readCommunityGroup(input.groupId);
+      if (!group || !canUseCommunityGroupForReport(group, actor)) {
+        return { code: "FORBIDDEN", message: "Current user cannot publish a sketch drawing into the selected group.", status: 403 };
+      }
+    }
+    if (input.visibility === "event" && !input.eventId) {
+      return { code: "VALIDATION_ERROR", message: "Event sketch drawing requires eventId.", status: 400 };
+    }
+    return null;
+  }
+
+  async function validateSketchDrawingUpdateScope(
+    input: UpdateSketchDrawingInput,
+    current: SketchDrawingFeature,
+    actor: AuthenticatedActor
+  ): Promise<{ code: "FORBIDDEN" | "VALIDATION_ERROR"; message: string; status: 400 | 403 } | null> {
+    const nextVisibility = input.visibility ?? current.properties.visibility;
+    const nextGroupId = input.groupId === null ? undefined : input.groupId ?? current.properties.groupId;
+    const nextEventId = input.eventId === null ? undefined : input.eventId ?? current.properties.eventId;
+    return validateSketchDrawingWriteScope({
+      ...(nextEventId ? { eventId: nextEventId } : {}),
+      ...(nextGroupId ? { groupId: nextGroupId } : {}),
+      visibility: nextVisibility
+    }, actor);
+  }
+
+  async function listSketchDrawings(query: SketchDrawingQuery): Promise<SketchDrawingFeature[]> {
+    try {
+      return await activeSketchDrawingStore().list(query);
+    } catch (error) {
+      markSketchDrawingStoreDegraded(error);
+      return sketchDrawingFallbackStore.list(query);
+    }
+  }
+
+  async function readSketchDrawing(drawingId: string): Promise<SketchDrawingFeature | null> {
+    try {
+      return await activeSketchDrawingStore().get(drawingId);
+    } catch (error) {
+      markSketchDrawingStoreDegraded(error);
+      return sketchDrawingFallbackStore.get(drawingId);
+    }
+  }
+
+  async function createSketchDrawing(input: CreateSketchDrawingInput, requestNow: Date): Promise<SketchDrawingFeature> {
+    try {
+      return await activeSketchDrawingStore().create(input, requestNow);
+    } catch (error) {
+      markSketchDrawingStoreDegraded(error);
+      return sketchDrawingFallbackStore.create(input, requestNow);
+    }
+  }
+
+  async function updateSketchDrawing(
+    drawingId: string,
+    actor: AuthenticatedActor,
+    input: UpdateSketchDrawingInput,
+    requestNow: Date
+  ): Promise<SketchDrawingFeature | null> {
+    try {
+      return await activeSketchDrawingStore().update(drawingId, actorToSketchActor(actor), input, requestNow);
+    } catch (error) {
+      markSketchDrawingStoreDegraded(error);
+      return sketchDrawingFallbackStore.update(drawingId, actorToSketchActor(actor), input, requestNow);
+    }
+  }
+
+  async function deleteSketchDrawing(drawingId: string, actor: AuthenticatedActor, requestNow: Date): Promise<boolean> {
+    try {
+      return await activeSketchDrawingStore().delete(drawingId, actorToSketchActor(actor), requestNow);
+    } catch (error) {
+      markSketchDrawingStoreDegraded(error);
+      return sketchDrawingFallbackStore.delete(drawingId, actorToSketchActor(actor), requestNow);
+    }
   }
 
   function requireActor(request: FastifyRequest, reply: FastifyReply): AuthenticatedActor | null {
@@ -1754,6 +1895,128 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       status: resolvedMember.member.status
     }, correlationIdFrom(request.headers["x-correlation-id"]));
     return group;
+  });
+
+  app.get("/api/v1/sketch/palettes", async (request) => {
+    const query = request.query as Record<string, unknown>;
+    const mode = query.mode === "civil" || query.mode === "professional" ? query.mode : "all";
+    return sketchPalettes(mode, now());
+  });
+
+  app.get("/api/v1/sketch/drawings", async (request, reply) => {
+    const actor = actorFromRequest(request);
+    const actorGroupIds = await readCommunityActorGroupIds(actor);
+    const query = normalizeSketchDrawingQuery(request.query, actor, actorGroupIds);
+    if (!query) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Sketch drawing query accepts bbox=west,south,east,north and optional groupId/eventId.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const requestNow = now();
+    const drawings = await listSketchDrawings(query);
+    return buildSketchDrawingCollection(drawings, query, requestNow);
+  });
+
+  app.post("/api/v1/sketch/drawings", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const input = normalizeCreateSketchDrawingRequest(request.body, actor);
+    if (!input) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Sketch drawing requires geometry, kind and visibility.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const accessError = await validateSketchDrawingWriteScope(input, actor);
+    if (accessError) {
+      return sendError(reply, accessError.status, accessError.code, accessError.message, correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const requestNow = now();
+    const drawing = await createSketchDrawing(input, requestNow);
+    appendAudit(state, "SKETCH_DRAWING_CREATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      drawingId: drawing.id,
+      kind: drawing.properties.kind,
+      visibility: drawing.properties.visibility
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return reply.code(201).send(drawing);
+  });
+
+  app.get("/api/v1/sketch/drawings/:drawingId", async (request, reply) => {
+    const actor = actorFromRequest(request);
+    const params = request.params as { drawingId: string };
+    const drawing = await readSketchDrawing(params.drawingId);
+    const actorGroupIds = await readCommunityActorGroupIds(actor);
+    if (!drawing || !canReadSketchDrawingResponse(drawing, actor, actorGroupIds)) {
+      return sendError(reply, 404, "NOT_FOUND", "Sketch drawing was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    return drawing;
+  });
+
+  app.patch("/api/v1/sketch/drawings/:drawingId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { drawingId: string };
+    const current = await readSketchDrawing(params.drawingId);
+    if (!current || current.properties.ownerSubjectId !== actor.subjectId) {
+      return sendError(reply, 404, "NOT_FOUND", "Sketch drawing was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const input = normalizeUpdateSketchDrawingRequest(request.body);
+    if (!input) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Sketch drawing update did not contain any editable field.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const accessError = await validateSketchDrawingUpdateScope(input, current, actor);
+    if (accessError) {
+      return sendError(reply, accessError.status, accessError.code, accessError.message, correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const requestNow = now();
+    const updated = await updateSketchDrawing(params.drawingId, actor, input, requestNow);
+    if (!updated) {
+      return sendError(reply, 404, "NOT_FOUND", "Sketch drawing was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    appendAudit(state, "SKETCH_DRAWING_UPDATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      drawingId: updated.id,
+      revision: updated.properties.revision
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return updated;
+  });
+
+  app.delete("/api/v1/sketch/drawings/:drawingId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { drawingId: string };
+    const deleted = await deleteSketchDrawing(params.drawingId, actor, now());
+    if (!deleted) {
+      return sendError(reply, 404, "NOT_FOUND", "Sketch drawing was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    appendAudit(state, "SKETCH_DRAWING_DELETED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      drawingId: params.drawingId
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return reply.code(204).send();
   });
 
   app.put("/api/v1/me/preferences", async (request, reply) => {
@@ -4210,6 +4473,14 @@ function actorToCommunityActor(actor: AuthenticatedActor) {
   };
 }
 
+function actorToSketchActor(actor: AuthenticatedActor) {
+  return {
+    displayName: actor.displayName,
+    subjectId: actor.subjectId,
+    username: actor.username
+  };
+}
+
 function userDirectoryEntry(profile: UserProfileRecord) {
   return {
     displayName: profile.displayName,
@@ -4343,6 +4614,199 @@ function normalizeCommunityGroupMemberRequest(value: unknown): {
     subjectId,
     username
   };
+}
+
+function normalizeSketchDrawingQuery(value: unknown, actor: AuthenticatedActor | null, actorGroupIds: Set<string>): SketchDrawingQuery | null {
+  if (!isRecord(value)) {
+    return {
+      allowedGroupIds: Array.from(actorGroupIds),
+      limit: 250,
+      ...(actor ? { subjectId: actor.subjectId } : {})
+    };
+  }
+  const bbox = parseBboxQuery(value.bbox);
+  const groupId = optionalUuid(value.groupId);
+  const eventId = optionalTrimmedString(value.eventId, 160);
+  return {
+    allowedGroupIds: Array.from(actorGroupIds),
+    ...(bbox ? { bbox } : {}),
+    ...(eventId ? { eventId } : {}),
+    ...(groupId ? { groupId } : {}),
+    limit: optionalFiniteNumber(value.limit, 1, 1000) ?? 250,
+    ...(actor ? { subjectId: actor.subjectId } : {})
+  };
+}
+
+function normalizeCreateSketchDrawingRequest(value: unknown, actor: AuthenticatedActor): CreateSketchDrawingInput | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const geometry = normalizeSketchGeometry(value.geometry);
+  const kind = normalizeSketchDrawingKind(value.kind);
+  const visibility = normalizeSketchDrawingVisibility(value.visibility) ?? "private";
+  if (!geometry || !kind) {
+    return null;
+  }
+  const groupId = optionalUuid(value.groupId);
+  const eventId = optionalTrimmedString(value.eventId, 160);
+  return {
+    actor: actorToSketchActor(actor),
+    ...(eventId ? { eventId } : {}),
+    geometry,
+    ...(groupId ? { groupId } : {}),
+    kind,
+    ...(optionalTrimmedString(value.label, 160) ? { label: optionalTrimmedString(value.label, 160) } : {}),
+    ...(typeof value.locked === "boolean" ? { locked: value.locked } : {}),
+    properties: normalizedJsonRecord(value.properties, 8000),
+    style: normalizeSketchStyle(value.style),
+    symbol: normalizeSketchSymbol(value.symbol),
+    visibility
+  };
+}
+
+function normalizeUpdateSketchDrawingRequest(value: unknown): UpdateSketchDrawingInput | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const geometry = hasOwn(value, "geometry") ? normalizeSketchGeometry(value.geometry) : undefined;
+  const kind = hasOwn(value, "kind") ? normalizeSketchDrawingKind(value.kind) : undefined;
+  const visibility = hasOwn(value, "visibility") ? normalizeSketchDrawingVisibility(value.visibility) : undefined;
+  const groupId = hasOwn(value, "groupId") ? optionalUuid(value.groupId) ?? null : undefined;
+  const eventId = hasOwn(value, "eventId") ? optionalTrimmedString(value.eventId, 160) ?? null : undefined;
+  const update: UpdateSketchDrawingInput = {
+    ...(eventId !== undefined ? { eventId } : {}),
+    ...(geometry ? { geometry } : {}),
+    ...(groupId !== undefined ? { groupId } : {}),
+    ...(kind ? { kind } : {}),
+    ...(optionalTrimmedString(value.label, 160) ? { label: optionalTrimmedString(value.label, 160) } : {}),
+    ...(typeof value.locked === "boolean" ? { locked: value.locked } : {}),
+    ...(isRecord(value.properties) ? { properties: normalizedJsonRecord(value.properties, 8000) } : {}),
+    ...(isRecord(value.style) ? { style: normalizeSketchStyle(value.style) } : {}),
+    ...(isRecord(value.symbol) ? { symbol: normalizeSketchSymbol(value.symbol) } : {}),
+    ...(visibility ? { visibility } : {})
+  };
+  return Object.keys(update).length > 0 ? update : null;
+}
+
+function normalizeSketchDrawingKind(value: unknown): SketchDrawingKind | undefined {
+  return value === "arrow"
+    || value === "circle"
+    || value === "line"
+    || value === "marker"
+    || value === "measurement"
+    || value === "point"
+    || value === "polygon"
+    || value === "text"
+    ? value
+    : undefined;
+}
+
+function normalizeSketchDrawingVisibility(value: unknown): SketchDrawingVisibility | undefined {
+  return value === "event" || value === "group" || value === "private" || value === "public" ? value : undefined;
+}
+
+function normalizeSketchGeometry(value: unknown): SketchGeometry | undefined {
+  if (!isRecord(value) || typeof value.type !== "string") {
+    return undefined;
+  }
+  if (value.type === "Point") {
+    const coordinate = normalizeCoordinate(value.coordinates);
+    return coordinate ? { coordinates: coordinate, type: "Point" } : undefined;
+  }
+  if (value.type === "LineString") {
+    const coordinates = normalizeCoordinateList(value.coordinates, 2, 500);
+    return coordinates ? { coordinates, type: "LineString" } : undefined;
+  }
+  if (value.type === "Polygon") {
+    if (!Array.isArray(value.coordinates)) {
+      return undefined;
+    }
+    const rings = value.coordinates.flatMap((ring) => {
+      const coordinates = normalizeCoordinateList(ring, 4, 500);
+      if (!coordinates) {
+        return [];
+      }
+      const first = coordinates[0];
+      const last = coordinates.at(-1);
+      const closed = first && last && first[0] === last[0] && first[1] === last[1]
+        ? coordinates
+        : first
+          ? [...coordinates, first]
+          : coordinates;
+      return closed.length >= 4 ? [closed] : [];
+    });
+    return rings.length > 0 ? { coordinates: rings, type: "Polygon" } : undefined;
+  }
+  return undefined;
+}
+
+function normalizeCoordinateList(value: unknown, minLength: number, maxLength: number): Array<[number, number]> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const coordinates = value.flatMap((item) => {
+    const coordinate = normalizeCoordinate(item);
+    return coordinate ? [coordinate] : [];
+  }).slice(0, maxLength);
+  return coordinates.length >= minLength ? coordinates : undefined;
+}
+
+function normalizeCoordinate(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) {
+    return undefined;
+  }
+  const lon = Number(value[0]);
+  const lat = Number(value[1]);
+  return Number.isFinite(lon) && Number.isFinite(lat)
+    ? [clampNumber(lon, -180, 180), clampNumber(lat, -90, 90)]
+    : undefined;
+}
+
+function normalizeSketchStyle(value: unknown): Partial<CreateSketchDrawingInput["style"]> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return {
+    ...(normalizeCssColor(value.fill) ? { fill: normalizeCssColor(value.fill) } : {}),
+    ...(optionalFiniteNumber(value.lineWidth, 1, 12) !== undefined ? { lineWidth: optionalFiniteNumber(value.lineWidth, 1, 12) } : {}),
+    ...(optionalFiniteNumber(value.opacity, 0.05, 1) !== undefined ? { opacity: optionalFiniteNumber(value.opacity, 0.05, 1) } : {}),
+    ...(normalizeCssColor(value.stroke) ? { stroke: normalizeCssColor(value.stroke) } : {})
+  };
+}
+
+function normalizeSketchSymbol(value: unknown): Partial<CreateSketchDrawingInput["symbol"]> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return {
+    ...(optionalTrimmedString(value.iconId, 80) ? { iconId: optionalTrimmedString(value.iconId, 80) } : {}),
+    ...(value.palette === "civil" || value.palette === "professional" ? { palette: value.palette } : {}),
+    ...(optionalTrimmedString(value.sidc, 32) ? { sidc: optionalTrimmedString(value.sidc, 32) } : {})
+  };
+}
+
+function normalizeCssColor(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/iu.test(normalized) ? normalized : undefined;
+}
+
+function canReadSketchDrawingResponse(drawing: SketchDrawingFeature, actor: AuthenticatedActor | null, actorGroupIds: Set<string>): boolean {
+  if (drawing.properties.visibility === "public") {
+    return true;
+  }
+  if (!actor) {
+    return false;
+  }
+  if (drawing.properties.ownerSubjectId === actor.subjectId) {
+    return true;
+  }
+  if (drawing.properties.visibility === "group" && drawing.properties.groupId) {
+    return actorGroupIds.has(drawing.properties.groupId);
+  }
+  return false;
 }
 
 const messagingPlaintextKeys = new Set([

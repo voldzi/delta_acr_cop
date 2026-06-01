@@ -232,7 +232,10 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
     || path.startsWith("/api/v1/stream/cop/")
     || path === "/api/v1/messaging/status"
     || path === "/api/v1/community/reports"
-    || path.startsWith("/api/v1/community/reports/");
+    || path.startsWith("/api/v1/community/reports/")
+    || path === "/api/v1/sketch/palettes"
+    || path === "/api/v1/sketch/drawings"
+    || path.startsWith("/api/v1/sketch/drawings/");
 }
 
 function isCommunityMediaTicketRequest(url: string, path: string): boolean {

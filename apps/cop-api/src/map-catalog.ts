@@ -203,6 +203,11 @@ function buildProviders(input: BuildMapCatalogInput): MapCatalogProvider[] {
       status: "online"
     },
     {
+      label: "COP user sketches",
+      providerId: "cop.sketch",
+      status: "online"
+    },
+    {
       label: "COP track stream",
       providerId: "cop.tracks",
       status: "online"
@@ -1154,6 +1159,31 @@ function buildCopOwnedLayers(): MapCatalogLayer[] {
       styleProfile: "user-alert-zone-v1"
     },
     {
+      audience: "authenticated",
+      cacheTtlSeconds: 30,
+      defaultVisible: true,
+      description: "Uživatelské zákresy, texty, značky a měření nad mapou.",
+      geometryTypes: ["Point", "LineString", "Polygon"],
+      groupId: "user",
+      kind: "user_objects",
+      label: "Zákresy",
+      layerId: "user.sketch.drawings",
+      maxZoom: 22,
+      minZoom: 4,
+      provenance: {
+        sourceIds: ["cop.sketch"]
+      },
+      query: {
+        mode: "internal",
+        providerId: "cop.sketch",
+        streamId: "user.sketch.drawings"
+      },
+      refreshSeconds: 30,
+      role: "user",
+      selectable: true,
+      styleProfile: "user-sketch-drawings-v1"
+    },
+    {
       audience: "public",
       cacheTtlSeconds: 30,
       defaultVisible: true,
@@ -1219,6 +1249,19 @@ function buildCopSources(): MapCatalogSource[] {
       providerId: "cop.user-profile",
       selectableInMap: false,
       sourceId: "user_zones",
+      sourceRole: "final",
+      updateCadenceSeconds: 30,
+      visibleInDiagnostics: true
+    },
+    {
+      audience: "authenticated",
+      cacheTtlSeconds: 30,
+      enabled: true,
+      feedsCatalogLayerIds: ["user.sketch.drawings"],
+      label: "User sketches",
+      providerId: "cop.sketch",
+      selectableInMap: false,
+      sourceId: "user_sketch_drawings",
       sourceRole: "final",
       updateCadenceSeconds: 30,
       visibleInDiagnostics: true

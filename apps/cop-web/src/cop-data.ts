@@ -169,6 +169,85 @@ export interface MapBounds {
   west: number;
 }
 
+export type SketchDrawingKind = "arrow" | "circle" | "line" | "marker" | "measurement" | "point" | "polygon" | "text";
+export type SketchDrawingVisibility = "event" | "group" | "private" | "public";
+export type SketchPaletteMode = "civil" | "professional";
+
+export type SketchGeometry =
+  | { coordinates: [number, number]; type: "Point" }
+  | { coordinates: Array<[number, number]>; type: "LineString" }
+  | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
+
+export interface SketchDrawingFeature {
+  geometry: SketchGeometry;
+  id: string;
+  properties: {
+    createdAt: string;
+    drawingId: string;
+    eventId?: string;
+    groupId?: string;
+    kind: SketchDrawingKind;
+    label: string;
+    locked: boolean;
+    ownerDisplayName: string;
+    ownerSubjectId: string;
+    ownerUsername: string;
+    properties: Record<string, unknown>;
+    revision: number;
+    style: {
+      fill: string;
+      lineWidth: number;
+      opacity: number;
+      stroke: string;
+    };
+    symbol: {
+      iconId?: string;
+      palette: SketchPaletteMode;
+      sidc?: string;
+    };
+    updatedAt: string;
+    visibility: SketchDrawingVisibility;
+  };
+  type: "Feature";
+}
+
+export interface SketchDrawingFeatureCollection {
+  contractVersion: "cop-sketch-drawings-v1";
+  features: SketchDrawingFeature[];
+  generatedAt: string;
+  summary: {
+    featureCount: number;
+  };
+  type: "FeatureCollection";
+}
+
+export interface SketchDrawingPayload {
+  eventId?: string | null;
+  geometry?: SketchGeometry;
+  groupId?: string | null;
+  kind?: SketchDrawingKind;
+  label?: string;
+  locked?: boolean;
+  properties?: Record<string, unknown>;
+  style?: Partial<SketchDrawingFeature["properties"]["style"]>;
+  symbol?: Partial<SketchDrawingFeature["properties"]["symbol"]>;
+  visibility?: SketchDrawingVisibility;
+}
+
+export interface SketchPaletteResponse {
+  contractVersion: "cop-sketch-palettes-v1";
+  generatedAt: string;
+  modes: Partial<Record<SketchPaletteMode, {
+    label: string;
+    symbols: Array<{
+      iconId: string;
+      label: string;
+      sidc?: string;
+      tone?: string;
+    }>;
+  }>>;
+}
+
 export interface SituationLayer {
   defaultVisible: boolean;
   description?: string;
@@ -1431,6 +1510,87 @@ export async function fetchMapFeatures(
       "Content-Type": "application/json"
     },
     method: "POST"
+  });
+}
+
+export async function fetchSketchDrawings(
+  apiBase: string,
+  token: string | undefined,
+  options: {
+    bbox?: MapBounds;
+    eventId?: string;
+    groupId?: string;
+    limit?: number;
+  } = {}
+): Promise<SketchDrawingFeatureCollection> {
+  const query = new URLSearchParams();
+  if (options.bbox) {
+    query.set("bbox", [options.bbox.west, options.bbox.south, options.bbox.east, options.bbox.north].join(","));
+  }
+  if (options.eventId) {
+    query.set("eventId", options.eventId);
+  }
+  if (options.groupId) {
+    query.set("groupId", options.groupId);
+  }
+  if (options.limit) {
+    query.set("limit", String(options.limit));
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return fetchJson<SketchDrawingFeatureCollection>(`${apiBase}/api/v1/sketch/drawings${suffix}`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function createSketchDrawing(
+  apiBase: string,
+  token: string,
+  payload: SketchDrawingPayload & { geometry: SketchGeometry; kind: SketchDrawingKind; visibility: SketchDrawingVisibility }
+): Promise<SketchDrawingFeature> {
+  return fetchJson<SketchDrawingFeature>(`${apiBase}/api/v1/sketch/drawings`, {
+    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function updateSketchDrawing(
+  apiBase: string,
+  token: string,
+  drawingId: string,
+  payload: SketchDrawingPayload
+): Promise<SketchDrawingFeature> {
+  return fetchJson<SketchDrawingFeature>(`${apiBase}/api/v1/sketch/drawings/${encodeURIComponent(drawingId)}`, {
+    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "PATCH"
+  });
+}
+
+export async function deleteSketchDrawing(apiBase: string, token: string, drawingId: string): Promise<void> {
+  const response = await fetch(`${apiBase}/api/v1/sketch/drawings/${encodeURIComponent(drawingId)}`, {
+    headers: authHeaders(token),
+    method: "DELETE"
+  });
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText || "API request failed"} for ${apiBase}/api/v1/sketch/drawings/${encodeURIComponent(drawingId)}`);
+  }
+}
+
+export async function fetchSketchPalettes(
+  apiBase: string,
+  token: string | undefined,
+  mode?: SketchPaletteMode
+): Promise<SketchPaletteResponse> {
+  const suffix = mode ? `?mode=${encodeURIComponent(mode)}` : "";
+  return fetchJson<SketchPaletteResponse>(`${apiBase}/api/v1/sketch/palettes${suffix}`, {
+    headers: authHeaders(token)
   });
 }
 

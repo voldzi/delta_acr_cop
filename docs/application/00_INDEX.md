@@ -10,3 +10,4 @@
 - [08 Audit and Observability](08_AUDIT_AND_OBSERVABILITY.md)
 - [09 Community Reporting and Media](09_COMMUNITY_REPORTING_AND_MEDIA.md)
 - [10 User Manual and Profile](10_USER_MANUAL_AND_PROFILE.md)
+- [11 User Sketches and Measurements](11_USER_SKETCHES_AND_MEASUREMENTS.md)

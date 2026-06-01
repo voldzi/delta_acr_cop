@@ -6,7 +6,19 @@ import maplibregl, {
   type StyleSpecification
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { isPublicFlightObject, type AoiRule, type CopAlert, type CopObject, type MapBounds, type SituationFeature, type SituationFeatureCollectionResponse } from "./cop-data";
+import {
+  isPublicFlightObject,
+  type AoiRule,
+  type CopAlert,
+  type CopObject,
+  type MapBounds,
+  type SituationFeature,
+  type SituationFeatureCollectionResponse,
+  type SketchDrawingFeature,
+  type SketchDrawingKind,
+  type SketchDrawingVisibility,
+  type SketchGeometry
+} from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
 import type { MapBasemapMode, MapViewState, PublicFlightSymbolMode, TrackHistoryDisplayMode } from "./user-preferences";
@@ -33,6 +45,9 @@ const userAlertRadiusSourceId = "cop-user-alert-radius";
 const aoiRuleSourceId = "cop-aoi-rules";
 const aoiDraftSourceId = "cop-aoi-draft";
 const aoiEditSourceId = "cop-aoi-edit";
+const sketchSourceId = "cop-sketch-drawings";
+const sketchDraftSourceId = "cop-sketch-draft";
+const sketchEditSourceId = "cop-sketch-edit";
 const alertAreaSourceId = "cop-alert-areas";
 const situationSourceId = "cop-situation-context";
 const trackHistoryLayerId = "cop-track-history-line";
@@ -46,6 +61,14 @@ const aoiDraftLineLayerId = "cop-aoi-draft-line";
 const aoiDraftPointLayerId = "cop-aoi-draft-point";
 const aoiEditMidpointLayerId = "cop-aoi-edit-midpoint";
 const aoiEditVertexLayerId = "cop-aoi-edit-vertex";
+const sketchFillLayerId = "cop-sketch-fill";
+const sketchLineLayerId = "cop-sketch-line";
+const sketchPointLayerId = "cop-sketch-point";
+const sketchLabelLayerId = "cop-sketch-label";
+const sketchDraftLineLayerId = "cop-sketch-draft-line";
+const sketchDraftPointLayerId = "cop-sketch-draft-point";
+const sketchEditMidpointLayerId = "cop-sketch-edit-midpoint";
+const sketchEditVertexLayerId = "cop-sketch-edit-vertex";
 const alertAreaFillLayerId = "cop-alert-area-fill";
 const alertAreaLineLayerId = "cop-alert-area-line";
 const situationFillLayerId = "cop-situation-fill";
@@ -88,6 +111,10 @@ const mapFeatureClickPriorityLayerIds = [
   trackLabelLayerId,
   trackClusterSymbolLayerId,
   trackClusterLabelLayerId,
+  sketchPointLayerId,
+  sketchLabelLayerId,
+  sketchLineLayerId,
+  sketchFillLayerId,
   situationRiskIconLayerId,
   situationRiskPointLayerId,
   situationRiskLabelLayerId,
@@ -107,6 +134,10 @@ const mapFeatureClickPriorityLayerIds = [
 ] as const;
 
 const mapPointRaiseLayerIds = [
+  sketchFillLayerId,
+  sketchLineLayerId,
+  sketchPointLayerId,
+  sketchLabelLayerId,
   situationPointSelectedLayerId,
   situationPointLayerId,
   situationTrafficSymbolLayerId,
@@ -253,6 +284,51 @@ export interface AoiEditFeatureCollection {
   }>;
 }
 
+export interface SketchFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: SketchGeometry;
+    properties: {
+      drawingId: string;
+      fill: string;
+      kind: SketchDrawingKind;
+      label: string;
+      lineWidth: number;
+      opacity: number;
+      selected: boolean;
+      stroke: string;
+    };
+  }>;
+}
+
+export interface SketchDraftFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry:
+      | { type: "LineString"; coordinates: Array<[number, number]> }
+      | { type: "Point"; coordinates: [number, number] }
+      | { type: "Polygon"; coordinates: Array<Array<[number, number]>> };
+    properties: { index?: number; kind: "area" | "line" | "point" };
+  }>;
+}
+
+export interface SketchEditFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: { type: "Point"; coordinates: [number, number] };
+    properties: {
+      drawingId: string;
+      index?: number;
+      insertIndex?: number;
+      kind: "midpoint" | "vertex";
+      selected?: boolean;
+    };
+  }>;
+}
+
 export interface SituationContextFeatureCollection {
   type: "FeatureCollection";
   features: Array<{
@@ -354,6 +430,34 @@ interface CopMapProps {
   onUpdateZonePolygon?: (zoneId: string, points: Array<{ lat: number; lon: number }>) => void;
   onPickReportLocation?: (center: { lat: number; lon: number }) => void;
   userLocation: UserLocation | null;
+  sketchDrawings?: SketchDrawingFeature[];
+  sketchMode?: SketchToolMode;
+  selectedSketchDrawingId?: string | null;
+  onCreateSketchDrawing?: (input: CreateSketchDrawingRequest) => void;
+  onDeleteSketchDrawing?: (drawingId: string) => void;
+  onSelectSketchDrawing?: (drawing: SketchDrawingFeature | null) => void;
+  onSketchModeChange?: (mode: SketchToolMode) => void;
+  onUpdateSketchDrawing?: (drawingId: string, input: UpdateSketchDrawingRequest) => void;
+}
+
+export type SketchToolMode = "line" | "marker" | "measurement" | "pan" | "polygon" | "select" | "text";
+
+export interface CreateSketchDrawingRequest {
+  geometry: SketchGeometry;
+  kind: SketchDrawingKind;
+  label?: string;
+  properties?: Record<string, unknown>;
+  style?: Partial<SketchDrawingFeature["properties"]["style"]>;
+  symbol?: Partial<SketchDrawingFeature["properties"]["symbol"]>;
+  visibility?: SketchDrawingVisibility;
+}
+
+export interface UpdateSketchDrawingRequest {
+  geometry?: SketchGeometry;
+  label?: string;
+  properties?: Record<string, unknown>;
+  style?: Partial<SketchDrawingFeature["properties"]["style"]>;
+  symbol?: Partial<SketchDrawingFeature["properties"]["symbol"]>;
 }
 
 interface ClusterInfo {
@@ -413,7 +517,15 @@ export function CopMap({
   userLocation,
   onCancelZoneEditing,
   onUpdateZonePolygon,
-  zoneCreationActive = false
+  zoneCreationActive = false,
+  sketchDrawings = [],
+  sketchMode = "pan",
+  selectedSketchDrawingId = null,
+  onCreateSketchDrawing,
+  onDeleteSketchDrawing,
+  onSelectSketchDrawing,
+  onSketchModeChange,
+  onUpdateSketchDrawing
 }: CopMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
@@ -428,11 +540,20 @@ export function CopMap({
   const onClearSelectionRef = React.useRef(onClearSelection);
   const onCreateZonePolygonRef = React.useRef(onCreateZonePolygon);
   const onUpdateZonePolygonRef = React.useRef(onUpdateZonePolygon);
+  const onCreateSketchDrawingRef = React.useRef(onCreateSketchDrawing);
+  const onDeleteSketchDrawingRef = React.useRef(onDeleteSketchDrawing);
+  const onSelectSketchDrawingRef = React.useRef(onSelectSketchDrawing);
+  const onSketchModeChangeRef = React.useRef(onSketchModeChange);
+  const onUpdateSketchDrawingRef = React.useRef(onUpdateSketchDrawing);
   const onPickReportLocationRef = React.useRef(onPickReportLocation);
   const onViewChangeRef = React.useRef(onViewChange);
   const aoiRulesRef = React.useRef(aoiRules);
+  const sketchDrawingsRef = React.useRef(sketchDrawings);
+  const sketchModeRef = React.useRef<SketchToolMode>(sketchMode);
+  const selectedSketchDrawingIdRef = React.useRef<string | null>(selectedSketchDrawingId);
   const editingZoneIdRef = React.useRef<string | null>(editingZoneId);
   const draggedAoiVertexRef = React.useRef<{ index: number; zoneId: string } | null>(null);
+  const draggedSketchVertexRef = React.useRef<{ drawingId: string; index: number } | null>(null);
   const reportLocationPickActiveRef = React.useRef(reportLocationPickActive);
   const zoneCreationActiveRef = React.useRef(zoneCreationActive);
   const lastFitSignatureRef = React.useRef("");
@@ -444,6 +565,8 @@ export function CopMap({
   const [mapFullscreen, setMapFullscreen] = React.useState(false);
   const [hoveredObjectId, setHoveredObjectId] = React.useState<string | undefined>();
   const [zoneDraftPoints, setZoneDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
+  const [sketchDraftPoints, setSketchDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
+  const [selectedSketchVertexIndex, setSelectedSketchVertexIndex] = React.useState<number | null>(null);
   const [selectedEditVertexIndex, setSelectedEditVertexIndex] = React.useState<number | null>(null);
 
   const selectedId = selectedObjectId;
@@ -458,6 +581,10 @@ export function CopMap({
         : null,
     [selectedSituationFeatureId, situationFeatures]
   );
+  const selectedSketchDrawing = React.useMemo(
+    () => selectedSketchDrawingId ? sketchDrawings.find((drawing) => drawing.id === selectedSketchDrawingId) ?? null : null,
+    [selectedSketchDrawingId, sketchDrawings]
+  );
   const selectionCard = React.useMemo(
     () => selectedObject
       ? {
@@ -471,8 +598,14 @@ export function CopMap({
             subtitle: formatSituationFeatureSubtitle(selectedSituationFeature),
             title: formatSituationFeatureTitle(selectedSituationFeature)
           }
-        : null,
-    [selectedObject, selectedSituationFeature]
+        : selectedSketchDrawing
+          ? {
+              eyebrow: "Vybraný zákres",
+              subtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
+              title: selectedSketchDrawing.properties.label
+            }
+          : null,
+    [selectedObject, selectedSituationFeature, selectedSketchDrawing]
   );
   const positionedObjects = React.useMemo(() => objects.filter(hasPosition), [objects]);
   const featureCollection = React.useMemo(
@@ -508,6 +641,18 @@ export function CopMap({
     () => aoiRuleToEditFeatureCollection(editingZone, selectedEditVertexIndex),
     [editingZone, selectedEditVertexIndex]
   );
+  const sketchFeatureCollection = React.useMemo(
+    () => sketchDrawingsToFeatureCollection(sketchDrawings, selectedSketchDrawingId),
+    [selectedSketchDrawingId, sketchDrawings]
+  );
+  const sketchDraftFeatureCollection = React.useMemo(
+    () => sketchDraftToFeatureCollection(sketchDraftPoints, sketchMode),
+    [sketchDraftPoints, sketchMode]
+  );
+  const sketchEditFeatureCollection = React.useMemo(
+    () => sketchDrawingToEditFeatureCollection(selectedSketchDrawing, selectedSketchVertexIndex),
+    [selectedSketchDrawing, selectedSketchVertexIndex]
+  );
   const alertAreaFeatureCollection = React.useMemo(
     () => (showAlertAreas ? alertAreasToFeatureCollection(alerts) : emptyPolygonFeatureCollection()),
     [alerts, showAlertAreas]
@@ -534,10 +679,18 @@ export function CopMap({
   onClearSelectionRef.current = onClearSelection;
   onCreateZonePolygonRef.current = onCreateZonePolygon;
   onUpdateZonePolygonRef.current = onUpdateZonePolygon;
+  onCreateSketchDrawingRef.current = onCreateSketchDrawing;
+  onDeleteSketchDrawingRef.current = onDeleteSketchDrawing;
+  onSelectSketchDrawingRef.current = onSelectSketchDrawing;
+  onSketchModeChangeRef.current = onSketchModeChange;
+  onUpdateSketchDrawingRef.current = onUpdateSketchDrawing;
   onPickReportLocationRef.current = onPickReportLocation;
   onViewChangeRef.current = onViewChange;
   reportLocationPickActiveRef.current = reportLocationPickActive;
   zoneCreationActiveRef.current = zoneCreationActive;
+  sketchDrawingsRef.current = sketchDrawings;
+  sketchModeRef.current = sketchMode;
+  selectedSketchDrawingIdRef.current = selectedSketchDrawingId;
 
   React.useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -571,6 +724,12 @@ export function CopMap({
       const situationFeature = situationFeaturesRef.current.find((candidate) => candidate.properties.featureId === featureId);
       if (situationFeature) {
         onSelectSituationFeatureRef.current(situationFeature);
+        return true;
+      }
+      const drawingId = stringProperty(properties.drawingId);
+      const sketchDrawing = sketchDrawingsRef.current.find((candidate) => candidate.id === drawingId);
+      if (sketchDrawing) {
+        onSelectSketchDrawingRef.current?.(sketchDrawing);
         return true;
       }
       return false;
@@ -616,6 +775,18 @@ export function CopMap({
         map.addSource(aoiEditSourceId, {
           type: "geojson",
           data: emptyAoiEditFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(sketchSourceId, {
+          type: "geojson",
+          data: emptySketchFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(sketchDraftSourceId, {
+          type: "geojson",
+          data: emptySketchDraftFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(sketchEditSourceId, {
+          type: "geojson",
+          data: emptySketchEditFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
         });
         map.addSource(alertAreaSourceId, {
           type: "geojson",
@@ -748,6 +919,123 @@ export function CopMap({
           paint: {
             "circle-color": ["case", ["get", "selected"], "#ffffff", "#c8f08d"],
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 5.5, 12, 7.4, 16, 9.2],
+            "circle-stroke-color": ["case", ["get", "selected"], "#38bdf8", "#061019"],
+            "circle-stroke-width": ["case", ["get", "selected"], 3, 2]
+          }
+        });
+
+        map.addLayer({
+          id: sketchFillLayerId,
+          type: "fill",
+          source: sketchSourceId,
+          filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+          paint: {
+            "fill-color": ["coalesce", ["get", "fill"], "#2f80ed"],
+            "fill-opacity": ["case", ["get", "selected"], ["*", ["coalesce", ["get", "opacity"], 0.25], 1.35], ["coalesce", ["get", "opacity"], 0.25]]
+          }
+        });
+
+        map.addLayer({
+          id: sketchLineLayerId,
+          type: "line",
+          source: sketchSourceId,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": ["coalesce", ["get", "stroke"], "#2f80ed"],
+            "line-dasharray": ["case", ["==", ["get", "kind"], "measurement"], ["literal", [1.5, 1.2]], ["literal", [1, 0]]],
+            "line-opacity": 0.9,
+            "line-width": ["case", ["get", "selected"], ["+", ["coalesce", ["get", "lineWidth"], 2], 1.4], ["coalesce", ["get", "lineWidth"], 2]]
+          }
+        });
+
+        map.addLayer({
+          id: sketchPointLayerId,
+          type: "circle",
+          source: sketchSourceId,
+          filter: ["==", ["geometry-type"], "Point"],
+          paint: {
+            "circle-color": ["coalesce", ["get", "fill"], "#2f80ed"],
+            "circle-radius": ["case", ["get", "selected"], 11, 8],
+            "circle-stroke-color": ["coalesce", ["get", "stroke"], "#ffffff"],
+            "circle-stroke-width": ["case", ["get", "selected"], 3, 2]
+          }
+        });
+
+        map.addLayer({
+          id: sketchLabelLayerId,
+          type: "symbol",
+          source: sketchSourceId,
+          layout: {
+            "text-field": ["get", "label"],
+            "text-font": ["Noto Sans Regular"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 6, 11, 12, 13, 16, 15],
+            "text-offset": [0, 1.25],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "text-color": ["coalesce", ["get", "stroke"], "#c8f08d"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 2,
+            "text-halo-blur": 0.3
+          }
+        });
+
+        map.addLayer({
+          id: sketchDraftLineLayerId,
+          type: "line",
+          source: sketchDraftSourceId,
+          filter: ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]],
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": "#c8f08d",
+            "line-dasharray": [2, 1.3],
+            "line-opacity": 0.95,
+            "line-width": 3
+          }
+        });
+
+        map.addLayer({
+          id: sketchDraftPointLayerId,
+          type: "circle",
+          source: sketchDraftSourceId,
+          filter: ["==", ["geometry-type"], "Point"],
+          paint: {
+            "circle-color": "#c8f08d",
+            "circle-radius": 6,
+            "circle-stroke-color": "#061019",
+            "circle-stroke-width": 2
+          }
+        });
+
+        map.addLayer({
+          id: sketchEditMidpointLayerId,
+          type: "circle",
+          source: sketchEditSourceId,
+          filter: ["==", ["get", "kind"], "midpoint"],
+          paint: {
+            "circle-color": "#38bdf8",
+            "circle-radius": 6,
+            "circle-stroke-color": "#061019",
+            "circle-stroke-width": 2
+          }
+        });
+
+        map.addLayer({
+          id: sketchEditVertexLayerId,
+          type: "circle",
+          source: sketchEditSourceId,
+          filter: ["==", ["get", "kind"], "vertex"],
+          paint: {
+            "circle-color": ["case", ["get", "selected"], "#ffffff", "#c8f08d"],
+            "circle-radius": ["case", ["get", "selected"], 9, 7],
             "circle-stroke-color": ["case", ["get", "selected"], "#38bdf8", "#061019"],
             "circle-stroke-width": ["case", ["get", "selected"], 3, 2]
           }
@@ -1766,6 +2054,107 @@ export function CopMap({
             map.getCanvas().style.cursor = "";
           }
         });
+        const updateSketchEditPoint = (drawingId: string, index: number, lngLat: maplibregl.LngLat) => {
+          const drawing = sketchDrawingsRef.current.find((candidate) => candidate.id === drawingId);
+          const points = sketchEditablePoints(drawing ?? null);
+          if (!drawing || !points[index]) {
+            return;
+          }
+          const nextPoints = points.map((point, pointIndex) => (
+            pointIndex === index ? { lat: lngLat.lat, lon: lngLat.lng } : point
+          ));
+          const geometry = sketchGeometryFromPoints(drawing.properties.kind, nextPoints);
+          if (geometry) {
+            onUpdateSketchDrawingRef.current?.(drawing.id, { geometry });
+          }
+        };
+        const finishSketchVertexDrag = () => {
+          if (!draggedSketchVertexRef.current) {
+            return;
+          }
+          draggedSketchVertexRef.current = null;
+          if (!mapInteractionSuspended && sketchModeRef.current !== "line" && sketchModeRef.current !== "polygon" && sketchModeRef.current !== "measurement") {
+            map.dragPan.enable();
+          }
+          map.touchZoomRotate.enable();
+          map.getCanvas().style.cursor = "";
+        };
+        const handleSketchVertexDragMove = (event: maplibregl.MapMouseEvent | (maplibregl.MapTouchEvent & { lngLat: maplibregl.LngLat })) => {
+          const dragged = draggedSketchVertexRef.current;
+          if (!dragged) {
+            return;
+          }
+          event.preventDefault();
+          updateSketchEditPoint(dragged.drawingId, dragged.index, event.lngLat);
+        };
+        const handleSketchVertexDragStart = (event: MapLayerMouseEvent | (maplibregl.MapTouchEvent & { features?: MapLayerMouseEvent["features"]; lngLat: maplibregl.LngLat })) => {
+          const feature = event.features?.[0];
+          const properties = isRecord(feature?.properties) ? feature.properties : {};
+          const drawingId = stringProperty(properties.drawingId);
+          const index = numberProperty(properties.index);
+          if (!drawingId || index === undefined) {
+            return;
+          }
+          event.preventDefault();
+          setSelectedSketchVertexIndex(index);
+          draggedSketchVertexRef.current = { drawingId, index };
+          map.dragPan.disable();
+          map.touchZoomRotate.disable();
+          map.getCanvas().style.cursor = "grabbing";
+        };
+        const handleSketchVertexClick = (event: MapLayerMouseEvent) => {
+          const feature = event.features?.[0];
+          const properties = isRecord(feature?.properties) ? feature.properties : {};
+          const index = numberProperty(properties.index);
+          if (index !== undefined) {
+            event.preventDefault();
+            setSelectedSketchVertexIndex(index);
+          }
+        };
+        const handleSketchMidpointClick = (event: MapLayerMouseEvent) => {
+          const feature = event.features?.[0];
+          const properties = isRecord(feature?.properties) ? feature.properties : {};
+          const drawingId = stringProperty(properties.drawingId);
+          const insertIndex = numberProperty(properties.insertIndex);
+          const drawing = sketchDrawingsRef.current.find((candidate) => candidate.id === (drawingId ?? selectedSketchDrawingIdRef.current));
+          const points = sketchEditablePoints(drawing ?? null);
+          if (!drawing || insertIndex === undefined || points.length < 2) {
+            return;
+          }
+          event.preventDefault();
+          const nextPoints = [...points];
+          nextPoints.splice(insertIndex, 0, { lat: event.lngLat.lat, lon: event.lngLat.lng });
+          const geometry = sketchGeometryFromPoints(drawing.properties.kind, nextPoints);
+          if (geometry) {
+            onUpdateSketchDrawingRef.current?.(drawing.id, { geometry });
+            setSelectedSketchVertexIndex(insertIndex);
+          }
+        };
+        map.on("mousedown", sketchEditVertexLayerId, handleSketchVertexDragStart);
+        map.on("touchstart", sketchEditVertexLayerId, handleSketchVertexDragStart);
+        map.on("click", sketchEditVertexLayerId, handleSketchVertexClick);
+        map.on("click", sketchEditMidpointLayerId, handleSketchMidpointClick);
+        map.on("mousemove", handleSketchVertexDragMove);
+        map.on("touchmove", handleSketchVertexDragMove);
+        map.on("mouseup", finishSketchVertexDrag);
+        map.on("touchend", finishSketchVertexDrag);
+        map.on("touchcancel", finishSketchVertexDrag);
+        map.on("mouseenter", sketchEditVertexLayerId, () => {
+          map.getCanvas().style.cursor = "grab";
+        });
+        map.on("mouseenter", sketchEditMidpointLayerId, () => {
+          map.getCanvas().style.cursor = "copy";
+        });
+        map.on("mouseleave", sketchEditVertexLayerId, () => {
+          if (!draggedSketchVertexRef.current) {
+            map.getCanvas().style.cursor = "";
+          }
+        });
+        map.on("mouseleave", sketchEditMidpointLayerId, () => {
+          if (!draggedSketchVertexRef.current) {
+            map.getCanvas().style.cursor = "";
+          }
+        });
         const handleUserMapInteraction = (event: maplibregl.MapLibreEvent) => {
           if (event.originalEvent) {
             onAutoFitChangeRef.current(false);
@@ -1776,8 +2165,43 @@ export function CopMap({
             onPickReportLocationRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
             return;
           }
+          const activeSketchMode = sketchModeRef.current;
+          if (activeSketchMode === "marker" || activeSketchMode === "text") {
+            const kind: SketchDrawingKind = activeSketchMode === "text" ? "text" : "marker";
+            onCreateSketchDrawingRef.current?.({
+              geometry: { coordinates: [event.lngLat.lng, event.lngLat.lat], type: "Point" },
+              kind,
+              label: activeSketchMode === "text" ? "Popisek" : "Značka",
+              properties: { createdFrom: "map" },
+              symbol: { iconId: activeSketchMode === "text" ? "note" : "warning", palette: "civil" },
+              visibility: "private"
+            });
+            onSketchModeChangeRef.current?.("select");
+            return;
+          }
+          if (activeSketchMode === "line" || activeSketchMode === "polygon" || activeSketchMode === "measurement") {
+            setSketchDraftPoints((current) => [...current, { lat: event.lngLat.lat, lon: event.lngLat.lng }].slice(0, 200));
+            return;
+          }
           if (zoneCreationActiveRef.current) {
             setZoneDraftPoints((current) => [...current, { lat: event.lngLat.lat, lon: event.lngLat.lng }].slice(0, 80));
+            return;
+          }
+          if (activeSketchMode === "select") {
+            const clickedSketchEditHandle = queryRenderedFeatureByLayerPriority(map, event.point, [sketchEditVertexLayerId, sketchEditMidpointLayerId]);
+            if (clickedSketchEditHandle) {
+              return;
+            }
+            const clickedSketch = queryRenderedFeatureByLayerPriority(map, event.point, [sketchPointLayerId, sketchLabelLayerId, sketchLineLayerId, sketchFillLayerId]);
+            const properties = isRecord(clickedSketch?.properties) ? clickedSketch.properties : {};
+            const drawingId = stringProperty(properties.drawingId);
+            const drawing = sketchDrawingsRef.current.find((candidate) => candidate.id === drawingId);
+            if (drawing) {
+              onSelectSketchDrawingRef.current?.(drawing);
+              return;
+            }
+            setSelectedSketchVertexIndex(null);
+            onSelectSketchDrawingRef.current?.(null);
             return;
           }
           if (editingZoneIdRef.current) {
@@ -2016,6 +2440,27 @@ export function CopMap({
   }, [aoiEditFeatureCollection, mapReady]);
 
   React.useEffect(() => {
+    const source = mapRef.current?.getSource(sketchSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(sketchFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [mapReady, sketchFeatureCollection]);
+
+  React.useEffect(() => {
+    const source = mapRef.current?.getSource(sketchDraftSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(sketchDraftFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [mapReady, sketchDraftFeatureCollection]);
+
+  React.useEffect(() => {
+    const source = mapRef.current?.getSource(sketchEditSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(sketchEditFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [mapReady, sketchEditFeatureCollection]);
+
+  React.useEffect(() => {
     if (!zoneCreationActive) {
       setZoneDraftPoints([]);
     }
@@ -2025,6 +2470,33 @@ export function CopMap({
     setSelectedEditVertexIndex(null);
     draggedAoiVertexRef.current = null;
   }, [editingZoneId]);
+
+  React.useEffect(() => {
+    if (sketchMode !== "line" && sketchMode !== "polygon" && sketchMode !== "measurement") {
+      setSketchDraftPoints([]);
+    }
+    if (sketchMode !== "select") {
+      setSelectedSketchVertexIndex(null);
+    }
+  }, [sketchMode]);
+
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) {
+      return;
+    }
+    const drawingMode = sketchMode === "line" || sketchMode === "polygon" || sketchMode === "measurement" || sketchMode === "marker" || sketchMode === "text";
+    if (drawingMode) {
+      map.dragPan.disable();
+    } else if (!mapInteractionSuspended && !draggedAoiVertexRef.current && !draggedSketchVertexRef.current) {
+      map.dragPan.enable();
+    }
+  }, [mapInteractionSuspended, mapReady, sketchMode]);
+
+  React.useEffect(() => {
+    setSelectedSketchVertexIndex(null);
+    draggedSketchVertexRef.current = null;
+  }, [selectedSketchDrawingId]);
 
   React.useEffect(() => {
     const source = mapRef.current?.getSource(alertAreaSourceId);
@@ -2181,6 +2653,56 @@ export function CopMap({
     });
   }, [editingZone, editingZonePoints, selectedEditVertexIndex]);
 
+  const finishSketchDraft = React.useCallback(() => {
+    const mode = sketchModeRef.current;
+    const minimum = mode === "polygon" ? 3 : 2;
+    if (sketchDraftPoints.length < minimum) {
+      return;
+    }
+    const kind: SketchDrawingKind = mode === "measurement" ? "measurement" : mode === "polygon" ? "polygon" : "line";
+    const geometry = sketchGeometryFromPoints(kind, sketchDraftPoints);
+    if (!geometry) {
+      return;
+    }
+    onCreateSketchDrawingRef.current?.({
+      geometry,
+      kind,
+      label: kind === "measurement" ? formatMeasurementLabel(measureSketchLine(sketchDraftPoints.map((point): [number, number] => [point.lon, point.lat]))) : kind === "polygon" ? "Oblast" : "Linie",
+      properties: kind === "measurement" ? { measurementKm: measureSketchLine(sketchDraftPoints.map((point): [number, number] => [point.lon, point.lat])) } : { createdFrom: "map" },
+      style: kind === "measurement" ? { stroke: "#facc15", fill: "#facc15", opacity: 0.08 } : undefined,
+      symbol: { iconId: kind === "measurement" ? "measure" : kind, palette: "civil" },
+      visibility: "private"
+    });
+    setSketchDraftPoints([]);
+    onSketchModeChangeRef.current?.("select");
+  }, [sketchDraftPoints]);
+
+  const removeLastSketchDraftPoint = React.useCallback(() => {
+    setSketchDraftPoints((current) => current.slice(0, -1));
+  }, []);
+
+  const deleteSelectedSketchVertex = React.useCallback(() => {
+    if (!selectedSketchDrawing || selectedSketchVertexIndex === null) {
+      return;
+    }
+    const points = sketchEditablePoints(selectedSketchDrawing);
+    const minimum = selectedSketchDrawing.properties.kind === "polygon" ? 3 : 2;
+    if (points.length <= minimum) {
+      return;
+    }
+    const nextPoints = points.filter((_, index) => index !== selectedSketchVertexIndex);
+    const geometry = sketchGeometryFromPoints(selectedSketchDrawing.properties.kind, nextPoints);
+    if (geometry) {
+      onUpdateSketchDrawingRef.current?.(selectedSketchDrawing.id, { geometry });
+      setSelectedSketchVertexIndex((current) => {
+        if (current === null) {
+          return null;
+        }
+        return Math.min(current, Math.max(0, nextPoints.length - 1));
+      });
+    }
+  }, [selectedSketchDrawing, selectedSketchVertexIndex]);
+
   const missingPositionCount = objects.length - positionedObjects.length;
 
   return (
@@ -2217,6 +2739,78 @@ export function CopMap({
         </div>
       ) : null}
       {reportLocationPickActive ? <div className="map-zone-create-hint">Kliknutím do mapy určíte polohu hlášení</div> : null}
+      <div
+        className="map-sketch-toolbar"
+        onClick={stopMapToolbarEvent}
+        onDoubleClick={stopMapToolbarEvent}
+        onPointerDown={stopMapToolbarEvent}
+      >
+        {([
+          ["pan", "Pohyb"],
+          ["select", "Výběr"],
+          ["marker", "Značka"],
+          ["line", "Linie"],
+          ["polygon", "Polygon"],
+          ["text", "Text"],
+          ["measurement", "Měření"]
+        ] as Array<[SketchToolMode, string]>).map(([mode, label]) => (
+          <button
+            className={sketchMode === mode ? "active" : ""}
+            key={mode}
+            onClick={() => onSketchModeChangeRef.current?.(mode)}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {sketchMode === "line" || sketchMode === "polygon" || sketchMode === "measurement" ? (
+        <div className="map-zone-create-hint map-sketch-create-hint">
+          <strong>{sketchMode === "measurement" ? "Měření" : "Kreslení"}</strong>
+          <span>
+            {sketchMode === "polygon"
+              ? sketchDraftPoints.length < 3 ? `Přidejte alespoň 3 body (${sketchDraftPoints.length}/3).` : `${sketchDraftPoints.length} bodů připraveno.`
+              : sketchDraftPoints.length < 2 ? `Přidejte alespoň 2 body (${sketchDraftPoints.length}/2).` : formatMeasurementLabel(measureSketchLine(sketchDraftPoints.map((point) => [point.lon, point.lat])))}
+          </span>
+          <div className="map-zone-create-actions">
+            <button
+              disabled={sketchDraftPoints.length < (sketchMode === "polygon" ? 3 : 2)}
+              onClick={finishSketchDraft}
+              type="button"
+            >
+              Uložit
+            </button>
+            <button disabled={sketchDraftPoints.length === 0} onClick={removeLastSketchDraftPoint} type="button">Zpět bod</button>
+            <button onClick={() => onSketchModeChangeRef.current?.("pan")} type="button">Zrušit</button>
+          </div>
+        </div>
+      ) : null}
+      {selectedSketchDrawing && sketchMode === "select" ? (
+        <div className="map-zone-create-hint map-sketch-edit-hint">
+          <strong>Zákres: {selectedSketchDrawing.properties.label}</strong>
+          <span>Rohy lze táhnout, modré body vkládají další bod. Zákres je samostatná vrstva.</span>
+          <div className="map-zone-create-actions">
+            <button
+              disabled={selectedSketchVertexIndex === null || sketchEditablePoints(selectedSketchDrawing).length <= (selectedSketchDrawing.properties.kind === "polygon" ? 3 : 2)}
+              onClick={deleteSelectedSketchVertex}
+              type="button"
+            >
+              Smazat bod
+            </button>
+            <button onClick={() => setSelectedSketchVertexIndex(null)} type="button">Zrušit výběr</button>
+            <button
+              onClick={() => {
+                if (window.confirm("Smazat vybraný zákres?")) {
+                  onDeleteSketchDrawingRef.current?.(selectedSketchDrawing.id);
+                }
+              }}
+              type="button"
+            >
+              Smazat
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="map-overlay-stack">
         <div
           className="map-toolbar"
@@ -2574,6 +3168,195 @@ function emptyAoiDraftFeatureCollection(): AoiDraftFeatureCollection {
 
 function emptyAoiEditFeatureCollection(): AoiEditFeatureCollection {
   return { type: "FeatureCollection", features: [] };
+}
+
+function emptySketchFeatureCollection(): SketchFeatureCollection {
+  return { type: "FeatureCollection", features: [] };
+}
+
+function emptySketchDraftFeatureCollection(): SketchDraftFeatureCollection {
+  return { type: "FeatureCollection", features: [] };
+}
+
+function emptySketchEditFeatureCollection(): SketchEditFeatureCollection {
+  return { type: "FeatureCollection", features: [] };
+}
+
+function sketchDrawingsToFeatureCollection(drawings: SketchDrawingFeature[], selectedDrawingId: string | null | undefined): SketchFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: drawings.map((drawing) => ({
+      type: "Feature",
+      geometry: drawing.geometry,
+      properties: {
+        drawingId: drawing.id,
+        fill: drawing.properties.style.fill || "#2f80ed",
+        kind: drawing.properties.kind,
+        label: drawing.properties.label,
+        lineWidth: Number.isFinite(drawing.properties.style.lineWidth) ? drawing.properties.style.lineWidth : 2,
+        opacity: Number.isFinite(drawing.properties.style.opacity) ? drawing.properties.style.opacity : 0.22,
+        selected: drawing.id === selectedDrawingId,
+        stroke: drawing.properties.style.stroke || "#2f80ed"
+      }
+    }))
+  };
+}
+
+function sketchDraftToFeatureCollection(points: Array<{ lat: number; lon: number }>, mode: SketchToolMode): SketchDraftFeatureCollection {
+  if (mode === "pan" || mode === "select") {
+    return emptySketchDraftFeatureCollection();
+  }
+  const coordinates = points.map((point): [number, number] => [point.lon, point.lat]);
+  const features: SketchDraftFeatureCollection["features"] = [];
+  if ((mode === "line" || mode === "measurement") && coordinates.length >= 2) {
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates },
+      properties: { kind: "line" }
+    });
+  }
+  if (mode === "polygon" && coordinates.length >= 2) {
+    const first = coordinates[0];
+    if (first) {
+      features.push({
+        type: "Feature",
+        geometry: { type: coordinates.length >= 3 ? "Polygon" : "LineString", coordinates: coordinates.length >= 3 ? [[...coordinates, first]] : coordinates } as SketchDraftFeatureCollection["features"][number]["geometry"],
+        properties: { kind: coordinates.length >= 3 ? "area" : "line" }
+      });
+    }
+  }
+  coordinates.forEach((coordinate, index) => {
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: coordinate },
+      properties: { index: index + 1, kind: "point" }
+    });
+  });
+  return { type: "FeatureCollection", features };
+}
+
+function sketchDrawingToEditFeatureCollection(drawing: SketchDrawingFeature | null, selectedVertexIndex: number | null = null): SketchEditFeatureCollection {
+  const points = sketchEditablePoints(drawing);
+  if (!drawing || points.length === 0 || drawing.properties.locked) {
+    return emptySketchEditFeatureCollection();
+  }
+  const features: SketchEditFeatureCollection["features"] = points.map((point, index) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: [point.lon, point.lat] },
+    properties: {
+      drawingId: drawing.id,
+      index,
+      kind: "vertex",
+      selected: selectedVertexIndex === index
+    }
+  }));
+  if (drawing.geometry.type !== "Point" && points.length >= 2) {
+    points.forEach((point, index) => {
+      const isPolygon = drawing.geometry.type === "Polygon";
+      const nextPoint = points[index + 1] ?? (isPolygon ? points[0] : undefined);
+      if (!nextPoint) {
+        return;
+      }
+      features.push({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [(point.lon + nextPoint.lon) / 2, (point.lat + nextPoint.lat) / 2]
+        },
+        properties: {
+          drawingId: drawing.id,
+          insertIndex: index + 1,
+          kind: "midpoint"
+        }
+      });
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
+function sketchEditablePoints(drawing: SketchDrawingFeature | null): Array<{ lat: number; lon: number }> {
+  if (!drawing) {
+    return [];
+  }
+  if (drawing.geometry.type === "Point") {
+    const [lon, lat] = drawing.geometry.coordinates;
+    return [{ lat, lon }];
+  }
+  if (drawing.geometry.type === "LineString") {
+    return drawing.geometry.coordinates.map(([lon, lat]) => ({ lat, lon }));
+  }
+  const ring = drawing.geometry.coordinates[0] ?? [];
+  return ring.slice(0, -1).map(([lon, lat]) => ({ lat, lon }));
+}
+
+function sketchGeometryFromPoints(kind: SketchDrawingKind, points: Array<{ lat: number; lon: number }>): SketchGeometry | null {
+  const coordinates = points.map((point): [number, number] => [point.lon, point.lat]);
+  if ((kind === "marker" || kind === "point" || kind === "text") && coordinates[0]) {
+    return { type: "Point", coordinates: coordinates[0] };
+  }
+  if ((kind === "line" || kind === "measurement" || kind === "arrow") && coordinates.length >= 2) {
+    return { type: "LineString", coordinates };
+  }
+  if ((kind === "polygon" || kind === "circle") && coordinates.length >= 3) {
+    const first = coordinates[0];
+    if (!first) {
+      return null;
+    }
+    return { type: "Polygon", coordinates: [[...coordinates, first]] };
+  }
+  return null;
+}
+
+function formatSketchDrawingSubtitle(drawing: SketchDrawingFeature): string {
+  const kindLabels: Record<SketchDrawingKind, string> = {
+    arrow: "šipka",
+    circle: "oblast",
+    line: "linie",
+    marker: "značka",
+    measurement: "měření",
+    point: "bod",
+    polygon: "polygon",
+    text: "text"
+  };
+  const visibilityLabels: Record<SketchDrawingVisibility, string> = {
+    event: "událost",
+    group: "skupina",
+    private: "soukromé",
+    public: "veřejné"
+  };
+  const metric = drawing.geometry.type === "LineString" ? ` · ${formatMeasurementLabel(measureSketchLine(drawing.geometry.coordinates))}` : "";
+  return `${kindLabels[drawing.properties.kind]} · ${visibilityLabels[drawing.properties.visibility]}${metric}`;
+}
+
+function measureSketchLine(coordinates: Array<[number, number]>): number {
+  let totalKm = 0;
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const previous = coordinates[index - 1];
+    const current = coordinates[index];
+    if (!previous || !current) {
+      continue;
+    }
+    totalKm += haversineDistanceKm(previous[1], previous[0], current[1], current[0]);
+  }
+  return totalKm;
+}
+
+function formatMeasurementLabel(distanceKm: number): string {
+  if (!Number.isFinite(distanceKm)) {
+    return "0 m";
+  }
+  return distanceKm < 1 ? `${Math.round(distanceKm * 1000)} m` : `${distanceKm.toFixed(distanceKm >= 10 ? 1 : 2)} km`;
+}
+
+function haversineDistanceKm(latA: number, lonA: number, latB: number, lonB: number): number {
+  const radiusKm = 6371.0088;
+  const toRadians = Math.PI / 180;
+  const phi1 = latA * toRadians;
+  const phi2 = latB * toRadians;
+  const deltaPhi = (latB - latA) * toRadians;
+  const deltaLambda = (lonB - lonA) * toRadians;
+  const a = Math.sin(deltaPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2;
+  return 2 * radiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function findEditableAoiRule(aoiRules: AoiRule[], zoneId: string | null | undefined): AoiRule | null {

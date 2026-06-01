@@ -75,9 +75,11 @@ import {
   createCommunityAttachmentUpload,
   createCommunityGroup,
   createCommunityReport,
+  createSketchDrawing,
   createMessagingConversation,
   bindMessagingConversationMatrixRoom,
   deleteCommunityReport,
+  deleteSketchDrawing,
   fetchCopDashboardData,
   fetchCopAlerts,
   fetchCommunityGroups,
@@ -86,6 +88,7 @@ import {
   fetchMessagingConversations,
   fetchMessagingStatus,
   fetchPlaceGeocode,
+  fetchSketchDrawings,
   fetchUserProfile,
   resolveMessagingMatrixIdentities,
   syncMessagingConversationMembers,
@@ -100,6 +103,7 @@ import {
   saveUserProfile,
   searchUserDirectory,
   submitCommunityReport,
+  updateSketchDrawing,
   updateCommunityReport,
   upsertCommunityGroupMember,
   uploadCommunityAttachmentFile,
@@ -143,6 +147,8 @@ import {
   type SafetyLayer,
   type SafetyLayerId,
   type SafetySourceDescriptor,
+  type SketchDrawingFeature,
+  type SketchDrawingPayload,
   type SituationFeature,
   type SituationFeatureCollectionResponse,
   type SituationLayer,
@@ -155,7 +161,7 @@ import {
   type TakSourceDescriptor,
   type UserDirectoryEntry
 } from "./cop-data";
-import { CopMap, formatTrackLabel } from "./CopMap";
+import { CopMap, formatTrackLabel, type CreateSketchDrawingRequest, type SketchToolMode, type UpdateSketchDrawingRequest } from "./CopMap";
 import { MessagingPanel } from "./messaging/MessagingPanel";
 import type { MessagingReportSeed } from "./messaging/types";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
@@ -496,6 +502,11 @@ export function App() {
   const [missionArenaFeatures, setMissionArenaFeatures] = React.useState<MissionArenaFeatureCollectionResponse | null>(null);
   const [missionArenaStatus, setMissionArenaStatus] = React.useState<SituationLayerStatus>("disabled");
   const [missionArenaWarnings, setMissionArenaWarnings] = React.useState<string[]>([]);
+  const [sketchDrawings, setSketchDrawings] = React.useState<SketchDrawingFeature[]>([]);
+  const [sketchMode, setSketchMode] = React.useState<SketchToolMode>("pan");
+  const [selectedSketchDrawingId, setSelectedSketchDrawingId] = React.useState<string | null>(null);
+  const [sketchStatus, setSketchStatus] = React.useState<SituationLayerStatus>("disabled");
+  const [sketchWarnings, setSketchWarnings] = React.useState<string[]>([]);
   const [communityReportOpen, setCommunityReportOpen] = React.useState(false);
   const [communityReportDraft, setCommunityReportDraft] = React.useState<CommunityReportDraft>(() => createCommunityReportDraft());
   const [communityReportSubmitting, setCommunityReportSubmitting] = React.useState(false);
@@ -1507,6 +1518,52 @@ export function App() {
   }, [apiBase, authToken, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog]);
 
   React.useEffect(() => {
+    if (!dataAccessReady) {
+      return;
+    }
+    if (!effectiveVisibleCatalogLayerIds.includes("user.sketch.drawings")) {
+      setSketchDrawings([]);
+      setSketchStatus("disabled");
+      setSketchWarnings([]);
+      setSelectedSketchDrawingId(null);
+      setSketchMode("pan");
+      return;
+    }
+    if (!mapBounds) {
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setSketchStatus((current) => current === "online" ? "online" : "loading");
+      fetchSketchDrawings(apiBase, authToken, {
+        bbox: mapBounds,
+        limit: 500
+      })
+        .then((collection) => {
+          if (cancelled) {
+            return;
+          }
+          setSketchDrawings(collection.features);
+          setSketchStatus("online");
+          setSketchWarnings([]);
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setSketchDrawings([]);
+            setSketchStatus("degraded");
+            setSketchWarnings([error instanceof Error ? error.message : "Zákresy nejsou dostupné."]);
+          }
+        });
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [apiBase, authToken, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds]);
+
+  React.useEffect(() => {
     if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
       return;
     }
@@ -1598,16 +1655,18 @@ export function App() {
   const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleMissionArenaLayerCount = React.useMemo(() => countVisibleMissionArenaLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
+  const visibleSketchLayerEnabled = visibleCatalogLayerIds.includes("user.sketch.drawings");
   const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0
     || visibleSafetyLayerIds.length > 0
     || visibleTakLayerIds.length > 0
     || visibleFlightLayerCount > 0
     || visibleCommunityLayerCount > 0
     || visibleMissionArenaLayerCount > 0
+    || visibleSketchLayerEnabled
     || outlineBoundaryLayerEnabled;
   const mapLayerLabel = React.useMemo(
-    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds, visibleFlightLayerCount, visibleCommunityLayerCount, visibleMissionArenaLayerCount, outlineBoundaryLayerEnabled),
-    [outlineBoundaryLayerEnabled, visibleCommunityLayerCount, visibleFlightLayerCount, visibleMissionArenaLayerCount, visibleSafetyLayerIds, visibleSituationLayerIds, visibleTakLayerIds, visibleTrackLayerIds]
+    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds, visibleFlightLayerCount, visibleCommunityLayerCount, visibleMissionArenaLayerCount, outlineBoundaryLayerEnabled, visibleSketchLayerEnabled ? sketchDrawings.length : 0),
+    [outlineBoundaryLayerEnabled, sketchDrawings.length, visibleCommunityLayerCount, visibleFlightLayerCount, visibleMissionArenaLayerCount, visibleSafetyLayerIds, visibleSituationLayerIds, visibleSketchLayerEnabled, visibleTakLayerIds, visibleTrackLayerIds]
   );
   const mapEmptyMessage = React.useMemo(
     () =>
@@ -2219,6 +2278,87 @@ export function App() {
     }
   }
 
+  function enableSketchLayer() {
+    if (!visibleCatalogLayerIds.includes("user.sketch.drawings")) {
+      applyCatalogLayerSelection(toggleCatalogLayerId(visibleCatalogLayerIds, "user.sketch.drawings", true));
+    }
+  }
+
+  function requireSketchWriteToken(): string | null {
+    if (authSession.accessToken && authenticatedSessionActive) {
+      return authSession.accessToken;
+    }
+    setLoginPromptReason("profile");
+    setSketchWarnings(["Pro uložení a úpravu zákresů se přihlaste."]);
+    return null;
+  }
+
+  async function handleCreateSketchDrawing(input: CreateSketchDrawingRequest) {
+    const token = requireSketchWriteToken();
+    if (!token) {
+      return;
+    }
+    enableSketchLayer();
+    const payload: SketchDrawingPayload & { geometry: CreateSketchDrawingRequest["geometry"]; kind: CreateSketchDrawingRequest["kind"]; visibility: NonNullable<CreateSketchDrawingRequest["visibility"]> } = {
+      geometry: input.geometry,
+      kind: input.kind,
+      label: input.label,
+      properties: input.properties,
+      style: input.style,
+      symbol: input.symbol,
+      visibility: input.visibility ?? "private"
+    };
+    try {
+      const drawing = await createSketchDrawing(apiBase, token, payload);
+      setSketchDrawings((current) => [drawing, ...current.filter((candidate) => candidate.id !== drawing.id)]);
+      setSelectedSketchDrawingId(drawing.id);
+      setSketchMode("select");
+      setSketchStatus("online");
+      setSketchWarnings([]);
+    } catch (error) {
+      setSketchStatus("degraded");
+      setSketchWarnings([error instanceof Error ? error.message : "Zákres se nepodařilo uložit."]);
+    }
+  }
+
+  async function handleUpdateSketchDrawing(drawingId: string, input: UpdateSketchDrawingRequest) {
+    const token = requireSketchWriteToken();
+    if (!token) {
+      return;
+    }
+    try {
+      const drawing = await updateSketchDrawing(apiBase, token, drawingId, input);
+      setSketchDrawings((current) => current.map((candidate) => (candidate.id === drawing.id ? drawing : candidate)));
+      setSelectedSketchDrawingId(drawing.id);
+      setSketchStatus("online");
+      setSketchWarnings([]);
+    } catch (error) {
+      setSketchStatus("degraded");
+      setSketchWarnings([error instanceof Error ? error.message : "Zákres se nepodařilo upravit."]);
+    }
+  }
+
+  async function handleDeleteSketchDrawing(drawingId: string) {
+    const token = requireSketchWriteToken();
+    if (!token) {
+      return;
+    }
+    const drawing = sketchDrawings.find((candidate) => candidate.id === drawingId);
+    const confirmed = typeof window === "undefined" || window.confirm(`Smazat zákres${drawing ? ` "${drawing.properties.label}"` : ""}?`);
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await deleteSketchDrawing(apiBase, token, drawingId);
+      setSketchDrawings((current) => current.filter((candidate) => candidate.id !== drawingId));
+      setSelectedSketchDrawingId((current) => current === drawingId ? null : current);
+      setSketchWarnings([]);
+    } catch (error) {
+      setSketchStatus("degraded");
+      setSketchWarnings([error instanceof Error ? error.message : "Zákres se nepodařilo smazat."]);
+    }
+  }
+
   function createAoiRule(center: { lat: number; lon: number }) {
     enableUserZoneLayer();
     setAlertPreferences((current) => {
@@ -2405,6 +2545,9 @@ export function App() {
     if (layer.query.providerId === "cop.community") {
       return communityFeatures?.summary.featureCount ?? 0;
     }
+    if (layer.query.providerId === "cop.sketch") {
+      return sketchDrawings.length;
+    }
     if (layer.query.providerId === "csm.mission-arena") {
       return missionArenaFeatures?.summary.featureCount ?? 0;
     }
@@ -2435,6 +2578,9 @@ export function App() {
     }
     if (layer.query.providerId === "cop.community") {
       return communityStatus;
+    }
+    if (layer.query.providerId === "cop.sketch") {
+      return sketchStatus;
     }
     if (layer.query.providerId === "csm.mission-arena") {
       return missionArenaStatus;
@@ -3666,12 +3812,14 @@ export function App() {
                 const isSelected = selectedObjectId === object.objectId;
                 setSelectedObjectId(isSelected ? null : object.objectId);
                 setSelectedSituationFeatureId(null);
+                setSelectedSketchDrawingId(null);
                 setMobileSheet(isSelected ? null : "detail");
               }}
               onSelectSituationFeature={(feature) => {
                 const isSelected = selectedSituationFeatureId === feature.properties.featureId;
                 setSelectedSituationFeatureId(isSelected ? null : feature.properties.featureId);
                 setSelectedObjectId(null);
+                setSelectedSketchDrawingId(null);
                 setMobileSheet(isSelected ? null : "detail");
               }}
               onAutoFitChange={setAutoFit}
@@ -3685,11 +3833,30 @@ export function App() {
               onCreateZonePolygon={handleCreateAoiRuleFromPolygon}
               onUpdateZonePolygon={handleAoiRulePolygonUpdate}
               onPickReportLocation={handleCommunityReportLocationPicked}
+              onCreateSketchDrawing={handleCreateSketchDrawing}
+              onDeleteSketchDrawing={handleDeleteSketchDrawing}
+              onSelectSketchDrawing={(drawing) => {
+                setSelectedSketchDrawingId(drawing?.id ?? null);
+                if (drawing) {
+                  setSelectedObjectId(null);
+                  setSelectedSituationFeatureId(null);
+                }
+              }}
+              onSketchModeChange={(mode) => {
+                setSketchMode(mode);
+                if (mode !== "select") {
+                  setSelectedSketchDrawingId(null);
+                }
+              }}
+              onUpdateSketchDrawing={handleUpdateSketchDrawing}
               onRequestUserLocation={locateUser}
               onViewChange={setMapView}
               reportLocationPickActive={communityReportLocationPickMode}
+              selectedSketchDrawingId={selectedSketchDrawingId}
               showAlertAreas={showAlertAreas}
               showProximityAlertRadius={proximityAlertEnabled}
+              sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : []}
+              sketchMode={sketchMode}
               userLocation={userLocation}
               zoneCreationActive={zoneCreationMode}
             />
@@ -10907,7 +11074,7 @@ function isCopLayer(value: string): value is CopLayer {
   return copLayerIds.includes(value as CopLayer);
 }
 
-function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[], takLayerIds: TakLayerId[], flightLayerCount = 0, communityLayerCount = 0, missionArenaLayerCount = 0, outlineBoundaryLayerEnabled = false): string {
+function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[], takLayerIds: TakLayerId[], flightLayerCount = 0, communityLayerCount = 0, missionArenaLayerCount = 0, outlineBoundaryLayerEnabled = false, sketchLayerCount = 0): string {
   const parts: string[] = [];
   if (trackLayerIds.length > 0) {
     parts.push(`${trackLayerIds.length} letecká`);
@@ -10930,6 +11097,9 @@ function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: Situat
   if (outlineBoundaryLayerEnabled) {
     parts.push("hranice");
   }
+  if (sketchLayerCount > 0) {
+    parts.push(`${sketchLayerCount} zákresy`);
+  }
   if (takLayerIds.length > 0) {
     parts.push(`${takLayerIds.length} TAK`);
   }
@@ -10942,7 +11112,7 @@ function readInitialAffiliationScope(value: string | undefined): AffiliationScop
     : "all";
 }
 
-type CatalogProviderId = "cop.community" | "csm.mission-arena" | "sim.flight-data" | "sim.safety-data" | "sim.situation-data" | "sim.tak-gateway";
+type CatalogProviderId = "cop.community" | "cop.sketch" | "csm.mission-arena" | "sim.flight-data" | "sim.safety-data" | "sim.situation-data" | "sim.tak-gateway";
 
 function buildCatalogGroupViews(catalog: MapCatalogResponse | null): CatalogGroupView[] {
   if (!catalog) {
@@ -10997,7 +11167,8 @@ function isImplementedCatalogLayer(layer: MapCatalogLayer): boolean {
       || layer.query.providerId === "sim.tak-gateway"))
     || layer.layerId === "flight.public.tracks"
     || layer.layerId === "flight.sim.tracks"
-    || layer.layerId === "user.zone.alerts";
+    || layer.layerId === "user.zone.alerts"
+    || layer.layerId === "user.sketch.drawings";
 }
 
 function defaultVisibleCatalogLayerIds(catalog: MapCatalogResponse): string[] {
@@ -11117,6 +11288,9 @@ function catalogLayerMatchesLegacySelection(
     return selection.trackLayerIds.includes("air-situation") || selection.trackLayerIds.includes("sim-air");
   }
   if (layer.layerId === "user.zone.alerts") {
+    return false;
+  }
+  if (layer.layerId === "user.sketch.drawings") {
     return false;
   }
   if (layer.query.providerId === "sim.situation-data") {

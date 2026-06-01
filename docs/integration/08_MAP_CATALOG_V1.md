@@ -462,6 +462,7 @@ Provider-native fields may be preserved under:
 | `partner.tak.traffic` | Partnerský provoz | `sim.tak-gateway` layer `traffic` |
 | `user.zone.alerts` | Uživatelské zóny | COP user profile/community store |
 | `user.community.reports` | Hlášení uživatelů | COP community report store |
+| `user.sketch.drawings` | Zákresy | COP sketch drawing store |
 | `diagnostic.mobile.coverage` | Technický odhad pokrytí | `sim.situation-data` layer `mobile_coverage`, source `mobile_coverage_model` |
 | `diagnostic.mobile.ctu_measurements` | ČTÚ měření | `sim.situation-data` layer `mobile`, source `ctu_nettest` |
 
