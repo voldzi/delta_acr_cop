@@ -423,11 +423,19 @@ export function sketchPalettes(mode: SketchPaletteMode | "all" = "all", generate
     { iconId: "water-source", label: "Zdroj vody", tone: "info" },
     { iconId: "evacuation", label: "Evakuační bod", tone: "info" },
     { iconId: "risk", label: "Riziko", tone: "critical" },
-    { iconId: "note", label: "Poznámka", tone: "neutral" }
+    { iconId: "note", label: "Poznámka", tone: "neutral" },
+    { iconId: "shape-star", label: "Hvězda", shape: "star", tone: "info" },
+    { iconId: "shape-circle", label: "Kruh", shape: "circle", tone: "info" },
+    { iconId: "shape-square", label: "Čtverec", shape: "square", tone: "info" },
+    { iconId: "shape-rectangle", label: "Obdélník", shape: "rectangle", tone: "info" },
+    { iconId: "shape-diamond", label: "Kosočtverec", shape: "diamond", tone: "critical" },
+    { iconId: "shape-triangle", label: "Trojúhelník", shape: "triangle", tone: "warning" },
+    { iconId: "shape-wave", label: "Vlnka", shape: "wave", tone: "info" },
+    { iconId: "shape-cross", label: "Kříž", shape: "cross", tone: "ok" }
   ];
   const professional = [
-    { iconId: "app6-neutral", label: "APP-6 neutrální", sidc: "10031000001211000000" },
     { iconId: "app6-friendly", label: "APP-6 vlastní", sidc: "10031000001211000000" },
+    { iconId: "app6-neutral", label: "APP-6 neutrální", sidc: "10031000001211000000" },
     { iconId: "app6-unknown", label: "APP-6 neznámé", sidc: "10011000001211000000" }
   ];
   return {

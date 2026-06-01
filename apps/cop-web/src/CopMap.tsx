@@ -1,5 +1,29 @@
 import React from "react";
-import { Camera, Maximize2, Minimize2, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Camera,
+  ChevronDown,
+  ChevronUp,
+  Circle as CircleIcon,
+  Droplets,
+  HelpCircle,
+  MapPin,
+  Maximize2,
+  Minimize2,
+  Minus,
+  MousePointer2,
+  Palette,
+  Pentagon,
+  PenLine,
+  Ruler,
+  Shield,
+  Square as SquareIcon,
+  Star,
+  Type,
+  Waves,
+  X
+} from "lucide-react";
 import maplibregl, {
   type GeoJSONSource,
   type MapLayerMouseEvent,
@@ -65,6 +89,7 @@ const sketchFillLayerId = "cop-sketch-fill";
 const sketchLineLayerId = "cop-sketch-line";
 const sketchArrowHeadLayerId = "cop-sketch-arrowhead";
 const sketchPointLayerId = "cop-sketch-point";
+const sketchPointIconLayerId = "cop-sketch-point-icon";
 const sketchLabelLayerId = "cop-sketch-label";
 const sketchDraftLineLayerId = "cop-sketch-draft-line";
 const sketchDraftPointLayerId = "cop-sketch-draft-point";
@@ -114,6 +139,7 @@ const mapFeatureClickPriorityLayerIds = [
   trackClusterLabelLayerId,
   sketchArrowHeadLayerId,
   sketchPointLayerId,
+  sketchPointIconLayerId,
   sketchLabelLayerId,
   sketchLineLayerId,
   sketchFillLayerId,
@@ -140,6 +166,7 @@ const mapPointRaiseLayerIds = [
   sketchLineLayerId,
   sketchArrowHeadLayerId,
   sketchPointLayerId,
+  sketchPointIconLayerId,
   sketchLabelLayerId,
   situationPointSelectedLayerId,
   situationPointLayerId,
@@ -296,6 +323,8 @@ export interface SketchFeatureCollection {
       bearing?: number;
       drawingId: string;
       fill: string;
+      fillPattern?: SketchFillPattern;
+      iconGlyph?: string;
       kind: SketchDrawingKind | "arrowhead";
       label: string;
       lineWidth: number;
@@ -446,6 +475,106 @@ interface CopMapProps {
 
 export type SketchToolMode = "arrow" | "circle" | "line" | "marker" | "measurement" | "pan" | "polygon" | "select" | "text";
 
+type SketchFillPattern = "dash" | "hatch" | "outline" | "solid";
+type SketchSymbolPalette = "civil" | "professional";
+
+interface SketchSymbolPreset {
+  glyph: string;
+  iconId: string;
+  label: string;
+  palette: SketchSymbolPalette;
+  shape?: "circle" | "cross" | "diamond" | "pin" | "rectangle" | "square" | "star" | "triangle" | "wave";
+  sidc?: string;
+  tone?: "critical" | "info" | "neutral" | "ok" | "professional" | "warning";
+}
+
+interface SketchStyleSettings {
+  fill: string;
+  lineWidth: number;
+  opacity: number;
+  stroke: string;
+}
+
+const defaultSketchStyle = {
+  fill: "#2f80ed",
+  lineWidth: 2,
+  opacity: 0.24,
+  stroke: "#2f80ed"
+} satisfies SketchStyleSettings;
+
+const sketchColorSwatches = [
+  "#2f80ed",
+  "#22c55e",
+  "#facc15",
+  "#f97316",
+  "#ef4444",
+  "#a855f7",
+  "#38bdf8",
+  "#f8fafc"
+] as const;
+
+const sketchSymbolPresets: SketchSymbolPreset[] = [
+  { glyph: "⚠", iconId: "warning", label: "Upozornění", palette: "civil", shape: "triangle", tone: "warning" },
+  { glyph: "⛔", iconId: "closure", label: "Uzávěra", palette: "civil", shape: "circle", tone: "critical" },
+  { glyph: "✚", iconId: "help", label: "Pomoc", palette: "civil", shape: "cross", tone: "ok" },
+  { glyph: "⊕", iconId: "meeting-point", label: "Místo setkání", palette: "civil", shape: "pin", tone: "ok" },
+  { glyph: "≋", iconId: "water-source", label: "Zdroj vody", palette: "civil", shape: "wave", tone: "info" },
+  { glyph: "↗", iconId: "evacuation", label: "Evakuační bod", palette: "civil", shape: "pin", tone: "info" },
+  { glyph: "◆", iconId: "risk", label: "Riziko", palette: "civil", shape: "diamond", tone: "critical" },
+  { glyph: "i", iconId: "note", label: "Poznámka", palette: "civil", shape: "circle", tone: "neutral" },
+  { glyph: "★", iconId: "shape-star", label: "Hvězda", palette: "civil", shape: "star", tone: "info" },
+  { glyph: "●", iconId: "shape-circle", label: "Kruh", palette: "civil", shape: "circle", tone: "info" },
+  { glyph: "■", iconId: "shape-square", label: "Čtverec", palette: "civil", shape: "square", tone: "info" },
+  { glyph: "▬", iconId: "shape-rectangle", label: "Obdélník", palette: "civil", shape: "rectangle", tone: "info" },
+  { glyph: "◆", iconId: "shape-diamond", label: "Kosočtverec", palette: "civil", shape: "diamond", tone: "warning" },
+  { glyph: "▲", iconId: "shape-triangle", label: "Trojúhelník", palette: "civil", shape: "triangle", tone: "warning" },
+  { glyph: "≋", iconId: "shape-wave", label: "Vlnka", palette: "civil", shape: "wave", tone: "info" },
+  { glyph: "✚", iconId: "shape-cross", label: "Kříž", palette: "civil", shape: "cross", tone: "ok" },
+  { glyph: "□", iconId: "app6-friendly", label: "APP-6 vlastní", palette: "professional", sidc: "10031000001211000000", tone: "professional" },
+  { glyph: "▭", iconId: "app6-neutral", label: "APP-6 neutrální", palette: "professional", sidc: "10031000001211000000", tone: "professional" },
+  { glyph: "◇", iconId: "app6-unknown", label: "APP-6 neznámé", palette: "professional", sidc: "10011000001211000000", tone: "professional" }
+];
+
+const defaultSketchSymbol = sketchSymbolPresets[0]!;
+
+const sketchToolItems: Array<{
+  Icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
+  label: string;
+  mode: SketchToolMode;
+}> = [
+  { Icon: MousePointer2, label: "Pohyb", mode: "pan" },
+  { Icon: MousePointer2, label: "Výběr", mode: "select" },
+  { Icon: MapPin, label: "Značka", mode: "marker" },
+  { Icon: Minus, label: "Linie", mode: "line" },
+  { Icon: ArrowRight, label: "Šipka", mode: "arrow" },
+  { Icon: Pentagon, label: "Polygon", mode: "polygon" },
+  { Icon: CircleIcon, label: "Kruh", mode: "circle" },
+  { Icon: Type, label: "Text", mode: "text" },
+  { Icon: Ruler, label: "Měření", mode: "measurement" }
+];
+
+const sketchSymbolIcons: Record<string, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
+  closure: X,
+  evacuation: ArrowRight,
+  help: HelpCircle,
+  "meeting-point": MapPin,
+  note: HelpCircle,
+  risk: AlertTriangle,
+  "shape-circle": CircleIcon,
+  "shape-cross": HelpCircle,
+  "shape-diamond": AlertTriangle,
+  "shape-rectangle": SquareIcon,
+  "shape-square": SquareIcon,
+  "shape-star": Star,
+  "shape-triangle": AlertTriangle,
+  "shape-wave": Waves,
+  "water-source": Droplets,
+  warning: AlertTriangle,
+  "app6-friendly": Shield,
+  "app6-neutral": SquareIcon,
+  "app6-unknown": Shield
+};
+
 export interface CreateSketchDrawingRequest {
   geometry: SketchGeometry;
   kind: SketchDrawingKind;
@@ -572,6 +701,21 @@ export function CopMap({
   const [sketchDraftPoints, setSketchDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
   const [selectedSketchVertexIndex, setSelectedSketchVertexIndex] = React.useState<number | null>(null);
   const [selectedEditVertexIndex, setSelectedEditVertexIndex] = React.useState<number | null>(null);
+  const [sketchToolsExpanded, setSketchToolsExpanded] = React.useState(true);
+  const [sketchStroke, setSketchStroke] = React.useState(defaultSketchStyle.stroke);
+  const [sketchFill, setSketchFill] = React.useState(defaultSketchStyle.fill);
+  const [sketchOpacity, setSketchOpacity] = React.useState(defaultSketchStyle.opacity);
+  const [sketchLineWidth, setSketchLineWidth] = React.useState(defaultSketchStyle.lineWidth);
+  const [sketchFillPattern, setSketchFillPattern] = React.useState<SketchFillPattern>("solid");
+  const [sketchSymbol, setSketchSymbol] = React.useState<SketchSymbolPreset>(defaultSketchSymbol);
+  const sketchStyleSettingsRef = React.useRef({
+    fill: defaultSketchStyle.fill,
+    lineWidth: defaultSketchStyle.lineWidth,
+    opacity: defaultSketchStyle.opacity,
+    stroke: defaultSketchStyle.stroke
+  });
+  const sketchFillPatternRef = React.useRef<SketchFillPattern>("solid");
+  const sketchSymbolRef = React.useRef<SketchSymbolPreset>(defaultSketchSymbol);
 
   const selectedId = selectedObjectId;
   const selectedObject = React.useMemo(
@@ -695,6 +839,33 @@ export function CopMap({
   sketchDrawingsRef.current = sketchDrawings;
   sketchModeRef.current = sketchMode;
   selectedSketchDrawingIdRef.current = selectedSketchDrawingId;
+  sketchStyleSettingsRef.current = {
+    fill: sketchFill,
+    lineWidth: sketchLineWidth,
+    opacity: sketchOpacity,
+    stroke: sketchStroke
+  };
+  sketchFillPatternRef.current = sketchFillPattern;
+  sketchSymbolRef.current = sketchSymbol;
+
+  React.useEffect(() => {
+    if (!selectedSketchDrawing) {
+      return;
+    }
+    const style = selectedSketchDrawing.properties.style;
+    setSketchStroke(style.stroke || defaultSketchStyle.stroke);
+    setSketchFill(style.fill || defaultSketchStyle.fill);
+    setSketchOpacity(Number.isFinite(style.opacity) ? style.opacity : defaultSketchStyle.opacity);
+    setSketchLineWidth(Number.isFinite(style.lineWidth) ? style.lineWidth : defaultSketchStyle.lineWidth);
+    const properties = selectedSketchDrawing.properties.properties ?? {};
+    setSketchFillPattern(isSketchFillPattern(properties.fillPattern) ? properties.fillPattern : "solid");
+    const symbol = selectedSketchDrawing.properties.symbol;
+    const preset =
+      sketchSymbolPresets.find((candidate) => candidate.iconId === symbol.iconId && candidate.palette === symbol.palette)
+      ?? (symbol.sidc ? sketchSymbolPresets.find((candidate) => candidate.sidc === symbol.sidc) : undefined)
+      ?? defaultSketchSymbol;
+    setSketchSymbol(preset);
+  }, [selectedSketchDrawing]);
 
   React.useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -935,7 +1106,16 @@ export function CopMap({
           filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
           paint: {
             "fill-color": ["coalesce", ["get", "fill"], "#2f80ed"],
-            "fill-opacity": ["case", ["get", "selected"], ["*", ["coalesce", ["get", "opacity"], 0.25], 1.35], ["coalesce", ["get", "opacity"], 0.25]]
+            "fill-opacity": [
+              "case",
+              ["==", ["get", "fillPattern"], "outline"],
+              0,
+              ["==", ["get", "fillPattern"], "hatch"],
+              ["case", ["get", "selected"], 0.18, 0.1],
+              ["get", "selected"],
+              ["*", ["coalesce", ["get", "opacity"], 0.25], 1.35],
+              ["coalesce", ["get", "opacity"], 0.25]
+            ]
           }
         });
 
@@ -949,7 +1129,16 @@ export function CopMap({
           },
           paint: {
             "line-color": ["coalesce", ["get", "stroke"], "#2f80ed"],
-            "line-dasharray": ["case", ["==", ["get", "kind"], "measurement"], ["literal", [1.5, 1.2]], ["literal", [1, 0]]],
+            "line-dasharray": [
+              "case",
+              ["==", ["get", "kind"], "measurement"],
+              ["literal", [1.5, 1.2]],
+              ["==", ["get", "fillPattern"], "dash"],
+              ["literal", [2.2, 1.1]],
+              ["==", ["get", "fillPattern"], "hatch"],
+              ["literal", [0.8, 0.8]],
+              ["literal", [1, 0]]
+            ],
             "line-opacity": 0.9,
             "line-width": ["case", ["get", "selected"], ["+", ["coalesce", ["get", "lineWidth"], 2], 1.4], ["coalesce", ["get", "lineWidth"], 2]]
           }
@@ -987,6 +1176,25 @@ export function CopMap({
             "circle-radius": ["case", ["get", "selected"], 11, 8],
             "circle-stroke-color": ["coalesce", ["get", "stroke"], "#ffffff"],
             "circle-stroke-width": ["case", ["get", "selected"], 3, 2]
+          }
+        });
+
+        map.addLayer({
+          id: sketchPointIconLayerId,
+          type: "symbol",
+          source: sketchSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "kind"], "arrowhead"]],
+          layout: {
+            "text-allow-overlap": true,
+            "text-anchor": "center",
+            "text-field": ["coalesce", ["get", "iconGlyph"], ""],
+            "text-font": ["Noto Sans Regular"],
+            "text-size": ["case", ["get", "selected"], 16, 13]
+          },
+          paint: {
+            "text-color": "#061019",
+            "text-halo-color": "rgba(255,255,255,0.45)",
+            "text-halo-width": 0.6
           }
         });
 
@@ -2194,12 +2402,15 @@ export function CopMap({
           const activeSketchMode = sketchModeRef.current;
           if (activeSketchMode === "marker" || activeSketchMode === "text") {
             const kind: SketchDrawingKind = activeSketchMode === "text" ? "text" : "marker";
+            const preset = activeSketchMode === "text" ? sketchSymbolPresets.find((candidate) => candidate.iconId === "note") ?? defaultSketchSymbol : sketchSymbolRef.current;
+            const style = sketchStyleSettingsRef.current;
             onCreateSketchDrawingRef.current?.({
               geometry: { coordinates: [event.lngLat.lng, event.lngLat.lat], type: "Point" },
               kind,
-              label: activeSketchMode === "text" ? "Popisek" : "Značka",
-              properties: { createdFrom: "map" },
-              symbol: { iconId: activeSketchMode === "text" ? "note" : "warning", palette: "civil" },
+              label: activeSketchMode === "text" ? "Popisek" : preset.label,
+              properties: { createdFrom: "map", fillPattern: sketchFillPatternRef.current, shape: preset.shape },
+              style,
+              symbol: sketchPresetToSymbolInput(preset),
               visibility: "private"
             });
             onSketchModeChangeRef.current?.("select");
@@ -2218,7 +2429,7 @@ export function CopMap({
             if (clickedSketchEditHandle) {
               return;
             }
-            const clickedSketch = queryRenderedFeatureByLayerPriority(map, event.point, [sketchPointLayerId, sketchLabelLayerId, sketchLineLayerId, sketchFillLayerId]);
+            const clickedSketch = queryRenderedFeatureByLayerPriority(map, event.point, [sketchPointIconLayerId, sketchPointLayerId, sketchLabelLayerId, sketchLineLayerId, sketchFillLayerId]);
             const properties = isRecord(clickedSketch?.properties) ? clickedSketch.properties : {};
             const drawingId = stringProperty(properties.drawingId);
             const drawing = sketchDrawingsRef.current.find((candidate) => candidate.id === drawingId);
@@ -2701,12 +2912,19 @@ export function CopMap({
     }
     const draftLineCoordinates = sketchDraftPoints.map((point): [number, number] => [point.lon, point.lat]);
     const measuredKm = measureSketchLine(draftLineCoordinates);
+    const style = sketchStyleSettingsRef.current;
+    const pattern = sketchFillPatternRef.current;
     onCreateSketchDrawingRef.current?.({
       geometry,
       kind,
       label: sketchDraftLabel(kind, measuredKm),
-      properties: kind === "measurement" ? { measurementKm: measuredKm } : kind === "circle" ? { createdFrom: "map", radiusKm: measuredKm } : { createdFrom: "map" },
-      style: kind === "measurement" ? { stroke: "#facc15", fill: "#facc15", opacity: 0.08 } : kind === "circle" ? { stroke: "#38bdf8", fill: "#38bdf8", opacity: 0.14 } : undefined,
+      properties:
+        kind === "measurement"
+          ? { fillPattern: "dash", measurementKm: measuredKm }
+          : kind === "circle"
+            ? { createdFrom: "map", fillPattern: pattern, radiusKm: measuredKm }
+            : { createdFrom: "map", fillPattern: pattern },
+      style: kind === "measurement" ? { stroke: "#facc15", fill: "#facc15", opacity: 0.08 } : style,
       symbol: { iconId: kind === "measurement" ? "measure" : kind, palette: "civil" },
       visibility: "private"
     });
@@ -2739,6 +2957,57 @@ export function CopMap({
       });
     }
   }, [selectedSketchDrawing, selectedSketchVertexIndex]);
+
+  const applySketchStyle = React.useCallback((patch: Partial<SketchStyleSettings>) => {
+    const nextStyle = {
+      fill: patch.fill ?? sketchStyleSettingsRef.current.fill,
+      lineWidth: patch.lineWidth ?? sketchStyleSettingsRef.current.lineWidth,
+      opacity: patch.opacity ?? sketchStyleSettingsRef.current.opacity,
+      stroke: patch.stroke ?? sketchStyleSettingsRef.current.stroke
+    };
+    setSketchFill(nextStyle.fill);
+    setSketchLineWidth(nextStyle.lineWidth);
+    setSketchOpacity(nextStyle.opacity);
+    setSketchStroke(nextStyle.stroke);
+    if (selectedSketchDrawing) {
+      onUpdateSketchDrawingRef.current?.(selectedSketchDrawing.id, { style: nextStyle });
+    }
+  }, [selectedSketchDrawing]);
+
+  const applySketchFillPattern = React.useCallback((pattern: SketchFillPattern) => {
+    setSketchFillPattern(pattern);
+    if (selectedSketchDrawing) {
+      onUpdateSketchDrawingRef.current?.(selectedSketchDrawing.id, {
+        properties: {
+          ...(selectedSketchDrawing.properties.properties ?? {}),
+          fillPattern: pattern
+        }
+      });
+    }
+  }, [selectedSketchDrawing]);
+
+  const applySketchSymbol = React.useCallback((preset: SketchSymbolPreset) => {
+    setSketchSymbol(preset);
+    if (selectedSketchDrawing && (selectedSketchDrawing.properties.kind === "marker" || selectedSketchDrawing.properties.kind === "point" || selectedSketchDrawing.properties.kind === "text")) {
+      onUpdateSketchDrawingRef.current?.(selectedSketchDrawing.id, {
+        label: preset.label,
+        properties: {
+          ...(selectedSketchDrawing.properties.properties ?? {}),
+          shape: preset.shape
+        },
+        symbol: sketchPresetToSymbolInput(preset)
+      });
+    }
+  }, [selectedSketchDrawing]);
+
+  const activeSketchTool = React.useMemo(
+    () => sketchToolItems.find((item) => item.mode === sketchMode) ?? sketchToolItems[0]!,
+    [sketchMode]
+  );
+  const ActiveSketchToolIcon = activeSketchTool.Icon;
+  const showSketchSymbolPalette =
+    sketchMode === "marker"
+    || Boolean(selectedSketchDrawing && (selectedSketchDrawing.properties.kind === "marker" || selectedSketchDrawing.properties.kind === "point" || selectedSketchDrawing.properties.kind === "text"));
 
   const missingPositionCount = objects.length - positionedObjects.length;
 
@@ -2777,32 +3046,167 @@ export function CopMap({
       ) : null}
       {reportLocationPickActive ? <div className="map-zone-create-hint">Kliknutím do mapy určíte polohu hlášení</div> : null}
       <div
-        className="map-sketch-toolbar"
+        className={`map-sketch-toolbar ${sketchToolsExpanded ? "expanded" : "collapsed"}`}
         onClick={stopMapToolbarEvent}
         onDoubleClick={stopMapToolbarEvent}
         onPointerDown={stopMapToolbarEvent}
       >
-        {([
-          ["pan", "Pohyb"],
-          ["select", "Výběr"],
-          ["marker", "Značka"],
-          ["line", "Linie"],
-          ["arrow", "Šipka"],
-          ["polygon", "Polygon"],
-          ["circle", "Kruh"],
-          ["text", "Text"],
-          ["measurement", "Měření"]
-        ] as Array<[SketchToolMode, string]>).map(([mode, label]) => (
+        <button
+          aria-label={sketchToolsExpanded ? "Skrýt nástroje zákresu" : "Zobrazit nástroje zákresu"}
+          className="map-sketch-toggle"
+          onClick={() => setSketchToolsExpanded((current) => !current)}
+          type="button"
+        >
+          {sketchToolsExpanded ? <ChevronDown size={17} /> : <ChevronUp size={17} />}
+        </button>
+        {sketchToolsExpanded ? (
+          <div className="map-sketch-tool-grid">
+            {sketchToolItems.map(({ Icon, label, mode }) => (
+              <button
+                aria-pressed={sketchMode === mode}
+                className={`map-sketch-tool-button ${sketchMode === mode ? "active" : ""}`}
+                key={mode}
+                onClick={() => onSketchModeChangeRef.current?.(mode)}
+                title={label}
+                type="button"
+              >
+                <Icon size={17} strokeWidth={2.2} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
           <button
-            className={sketchMode === mode ? "active" : ""}
-            key={mode}
-            onClick={() => onSketchModeChangeRef.current?.(mode)}
+            className="map-sketch-tool-button active compact"
+            onClick={() => setSketchToolsExpanded(true)}
             type="button"
           >
-            {label}
+            <ActiveSketchToolIcon size={17} strokeWidth={2.2} />
+            <span>{activeSketchTool.label}</span>
           </button>
-        ))}
+        )}
       </div>
+      {sketchToolsExpanded ? (
+        <div
+          className="map-sketch-style-panel"
+          onClick={stopMapToolbarEvent}
+          onDoubleClick={stopMapToolbarEvent}
+          onPointerDown={stopMapToolbarEvent}
+          onWheel={stopMapToolbarEvent}
+        >
+          <div className="map-sketch-style-header">
+            <Palette size={16} />
+            <strong>Zákres</strong>
+            <span>{selectedSketchDrawing ? "upravujete vybraný prvek" : "styl pro nový prvek"}</span>
+          </div>
+          <div className="map-sketch-style-grid">
+            <div className="map-sketch-style-section">
+              <span>Tah</span>
+              <div className="map-sketch-swatches">
+                {sketchColorSwatches.map((color) => (
+                  <button
+                    aria-label={`Barva tahu ${color}`}
+                    className={sketchStroke === color ? "active" : ""}
+                    key={`stroke-${color}`}
+                    onClick={() => applySketchStyle({ stroke: color })}
+                    style={{ "--swatch-color": color } as React.CSSProperties}
+                    type="button"
+                  />
+                ))}
+                <input
+                  aria-label="Vlastní barva tahu"
+                  onChange={(event) => applySketchStyle({ stroke: event.target.value })}
+                  type="color"
+                  value={sketchStroke}
+                />
+              </div>
+            </div>
+            <div className="map-sketch-style-section">
+              <span>Výplň</span>
+              <div className="map-sketch-swatches">
+                {sketchColorSwatches.map((color) => (
+                  <button
+                    aria-label={`Barva výplně ${color}`}
+                    className={sketchFill === color ? "active" : ""}
+                    key={`fill-${color}`}
+                    onClick={() => applySketchStyle({ fill: color })}
+                    style={{ "--swatch-color": color } as React.CSSProperties}
+                    type="button"
+                  />
+                ))}
+                <input
+                  aria-label="Vlastní barva výplně"
+                  onChange={(event) => applySketchStyle({ fill: event.target.value })}
+                  type="color"
+                  value={sketchFill}
+                />
+              </div>
+            </div>
+            <label className="map-sketch-range">
+              <span>Šířka {sketchLineWidth}px</span>
+              <input
+                max={12}
+                min={1}
+                onChange={(event) => applySketchStyle({ lineWidth: Number(event.target.value) })}
+                step={1}
+                type="range"
+                value={sketchLineWidth}
+              />
+            </label>
+            <label className="map-sketch-range">
+              <span>Průhlednost {Math.round(sketchOpacity * 100)}%</span>
+              <input
+                max={0.9}
+                min={0.05}
+                onChange={(event) => applySketchStyle({ opacity: Number(event.target.value) })}
+                step={0.05}
+                type="range"
+                value={sketchOpacity}
+              />
+            </label>
+            <div className="map-sketch-fill-patterns">
+              {([
+                ["solid", "Plná"],
+                ["outline", "Obrys"],
+                ["hatch", "Šrafy"],
+                ["dash", "Čár."]
+              ] as Array<[SketchFillPattern, string]>).map(([pattern, label]) => (
+                <button
+                  className={sketchFillPattern === pattern ? "active" : ""}
+                  key={pattern}
+                  onClick={() => applySketchFillPattern(pattern)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {showSketchSymbolPalette ? (
+            <div className="map-sketch-symbol-section">
+              <span>Symbol</span>
+              <div className="map-sketch-symbol-grid">
+                {sketchSymbolPresets.map((preset) => {
+                  const Icon = sketchSymbolIcons[preset.iconId] ?? MapPin;
+                  return (
+                    <button
+                      aria-label={preset.label}
+                      className={sketchSymbol.iconId === preset.iconId ? "active" : ""}
+                      key={preset.iconId}
+                      onClick={() => applySketchSymbol(preset)}
+                      title={preset.label}
+                      type="button"
+                    >
+                      <Icon size={16} strokeWidth={2.2} />
+                      <span>{preset.glyph}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {isSketchDraftMode(sketchMode) ? (
         <div className="map-zone-create-hint map-sketch-create-hint">
           <strong>{sketchMode === "measurement" ? "Měření" : "Kreslení"}</strong>
@@ -3219,13 +3623,34 @@ function emptySketchEditFeatureCollection(): SketchEditFeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
 
+function isSketchFillPattern(value: unknown): value is SketchFillPattern {
+  return value === "dash" || value === "hatch" || value === "outline" || value === "solid";
+}
+
+function sketchPresetToSymbolInput(preset: SketchSymbolPreset): Partial<SketchDrawingFeature["properties"]["symbol"]> {
+  return {
+    iconId: preset.iconId,
+    palette: preset.palette,
+    ...(preset.sidc ? { sidc: preset.sidc } : {})
+  };
+}
+
+function sketchSymbolGlyph(iconId: string | undefined, sidc: string | undefined): string {
+  const preset = sketchSymbolPresets.find((candidate) => candidate.iconId === iconId || (sidc && candidate.sidc === sidc));
+  return preset?.glyph ?? "●";
+}
+
 function sketchDrawingsToFeatureCollection(drawings: SketchDrawingFeature[], selectedDrawingId: string | null | undefined): SketchFeatureCollection {
   const features: SketchFeatureCollection["features"] = [];
   drawings.forEach((drawing) => {
     const selected = drawing.id === selectedDrawingId;
+    const drawingProperties = drawing.properties.properties ?? {};
+    const fillPattern = isSketchFillPattern(drawingProperties.fillPattern) ? drawingProperties.fillPattern : "solid";
     const baseProperties = {
       drawingId: drawing.id,
       fill: drawing.properties.style.fill || "#2f80ed",
+      fillPattern,
+      iconGlyph: sketchSymbolGlyph(drawing.properties.symbol.iconId, drawing.properties.symbol.sidc),
       kind: drawing.properties.kind,
       label: drawing.properties.label,
       lineWidth: Number.isFinite(drawing.properties.style.lineWidth) ? drawing.properties.style.lineWidth : 2,
@@ -3281,12 +3706,22 @@ function sketchDraftToFeatureCollection(points: Array<{ lat: number; lon: number
   }
   const coordinates = points.map((point): [number, number] => [point.lon, point.lat]);
   const features: SketchDraftFeatureCollection["features"] = [];
-  if ((mode === "line" || mode === "measurement" || mode === "arrow") && coordinates.length >= 2) {
+  if ((mode === "line" || mode === "measurement") && coordinates.length >= 2) {
     features.push({
       type: "Feature",
       geometry: { type: "LineString", coordinates },
       properties: { kind: "line" }
     });
+  }
+  if (mode === "arrow" && points.length >= 2) {
+    const geometry = arrowGeometryFromDraftPoints(points);
+    if (geometry) {
+      features.push({
+        type: "Feature",
+        geometry,
+        properties: { kind: "area" }
+      });
+    }
   }
   if (mode === "circle" && points.length >= 2) {
     const geometry = circleGeometryFromDraftPoints(points);
@@ -3377,7 +3812,10 @@ function sketchGeometryFromPoints(kind: SketchDrawingKind, points: Array<{ lat: 
   if ((kind === "marker" || kind === "point" || kind === "text") && coordinates[0]) {
     return { type: "Point", coordinates: coordinates[0] };
   }
-  if ((kind === "line" || kind === "measurement" || kind === "arrow") && coordinates.length >= 2) {
+  if (kind === "arrow" && coordinates.length >= 2) {
+    return arrowGeometryFromDraftPoints(points);
+  }
+  if ((kind === "line" || kind === "measurement") && coordinates.length >= 2) {
     return { type: "LineString", coordinates };
   }
   if (kind === "circle") {
@@ -3424,6 +3862,44 @@ function sketchDraftHint(mode: SketchToolMode, points: Array<{ lat: number; lon:
     return points.length < 2 ? `Klikněte začátek a konec šipky (${points.length}/2).` : `${points.length} bodů připraveno.`;
   }
   return points.length < 2 ? `Přidejte alespoň 2 body (${points.length}/2).` : formatMeasurementLabel(measureSketchLine(points.map((point) => [point.lon, point.lat])));
+}
+
+function arrowGeometryFromDraftPoints(points: Array<{ lat: number; lon: number }>): Extract<SketchGeometry, { type: "Polygon" }> | null {
+  const start = points[0];
+  const end = points[points.length - 1];
+  if (!start || !end) {
+    return null;
+  }
+  const dx = end.lon - start.lon;
+  const dy = end.lat - start.lat;
+  const length = Math.hypot(dx, dy);
+  if (!Number.isFinite(length) || length <= 0.000001) {
+    return null;
+  }
+  const ux = dx / length;
+  const uy = dy / length;
+  const nx = -uy;
+  const ny = ux;
+  const headLength = clampValue(length * 0.32, length * 0.18, length * 0.46);
+  const shaftHalf = Math.max(length * 0.035, 0.00008);
+  const headHalf = Math.max(length * 0.12, shaftHalf * 2.6);
+  const neckLon = end.lon - ux * headLength;
+  const neckLat = end.lat - uy * headLength;
+  const ring: Array<[number, number]> = [
+    [start.lon + nx * shaftHalf, start.lat + ny * shaftHalf],
+    [neckLon + nx * shaftHalf, neckLat + ny * shaftHalf],
+    [neckLon + nx * headHalf, neckLat + ny * headHalf],
+    [end.lon, end.lat],
+    [neckLon - nx * headHalf, neckLat - ny * headHalf],
+    [neckLon - nx * shaftHalf, neckLat - ny * shaftHalf],
+    [start.lon - nx * shaftHalf, start.lat - ny * shaftHalf],
+    [start.lon + nx * shaftHalf, start.lat + ny * shaftHalf]
+  ];
+  return { type: "Polygon", coordinates: [ring] };
+}
+
+function clampValue(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function circleGeometryFromDraftPoints(points: Array<{ lat: number; lon: number }>): Extract<SketchGeometry, { type: "Polygon" }> | null {

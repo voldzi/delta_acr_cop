@@ -24,6 +24,10 @@ Základní pole:
 - `visibility`: `private`, `group`, `event`, `public`.
 - `style`: barva tahu, výplň, průhlednost a šířka čáry.
 - `symbol`: civilní `iconId` nebo profesionální APP-6/NATO `sidc`.
+- `properties.fillPattern`: volitelný vizuální vzor výplně `solid`, `outline`,
+  `hatch` nebo `dash`.
+- `properties.shape`: volitelná informace o obecném tvaru symbolu, například
+  `star`, `circle`, `square`, `rectangle`, `triangle`, `wave`, `diamond`.
 - `ownerSubjectId`, `groupId`, `eventId`, `revision`, `locked`.
 
 Veřejné a soukromé zákresy se vrací stejným GeoJSON kontraktem. Přístupová
@@ -79,12 +83,23 @@ Web používá explicitní režimy mapy:
 - `Značka`: vložení bodové civilní značky.
 - `Linie`: kreslení linie.
 - `Polygon`: kreslení oblasti.
+- `Šipka`: vyplněná 2D šipka vytvořená začátkem a koncem směru.
 - `Text`: vložení textové poznámky.
 - `Měření`: dočasné měření vzdálenosti, které lze uložit jako zákres.
 
 Při kreslení se vypne běžné posouvání mapy, aby touch eventy na mobilu
 nepropadávaly do MapLibre. Vybraný zákres lze upravit přímo v mapě: posunem
 vrcholů, vložením bodu přes midpoint a smazáním vybraného vrcholu.
+
+Webový klient má profesionální kreslicí inspektor:
+
+- nástroje lze sbalit na jedinou aktivní ikonu,
+- každému novému nebo vybranému objektu lze nastavit barvu tahu, barvu výplně,
+  průhlednost, šířku čáry a vzor výplně,
+- značka má výběr ze symbolů včetně obecných tvarů a základních profesionálních
+  APP-6/NATO symbolů,
+- styl se aplikuje okamžitě na vybraný zákres a současně slouží jako výchozí
+  nastavení pro další objekt.
 
 ## Palety
 
@@ -98,6 +113,10 @@ Civilní paleta obsahuje obecné krizové symboly:
 - evakuační bod,
 - riziko,
 - poznámka.
+
+Dále obsahuje obecné vektorové tvary pro rychlý zákres: hvězda, kruh, čtverec,
+obdélník, trojúhelník, kosočtverec a vlnka. Tyto tvary jsou uložené jako běžné
+`iconId` a klienti je mohou vykreslovat nativně.
 
 Profesionální paleta může používat APP-6/NATO symboly přes existující renderer.
 Použití je omezené na situační anotaci a nesmí přidávat targeting, navádění ani
