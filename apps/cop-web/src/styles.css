@@ -3758,6 +3758,9 @@ h1 {
     linear-gradient(180deg, rgba(17, 25, 31, 0.97), rgba(7, 12, 16, 0.97)),
     var(--panel);
   box-shadow: 18px 24px 70px rgba(0, 0, 0, 0.48);
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  touch-action: pan-y;
 }
 
 .catalog-drawer-header {
@@ -7921,6 +7924,23 @@ dd {
       radial-gradient(circle at 12% 0%, rgba(74, 163, 255, 0.12), transparent 35%),
       linear-gradient(180deg, rgba(10, 17, 24, 0.98), rgba(5, 10, 15, 0.99));
     box-shadow: 0 -24px 56px rgba(0, 0, 0, 0.58);
+  }
+
+  .shell.app-shell-v2.mobile-sheet-open .map-stage,
+  .shell.app-shell-v2.mobile-sheet-open .map-container,
+  .shell.app-shell-v2.mobile-sheet-open .map-canvas,
+  .shell.app-shell-v2.mobile-sheet-open .map-canvas canvas,
+  .shell.app-shell-v2.mobile-sheet-open .map-canvas .maplibregl-canvas-container {
+    pointer-events: none;
+  }
+
+  .shell.app-shell-v2.mobile-sheet-open .mobile-bottom-nav,
+  .shell.app-shell-v2.mobile-sheet-open .mobile-sheet-close,
+  .shell.app-shell-v2.mobile-sheet-layers .left-panel,
+  .shell.app-shell-v2.mobile-sheet-detail .right-panel,
+  .shell.app-shell-v2.mobile-sheet-layers .catalog-layer-menu,
+  .shell.app-shell-v2.mobile-sheet-layers .catalog-layer-drawer {
+    pointer-events: auto;
   }
 
   .shell.app-shell-v2.mobile-sheet-layers .left-panel::before,

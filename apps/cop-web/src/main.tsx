@@ -6685,7 +6685,12 @@ function CatalogLayerDrawer({
 }) {
   const enabledCount = groupView.layers.filter(isLayerEnabled).length;
   return (
-    <section className="catalog-layer-drawer" data-testid="catalog-layer-drawer">
+    <section
+      className="catalog-layer-drawer"
+      data-testid="catalog-layer-drawer"
+      onPointerDown={(event) => event.stopPropagation()}
+      onTouchMove={(event) => event.stopPropagation()}
+    >
       <div className="catalog-drawer-header">
         <div>
           <span>Katalog vrstev</span>
@@ -6737,7 +6742,11 @@ function CatalogLayerDrawer({
                   aria-label={`Zobrazit vrstvu ${layer.label}`}
                   checked={enabled}
                   disabled={!operable}
-                  onChange={toggleLayer}
+                  onChange={(event) => {
+                    event.stopPropagation();
+                    toggleLayer();
+                  }}
+                  onClick={(event) => event.stopPropagation()}
                   type="checkbox"
                 />
                 <span>
