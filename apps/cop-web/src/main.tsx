@@ -56,6 +56,7 @@ import {
   Wifi
 } from "lucide-react";
 import {
+  authSessionStorageKey,
   beginLogin,
   createInitialAuthSession,
   endSession,
@@ -66,6 +67,8 @@ import {
   isOidcEnabled,
   readAuthConfig,
   refreshAuthSession,
+  subjectIdFromAuthSession,
+  subjectIdFromStoredAuthValue,
   type AuthConfig,
   type AuthSession
 } from "./auth";
@@ -371,6 +374,10 @@ interface AlertSummary {
 
 type MobileSheet = "layers" | "detail" | null;
 
+interface AccountChangeNotice {
+  kind: "changed" | "cleared";
+}
+
 export function App() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
@@ -519,6 +526,7 @@ export function App() {
   const [communityGroupsError, setCommunityGroupsError] = React.useState<string | null>(null);
   const [communityGallery, setCommunityGallery] = React.useState<CommunityGalleryState | null>(null);
   const [loginPromptReason, setLoginPromptReason] = React.useState<LoginPromptReason | null>(null);
+  const [accountChangeNotice, setAccountChangeNotice] = React.useState<AccountChangeNotice | null>(null);
   const [takLayers, setTakLayers] = React.useState<TakLayer[]>([]);
   const [visibleTakLayerIds, setVisibleTakLayerIds] = React.useState<TakLayerId[]>(() => normalizeTakLayerIds(initialPreferences.takLayerIds));
   const [takFeatures, setTakFeatures] = React.useState<TakFeatureCollectionResponse | null>(null);
@@ -561,6 +569,7 @@ export function App() {
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken);
   const profileAccessReady = Boolean(authToken);
   const messagingAuthenticated = authenticatedSessionActive;
+  const authSubjectId = subjectIdFromAuthSession(authSession);
 
   const refreshAuthSessionForRequest = React.useCallback(async (): Promise<string | undefined> => {
     const refreshed = await refreshAuthSession(authConfig, authSession);
@@ -570,6 +579,37 @@ export function App() {
     }
     return undefined;
   }, [authConfig, authSession]);
+
+  React.useEffect(() => {
+    if (!isOidcEnabled(authConfig) || authSession.status !== "authenticated" || !authSubjectId) {
+      return;
+    }
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key !== authSessionStorageKey || (event.storageArea && event.storageArea !== window.localStorage)) {
+        return;
+      }
+      const nextSubjectId = subjectIdFromStoredAuthValue(event.newValue);
+      if (nextSubjectId === authSubjectId) {
+        return;
+      }
+      setAuthSession({
+        error: nextSubjectId ? "Účet byl změněn v jiném okně." : "Účet byl odhlášen v jiném okně.",
+        status: "anonymous"
+      });
+      setAccountChangeNotice({
+        kind: nextSubjectId ? "changed" : "cleared"
+      });
+      try {
+        window.sessionStorage.removeItem(authSessionStorageKey);
+      } catch {
+        // Session storage is best-effort; the important protection is dropping the active in-memory token.
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [authConfig, authSession.status, authSubjectId]);
 
   React.useEffect(() => {
     if (authSession.status !== "authenticated" || !authSession.expiresAt || !isOidcEnabled(authConfig)) {
@@ -2687,8 +2727,12 @@ export function App() {
     setReplayPosition(100);
   }
 
-  function loginOperator() {
-    void beginLogin(authConfig);
+  function loginOperator(options?: { promptLogin?: boolean }) {
+    void beginLogin(authConfig, options?.promptLogin ? { prompt: "login" } : {});
+  }
+
+  function loginDifferentOperator() {
+    loginOperator({ promptLogin: true });
   }
 
   function openLoginPrompt(reason: LoginPromptReason = "account") {
@@ -2706,6 +2750,29 @@ export function App() {
   function continueLoginFromPrompt() {
     setLoginPromptReason(null);
     loginOperator();
+  }
+
+  function switchToChangedAccount() {
+    setAccountChangeNotice(null);
+    setAuthSession((current) => ({ ...current, status: "authenticating" }));
+    initializeAuth(authConfig)
+      .then((nextSession) => setAuthSession(nextSession))
+      .catch((error: unknown) => {
+        setAuthSession({
+          error: error instanceof Error ? error.message : "Přepnutí účtu selhalo.",
+          status: "anonymous"
+        });
+      });
+  }
+
+  function staySignedOutAfterAccountChange() {
+    try {
+      window.sessionStorage.removeItem(authSessionStorageKey);
+    } catch {
+      // Session storage may be unavailable in restricted browser modes.
+    }
+    setAccountChangeNotice(null);
+    setAuthSession({ status: "anonymous" });
   }
 
   function startCommunityReportCapture() {
@@ -4107,6 +4174,7 @@ export function App() {
               <AccountAccessBox
                 authenticated={profileAccessReady}
                 session={authSession}
+                onLoginDifferent={loginDifferentOperator}
                 onLogin={() => openLoginPrompt("account")}
               />
               <div className="personal-awareness-box">
@@ -4389,6 +4457,7 @@ export function App() {
           onWorkspaceLayoutChange={updateWorkspaceLayout}
           onHelp={(section) => setHelpSection(section)}
           onLogin={loginOperator}
+          onLoginDifferent={loginDifferentOperator}
           onLogout={logoutOperator}
         />
       ) : null}
@@ -4443,6 +4512,15 @@ export function App() {
           reason={loginPromptReason}
           onClose={() => setLoginPromptReason(null)}
           onContinue={continueLoginFromPrompt}
+        />
+      ) : null}
+
+      {accountChangeNotice ? (
+        <AccountChangedDialog
+          notice={accountChangeNotice}
+          onLoginDifferent={loginDifferentOperator}
+          onStaySignedOut={staySignedOutAfterAccountChange}
+          onSwitch={switchToChangedAccount}
         />
       ) : null}
 
@@ -4908,6 +4986,56 @@ function LoginRequiredDialog({
   );
 }
 
+function AccountChangedDialog({
+  notice,
+  onLoginDifferent,
+  onStaySignedOut,
+  onSwitch
+}: {
+  notice: AccountChangeNotice;
+  onLoginDifferent: () => void;
+  onStaySignedOut: () => void;
+  onSwitch: () => void;
+}) {
+  const changed = notice.kind === "changed";
+  return (
+    <ModalDialog
+      actions={
+        <>
+          <button className="ghost-button" onClick={onStaySignedOut} type="button">
+            Zůstat odhlášen
+          </button>
+          <button className="ghost-button" onClick={onLoginDifferent} type="button">
+            <LogIn size={16} />
+            Přihlásit jiný účet
+          </button>
+          {changed ? (
+            <button className="primary-button" onClick={onSwitch} type="button">
+              Přepnout účet
+            </button>
+          ) : null}
+        </>
+      }
+      className="account-changed-dialog"
+      description={
+        changed
+          ? "V jiném okně nebo webové instalaci se přihlásil jiný účet. Toto okno se nepřepnulo automaticky."
+          : "V jiném okně nebo webové instalaci došlo k odhlášení. Toto okno už nepoužívá původní relaci."
+      }
+      eyebrow="Zabezpečení účtu"
+      onClose={onStaySignedOut}
+      title={changed ? "Účet byl změněn v jiném okně" : "Účet byl odhlášen v jiném okně"}
+    >
+      <div className="login-required-body">
+        <div className="login-required-note">
+          <ShieldCheck size={17} />
+          <span>Vyberte, zda chcete převzít nově přihlášený účet, nebo v tomto okně pokračovat bez přihlášení.</span>
+        </div>
+      </div>
+    </ModalDialog>
+  );
+}
+
 function loginPromptContent(reason: LoginPromptReason): { benefits: string[]; description: string; title: string } {
   switch (reason) {
     case "ai":
@@ -5011,11 +5139,13 @@ function AlertCenterBoard({
 function AccountAccessBox({
   authenticated,
   session,
-  onLogin
+  onLogin,
+  onLoginDifferent
 }: {
   authenticated: boolean;
   session: AuthSession;
   onLogin: () => void;
+  onLoginDifferent: () => void;
 }) {
   const displayName = session.profile?.name ?? session.profile?.username ?? "Přihlášený uživatel";
   return (
@@ -5025,6 +5155,10 @@ function AccountAccessBox({
         <div className="account-access-summary">
           <strong>{displayName}</strong>
           <span>Profil, hlášení a komunikace jsou dostupné.</span>
+          <button className="mini-button" onClick={onLoginDifferent} type="button">
+            <LogIn size={14} />
+            Přihlásit jiný účet
+          </button>
         </div>
       ) : (
         <>
@@ -6082,6 +6216,7 @@ function SettingsDrawer({
   onWorkspaceLayoutChange,
   onHelp,
   onLogin,
+  onLoginDifferent,
   onLogout
 }: {
   activeTab: SettingsTab;
@@ -6142,6 +6277,7 @@ function SettingsDrawer({
   onWorkspaceLayoutChange: (value: Partial<WorkspaceLayoutPreferences>) => void;
   onHelp: (section: HelpSection) => void;
   onLogin: () => void;
+  onLoginDifferent: () => void;
   onLogout: () => void;
 }) {
   return (
@@ -6385,15 +6521,27 @@ function SettingsDrawer({
               ) : null}
               {isOidcEnabled(authConfig) ? (
                 authSession.status === "authenticated" ? (
-                  <button className="primary-button secondary" onClick={onLogout} type="button">
-                    <LogOut size={16} />
-                    Odhlásit
-                  </button>
+                  <div className="settings-button-row">
+                    <button className="primary-button secondary" onClick={onLogout} type="button">
+                      <LogOut size={16} />
+                      Odhlásit
+                    </button>
+                    <button className="ghost-button" onClick={onLoginDifferent} type="button">
+                      <LogIn size={16} />
+                      Přihlásit jiný účet
+                    </button>
+                  </div>
                 ) : (
-                  <button className="primary-button" onClick={onLogin} type="button">
-                    <LogIn size={16} />
-                    Přihlásit
-                  </button>
+                  <div className="settings-button-row">
+                    <button className="primary-button" onClick={onLogin} type="button">
+                      <LogIn size={16} />
+                      Přihlásit
+                    </button>
+                    <button className="ghost-button" onClick={onLoginDifferent} type="button">
+                      <LogIn size={16} />
+                      Přihlásit jiný účet
+                    </button>
+                  </div>
                 )
               ) : (
                 <div className="empty-mini">Přihlášení není v této konfiguraci zapnuté. Aplikace běží v laboratorním režimu.</div>

@@ -56,6 +56,12 @@ const callbackStateFallbackKey = "cop.oidc.callback.fallback.v1";
 const callbackStateTtlMs = 10 * 60 * 1000;
 const sessionKey = "cop.oidc.session.v1";
 
+export const authSessionStorageKey = sessionKey;
+
+export interface BeginLoginOptions {
+  prompt?: "login";
+}
+
 export function readAuthConfig(): AuthConfig {
   return {
     clientId: import.meta.env.VITE_COP_OIDC_CLIENT_ID ?? "cop-web",
@@ -142,7 +148,7 @@ export function isAuthSessionActive(session: AuthSession, skewMs = 30_000): sess
     && (!session.expiresAt || session.expiresAt > Date.now() + skewMs);
 }
 
-export async function beginLogin(config: AuthConfig): Promise<void> {
+export async function beginLogin(config: AuthConfig, options: BeginLoginOptions = {}): Promise<void> {
   if (!isOidcEnabled(config)) {
     return;
   }
@@ -161,6 +167,9 @@ export async function beginLogin(config: AuthConfig): Promise<void> {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", config.scope);
   url.searchParams.set("state", state);
+  if (options.prompt) {
+    url.searchParams.set("prompt", options.prompt);
+  }
   window.location.assign(url.toString());
 }
 
@@ -178,6 +187,25 @@ export function endSession(config: AuthConfig, session: AuthSession): void {
     url.searchParams.set("id_token_hint", session.idToken);
   }
   window.location.assign(url.toString());
+}
+
+export function subjectIdFromAuthSession(session: AuthSession): string | undefined {
+  return stableSubjectId(session.profile);
+}
+
+export function subjectIdFromStoredAuthValue(value: string | null): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(value) as Partial<StoredAuthSession>;
+    if (typeof parsed.accessToken !== "string" || typeof parsed.expiresAt !== "number") {
+      return undefined;
+    }
+    return subjectIdFromStoredSession(parsed as StoredAuthSession);
+  } catch {
+    return undefined;
+  }
 }
 
 export function decodeJwtPayload(token: string): Record<string, unknown> {
@@ -272,6 +300,14 @@ function profileFromPayload(payload: Record<string, unknown>): AuthProfile {
     subjectId: optionalString(payload.sub),
     username: preferredUsername ?? name
   };
+}
+
+function subjectIdFromStoredSession(session: Pick<StoredAuthSession, "profile"> | null): string | undefined {
+  return session ? stableSubjectId(session.profile) : undefined;
+}
+
+function stableSubjectId(profile: AuthProfile | undefined): string | undefined {
+  return profile?.subjectId ?? profile?.username ?? profile?.email;
 }
 
 function readStoredSession(): StoredAuthSession | null {

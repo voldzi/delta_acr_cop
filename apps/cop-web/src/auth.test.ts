@@ -1,7 +1,18 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createInitialAuthSession, decodeJwtPayload, getAuthorizationToken, initializeAuth, isAuthSessionActive, isOidcEnabled, refreshAuthSession, type AuthConfig } from "./auth";
+import {
+  createInitialAuthSession,
+  decodeJwtPayload,
+  getAuthorizationToken,
+  initializeAuth,
+  isAuthSessionActive,
+  isOidcEnabled,
+  refreshAuthSession,
+  subjectIdFromAuthSession,
+  subjectIdFromStoredAuthValue,
+  type AuthConfig
+} from "./auth";
 
 describe("web auth helpers", () => {
   beforeEach(() => {
@@ -74,6 +85,26 @@ describe("web auth helpers", () => {
       profile: { username: "operator" },
       status: "authenticated"
     });
+  });
+
+  it("extracts stable subject IDs from active and stored sessions", () => {
+    expect(subjectIdFromAuthSession({
+      accessToken: "token",
+      expiresAt: Date.now() + 120_000,
+      profile: { email: "operator@example.test", name: "COP Operator", subjectId: "subject-1", username: "operator" },
+      status: "authenticated"
+    })).toBe("subject-1");
+    expect(subjectIdFromAuthSession({
+      profile: { email: "operator@example.test", name: "COP Operator", username: "operator" },
+      status: "authenticated"
+    })).toBe("operator");
+    expect(subjectIdFromStoredAuthValue(JSON.stringify({
+      accessToken: "stored-token",
+      expiresAt: Date.now() + 120_000,
+      profile: { name: "Stored Operator", subjectId: "stored-subject", username: "stored" }
+    }))).toBe("stored-subject");
+    expect(subjectIdFromStoredAuthValue(null)).toBeUndefined();
+    expect(subjectIdFromStoredAuthValue("{bad json")).toBeUndefined();
   });
 
   it("refreshes an expired persisted OIDC session instead of dropping it to anonymous", async () => {

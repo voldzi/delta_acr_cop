@@ -1388,6 +1388,7 @@ h1 {
   padding: 0 16px;
 }
 
+.account-changed-dialog,
 .login-required-dialog {
   display: grid;
   gap: 14px;
