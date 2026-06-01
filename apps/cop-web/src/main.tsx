@@ -6659,16 +6659,48 @@ function CatalogLayerDrawer({
           const enabled = isLayerEnabled(layer);
           const operable = isLayerOperable(layer);
           const status = getLayerStatus(layer);
+          const toggleLayer = () => {
+            if (operable) {
+              onToggleLayer(layer);
+            }
+          };
           return (
-            <div className={`catalog-layer-row ${enabled ? "enabled" : ""} ${!operable ? "disabled" : ""}`} key={layer.layerId}>
-              <label title={layer.description ?? layer.label}>
-                <input checked={enabled} disabled={!operable} onChange={() => onToggleLayer(layer)} type="checkbox" />
+            <div
+              aria-checked={enabled}
+              aria-disabled={!operable}
+              className={`catalog-layer-row ${enabled ? "enabled" : ""} ${!operable ? "disabled" : ""}`}
+              key={layer.layerId}
+              onClick={(event) => {
+                const target = event.target as HTMLElement | null;
+                if (target?.closest("button,input,select,textarea,a")) {
+                  return;
+                }
+                toggleLayer();
+              }}
+              onKeyDown={(event) => {
+                if (!operable || (event.key !== "Enter" && event.key !== " ")) {
+                  return;
+                }
+                event.preventDefault();
+                toggleLayer();
+              }}
+              role="switch"
+              tabIndex={operable ? 0 : -1}
+            >
+              <div className="catalog-layer-toggle" title={layer.description ?? layer.label}>
+                <input
+                  aria-label={`Zobrazit vrstvu ${layer.label}`}
+                  checked={enabled}
+                  disabled={!operable}
+                  onChange={toggleLayer}
+                  type="checkbox"
+                />
                 <span>
                   <strong>{layer.label}</strong>
                   <small>{catalogLayerHint(layer, operable)}</small>
                 </span>
                 <em>{getFeatureCount(layer)}</em>
-              </label>
+              </div>
               <div className="catalog-layer-meta">
                 <span className={`catalog-status ${status}`}>{situationStatusLabel(status)}</span>
                 <span>{catalogLayerProviderLabel(layer)}</span>
