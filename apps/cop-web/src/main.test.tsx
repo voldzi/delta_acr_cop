@@ -168,6 +168,12 @@ describe("COP web dashboard", () => {
     expect((within(catalogDrawer).getByRole("checkbox", { name: /Veřejné lety/u }) as HTMLInputElement).checked).toBe(true);
     expect(within(catalogDrawer).getByText("Simulace")).toBeTruthy();
     expect((within(catalogDrawer).getByRole("checkbox", { name: /Simulace/u }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Mobilní navigace" })).getByRole("button", { name: "Vrstvy" }));
+    const mobileSheet = screen.getByTestId("mobile-sheet-surface");
+    const mobilePublicFlightToggle = within(mobileSheet).getByRole("checkbox", { name: /Veřejné lety/u }) as HTMLInputElement;
+    expect(mobilePublicFlightToggle.checked).toBe(true);
+    fireEvent.click(mobilePublicFlightToggle);
+    expect(mobilePublicFlightToggle.checked).toBe(false);
     const mapWorkspaceTab = screen.getAllByRole("button", { name: /Mapa/u }).find((button) => button.classList.contains("workspace-tab"));
     expect(mapWorkspaceTab?.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: /Přehled/u }));

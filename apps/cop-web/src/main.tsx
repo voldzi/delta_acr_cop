@@ -4004,6 +4004,81 @@ export function App() {
         /> : null}
       </section>
 
+      {mobileSheet === "layers" ? (
+        <MobileSheetSurface
+          title={activeCatalogGroup?.group.label ?? "Vrstvy"}
+          subtitle="Katalog vrstev"
+          onClose={() => setMobileSheet(null)}
+        >
+          <CatalogLayerMenu
+            activeGroup={activeCatalogGroup}
+            groups={catalogGroupViews}
+            loadError={loadError}
+            statusLabel={missionModeLabel(operatingMode, offlineSnapshotState)}
+            onCloseDrawer={() => setMobileSheet(null)}
+            onGroupSelect={setActiveCatalogGroupId}
+            getFeatureCount={catalogLayerFeatureCount}
+            getLayerStatus={catalogLayerStatus}
+            isLayerEnabled={isCatalogLayerEnabled}
+            isLayerOperable={isCatalogLayerOperable}
+            onToggleLayer={toggleCatalogLayer}
+            coverageTechnology={coverageTechnology}
+            onCoverageTechnologyChange={setCoverageTechnology}
+            userZones={aoiRules}
+            zoneCreationMode={zoneCreationMode}
+            editingZoneId={editingZoneId}
+            onUserZoneColorChange={handleAoiRuleColorChange}
+            onUserZoneCreateFromMap={handleCreateAoiRuleFromMap}
+            onUserZoneCreateFromUserLocation={handleCreateAoiRuleFromUserLocation}
+            onUserZoneDelete={handleAoiRuleDelete}
+            onUserZoneEnabledChange={handleAoiRuleEnabledChange}
+            onUserZoneEdit={handleStartAoiRuleEdit}
+            onUserZoneRadiusChange={handleAoiRuleRadiusChange}
+            onUserZoneStartDrawing={() => {
+              setEditingZoneId(null);
+              setZoneCreationMode((current) => !current);
+              setMobileSheet(null);
+            }}
+          />
+        </MobileSheetSurface>
+      ) : null}
+
+      {mobileSheet === "detail" ? (
+        <MobileSheetSurface
+          title={selectedSituationFeature ? "Detail prvku" : explicitlySelectedObject ? "Detail objektu" : "Detail"}
+          subtitle="Mapa"
+          onClose={() => setMobileSheet(null)}
+        >
+          {selectedSituationFeature ? (
+            <SituationFeatureDetail
+              feature={selectedSituationFeature}
+              onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
+              onEditReport={(feature) => editCommunityReportFeature(feature)}
+              onOpenGallery={(attachments, index, title, subtitle) => {
+                const galleryAttachments = buildCommunityGalleryAttachments(communityFeatures, selectedSituationFeature, attachments);
+                const selectedAttachmentId = attachments[index]?.attachmentId;
+                const galleryIndex = Math.max(0, galleryAttachments.findIndex((attachment) => attachment.attachmentId === selectedAttachmentId));
+                setCommunityGallery({
+                  attachments: galleryAttachments,
+                  index: galleryIndex,
+                  subtitle,
+                  title
+                });
+              }}
+            />
+          ) : selectedObject ? (
+            <ObjectDetail
+              historyPoints={replayTrackHistory[selectedObject.objectId] ?? []}
+              object={selectedObject}
+              replayActive={replayActive}
+              sourceHealth={sourceHealth}
+            />
+          ) : (
+            <div className="empty-state">Vyberte objekt nebo mapový prvek.</div>
+          )}
+        </MobileSheetSurface>
+      ) : null}
+
       <MobileBottomNav
         activeSheet={mobileSheet}
         hasDetail={Boolean(selectedSituationFeature || explicitlySelectedObject)}
@@ -5237,6 +5312,112 @@ function MobileSelectionPeek({
       <button aria-label="Zrušit výběr" className="mobile-selection-peek-close" onClick={onClose} type="button">
         <X size={17} />
       </button>
+    </div>
+  );
+}
+
+function MobileSheetSurface({
+  children,
+  onClose,
+  subtitle,
+  title
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+  subtitle?: string;
+  title: string;
+}) {
+  const [dragOffset, setDragOffset] = React.useState(0);
+  const startYRef = React.useRef<number | null>(null);
+
+  const stopSheetEvent = React.useCallback((event: React.SyntheticEvent<HTMLElement>) => {
+    event.stopPropagation();
+  }, []);
+
+  const handleGripPointerDown = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    startYRef.current = event.clientY;
+    setDragOffset(0);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (startYRef.current === null) {
+        return;
+      }
+      moveEvent.preventDefault();
+      const nextOffset = Math.max(0, moveEvent.clientY - startYRef.current);
+      setDragOffset(Math.min(140, nextOffset));
+    };
+
+    const finishDrag = (upEvent: PointerEvent) => {
+      const startY = startYRef.current;
+      const deltaY = startY === null ? 0 : upEvent.clientY - startY;
+      startYRef.current = null;
+      setDragOffset(0);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+      if (deltaY > 78) {
+        onClose();
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", finishDrag, { once: true });
+    window.addEventListener("pointercancel", finishDrag, { once: true });
+  }, [onClose]);
+
+  return (
+    <div
+      className="mobile-sheet-layer"
+      onClick={stopSheetEvent}
+      onPointerDown={stopSheetEvent}
+      onPointerMove={stopSheetEvent}
+      onPointerUp={stopSheetEvent}
+      onTouchEnd={stopSheetEvent}
+      onTouchMove={stopSheetEvent}
+      onTouchStart={stopSheetEvent}
+    >
+      <div className="mobile-sheet-map-shield" aria-hidden="true" />
+      <section
+        aria-label={title}
+        className="mobile-sheet-surface"
+        data-testid="mobile-sheet-surface"
+        role="dialog"
+        style={{ "--mobile-sheet-offset": `${dragOffset}px` } as React.CSSProperties}
+      >
+        <button
+          aria-label="Stáhnout panel dolů"
+          className="mobile-sheet-grip"
+          onKeyDown={(event) => {
+            if (event.key === "Escape" || event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onClose();
+            }
+          }}
+          onPointerDown={handleGripPointerDown}
+          type="button"
+        >
+          <span aria-hidden="true" />
+        </button>
+        <header className="mobile-sheet-header">
+          <div>
+            <span>{subtitle ?? "Panel"}</span>
+            <strong>{title}</strong>
+          </div>
+          <button aria-label="Zavřít panel" onClick={onClose} type="button">
+            <X size={18} />
+            <span>Zavřít</span>
+          </button>
+        </header>
+        <div className="mobile-sheet-content">
+          {children}
+        </div>
+      </section>
     </div>
   );
 }
