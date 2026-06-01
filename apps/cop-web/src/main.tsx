@@ -252,7 +252,6 @@ import "./styles.css";
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? (import.meta.env.DEV ? "dev-lab-token" : "");
 const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_COP_REFRESH_MS ?? "5000");
-const messagingLauncherEnabled = readBooleanEnv(import.meta.env.VITE_COP_MESSAGING_LAUNCHER_ENABLED ?? "true");
 const XrWorkspace = React.lazy(() => import("./XrWorkspace"));
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
@@ -3326,14 +3325,9 @@ export function App() {
             <>
           {!showMapLayerControls ? (
             <>
-              <div className="refresh-row">
-                <div>
-                  <span>Poslední načtení</span>
-                  <strong>{lastLoadedAt ?? "čekám na data"}</strong>
-                </div>
-                <button className="icon-button" onClick={() => void load()} disabled={isLoading} title="Obnovit situační data">
-                  <RefreshCw size={16} className={isLoading ? "spin" : ""} />
-                </button>
+              <div className="refresh-row compact">
+                <span>Poslední aktualizace</span>
+                <strong>{lastLoadedAt ?? "čekám na data"}</strong>
               </div>
               {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
               <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} />
@@ -3538,13 +3532,6 @@ export function App() {
 
         <section className={`center-column center-column-${activeWorkspace}`}>
           <section className="map-stage">
-            {activeWorkspace === "map" ? (
-              <WorkspaceLayoutControls
-                layout={workspaceLayout}
-                onChange={updateWorkspaceLayout}
-                onHelp={(section) => setHelpSection(section)}
-              />
-            ) : null}
             {activeWorkspace === "map" && !mapSearchDocked ? (
               <MapGlobalSearch
                 docked={false}
@@ -3603,7 +3590,6 @@ export function App() {
                 setSelectedObjectId(null);
                 setMobileSheet(isSelected ? null : "detail");
               }}
-              onStartReport={startCommunityReportCapture}
               onAutoFitChange={setAutoFit}
               onClearSelection={() => {
                 setSelectedObjectId(null);
@@ -3866,8 +3852,6 @@ export function App() {
             <>
               <AccountAccessBox
                 authenticated={profileAccessReady}
-                profileSyncStatus={profileSyncStatus}
-                publicReadEnabled={authConfig.publicReadEnabled}
                 session={authSession}
                 onLogin={() => openLoginPrompt("account")}
               />
@@ -3985,6 +3969,12 @@ export function App() {
       />
 
       {workspaceLayout.statusbarVisible ? <footer className="app-statusbar" aria-label="Provozní stav aplikace">
+        {activeWorkspace === "map" ? (
+          <WorkspaceLayoutControls
+            layout={workspaceLayout}
+            onChange={updateWorkspaceLayout}
+          />
+        ) : null}
         <span className={alertSummary.total > 0 ? "warn" : "ok"}>
           <AlertTriangle size={15} />
           Výstrahy {alertSummary.total > 0 ? `${alertSummary.total} aktivní` : "bez aktivních"}
@@ -4079,19 +4069,6 @@ export function App() {
           onLogin={loginOperator}
           onLogout={logoutOperator}
         />
-      ) : null}
-
-      {messagingLauncherEnabled ? (
-        <button
-          aria-label="Otevřít zprávy"
-          className={`messaging-launcher ${messagingOpen ? "active" : ""}`}
-          onClick={() => setMessagingOpen(true)}
-          title="Otevřít komunikační okno"
-          type="button"
-        >
-          <MessageCircle size={20} />
-          <span>Chat</span>
-        </button>
       ) : null}
 
       {messagingOpen ? (
@@ -4711,33 +4688,31 @@ function AlertCenterBoard({
 
 function AccountAccessBox({
   authenticated,
-  profileSyncStatus,
-  publicReadEnabled,
   session,
   onLogin
 }: {
   authenticated: boolean;
-  profileSyncStatus: ProfileSyncStatus;
-  publicReadEnabled: boolean;
   session: AuthSession;
   onLogin: () => void;
 }) {
+  const displayName = session.profile?.name ?? session.profile?.username ?? "Přihlášený uživatel";
   return (
     <div className="account-access-box">
-      <PanelTitle icon={<UserCircle size={17} />} title="Režim účtu" />
-      <ReadinessRow label="Mapa a veřejná data" value={publicReadEnabled ? "dostupné bez účtu" : "vyžaduje účet"} tone={publicReadEnabled ? "ok" : "warn"} />
-      <ReadinessRow label="Přihlášení" value={authenticated ? session.profile?.name ?? "aktivní" : "bez přihlášení"} tone={authenticated ? "ok" : "neutral"} />
-      <ReadinessRow label="Serverový profil" value={authenticated ? profileSyncLabel(profileSyncStatus) : "zamčeno"} tone={authenticated ? profileSyncTone(profileSyncStatus) : "neutral"} />
-      <ReadinessRow label="Přispívání" value={authenticated ? "účet připraven" : "vyžaduje účet"} tone={authenticated ? "ok" : "neutral"} />
-      {!authenticated ? (
+      <PanelTitle icon={<UserCircle size={17} />} title="Účet" />
+      {authenticated ? (
+        <div className="account-access-summary">
+          <strong>{displayName}</strong>
+          <span>Profil, hlášení a komunikace jsou dostupné.</span>
+        </div>
+      ) : (
         <>
-          <p>Bez přihlášení zůstává aplikace read-only. Přihlášení odemkne ukládání profilu, potvrzování výstrah a komunitní hlášení.</p>
+          <p>Mapu lze prohlížet bez účtu. Přihlášení zapne ukládání profilu, hlášení a komunikaci.</p>
           <button className="primary-button secondary" onClick={onLogin} type="button">
             <LogIn size={16} />
             Přihlásit
           </button>
         </>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -6108,8 +6083,9 @@ function CollapsedPanelRail({ icon, label, onExpand }: { icon: React.ReactNode; 
     <div className="collapsed-panel-rail">
       {icon}
       <span>{label}</span>
-      <button className="icon-button" onClick={onExpand} title="Rozbalit panel" type="button">
-        <Move size={15} />
+      <button className="icon-button collapsed-panel-expand" onClick={onExpand} title="Rozbalit panel" type="button">
+        <ChevronDown size={15} />
+        <span>Rozbalit</span>
       </button>
     </div>
   );
@@ -6117,12 +6093,10 @@ function CollapsedPanelRail({ icon, label, onExpand }: { icon: React.ReactNode; 
 
 function WorkspaceLayoutControls({
   layout,
-  onChange,
-  onHelp
+  onChange
 }: {
   layout: Required<WorkspaceLayoutPreferences>;
   onChange: (value: Partial<WorkspaceLayoutPreferences>) => void;
-  onHelp: (section: HelpSection) => void;
 }) {
   return (
     <div className="workspace-layout-toolbar" aria-label="Nastavení pracovní plochy">
@@ -6153,10 +6127,6 @@ function WorkspaceLayoutControls({
         <Layers size={15} />
         Lišta
       </button>
-      <button onClick={() => onChange(defaultWorkspaceLayout)} title="Obnovit výchozí plochu" type="button">
-        <RefreshCw size={15} />
-      </button>
-      <HelpHint label="Plocha" onOpen={() => onHelp("layout")} />
     </div>
   );
 }
@@ -11141,13 +11111,6 @@ function shouldSkipSafetyFeatureLoad(bounds: MapBounds, zoom: number | undefined
   const width = Math.abs(bounds.east - bounds.west);
   const height = Math.abs(bounds.north - bounds.south);
   return (zoom ?? 0) < 4 || width > 16 || height > 10;
-}
-
-function readBooleanEnv(value: string | undefined, fallback = true): boolean {
-  if (value === undefined) {
-    return fallback;
-  }
-  return value === "true" || value === "1" || value === "yes" || value === "on";
 }
 
 registerCopServiceWorker();

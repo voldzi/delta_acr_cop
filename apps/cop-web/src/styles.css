@@ -2659,9 +2659,9 @@ h1 {
 }
 
 .app-statusbar {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, auto));
-  justify-content: end;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px 20px;
   min-height: 34px;
@@ -2678,6 +2678,27 @@ h1 {
   color: var(--muted);
   font-size: 11px;
   white-space: nowrap;
+}
+
+.app-statusbar .workspace-layout-toolbar {
+  position: static;
+  z-index: auto;
+  max-width: none;
+  margin-right: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.app-statusbar .workspace-layout-toolbar button {
+  min-height: 28px;
+  padding: 0 9px;
+  border-color: rgba(122, 148, 172, 0.28);
+  border-radius: 5px;
+  background: rgba(16, 24, 34, 0.68);
+  font-size: 10px;
 }
 
 .app-statusbar .ok,
@@ -2988,10 +3009,26 @@ h1 {
   border-left: 0;
 }
 
-.shell.app-shell-v2 .messaging-launcher {
-  right: 78px;
-  bottom: 46px;
-  border-radius: 999px;
+.shell.app-shell-v2 .app-statusbar .workspace-layout-toolbar + span {
+  border-left: 0;
+}
+
+.shell.app-shell-v2 .app-statusbar .workspace-layout-toolbar {
+  position: static;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  max-width: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.shell.app-shell-v2 .app-statusbar .workspace-layout-toolbar button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-color: rgba(122, 148, 172, 0.24);
+  background: rgba(15, 24, 34, 0.72);
 }
 
 .shell.app-shell-v2 .messaging-panel.pinned {
@@ -3251,6 +3288,11 @@ h1 {
   transform: rotate(180deg);
 }
 
+.collapsed-panel-expand span {
+  writing-mode: horizontal-tb;
+  transform: none;
+}
+
 .workspace-layout-toolbar {
   position: absolute;
   top: 12px;
@@ -3294,6 +3336,12 @@ h1 {
   gap: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(142, 157, 170, 0.18);
+}
+
+.refresh-row.compact {
+  display: grid;
+  justify-content: stretch;
+  gap: 3px;
 }
 
 .refresh-row span,
@@ -5141,6 +5189,18 @@ h1 {
   max-width: none;
 }
 
+.map-global-search.is-docked.is-collapsed .map-global-search-launcher {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+}
+
+.map-global-search.is-docked.is-collapsed .map-global-search-launcher span {
+  display: none;
+}
+
 .map-global-search.is-dragging {
   user-select: none;
 }
@@ -6784,6 +6844,26 @@ dd {
 .account-access-box {
   display: grid;
   gap: 8px;
+}
+
+.account-access-summary {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid rgba(122, 148, 172, 0.18);
+  background: rgba(11, 18, 24, 0.42);
+}
+
+.account-access-summary strong {
+  color: #e8f1fb;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.account-access-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .account-access-box p {
