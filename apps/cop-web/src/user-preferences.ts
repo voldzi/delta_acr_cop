@@ -1,4 +1,7 @@
+import type { AlertPreferences, AoiRule, CopAlertType } from "./cop-data";
+
 const preferencesKey = "cop.user.preferences.v1";
+const alertPreferencesKey = "cop.user.alertPreferences.v1";
 
 export interface MapViewState {
   center: [number, number];
@@ -73,6 +76,11 @@ export interface UserPreferences {
   workspaceSkin?: WorkspaceSkin;
 }
 
+export interface StoredLocalAlertPreferences {
+  alertPreferences: AlertPreferences;
+  updatedAt: string | null;
+}
+
 export function readUserPreferences(scope?: string): UserPreferences {
   if (typeof window === "undefined") {
     return {};
@@ -103,6 +111,51 @@ export function writeUserPreferences(preferences: UserPreferences, scope?: strin
     return;
   }
   window.localStorage.setItem(scopedStorageKey(preferencesKey, scope), JSON.stringify(preferences));
+}
+
+export function readLocalAlertPreferences(scope?: string): StoredLocalAlertPreferences {
+  if (typeof window === "undefined") {
+    return { alertPreferences: {}, updatedAt: null };
+  }
+
+  try {
+    if (typeof window.localStorage?.getItem !== "function") {
+      return { alertPreferences: {}, updatedAt: null };
+    }
+    const key = scopedStorageKey(alertPreferencesKey, scope);
+    const raw = window.localStorage.getItem(key) ?? (key === alertPreferencesKey ? null : window.localStorage.getItem(alertPreferencesKey));
+    if (!raw) {
+      return { alertPreferences: {}, updatedAt: null };
+    }
+    const parsed = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      return { alertPreferences: {}, updatedAt: null };
+    }
+    return {
+      alertPreferences: normalizeAlertPreferences(parsed.alertPreferences),
+      updatedAt: optionalIsoDateString(parsed.updatedAt) ?? null
+    };
+  } catch {
+    return { alertPreferences: {}, updatedAt: null };
+  }
+}
+
+export function writeLocalAlertPreferences(
+  alertPreferences: AlertPreferences,
+  scope?: string,
+  updatedAt = new Date().toISOString()
+): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (typeof window.localStorage?.setItem !== "function") {
+    return;
+  }
+  window.localStorage.setItem(scopedStorageKey(alertPreferencesKey, scope), JSON.stringify({
+    alertPreferences: normalizeAlertPreferences(alertPreferences),
+    updatedAt
+  }));
 }
 
 export function normalizeMapView(value: unknown): MapViewState | undefined {
@@ -163,6 +216,20 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds),
     workspaceLayout: normalizeWorkspaceLayoutPreferences(value.workspaceLayout),
     workspaceSkin: optionalWorkspaceSkin(value.workspaceSkin)
+  };
+}
+
+export function normalizeAlertPreferences(value: unknown): AlertPreferences {
+  if (!isRecord(value)) {
+    return {};
+  }
+  const aoiRules = Array.isArray(value.aoiRules) ? value.aoiRules.flatMap(normalizeLocalAoiRule) : undefined;
+  const enabledTypes = optionalStringArray(value.enabledTypes);
+  const minimumSeverity = optionalAlertSeverity(value.minimumSeverity);
+  return {
+    ...(aoiRules ? { aoiRules } : {}),
+    ...(enabledTypes ? { enabledTypes: enabledTypes.filter(isCopAlertType) } : {}),
+    ...(minimumSeverity ? { minimumSeverity } : {})
   };
 }
 
@@ -239,6 +306,90 @@ function optionalDataUrl(value: unknown): string | undefined {
 
 function optionalStringArray(value: unknown): string[] | undefined {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
+}
+
+function optionalIsoDateString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return Number.isFinite(Date.parse(value)) ? value : undefined;
+}
+
+function optionalAlertSeverity(value: unknown): AlertPreferences["minimumSeverity"] | undefined {
+  return value === "critical" || value === "info" || value === "warning" ? value : undefined;
+}
+
+function isCopAlertType(value: string): value is CopAlertType {
+  return value === "AOI_ENTRY"
+    || value === "LOW_CONFIDENCE"
+    || value === "SOURCE_DEGRADED"
+    || value === "TRACK_CONFLICT"
+    || value === "TRACK_LOST"
+    || value === "TRACK_STALE";
+}
+
+function normalizeLocalAoiRule(value: unknown): AoiRule[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const id = optionalTrimmedString(value.id, 80);
+  const name = optionalTrimmedString(value.name, 120);
+  const lat = optionalClampedNumber(value.lat, -90, 90);
+  const lon = optionalClampedNumber(value.lon, -180, 180);
+  const radiusKm = optionalClampedNumber(value.radiusKm, 0.2, 500);
+  if (!id || !name || lat === undefined || lon === undefined || radiusKm === undefined) {
+    return [];
+  }
+  const fillOpacity = optionalClampedNumber(value.fillOpacity, 0.02, 0.35);
+  const polygon = normalizeLocalAoiPolygon(value.polygon);
+  return [
+    {
+      ...(isAoiRuleAffiliationScope(value.affiliationScope) ? { affiliationScope: value.affiliationScope } : {}),
+      ...(typeof value.color === "string" && /^#[0-9a-f]{6}$/iu.test(value.color) ? { color: value.color } : {}),
+      enabled: value.enabled === true,
+      ...(fillOpacity !== undefined ? { fillOpacity } : {}),
+      id,
+      lat,
+      lon,
+      name,
+      ...(polygon ? { polygon } : {}),
+      radiusKm,
+      ...(optionalAlertSeverity(value.severity) ? { severity: optionalAlertSeverity(value.severity) } : {})
+    }
+  ];
+}
+
+function isAoiRuleAffiliationScope(value: unknown): value is NonNullable<AoiRule["affiliationScope"]> {
+  return value === "all" || value === "friend" || value === "hostile" || value === "unknown";
+}
+
+function normalizeLocalAoiPolygon(value: unknown): AoiRule["polygon"] | undefined {
+  if (!isRecord(value) || value.type !== "Polygon" || !Array.isArray(value.coordinates)) {
+    return undefined;
+  }
+  const rings = value.coordinates.flatMap((ring) => normalizeLocalAoiPolygonRing(ring));
+  return rings.length > 0 ? { type: "Polygon", coordinates: rings.slice(0, 4) } : undefined;
+}
+
+function normalizeLocalAoiPolygonRing(value: unknown): Array<Array<[number, number]>> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const points = value.flatMap((coordinate): Array<[number, number]> => {
+    if (!Array.isArray(coordinate) || coordinate.length < 2) {
+      return [];
+    }
+    const lon = optionalClampedNumber(coordinate[0], -180, 180);
+    const lat = optionalClampedNumber(coordinate[1], -90, 90);
+    return lon === undefined || lat === undefined ? [] : [[lon, lat]];
+  });
+  if (points.length < 3) {
+    return [];
+  }
+  const first = points[0];
+  const last = points[points.length - 1];
+  const closed = first && last && (first[0] !== last[0] || first[1] !== last[1]) ? [...points, first] : points;
+  return [closed.slice(0, 161)];
 }
 
 function optionalPublicFlightSymbolMode(value: unknown): PublicFlightSymbolMode | undefined {

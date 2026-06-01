@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { clamp, normalizeMapView, normalizeUserPreferences, readUserPreferences, writeUserPreferences } from "./user-preferences";
+import {
+  clamp,
+  normalizeMapView,
+  normalizeUserPreferences,
+  readLocalAlertPreferences,
+  readUserPreferences,
+  writeLocalAlertPreferences,
+  writeUserPreferences
+} from "./user-preferences";
 
 beforeEach(() => {
   installLocalStorageMock();
@@ -32,6 +40,55 @@ describe("user preferences helpers", () => {
 
     expect(readUserPreferences("operator-a").selectedLayer).toBe("uav");
     expect(readUserPreferences("operator-b").selectedLayer).toBe("foreign");
+  });
+
+  it("stores user alert zones per local user scope", () => {
+    writeLocalAlertPreferences({
+      aoiRules: [
+        {
+          color: "#8cb6d8",
+          enabled: true,
+          fillOpacity: 0.14,
+          id: "zone-a",
+          lat: 50.1,
+          lon: 14.4,
+          name: "Testovací zóna",
+          polygon: {
+            coordinates: [[
+              [14.4, 50.1],
+              [14.5, 50.1],
+              [14.5, 50.2],
+              [14.4, 50.1]
+            ]],
+            type: "Polygon"
+          },
+          radiusKm: 12
+        }
+      ]
+    }, "operator-a", "2026-06-01T10:00:00.000Z");
+    writeLocalAlertPreferences({ aoiRules: [] }, "operator-b", "2026-06-01T11:00:00.000Z");
+
+    expect(readLocalAlertPreferences("operator-a")).toMatchObject({
+      alertPreferences: {
+        aoiRules: [
+          {
+            enabled: true,
+            id: "zone-a",
+            name: "Testovací zóna",
+            polygon: {
+              type: "Polygon"
+            }
+          }
+        ]
+      },
+      updatedAt: "2026-06-01T10:00:00.000Z"
+    });
+    expect(readLocalAlertPreferences("operator-b")).toMatchObject({
+      alertPreferences: {
+        aoiRules: []
+      },
+      updatedAt: "2026-06-01T11:00:00.000Z"
+    });
   });
 
   it("normalizes language and outline basemap preferences", () => {

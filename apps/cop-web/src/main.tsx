@@ -194,9 +194,12 @@ import { SelectField } from "./ui/select";
 import { Tooltip } from "./ui/tooltip";
 import {
   clamp,
+  normalizeAlertPreferences,
   normalizeMapView,
   normalizeUserPreferences,
+  readLocalAlertPreferences,
   readUserPreferences,
+  writeLocalAlertPreferences,
   writeUserPreferences,
   type AppLanguage,
   type MapBasemapMode,
@@ -373,6 +376,7 @@ export function App() {
     initialOfflineSnapshotState(userStorageScope)
   );
   const initialPreferences = React.useMemo(() => readUserPreferences(userStorageScope), [userStorageScope]);
+  const initialAlertPreferences = React.useMemo(() => readLocalAlertPreferences(userStorageScope), [userStorageScope]);
   const [activeWorkspace, setActiveWorkspace] = React.useState<WorkspaceModule>(() =>
     normalizeWorkspaceModule(initialPreferences.activeWorkspace)
   );
@@ -518,7 +522,8 @@ export function App() {
   const [alertRadiusKm, setAlertRadiusKm] = React.useState(() => clamp(initialPreferences.alertRadiusKm ?? 10, 1, 50));
   const [viewProfiles, setViewProfiles] = React.useState<ViewProfile[]>(() => readViewProfiles(userStorageScope));
   const [lastProfileName, setLastProfileName] = React.useState<string | null>(null);
-  const [alertPreferences, setAlertPreferences] = React.useState<AlertPreferences>({});
+  const [alertPreferences, setAlertPreferences] = React.useState<AlertPreferences>(() => initialAlertPreferences.alertPreferences);
+  const [, setLocalAlertPreferencesUpdatedAt] = React.useState<string | null>(() => initialAlertPreferences.updatedAt);
   const [profileSyncStatus, setProfileSyncStatus] = React.useState<ProfileSyncStatus>("loading");
   const [profileSyncError, setProfileSyncError] = React.useState<string | null>(null);
   const [serverProfileUpdatedAt, setServerProfileUpdatedAt] = React.useState<string | null>(null);
@@ -536,6 +541,7 @@ export function App() {
   const profileHydratedRef = React.useRef(false);
   const profileLoadKeyRef = React.useRef<string | null>(null);
   const profileSaveTimerRef = React.useRef<number | undefined>(undefined);
+  const skipNextAlertPreferenceWriteRef = React.useRef(false);
   const skipNextPreferenceWriteRef = React.useRef(false);
   const notifiedProximityAlertsRef = React.useRef<Set<string>>(new Set());
   const authToken = getAuthorizationToken(authSession, labToken);
@@ -1884,11 +1890,15 @@ export function App() {
     profileLoadKeyRef.current = null;
     skipNextPreferenceWriteRef.current = true;
     const scopedPreferences = readUserPreferences(userStorageScope);
+    const scopedAlertPreferences = readLocalAlertPreferences(userStorageScope);
     catalogSelectionInitializedRef.current = scopedPreferences.catalogLayerIds !== undefined;
     setVisibleCatalogLayerIds(normalizeCatalogLayerIds(scopedPreferences.catalogLayerIds));
     setOperatorProfile(initialOperatorProfile(authSession, scopedPreferences.operatorProfile));
     setWorkspaceLayout(normalizeWorkspaceLayout(scopedPreferences.workspaceLayout));
     setWorkspaceSkin(normalizeWorkspaceSkin(scopedPreferences.workspaceSkin));
+    skipNextAlertPreferenceWriteRef.current = true;
+    setAlertPreferences(scopedAlertPreferences.alertPreferences);
+    setLocalAlertPreferencesUpdatedAt(scopedAlertPreferences.updatedAt);
     applyPreferenceSettings(scopedPreferences, { focusMap: true });
     setViewProfiles(readViewProfiles(userStorageScope));
     setOfflineSnapshotState(initialOfflineSnapshotState(userStorageScope));
@@ -1920,22 +1930,44 @@ export function App() {
           return;
         }
         const serverPreferences = normalizeUserPreferences(profile.preferences);
-        setAlertPreferences(profile.alertPreferences ?? {});
+        const serverAlertPreferences = normalizeAlertPreferences(profile.alertPreferences ?? {});
+        const localAlertPreferences = readLocalAlertPreferences(userStorageScope);
+        const localAlertPreferencesWin = shouldPreferLocalAlertPreferences(localAlertPreferences.updatedAt, profile.updatedAt);
+        const nextAlertPreferences = localAlertPreferencesWin
+          ? localAlertPreferences.alertPreferences
+          : serverAlertPreferences;
+        skipNextAlertPreferenceWriteRef.current = true;
+        setAlertPreferences(nextAlertPreferences);
+        if (!localAlertPreferencesWin) {
+          const mirrorUpdatedAt = profile.updatedAt ?? new Date().toISOString();
+          writeLocalAlertPreferences(nextAlertPreferences, userStorageScope, mirrorUpdatedAt);
+          setLocalAlertPreferencesUpdatedAt(mirrorUpdatedAt);
+        }
         setServerProfileUpdatedAt(profile.updatedAt);
+        let savedProfile: Awaited<ReturnType<typeof saveUserProfile>> | null = null;
         if (Object.keys(serverPreferences).length > 0) {
           writeUserPreferences(serverPreferences, userStorageScope);
           skipNextPreferenceWriteRef.current = true;
           applyPreferenceSettings(serverPreferences, { focusMap: true });
+          if (localAlertPreferencesWin) {
+            savedProfile = await saveUserProfile(apiBase, authToken, {
+              alertPreferences: nextAlertPreferences,
+              preferences: serverPreferences
+            });
+          }
         } else {
           const localPreferences = readUserPreferences(userStorageScope);
           const seedPreferences = Object.keys(localPreferences).length > 0 ? localPreferences : currentPreferences;
-          const savedProfile = await saveUserProfile(apiBase, authToken, {
-            alertPreferences: profile.alertPreferences ?? {},
+          savedProfile = await saveUserProfile(apiBase, authToken, {
+            alertPreferences: nextAlertPreferences,
             preferences: seedPreferences
           });
-          if (!cancelled) {
-            setServerProfileUpdatedAt(savedProfile.updatedAt);
-          }
+        }
+        if (savedProfile && !cancelled) {
+          const savedUpdatedAt = savedProfile.updatedAt ?? new Date().toISOString();
+          setServerProfileUpdatedAt(savedProfile.updatedAt);
+          writeLocalAlertPreferences(savedProfile.alertPreferences ?? nextAlertPreferences, userStorageScope, savedUpdatedAt);
+          setLocalAlertPreferencesUpdatedAt(savedUpdatedAt);
         }
         if (!cancelled) {
           profileHydratedRef.current = true;
@@ -1971,6 +2003,16 @@ export function App() {
   }, []);
 
   React.useEffect(() => {
+    if (skipNextAlertPreferenceWriteRef.current) {
+      skipNextAlertPreferenceWriteRef.current = false;
+      return;
+    }
+    const updatedAt = new Date().toISOString();
+    writeLocalAlertPreferences(alertPreferences, userStorageScope, updatedAt);
+    setLocalAlertPreferencesUpdatedAt(updatedAt);
+  }, [alertPreferences]);
+
+  React.useEffect(() => {
     if (skipNextPreferenceWriteRef.current) {
       skipNextPreferenceWriteRef.current = false;
       return;
@@ -1990,6 +2032,9 @@ export function App() {
       })
         .then((profile) => {
           setServerProfileUpdatedAt(profile.updatedAt);
+          const savedUpdatedAt = profile.updatedAt ?? new Date().toISOString();
+          writeLocalAlertPreferences(profile.alertPreferences ?? alertPreferences, userStorageScope, savedUpdatedAt);
+          setLocalAlertPreferencesUpdatedAt(savedUpdatedAt);
           setProfileSyncError(null);
           setProfileSyncStatus("synced");
         })
@@ -10333,6 +10378,21 @@ function formatProfileUpdatedAt(value: string | null): string {
     return "zatím ne";
   }
   return formatShortDateTime(value);
+}
+
+function shouldPreferLocalAlertPreferences(localUpdatedAt: string | null, serverUpdatedAt: string | null): boolean {
+  if (!localUpdatedAt) {
+    return false;
+  }
+  const localTime = Date.parse(localUpdatedAt);
+  if (!Number.isFinite(localTime)) {
+    return false;
+  }
+  if (!serverUpdatedAt) {
+    return true;
+  }
+  const serverTime = Date.parse(serverUpdatedAt);
+  return !Number.isFinite(serverTime) || localTime > serverTime;
 }
 
 function userPreferenceScope(session: AuthSession): string {
