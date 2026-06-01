@@ -440,7 +440,7 @@ interface CopMapProps {
   onUpdateSketchDrawing?: (drawingId: string, input: UpdateSketchDrawingRequest) => void;
 }
 
-export type SketchToolMode = "line" | "marker" | "measurement" | "pan" | "polygon" | "select" | "text";
+export type SketchToolMode = "arrow" | "circle" | "line" | "marker" | "measurement" | "pan" | "polygon" | "select" | "text";
 
 export interface CreateSketchDrawingRequest {
   geometry: SketchGeometry;
@@ -2179,7 +2179,7 @@ export function CopMap({
             onSketchModeChangeRef.current?.("select");
             return;
           }
-          if (activeSketchMode === "line" || activeSketchMode === "polygon" || activeSketchMode === "measurement") {
+          if (isSketchDraftMode(activeSketchMode)) {
             setSketchDraftPoints((current) => [...current, { lat: event.lngLat.lat, lon: event.lngLat.lng }].slice(0, 200));
             return;
           }
@@ -2485,7 +2485,7 @@ export function CopMap({
     if (!mapReady || !map) {
       return;
     }
-    const drawingMode = sketchMode === "line" || sketchMode === "polygon" || sketchMode === "measurement" || sketchMode === "marker" || sketchMode === "text";
+    const drawingMode = isSketchDraftMode(sketchMode) || sketchMode === "marker" || sketchMode === "text";
     if (drawingMode) {
       map.dragPan.disable();
     } else if (!mapInteractionSuspended && !draggedAoiVertexRef.current && !draggedSketchVertexRef.current) {
@@ -2659,17 +2659,28 @@ export function CopMap({
     if (sketchDraftPoints.length < minimum) {
       return;
     }
-    const kind: SketchDrawingKind = mode === "measurement" ? "measurement" : mode === "polygon" ? "polygon" : "line";
+    const kind: SketchDrawingKind =
+      mode === "measurement"
+        ? "measurement"
+        : mode === "polygon"
+          ? "polygon"
+          : mode === "circle"
+            ? "circle"
+            : mode === "arrow"
+              ? "arrow"
+              : "line";
     const geometry = sketchGeometryFromPoints(kind, sketchDraftPoints);
     if (!geometry) {
       return;
     }
+    const draftLineCoordinates = sketchDraftPoints.map((point): [number, number] => [point.lon, point.lat]);
+    const measuredKm = measureSketchLine(draftLineCoordinates);
     onCreateSketchDrawingRef.current?.({
       geometry,
       kind,
-      label: kind === "measurement" ? formatMeasurementLabel(measureSketchLine(sketchDraftPoints.map((point): [number, number] => [point.lon, point.lat]))) : kind === "polygon" ? "Oblast" : "Linie",
-      properties: kind === "measurement" ? { measurementKm: measureSketchLine(sketchDraftPoints.map((point): [number, number] => [point.lon, point.lat])) } : { createdFrom: "map" },
-      style: kind === "measurement" ? { stroke: "#facc15", fill: "#facc15", opacity: 0.08 } : undefined,
+      label: sketchDraftLabel(kind, measuredKm),
+      properties: kind === "measurement" ? { measurementKm: measuredKm } : kind === "circle" ? { createdFrom: "map", radiusKm: measuredKm } : { createdFrom: "map" },
+      style: kind === "measurement" ? { stroke: "#facc15", fill: "#facc15", opacity: 0.08 } : kind === "circle" ? { stroke: "#38bdf8", fill: "#38bdf8", opacity: 0.14 } : undefined,
       symbol: { iconId: kind === "measurement" ? "measure" : kind, palette: "civil" },
       visibility: "private"
     });
@@ -2750,7 +2761,9 @@ export function CopMap({
           ["select", "Výběr"],
           ["marker", "Značka"],
           ["line", "Linie"],
+          ["arrow", "Šipka"],
           ["polygon", "Polygon"],
+          ["circle", "Kruh"],
           ["text", "Text"],
           ["measurement", "Měření"]
         ] as Array<[SketchToolMode, string]>).map(([mode, label]) => (
@@ -2764,13 +2777,11 @@ export function CopMap({
           </button>
         ))}
       </div>
-      {sketchMode === "line" || sketchMode === "polygon" || sketchMode === "measurement" ? (
+      {isSketchDraftMode(sketchMode) ? (
         <div className="map-zone-create-hint map-sketch-create-hint">
           <strong>{sketchMode === "measurement" ? "Měření" : "Kreslení"}</strong>
           <span>
-            {sketchMode === "polygon"
-              ? sketchDraftPoints.length < 3 ? `Přidejte alespoň 3 body (${sketchDraftPoints.length}/3).` : `${sketchDraftPoints.length} bodů připraveno.`
-              : sketchDraftPoints.length < 2 ? `Přidejte alespoň 2 body (${sketchDraftPoints.length}/2).` : formatMeasurementLabel(measureSketchLine(sketchDraftPoints.map((point) => [point.lon, point.lat])))}
+            {sketchDraftHint(sketchMode, sketchDraftPoints)}
           </span>
           <div className="map-zone-create-actions">
             <button
@@ -3208,12 +3219,22 @@ function sketchDraftToFeatureCollection(points: Array<{ lat: number; lon: number
   }
   const coordinates = points.map((point): [number, number] => [point.lon, point.lat]);
   const features: SketchDraftFeatureCollection["features"] = [];
-  if ((mode === "line" || mode === "measurement") && coordinates.length >= 2) {
+  if ((mode === "line" || mode === "measurement" || mode === "arrow") && coordinates.length >= 2) {
     features.push({
       type: "Feature",
       geometry: { type: "LineString", coordinates },
       properties: { kind: "line" }
     });
+  }
+  if (mode === "circle" && points.length >= 2) {
+    const geometry = circleGeometryFromDraftPoints(points);
+    if (geometry) {
+      features.push({
+        type: "Feature",
+        geometry,
+        properties: { kind: "area" }
+      });
+    }
   }
   if (mode === "polygon" && coordinates.length >= 2) {
     const first = coordinates[0];
@@ -3297,7 +3318,10 @@ function sketchGeometryFromPoints(kind: SketchDrawingKind, points: Array<{ lat: 
   if ((kind === "line" || kind === "measurement" || kind === "arrow") && coordinates.length >= 2) {
     return { type: "LineString", coordinates };
   }
-  if ((kind === "polygon" || kind === "circle") && coordinates.length >= 3) {
+  if (kind === "circle") {
+    return circleGeometryFromDraftPoints(points);
+  }
+  if (kind === "polygon" && coordinates.length >= 3) {
     const first = coordinates[0];
     if (!first) {
       return null;
@@ -3305,6 +3329,72 @@ function sketchGeometryFromPoints(kind: SketchDrawingKind, points: Array<{ lat: 
     return { type: "Polygon", coordinates: [[...coordinates, first]] };
   }
   return null;
+}
+
+function isSketchDraftMode(mode: SketchToolMode): boolean {
+  return mode === "arrow" || mode === "circle" || mode === "line" || mode === "measurement" || mode === "polygon";
+}
+
+function sketchDraftLabel(kind: SketchDrawingKind, measuredKm: number): string {
+  if (kind === "measurement") {
+    return formatMeasurementLabel(measuredKm);
+  }
+  if (kind === "polygon") {
+    return "Oblast";
+  }
+  if (kind === "circle") {
+    return "Kruh";
+  }
+  if (kind === "arrow") {
+    return "Šipka";
+  }
+  return "Linie";
+}
+
+function sketchDraftHint(mode: SketchToolMode, points: Array<{ lat: number; lon: number }>): string {
+  if (mode === "polygon") {
+    return points.length < 3 ? `Přidejte alespoň 3 body (${points.length}/3).` : `${points.length} bodů připraveno.`;
+  }
+  if (mode === "circle") {
+    return points.length < 2 ? `Klikněte na střed a okraj kruhu (${points.length}/2).` : `Poloměr ${formatMeasurementLabel(measureSketchLine(points.map((point) => [point.lon, point.lat])))}.`;
+  }
+  if (mode === "arrow") {
+    return points.length < 2 ? `Klikněte začátek a konec šipky (${points.length}/2).` : `${points.length} bodů připraveno.`;
+  }
+  return points.length < 2 ? `Přidejte alespoň 2 body (${points.length}/2).` : formatMeasurementLabel(measureSketchLine(points.map((point) => [point.lon, point.lat])));
+}
+
+function circleGeometryFromDraftPoints(points: Array<{ lat: number; lon: number }>): Extract<SketchGeometry, { type: "Polygon" }> | null {
+  const center = points[0];
+  const edge = points[1];
+  if (!center || !edge) {
+    return null;
+  }
+  const radiusKm = haversineDistanceKm(center.lat, center.lon, edge.lat, edge.lon);
+  if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
+    return null;
+  }
+  const earthRadiusKm = 6371.0088;
+  const toRadians = Math.PI / 180;
+  const toDegrees = 180 / Math.PI;
+  const centerLat = center.lat * toRadians;
+  const centerLon = center.lon * toRadians;
+  const angularDistance = radiusKm / earthRadiusKm;
+  const ring: Array<[number, number]> = [];
+  for (let index = 0; index <= 64; index += 1) {
+    const bearing = (index / 64) * Math.PI * 2;
+    const lat = Math.asin(
+      Math.sin(centerLat) * Math.cos(angularDistance)
+        + Math.cos(centerLat) * Math.sin(angularDistance) * Math.cos(bearing)
+    );
+    const lon = centerLon + Math.atan2(
+      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(centerLat),
+      Math.cos(angularDistance) - Math.sin(centerLat) * Math.sin(lat)
+    );
+    const normalizedLon = ((((lon * toDegrees) + 540) % 360) - 180) as number;
+    ring.push([normalizedLon, lat * toDegrees]);
+  }
+  return { type: "Polygon", coordinates: [ring] };
 }
 
 function formatSketchDrawingSubtitle(drawing: SketchDrawingFeature): string {
