@@ -7931,7 +7931,7 @@ dd {
   .shell.app-shell-v2.mobile-sheet-open .map-canvas,
   .shell.app-shell-v2.mobile-sheet-open .map-canvas canvas,
   .shell.app-shell-v2.mobile-sheet-open .map-canvas .maplibregl-canvas-container {
-    pointer-events: none;
+    pointer-events: none !important;
   }
 
   .shell.app-shell-v2.mobile-sheet-open .mobile-bottom-nav,
