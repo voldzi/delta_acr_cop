@@ -3690,6 +3690,7 @@ h1 {
 .catalog-rail {
   display: grid;
   gap: 6px;
+  touch-action: pan-y;
 }
 
 .catalog-rail-button {
@@ -3698,6 +3699,9 @@ h1 {
   height: 50px;
   color: var(--cyan);
   cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .catalog-rail-button:hover,
@@ -7763,6 +7767,10 @@ dd {
   display: none;
 }
 
+.mobile-sheet-pull-handle {
+  display: none;
+}
+
 @media (max-width: 860px) {
   html,
   body,
@@ -7905,7 +7913,7 @@ dd {
     left: 0;
     z-index: 78;
     display: grid;
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 12px;
     width: 100vw;
     min-width: 100vw;
@@ -7924,6 +7932,50 @@ dd {
       radial-gradient(circle at 12% 0%, rgba(74, 163, 255, 0.12), transparent 35%),
       linear-gradient(180deg, rgba(10, 17, 24, 0.98), rgba(5, 10, 15, 0.99));
     box-shadow: 0 -24px 56px rgba(0, 0, 0, 0.58);
+  }
+
+  .mobile-sheet-pull-handle {
+    display: inline-grid;
+    place-items: center;
+    justify-self: center;
+    gap: 5px;
+    width: min(180px, 58vw);
+    min-height: 28px;
+    margin: -6px auto 0;
+    padding: 2px 10px 0;
+    border: 0;
+    background: transparent;
+    color: rgba(191, 207, 220, 0.82);
+    font: inherit;
+    text-transform: uppercase;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-sheet-pull-handle:active {
+    cursor: grabbing;
+  }
+
+  .mobile-sheet-pull-handle span {
+    width: 54px;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(191, 207, 220, 0.36);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+  }
+
+  .mobile-sheet-pull-handle small {
+    max-width: 100%;
+    overflow: hidden;
+    color: rgba(174, 192, 207, 0.68);
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .shell.app-shell-v2.mobile-sheet-open .map-stage,

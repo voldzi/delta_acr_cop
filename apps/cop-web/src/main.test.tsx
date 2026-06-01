@@ -168,7 +168,8 @@ describe("COP web dashboard", () => {
     expect((within(catalogDrawer).getByRole("checkbox", { name: /Veřejné lety/u }) as HTMLInputElement).checked).toBe(true);
     expect(within(catalogDrawer).getByText("Simulace")).toBeTruthy();
     expect((within(catalogDrawer).getByRole("checkbox", { name: /Simulace/u }) as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByRole("button", { name: /Mapa/u }).getAttribute("aria-pressed")).toBe("true");
+    const mapWorkspaceTab = screen.getAllByRole("button", { name: /Mapa/u }).find((button) => button.classList.contains("workspace-tab"));
+    expect(mapWorkspaceTab?.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: /Přehled/u }));
     expect(screen.getByText("Zobrazit simulovaná data")).toBeTruthy();
     const objectSearchInput = screen.getAllByLabelText("Hledat v zobrazených objektech")[0] as HTMLInputElement;

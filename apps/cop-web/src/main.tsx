@@ -3399,6 +3399,7 @@ export function App() {
             />
           ) : (
             <>
+          <MobileSheetPullHandle label="Stáhnout panel vrstev" onClose={() => setMobileSheet(null)} />
           {!showMapLayerControls ? (
             <>
               <div className="refresh-row compact">
@@ -3865,6 +3866,7 @@ export function App() {
             />
           ) : (
             <>
+          <MobileSheetPullHandle label="Stáhnout detail" onClose={() => setMobileSheet(null)} />
           {activeWorkspace !== "map" ? (
             <div className="workspace-context-card">
               <span>Workspace</span>
@@ -6573,6 +6575,65 @@ function PanelTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
   );
 }
 
+function MobileSheetPullHandle({ label, onClose }: { label: string; onClose: () => void }) {
+  const [dragOffset, setDragOffset] = React.useState(0);
+  const startYRef = React.useRef<number | null>(null);
+
+  const handlePointerDown = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    startYRef.current = event.clientY;
+    setDragOffset(0);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (startYRef.current === null) {
+        return;
+      }
+      const nextOffset = Math.max(0, moveEvent.clientY - startYRef.current);
+      setDragOffset(Math.min(96, nextOffset));
+    };
+
+    const finishDrag = (upEvent: PointerEvent) => {
+      const startY = startYRef.current;
+      const deltaY = startY === null ? 0 : upEvent.clientY - startY;
+      startYRef.current = null;
+      setDragOffset(0);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+      if (deltaY > 72) {
+        onClose();
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
+  }, [onClose]);
+
+  return (
+    <button
+      aria-label={label}
+      className="mobile-sheet-pull-handle"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" || event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClose();
+        }
+      }}
+      onPointerDown={handlePointerDown}
+      style={{ transform: `translateY(${dragOffset}px)` }}
+      type="button"
+    >
+      <span aria-hidden="true" />
+      <small>{label}</small>
+    </button>
+  );
+}
+
 function CatalogLayerMenu({
   activeGroup,
   coverageTechnology,
@@ -6625,8 +6686,36 @@ function CatalogLayerMenu({
   zoneCreationMode: boolean;
 }) {
   const activeLayerCount = groups.reduce((sum, view) => sum + view.layers.filter(isLayerEnabled).length, 0);
+  const lastTouchGroupSelectRef = React.useRef<{ groupId: string; at: number } | null>(null);
+  const handleGroupPointerUp = React.useCallback((event: React.PointerEvent<HTMLButtonElement>, groupId: string) => {
+    if (event.pointerType === "mouse") {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    lastTouchGroupSelectRef.current = { groupId, at: Date.now() };
+    onGroupSelect(groupId);
+  }, [onGroupSelect]);
+  const handleGroupClick = React.useCallback((event: React.MouseEvent<HTMLButtonElement>, groupId: string) => {
+    event.stopPropagation();
+    const lastTouchSelect = lastTouchGroupSelectRef.current;
+    if (lastTouchSelect?.groupId === groupId && Date.now() - lastTouchSelect.at < 700) {
+      return;
+    }
+    onGroupSelect(groupId);
+  }, [onGroupSelect]);
   return (
-    <div className="catalog-layer-menu" data-testid="catalog-layer-rail">
+    <div
+      className="catalog-layer-menu"
+      data-testid="catalog-layer-rail"
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerMove={(event) => event.stopPropagation()}
+      onPointerUp={(event) => event.stopPropagation()}
+      onTouchEnd={(event) => event.stopPropagation()}
+      onTouchMove={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
+    >
       <div className="catalog-rail-status" title={`Režim ${statusLabel}`}>
         <Layers size={18} />
         <strong>{activeLayerCount}</strong>
@@ -6641,7 +6730,9 @@ function CatalogLayerMenu({
               aria-pressed={isActive}
               className={`catalog-rail-button ${isActive ? "active" : ""} ${enabledCount > 0 ? "has-enabled" : ""}`}
               key={view.group.groupId}
-              onClick={() => onGroupSelect(view.group.groupId)}
+              onClick={(event) => handleGroupClick(event, view.group.groupId)}
+              onPointerDown={(event) => event.stopPropagation()}
+              onPointerUp={(event) => handleGroupPointerUp(event, view.group.groupId)}
               title={view.group.label}
               type="button"
             >
