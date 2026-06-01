@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   alertAreasToFeatureCollection,
+  aoiRuleToEditFeatureCollection,
   aoiRulesToFeatureCollection,
   fitMapToObjects,
   formatTrackLabel,
@@ -186,6 +187,34 @@ describe("COP map data helpers", () => {
         }
       ]
     });
+  });
+
+  it("builds editable handles for polygon user zones", () => {
+    const collection = aoiRuleToEditFeatureCollection({
+      color: "#8cb6d8",
+      enabled: true,
+      fillOpacity: 0.12,
+      id: "zone-1",
+      lat: 50,
+      lon: 14,
+      name: "Test zone",
+      polygon: {
+        type: "Polygon",
+        coordinates: [[
+          [14.0, 50.0],
+          [14.2, 50.0],
+          [14.2, 50.2],
+          [14.0, 50.0]
+        ]]
+      },
+      radiusKm: 10
+    }, 1);
+
+    expect(collection.features).toHaveLength(6);
+    expect(collection.features.filter((feature) => feature.properties.kind === "vertex")).toHaveLength(3);
+    expect(collection.features.filter((feature) => feature.properties.kind === "midpoint")).toHaveLength(3);
+    expect(collection.features.find((feature) => feature.properties.kind === "vertex" && feature.properties.index === 1)?.properties.selected).toBe(true);
+    expect(collection.features.find((feature) => feature.properties.kind === "midpoint" && feature.properties.insertIndex === 2)?.geometry.coordinates).toEqual([14.2, 50.1]);
   });
 
   it("adds ČHMÚ weather observation and air quality render metadata", () => {

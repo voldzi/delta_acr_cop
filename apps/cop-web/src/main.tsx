@@ -458,6 +458,7 @@ export function App() {
     normalizeCatalogLayerIds(initialPreferences.catalogLayerIds)
   );
   const [zoneCreationMode, setZoneCreationMode] = React.useState(false);
+  const [editingZoneId, setEditingZoneId] = React.useState<string | null>(null);
   const [autoFit, setAutoFit] = React.useState(initialPreferences.autoFit ?? true);
   const [mapView, setMapView] = React.useState<MapViewState | undefined>(() => normalizeMapView(initialPreferences.mapView));
   const [mapBounds, setMapBounds] = React.useState<MapBounds | undefined>();
@@ -2158,6 +2159,9 @@ export function App() {
   }
 
   function handleAoiRuleDelete(ruleId: string) {
+    if (editingZoneId === ruleId) {
+      setEditingZoneId(null);
+    }
     setAlertPreferences((current) => ({
       ...current,
       aoiRules: (current.aoiRules ?? []).filter((rule) => rule.id !== ruleId)
@@ -2165,11 +2169,13 @@ export function App() {
   }
 
   function handleCreateAoiRuleFromMap() {
+    setEditingZoneId(null);
     const center: [number, number] = mapView?.center ?? [defaultAoiCenter.lon, defaultAoiCenter.lat];
     createAoiRule({ lat: center[1], lon: center[0] });
   }
 
   function handleCreateAoiRuleFromUserLocation() {
+    setEditingZoneId(null);
     if (!userLocation) {
       locateUser();
       return;
@@ -2178,8 +2184,33 @@ export function App() {
   }
 
   function handleCreateAoiRuleFromPolygon(points: Array<{ lat: number; lon: number }>) {
+    setEditingZoneId(null);
     createAoiRuleFromPolygon(points);
     setZoneCreationMode(false);
+  }
+
+  function handleStartAoiRuleEdit(ruleId: string) {
+    setZoneCreationMode(false);
+    setEditingZoneId((current) => (current === ruleId ? null : ruleId));
+  }
+
+  function handleAoiRulePolygonUpdate(ruleId: string, points: Array<{ lat: number; lon: number }>) {
+    const polygon = createAoiPolygonFromPoints(points);
+    if (!polygon) {
+      return;
+    }
+    const center = calculateAoiPolygonCenter(polygon);
+    const radiusKm = calculateAoiPolygonRadiusKm(center, polygon);
+    updateAoiRule(ruleId, (rule) => ({
+      ...rule,
+      affiliationScope: "all",
+      enabled: true,
+      lat: center.lat,
+      lon: center.lon,
+      polygon,
+      radiusKm,
+      severity: "warning"
+    }));
   }
 
   function enableUserZoneLayer() {
@@ -3401,13 +3432,18 @@ export function App() {
               onCoverageTechnologyChange={setCoverageTechnology}
               userZones={aoiRules}
               zoneCreationMode={zoneCreationMode}
+              editingZoneId={editingZoneId}
               onUserZoneColorChange={handleAoiRuleColorChange}
               onUserZoneCreateFromMap={handleCreateAoiRuleFromMap}
               onUserZoneCreateFromUserLocation={handleCreateAoiRuleFromUserLocation}
               onUserZoneDelete={handleAoiRuleDelete}
               onUserZoneEnabledChange={handleAoiRuleEnabledChange}
+              onUserZoneEdit={handleStartAoiRuleEdit}
               onUserZoneRadiusChange={handleAoiRuleRadiusChange}
-              onUserZoneStartDrawing={() => setZoneCreationMode((current) => !current)}
+              onUserZoneStartDrawing={() => {
+                setEditingZoneId(null);
+                setZoneCreationMode((current) => !current);
+              }}
             />
           ) : null}
           {showMapLayerControls ? <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} /> : null}
@@ -3599,6 +3635,7 @@ export function App() {
             <CopMap
               alerts={mapAlerts}
               aoiRules={aoiRules}
+              editingZoneId={editingZoneId}
               clusterTracks={mapClusterEnabled}
               objects={visibleObjects}
               emptyMessage={mapEmptyMessage}
@@ -3610,6 +3647,7 @@ export function App() {
               trackHistory={replayTrackHistory}
               publicFlightSymbolMode={publicFlightSymbolMode}
               mapBasemapMode={mapBasemapMode}
+              mapInteractionSuspended={Boolean(mobileSheet) || messagingOpen || settingsOpen}
               predictionMinutes={predictionMinutes}
               predictionMode={predictionMode}
               autoFit={autoFit}
@@ -3642,7 +3680,9 @@ export function App() {
                 setMobileSheet(null);
               }}
               onCancelZoneCreation={() => setZoneCreationMode(false)}
+              onCancelZoneEditing={() => setEditingZoneId(null)}
               onCreateZonePolygon={handleCreateAoiRuleFromPolygon}
+              onUpdateZonePolygon={handleAoiRulePolygonUpdate}
               onPickReportLocation={handleCommunityReportLocationPicked}
               onRequestUserLocation={locateUser}
               onViewChange={setMapView}
@@ -3961,13 +4001,6 @@ export function App() {
           onWorkspaceChange={setActiveWorkspace}
         /> : null}
       </section>
-
-      {mobileSheet ? (
-        <button className="mobile-sheet-close" onClick={() => setMobileSheet(null)} type="button">
-          <X size={16} />
-          Zavřít
-        </button>
-      ) : null}
 
       <MobileBottomNav
         activeSheet={mobileSheet}
@@ -6559,9 +6592,11 @@ function CatalogLayerMenu({
   onUserZoneCreateFromUserLocation,
   onUserZoneDelete,
   onUserZoneEnabledChange,
+  onUserZoneEdit,
   onUserZoneRadiusChange,
   onUserZoneStartDrawing,
   userZones,
+  editingZoneId,
   zoneCreationMode
 }: {
   activeGroup: CatalogGroupView | null;
@@ -6582,9 +6617,11 @@ function CatalogLayerMenu({
   onUserZoneCreateFromUserLocation: () => void;
   onUserZoneDelete: (zoneId: string) => void;
   onUserZoneEnabledChange: (zoneId: string, enabled: boolean) => void;
+  onUserZoneEdit: (zoneId: string) => void;
   onUserZoneRadiusChange: (zoneId: string, radiusKm: number) => void;
   onUserZoneStartDrawing: () => void;
   userZones: AoiRule[];
+  editingZoneId: string | null;
   zoneCreationMode: boolean;
 }) {
   const activeLayerCount = groups.reduce((sum, view) => sum + view.layers.filter(isLayerEnabled).length, 0);
@@ -6632,9 +6669,11 @@ function CatalogLayerMenu({
           onUserZoneCreateFromUserLocation={onUserZoneCreateFromUserLocation}
           onUserZoneDelete={onUserZoneDelete}
           onUserZoneEnabledChange={onUserZoneEnabledChange}
+          onUserZoneEdit={onUserZoneEdit}
           onUserZoneRadiusChange={onUserZoneRadiusChange}
           onUserZoneStartDrawing={onUserZoneStartDrawing}
           userZones={userZones}
+          editingZoneId={editingZoneId}
           zoneCreationMode={zoneCreationMode}
         />
       ) : null}
@@ -6658,9 +6697,11 @@ function CatalogLayerDrawer({
   onUserZoneCreateFromUserLocation,
   onUserZoneDelete,
   onUserZoneEnabledChange,
+  onUserZoneEdit,
   onUserZoneRadiusChange,
   onUserZoneStartDrawing,
   userZones,
+  editingZoneId,
   zoneCreationMode
 }: {
   coverageTechnology: CoverageTechnology;
@@ -6678,9 +6719,11 @@ function CatalogLayerDrawer({
   onUserZoneCreateFromUserLocation: () => void;
   onUserZoneDelete: (zoneId: string) => void;
   onUserZoneEnabledChange: (zoneId: string, enabled: boolean) => void;
+  onUserZoneEdit: (zoneId: string) => void;
   onUserZoneRadiusChange: (zoneId: string, radiusKm: number) => void;
   onUserZoneStartDrawing: () => void;
   userZones: AoiRule[];
+  editingZoneId: string | null;
   zoneCreationMode: boolean;
 }) {
   const enabledCount = groupView.layers.filter(isLayerEnabled).length;
@@ -6688,7 +6731,12 @@ function CatalogLayerDrawer({
     <section
       className="catalog-layer-drawer"
       data-testid="catalog-layer-drawer"
+      onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
+      onPointerMove={(event) => event.stopPropagation()}
+      onPointerUp={(event) => event.stopPropagation()}
+      onTouchEnd={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
       onTouchMove={(event) => event.stopPropagation()}
     >
       <div className="catalog-drawer-header">
@@ -6777,12 +6825,14 @@ function CatalogLayerDrawer({
               {layer.layerId === "user.zone.alerts" ? (
                 <UserZoneLayerControls
                   creationMode={zoneCreationMode}
+                  editingZoneId={editingZoneId}
                   zones={userZones}
                   onColorChange={onUserZoneColorChange}
                   onCreateFromMap={onUserZoneCreateFromMap}
                   onCreateFromUserLocation={onUserZoneCreateFromUserLocation}
                   onDelete={onUserZoneDelete}
                   onEnabledChange={onUserZoneEnabledChange}
+                  onEdit={onUserZoneEdit}
                   onRadiusChange={onUserZoneRadiusChange}
                   onStartMapClickCreation={onUserZoneStartDrawing}
                 />
@@ -7080,22 +7130,26 @@ function TakGatewayLayerControls({
 
 function UserZoneLayerControls({
   creationMode,
+  editingZoneId,
   zones,
   onColorChange,
   onCreateFromMap,
   onCreateFromUserLocation,
   onDelete,
   onEnabledChange,
+  onEdit,
   onRadiusChange,
   onStartMapClickCreation
 }: {
   creationMode: boolean;
+  editingZoneId: string | null;
   zones: AoiRule[];
   onColorChange: (zoneId: string, color: string) => void;
   onCreateFromMap: () => void;
   onCreateFromUserLocation: () => void;
   onDelete: (zoneId: string) => void;
   onEnabledChange: (zoneId: string, enabled: boolean) => void;
+  onEdit: (zoneId: string) => void;
   onRadiusChange: (zoneId: string, radiusKm: number) => void;
   onStartMapClickCreation: () => void;
 }) {
@@ -7108,8 +7162,10 @@ function UserZoneLayerControls({
       </div>
       {zones.length === 0 ? <div className="empty-mini">Zapněte kreslení polygonu a klikáním do mapy vymezte vlastní zónu. Zóny se ukládají do profilu přihlášeného uživatele.</div> : null}
       <div className="user-zone-list">
-        {zones.map((zone) => (
-          <div className="user-zone-row" key={zone.id}>
+        {zones.map((zone) => {
+          const isEditing = editingZoneId === zone.id;
+          return (
+          <div className={`user-zone-row ${isEditing ? "editing" : ""}`} key={zone.id}>
             <label className="user-zone-main" title="Zapnutí zóny ji zobrazí v mapě a aktivuje výstrahu pro objekty uvnitř.">
               <input checked={zone.enabled} onChange={(event) => onEnabledChange(zone.id, event.target.checked)} type="checkbox" />
               <span style={{ background: normalizeAoiColor(zone.color) }} />
@@ -7143,12 +7199,19 @@ function UserZoneLayerControls({
                 />
               </label>
             )}
+            {zone.polygon ? (
+              <button className={`mini-button wide ${isEditing ? "active" : ""}`} onClick={() => onEdit(zone.id)} type="button">
+                <MousePointer2 size={14} />
+                {isEditing ? "Ukončit editaci" : "Upravit v mapě"}
+              </button>
+            ) : null}
             <button className="mini-button danger wide" onClick={() => onDelete(zone.id)} type="button">
               <Trash2 size={14} />
               Smazat
             </button>
           </div>
-        ))}
+          );
+        })}
       </div>
       <div className="zone-action-grid">
         <button className={`mini-button wide ${creationMode ? "active" : ""}`} onClick={onStartMapClickCreation} type="button">

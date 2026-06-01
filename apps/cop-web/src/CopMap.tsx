@@ -32,6 +32,7 @@ const userLocationSourceId = "cop-user-location";
 const userAlertRadiusSourceId = "cop-user-alert-radius";
 const aoiRuleSourceId = "cop-aoi-rules";
 const aoiDraftSourceId = "cop-aoi-draft";
+const aoiEditSourceId = "cop-aoi-edit";
 const alertAreaSourceId = "cop-alert-areas";
 const situationSourceId = "cop-situation-context";
 const trackHistoryLayerId = "cop-track-history-line";
@@ -43,6 +44,8 @@ const aoiRuleLineLayerId = "cop-aoi-rule-line";
 const aoiDraftFillLayerId = "cop-aoi-draft-fill";
 const aoiDraftLineLayerId = "cop-aoi-draft-line";
 const aoiDraftPointLayerId = "cop-aoi-draft-point";
+const aoiEditMidpointLayerId = "cop-aoi-edit-midpoint";
+const aoiEditVertexLayerId = "cop-aoi-edit-vertex";
 const alertAreaFillLayerId = "cop-alert-area-fill";
 const alertAreaLineLayerId = "cop-alert-area-line";
 const situationFillLayerId = "cop-situation-fill";
@@ -235,6 +238,21 @@ export interface AoiDraftFeatureCollection {
   }>;
 }
 
+export interface AoiEditFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: { type: "Point"; coordinates: [number, number] };
+    properties: {
+      index?: number;
+      insertIndex?: number;
+      kind: "midpoint" | "vertex";
+      selected?: boolean;
+      zoneId: string;
+    };
+  }>;
+}
+
 export interface SituationContextFeatureCollection {
   type: "FeatureCollection";
   features: Array<{
@@ -298,6 +316,7 @@ interface CopMapProps {
   emptyMessage: string;
   hasSituationContextEnabled: boolean;
   mapLayerLabel: string;
+  mapInteractionSuspended?: boolean;
   selectedSituationFeatureId?: string;
   selectedObjectId?: string;
   showHistory: boolean;
@@ -327,9 +346,12 @@ interface CopMapProps {
   reportLocationPickActive?: boolean;
   showAlertAreas: boolean;
   showProximityAlertRadius: boolean;
+  editingZoneId?: string | null;
   zoneCreationActive?: boolean;
   onCancelZoneCreation?: () => void;
+  onCancelZoneEditing?: () => void;
   onCreateZonePolygon?: (points: Array<{ lat: number; lon: number }>) => void;
+  onUpdateZonePolygon?: (zoneId: string, points: Array<{ lat: number; lon: number }>) => void;
   onPickReportLocation?: (center: { lat: number; lon: number }) => void;
   userLocation: UserLocation | null;
 }
@@ -354,6 +376,7 @@ export function CopMap({
   emptyMessage,
   hasSituationContextEnabled,
   mapLayerLabel,
+  mapInteractionSuspended = false,
   selectedSituationFeatureId,
   selectedObjectId,
   showHistory,
@@ -386,7 +409,10 @@ export function CopMap({
   reportLocationPickActive = false,
   showAlertAreas,
   showProximityAlertRadius,
+  editingZoneId = null,
   userLocation,
+  onCancelZoneEditing,
+  onUpdateZonePolygon,
   zoneCreationActive = false
 }: CopMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -398,10 +424,15 @@ export function CopMap({
   const onSelectSituationFeatureRef = React.useRef(onSelectSituationFeature);
   const onAutoFitChangeRef = React.useRef(onAutoFitChange);
   const onCancelZoneCreationRef = React.useRef(onCancelZoneCreation);
+  const onCancelZoneEditingRef = React.useRef(onCancelZoneEditing);
   const onClearSelectionRef = React.useRef(onClearSelection);
   const onCreateZonePolygonRef = React.useRef(onCreateZonePolygon);
+  const onUpdateZonePolygonRef = React.useRef(onUpdateZonePolygon);
   const onPickReportLocationRef = React.useRef(onPickReportLocation);
   const onViewChangeRef = React.useRef(onViewChange);
+  const aoiRulesRef = React.useRef(aoiRules);
+  const editingZoneIdRef = React.useRef<string | null>(editingZoneId);
+  const draggedAoiVertexRef = React.useRef<{ index: number; zoneId: string } | null>(null);
   const reportLocationPickActiveRef = React.useRef(reportLocationPickActive);
   const zoneCreationActiveRef = React.useRef(zoneCreationActive);
   const lastFitSignatureRef = React.useRef("");
@@ -413,6 +444,7 @@ export function CopMap({
   const [mapFullscreen, setMapFullscreen] = React.useState(false);
   const [hoveredObjectId, setHoveredObjectId] = React.useState<string | undefined>();
   const [zoneDraftPoints, setZoneDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
+  const [selectedEditVertexIndex, setSelectedEditVertexIndex] = React.useState<number | null>(null);
 
   const selectedId = selectedObjectId;
   const selectedObject = React.useMemo(
@@ -464,6 +496,18 @@ export function CopMap({
   );
   const aoiRuleFeatureCollection = React.useMemo(() => aoiRulesToFeatureCollection(aoiRules), [aoiRules]);
   const aoiDraftFeatureCollection = React.useMemo(() => zoneDraftToFeatureCollection(zoneDraftPoints), [zoneDraftPoints]);
+  const editingZone = React.useMemo(
+    () => findEditableAoiRule(aoiRules, editingZoneId),
+    [aoiRules, editingZoneId]
+  );
+  const editingZonePoints = React.useMemo(
+    () => aoiRuleEditablePoints(editingZone),
+    [editingZone]
+  );
+  const aoiEditFeatureCollection = React.useMemo(
+    () => aoiRuleToEditFeatureCollection(editingZone, selectedEditVertexIndex),
+    [editingZone, selectedEditVertexIndex]
+  );
   const alertAreaFeatureCollection = React.useMemo(
     () => (showAlertAreas ? alertAreasToFeatureCollection(alerts) : emptyPolygonFeatureCollection()),
     [alerts, showAlertAreas]
@@ -477,6 +521,8 @@ export function CopMap({
     [situationFeatureCollection]
   );
 
+  aoiRulesRef.current = aoiRules;
+  editingZoneIdRef.current = editingZoneId;
   objectsRef.current = objects;
   situationFeaturesRef.current = situationFeatures?.features ?? [];
   onBoundsChangeRef.current = onBoundsChange;
@@ -484,8 +530,10 @@ export function CopMap({
   onSelectSituationFeatureRef.current = onSelectSituationFeature;
   onAutoFitChangeRef.current = onAutoFitChange;
   onCancelZoneCreationRef.current = onCancelZoneCreation;
+  onCancelZoneEditingRef.current = onCancelZoneEditing;
   onClearSelectionRef.current = onClearSelection;
   onCreateZonePolygonRef.current = onCreateZonePolygon;
+  onUpdateZonePolygonRef.current = onUpdateZonePolygon;
   onPickReportLocationRef.current = onPickReportLocation;
   onViewChangeRef.current = onViewChange;
   reportLocationPickActiveRef.current = reportLocationPickActive;
@@ -564,6 +612,10 @@ export function CopMap({
         map.addSource(aoiDraftSourceId, {
           type: "geojson",
           data: emptyAoiDraftFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(aoiEditSourceId, {
+          type: "geojson",
+          data: emptyAoiEditFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
         });
         map.addSource(alertAreaSourceId, {
           type: "geojson",
@@ -670,6 +722,34 @@ export function CopMap({
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 3.5, 12, 5.2, 16, 7],
             "circle-stroke-color": "#061019",
             "circle-stroke-width": 2
+          }
+        });
+
+        map.addLayer({
+          id: aoiEditMidpointLayerId,
+          type: "circle",
+          source: aoiEditSourceId,
+          filter: ["==", ["get", "kind"], "midpoint"],
+          paint: {
+            "circle-color": "#38bdf8",
+            "circle-opacity": 0.82,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 4, 12, 5.8, 16, 7.5],
+            "circle-stroke-color": "#061019",
+            "circle-stroke-opacity": 0.88,
+            "circle-stroke-width": 1.8
+          }
+        });
+
+        map.addLayer({
+          id: aoiEditVertexLayerId,
+          type: "circle",
+          source: aoiEditSourceId,
+          filter: ["==", ["get", "kind"], "vertex"],
+          paint: {
+            "circle-color": ["case", ["get", "selected"], "#ffffff", "#c8f08d"],
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 5.5, 12, 7.4, 16, 9.2],
+            "circle-stroke-color": ["case", ["get", "selected"], "#38bdf8", "#061019"],
+            "circle-stroke-width": ["case", ["get", "selected"], 3, 2]
           }
         });
 
@@ -1593,6 +1673,99 @@ export function CopMap({
         };
         map.on("click", trackClusterCircleLayerId, handleClusterClick);
         map.on("click", trackClusterCountLayerId, handleClusterClick);
+        const updateAoiEditPoint = (zoneId: string, index: number, lngLat: maplibregl.LngLat) => {
+          const rule = findEditableAoiRule(aoiRulesRef.current, zoneId);
+          const points = aoiRuleEditablePoints(rule);
+          if (!rule || !points[index]) {
+            return;
+          }
+          const nextPoints = points.map((point, pointIndex) => (
+            pointIndex === index ? { lat: lngLat.lat, lon: lngLat.lng } : point
+          ));
+          onUpdateZonePolygonRef.current?.(rule.id, nextPoints);
+        };
+        const finishAoiVertexDrag = () => {
+          if (!draggedAoiVertexRef.current) {
+            return;
+          }
+          draggedAoiVertexRef.current = null;
+          map.dragPan.enable();
+          map.touchZoomRotate.enable();
+          map.getCanvas().style.cursor = "";
+        };
+        const handleAoiVertexDragMove = (event: maplibregl.MapMouseEvent | (maplibregl.MapTouchEvent & { lngLat: maplibregl.LngLat })) => {
+          const dragged = draggedAoiVertexRef.current;
+          if (!dragged) {
+            return;
+          }
+          event.preventDefault();
+          updateAoiEditPoint(dragged.zoneId, dragged.index, event.lngLat);
+        };
+        const handleAoiVertexDragStart = (event: MapLayerMouseEvent | (maplibregl.MapTouchEvent & { features?: MapLayerMouseEvent["features"]; lngLat: maplibregl.LngLat })) => {
+          const feature = event.features?.[0];
+          const properties = isRecord(feature?.properties) ? feature.properties : {};
+          const zoneId = stringProperty(properties.zoneId);
+          const index = numberProperty(properties.index);
+          if (!zoneId || index === undefined) {
+            return;
+          }
+          event.preventDefault();
+          setSelectedEditVertexIndex(index);
+          draggedAoiVertexRef.current = { index, zoneId };
+          map.dragPan.disable();
+          map.touchZoomRotate.disable();
+          map.getCanvas().style.cursor = "grabbing";
+        };
+        const handleAoiVertexClick = (event: MapLayerMouseEvent) => {
+          const feature = event.features?.[0];
+          const properties = isRecord(feature?.properties) ? feature.properties : {};
+          const index = numberProperty(properties.index);
+          if (index !== undefined) {
+            event.preventDefault();
+            setSelectedEditVertexIndex(index);
+          }
+        };
+        const handleAoiMidpointClick = (event: MapLayerMouseEvent) => {
+          const feature = event.features?.[0];
+          const properties = isRecord(feature?.properties) ? feature.properties : {};
+          const zoneId = stringProperty(properties.zoneId);
+          const insertIndex = numberProperty(properties.insertIndex);
+          const rule = findEditableAoiRule(aoiRulesRef.current, zoneId ?? editingZoneIdRef.current);
+          const points = aoiRuleEditablePoints(rule);
+          if (!rule || insertIndex === undefined || points.length < 3) {
+            return;
+          }
+          event.preventDefault();
+          const nextPoints = [...points];
+          nextPoints.splice(insertIndex, 0, { lat: event.lngLat.lat, lon: event.lngLat.lng });
+          onUpdateZonePolygonRef.current?.(rule.id, nextPoints);
+          setSelectedEditVertexIndex(insertIndex);
+        };
+        map.on("mousedown", aoiEditVertexLayerId, handleAoiVertexDragStart);
+        map.on("touchstart", aoiEditVertexLayerId, handleAoiVertexDragStart);
+        map.on("click", aoiEditVertexLayerId, handleAoiVertexClick);
+        map.on("click", aoiEditMidpointLayerId, handleAoiMidpointClick);
+        map.on("mousemove", handleAoiVertexDragMove);
+        map.on("touchmove", handleAoiVertexDragMove);
+        map.on("mouseup", finishAoiVertexDrag);
+        map.on("touchend", finishAoiVertexDrag);
+        map.on("touchcancel", finishAoiVertexDrag);
+        map.on("mouseenter", aoiEditVertexLayerId, () => {
+          map.getCanvas().style.cursor = "grab";
+        });
+        map.on("mouseenter", aoiEditMidpointLayerId, () => {
+          map.getCanvas().style.cursor = "copy";
+        });
+        map.on("mouseleave", aoiEditVertexLayerId, () => {
+          if (!draggedAoiVertexRef.current) {
+            map.getCanvas().style.cursor = "";
+          }
+        });
+        map.on("mouseleave", aoiEditMidpointLayerId, () => {
+          if (!draggedAoiVertexRef.current) {
+            map.getCanvas().style.cursor = "";
+          }
+        });
         const handleUserMapInteraction = (event: maplibregl.MapLibreEvent) => {
           if (event.originalEvent) {
             onAutoFitChangeRef.current(false);
@@ -1605,6 +1778,14 @@ export function CopMap({
           }
           if (zoneCreationActiveRef.current) {
             setZoneDraftPoints((current) => [...current, { lat: event.lngLat.lat, lon: event.lngLat.lng }].slice(0, 80));
+            return;
+          }
+          if (editingZoneIdRef.current) {
+            const clickedEditHandle = queryRenderedFeatureByLayerPriority(map, event.point, [aoiEditVertexLayerId, aoiEditMidpointLayerId]);
+            if (clickedEditHandle) {
+              return;
+            }
+            setSelectedEditVertexIndex(null);
             return;
           }
           const clickedCluster = queryRenderedFeatureByLayerPriority(map, event.point, mapClusterClickLayerIds);
@@ -1828,10 +2009,22 @@ export function CopMap({
   }, [aoiDraftFeatureCollection, mapReady]);
 
   React.useEffect(() => {
+    const source = mapRef.current?.getSource(aoiEditSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(aoiEditFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [aoiEditFeatureCollection, mapReady]);
+
+  React.useEffect(() => {
     if (!zoneCreationActive) {
       setZoneDraftPoints([]);
     }
   }, [zoneCreationActive]);
+
+  React.useEffect(() => {
+    setSelectedEditVertexIndex(null);
+    draggedAoiVertexRef.current = null;
+  }, [editingZoneId]);
 
   React.useEffect(() => {
     const source = mapRef.current?.getSource(alertAreaSourceId);
@@ -1949,6 +2142,14 @@ export function CopMap({
     return () => window.cancelAnimationFrame(frame);
   }, [mapFullscreen]);
 
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) {
+      return;
+    }
+    setMapInteractionSuspended(map, mapInteractionSuspended);
+  }, [mapInteractionSuspended, mapReady]);
+
   const finishZoneDraft = React.useCallback(() => {
     if (zoneDraftPoints.length < 3) {
       return;
@@ -1966,6 +2167,20 @@ export function CopMap({
     onCancelZoneCreationRef.current?.();
   }, []);
 
+  const deleteSelectedEditVertex = React.useCallback(() => {
+    if (!editingZone || selectedEditVertexIndex === null || editingZonePoints.length <= 3) {
+      return;
+    }
+    const nextPoints = editingZonePoints.filter((_, index) => index !== selectedEditVertexIndex);
+    onUpdateZonePolygonRef.current?.(editingZone.id, nextPoints);
+    setSelectedEditVertexIndex((current) => {
+      if (current === null) {
+        return null;
+      }
+      return Math.min(current, Math.max(0, nextPoints.length - 1));
+    });
+  }, [editingZone, editingZonePoints, selectedEditVertexIndex]);
+
   const missingPositionCount = objects.length - positionedObjects.length;
 
   return (
@@ -1979,6 +2194,25 @@ export function CopMap({
             <button disabled={zoneDraftPoints.length < 3} onClick={finishZoneDraft} type="button">Dokončit polygon</button>
             <button disabled={zoneDraftPoints.length === 0} onClick={removeLastZoneDraftPoint} type="button">Zpět bod</button>
             <button onClick={cancelZoneDraft} type="button">Zrušit</button>
+          </div>
+        </div>
+      ) : null}
+      {editingZone ? (
+        <div className="map-zone-create-hint map-zone-edit-hint">
+          <strong>Editace zóny: {editingZone.name}</strong>
+          <span>
+            Tažením posuňte roh. Modré body mezi hranami vloží nový bod. Vybraný roh lze smazat.
+          </span>
+          <div className="map-zone-create-actions">
+            <button
+              disabled={selectedEditVertexIndex === null || editingZonePoints.length <= 3}
+              onClick={deleteSelectedEditVertex}
+              type="button"
+            >
+              Smazat bod
+            </button>
+            <button onClick={() => setSelectedEditVertexIndex(null)} type="button">Zrušit výběr</button>
+            <button onClick={() => onCancelZoneEditingRef.current?.()} type="button">Hotovo</button>
           </div>
         </div>
       ) : null}
@@ -2097,6 +2331,20 @@ function enableMapInteractions(map: maplibregl.Map): void {
   canvas.style.touchAction = "none";
   canvasContainer.style.pointerEvents = "auto";
   canvasContainer.style.touchAction = "none";
+}
+
+function setMapInteractionSuspended(map: maplibregl.Map, suspended: boolean): void {
+  if (suspended) {
+    map.dragPan.disable();
+    map.scrollZoom.disable();
+    map.boxZoom.disable();
+    map.dragRotate.disable();
+    map.keyboard.disable();
+    map.doubleClickZoom.disable();
+    map.touchZoomRotate.disable();
+    return;
+  }
+  enableMapInteractions(map);
 }
 
 function stopMapToolbarEvent(event: React.SyntheticEvent<HTMLElement>): void {
@@ -2322,6 +2570,65 @@ function zoneDraftToFeatureCollection(points: Array<{ lat: number; lon: number }
 
 function emptyAoiDraftFeatureCollection(): AoiDraftFeatureCollection {
   return { type: "FeatureCollection", features: [] };
+}
+
+function emptyAoiEditFeatureCollection(): AoiEditFeatureCollection {
+  return { type: "FeatureCollection", features: [] };
+}
+
+function findEditableAoiRule(aoiRules: AoiRule[], zoneId: string | null | undefined): AoiRule | null {
+  if (!zoneId) {
+    return null;
+  }
+  const rule = aoiRules.find((candidate) => candidate.id === zoneId);
+  return rule && isValidAoiPolygon(rule.polygon) ? rule : null;
+}
+
+function aoiRuleEditablePoints(rule: AoiRule | null): Array<{ lat: number; lon: number }> {
+  if (!rule || !isValidAoiPolygon(rule.polygon)) {
+    return [];
+  }
+  const ring = rule.polygon.coordinates[0] ?? [];
+  return ring.slice(0, -1).map(([lon, lat]) => ({ lat, lon }));
+}
+
+export function aoiRuleToEditFeatureCollection(rule: AoiRule | null, selectedVertexIndex: number | null = null): AoiEditFeatureCollection {
+  const points = aoiRuleEditablePoints(rule);
+  if (!rule || points.length < 3) {
+    return emptyAoiEditFeatureCollection();
+  }
+  const features: AoiEditFeatureCollection["features"] = [];
+  points.forEach((point, index) => {
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [point.lon, point.lat] },
+      properties: {
+        index,
+        kind: "vertex",
+        selected: selectedVertexIndex === index,
+        zoneId: rule.id
+      }
+    });
+  });
+  points.forEach((point, index) => {
+    const nextPoint = points[(index + 1) % points.length];
+    if (!nextPoint) {
+      return;
+    }
+    features.push({
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [(point.lon + nextPoint.lon) / 2, (point.lat + nextPoint.lat) / 2]
+      },
+      properties: {
+        insertIndex: index + 1,
+        kind: "midpoint",
+        zoneId: rule.id
+      }
+    });
+  });
+  return { type: "FeatureCollection", features };
 }
 
 function isValidAoiPolygon(polygon: AoiRule["polygon"]): polygon is NonNullable<AoiRule["polygon"]> {
