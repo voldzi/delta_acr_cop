@@ -63,6 +63,7 @@ const aoiEditMidpointLayerId = "cop-aoi-edit-midpoint";
 const aoiEditVertexLayerId = "cop-aoi-edit-vertex";
 const sketchFillLayerId = "cop-sketch-fill";
 const sketchLineLayerId = "cop-sketch-line";
+const sketchArrowHeadLayerId = "cop-sketch-arrowhead";
 const sketchPointLayerId = "cop-sketch-point";
 const sketchLabelLayerId = "cop-sketch-label";
 const sketchDraftLineLayerId = "cop-sketch-draft-line";
@@ -111,6 +112,7 @@ const mapFeatureClickPriorityLayerIds = [
   trackLabelLayerId,
   trackClusterSymbolLayerId,
   trackClusterLabelLayerId,
+  sketchArrowHeadLayerId,
   sketchPointLayerId,
   sketchLabelLayerId,
   sketchLineLayerId,
@@ -136,6 +138,7 @@ const mapFeatureClickPriorityLayerIds = [
 const mapPointRaiseLayerIds = [
   sketchFillLayerId,
   sketchLineLayerId,
+  sketchArrowHeadLayerId,
   sketchPointLayerId,
   sketchLabelLayerId,
   situationPointSelectedLayerId,
@@ -290,9 +293,10 @@ export interface SketchFeatureCollection {
     type: "Feature";
     geometry: SketchGeometry;
     properties: {
+      bearing?: number;
       drawingId: string;
       fill: string;
-      kind: SketchDrawingKind;
+      kind: SketchDrawingKind | "arrowhead";
       label: string;
       lineWidth: number;
       opacity: number;
@@ -952,10 +956,32 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: sketchArrowHeadLayerId,
+          type: "symbol",
+          source: sketchSourceId,
+          filter: ["==", ["get", "kind"], "arrowhead"],
+          layout: {
+            "text-field": "➤",
+            "text-font": ["Noto Sans Regular"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 6, 17, 12, 22, 16, 28],
+            "text-rotate": ["coalesce", ["get", "bearing"], 0],
+            "text-rotation-alignment": "map",
+            "text-allow-overlap": true,
+            "text-anchor": "center"
+          },
+          paint: {
+            "text-color": ["coalesce", ["get", "stroke"], "#2f80ed"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 2,
+            "text-halo-blur": 0.2
+          }
+        });
+
+        map.addLayer({
           id: sketchPointLayerId,
           type: "circle",
           source: sketchSourceId,
-          filter: ["==", ["geometry-type"], "Point"],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "kind"], "arrowhead"]],
           paint: {
             "circle-color": ["coalesce", ["get", "fill"], "#2f80ed"],
             "circle-radius": ["case", ["get", "selected"], 11, 8],
@@ -3194,22 +3220,58 @@ function emptySketchEditFeatureCollection(): SketchEditFeatureCollection {
 }
 
 function sketchDrawingsToFeatureCollection(drawings: SketchDrawingFeature[], selectedDrawingId: string | null | undefined): SketchFeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: drawings.map((drawing) => ({
+  const features: SketchFeatureCollection["features"] = [];
+  drawings.forEach((drawing) => {
+    const selected = drawing.id === selectedDrawingId;
+    const baseProperties = {
+      drawingId: drawing.id,
+      fill: drawing.properties.style.fill || "#2f80ed",
+      kind: drawing.properties.kind,
+      label: drawing.properties.label,
+      lineWidth: Number.isFinite(drawing.properties.style.lineWidth) ? drawing.properties.style.lineWidth : 2,
+      opacity: Number.isFinite(drawing.properties.style.opacity) ? drawing.properties.style.opacity : 0.22,
+      selected,
+      stroke: drawing.properties.style.stroke || "#2f80ed"
+    };
+    features.push({
       type: "Feature",
       geometry: drawing.geometry,
-      properties: {
-        drawingId: drawing.id,
-        fill: drawing.properties.style.fill || "#2f80ed",
-        kind: drawing.properties.kind,
-        label: drawing.properties.label,
-        lineWidth: Number.isFinite(drawing.properties.style.lineWidth) ? drawing.properties.style.lineWidth : 2,
-        opacity: Number.isFinite(drawing.properties.style.opacity) ? drawing.properties.style.opacity : 0.22,
-        selected: drawing.id === selectedDrawingId,
-        stroke: drawing.properties.style.stroke || "#2f80ed"
-      }
-    }))
+      properties: baseProperties
+    });
+    const arrowHead = sketchArrowHeadFeature(drawing, baseProperties, selected);
+    if (arrowHead) {
+      features.push(arrowHead);
+    }
+  });
+  return {
+    type: "FeatureCollection",
+    features
+  };
+}
+
+function sketchArrowHeadFeature(
+  drawing: SketchDrawingFeature,
+  baseProperties: Omit<SketchFeatureCollection["features"][number]["properties"], "bearing" | "kind"> & { kind: SketchDrawingKind },
+  selected: boolean
+): SketchFeatureCollection["features"][number] | null {
+  if (drawing.properties.kind !== "arrow" || drawing.geometry.type !== "LineString" || drawing.geometry.coordinates.length < 2) {
+    return null;
+  }
+  const end = drawing.geometry.coordinates[drawing.geometry.coordinates.length - 1];
+  const previous = drawing.geometry.coordinates[drawing.geometry.coordinates.length - 2];
+  if (!end || !previous) {
+    return null;
+  }
+  return {
+    type: "Feature",
+    geometry: { type: "Point", coordinates: end },
+    properties: {
+      ...baseProperties,
+      bearing: bearingDegrees(previous, end),
+      kind: "arrowhead",
+      label: "",
+      selected
+    }
   };
 }
 
@@ -3447,6 +3509,19 @@ function haversineDistanceKm(latA: number, lonA: number, latB: number, lonB: num
   const deltaLambda = (lonB - lonA) * toRadians;
   const a = Math.sin(deltaPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2;
   return 2 * radiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function bearingDegrees(from: [number, number], to: [number, number]): number {
+  const toRadians = Math.PI / 180;
+  const toDegrees = 180 / Math.PI;
+  const [lonA, latA] = from;
+  const [lonB, latB] = to;
+  const phi1 = latA * toRadians;
+  const phi2 = latB * toRadians;
+  const deltaLambda = (lonB - lonA) * toRadians;
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  return ((Math.atan2(y, x) * toDegrees - 90) + 360) % 360;
 }
 
 function findEditableAoiRule(aoiRules: AoiRule[], zoneId: string | null | undefined): AoiRule | null {
