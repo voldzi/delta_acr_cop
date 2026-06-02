@@ -4233,6 +4233,7 @@ export function App() {
         >
           <CatalogLayerMenu
             activeGroup={activeCatalogGroup}
+            compactDrawerHeader
             groups={catalogGroupViews}
             loadError={loadError}
             statusLabel={missionModeLabel(operatingMode, offlineSnapshotState)}
@@ -7127,6 +7128,7 @@ function MobileSheetPullHandle({ label, onClose }: { label: string; onClose: () 
 
 function CatalogLayerMenu({
   activeGroup,
+  compactDrawerHeader = false,
   coverageTechnology,
   getFeatureCount,
   getLayerStatus,
@@ -7152,6 +7154,7 @@ function CatalogLayerMenu({
   zoneCreationMode
 }: {
   activeGroup: CatalogGroupView | null;
+  compactDrawerHeader?: boolean;
   coverageTechnology: CoverageTechnology;
   getFeatureCount: (layer: MapCatalogLayer) => number;
   getLayerStatus: (layer: MapCatalogLayer) => SituationLayerStatus;
@@ -7236,6 +7239,7 @@ function CatalogLayerMenu({
       {groups.length === 0 ? <div className="catalog-empty-state">Katalog se načítá</div> : null}
       {activeGroup ? (
         <CatalogLayerDrawer
+          compactHeader={compactDrawerHeader}
           coverageTechnology={coverageTechnology}
           getFeatureCount={getFeatureCount}
           getLayerStatus={getLayerStatus}
@@ -7264,6 +7268,7 @@ function CatalogLayerMenu({
 }
 
 function CatalogLayerDrawer({
+  compactHeader = false,
   coverageTechnology,
   getFeatureCount,
   getLayerStatus,
@@ -7286,6 +7291,7 @@ function CatalogLayerDrawer({
   editingZoneId,
   zoneCreationMode
 }: {
+  compactHeader?: boolean;
   coverageTechnology: CoverageTechnology;
   getFeatureCount: (layer: MapCatalogLayer) => number;
   getLayerStatus: (layer: MapCatalogLayer) => SituationLayerStatus;
@@ -7321,15 +7327,17 @@ function CatalogLayerDrawer({
       onTouchStart={(event) => event.stopPropagation()}
       onTouchMove={(event) => event.stopPropagation()}
     >
-      <div className="catalog-drawer-header">
-        <div>
-          <span>Katalog vrstev</span>
-          <strong>{groupView.group.label}</strong>
+      {!compactHeader ? (
+        <div className="catalog-drawer-header">
+          <div>
+            <span>Katalog vrstev</span>
+            <strong>{groupView.group.label}</strong>
+          </div>
+          <button aria-label="Zavřít katalog vrstev" onClick={onClose} type="button">
+            <X size={18} />
+          </button>
         </div>
-        <button aria-label="Zavřít katalog vrstev" onClick={onClose} type="button">
-          <X size={18} />
-        </button>
-      </div>
+      ) : null}
       <div className="catalog-drawer-summary">
         <ReadinessRow label="Zapnuto" value={`${enabledCount}/${groupView.layers.length}`} tone={enabledCount > 0 ? "ok" : "neutral"} />
       </div>
