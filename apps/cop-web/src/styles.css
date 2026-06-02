@@ -5806,29 +5806,59 @@ h1 {
   opacity: 0.45;
 }
 
-.map-sketch-toolbar {
+.map-sketch-palette {
   position: absolute;
   left: 50%;
   bottom: 16px;
-  z-index: 7;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  z-index: 8;
+  display: grid;
+  gap: 8px;
+  width: min(840px, calc(100% - 34px));
   max-width: min(840px, calc(100% - 34px));
-  padding: 7px;
-  border: 1px solid rgba(111, 140, 165, 0.36);
-  background: linear-gradient(180deg, rgba(17, 26, 35, 0.92), rgba(6, 12, 18, 0.9));
-  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.36);
   transform: translateX(-50%);
   pointer-events: auto;
   touch-action: manipulation;
 }
 
-.map-sketch-toolbar.collapsed {
-  left: auto;
-  right: 18px;
-  bottom: 18px;
+.map-sketch-palette.collapsed {
+  top: 18px;
+  bottom: auto;
+  left: clamp(84px, 12vw, 132px);
+  width: auto;
+  max-width: none;
   transform: none;
+  z-index: 44;
+}
+
+.map-sketch-palette.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.map-sketch-toolbar {
+  position: relative;
+  order: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 7px;
+  border: 1px solid rgba(111, 140, 165, 0.36);
+  background: linear-gradient(180deg, rgba(17, 26, 35, 0.92), rgba(6, 12, 18, 0.9));
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.36);
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.map-sketch-toolbar.collapsed {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.map-sketch-palette.collapsed .map-sketch-tool-button.compact {
+  display: none;
 }
 
 .map-sketch-tool-grid {
@@ -5877,18 +5907,15 @@ h1 {
 }
 
 .map-sketch-style-panel {
-  position: absolute;
-  left: 50%;
-  bottom: 74px;
-  z-index: 8;
-  width: min(820px, calc(100% - 34px));
+  position: relative;
+  order: 1;
+  width: 100%;
   max-height: min(42vh, 420px);
   overflow: auto;
   padding: 12px;
   border: 1px solid rgba(111, 140, 165, 0.38);
   background: linear-gradient(180deg, rgba(11, 20, 29, 0.96), rgba(5, 11, 17, 0.94));
   box-shadow: 0 18px 54px rgba(0, 0, 0, 0.42);
-  transform: translateX(-50%);
   pointer-events: auto;
   touch-action: manipulation;
 }
@@ -5915,6 +5942,22 @@ h1 {
   color: #91a1b1;
   font-size: 11px;
   font-weight: 800;
+}
+
+.map-sketch-palette-drag {
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  min-height: 30px;
+  border: 1px solid rgba(142, 157, 170, 0.28);
+  background: rgba(18, 28, 38, 0.86);
+  color: #dbe7f2;
+  cursor: grab;
+}
+
+.map-sketch-palette-drag:active,
+.map-sketch-palette.dragging .map-sketch-palette-drag {
+  cursor: grabbing;
 }
 
 .map-sketch-style-grid {
@@ -6030,29 +6073,36 @@ h1 {
   color: #bfdbfe;
 }
 
-.map-sketch-style-panel + .map-sketch-create-hint,
-.map-sketch-style-panel + .map-sketch-edit-hint {
+.map-sketch-palette.expanded ~ .map-sketch-create-hint,
+.map-sketch-palette.expanded ~ .map-sketch-edit-hint {
   bottom: min(52vh, 478px);
 }
 
 @media (max-width: 860px) {
-  .map-container:not(.mobile-sketch-controls-open) .map-sketch-toolbar,
-  .map-container:not(.mobile-sketch-controls-open) .map-sketch-style-panel {
+  .map-container:not(.mobile-sketch-controls-open) .map-sketch-palette {
     display: none;
   }
 
-  .map-sketch-toolbar {
+  .map-sketch-palette {
     left: 10px;
     right: 10px;
     bottom: calc(var(--mobile-bottom-nav-height, 76px) + 8px);
+    width: auto;
     max-width: none;
     transform: none;
   }
 
-  .map-sketch-toolbar.collapsed {
+  .map-sketch-palette.collapsed {
+    top: auto;
     left: auto;
     right: 12px;
     bottom: calc(var(--mobile-bottom-nav-height, 76px) + 10px);
+    width: auto;
+    max-width: none;
+  }
+
+  .map-sketch-toolbar {
+    max-width: none;
   }
 
   .map-sketch-tool-grid {
@@ -6065,10 +6115,11 @@ h1 {
     font-size: 10px;
   }
 
+  .map-sketch-palette.collapsed .map-sketch-tool-button.compact {
+    display: grid;
+  }
+
   .map-sketch-style-panel {
-    left: 10px;
-    right: 10px;
-    bottom: calc(var(--mobile-bottom-nav-height, 76px) + 64px);
     width: auto;
     max-height: min(31dvh, 260px);
     transform: none;
@@ -6093,8 +6144,8 @@ h1 {
     overscroll-behavior: contain;
   }
 
-  .map-sketch-style-panel + .map-sketch-create-hint,
-  .map-sketch-style-panel + .map-sketch-edit-hint {
+  .map-sketch-palette.expanded ~ .map-sketch-create-hint,
+  .map-sketch-palette.expanded ~ .map-sketch-edit-hint {
     bottom: calc(var(--mobile-bottom-nav-height, 76px) + 64px + min(31dvh, 260px) + 10px);
   }
 

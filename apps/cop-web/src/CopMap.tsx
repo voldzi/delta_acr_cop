@@ -12,6 +12,7 @@ import {
   Maximize2,
   Minimize2,
   Minus,
+  Move,
   MousePointer2,
   Palette,
   Pentagon,
@@ -663,6 +664,15 @@ export function CopMap({
   onUpdateSketchDrawing
 }: CopMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const sketchPaletteRef = React.useRef<HTMLDivElement | null>(null);
+  const sketchPaletteDragRef = React.useRef<{
+    height: number;
+    originX: number;
+    originY: number;
+    startX: number;
+    startY: number;
+    width: number;
+  } | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const objectsRef = React.useRef(objects);
   const situationFeaturesRef = React.useRef<SituationFeature[]>([]);
@@ -704,6 +714,8 @@ export function CopMap({
   const [selectedSketchVertexIndex, setSelectedSketchVertexIndex] = React.useState<number | null>(null);
   const [selectedEditVertexIndex, setSelectedEditVertexIndex] = React.useState<number | null>(null);
   const [sketchToolsExpanded, setSketchToolsExpanded] = React.useState(true);
+  const [sketchPalettePosition, setSketchPalettePosition] = React.useState<{ x: number; y: number } | null>(null);
+  const [sketchPaletteDragging, setSketchPaletteDragging] = React.useState(false);
   const [mapLegendCollapsed, setMapLegendCollapsed] = React.useState(false);
   const [sketchStroke, setSketchStroke] = React.useState(defaultSketchStyle.stroke);
   const [sketchFill, setSketchFill] = React.useState(defaultSketchStyle.fill);
@@ -3028,6 +3040,79 @@ export function CopMap({
   const showSketchSymbolPalette =
     sketchMode === "marker"
     || Boolean(selectedSketchDrawing && (selectedSketchDrawing.properties.kind === "marker" || selectedSketchDrawing.properties.kind === "point" || selectedSketchDrawing.properties.kind === "text"));
+  const beginSketchPaletteDrag = React.useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (mobileSketchControlsOpen || !sketchToolsExpanded) {
+        return;
+      }
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      const paletteRect = sketchPaletteRef.current?.getBoundingClientRect();
+      if (!containerRect || !paletteRect) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const currentPosition = sketchPalettePosition ?? {
+        x: paletteRect.left - containerRect.left,
+        y: paletteRect.top - containerRect.top
+      };
+      sketchPaletteDragRef.current = {
+        height: paletteRect.height,
+        originX: currentPosition.x,
+        originY: currentPosition.y,
+        startX: event.clientX,
+        startY: event.clientY,
+        width: paletteRect.width
+      };
+      setSketchPaletteDragging(true);
+    },
+    [mobileSketchControlsOpen, sketchPalettePosition, sketchToolsExpanded]
+  );
+  React.useEffect(() => {
+    if (!sketchPaletteDragging) {
+      return undefined;
+    }
+    const handlePointerMove = (event: PointerEvent) => {
+      const drag = sketchPaletteDragRef.current;
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      if (!drag || !containerRect) {
+        return;
+      }
+      const paletteRect = sketchPaletteRef.current?.getBoundingClientRect();
+      const paletteWidth = paletteRect?.width ?? drag.width;
+      const paletteHeight = paletteRect?.height ?? drag.height;
+      const nextX = drag.originX + event.clientX - drag.startX;
+      const nextY = drag.originY + event.clientY - drag.startY;
+      setSketchPalettePosition({
+        x: clampValue(nextX, 10, Math.max(10, containerRect.width - paletteWidth - 10)),
+        y: clampValue(nextY, 10, Math.max(10, containerRect.height - paletteHeight - 10))
+      });
+    };
+    const handlePointerUp = () => {
+      sketchPaletteDragRef.current = null;
+      setSketchPaletteDragging(false);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [sketchPaletteDragging]);
+  const sketchPaletteStyle = React.useMemo<React.CSSProperties | undefined>(() => {
+    if (!sketchToolsExpanded || mobileSketchControlsOpen || !sketchPalettePosition) {
+      return undefined;
+    }
+    return {
+      bottom: "auto",
+      left: `${sketchPalettePosition.x}px`,
+      right: "auto",
+      top: `${sketchPalettePosition.y}px`,
+      transform: "none"
+    };
+  }, [mobileSketchControlsOpen, sketchPalettePosition, sketchToolsExpanded]);
 
   const missingPositionCount = objects.length - positionedObjects.length;
 
@@ -3074,46 +3159,54 @@ export function CopMap({
       ) : null}
       {reportLocationPickActive ? <div className="map-zone-create-hint">Kliknutím do mapy určíte polohu hlášení</div> : null}
       <div
-        className={`map-sketch-toolbar ${sketchToolsExpanded ? "expanded" : "collapsed"}`}
+        className={[
+          "map-sketch-palette",
+          sketchToolsExpanded ? "expanded" : "collapsed",
+          sketchPaletteDragging ? "dragging" : "",
+          sketchPalettePosition && sketchToolsExpanded && !mobileSketchControlsOpen ? "moved" : ""
+        ].filter(Boolean).join(" ")}
         onClick={stopMapToolbarEvent}
         onDoubleClick={stopMapToolbarEvent}
         onPointerDown={stopMapToolbarEvent}
+        ref={sketchPaletteRef}
+        style={sketchPaletteStyle}
       >
-        <button
-          aria-label={sketchToolsExpanded ? "Skrýt nástroje zákresu" : "Zobrazit nástroje zákresu"}
-          className="map-sketch-toggle"
-          onClick={() => setSketchToolsExpanded((current) => !current)}
-          type="button"
-        >
-          {sketchToolsExpanded ? <ChevronDown size={17} /> : <ChevronUp size={17} />}
-        </button>
-        {sketchToolsExpanded ? (
-          <div className="map-sketch-tool-grid">
-            {sketchToolItems.map(({ Icon, label, mode }) => (
-              <button
-                aria-pressed={sketchMode === mode}
-                className={`map-sketch-tool-button ${sketchMode === mode ? "active" : ""}`}
-                key={mode}
-                onClick={() => handleSketchToolChange(mode)}
-                title={label}
-                type="button"
-              >
-                <Icon size={17} strokeWidth={2.2} />
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-        ) : (
+        <div className={`map-sketch-toolbar ${sketchToolsExpanded ? "expanded" : "collapsed"}`}>
           <button
-            className="map-sketch-tool-button active compact"
-            onClick={() => setSketchToolsExpanded(true)}
+            aria-label={sketchToolsExpanded ? "Skrýt nástroje zákresu" : "Zobrazit nástroje zákresu"}
+            className="map-sketch-toggle"
+            onClick={() => setSketchToolsExpanded((current) => !current)}
             type="button"
           >
-            <ActiveSketchToolIcon size={17} strokeWidth={2.2} />
-            <span>{activeSketchTool.label}</span>
+            {sketchToolsExpanded ? <ChevronDown size={17} /> : <Palette size={17} />}
           </button>
-        )}
-      </div>
+          {sketchToolsExpanded ? (
+            <div className="map-sketch-tool-grid">
+              {sketchToolItems.map(({ Icon, label, mode }) => (
+                <button
+                  aria-pressed={sketchMode === mode}
+                  className={`map-sketch-tool-button ${sketchMode === mode ? "active" : ""}`}
+                  key={mode}
+                  onClick={() => handleSketchToolChange(mode)}
+                  title={label}
+                  type="button"
+                >
+                  <Icon size={17} strokeWidth={2.2} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <button
+              className="map-sketch-tool-button active compact"
+              onClick={() => setSketchToolsExpanded(true)}
+              type="button"
+            >
+              <ActiveSketchToolIcon size={17} strokeWidth={2.2} />
+              <span>{activeSketchTool.label}</span>
+            </button>
+          )}
+        </div>
       {sketchToolsExpanded ? (
         <div
           className="map-sketch-style-panel"
@@ -3126,6 +3219,15 @@ export function CopMap({
             <Palette size={16} />
             <strong>Zákres</strong>
             <span>{selectedSketchDrawing ? "upravujete vybraný prvek" : "styl pro nový prvek"}</span>
+            <button
+              aria-label="Přesunout paletu zákresu"
+              className="map-sketch-palette-drag"
+              onPointerDown={beginSketchPaletteDrag}
+              title="Přesunout paletu"
+              type="button"
+            >
+              <Move size={15} strokeWidth={2.2} />
+            </button>
           </div>
           <div className="map-sketch-style-grid">
             <div className="map-sketch-style-section">
@@ -3235,6 +3337,7 @@ export function CopMap({
           ) : null}
         </div>
       ) : null}
+      </div>
       {isSketchDraftMode(sketchMode) ? (
         <div className="map-zone-create-hint map-sketch-create-hint">
           <strong>{sketchMode === "measurement" ? "Měření" : "Kreslení"}</strong>
