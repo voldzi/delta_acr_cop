@@ -9,7 +9,7 @@ describe("Matrix client diagnostics", () => {
       "založit chatovou místnost"
     );
 
-    expect(error.message).toContain("prohlížeč se nedostal na Matrix server https://msg.zeleznalady.cz");
+    expect(error.message).toContain("prohlížeč se nedostal ke službě zpráv https://msg.zeleznalady.cz");
     expect(error.message).toContain("/_matrix/client/versions");
   });
 

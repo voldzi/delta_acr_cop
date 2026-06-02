@@ -38,7 +38,7 @@ export function assertMatrixRoomBindingConfirmed(
   if (binding.status === "online" && binding.conversation?.matrix?.roomId === roomId) {
     return;
   }
-  throw new Error(binding.warnings[0] ?? "Messaging provider nepotvrdil vazbu Matrix místnosti. Chat nebude lokálně aktivován.");
+  throw new Error(binding.warnings[0] ?? "Služba zpráv zatím nepotvrdila zabezpečenou konverzaci.");
 }
 
 export function matrixUserIdsFromResolution(
@@ -46,13 +46,13 @@ export function matrixUserIdsFromResolution(
   requestedUserIds: string[]
 ): string[] {
   if (result.status !== "online") {
-    throw new Error(result.warnings[0] ?? "Některé členy se nepodařilo pozvat do Matrix místnosti.");
+    throw new Error(result.warnings[0] ?? "Některé členy se nepodařilo pozvat do konverzace.");
   }
   const requested = Array.from(new Set(requestedUserIds));
   const resolvedByUserId = new Map(result.identities.map((identity) => [identity.userId, identity.matrixUserId]));
   const missing = requested.filter((userId) => !resolvedByUserId.get(userId));
   if (missing.length > 0) {
-    throw new Error(`Chybí Matrix identita pro členy: ${missing.slice(0, 5).join(", ")}.`);
+    throw new Error(`Některé členy zatím nelze pozvat: ${missing.slice(0, 5).join(", ")}.`);
   }
   return Array.from(new Set(requested.flatMap((userId) => resolvedByUserId.get(userId) ?? [])));
 }
@@ -357,7 +357,7 @@ export function MessagingPanel({
       return;
     }
     if (!status?.chatAvailable) {
-      setBootstrapError("Messaging provider zatím nepotvrdil bezpečný Matrix/E2EE bootstrap.");
+      setBootstrapError("Zabezpečené zprávy zatím nejsou připravené.");
       return;
     }
 
@@ -366,12 +366,12 @@ export function MessagingPanel({
     try {
       const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, getOrCreateMatrixDeviceId(matrixAccountOwnerId));
       if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
-        setBootstrapError(bootstrap.detail ?? bootstrap.warnings[0] ?? "Matrix token bootstrap není připravený.");
+        setBootstrapError(bootstrap.detail ?? bootstrap.warnings[0] ?? "Zabezpečený chat zatím není připravený.");
         return;
       }
       await startMatrixSession(bootstrap);
     } catch (caught) {
-      setBootstrapError(caught instanceof Error ? caught.message : "Matrix klient se nepodařilo spustit.");
+      setBootstrapError(caught instanceof Error ? caught.message : "Zabezpečený chat se nepodařilo spustit.");
     } finally {
       setBootstrapLoading(false);
     }
@@ -384,12 +384,12 @@ export function MessagingPanel({
     try {
       const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, matrixSession.bootstrap.deviceId ?? getOrCreateMatrixDeviceId(matrixAccountOwnerId));
       if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
-        setBootstrapError(bootstrap.detail ?? bootstrap.warnings[0] ?? "Matrix token se nepodařilo obnovit.");
+        setBootstrapError(bootstrap.detail ?? bootstrap.warnings[0] ?? "Přihlášení do chatu se nepodařilo obnovit.");
         return;
       }
       await startMatrixSession(bootstrap, selectedRoomId);
     } catch (caught) {
-      setBootstrapError(caught instanceof Error ? caught.message : "Matrix session se nepodařilo obnovit.");
+      setBootstrapError(caught instanceof Error ? caught.message : "Konverzaci se nepodařilo obnovit.");
     }
   }
 
@@ -740,13 +740,13 @@ export function MessagingPanel({
             <p>{conversations.length > 0 ? "Otevřete chat a pokračujte ve skupinách navázaných na sdílení v mapě." : "Založte skupinu níže. Bude sloužit pro zprávy i omezení přístupu k médiím."}</p>
             <div className="messaging-security-note">
               <ShieldCheck size={15} />
-              Šifrované zprávy nejdou přes COP API.
+              Zprávy jsou chráněné koncovým šifrováním.
             </div>
           </div>
         ) : activeDockTab === "chat" ? (
           <div className="messaging-empty-state">
-            <strong>Chat zatím čeká na bezpečný bootstrap.</strong>
-            <p>Skupiny pro sdílení médií můžete připravit už teď; zprávy se zapnou po Matrix/E2EE potvrzení.</p>
+            <strong>Zabezpečený chat se připravuje.</strong>
+            <p>Skupiny a sdílená média můžete používat už teď. Psaní zpráv se zpřístupní po ověření zabezpečeného spojení.</p>
           </div>
         ) : null}
 
@@ -884,7 +884,7 @@ function MessagingContextPanel({
       <div className="messaging-context-link-grid">
         <span>Konverzace</span>
         <strong>{selectedConversation?.conversationId ?? "není vybraná"}</strong>
-        <span>Matrix místnost</span>
+        <span>Zabezpečený chat</span>
         <strong>{selectedRoomId ?? "čeká"}</strong>
         <span>Skupina</span>
         <strong>{selectedGroup?.name ?? "bez skupiny"}</strong>
@@ -1370,10 +1370,10 @@ function MatrixChatShell({
             <div className="conversation-start-card">
               <strong>{selectedConversation?.title}</strong>
               {selectedConversation?.matrix?.roomId ? (
-                <span>Šifrovaná místnost už existuje. Probíhá synchronizace Matrix klienta; pokud se zprávy nenačtou, obnovte stav konverzací.</span>
+                <span>Zabezpečená konverzace už existuje. Probíhá synchronizace; pokud se zprávy nenačtou, obnovte stav konverzací.</span>
               ) : (
                 <>
-                  <span>Skupina existuje pro sdílená média. Založte šifrovanou chatovou místnost a můžete začít psát.</span>
+                  <span>Skupina existuje pro sdílená média. Založte zabezpečenou konverzaci a můžete začít psát.</span>
                   <button className="mini-button" onClick={() => selectedConversation ? onStartRoom(selectedConversation.conversationId) : undefined} type="button">
                     <Plus size={14} />
                     Začít chat
@@ -1488,7 +1488,7 @@ function MatrixMessageBody({ message, onDownloadAttachment }: { message: MatrixT
             {attachmentIcon(message.kind === "text" || message.kind === "location" ? "file" : message.kind)}
             <span>
               <strong>{message.attachment.fileName}</strong>
-              <small>{message.attachment.encrypted ? "E2EE příloha" : message.attachment.contentType ?? "soubor"}{message.attachment.size ? ` · ${formatBytes(message.attachment.size)}` : ""}</small>
+              <small>{message.attachment.encrypted ? "chráněná příloha" : message.attachment.contentType ?? "soubor"}{message.attachment.size ? ` · ${formatBytes(message.attachment.size)}` : ""}</small>
             </span>
             <button className="mini-button" onClick={() => onDownloadAttachment(message)} type="button">
               <Download size={14} />

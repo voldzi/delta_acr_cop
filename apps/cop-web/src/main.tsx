@@ -555,7 +555,7 @@ export function App() {
   const [messagingError, setMessagingError] = React.useState<string | null>(null);
   const [messagingConversations, setMessagingConversations] = React.useState<MessagingConversationSummary[]>([]);
   const [messagingConversationsError, setMessagingConversationsError] = React.useState<string | null>(null);
-  const [aiResult, setAiResult] = React.useState("Mock AI provider připraven pro dotazy nad situačními daty.");
+  const [aiResult, setAiResult] = React.useState("AI asistent je připraven zkontrolovat kvalitu zobrazených dat.");
   const loadInFlightRef = React.useRef(false);
   const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
   const profileHydratedRef = React.useRef(false);
@@ -770,7 +770,7 @@ export function App() {
           sourceCount: snapshot.sourceCount
         });
         setStreamStatus(browserOnline ? "degraded" : "offline");
-        setLoadError(`${errorMessage}. Zobrazuji lokální read-only snapshot (${formatSnapshotAge(snapshot)}).`);
+        setLoadError(`${errorMessage}. Zobrazuji uložený náhled posledních dat (${formatSnapshotAge(snapshot)}).`);
       } else {
         setLoadError(errorMessage);
       }
@@ -3696,8 +3696,8 @@ export function App() {
               <div className="mission-metrics">
                 <MetricTile label="Vlastní" value={metrics.friendlyCount} tone="friend" />
                 <MetricTile label="Rizikové" value={metrics.foreignCount} tone="hostile" />
-                <MetricTile label="Confidence" value={`${metrics.avgConfidence}%`} tone={metrics.avgConfidence >= 75 ? "ok" : "warn"} />
-                <MetricTile label="Alerts" value={alertSummary.total} tone={alertSummary.total > 0 ? "warn" : "ok"} />
+                <MetricTile label="Jistota" value={`${metrics.avgConfidence}%`} tone={metrics.avgConfidence >= 75 ? "ok" : "warn"} />
+                <MetricTile label="Výstrahy" value={alertSummary.total} tone={alertSummary.total > 0 ? "warn" : "ok"} />
               </div>
 
               <PanelTitle icon={<Layers size={17} />} title="Datové pohledy" />
@@ -3721,12 +3721,12 @@ export function App() {
                   Zobrazit simulovaná data
                 </label>
                 <label className="range-label">
-                  Minimum confidence
+                  Minimální jistota dat
                   <input type="range" min="0" max="1" step="0.05" value={minConfidence} onChange={(event) => setMinConfidence(Number(event.target.value))} />
                   <span>{Math.round(minConfidence * 100)} %</span>
                 </label>
                 <SegmentedControl
-                  label="Affiliation"
+                  label="Vztah"
                   options={[
                     ["all", "Vše"],
                     ["friend", "Vlastní"],
@@ -3737,12 +3737,12 @@ export function App() {
                   onChange={(value) => setAffiliationScope(value as AffiliationScope)}
                 />
                 <SegmentedControl
-                  label="Domain"
+                  label="Doména"
                   options={[
-                    ["all", "All"],
-                    ["AIR", "AIR"],
-                    ["LAND", "LAND"],
-                    ["RESCUE", "RESCUE"]
+                    ["all", "Vše"],
+                    ["AIR", "Vzduch"],
+                    ["LAND", "Země"],
+                    ["RESCUE", "Záchrana"]
                   ]}
                   value={domainScope}
                   onChange={(value) => setDomainScope(value as DomainScope)}
@@ -3753,16 +3753,16 @@ export function App() {
 
           {showAlertControls ? (
             <div className="workspace-module-card">
-              <PanelTitle icon={<AlertTriangle size={17} />} title="Alert Center" />
-              <ReadinessRow label="Serverové alerty" value={String(serverAlerts.length)} tone={serverAlerts.length > 0 ? "warn" : "ok"} />
-              <ReadinessRow label="Critical" value={String(alertSummary.critical)} tone={alertSummary.critical > 0 ? "warn" : "ok"} />
+              <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
+              <ReadinessRow label="Systémové výstrahy" value={String(serverAlerts.length)} tone={serverAlerts.length > 0 ? "warn" : "ok"} />
+              <ReadinessRow label="Kritické" value={String(alertSummary.critical)} tone={alertSummary.critical > 0 ? "warn" : "ok"} />
               <ReadinessRow label="Vrstva na mapě" value={showAlertAreas || proximityAlertEnabled ? "aktivní" : "vypnuto"} tone={showAlertAreas || proximityAlertEnabled ? "ok" : "neutral"} />
               <ReadinessRow label="Uživatelské zóny" value={String(aoiRules.filter((rule) => rule.enabled).length)} tone={aoiRules.some((rule) => rule.enabled) ? "ok" : "neutral"} />
               <ReadinessRow label="Poloměr" value={`${alertRadiusKm} km`} tone="neutral" />
               <ReadinessRow label="Moje poloha" value={String(proximityAlerts.length)} tone={proximityAlerts.length > 0 ? "warn" : "ok"} />
               <button className="mini-button wide" onClick={() => void loadAlerts()} type="button">
                 <RefreshCw size={14} />
-                Obnovit alerty
+                Obnovit výstrahy
               </button>
               <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
                 <Settings size={14} />
@@ -3773,14 +3773,14 @@ export function App() {
 
           {showReplayControls ? (
             <div className="workspace-module-card">
-              <PanelTitle icon={<History size={17} />} title="Replay workspace" />
+              <PanelTitle icon={<History size={17} />} title="Zpětné přehrání" />
               <ReadinessRow label="Stav" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
               <ReadinessRow label="Historie" value={`${trackHistoryWindowSeconds} s / ${historyPointCount} bodů`} tone={showHistory ? "ok" : "neutral"} />
               <ReadinessRow label="Predikce" value={showPrediction ? predictionModeLabel(predictionMode) : "vypnuto"} tone={showPrediction ? "ok" : "neutral"} />
               <div className="module-action-row">
                 <button className="mini-button" disabled={!replayWindow} onClick={toggleReplayPlayback} type="button">
                   {replayRunning ? <Pause size={14} /> : <Play size={14} />}
-                  {replayRunning ? "Pause" : "Play"}
+                  {replayRunning ? "Pozastavit" : "Spustit"}
                 </button>
                 <button className="mini-button" onClick={() => openSettings("map")} type="button">
                   <Settings size={14} />
@@ -3793,7 +3793,7 @@ export function App() {
           {showSourceControls ? (
             <>
               <div className="source-list">
-                <PanelTitle icon={<ShieldCheck size={17} />} title="Source Registry" />
+                <PanelTitle icon={<ShieldCheck size={17} />} title="Datové zdroje" />
                 {sources.map((source) => (
                   <div className="source-row" key={source.sourceSystemId}>
                     <span className={`dot ${source.status === "ACTIVE" ? "ok" : "warn"}`} />
@@ -3801,10 +3801,10 @@ export function App() {
                       <strong>{source.displayName}</strong>
                       <small>{source.sourceSystemId}</small>
                     </div>
-                    <em>{source.status ?? "REGISTERED"}</em>
+                    <em>{sourceRegistryStatusLabel(source.status)}</em>
                   </div>
                 ))}
-                {sources.length === 0 ? <div className="empty-mini">Source Registry zatím nevrátil žádné zdroje.</div> : null}
+                {sources.length === 0 ? <div className="empty-mini">Datové zdroje zatím nejsou dostupné.</div> : null}
               </div>
 
               <StreamHealthPanel health={streamHealth} telemetry={streamTelemetry} />
@@ -3982,20 +3982,20 @@ export function App() {
                   <PanelTitle icon={<RadioTower size={17} />} title="Stav zdrojů" />
                   <span>{sourceHealth.length} zdrojů</span>
                 </div>
-                <ReadinessRow label="Flight data" value={sourceHealthSummary(sourceHealth, "flight")} tone={sourceHealthTone(sourceHealth, "flight")} />
-                <ReadinessRow label="Situation data" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
-                <ReadinessRow label="Safety data" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
-                <ReadinessRow label="Source registry" value={`${sources.length} zdrojů`} tone={sources.length > 0 ? "ok" : "neutral"} />
+                <ReadinessRow label="Letecká data" value={sourceHealthSummary(sourceHealth, "flight")} tone={sourceHealthTone(sourceHealth, "flight")} />
+                <ReadinessRow label="Situační vrstvy" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
+                <ReadinessRow label="Výstražné vrstvy" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
+                <ReadinessRow label="Datové zdroje" value={`${sources.length} zdrojů`} tone={sources.length > 0 ? "ok" : "neutral"} />
               </div>
               <div className="source-operations-board">
                 <div className="deck-header">
-                  <PanelTitle icon={<Activity size={17} />} title="Stream" />
+                  <PanelTitle icon={<Activity size={17} />} title="Živé spojení" />
                   <span>{streamStatusLabel(streamStatus)}</span>
                 </div>
-                <ReadinessRow label="Mode" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
-                <ReadinessRow label="Latency" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
-                <ReadinessRow label="Last heartbeat" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
-                <ReadinessRow label="Backpressure" value={formatBackpressureState(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
+                <ReadinessRow label="Stav" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
+                <ReadinessRow label="Odezva" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
+                <ReadinessRow label="Poslední signál" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
+                <ReadinessRow label="Zátěž" value={formatBackpressureState(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
               </div>
             </section>
           ) : showAlertControls ? (
@@ -4023,7 +4023,7 @@ export function App() {
             <section className="operations-deck">
               <div className="track-board">
                 <div className="deck-header">
-                  <PanelTitle icon={<ListFilter size={17} />} title="Track list" />
+                  <PanelTitle icon={<ListFilter size={17} />} title="Objekty" />
                   <span>{formatObjectSearchCount(visibleObjects.length, visibleObjectsSearchScope.length, searchQuery)}</span>
                 </div>
                 <ObjectSearchControl
@@ -4046,14 +4046,14 @@ export function App() {
               </div>
               <div className="replay-board">
                 <div className="deck-header">
-                  <PanelTitle icon={<History size={17} />} title="Replay" />
+                  <PanelTitle icon={<History size={17} />} title="Zpětné přehrání" />
                   <div className="deck-actions">
                     <button className="mini-button" disabled={!replayWindow} onClick={toggleReplayPlayback} type="button">
                       {replayRunning ? <Pause size={14} /> : <Play size={14} />}
-                      {replayRunning ? "Pause" : "Play"}
+                      {replayRunning ? "Pozastavit" : "Spustit"}
                     </button>
                     <button className="mini-button" disabled={!replayWindow || replayPosition >= 100} onClick={jumpToLive} type="button">
-                      Live
+                      Živě
                     </button>
                   </div>
                 </div>
@@ -4109,7 +4109,7 @@ export function App() {
             </div>
           ) : null}
 
-          <PanelTitle icon={<Database size={17} />} title={selectedSituationFeature ? "Situation detail" : "Object detail"} />
+          <PanelTitle icon={<Database size={17} />} title={selectedSituationFeature ? "Detail prvku" : "Detail objektu"} />
           {selectedSituationFeature ? (
             <SituationFeatureDetail
               feature={selectedSituationFeature}
@@ -4135,37 +4135,20 @@ export function App() {
               sourceHealth={sourceHealth}
             />
           ) : (
-            <div className="empty-state">Zatím nejsou přijata žádná situační data. Pošli validní ingest event ze SIM fixture.</div>
+            <div className="empty-state">Zatím nejsou k dispozici žádné viditelné objekty. Zapněte vrstvy nebo vyberte oblast s dostupnými daty.</div>
           )}
 
           {activeWorkspace === "data" || activeWorkspace === "sources" ? (
             <div className="readiness-box">
-              <PanelTitle icon={<Gauge size={17} />} title="Data readiness" />
-              <ReadinessRow label="Source coverage" value={metrics.activeSources > 0 ? "active" : "waiting"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
-              <ReadinessRow label="Connectivity" value={operatingMode} tone={operatingModeTone(operatingMode)} />
-              <ReadinessRow label="Offline snapshot" value={formatOfflineSnapshotState(offlineSnapshotState)} tone={offlineSnapshotTone(offlineSnapshotState)} />
-              <ReadinessRow label="SIM data visible" value={includeSynthetic ? "enabled" : "hidden"} tone={includeSynthetic ? "ok" : "warn"} />
-              <ReadinessRow label="SIM tracks" value={String(metrics.syntheticCount)} tone="neutral" />
-              <ReadinessRow label="Public flights" value={String(metrics.publicFlightCount)} tone={metrics.publicFlightCount > 0 ? "ok" : "neutral"} />
-              <ReadinessRow label="Situation context" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
-              <ReadinessRow label="Safety data" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
-              <ReadinessRow label="Stream mode" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
-              <ReadinessRow label="Stream latency" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
-              <ReadinessRow label="Last heartbeat" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
-              <ReadinessRow label="Server clients" value={formatServerClientCount(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
-              <ReadinessRow label="Backpressure" value={formatBackpressureState(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
-              <ReadinessRow label="Reconnects" value={String(streamTelemetry.reconnectCount)} tone={streamTelemetry.reconnectCount > 0 ? "warn" : "ok"} />
-              {streamTelemetry.lastError ? <ReadinessRow label="Stream error" value={streamTelemetry.lastError} tone="warn" /> : null}
-              <ReadinessRow label="User profile" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
-              <ReadinessRow label="Fallback sync" value={autoRefresh ? `${refreshSeconds} s` : "manual"} tone={autoRefresh ? "ok" : "neutral"} />
-              <ReadinessRow label="Map clusters" value={mapClusterEnabled ? "enabled" : "off"} tone={mapClusterEnabled ? "ok" : "neutral"} />
-              <ReadinessRow label="Alert map areas" value={showAlertAreas ? "enabled" : "off"} tone={showAlertAreas ? "warn" : "neutral"} />
-              <ReadinessRow label="Track history" value={showHistory ? `${historyPointCount} pts` : "hidden"} tone={showHistory ? "ok" : "neutral"} />
-              <ReadinessRow label="Replay" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
-              <ReadinessRow label="Alert Center" value={`${alertSummary.server} server · ${alertSummary.local} local`} tone={alertSummary.total > 0 ? "warn" : "ok"} />
-              <ReadinessRow label="History window" value={`${trackHistoryWindowSeconds} s · max ${trackHistoryLimit} pts`} tone="neutral" />
-              <ReadinessRow label="Prediction" value={showPrediction ? `${predictionModeLabel(predictionMode)} · ${predictionMinutes} min` : "hidden"} tone={showPrediction ? "ok" : "neutral"} />
-              <ReadinessRow label="Policy scope" value="situační data" tone="neutral" />
+              <PanelTitle icon={<Gauge size={17} />} title="Stav dat" />
+              <ReadinessRow label="Datové zdroje" value={metrics.activeSources > 0 ? "aktivní" : "čekají"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
+              <ReadinessRow label="Spojení" value={operatingModeLabel(operatingMode)} tone={operatingModeTone(operatingMode)} />
+              <ReadinessRow label="Uložený náhled" value={formatOfflineSnapshotState(offlineSnapshotState)} tone={offlineSnapshotTone(offlineSnapshotState)} />
+              <ReadinessRow label="Cvičná data" value={includeSynthetic ? "zobrazena" : "skryta"} tone={includeSynthetic ? "ok" : "neutral"} />
+              <ReadinessRow label="Veřejné lety" value={String(metrics.publicFlightCount)} tone={metrics.publicFlightCount > 0 ? "ok" : "neutral"} />
+              <ReadinessRow label="Situační vrstvy" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
+              <ReadinessRow label="Výstražné vrstvy" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
+              <ReadinessRow label="Živé spojení" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
             </div>
           ) : null}
 
@@ -4375,7 +4358,7 @@ export function App() {
         </span>
         <span className={operatingModeTone(operatingMode)}>
           <Wifi size={15} />
-          Režim {operatingMode}
+          Režim {operatingModeLabel(operatingMode)}
         </span>
         <span>
           <Clock3 size={15} />
@@ -5095,15 +5078,15 @@ function AlertCenterBoard({
   return (
     <div className="alert-center-board">
       <div className="deck-header">
-        <PanelTitle icon={<AlertTriangle size={17} />} title="Server Alert Center" />
-        <span>{alerts.length} active</span>
+        <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
+        <span>{alerts.length} aktivních</span>
       </div>
       <div className="alert-summary-grid">
-        <MetricTile label="Critical" value={summary.critical} tone={summary.critical > 0 ? "warn" : "ok"} />
-        <MetricTile label="Warning" value={summary.warning} tone={summary.warning > 0 ? "warn" : "ok"} />
+        <MetricTile label="Kritické" value={summary.critical} tone={summary.critical > 0 ? "warn" : "ok"} />
+        <MetricTile label="Varování" value={summary.warning} tone={summary.warning > 0 ? "warn" : "ok"} />
       </div>
       <div className="alert-list">
-        {alerts.length === 0 ? <div className="empty-mini">Žádné aktivní serverové alerty.</div> : null}
+        {alerts.length === 0 ? <div className="empty-mini">Žádné aktivní výstrahy.</div> : null}
         {alerts.map((alert) => (
           <article className={`alert-row ${alert.severity}`} key={alert.alertId}>
             <div className="alert-severity-mark" aria-hidden="true" />
@@ -5232,8 +5215,8 @@ function DataWorkspaceBoard({
 
       <div className="data-summary-grid">
         <DataMetric label="Objekty" value={String(objects.length)} tone="neutral" />
-        <DataMetric label="Nízká confidence" value={String(metrics.lowConfidenceCount)} tone={metrics.lowConfidenceCount > 0 ? "warn" : "ok"} />
-        <DataMetric label="Stale/lost" value={String(staleOrLostCount)} tone={staleOrLostCount > 0 ? "warn" : "ok"} />
+        <DataMetric label="Nízká jistota" value={String(metrics.lowConfidenceCount)} tone={metrics.lowConfidenceCount > 0 ? "warn" : "ok"} />
+        <DataMetric label="Neaktuální" value={String(staleOrLostCount)} tone={staleOrLostCount > 0 ? "warn" : "ok"} />
         <DataMetric label="Kontext" value={String(contextCount)} tone={contextCount > 0 ? "ok" : "neutral"} />
       </div>
 
@@ -5264,9 +5247,9 @@ function SelectedObjectDataCard({ object }: { object: CopObject }) {
       <DetailGrid
         rows={[
           ["ID", object.objectId],
-          ["Stav", <StatusBadge key="status" label={object.status} tone={objectStatusTone(object.status)} />],
+          ["Stav", <StatusBadge key="status" label={objectStatusLabel(object.status)} tone={objectStatusTone(object.status)} />],
           ["Typ", `${object.objectType} / ${object.domain}`],
-          ["Confidence", formatOptionalPercent(object.confidence)],
+          ["Jistota", formatOptionalPercent(object.confidence)],
           ["Zdroj", provenance?.sourceSystemId ?? "n/a"],
           ["Aktualizace", formatShortDateTime(object.lastUpdatedAt ?? provenance?.producerTimestamp)]
         ]}
@@ -5380,9 +5363,9 @@ function CommunicationTowerSummary({ feature }: { feature: SituationFeature }) {
     <div className="mobile-status-summary">
       <DataMetric label="Typ" value={stringProperty(tags.towerType) ?? "communication"} tone="neutral" />
       <DataMetric label="OSM" value={formatOsmReference(tags)} tone="neutral" />
-      <DataMetric label="Status" value={formatCommunicationTowerStatus(feature.properties.status)} tone="neutral" />
+      <DataMetric label="Stav" value={formatCommunicationTowerStatus(feature.properties.status)} tone="neutral" />
       <DataMetric label="BTS" value={formatCommunicationTowerStatus(feature.properties.btsStatus)} tone="neutral" />
-      <DataMetric label="Confidence" value={formatOptionalPercent(feature.properties.confidence)} tone="neutral" />
+      <DataMetric label="Jistota" value={formatOptionalPercent(feature.properties.confidence)} tone="neutral" />
     </div>
   );
 }
@@ -5798,9 +5781,9 @@ function OfflineSnapshotNotice({ mode, state }: { mode: OperatingMode; state: Of
     <div className={`offline-snapshot-banner ${mode === "OFFLINE" ? "offline" : "degraded"}`}>
       <Wifi size={16} />
       <div>
-        <strong>{mode === "OFFLINE" ? "Offline read-only režim" : "Degraded read-only fallback"}</strong>
+        <strong>{mode === "OFFLINE" ? "Offline uložený náhled" : "Omezený režim s uloženým náhledem"}</strong>
         <span>
-          Snapshot {formatSnapshotAge(state)} · {state.objectCount} objektů · {state.sourceCount} zdrojů
+          Uloženo {formatSnapshotAge(state)} · {state.objectCount} objektů · {state.sourceCount} zdrojů
         </span>
       </div>
     </div>
@@ -5914,14 +5897,24 @@ function operatingModeTone(mode: OperatingMode): "ok" | "warn" | "neutral" {
   return mode === "ONLINE" ? "ok" : "warn";
 }
 
+function operatingModeLabel(mode: OperatingMode): string {
+  if (mode === "ONLINE") {
+    return "online";
+  }
+  if (mode === "OFFLINE") {
+    return "offline";
+  }
+  return "omezeno";
+}
+
 function missionModeLabel(mode: OperatingMode, snapshotState: OfflineSnapshotState): string {
   if (snapshotState.kind === "active") {
-    return mode === "OFFLINE" ? "OFFLINE SNAPSHOT" : "DEGRADED SNAPSHOT";
+    return mode === "OFFLINE" ? "offline náhled" : "omezený náhled";
   }
   if (mode === "ONLINE") {
-    return "SIM LIVE";
+    return "živě";
   }
-  return mode;
+  return operatingModeLabel(mode);
 }
 
 function streamStatusTone(status: CopStreamStatus): "ok" | "warn" | "neutral" {
@@ -6035,12 +6028,12 @@ function formatServerClientCount(health: CopStreamHealth | null, telemetry: Stre
 
 function formatBackpressureState(health: CopStreamHealth | null, telemetry: StreamTelemetry): string {
   if (health) {
-    return health.metrics.backpressureActive ? `active · retry ${formatRetryMs(health.metrics.recommendedRetryMs)}` : "clear";
+    return health.metrics.backpressureActive ? `aktivní · obnova ${formatRetryMs(health.metrics.recommendedRetryMs)}` : "v pořádku";
   }
   if (telemetry.lastBackpressureAt) {
-    return `seen ${formatStreamObservation(telemetry.lastBackpressureAt)}`;
+    return `zaznamenáno ${formatStreamObservation(telemetry.lastBackpressureAt)}`;
   }
-  return "clear";
+  return "v pořádku";
 }
 
 function formatStreamWriteErrors(health: CopStreamHealth | null, telemetry: StreamTelemetry): string {
@@ -6053,7 +6046,7 @@ function formatStreamMessageTotals(health: CopStreamHealth | null): string {
   if (!metrics) {
     return "n/a";
   }
-  return `delta ${metrics.deltaMessagesTotal} · hb ${metrics.heartbeatMessagesTotal}`;
+  return `změny ${metrics.deltaMessagesTotal} · signál ${metrics.heartbeatMessagesTotal}`;
 }
 
 function formatRetryMs(value: number | null | undefined): string {
@@ -6093,8 +6086,8 @@ function MetricTile({ label, value, tone }: { label: string; value: string | num
 function SourceHealthCenter({ items }: { items: SourceHealthItem[] }) {
   return (
     <div className="source-health-box">
-      <PanelTitle icon={<Activity size={17} />} title="Source Health" />
-      {items.length === 0 ? <div className="empty-mini">Health metriky zdrojů zatím nejsou dostupné.</div> : null}
+      <PanelTitle icon={<Activity size={17} />} title="Stav zdrojů" />
+      {items.length === 0 ? <div className="empty-mini">Stav zdrojů zatím není dostupný.</div> : null}
       <div className="source-health-list">
         {items.map((item) => (
           <div className="source-health-row" key={item.sourceSystemId}>
@@ -6105,27 +6098,27 @@ function SourceHealthCenter({ items }: { items: SourceHealthItem[] }) {
             </div>
             <dl>
               <div>
-                <dt>Tracks</dt>
+                <dt>Objekty</dt>
                 <dd>{item.currentTracks}/{item.totalTracks}</dd>
               </div>
               <div>
-                <dt>Events</dt>
+                <dt>Události</dt>
                 <dd>{item.acceptedEvents}</dd>
               </div>
               <div>
-                <dt>Last</dt>
+                <dt>Aktualizace</dt>
                 <dd>{formatSourceAge(item.lastObservationAgeSeconds)}</dd>
               </div>
               <div>
-                <dt>Latency</dt>
+                <dt>Odezva</dt>
                 <dd>{formatLatency(item.lastLatencyMs ?? item.avgLatencyMs)}</dd>
               </div>
             </dl>
             {item.staleTracks > 0 || item.expiredTracks > 0 || item.lowConfidenceTracks > 0 ? (
               <div className="source-health-warnings">
-                {item.staleTracks > 0 ? <span>{item.staleTracks} stale</span> : null}
-                {item.expiredTracks > 0 ? <span>{item.expiredTracks} expired</span> : null}
-                {item.lowConfidenceTracks > 0 ? <span>{item.lowConfidenceTracks} low confidence</span> : null}
+                {item.staleTracks > 0 ? <span>{item.staleTracks} starší data</span> : null}
+                {item.expiredTracks > 0 ? <span>{item.expiredTracks} po platnosti</span> : null}
+                {item.lowConfidenceTracks > 0 ? <span>{item.lowConfidenceTracks} nízká jistota</span> : null}
               </div>
             ) : null}
             {item.detail || item.lastError || item.warnings?.length ? (
@@ -6146,13 +6139,13 @@ function StreamHealthPanel({ health, telemetry }: { health: CopStreamHealth | nu
   const metrics = health?.metrics;
   return (
     <div className="source-health-box stream-health-box">
-      <PanelTitle icon={<Activity size={17} />} title="Stream Health" />
-      <ReadinessRow label="Server status" value={health?.status ?? "waiting"} tone={streamServerTone(health, telemetry)} />
-      <ReadinessRow label="Clients" value={formatServerClientCount(health, telemetry)} tone={streamServerTone(health, telemetry)} />
-      <ReadinessRow label="Messages" value={formatStreamMessageTotals(health)} tone="neutral" />
-      <ReadinessRow label="Last delta" value={formatStreamObservation(metrics?.lastDeltaAt ?? null)} tone={metrics?.lastDeltaAt ? "ok" : "neutral"} />
-      <ReadinessRow label="Backpressure" value={formatBackpressureState(health, telemetry)} tone={streamServerTone(health, telemetry)} />
-      <ReadinessRow label="Write errors" value={formatStreamWriteErrors(health, telemetry)} tone={streamWriteErrorsTone(health, telemetry)} />
+      <PanelTitle icon={<Activity size={17} />} title="Živé spojení" />
+      <ReadinessRow label="Stav služby" value={health?.status ?? "čeká"} tone={streamServerTone(health, telemetry)} />
+      <ReadinessRow label="Připojení" value={formatServerClientCount(health, telemetry)} tone={streamServerTone(health, telemetry)} />
+      <ReadinessRow label="Datové zprávy" value={formatStreamMessageTotals(health)} tone="neutral" />
+      <ReadinessRow label="Poslední změna" value={formatStreamObservation(metrics?.lastDeltaAt ?? null)} tone={metrics?.lastDeltaAt ? "ok" : "neutral"} />
+      <ReadinessRow label="Zátěž" value={formatBackpressureState(health, telemetry)} tone={streamServerTone(health, telemetry)} />
+      <ReadinessRow label="Chyby zápisu" value={formatStreamWriteErrors(health, telemetry)} tone={streamWriteErrorsTone(health, telemetry)} />
     </div>
   );
 }
@@ -6392,29 +6385,29 @@ function SettingsDrawer({
 
           {activeTab === "data" ? (
             <section className="settings-section">
-              <PanelTitle icon={<RefreshCw size={17} />} title="Fallback synchronizace" />
+              <PanelTitle icon={<RefreshCw size={17} />} title="Aktualizace dat" />
               <p className="settings-help">
-                Primární zdroj živých dat je SSE stream. Tato synchronizace se používá při výpadku streamu, po obnově záložky a pro méně dynamická data.
+                Aplikace se průběžně obnovuje sama. Záložní aktualizace pomáhá po ztrátě spojení, po návratu do prohlížeče a u méně dynamických vrstev.
               </p>
               <p className="settings-help">
-                PWA režim ukládá aplikační shell a poslední povolený situační snapshot pro read-only zobrazení při výpadku spojení.
+                Při výpadku spojení zůstane dostupný poslední uložený náhled mapy a povolených vrstev.
               </p>
               <label className="toggle-row">
                 <input type="checkbox" checked={autoRefresh} onChange={(event) => onAutoRefreshChange(event.target.checked)} />
-                Povolit fallback synchronizaci
+                Povolit záložní aktualizaci
               </label>
               <SegmentedControl
-                label="Fallback interval"
+                label="Interval aktualizace"
                 options={REFRESH_OPTIONS.map((option) => [String(option), `${option}s`])}
                 value={String(refreshSeconds)}
                 onChange={(value) => onRefreshSecondsChange(normalizeRefreshSeconds(Number(value)))}
               />
               <label className="toggle-row">
                 <input type="checkbox" checked={includeSynthetic} onChange={(event) => onIncludeSyntheticChange(event.target.checked)} />
-                Zobrazit simulovaná data
+                Zobrazit cvičná data
               </label>
               <label className="range-label">
-                Minimum confidence
+                Minimální jistota dat
                 <input type="range" min="0" max="1" step="0.05" value={minConfidence} onChange={(event) => onMinConfidenceChange(Number(event.target.value))} />
                 <span>{Math.round(minConfidence * 100)} %</span>
               </label>
@@ -6505,11 +6498,9 @@ function SettingsDrawer({
               />
               <p className="settings-help">Jazyk se ukládá do profilu uživatele. Zároveň se podle něj dotazuje katalog vrstev a vyhledávání míst.</p>
               <PanelTitle icon={<UserCircle size={17} />} title="Přihlášení" />
-              <ReadinessRow label="Stav" value={authStatusLabel(authSession, authConfig)} tone={authSession.status === "authenticated" ? "ok" : "neutral"} />
-              <ReadinessRow label="Profil" value={authSession.profile?.name ?? "nepřihlášen"} tone="neutral" />
-              <ReadinessRow label="Veřejné čtení" value={authConfig.publicReadEnabled ? "zapnuto" : "vypnuto"} tone={authConfig.publicReadEnabled ? "ok" : "neutral"} />
-              <ReadinessRow label="Serverový profil" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
-              <ReadinessRow label="Uloženo" value={formatProfileUpdatedAt(serverProfileUpdatedAt)} tone="neutral" />
+              <ReadinessRow label="Stav" value={authSession.status === "authenticated" ? "přihlášeno" : "veřejný režim"} tone={authSession.status === "authenticated" ? "ok" : "neutral"} />
+              <ReadinessRow label="Uživatel" value={authSession.profile?.name ?? "nepřihlášen"} tone="neutral" />
+              <ReadinessRow label="Uložení profilu" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
               <ProfileEditor
                 profile={operatorProfile}
                 session={authSession}
@@ -7011,7 +7002,7 @@ const manualSections: Record<HelpSection, { body: string; label: string; points:
     points: [
       "Avatar se zmenší a uloží do uživatelského profilu jako lehký obrázek.",
       "Veřejnost kontaktu zapínejte jen tehdy, pokud má být kontakt sdílen v rámci skupin nebo incidentů.",
-      "Přihlašovací údaje spravuje identity provider; COP neukládá hesla."
+      "Přihlašovací údaje spravuje přihlašovací služba; aplikace neukládá hesla."
     ],
     title: "Profil a kontakt"
   },
@@ -7445,13 +7436,13 @@ function LayerSourceTree({
 }) {
   const overallSelected = selectedLayerIds.includes("air-situation");
   const streams: Array<{ count: number; description: string; label: string; layerId: CopLayer }> = [
-    { count: scopedObjects.length, description: "Všechny přijaté georeferencované tracky po aktivních filtrech.", label: "Celkový obraz", layerId: "air-situation" },
-    { count: getSimulatedAirCount(scopedObjects), description: "Simulovaná letecká situace ze SIM track streamu.", label: "Simulace", layerId: "sim-air" },
-    { count: getUavCount(scopedObjects), description: "Bezpilotní prostředky a UAV tracky.", label: "UAV", layerId: "uav" },
+    { count: scopedObjects.length, description: "Všechny přijaté georeferencované objekty po aktivních filtrech.", label: "Celkový obraz", layerId: "air-situation" },
+    { count: getSimulatedAirCount(scopedObjects), description: "Cvičná letecká situace ze simulačního zdroje.", label: "Simulace", layerId: "sim-air" },
+    { count: getUavCount(scopedObjects), description: "Bezpilotní prostředky a UAV.", label: "UAV", layerId: "uav" },
     { count: metrics.friendlyCount, description: "Vlastní a pravděpodobně vlastní objekty.", label: "Vlastní", layerId: "friendly" },
     { count: metrics.foreignCount, description: "Rizikové nebo neověřené objekty.", label: "Rizikové", layerId: "foreign" },
-    { count: metrics.publicFlightCount, description: "Veřejná letová data ze SIM flight-data zdroje.", label: "Veřejné lety", layerId: "public-flights" },
-    { count: getDataQualityCount(scopedObjects), description: "Tracky s nízkou confidence nebo datovou nejistotou.", label: "Kvalita dat", layerId: "data-quality" }
+    { count: metrics.publicFlightCount, description: "Veřejná letová data z leteckého zdroje.", label: "Veřejné lety", layerId: "public-flights" },
+    { count: getDataQualityCount(scopedObjects), description: "Objekty s nízkou jistotou nebo datovou nejistotou.", label: "Kvalita dat", layerId: "data-quality" }
   ];
 
   return (
@@ -8221,20 +8212,20 @@ function TrackTable({
         cell: (info) => info.getValue()
       }),
       objectColumnHelper.accessor("affiliation", {
-        header: "Affiliation",
+        header: "Vztah",
         cell: ({ row }) => {
           const affiliation = getAffiliationPresentation(row.original.affiliation);
           return (
             <>
               <i className={`affiliation-dot ${affiliation.disposition}`} />
-              {row.original.affiliation}
+              {affiliation.label}
             </>
           );
         }
       }),
       objectColumnHelper.accessor((object) => Math.round((object.confidence ?? 0) * 100), {
         id: "confidence",
-        header: "Confidence",
+        header: "Jistota",
         cell: (info) => `${info.getValue()} %`
       })
     ],
@@ -8353,15 +8344,15 @@ function ObjectDetail({
           <strong>{object.objectType}</strong>
           <span>{object.objectId}</span>
         </div>
-        <em>{object.status}</em>
+        <em>{objectStatusLabel(object.status)}</em>
       </div>
 
       <ObjectDetailSection title="Identita">
         <DetailGrid
           rows={[
-            ["Příslušnost", <><span className={`affiliation-chip ${model.affiliation.disposition}`}>{model.affiliation.label}</span>{object.affiliation}</>],
+            ["Příslušnost", <span className={`affiliation-chip ${model.affiliation.disposition}`}>{model.affiliation.label}</span>],
             ["Doména", object.domain],
-            ["Stav", replayActive ? `${object.status} / replay` : object.status],
+            ["Stav", replayActive ? `${objectStatusLabel(object.status)} / zpětné přehrání` : objectStatusLabel(object.status)],
             ["Jistota", `${Math.round((object.confidence ?? 0) * 100)} %`]
           ]}
         />
@@ -8383,7 +8374,7 @@ function ObjectDetail({
           rows={[
             ["NATO symbol", model.symbolCode],
             ["SIDC", model.sidc],
-            ["Vyhodnocení", `${object.objectType} / ${object.affiliation} / ${object.status}`]
+            ["Vyhodnocení", `${object.objectType} / ${model.affiliation.label} / ${objectStatusLabel(object.status)}`]
           ]}
         />
       </ObjectDetailSection>
@@ -8436,11 +8427,11 @@ function ObjectDetail({
 
       <div className="object-flags">
         {object.synthetic ? <span className="synthetic-badge">SIM</span> : null}
-        {isPublicFlightObject(object) ? <span className="public-flight-badge">PUBLIC FLIGHT</span> : null}
-        {isMockFlightObject(object) ? <span className="warning-badge">MOCK</span> : null}
-        {object.status === "STALE" || flightData?.quality?.stale ? <span className="warning-badge">STALE</span> : null}
-        {(object.confidence ?? 0) < 0.5 ? <span className="warning-badge">LOW CONFIDENCE</span> : null}
-        {model.conflicts.some((conflict) => conflict.severity === "warn") ? <span className="warning-badge">DATA CONFLICT</span> : null}
+        {isPublicFlightObject(object) ? <span className="public-flight-badge">VEŘEJNÝ LET</span> : null}
+        {isMockFlightObject(object) ? <span className="warning-badge">CVIČNÁ DATA</span> : null}
+        {object.status === "STALE" || flightData?.quality?.stale ? <span className="warning-badge">STARŠÍ DATA</span> : null}
+        {(object.confidence ?? 0) < 0.5 ? <span className="warning-badge">NÍZKÁ JISTOTA</span> : null}
+        {model.conflicts.some((conflict) => conflict.severity === "warn") ? <span className="warning-badge">KONFLIKT DAT</span> : null}
       </div>
     </div>
   );
@@ -8494,19 +8485,19 @@ function SituationFeatureDetail({
       <ObjectDetailSection title="Kontext">
         <DetailGrid
           rows={[
-            [isCommunityReport ? "Typ" : "Layer", isCommunityReport ? communityReportCategoryDisplay(properties.category) : situationLayerLabel(properties.layer)],
-            [isCommunityReport ? "Skupina" : "Category", isCommunityReport ? properties.groupName ?? "bez skupiny" : properties.category],
-            [isCommunityReport ? "Zdroj" : "Source", properties.sourceId],
-            [isCommunityReport ? "Vloženo" : "Observed", formatShortDateTime(properties.observedAt)],
-            [isCommunityReport ? "Platnost" : "Valid until", formatShortDateTime(properties.validUntil)],
-            [isCommunityReport ? "Stáří" : "Age", formatAge(properties.observedAt)],
-            [isCommunityReport ? "Riziko" : "Urgency", communitySeverityDisplay(properties.hazardSeverity ?? properties.severity ?? properties.urgency)],
-            [isCommunityReport ? "Stav" : "Status", <StatusBadge key="status" label={status.label} tone={status.tone} />],
+            [isCommunityReport ? "Typ" : "Vrstva", isCommunityReport ? communityReportCategoryDisplay(properties.category) : situationLayerLabel(properties.layer)],
+            [isCommunityReport ? "Skupina" : "Kategorie", isCommunityReport ? properties.groupName ?? "bez skupiny" : properties.category],
+            ["Zdroj", properties.sourceName ?? properties.sourceId],
+            [isCommunityReport ? "Vloženo" : "Pozorováno", formatShortDateTime(properties.observedAt)],
+            [isCommunityReport ? "Platnost" : "Platí do", formatShortDateTime(properties.validUntil)],
+            ["Stáří", formatAge(properties.observedAt)],
+            [isCommunityReport ? "Riziko" : "Naléhavost", communitySeverityDisplay(properties.hazardSeverity ?? properties.severity ?? properties.urgency)],
+            ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
             ...(isCommunityReport ? [] : [
-              ["Effective", formatShortDateTime(properties.effectiveAt)],
-              ["Expires", formatShortDateTime(properties.expiresAt)],
-              ["Confidence", formatOptionalPercent(properties.confidence)],
-              ["Certainty", properties.certainty ?? "n/a"]
+              ["Účinné od", formatShortDateTime(properties.effectiveAt)],
+              ["Konec platnosti", formatShortDateTime(properties.expiresAt)],
+              ["Jistota", formatOptionalPercent(properties.confidence)],
+              ["Spolehlivost", properties.certainty ?? "n/a"]
             ] as Array<[string, React.ReactNode]>)
           ]}
         />
@@ -8581,30 +8572,17 @@ function SituationFeatureDetail({
       <ObjectDetailSection title="Poloha">
         <DetailGrid
           rows={[
-            ["Geometry", feature.geometry.type],
-            ["Coordinates", formatSituationCoordinates(feature)]
-          ]}
-        />
-      </ObjectDetailSection>
-
-      <ObjectDetailSection title="Metadata">
-        <DetailGrid
-          rows={[
-            ["License", formatSituationRecord(properties.license)],
-            ["Metrics", formatSituationRecord(properties.metrics)],
-            ["Tags", formatSituationRecord(properties.tags)],
-            ["Assumptions", formatSituationRecord(properties.assumptions)],
-            ["Affected areas", formatStringList(properties.affectedAreas)],
-            ["Geocodes", formatGeocodes(properties.geocodes)]
+            ["Typ geometrie", feature.geometry.type],
+            ["Souřadnice", formatSituationCoordinates(feature)]
           ]}
         />
       </ObjectDetailSection>
 
       <div className="object-flags">
-        <span className="situation-badge">CONTEXT</span>
-        {isSafetyLayerId(properties.layer) ? <span className="warning-badge">SAFETY DATA</span> : null}
-        {properties.stale ? <span className="warning-badge">STALE</span> : null}
-        {properties.severity ? <span className="warning-badge">{properties.severity.toUpperCase()}</span> : null}
+        <span className="situation-badge">KONTEXT</span>
+        {isSafetyLayerId(properties.layer) ? <span className="warning-badge">VÝSTRAŽNÁ VRSTVA</span> : null}
+        {properties.stale ? <span className="warning-badge">STARŠÍ DATA</span> : null}
+        {properties.severity ? <span className="warning-badge">{communitySeverityDisplay(properties.severity)}</span> : null}
       </div>
     </div>
   );
@@ -8819,8 +8797,8 @@ function formatFlightLicenses(flightData: FlightDataAttributes): string {
 
 function formatFlightQuality(flightData: FlightDataAttributes): string {
   const confidence = typeof flightData.quality?.confidence === "number" ? `${Math.round(flightData.quality.confidence * 100)} %` : "n/a";
-  const stale = flightData.quality?.stale ? "stale" : "fresh";
-  const age = typeof flightData.quality?.positionAgeSeconds === "number" ? `${flightData.quality.positionAgeSeconds}s` : "age n/a";
+  const stale = flightData.quality?.stale ? "starší data" : "aktuální";
+  const age = typeof flightData.quality?.positionAgeSeconds === "number" ? `${flightData.quality.positionAgeSeconds}s` : "stáří není dostupné";
   return `${confidence} / ${stale} / ${age}`;
 }
 
@@ -8895,7 +8873,7 @@ function ConflictList({ conflicts }: { conflicts: ObjectConflict[] }) {
 
 function ObjectHistoryList({ history }: { history: ObjectHistoryEntry[] }) {
   if (history.length === 0) {
-    return <div className="empty-mini">Temporal store zatím nemá body pro tento objekt.</div>;
+    return <div className="empty-mini">Historie zatím nemá body pro tento objekt.</div>;
   }
 
   return (
@@ -8903,9 +8881,9 @@ function ObjectHistoryList({ history }: { history: ObjectHistoryEntry[] }) {
       {history.map((entry) => (
         <div className="object-history-row" key={`${entry.timestamp}-${entry.eventId ?? entry.sourceSystemId ?? "point"}`}>
           <strong>{formatShortDateTime(entry.timestamp)}</strong>
-          <span>{entry.sourceSystemId ?? "source n/a"}</span>
+          <span>{entry.sourceSystemId ?? "zdroj není dostupný"}</span>
           <small>
-            {entry.status ?? "status n/a"} · {entry.confidence === undefined ? "confidence n/a" : `${Math.round(entry.confidence * 100)} %`} ·{" "}
+            {entry.status ? objectStatusLabel(entry.status) : "stav není dostupný"} · {entry.confidence === undefined ? "jistota není dostupná" : `${Math.round(entry.confidence * 100)} %`} ·{" "}
             {entry.lat.toFixed(3)}, {entry.lon.toFixed(3)}
           </small>
         </div>
@@ -9797,21 +9775,21 @@ function buildMapEmptyMessage({
     return `API situační mapy není dostupné: ${loadError}`;
   }
   if (replayActive && objects.length === 0) {
-    return "Zvolený čas replaye neobsahuje žádné tracky. Posuň časovou osu nebo přepni zpět na live.";
+    return "Zvolený čas neobsahuje žádné objekty. Posuňte časovou osu nebo přepněte zpět na živé zobrazení.";
   }
   if (objects.length > 0 && visibleObjects.length === 0) {
     if (contextLayersEnabled) {
-      return "Track streamy jsou vypnuté nebo neodpovídají filtrům; mapa může dál zobrazovat vybrané kontextové vrstvy.";
+      return "Objekty jsou vypnuté nebo neodpovídají filtrům. Mapa může dál zobrazovat vybrané kontextové vrstvy.";
     }
     return scopedObjects.length > 0
-      ? "Zapnuté track streamy neobsahují žádné objekty. Změň výběr streamů nebo zapni kontextové vrstvy."
+      ? "Zapnuté vrstvy neobsahují žádné objekty. Změňte výběr vrstev nebo zapněte kontextové vrstvy."
       : "Aktivní filtry skrývají všechny přijaté objekty.";
   }
   if (hasActiveSimSource(sources)) {
-    return "SIM zdroj je připojený, ale mapa nemá žádné aktivní georeferencované objekty. Spusť scénář v SIM.";
+    return "Datový zdroj je připojený, ale v aktuálním pohledu nejsou žádné aktivní objekty.";
   }
   if (sources.length > 0) {
-    return "Source Registry je dostupný, ale zatím nejsou přijaty aktivní georeferencované tracky.";
+    return "Datové zdroje jsou dostupné, ale zatím neposkytují viditelné objekty.";
   }
   return "Čekám na georeferencované situační objekty.";
 }
@@ -9830,8 +9808,8 @@ function buildEventStream(objects: CopObject[]) {
     const affiliation = getAffiliationPresentation(object.affiliation);
     return {
       id: `${object.objectId}-${object.status}`,
-      title: `${object.status} / ${object.objectType}`,
-      detail: `${object.objectId} · ${affiliation.label} · ${confidence} % confidence`,
+      title: `${objectStatusLabel(object.status)} / ${object.objectType}`,
+      detail: `${object.objectId} · ${affiliation.label} · jistota ${confidence} %`,
       tone: affiliation.disposition
     };
   });
@@ -9839,24 +9817,38 @@ function buildEventStream(objects: CopObject[]) {
 
 function sourceHealthLabel(status: SourceHealthItem["health"]): string {
   const labels: Record<SourceHealthItem["health"], string> = {
-    DEGRADED: "degraded",
-    DISABLED: "disabled",
+    DEGRADED: "omezeno",
+    DISABLED: "vypnuto",
     ONLINE: "online",
-    QUIET: "quiet",
-    STALE: "stale",
-    UNAVAILABLE: "unavailable",
-    WAITING: "waiting"
+    QUIET: "bez nových dat",
+    STALE: "starší data",
+    UNAVAILABLE: "nedostupné",
+    WAITING: "čeká"
   };
   return labels[status];
+}
+
+function sourceRegistryStatusLabel(status: string | undefined): string {
+  const normalized = status?.toUpperCase();
+  if (normalized === "ACTIVE") {
+    return "aktivní";
+  }
+  if (normalized === "DISABLED") {
+    return "vypnutý";
+  }
+  if (normalized === "REGISTERED") {
+    return "registrovaný";
+  }
+  if (normalized === "DEGRADED") {
+    return "omezený";
+  }
+  return "čeká";
 }
 
 function sourceHealthSummary(items: SourceHealthItem[], sourceKey: string): string {
   const item = findSourceHealth(items, sourceKey);
   if (!item) {
-    return "waiting";
-  }
-  if (item.detail) {
-    return item.detail;
+    return "čeká";
   }
   return `${sourceHealthLabel(item.health)} · ${item.currentTracks}/${item.totalTracks}`;
 }
@@ -10449,13 +10441,13 @@ function situationFeatureStatusModel(feature: SituationFeature): { label: string
   }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     const coverage = mobileCoverageQualityModel(feature.properties.quality);
-    return feature.properties.stale && coverage.tone === "ok" ? { label: `${coverage.label} · STALE`, tone: "warn" } : coverage;
+    return feature.properties.stale && coverage.tone === "ok" ? { label: `${coverage.label} · starší data`, tone: "warn" } : coverage;
   }
   if (isCommunicationTowerFeature(feature)) {
     return { label: "REFERENČNÍ", tone: "neutral" };
   }
   if (feature.properties.stale) {
-    return { label: "STALE", tone: "warn" };
+    return { label: "starší data", tone: "warn" };
   }
   const aviationCategory = aviationFlightCategoryModel(feature);
   if (aviationCategory) {
@@ -10586,6 +10578,26 @@ function objectStatusTone(status: string): "neutral" | "ok" | "warn" | "critical
     return "warn";
   }
   return "neutral";
+}
+
+function objectStatusLabel(status: string): string {
+  const normalized = status.toUpperCase();
+  if (normalized === "ACTIVE") {
+    return "aktivní";
+  }
+  if (normalized === "INACTIVE") {
+    return "neaktivní";
+  }
+  if (normalized === "LOST") {
+    return "ztracený";
+  }
+  if (normalized === "STALE") {
+    return "starší data";
+  }
+  if (normalized === "CONFLICTED") {
+    return "konflikt dat";
+  }
+  return status.toLowerCase();
 }
 
 function mobileMetricTone(value: number | undefined, goodThreshold: number, warnThreshold: number, higherIsBetter: boolean): "neutral" | "ok" | "warn" {
@@ -11070,13 +11082,13 @@ function userPreferenceScope(session: AuthSession): string {
 function workspaceMetadata(module: WorkspaceModule): { description: string; label: string } {
   switch (module) {
     case "data":
-      return { description: "Track list, filtrování a datové vrstvy.", label: "Data" };
+      return { description: "Seznam objektů, filtrování a datové vrstvy.", label: "Data" };
     case "sources":
-      return { description: "Source Registry, health, latence a kvalita ingestu.", label: "Zdroje" };
+      return { description: "Stav zdrojů, odezva a kvalita přijatých dat.", label: "Zdroje" };
     case "alerts":
       return { description: "Výstrahy, oblast polohy operátora a aktivní přiblížení.", label: "Výstrahy" };
     case "replay":
-      return { description: "Historie stop, replay a predikční režimy.", label: "Replay" };
+      return { description: "Historie stop, zpětné přehrání a predikce.", label: "Replay" };
     case "map":
     default:
       return { description: "Primární situační mapa se symboly APP-6.", label: "Mapa" };

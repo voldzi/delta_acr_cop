@@ -13,7 +13,7 @@ describe("object detail model", () => {
     expect(model.sidc).toBe("SFAPMFQ--------");
     expect(model.lineage.map((step) => step.label)).toContain("APP-6 zobrazení");
     expect(model.confidenceFactors.some((factor) => factor.label === "Skóre" && factor.tone === "warn")).toBe(true);
-    expect(model.confidenceFactors.some((factor) => factor.detail.includes("Syntetický/SIM"))).toBe(true);
+    expect(model.confidenceFactors.some((factor) => factor.detail.includes("Cvičný původ"))).toBe(true);
   });
 
   it("flags source position variance from recent multi-source history", () => {
@@ -75,7 +75,7 @@ describe("object detail model", () => {
 
     expect(model.conflicts).toEqual([
       {
-        detail: "Recent history contains multiple affiliations: FRIEND, HOSTILE. Sources: sim-air.",
+        detail: "Recent history contains multiple affiliations: FRIEND, HOSTILE. Zdroje: sim-air.",
         severity: "warn",
         title: "Affiliation variance"
       }

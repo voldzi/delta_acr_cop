@@ -64,7 +64,7 @@ export async function createMatrixMessagingSession(
   validateBootstrap(bootstrap);
   const homeserverBaseUrl = bootstrap.homeserverBaseUrl;
   if (!homeserverBaseUrl) {
-    throw new Error("Matrix bootstrap neobsahuje URL homeserveru.");
+    throw new Error("Zabezpečený chat nemá připravenou adresu služby.");
   }
   await assertBrowserCanReachHomeserver(homeserverBaseUrl);
   const matrixSdk = await import("matrix-js-sdk/lib/browser-index.js");
@@ -78,7 +78,7 @@ export async function createMatrixMessagingSession(
 
   if (bootstrap.e2eeRequired) {
     if (typeof client.initRustCrypto !== "function") {
-      throw new Error("Matrix klient nepodporuje Rust Crypto. E2EE chat zůstává vypnutý.");
+      throw new Error("Tento prohlížeč nepodporuje potřebné šifrování zpráv.");
     }
     try {
       await client.initRustCrypto({
@@ -122,7 +122,7 @@ export async function createMatrixMessagingSession(
     bootstrap,
     createGroupRoom: async (name, inviteUserIds = []) => {
       if (typeof client.createRoom !== "function") {
-        throw new Error("Matrix SDK neumí založit konverzaci.");
+        throw new Error("Chat se nepodařilo založit.");
       }
       let response: { room_id?: string; roomId?: string };
       try {
@@ -145,7 +145,7 @@ export async function createMatrixMessagingSession(
       callbacks.onRoomsChanged?.(readRooms(client));
       const roomId = response.room_id ?? response.roomId;
       if (!roomId) {
-        throw new Error("Matrix nevrátil identifikátor konverzace.");
+        throw new Error("Služba zpráv nevrátila identifikátor konverzace.");
       }
       return roomId;
     },
@@ -160,7 +160,7 @@ export async function createMatrixMessagingSession(
     joinInvitedRooms,
     sendAttachment: async (roomId, attachment) => {
       if (typeof client.uploadContent !== "function" || typeof client.sendMessage !== "function") {
-        throw new Error("Matrix SDK neumí bezpečně odeslat přílohu.");
+        throw new Error("Přílohu se nepodařilo bezpečně odeslat.");
       }
       try {
         await joinInvitedRooms();
@@ -173,7 +173,7 @@ export async function createMatrixMessagingSession(
     },
     sendLocation: async (roomId, location) => {
       if (typeof client.sendMessage !== "function") {
-        throw new Error("Matrix SDK neumí odeslat polohu.");
+        throw new Error("Polohu se nepodařilo odeslat.");
       }
       try {
         await joinInvitedRooms();
@@ -189,7 +189,7 @@ export async function createMatrixMessagingSession(
         return;
       }
       if (typeof client.sendTextMessage !== "function") {
-        throw new Error("Matrix SDK neumí odeslat textovou zprávu.");
+        throw new Error("Zprávu se nepodařilo odeslat.");
       }
       try {
         await joinInvitedRooms();
@@ -209,7 +209,7 @@ export async function createMatrixMessagingSession(
 
 async function createEncryptedAttachmentMessage(client: MatrixClientLike, attachment: MatrixAttachmentUpload): Promise<Record<string, unknown>> {
   if (typeof client.uploadContent !== "function") {
-    throw new Error("Matrix SDK neumí nahrát přílohu.");
+    throw new Error("Přílohu se nepodařilo nahrát.");
   }
   const encrypted = await encryptAttachmentFile(attachment.file);
   const upload = await client.uploadContent(encrypted.blob, {
@@ -219,7 +219,7 @@ async function createEncryptedAttachmentMessage(client: MatrixClientLike, attach
   });
   const contentUri = upload.content_uri ?? upload.contentUri;
   if (!contentUri) {
-    throw new Error("Matrix server nevrátil URI nahrané přílohy.");
+    throw new Error("Služba zpráv nevrátila odkaz na nahranou přílohu.");
   }
   const fileName = attachment.file.name || defaultAttachmentName(attachment.kind);
   const contentType = attachment.file.type || "application/octet-stream";
@@ -288,7 +288,7 @@ async function downloadMatrixAttachment(
   const encryptedUrl = attachment.encrypted?.url;
   const mxcUrl = encryptedUrl ?? attachment.mediaUrl;
   if (!mxcUrl) {
-    throw new Error("Příloha neobsahuje Matrix media URI.");
+    throw new Error("Příloha nemá platný odkaz ke stažení.");
   }
   const downloadUrl = matrixMediaHttpUrl(client, homeserverBaseUrl, mxcUrl, true);
   if (!downloadUrl) {
@@ -402,7 +402,7 @@ async function ensureJoinedRoom(client: MatrixClientLike, roomId: string, homese
     return;
   }
   if (typeof client.joinRoom !== "function") {
-    throw new Error("Matrix SDK neumí přijmout pozvánku do konverzace.");
+    throw new Error("Pozvánku do konverzace se nepodařilo přijmout.");
   }
   try {
     await client.joinRoom(roomId);
@@ -431,13 +431,13 @@ export async function clearMatrixMessagingCryptoStateForBootstrap(bootstrap: Mes
 
 function validateBootstrap(bootstrap: MessagingBootstrapResponse): void {
   if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
-    throw new Error("Matrix bootstrap neobsahuje uživatelský access token.");
+    throw new Error("Zabezpečený chat zatím nemá připravené přihlášení uživatele.");
   }
   if (!bootstrap.homeserverBaseUrl || !bootstrap.userId || !bootstrap.deviceId) {
-    throw new Error("Matrix bootstrap neobsahuje povinné údaje klienta.");
+    throw new Error("Zabezpečený chat nemá všechny potřebné údaje.");
   }
   if (bootstrap.e2eeRequired !== true) {
-    throw new Error("Provider nevyžaduje E2EE; COP chat proto zůstává vypnutý.");
+    throw new Error("Služba zpráv nepotvrdila požadované šifrování.");
   }
 }
 
@@ -456,14 +456,14 @@ async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
       throw new Error(`HTTP ${response.status}`);
     }
   } catch (caught) {
-    throw formatMatrixClientError(caught, baseUrl, "ověřit Matrix server v prohlížeči");
+    throw formatMatrixClientError(caught, baseUrl, "ověřit službu zpráv v prohlížeči");
   }
 }
 
 export function formatMatrixClientError(caught: unknown, baseUrl: string, action: string): Error {
   if (isLikelyBrowserNetworkError(caught)) {
     return new Error(
-      `Nelze ${action}: prohlížeč se nedostal na Matrix server ${baseUrl}. ` +
+      `Nelze ${action}: prohlížeč se nedostal ke službě zpráv ${baseUrl}. ` +
       `Otevřete ${baseUrl.replace(/\/+$/u, "")}/_matrix/client/versions na stejném zařízení; ` +
       "pokud endpoint funguje, proveďte tvrdé obnovení stránky nebo vyčistěte DNS/site cache pro cop.zeleznalady.cz a msg.zeleznalady.cz."
     );

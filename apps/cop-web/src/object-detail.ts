@@ -102,7 +102,7 @@ function conflictsFromServerEvidence(evidence: ObjectConflictEvidence | undefine
   }
 
   return evidence.signals.map((signal) => ({
-    detail: signal.sourceSystemIds.length > 0 ? `${signal.detail} Sources: ${signal.sourceSystemIds.join(", ")}.` : signal.detail,
+    detail: signal.sourceSystemIds.length > 0 ? `${signal.detail} Zdroje: ${signal.sourceSystemIds.join(", ")}.` : signal.detail,
     severity: signal.severity === "warning" ? "warn" : "neutral",
     title: signal.title
   }));
@@ -137,12 +137,12 @@ function buildConfidenceFactors(
       tone: ageSeconds === undefined ? "neutral" : ageSeconds > 120 ? "warn" : "ok"
     },
     {
-      detail: sourceHealth ? `Zdroj ${sourceHealth.health.toLowerCase()}, aktuální objekty: ${sourceHealth.currentTracks}` : "Není navázán provozní stav zdroje.",
+      detail: sourceHealth ? `Zdroj: ${sourceHealthLabel(sourceHealth.health)}, aktuální objekty: ${sourceHealth.currentTracks}` : "Není navázán provozní stav zdroje.",
       label: "Stav zdroje",
       tone: sourceHealth?.health === "ONLINE" ? "ok" : sourceHealth ? "warn" : "neutral"
     },
     {
-      detail: object.synthetic || provenance?.synthetic ? "Syntetický/SIM původ je explicitně označen." : "Objekt nemá příznak syntetického původu.",
+      detail: object.synthetic || provenance?.synthetic ? "Cvičný původ je explicitně označen." : "Objekt nemá příznak cvičného původu.",
       label: "Původ",
       tone: object.synthetic || provenance?.synthetic ? "neutral" : "ok"
     }
@@ -157,26 +157,59 @@ function buildLineage(
 ): LineageStep[] {
   return [
     {
-      detail: provenance?.eventId ?? "event id n/a",
+      detail: provenance?.eventId ?? "identifikátor události není dostupný",
       label: "Zdrojová událost",
-      status: provenance?.sourceSystemId ?? "source n/a"
+      status: provenance?.sourceSystemId ?? "zdroj není dostupný"
     },
     {
-      detail: provenance?.adapterVersion ? `${provenance.adapterId ?? "adapter"} ${provenance.adapterVersion}` : provenance?.adapterId ?? "adapter n/a",
-      label: "Transformace adaptéru",
+      detail: provenance?.adapterVersion ? `${provenance.adapterId ?? "datový adaptér"} ${provenance.adapterVersion}` : provenance?.adapterId ?? "datový adaptér není dostupný",
+      label: "Zpracování dat",
       status: provenance?.producerTimestamp ?? "čas zdroje n/a"
     },
     {
-      detail: `${object.domain} / ${object.status} / confidence ${Math.round((object.confidence ?? 0) * 100)} %`,
+      detail: `${object.domain} / ${objectStatusLabel(object.status)} / jistota ${Math.round((object.confidence ?? 0) * 100)} %`,
       label: "Kanonický situační objekt",
       status: object.objectId
     },
     {
       detail: `${sidc} -> ${symbolCode}`,
       label: "APP-6 zobrazení",
-      status: `${object.objectType} / ${object.affiliation}`
+      status: `${object.objectType} / ${getAffiliationPresentation(object.affiliation).label}`
     }
   ];
+}
+
+function sourceHealthLabel(status: SourceHealthItem["health"]): string {
+  const labels: Record<SourceHealthItem["health"], string> = {
+    DEGRADED: "omezený",
+    DISABLED: "vypnutý",
+    ONLINE: "online",
+    QUIET: "bez nových dat",
+    STALE: "starší data",
+    UNAVAILABLE: "nedostupný",
+    WAITING: "čeká"
+  };
+  return labels[status] ?? "neznámý";
+}
+
+function objectStatusLabel(status: string): string {
+  const normalized = status.toUpperCase();
+  if (normalized === "ACTIVE") {
+    return "aktivní";
+  }
+  if (normalized === "INACTIVE") {
+    return "neaktivní";
+  }
+  if (normalized === "LOST") {
+    return "ztracený";
+  }
+  if (normalized === "STALE") {
+    return "starší data";
+  }
+  if (normalized === "CONFLICTED") {
+    return "konflikt dat";
+  }
+  return status.toLowerCase();
 }
 
 function detectObjectConflicts(

@@ -261,8 +261,8 @@ describe("COP web dashboard", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText(/SIM zdroj je připojený/u)).toBeTruthy());
-    expect(screen.queryByText("Čekám na georeferencované COP tracky.")).toBeNull();
+    await waitFor(() => expect(screen.getByText(/Datový zdroj je připojený/u)).toBeTruthy());
+    expect(screen.queryByText("Čekám na georeferencované situační objekty.")).toBeNull();
   });
 
   it("restores the last local snapshot when the COP API is unavailable", async () => {
@@ -311,8 +311,8 @@ describe("COP web dashboard", () => {
     render(<App />);
 
     await waitFor(() => expect(screen.getAllByText("OFFLINE_TRACK-001").length).toBeGreaterThan(0));
-    expect(screen.getByText("Degraded read-only fallback")).toBeTruthy();
-    expect(screen.getByText(/Snapshot/u)).toBeTruthy();
+    expect(screen.getByText("Omezený režim s uloženým náhledem")).toBeTruthy();
+    expect(screen.getByText(/Uloženo/u)).toBeTruthy();
   });
 });
 

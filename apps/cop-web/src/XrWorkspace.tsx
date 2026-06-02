@@ -297,7 +297,7 @@ export default function XrWorkspace() {
               <div className="xr-selected-card">
                 <strong>{selectedModel.label}</strong>
                 <span>{selectedModel.objectType} · {selectedModel.affiliation} · {selectedModel.status}</span>
-                <small>{selectedModel.confidence === undefined ? "confidence n/a" : `${Math.round(selectedModel.confidence * 100)} % confidence`}</small>
+                <small>{selectedModel.confidence === undefined ? "jistota není dostupná" : `${Math.round(selectedModel.confidence * 100)} % jistota`}</small>
               </div>
             ) : (
               <div className="empty-mini">Vyberte marker ovladačem, rukou nebo kliknutím v náhledu.</div>

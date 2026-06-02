@@ -3261,7 +3261,7 @@ export function CopMap({
           onWheel={stopMapToolbarEvent}
         >
           <div>
-            <span>Map layer</span>
+            <span>Vrstvy</span>
             <strong>{mapLayerLabel}</strong>
           </div>
           <button
@@ -3277,7 +3277,7 @@ export function CopMap({
             title="Zapnout nebo vypnout automatické přizpůsobení mapy objektům"
             type="button"
           >
-            Fit
+            Přiblížit
           </button>
           <button className="map-action" onClick={onRequestUserLocation} type="button">
             Poloha
@@ -4461,7 +4461,7 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
   }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     const coverage = mobileCoverageStatus(feature.properties.quality);
-    return feature.properties.stale ? { ...coverage, label: `${coverage.label} · STALE`, tone: coverage.tone === "info" ? "warning" : coverage.tone } : coverage;
+    return feature.properties.stale ? { ...coverage, label: `${coverage.label} · starší data`, tone: coverage.tone === "info" ? "warning" : coverage.tone } : coverage;
   }
   if (isCommunicationTowerFeature(feature)) {
     return communicationTowerReferenceStatus();
@@ -4496,7 +4496,7 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
     return { color: riskDefaultColor(feature), label: rawRisk.toUpperCase(), tone: "unknown" };
   }
   if (feature.properties.stale) {
-    return { color: "#facc15", label: "STALE", tone: "warning" };
+    return { color: "#facc15", label: "starší data", tone: "warning" };
   }
   if (isTakGatewayFeature(feature)) {
     const affiliation = normalizeTakAffiliation(feature.properties.affiliation);
