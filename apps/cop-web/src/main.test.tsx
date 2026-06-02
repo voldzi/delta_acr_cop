@@ -157,8 +157,9 @@ describe("COP web dashboard", () => {
 
     await waitFor(() => expect(screen.getAllByText("AIR_SIM_AIRCRAFT-0001").length).toBeGreaterThan(0));
     expect(screen.getByTestId("cop-map").textContent).toContain("AIR_SIM_UAV-0001");
-    expect(screen.getByText("APP6-AIR-FRIEND-AIRCRAFT-ACTIVE")).toBeTruthy();
-    expect(screen.getByText("SFAP-----------")).toBeTruthy();
+    expect(screen.getByText("Standardní operační symbol")).toBeTruthy();
+    expect(screen.queryByText("APP6-AIR-FRIEND-AIRCRAFT-ACTIVE")).toBeNull();
+    expect(screen.queryByText("SFAP-----------")).toBeNull();
     expect(screen.getByText("SIM")).toBeTruthy();
     expect(screen.queryByText("Source Registry")).toBeNull();
     expect(screen.getByTestId("catalog-layer-rail")).toBeTruthy();

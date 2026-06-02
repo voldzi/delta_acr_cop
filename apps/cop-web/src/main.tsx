@@ -3371,15 +3371,14 @@ export function App() {
         : "Civilní situační mapa";
   const operationBadge = selectedSituationFeature || alertSummary.total > 0 ? "Aktivní událost" : "Operační obraz";
   const operationStatus = selectedSituationFeature
-    ? selectedSituationFeature.properties.status
+    ? formatOperationStatusLabel(selectedSituationFeature.properties.status
       ?? selectedSituationFeature.properties.severity
       ?? selectedSituationFeature.properties.hazardSeverity
-      ?? missionModeLabel(operatingMode, offlineSnapshotState)
+      ?? missionModeLabel(operatingMode, offlineSnapshotState))
     : missionModeLabel(operatingMode, offlineSnapshotState);
   const operationStartedAt = selectedSituationFeature
     ? formatShortDateTime(selectedSituationFeature.properties.validFrom ?? selectedSituationFeature.properties.effectiveAt ?? selectedSituationFeature.properties.observedAt)
     : lastLoadedAt ?? "čekám";
-  const operationId = selectedSituationFeature?.properties.featureId ?? selectedObject?.objectId ?? "CSM-LAB";
   const mobileDetailTitle = selectedSituationFeature
     ? selectedSituationFeature.properties.headline
       ?? selectedSituationFeature.properties.areaName
@@ -3510,11 +3509,9 @@ export function App() {
           </small>
         </div>
         <div className="event-summary-strip" aria-label="Aktuální provozní souhrn">
-          <span>Stav: <strong>{operationStatus}</strong></span>
           <span>Zahájení: <strong>{operationStartedAt}</strong></span>
           <span>Výstrahy: <strong>{alertSummary.total}</strong></span>
           <span>Zdroje: <strong>{sources.length}</strong></span>
-          <span>ID: <strong>{operationId}</strong></span>
         </div>
         <div className="topbar-actions">
           <button className="top-command-button record" onClick={startCommunityReportCapture} type="button">
@@ -8336,13 +8333,14 @@ function ObjectDetail({
     [historyPoints, object, sourceHealth]
   );
   const flightData = object.attributes?.flightData;
+  const objectTitle = formatObjectListLabel(object);
 
   return (
     <div className="object-detail">
       <div className="object-header">
         <div>
           <strong>{object.objectType}</strong>
-          <span>{object.objectId}</span>
+          <span>{objectTitle}</span>
         </div>
         <em>{objectStatusLabel(object.status)}</em>
       </div>
@@ -8369,11 +8367,10 @@ function ObjectDetail({
         />
       </ObjectDetailSection>
 
-      <ObjectDetailSection title="Symbologie">
+      <ObjectDetailSection title="Zobrazení">
         <DetailGrid
           rows={[
-            ["NATO symbol", model.symbolCode],
-            ["SIDC", model.sidc],
+            ["Režim", "Standardní operační symbol"],
             ["Vyhodnocení", `${object.objectType} / ${model.affiliation.label} / ${objectStatusLabel(object.status)}`]
           ]}
         />
@@ -8382,11 +8379,9 @@ function ObjectDetail({
       <ObjectDetailSection title="Zdroj">
         <DetailGrid
           rows={[
-            ["Zdroj", model.provenance?.sourceSystemId ?? "n/a"],
-            ["Adapter", formatAdapter(model.provenance)],
-            ["Čas zdroje", formatShortDateTime(model.provenance?.producerTimestamp)],
-            ["Čas příjmu", formatShortDateTime(model.provenance?.ingestTimestamp)],
-            ["Latence", formatLatency(model.provenance?.latencyMs)],
+            ["Zdroj", sourceDisplayName(model.provenance?.sourceSystemId)],
+            ["Aktualizace", formatShortDateTime(model.provenance?.producerTimestamp ?? object.lastUpdatedAt)],
+            ["Odezva", formatLatency(model.provenance?.latencyMs)],
             ["Spolehlivost", formatReliability(model.provenance)]
           ]}
         />
@@ -8413,16 +8408,8 @@ function ObjectDetail({
         <ConfidenceFactorList factors={model.confidenceFactors} />
       </ObjectDetailSection>
 
-      <ObjectDetailSection title="Původ dat">
-        <LineageList steps={model.lineage} />
-      </ObjectDetailSection>
-
       <ObjectDetailSection title="Konflikty">
         <ConflictList conflicts={model.conflicts} />
-      </ObjectDetailSection>
-
-      <ObjectDetailSection title="Historie zdroje">
-        <ObjectHistoryList history={model.history} />
       </ObjectDetailSection>
 
       <div className="object-flags">
@@ -9025,6 +9012,26 @@ function communitySeverityDisplay(severity: unknown): string {
     return "Informace";
   }
   return String(severity ?? "n/a");
+}
+
+function formatOperationStatusLabel(status: unknown): string {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  const labels: Record<string, string> = {
+    active: "aktivní",
+    advisory: "informace",
+    critical: "kritické",
+    degraded: "omezeno",
+    expired: "po platnosti",
+    info: "informace",
+    online: "online",
+    ready: "připraveno",
+    risk: "riziko",
+    stale: "starší data",
+    warning: "varování",
+    zivě: "živě",
+    "živě": "živě"
+  };
+  return labels[normalized] ?? (normalized ? normalized : "čekám");
 }
 
 function isCommunityReportCategoryValue(value: unknown): value is CommunityReportCategory {
@@ -10881,6 +10888,21 @@ function formatRecordValue(value: unknown): string {
     return "object";
   }
   return "n/a";
+}
+
+function sourceDisplayName(sourceSystemId: string | undefined): string {
+  if (!sourceSystemId) {
+    return "zdroj není dostupný";
+  }
+  const labels: Record<string, string> = {
+    "flight-data-api": "Veřejná letecká data",
+    "mission-arena": "Mission Arena",
+    "safety-data-api": "Výstražná data",
+    "sim-air-situation-001": "Cvičná letecká situace",
+    "situation-data-api": "Situační vrstvy",
+    "tak-gateway": "Partnerská data"
+  };
+  return labels[sourceSystemId] ?? sourceSystemId;
 }
 
 function formatPosition(object: CopObject): string {
