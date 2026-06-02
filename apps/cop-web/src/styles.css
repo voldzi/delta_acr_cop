@@ -5821,9 +5821,9 @@ h1 {
 }
 
 .map-sketch-palette.collapsed {
-  top: 18px;
-  bottom: auto;
-  left: clamp(84px, 12vw, 132px);
+  top: auto;
+  left: 12px;
+  bottom: 58px;
   width: auto;
   max-width: none;
   transform: none;
@@ -5859,6 +5859,16 @@ h1 {
 
 .map-sketch-palette.collapsed .map-sketch-tool-button.compact {
   display: none;
+}
+
+.map-sketch-palette.collapsed .map-sketch-toggle {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-color: rgba(164, 210, 235, 0.34);
+  background: rgba(9, 16, 20, 0.9);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.34);
 }
 
 .map-sketch-tool-grid {

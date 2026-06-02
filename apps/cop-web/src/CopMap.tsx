@@ -713,7 +713,7 @@ export function CopMap({
   const [sketchDraftPoints, setSketchDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
   const [selectedSketchVertexIndex, setSelectedSketchVertexIndex] = React.useState<number | null>(null);
   const [selectedEditVertexIndex, setSelectedEditVertexIndex] = React.useState<number | null>(null);
-  const [sketchToolsExpanded, setSketchToolsExpanded] = React.useState(true);
+  const [sketchToolsExpanded, setSketchToolsExpanded] = React.useState(false);
   const [sketchPalettePosition, setSketchPalettePosition] = React.useState<{ x: number; y: number } | null>(null);
   const [sketchPaletteDragging, setSketchPaletteDragging] = React.useState(false);
   const [mapLegendCollapsed, setMapLegendCollapsed] = React.useState(false);
