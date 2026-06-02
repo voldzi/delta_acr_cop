@@ -8367,6 +8367,7 @@ dd {
   .mobile-sheet-surface .catalog-layer-menu {
     display: grid;
     grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-rows: 46px minmax(0, 1fr);
     align-items: start;
     gap: 10px;
     height: 100%;
@@ -8376,7 +8377,25 @@ dd {
     touch-action: pan-y;
   }
 
+  .mobile-sheet-surface .catalog-rail-status {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: start;
+    justify-self: center;
+    flex: none;
+    contain: layout paint style;
+  }
+
   .mobile-sheet-surface .catalog-rail {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: stretch;
+    justify-self: center;
+    display: grid;
+    grid-auto-rows: 46px;
+    justify-items: center;
+    width: 52px;
+    min-height: 0;
     max-height: 100%;
     overflow: auto;
     padding: 0 0 14px;
@@ -8388,11 +8407,31 @@ dd {
   .mobile-sheet-surface .catalog-rail-status,
   .mobile-sheet-surface .catalog-rail-button {
     width: 46px;
+    height: 46px;
+    min-width: 46px;
     min-height: 46px;
+    max-width: 46px;
+    max-height: 46px;
+    flex: none;
+    contain: layout paint style;
   }
 
   .mobile-sheet-surface .catalog-rail-button {
-    height: 46px;
+    padding: 0;
+    transform: none !important;
+  }
+
+  .mobile-sheet-surface .catalog-rail-button svg {
+    width: 19px;
+    height: 19px;
+    pointer-events: none;
+  }
+
+  .mobile-sheet-surface .catalog-rail-button span {
+    width: 18px;
+    min-width: 18px;
+    max-width: 18px;
+    font-variant-numeric: tabular-nums;
   }
 
   .mobile-sheet-surface .catalog-layer-drawer {
@@ -8582,10 +8621,14 @@ dd {
 
   .mobile-bottom-nav button {
     display: grid;
-    place-items: center;
+    grid-template-rows: 22px 14px;
+    align-content: center;
+    justify-items: center;
     gap: 3px;
     min-width: 0;
+    width: 100%;
     min-height: 48px;
+    height: 48px;
     padding: 4px 2px;
     border: 1px solid transparent;
     border-radius: 11px;
@@ -8595,10 +8638,14 @@ dd {
     font-weight: 900;
     letter-spacing: 0;
     touch-action: manipulation;
+    contain: layout paint style;
   }
 
   .mobile-bottom-nav button svg {
+    width: 20px;
+    height: 20px;
     color: #9eb8cc;
+    pointer-events: none;
   }
 
   .mobile-bottom-nav button.active {
@@ -8996,6 +9043,13 @@ dd {
   }
 
   .mobile-bottom-nav span {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    line-height: 1.1;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 8px;
   }
 }
