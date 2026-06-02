@@ -8,6 +8,7 @@ import {
   initializeAuth,
   isAuthSessionActive,
   isOidcEnabled,
+  readAuthDiagnostics,
   refreshAuthSession,
   subjectIdFromAuthSession,
   subjectIdFromStoredAuthValue,
@@ -131,6 +132,44 @@ describe("web auth helpers", () => {
       status: "authenticated"
     });
     expect(stored.refreshToken).toBe("next-refresh");
+  });
+
+  it("records session diagnostics without storing token values", async () => {
+    window.localStorage.setItem("cop.oidc.session.v1", JSON.stringify({
+      accessToken: "expired-access-secret",
+      expiresAt: Date.now() - 10_000,
+      idToken: "expired-id-secret",
+      profile: { name: "COP Operator", username: "operator" },
+      refreshToken: "persisted-refresh-secret"
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      json: async () => ({
+        access_token: unsignedJwt({ name: "COP Operator", preferred_username: "operator", sub: "user-1" }),
+        expires_in: 300,
+        id_token: "next-id-secret",
+        refresh_token: "next-refresh-secret"
+      }),
+      ok: true
+    } as Response)));
+
+    const session = await initializeAuth(oidcConfig());
+    const diagnostics = readAuthDiagnostics();
+    const serializedDiagnostics = JSON.stringify(diagnostics);
+
+    expect(session).toMatchObject({
+      profile: { subjectId: "user-1", username: "operator" },
+      status: "authenticated"
+    });
+    expect(diagnostics.current).toMatchObject({
+      hasRefreshToken: true,
+      storage: "localStorage"
+    });
+    expect(diagnostics.events.map((event) => event.type)).toContain("refresh_succeeded");
+    expect(serializedDiagnostics).not.toContain("expired-access-secret");
+    expect(serializedDiagnostics).not.toContain("expired-id-secret");
+    expect(serializedDiagnostics).not.toContain("persisted-refresh-secret");
+    expect(serializedDiagnostics).not.toContain("next-id-secret");
+    expect(serializedDiagnostics).not.toContain("next-refresh-secret");
   });
 
   it("can refresh the active request session for a retry after API 401", async () => {

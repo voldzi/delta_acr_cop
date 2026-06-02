@@ -26,6 +26,45 @@ export interface AuthSession {
   status: AuthStatus;
 }
 
+export type AuthDiagnosticEventType =
+  | "callback_error"
+  | "login_succeeded"
+  | "manual_logout"
+  | "refresh_failed"
+  | "refresh_started"
+  | "refresh_succeeded"
+  | "session_cleared"
+  | "session_expired"
+  | "session_missing"
+  | "session_persisted"
+  | "session_restored"
+  | "storage_changed"
+  | "storage_write_failed";
+
+export interface AuthDiagnosticEvent {
+  at: string;
+  detail?: string;
+  expiresAt?: number;
+  hasRefreshToken?: boolean;
+  status?: AuthStatus;
+  storage?: "localStorage" | "sessionStorage" | "none";
+  subjectId?: string;
+  type: AuthDiagnosticEventType;
+  username?: string;
+}
+
+export interface AuthStoredSessionSnapshot {
+  expiresAt?: number;
+  hasRefreshToken: boolean;
+  profile?: AuthProfile;
+  storage: "localStorage" | "sessionStorage" | "none";
+}
+
+export interface AuthDiagnostics {
+  current: AuthStoredSessionSnapshot;
+  events: AuthDiagnosticEvent[];
+}
+
 interface TokenResponse {
   access_token: string;
   expires_in?: number;
@@ -55,6 +94,8 @@ const callbackStateKey = "cop.oidc.callback.v1";
 const callbackStateFallbackKey = "cop.oidc.callback.fallback.v1";
 const callbackStateTtlMs = 10 * 60 * 1000;
 const sessionKey = "cop.oidc.session.v1";
+const diagnosticsKey = "cop.oidc.diagnostics.v1";
+const diagnosticsLimit = 40;
 
 export const authSessionStorageKey = sessionKey;
 
@@ -78,7 +119,13 @@ export function createInitialAuthSession(config: AuthConfig): AuthSession {
   }
   const stored = readStoredSession();
   if (stored && stored.expiresAt > Date.now() + 30_000) {
+    recordAuthDiagnosticEvent("session_restored", snapshotFromStoredSession(stored, detectedSessionStorage()));
     return { ...stored, status: "authenticated" };
+  }
+  if (stored) {
+    recordAuthDiagnosticEvent("session_expired", snapshotFromStoredSession(stored, detectedSessionStorage()));
+  } else {
+    recordAuthDiagnosticEvent("session_missing", { storage: "none" });
   }
   return { status: "anonymous" };
 }
@@ -94,6 +141,7 @@ export async function initializeAuth(config: AuthConfig): Promise<AuthSession> {
 
   const callback = readCallbackParams();
   if (callback.error) {
+    recordAuthDiagnosticEvent("callback_error", { detail: callback.error });
     clearCallbackState();
     removeCallbackParams();
     return { status: "error", error: callback.error };
@@ -104,9 +152,11 @@ export async function initializeAuth(config: AuthConfig): Promise<AuthSession> {
 
   const stored = readStoredSession();
   if (!stored) {
+    recordAuthDiagnosticEvent("session_missing", { storage: "none" });
     return { status: "anonymous" };
   }
   if (stored.expiresAt > Date.now() + 30_000) {
+    recordAuthDiagnosticEvent("session_restored", snapshotFromStoredSession(stored, detectedSessionStorage()));
     return { ...stored, status: "authenticated" };
   }
   if (stored.refreshToken) {
@@ -114,6 +164,7 @@ export async function initializeAuth(config: AuthConfig): Promise<AuthSession> {
     if (refreshed) {
       return refreshed;
     }
+    recordAuthDiagnosticEvent("refresh_failed", snapshotFromStoredSession(stored, detectedSessionStorage()));
   }
   clearStoredSession();
   return { status: "anonymous" };
@@ -174,6 +225,7 @@ export async function beginLogin(config: AuthConfig, options: BeginLoginOptions 
 }
 
 export function endSession(config: AuthConfig, session: AuthSession): void {
+  recordAuthDiagnosticEvent("manual_logout", snapshotFromAuthSession(session));
   clearStoredSession();
   clearCallbackState();
   if (!isOidcEnabled(config)) {
@@ -205,6 +257,41 @@ export function subjectIdFromStoredAuthValue(value: string | null): string | und
     return subjectIdFromStoredSession(parsed as StoredAuthSession);
   } catch {
     return undefined;
+  }
+}
+
+export function readAuthDiagnostics(): AuthDiagnostics {
+  return {
+    current: readStoredSessionSnapshot(),
+    events: readAuthDiagnosticEvents()
+  };
+}
+
+export function recordAuthDiagnosticEvent(type: AuthDiagnosticEventType, input: Partial<AuthDiagnosticEvent> = {}): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const event: AuthDiagnosticEvent = {
+    at: new Date().toISOString(),
+    detail: input.detail,
+    expiresAt: input.expiresAt,
+    hasRefreshToken: input.hasRefreshToken,
+    status: input.status,
+    storage: input.storage,
+    subjectId: input.subjectId,
+    type,
+    username: input.username
+  };
+  try {
+    const events = [...readAuthDiagnosticEvents(), event].slice(-diagnosticsLimit);
+    window.localStorage.setItem(diagnosticsKey, JSON.stringify(events));
+  } catch {
+    try {
+      const events = [...(readAuthDiagnosticEventsFrom(() => window.sessionStorage) ?? []), event].slice(-diagnosticsLimit);
+      window.sessionStorage.setItem(diagnosticsKey, JSON.stringify(events));
+    } catch {
+      // Diagnostics must never interfere with authentication itself.
+    }
   }
 }
 
@@ -253,13 +340,17 @@ async function exchangeAuthorizationCode(config: AuthConfig, code: string, state
   clearCallbackState();
   removeCallbackParams(callbackState.returnUrl);
   if (!response.ok) {
+    recordAuthDiagnosticEvent("callback_error", { detail: `token exchange ${response.status}` });
     return { status: "error", error: `OIDC token exchange failed: ${response.status}` };
   }
 
-  return persistTokenResponse(await response.json() as TokenResponse);
+  const session = persistTokenResponse(await response.json() as TokenResponse);
+  recordAuthDiagnosticEvent("login_succeeded", snapshotFromAuthSession(session));
+  return session;
 }
 
 async function refreshSession(config: AuthConfig, refreshToken: string): Promise<AuthSession | null> {
+  recordAuthDiagnosticEvent("refresh_started", { hasRefreshToken: true });
   const response = await fetch(`${config.issuer}/protocol/openid-connect/token`, {
     body: new URLSearchParams({
       client_id: config.clientId,
@@ -272,9 +363,12 @@ async function refreshSession(config: AuthConfig, refreshToken: string): Promise
     method: "POST"
   });
   if (!response.ok) {
+    recordAuthDiagnosticEvent("refresh_failed", { detail: `token refresh ${response.status}`, hasRefreshToken: true });
     return null;
   }
-  return persistTokenResponse(await response.json() as TokenResponse, refreshToken);
+  const session = persistTokenResponse(await response.json() as TokenResponse, refreshToken);
+  recordAuthDiagnosticEvent("refresh_succeeded", snapshotFromAuthSession(session));
+  return session;
 }
 
 function persistTokenResponse(tokenResponse: TokenResponse, fallbackRefreshToken?: string): AuthSession {
@@ -315,6 +409,131 @@ function readStoredSession(): StoredAuthSession | null {
     ?? readStoredSessionFrom(() => window.sessionStorage);
 }
 
+function detectedSessionStorage(): "localStorage" | "sessionStorage" | "none" {
+  if (readStoredSessionFrom(() => window.localStorage)) {
+    return "localStorage";
+  }
+  if (readStoredSessionFrom(() => window.sessionStorage)) {
+    return "sessionStorage";
+  }
+  return "none";
+}
+
+function readStoredSessionSnapshot(): AuthStoredSessionSnapshot {
+  const local = readStoredSessionFrom(() => window.localStorage);
+  if (local) {
+    return snapshotFromStoredSession(local, "localStorage");
+  }
+  const session = readStoredSessionFrom(() => window.sessionStorage);
+  if (session) {
+    return snapshotFromStoredSession(session, "sessionStorage");
+  }
+  return {
+    hasRefreshToken: false,
+    storage: "none"
+  };
+}
+
+function snapshotFromAuthSession(session: AuthSession): Partial<AuthDiagnosticEvent> {
+  return {
+    expiresAt: session.expiresAt,
+    hasRefreshToken: Boolean(session.refreshToken),
+    status: session.status,
+    subjectId: subjectIdFromAuthSession(session),
+    username: session.profile?.username
+  };
+}
+
+function snapshotFromStoredSession(
+  session: Pick<StoredAuthSession, "expiresAt" | "profile" | "refreshToken">,
+  storage: "localStorage" | "sessionStorage" | "none"
+): AuthStoredSessionSnapshot & Partial<AuthDiagnosticEvent> {
+  return {
+    expiresAt: session.expiresAt,
+    hasRefreshToken: Boolean(session.refreshToken),
+    profile: session.profile,
+    storage,
+    subjectId: subjectIdFromStoredSession(session),
+    username: session.profile?.username
+  };
+}
+
+function readAuthDiagnosticEvents(): AuthDiagnosticEvent[] {
+  return readAuthDiagnosticEventsFrom(() => window.localStorage)
+    ?? readAuthDiagnosticEventsFrom(() => window.sessionStorage)
+    ?? [];
+}
+
+function readAuthDiagnosticEventsFrom(getStorage: () => Storage): AuthDiagnosticEvent[] | null {
+  try {
+    const raw = getStorage().getItem(diagnosticsKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed
+        .map(normalizeDiagnosticEvent)
+        .filter((event): event is AuthDiagnosticEvent => Boolean(event))
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeDiagnosticEvent(value: unknown): AuthDiagnosticEvent | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Partial<AuthDiagnosticEvent>;
+  if (typeof candidate.at !== "string" || typeof candidate.type !== "string") {
+    return null;
+  }
+  return {
+    at: candidate.at,
+    detail: optionalString(candidate.detail),
+    expiresAt: optionalNumber(candidate.expiresAt),
+    hasRefreshToken: typeof candidate.hasRefreshToken === "boolean" ? candidate.hasRefreshToken : undefined,
+    status: normalizeAuthStatus(candidate.status),
+    storage: normalizeAuthStorage(candidate.storage),
+    subjectId: optionalString(candidate.subjectId),
+    type: normalizeDiagnosticEventType(candidate.type),
+    username: optionalString(candidate.username)
+  };
+}
+
+function normalizeDiagnosticEventType(value: string): AuthDiagnosticEventType {
+  return [
+    "callback_error",
+    "login_succeeded",
+    "manual_logout",
+    "refresh_failed",
+    "refresh_started",
+    "refresh_succeeded",
+    "session_cleared",
+    "session_expired",
+    "session_missing",
+    "session_persisted",
+    "session_restored",
+    "storage_changed",
+    "storage_write_failed"
+  ].includes(value) ? value as AuthDiagnosticEventType : "session_missing";
+}
+
+function normalizeAuthStatus(value: unknown): AuthStatus | undefined {
+  return value === "lab" || value === "anonymous" || value === "authenticating" || value === "authenticated" || value === "error"
+    ? value
+    : undefined;
+}
+
+function normalizeAuthStorage(value: unknown): AuthDiagnosticEvent["storage"] {
+  return value === "localStorage" || value === "sessionStorage" || value === "none" ? value : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function readStoredSessionFrom(getStorage: () => Storage): StoredAuthSession | null {
   try {
     const raw = getStorage().getItem(sessionKey);
@@ -346,8 +565,10 @@ function writeStoredSession(session: StoredAuthSession): void {
     // If both stores fail, surface the error below.
   }
   if (!persisted) {
+    recordAuthDiagnosticEvent("storage_write_failed", snapshotFromStoredSession(session, "none"));
     throw new Error("Prohlížeč neumožnil uložit přihlášení. Povolte site storage pro COP a zkuste to znovu.");
   }
+  recordAuthDiagnosticEvent("session_persisted", snapshotFromStoredSession(session, detectedSessionStorage()));
 }
 
 function clearStoredSession(): void {
@@ -361,6 +582,7 @@ function clearStoredSession(): void {
   } catch {
     // Best effort cleanup.
   }
+  recordAuthDiagnosticEvent("session_cleared", { storage: "none" });
 }
 
 function readCallbackParams(): { code?: string; error?: string; state?: string } {

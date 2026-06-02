@@ -66,11 +66,14 @@ import {
   initializeAuth,
   isAuthSessionActive,
   isOidcEnabled,
+  readAuthDiagnostics,
+  recordAuthDiagnosticEvent,
   readAuthConfig,
   refreshAuthSession,
   subjectIdFromAuthSession,
   subjectIdFromStoredAuthValue,
   type AuthConfig,
+  type AuthDiagnostics,
   type AuthSession
 } from "./auth";
 import {
@@ -382,6 +385,7 @@ interface AccountChangeNotice {
 export function App() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
+  const [authDiagnostics, setAuthDiagnostics] = React.useState<AuthDiagnostics>(() => readAuthDiagnostics());
   const userStorageScope = React.useMemo(
     () => userPreferenceScope(authSession),
     [authSession.profile?.subjectId, authSession.profile?.username, authSession.status]
@@ -573,6 +577,10 @@ export function App() {
   const messagingAuthenticated = authenticatedSessionActive;
   const authSubjectId = subjectIdFromAuthSession(authSession);
 
+  React.useEffect(() => {
+    setAuthDiagnostics(readAuthDiagnostics());
+  }, [authSession.expiresAt, authSession.profile?.subjectId, authSession.profile?.username, authSession.status]);
+
   const refreshAuthSessionForRequest = React.useCallback(async (): Promise<string | undefined> => {
     const refreshed = await refreshAuthSession(authConfig, authSession);
     if (refreshed?.status === "authenticated" && refreshed.accessToken) {
@@ -595,6 +603,12 @@ export function App() {
       if (nextSubjectId === authSubjectId) {
         return;
       }
+      recordAuthDiagnosticEvent("storage_changed", {
+        detail: nextSubjectId ? "Účet byl změněn v jiném okně." : "Účet byl odhlášen v jiném okně.",
+        storage: "localStorage",
+        subjectId: nextSubjectId
+      });
+      setAuthDiagnostics(readAuthDiagnostics());
       setAuthSession({
         error: nextSubjectId ? "Účet byl změněn v jiném okně." : "Účet byl odhlášen v jiném okně.",
         status: "anonymous"
@@ -4347,6 +4361,7 @@ export function App() {
           alertRadiusKm={alertRadiusKm}
           aoiRule={primaryAoiRule}
           authConfig={authConfig}
+          authDiagnostics={authDiagnostics}
           authSession={authSession}
           autoRefresh={autoRefresh}
           includeSynthetic={includeSynthetic}
@@ -6101,6 +6116,7 @@ function SettingsDrawer({
   alertRadiusKm,
   aoiRule,
   authConfig,
+  authDiagnostics,
   authSession,
   autoRefresh,
   includeSynthetic,
@@ -6162,6 +6178,7 @@ function SettingsDrawer({
   alertRadiusKm: number;
   aoiRule: AoiRule | null;
   authConfig: AuthConfig;
+  authDiagnostics: AuthDiagnostics;
   authSession: AuthSession;
   autoRefresh: boolean;
   includeSynthetic: boolean;
@@ -6485,12 +6502,159 @@ function SettingsDrawer({
               )}
               {profileSyncError ? <div className="error-banner">Profil: {profileSyncError}</div> : null}
               {authSession.error ? <div className="error-banner">Přihlášení: {authSession.error}</div> : null}
+              <AuthDiagnosticsPanel diagnostics={authDiagnostics} session={authSession} />
             </section>
           ) : null}
         </div>
       </aside>
     </div>
   );
+}
+
+function AuthDiagnosticsPanel({ diagnostics, session }: { diagnostics: AuthDiagnostics; session: AuthSession }) {
+  const lastRefresh = [...diagnostics.events].reverse().find((event) =>
+    event.type === "refresh_succeeded" || event.type === "refresh_failed" || event.type === "refresh_started"
+  );
+  const lastAccountChange = [...diagnostics.events].reverse().find((event) => event.type === "storage_changed");
+  const currentStorage = diagnostics.current.storage;
+  const currentExpiresAt = session.expiresAt ?? diagnostics.current.expiresAt;
+  const hasRefreshToken = Boolean(session.refreshToken || diagnostics.current.hasRefreshToken);
+  const eventItems = [...diagnostics.events].reverse().slice(0, 8);
+
+  return (
+    <div className="settings-subsection auth-diagnostics-panel">
+      <PanelTitle icon={<ShieldCheck size={17} />} title="Kontrola přihlášení" />
+      <p className="settings-help">
+        Slouží k ověření, jestli relaci ukončila expirace, neúspěšná obnova, ruční odhlášení nebo změna účtu v jiném okně. Diagnostika neukládá přístupové ani obnovovací tokeny.
+      </p>
+      <ReadinessRow
+        label="Aktuální relace"
+        value={authDiagnosticSessionLabel(session)}
+        tone={session.status === "authenticated" ? "ok" : session.status === "error" ? "warn" : "neutral"}
+      />
+      <ReadinessRow
+        label="Uložení relace"
+        value={authDiagnosticStorageLabel(currentStorage)}
+        tone={currentStorage === "none" ? "neutral" : "ok"}
+      />
+      <ReadinessRow
+        label="Platnost"
+        value={formatAuthDiagnosticExpiry(currentExpiresAt)}
+        tone={authDiagnosticExpiryTone(currentExpiresAt)}
+      />
+      <ReadinessRow
+        label="Obnova relace"
+        value={hasRefreshToken ? "připravená" : "není k dispozici"}
+        tone={hasRefreshToken ? "ok" : "warn"}
+      />
+      {lastRefresh ? (
+        <ReadinessRow
+          label="Poslední obnova"
+          value={authDiagnosticEventLabel(lastRefresh)}
+          tone={lastRefresh.type === "refresh_failed" ? "warn" : lastRefresh.type === "refresh_succeeded" ? "ok" : "neutral"}
+        />
+      ) : null}
+      {lastAccountChange ? (
+        <ReadinessRow
+          label="Jiné okno"
+          value={lastAccountChange.detail ?? authDiagnosticEventLabel(lastAccountChange)}
+          tone="warn"
+        />
+      ) : null}
+      <details className="auth-diagnostics-events">
+        <summary>Poslední události přihlášení</summary>
+        {eventItems.length > 0 ? (
+          <div className="auth-diagnostics-event-list">
+            {eventItems.map((event) => (
+              <div className="auth-diagnostics-event" key={`${event.at}-${event.type}-${event.detail ?? ""}`}>
+                <span>{formatShortDateTime(event.at)}</span>
+                <strong>{authDiagnosticEventLabel(event)}</strong>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-mini">Zatím nejsou uložené žádné události přihlášení.</div>
+        )}
+      </details>
+    </div>
+  );
+}
+
+function authDiagnosticSessionLabel(session: AuthSession): string {
+  if (session.status === "authenticated") {
+    return session.profile?.name ?? session.profile?.username ?? "přihlášeno";
+  }
+  if (session.status === "authenticating") {
+    return "ověřuji";
+  }
+  if (session.status === "error") {
+    return "chyba přihlášení";
+  }
+  if (session.status === "lab") {
+    return "laboratorní režim";
+  }
+  return "veřejný režim";
+}
+
+function authDiagnosticStorageLabel(storage: AuthDiagnostics["current"]["storage"]): string {
+  if (storage === "localStorage") {
+    return "trvalé v prohlížeči";
+  }
+  if (storage === "sessionStorage") {
+    return "jen aktuální karta";
+  }
+  return "není uložená";
+}
+
+function authDiagnosticExpiryTone(expiresAt: number | undefined): "ok" | "warn" | "neutral" {
+  if (!expiresAt) {
+    return "neutral";
+  }
+  return expiresAt > Date.now() + 60_000 ? "ok" : "warn";
+}
+
+function formatAuthDiagnosticExpiry(expiresAt: number | undefined): string {
+  if (!expiresAt) {
+    return "není dostupná";
+  }
+  const remainingMs = expiresAt - Date.now();
+  if (remainingMs <= 0) {
+    return `vypršela ${formatShortDateTime(new Date(expiresAt).toISOString())}`;
+  }
+  const remainingMinutes = Math.max(1, Math.round(remainingMs / 60_000));
+  return `${remainingMinutes} min · ${formatShortDateTime(new Date(expiresAt).toISOString())}`;
+}
+
+function authDiagnosticEventLabel(event: AuthDiagnostics["events"][number]): string {
+  const detail = event.detail ? ` · ${event.detail}` : "";
+  switch (event.type) {
+    case "callback_error":
+      return `chyba návratu z přihlášení${detail}`;
+    case "login_succeeded":
+      return "přihlášení proběhlo";
+    case "manual_logout":
+      return "ruční odhlášení";
+    case "refresh_failed":
+      return `obnova relace selhala${detail}`;
+    case "refresh_started":
+      return "obnova relace zahájena";
+    case "refresh_succeeded":
+      return "obnova relace proběhla";
+    case "session_cleared":
+      return "relace byla odstraněna";
+    case "session_expired":
+      return "uložená relace expirovala";
+    case "session_missing":
+      return "relace není uložená";
+    case "session_persisted":
+      return "relace byla uložena";
+    case "session_restored":
+      return "relace byla obnovena";
+    case "storage_changed":
+      return `změna účtu v jiném okně${detail}`;
+    case "storage_write_failed":
+      return "prohlížeč odmítl uložit relaci";
+  }
 }
 
 function normalizeWorkspaceLayout(value: WorkspaceLayoutPreferences | undefined): Required<WorkspaceLayoutPreferences> {
