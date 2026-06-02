@@ -426,6 +426,7 @@ interface CopMapProps {
   hasSituationContextEnabled: boolean;
   mapLayerLabel: string;
   mapInteractionSuspended?: boolean;
+  mobileSketchControlsOpen?: boolean;
   selectedSituationFeatureId?: string;
   selectedObjectId?: string;
   showHistory: boolean;
@@ -614,6 +615,7 @@ export function CopMap({
   hasSituationContextEnabled,
   mapLayerLabel,
   mapInteractionSuspended = false,
+  mobileSketchControlsOpen = false,
   selectedSituationFeatureId,
   selectedObjectId,
   showHistory,
@@ -702,6 +704,7 @@ export function CopMap({
   const [selectedSketchVertexIndex, setSelectedSketchVertexIndex] = React.useState<number | null>(null);
   const [selectedEditVertexIndex, setSelectedEditVertexIndex] = React.useState<number | null>(null);
   const [sketchToolsExpanded, setSketchToolsExpanded] = React.useState(true);
+  const [mapLegendCollapsed, setMapLegendCollapsed] = React.useState(false);
   const [sketchStroke, setSketchStroke] = React.useState(defaultSketchStyle.stroke);
   const [sketchFill, setSketchFill] = React.useState(defaultSketchStyle.fill);
   const [sketchOpacity, setSketchOpacity] = React.useState(defaultSketchStyle.opacity);
@@ -847,6 +850,14 @@ export function CopMap({
   };
   sketchFillPatternRef.current = sketchFillPattern;
   sketchSymbolRef.current = sketchSymbol;
+
+  React.useEffect(() => {
+    if (!mobileSketchControlsOpen) {
+      return;
+    }
+    setSketchToolsExpanded(false);
+    setMapLegendCollapsed(true);
+  }, [mobileSketchControlsOpen]);
 
   React.useEffect(() => {
     if (!selectedSketchDrawing) {
@@ -3005,6 +3016,15 @@ export function CopMap({
     [sketchMode]
   );
   const ActiveSketchToolIcon = activeSketchTool.Icon;
+  const handleSketchToolChange = React.useCallback(
+    (mode: SketchToolMode) => {
+      onSketchModeChangeRef.current?.(mode);
+      if (mobileSketchControlsOpen) {
+        setSketchToolsExpanded(false);
+      }
+    },
+    [mobileSketchControlsOpen]
+  );
   const showSketchSymbolPalette =
     sketchMode === "marker"
     || Boolean(selectedSketchDrawing && (selectedSketchDrawing.properties.kind === "marker" || selectedSketchDrawing.properties.kind === "point" || selectedSketchDrawing.properties.kind === "text"));
@@ -3012,7 +3032,15 @@ export function CopMap({
   const missingPositionCount = objects.length - positionedObjects.length;
 
   return (
-    <div className={`map-container basemap-${mapBasemapMode} ${mapFullscreen ? "fullscreen" : ""}`}>
+    <div
+      className={[
+        "map-container",
+        `basemap-${mapBasemapMode}`,
+        `sketch-cursor-${sketchMode}`,
+        mapFullscreen ? "fullscreen" : "",
+        mobileSketchControlsOpen ? "mobile-sketch-controls-open" : ""
+      ].filter(Boolean).join(" ")}
+    >
       <div className="map-canvas" ref={containerRef} aria-label="Georeferencovaná situační mapa" />
       {zoneCreationActive ? (
         <div className="map-zone-create-hint">
@@ -3066,7 +3094,7 @@ export function CopMap({
                 aria-pressed={sketchMode === mode}
                 className={`map-sketch-tool-button ${sketchMode === mode ? "active" : ""}`}
                 key={mode}
-                onClick={() => onSketchModeChangeRef.current?.(mode)}
+                onClick={() => handleSketchToolChange(mode)}
                 title={label}
                 type="button"
               >
@@ -3329,19 +3357,37 @@ export function CopMap({
           <span>Nahlásit</span>
         </button>
       ) : null}
-      <div className="map-legend">
-        <LegendItem disposition="friend" color="#3b82f6" label="Vlastní" />
-        <LegendItem disposition="hostile" color="#ef4444" label="Rizikové" />
-        <LegendItem disposition="neutral" color="#22c55e" label="Neutrální" />
-        <LegendItem disposition="unknown" color="#facc15" label="Neznámé" />
-        {showHistory ? <LineLegendItem label="Historie" /> : null}
-        {showPrediction ? <LineLegendItem dashed label="Predikce" /> : null}
-        {showProximityAlertRadius && userLocation ? <RadiusLegendItem active={hasProximityAlerts} label="Výstražný perimetr" /> : null}
-        {aoiRuleFeatureCollection.features.length > 0 ? <RadiusLegendItem active={false} label="Uživatelská zóna" /> : null}
-        {alertAreaFeatureCollection.features.length > 0 ? <RadiusLegendItem active label="Alert vrstva" /> : null}
-        {situationFeatureCollection.features.length > 0 ? <SituationLegendItem label="Situační kontext" /> : null}
-        {hasMobileCoverageFeatures ? <CoverageLegendItem /> : null}
-        {clusterTracks ? <ClusterLegendItem label="Shluky" /> : null}
+      <div
+        className={`map-legend ${mapLegendCollapsed ? "collapsed" : "expanded"}`}
+        onClick={stopMapToolbarEvent}
+        onDoubleClick={stopMapToolbarEvent}
+        onPointerDown={stopMapToolbarEvent}
+      >
+        <button
+          aria-expanded={!mapLegendCollapsed}
+          aria-label={mapLegendCollapsed ? "Zobrazit legendu mapy" : "Skrýt legendu mapy"}
+          className="map-legend-toggle"
+          onClick={() => setMapLegendCollapsed((current) => !current)}
+          type="button"
+        >
+          <HelpCircle size={17} />
+        </button>
+        {mapLegendCollapsed ? null : (
+          <div className="map-legend-items">
+            <LegendItem disposition="friend" color="#3b82f6" label="Vlastní" />
+            <LegendItem disposition="hostile" color="#ef4444" label="Rizikové" />
+            <LegendItem disposition="neutral" color="#22c55e" label="Neutrální" />
+            <LegendItem disposition="unknown" color="#facc15" label="Neznámé" />
+            {showHistory ? <LineLegendItem label="Historie" /> : null}
+            {showPrediction ? <LineLegendItem dashed label="Predikce" /> : null}
+            {showProximityAlertRadius && userLocation ? <RadiusLegendItem active={hasProximityAlerts} label="Výstražný perimetr" /> : null}
+            {aoiRuleFeatureCollection.features.length > 0 ? <RadiusLegendItem active={false} label="Uživatelská zóna" /> : null}
+            {alertAreaFeatureCollection.features.length > 0 ? <RadiusLegendItem active label="Alert vrstva" /> : null}
+            {situationFeatureCollection.features.length > 0 ? <SituationLegendItem label="Situační kontext" /> : null}
+            {hasMobileCoverageFeatures ? <CoverageLegendItem /> : null}
+            {clusterTracks ? <ClusterLegendItem label="Shluky" /> : null}
+          </div>
+        )}
       </div>
       {clusterInfo ? <ClusterPanel cluster={clusterInfo} onClose={() => setClusterInfo(null)} /> : null}
       {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}

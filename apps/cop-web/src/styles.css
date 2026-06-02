@@ -5508,6 +5508,28 @@ h1 {
   touch-action: none;
 }
 
+.map-container.sketch-cursor-pan .map-canvas canvas {
+  cursor: grab;
+}
+
+.map-container.sketch-cursor-pan .map-canvas canvas:active {
+  cursor: grabbing;
+}
+
+.map-container.sketch-cursor-select .map-canvas canvas {
+  cursor: pointer;
+}
+
+.map-container.sketch-cursor-marker .map-canvas canvas,
+.map-container.sketch-cursor-line .map-canvas canvas,
+.map-container.sketch-cursor-arrow .map-canvas canvas,
+.map-container.sketch-cursor-polygon .map-canvas canvas,
+.map-container.sketch-cursor-circle .map-canvas canvas,
+.map-container.sketch-cursor-text .map-canvas canvas,
+.map-container.sketch-cursor-measurement .map-canvas canvas {
+  cursor: crosshair;
+}
+
 .map-overlay-stack {
   position: absolute;
   top: 12px;
@@ -5700,12 +5722,43 @@ h1 {
   bottom: 12px;
   z-index: 3;
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 9px;
   padding: 8px 10px;
   color: #cfdae4;
   font-size: 12px;
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+.map-legend.collapsed {
+  gap: 0;
+  padding: 6px;
+}
+
+.map-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  min-width: 0;
+}
+
+.map-legend-toggle {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(142, 157, 170, 0.32);
+  border-radius: 999px;
+  background: rgba(16, 26, 36, 0.86);
+  color: #dbeafe;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.map-legend-toggle:hover {
+  border-color: rgba(147, 197, 253, 0.68);
+  color: #bfdbfe;
 }
 
 .map-zone-create-hint {
@@ -5982,11 +6035,16 @@ h1 {
   bottom: min(52vh, 478px);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
+  .map-container:not(.mobile-sketch-controls-open) .map-sketch-toolbar,
+  .map-container:not(.mobile-sketch-controls-open) .map-sketch-style-panel {
+    display: none;
+  }
+
   .map-sketch-toolbar {
-    left: 12px;
-    right: 12px;
-    bottom: calc(var(--mobile-bottom-nav-height, 76px) + 10px);
+    left: 10px;
+    right: 10px;
+    bottom: calc(var(--mobile-bottom-nav-height, 76px) + 8px);
     max-width: none;
     transform: none;
   }
@@ -5994,7 +6052,7 @@ h1 {
   .map-sketch-toolbar.collapsed {
     left: auto;
     right: 12px;
-    bottom: calc(var(--mobile-bottom-nav-height, 76px) + 12px);
+    bottom: calc(var(--mobile-bottom-nav-height, 76px) + 10px);
   }
 
   .map-sketch-tool-grid {
@@ -6008,16 +6066,17 @@ h1 {
   }
 
   .map-sketch-style-panel {
-    left: 12px;
-    right: 12px;
-    bottom: calc(var(--mobile-bottom-nav-height, 76px) + 70px);
+    left: 10px;
+    right: 10px;
+    bottom: calc(var(--mobile-bottom-nav-height, 76px) + 64px);
     width: auto;
-    max-height: 38vh;
+    max-height: min(31dvh, 260px);
     transform: none;
   }
 
   .map-sketch-style-grid {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .map-sketch-style-header {
@@ -6026,6 +6085,27 @@ h1 {
 
   .map-sketch-style-header span {
     margin-left: 0;
+  }
+
+  .map-sketch-symbol-section {
+    max-height: 104px;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .map-sketch-style-panel + .map-sketch-create-hint,
+  .map-sketch-style-panel + .map-sketch-edit-hint {
+    bottom: calc(var(--mobile-bottom-nav-height, 76px) + 64px + min(31dvh, 260px) + 10px);
+  }
+
+  .map-container.mobile-sketch-controls-open .map-sketch-create-hint,
+  .map-container.mobile-sketch-controls-open .map-sketch-edit-hint {
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: calc(var(--mobile-bottom-nav-height, 76px) + 64px);
+    min-width: 0;
+    transform: none;
   }
 }
 
@@ -7882,6 +7962,10 @@ dd {
     font-size: 11px;
   }
 
+  .map-legend-items {
+    gap: 7px;
+  }
+
   .map-report-button {
     right: 14px;
     bottom: 92px;
@@ -8529,9 +8613,34 @@ dd {
   }
 
   .shell.app-shell-v2 .map-legend {
-    bottom: 82px;
     left: 12px;
-    max-width: calc(100% - 24px);
+    right: 12px;
+    bottom: calc(var(--mobile-bottom-nav-height, 76px) + 8px);
+    max-width: none;
+  }
+
+  .shell.app-shell-v2 .map-legend.collapsed {
+    left: auto;
+    width: 44px;
+    height: 44px;
+    padding: 5px;
+  }
+
+  .shell.app-shell-v2 .map-legend-toggle {
+    width: 32px;
+    height: 32px;
+  }
+
+  .shell.app-shell-v2 .map-legend-items {
+    max-height: 74px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .shell.app-shell-v2 .map-container.mobile-sketch-controls-open .map-legend.collapsed {
+    right: auto;
+    left: 12px;
   }
 
   .shell.app-shell-v2.mobile-sheet-open .map-legend {

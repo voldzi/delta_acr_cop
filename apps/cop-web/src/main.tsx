@@ -38,6 +38,7 @@ import {
   PanelLeftClose,
   PanelRightClose,
   Pause,
+  PenLine,
   Pin,
   PinOff,
   Plane,
@@ -414,6 +415,7 @@ export function App() {
   const [mapSearchQuery, setMapSearchQuery] = React.useState("");
   const [mapSearchDocked, setMapSearchDocked] = React.useState(() => readMapSearchDocked());
   const [mobileSheet, setMobileSheet] = React.useState<MobileSheet>(null);
+  const [mobileSketchOpen, setMobileSketchOpen] = React.useState(false);
   const [workspaceLayout, setWorkspaceLayout] = React.useState<Required<WorkspaceLayoutPreferences>>(() =>
     normalizeWorkspaceLayout(initialPreferences.workspaceLayout)
   );
@@ -3859,6 +3861,7 @@ export function App() {
               publicFlightSymbolMode={publicFlightSymbolMode}
               mapBasemapMode={mapBasemapMode}
               mapInteractionSuspended={Boolean(mobileSheet) || messagingOpen || settingsOpen}
+              mobileSketchControlsOpen={mobileSketchOpen}
               predictionMinutes={predictionMinutes}
               predictionMode={predictionMode}
               autoFit={autoFit}
@@ -3877,6 +3880,7 @@ export function App() {
                 setSelectedObjectId(isSelected ? null : object.objectId);
                 setSelectedSituationFeatureId(null);
                 setSelectedSketchDrawingId(null);
+                setMobileSketchOpen(false);
                 setMobileSheet(isSelected ? null : "detail");
               }}
               onSelectSituationFeature={(feature) => {
@@ -3884,12 +3888,14 @@ export function App() {
                 setSelectedSituationFeatureId(isSelected ? null : feature.properties.featureId);
                 setSelectedObjectId(null);
                 setSelectedSketchDrawingId(null);
+                setMobileSketchOpen(false);
                 setMobileSheet(isSelected ? null : "detail");
               }}
               onAutoFitChange={setAutoFit}
               onClearSelection={() => {
                 setSelectedObjectId(null);
                 setSelectedSituationFeatureId(null);
+                setMobileSketchOpen(false);
                 setMobileSheet(null);
               }}
               onCancelZoneCreation={() => setZoneCreationMode(false)}
@@ -4296,25 +4302,17 @@ export function App() {
 
       <MobileBottomNav
         activeSheet={mobileSheet}
-        hasDetail={Boolean(selectedSituationFeature || explicitlySelectedObject)}
         messagingOpen={messagingOpen}
+        sketchOpen={mobileSketchOpen}
         onChat={() => {
           setMobileSheet(null);
+          setMobileSketchOpen(false);
           setMessagingOpen(true);
           setMessagingPinned(true);
         }}
-        onDetail={() => {
-          setActiveWorkspace("map");
-          if (!selectedSituationFeature && !explicitlySelectedObject) {
-            return;
-          }
-          if (workspaceLayout.rightPanelMode !== "open") {
-            updateWorkspaceLayout({ rightPanelMode: "open" });
-          }
-          setMobileSheet((current) => current === "detail" ? null : "detail");
-        }}
         onLayers={() => {
           setActiveWorkspace("map");
+          setMobileSketchOpen(false);
           if (workspaceLayout.leftPanelMode !== "open") {
             updateWorkspaceLayout({ leftPanelMode: "open" });
           }
@@ -4326,15 +4324,24 @@ export function App() {
         }}
         onMap={() => {
           setActiveWorkspace("map");
+          setMobileSketchOpen(false);
           setMobileSheet(null);
         }}
         onMenu={() => {
           setMobileSheet(null);
+          setMobileSketchOpen(false);
           openSettings("map");
         }}
         onReport={() => {
           setMobileSheet(null);
+          setMobileSketchOpen(false);
           startCommunityReportCapture();
+        }}
+        onSketch={() => {
+          setActiveWorkspace("map");
+          setMobileSheet(null);
+          setMessagingOpen(false);
+          setMobileSketchOpen((current) => !current);
         }}
       />
 
@@ -5523,28 +5530,28 @@ function ContextRail({
 
 function MobileBottomNav({
   activeSheet,
-  hasDetail,
   messagingOpen,
+  sketchOpen,
   onChat,
-  onDetail,
   onLayers,
   onMap,
   onMenu,
-  onReport
+  onReport,
+  onSketch
 }: {
   activeSheet: MobileSheet;
-  hasDetail: boolean;
   messagingOpen: boolean;
+  sketchOpen: boolean;
   onChat: () => void;
-  onDetail: () => void;
   onLayers: () => void;
   onMap: () => void;
   onMenu: () => void;
   onReport: () => void;
+  onSketch: () => void;
 }) {
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobilní navigace">
-      <button className={!activeSheet && !messagingOpen ? "active" : ""} onClick={onMap} type="button">
+      <button className={!activeSheet && !messagingOpen && !sketchOpen ? "active" : ""} onClick={onMap} type="button">
         <Layers size={18} />
         <span>Mapa</span>
       </button>
@@ -5552,9 +5559,9 @@ function MobileBottomNav({
         <ListFilter size={18} />
         <span>Vrstvy</span>
       </button>
-      <button className={activeSheet === "detail" ? "active" : ""} disabled={!hasDetail} onClick={onDetail} type="button">
-        <Database size={18} />
-        <span>Detail</span>
+      <button className={sketchOpen ? "active" : ""} onClick={onSketch} type="button">
+        <PenLine size={18} />
+        <span>Zákres</span>
       </button>
       <button className={messagingOpen ? "active" : ""} onClick={onChat} type="button">
         <MessageCircle size={18} />
