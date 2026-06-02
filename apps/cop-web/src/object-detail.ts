@@ -94,7 +94,7 @@ function conflictsFromServerEvidence(evidence: ObjectConflictEvidence | undefine
   if (evidence.signals.length === 0) {
     return [
       {
-        detail: `Serverová fúze vyhodnotila objekt v ${evidence.evaluatedAt}; aktuálně není vidět konfliktní evidence.`,
+        detail: "Aktuálně není zjištěný konflikt mezi dostupnými zdroji.",
         severity: "neutral",
         title: "Bez konfliktu"
       }
@@ -220,7 +220,7 @@ function detectObjectConflicts(
   const conflicts: ObjectConflict[] = [];
   if (object.status === "CONFLICTED") {
     conflicts.push({
-      detail: "Objekt má v situačním stavu příznak CONFLICTED.",
+      detail: "Dostupné zdroje se u tohoto objektu neshodují.",
       severity: "warn",
       title: "Konflikt stavu"
     });

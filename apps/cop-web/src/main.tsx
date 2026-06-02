@@ -8339,7 +8339,7 @@ function ObjectDetail({
     <div className="object-detail">
       <div className="object-header">
         <div>
-          <strong>{object.objectType}</strong>
+          <strong>{objectTypeDisplayName(object.objectType)}</strong>
           <span>{objectTitle}</span>
         </div>
         <em>{objectStatusLabel(object.status)}</em>
@@ -8349,7 +8349,7 @@ function ObjectDetail({
         <DetailGrid
           rows={[
             ["Příslušnost", <span className={`affiliation-chip ${model.affiliation.disposition}`}>{model.affiliation.label}</span>],
-            ["Doména", object.domain],
+            ["Doména", domainDisplayName(object.domain)],
             ["Stav", replayActive ? `${objectStatusLabel(object.status)} / zpětné přehrání` : objectStatusLabel(object.status)],
             ["Jistota", `${Math.round((object.confidence ?? 0) * 100)} %`]
           ]}
@@ -8371,7 +8371,7 @@ function ObjectDetail({
         <DetailGrid
           rows={[
             ["Režim", "Standardní operační symbol"],
-            ["Vyhodnocení", `${object.objectType} / ${model.affiliation.label} / ${objectStatusLabel(object.status)}`]
+            ["Vyhodnocení", `${objectTypeDisplayName(object.objectType)} / ${model.affiliation.label} / ${objectStatusLabel(object.status)}`]
           ]}
         />
       </ObjectDetailSection>
@@ -8391,14 +8391,10 @@ function ObjectDetail({
         <ObjectDetailSection title="Letová data">
           <DetailGrid
             rows={[
-              ["ICAO24", flightData.icao24 ?? "n/a"],
-              ["Callsign", flightData.callsign ?? "n/a"],
-              ["Registrace", flightData.registration ?? "n/a"],
-              ["Letadlo", formatFlightAircraft(flightData)],
-              ["Původ", flightData.originCountry ?? "n/a"],
-              ["Poskytovatelé", formatFlightProviders(flightData)],
-              ["Licence", formatFlightLicenses(flightData)],
-              ["Kvalita", formatFlightQuality(flightData)]
+              ["Volací znak", displayValue(flightData.callsign)],
+              ["Registrace", displayValue(flightData.registration)],
+              ["Typ letadla", formatFlightAircraft(flightData)],
+              ["Země původu", displayValue(flightData.originCountry)]
             ]}
           />
         </ObjectDetailSection>
@@ -8761,7 +8757,12 @@ function formatFlightAircraft(flightData: FlightDataAttributes): string {
   const designator = recordString(flightData.aircraft, "typeDesignator") ?? recordString(flightData.aircraft, "designator");
   const manufacturer = recordString(flightData.aircraft, "manufacturer");
   const model = recordString(flightData.aircraft, "model");
-  return [designator, manufacturer, model].filter(Boolean).join(" / ") || "n/a";
+  return [designator, manufacturer, model].filter(Boolean).join(" / ") || "neuvedeno";
+}
+
+function displayValue(value: string | null | undefined): string {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed.length > 0 ? trimmed : "neuvedeno";
 }
 
 function formatFlightProviders(flightData: FlightDataAttributes): string {
@@ -10903,6 +10904,37 @@ function sourceDisplayName(sourceSystemId: string | undefined): string {
     "tak-gateway": "Partnerská data"
   };
   return labels[sourceSystemId] ?? sourceSystemId;
+}
+
+function objectTypeDisplayName(objectType: string): string {
+  const normalized = objectType.trim().toUpperCase();
+  const labels: Record<string, string> = {
+    AIRCRAFT: "Letadlo",
+    INFRASTRUCTURE: "Infrastruktura",
+    MISSILE: "Vzdušný objekt",
+    PERSON: "Osoba",
+    SENSOR: "Senzor",
+    UAV: "Dron",
+    UNIT: "Jednotka",
+    VEHICLE: "Vozidlo",
+    VESSEL: "Plavidlo"
+  };
+  return labels[normalized] ?? objectType;
+}
+
+function domainDisplayName(domain: string): string {
+  const normalized = domain.trim().toUpperCase();
+  const labels: Record<string, string> = {
+    AIR: "vzduch",
+    LAND: "země",
+    MARITIME: "voda",
+    OTHER: "ostatní",
+    RESCUE: "záchrana",
+    SPACE: "vesmír",
+    SUBSURFACE: "pod hladinou",
+    SURFACE: "povrch"
+  };
+  return labels[normalized] ?? domain.toLowerCase();
 }
 
 function formatPosition(object: CopObject): string {
