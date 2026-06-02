@@ -3381,28 +3381,6 @@ export function App() {
   const operationStartedAt = selectedSituationFeature
     ? formatShortDateTime(selectedSituationFeature.properties.validFrom ?? selectedSituationFeature.properties.effectiveAt ?? selectedSituationFeature.properties.observedAt)
     : lastLoadedAt ?? "čekám";
-  const mobileDetailTitle = selectedSituationFeature
-    ? selectedSituationFeature.properties.headline
-      ?? selectedSituationFeature.properties.areaName
-      ?? selectedSituationFeature.properties.label
-      ?? selectedSituationFeature.properties.featureId
-    : explicitlySelectedObject
-      ? formatObjectListLabel(explicitlySelectedObject)
-      : null;
-  const mobileDetailMeta = selectedSituationFeature
-    ? [
-        selectedSituationFeature.properties.hazardType ?? selectedSituationFeature.properties.layer ?? selectedSituationFeature.properties.category,
-        selectedSituationFeature.properties.status ?? selectedSituationFeature.properties.severity,
-        selectedSituationFeature.properties.sourceName ?? selectedSituationFeature.properties.source
-      ].filter(Boolean).join(" · ")
-    : explicitlySelectedObject
-      ? [
-          explicitlySelectedObject.domain,
-          explicitlySelectedObject.affiliation,
-          explicitlySelectedObject.status,
-          `${Math.round((explicitlySelectedObject.confidence ?? 0) * 100)} %`
-        ].filter(Boolean).join(" · ")
-      : "";
   const effectiveOperatorProfile = React.useMemo(
     () => mergeOperatorProfile(authSession, operatorProfile),
     [authSession, operatorProfile]
@@ -3881,7 +3859,7 @@ export function App() {
                 setSelectedSituationFeatureId(null);
                 setSelectedSketchDrawingId(null);
                 setMobileSketchOpen(false);
-                setMobileSheet(isSelected ? null : "detail");
+                setMobileSheet(null);
               }}
               onSelectSituationFeature={(feature) => {
                 const isSelected = selectedSituationFeatureId === feature.properties.featureId;
@@ -3889,7 +3867,7 @@ export function App() {
                 setSelectedObjectId(null);
                 setSelectedSketchDrawingId(null);
                 setMobileSketchOpen(false);
-                setMobileSheet(isSelected ? null : "detail");
+                setMobileSheet(null);
               }}
               onAutoFitChange={setAutoFit}
               onClearSelection={() => {
@@ -3930,18 +3908,6 @@ export function App() {
               userLocation={userLocation}
               zoneCreationActive={zoneCreationMode}
             />
-            {activeWorkspace === "map" && mobileDetailTitle ? (
-              <MobileSelectionPeek
-                meta={mobileDetailMeta}
-                title={mobileDetailTitle}
-                onClose={() => {
-                  setSelectedObjectId(null);
-                  setSelectedSituationFeatureId(null);
-                  setMobileSheet(null);
-                }}
-                onOpen={() => setMobileSheet("detail")}
-              />
-            ) : null}
           </section>
 
           {activeWorkspace === "map" ? null : activeWorkspace === "data" ? (
@@ -5577,31 +5543,6 @@ function MobileBottomNav({
         <span>Menu</span>
       </button>
     </nav>
-  );
-}
-
-function MobileSelectionPeek({
-  meta,
-  onClose,
-  onOpen,
-  title
-}: {
-  meta: string;
-  onClose: () => void;
-  onOpen: () => void;
-  title: string;
-}) {
-  return (
-    <div className="mobile-selection-peek">
-      <button className="mobile-selection-peek-main" onClick={onOpen} type="button">
-        <span>Vybráno</span>
-        <strong>{title}</strong>
-        {meta ? <small>{meta}</small> : null}
-      </button>
-      <button aria-label="Zrušit výběr" className="mobile-selection-peek-close" onClick={onClose} type="button">
-        <X size={17} />
-      </button>
-    </div>
   );
 }
 
