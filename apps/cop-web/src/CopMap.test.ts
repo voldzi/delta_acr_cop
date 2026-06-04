@@ -897,6 +897,135 @@ describe("COP map data helpers", () => {
     expect(collection.features[0]?.properties.riskMapLabel).not.toContain("Povodeň");
   });
 
+  it("renders weather grid polygons as thematic map fields", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [14.1, 50.0],
+              [14.2, 50.0],
+              [14.2, 50.1],
+              [14.1, 50.1],
+              [14.1, 50.0]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            category: "weather",
+            confidence: 0.86,
+            featureId: "weather:grid:temp",
+            label: "Teplotní pole",
+            layer: "weather_temperature_grid",
+            metrics: {
+              temperatureC: 31.2
+            },
+            observedAt: "2026-06-04T08:00:00Z",
+            sourceId: "chmi_weather_stations",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-06-04T08:05:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["weather_temperature_grid"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      mapPointSuppressed: true,
+      situationStatusLabel: "TEPLOTA",
+      weatherFillColor: "#fb923c",
+      weatherFillOpacity: 0.3,
+      weatherGrid: true,
+      weatherMetricLabel: "31°C",
+      weatherObservation: false
+    });
+  });
+
+  it("renders air-quality grid polygons as thematic map fields", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [14.1, 50.0],
+              [14.2, 50.0],
+              [14.2, 50.1],
+              [14.1, 50.1],
+              [14.1, 50.0]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            category: "air_quality",
+            confidence: 0.8,
+            featureId: "air:grid:pm10",
+            label: "Kvalita ovzduší",
+            layer: "air_quality_grid",
+            metrics: {
+              airQualityIndex: 4
+            },
+            observedAt: "2026-06-04T08:00:00Z",
+            sourceId: "chmi_air_quality",
+            stale: false,
+            tags: {
+              dominantPollutant: "pm10"
+            }
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-06-04T08:05:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["air_quality_grid"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      airQualityFeature: true,
+      mapPointSuppressed: true,
+      situationStatusLabel: "ŠPATNÁ",
+      weatherFillColor: "#fb923c",
+      weatherFillOpacity: 0.28,
+      weatherGrid: true,
+      weatherMetricLabel: "AQI 4 PM10"
+    });
+  });
+
   it("parses map center from longitude and latitude env value", () => {
     expect(parseMapCenter("15.1,50.2")).toEqual([15.1, 50.2]);
     expect(parseMapCenter("invalid")).toEqual([14.42, 50.08]);

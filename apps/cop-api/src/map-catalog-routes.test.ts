@@ -367,6 +367,32 @@ describe("map catalog route", () => {
     });
   });
 
+  it("queries provider grid layers through situation-data layer aliases", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource: new FakeProviderCatalogSituationDataSource()
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [13.85, 49.65, 15.35, 50.45],
+        layerIds: ["public.weather.temperature_grid"],
+        limit: 20
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { query: { layerIds: string[] }; situation?: SituationFeatureCollection };
+    expect(body.query.layerIds).toEqual(["public.weather.temperature_grid"]);
+    expect(body.situation?.query).toMatchObject({
+      layers: ["weather_temperature_grid"],
+      sources: ["chmi_weather_stations"]
+    });
+  });
+
   it("post-filters provider features by catalog category ids", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const app = buildServer({

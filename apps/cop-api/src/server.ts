@@ -4021,13 +4021,16 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
   let situationTechnology: string | undefined;
 
   for (const layer of layers) {
-    if (layer.query.mode !== "bbox") {
+    const supportedFeatureQuery = layer.query.mode === "bbox"
+      || (layer.query.mode === "grid" && layer.query.providerId === "sim.situation-data");
+    if (!supportedFeatureQuery) {
       continue;
     }
     if (layer.query.providerId === "sim.situation-data") {
       for (const layerId of layer.query.providerLayerIds ?? []) {
-        if (isSituationLayerId(layerId)) {
-          situationLayers.add(layerId);
+        const situationLayerId = situationLayerIdFromProviderLayerId(layerId);
+        if (situationLayerId) {
+          situationLayers.add(situationLayerId);
         }
       }
       for (const sourceId of layer.query.providerSourceIds ?? []) {
@@ -4178,6 +4181,40 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "weather_wind_field";
 }
 
+function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | undefined {
+  if (isSituationLayerId(value)) {
+    return value;
+  }
+  switch (value) {
+    case "air_quality.grid":
+    case "air_quality_grid":
+    case "public.safety.air_quality_grid":
+      return "air_quality_grid";
+    case "weather.humidity":
+    case "weather.humidity_grid":
+    case "public.weather.humidity_grid":
+      return "weather_humidity_grid";
+    case "weather.precipitation":
+    case "weather.precipitation_grid":
+    case "public.weather.precipitation_grid":
+      return "weather_precipitation_grid";
+    case "weather.pressure":
+    case "weather.pressure_grid":
+    case "public.weather.pressure_grid":
+      return "weather_pressure_grid";
+    case "weather.temperature":
+    case "weather.temperature_grid":
+    case "public.weather.temperature_grid":
+      return "weather_temperature_grid";
+    case "weather.wind":
+    case "weather.wind_field":
+    case "public.weather.wind_field":
+      return "weather_wind_field";
+    default:
+      return undefined;
+  }
+}
+
 function isSafetyLayerId(value: string): value is SafetyLayerId {
   return value === "boundary_admin" || value === "fire" || value === "flood" || value === "warnings" || value === "weather_alerts";
 }
@@ -4263,7 +4300,10 @@ function filterSituationCollectionForCatalogLayers(
   collection: SituationFeatureCollection,
   selectedLayers: MapCatalogLayer[]
 ): SituationFeatureCollection {
-  const situationLayers = selectedLayers.filter((layer) => layer.query.mode === "bbox" && layer.query.providerId === "sim.situation-data");
+  const situationLayers = selectedLayers.filter((layer) =>
+    (layer.query.mode === "bbox" || layer.query.mode === "grid")
+    && layer.query.providerId === "sim.situation-data"
+  );
   if (situationLayers.length === 0) {
     return collection;
   }
@@ -4285,8 +4325,17 @@ function filterSituationCollectionForCatalogLayers(
 
 function situationFeatureMatchesCatalogLayer(feature: SituationFeature, layer: MapCatalogLayer): boolean {
   const providerLayerIds = layer.query.providerLayerIds ?? [];
-  if (providerLayerIds.length > 0 && !providerLayerIds.includes(feature.properties.layer)) {
-    return false;
+  if (providerLayerIds.length > 0) {
+    const normalizedProviderLayerIds = providerLayerIds
+      .map(situationLayerIdFromProviderLayerId)
+      .filter((value): value is SituationLayerId => Boolean(value));
+    const rawLayerMatch = providerLayerIds.includes(feature.properties.layer)
+      || providerLayerIds.includes(feature.properties.layerId ?? "")
+      || providerLayerIds.includes(feature.properties.providerLayerId ?? "");
+    const normalizedLayerMatch = normalizedProviderLayerIds.includes(feature.properties.layer);
+    if (!rawLayerMatch && !normalizedLayerMatch) {
+      return false;
+    }
   }
   const providerSourceIds = layer.query.providerSourceIds ?? [];
   if (providerSourceIds.length > 0 && !providerSourceIds.includes(feature.properties.sourceId)) {

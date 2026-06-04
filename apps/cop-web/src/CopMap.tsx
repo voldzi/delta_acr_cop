@@ -101,6 +101,9 @@ const alertAreaLineLayerId = "cop-alert-area-line";
 const situationFillLayerId = "cop-situation-fill";
 const situationLineLayerId = "cop-situation-line";
 const situationPointSelectedLayerId = "cop-situation-point-selected";
+const situationWeatherGridFillLayerId = "cop-situation-weather-grid-fill";
+const situationWeatherGridLineLayerId = "cop-situation-weather-grid-line";
+const situationWeatherGridLabelLayerId = "cop-situation-weather-grid-label";
 const situationWeatherHeatLayerId = "cop-situation-weather-heat";
 const situationWeatherPointLayerId = "cop-situation-weather-point";
 const situationWeatherWindLayerId = "cop-situation-weather-wind";
@@ -158,6 +161,9 @@ const mapFeatureClickPriorityLayerIds = [
   situationPointSelectedLayerId,
   situationPointLayerId,
   situationLabelLayerId,
+  situationWeatherGridLabelLayerId,
+  situationWeatherGridLineLayerId,
+  situationWeatherGridFillLayerId,
   situationLineLayerId,
   situationFillLayerId
 ] as const;
@@ -376,8 +382,14 @@ export interface SituationContextFeatureCollection {
       airQualityLabel?: string;
       airQualityLevel?: string;
       weatherCloudCoverPercent?: number;
+      weatherFillColor?: string;
+      weatherFillOpacity?: number;
       weatherFlightCategoryColor?: string;
+      weatherGrid?: boolean;
+      weatherGridKind?: string;
       weatherLabel?: string;
+      weatherLineColor?: string;
+      weatherMetricLabel?: string;
       weatherObservation?: boolean;
       weatherPrecipitationMm?: number;
       weatherStationIcao?: string;
@@ -1328,7 +1340,7 @@ export function CopMap({
           id: situationFillLayerId,
           type: "fill",
           source: situationSourceId,
-          filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+          filter: ["all", ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]], ["!=", ["get", "weatherGrid"], true]],
           paint: {
             "fill-color": [
               "coalesce",
@@ -1384,7 +1396,7 @@ export function CopMap({
           id: situationLineLayerId,
           type: "line",
           source: situationSourceId,
-          filter: ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]],
+          filter: ["all", ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]], ["!=", ["get", "weatherGrid"], true]],
           layout: {
             "line-cap": "round",
             "line-join": "round"
@@ -1468,6 +1480,60 @@ export function CopMap({
                 2.6
               ]
             ]
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherGridFillLayerId,
+          type: "fill",
+          source: situationSourceId,
+          filter: ["all", ["==", ["get", "weatherGrid"], true], ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]]],
+          paint: {
+            "fill-color": ["coalesce", ["get", "weatherFillColor"], ["get", "situationStatusColor"], "#38bdf8"],
+            "fill-opacity": [
+              "case",
+              ["get", "stale"],
+              ["*", ["coalesce", ["get", "weatherFillOpacity"], 0.24], 0.52],
+              ["coalesce", ["get", "weatherFillOpacity"], 0.24]
+            ]
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherGridLineLayerId,
+          type: "line",
+          source: situationSourceId,
+          filter: ["all", ["==", ["get", "weatherGrid"], true], ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]]],
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": ["coalesce", ["get", "weatherLineColor"], ["get", "weatherFillColor"], ["get", "situationStatusColor"], "#38bdf8"],
+            "line-dasharray": ["case", ["get", "stale"], ["literal", [2, 1.2]], ["literal", [1, 0]]],
+            "line-opacity": ["case", ["get", "stale"], 0.28, 0.48],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.45, 9, 0.8, 13, 1.25]
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherGridLabelLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 9,
+          filter: ["all", ["==", ["get", "weatherGrid"], true], ["has", "weatherMetricLabel"]],
+          layout: {
+            "text-field": ["get", "weatherMetricLabel"],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 9, 0, 10, 9, 13, 11],
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "text-color": "#f8fafc",
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.6,
+            "text-halo-blur": 0.35
           }
         });
 
@@ -4364,6 +4430,7 @@ function buildSituationRenderProperties(
     const dominantPollutant = recordString(tags, "dominantPollutant");
     const color = airQualityColor(airQualityIndex, airQualityLevel, status.color);
     const label = formatAirQualityMapLabel(airQualityIndex, dominantPollutant, airQualityLevel);
+    const weatherGrid = feature.properties.layer === "air_quality_grid" && feature.geometry.type !== "Point";
     return {
       airQualityDominantPollutant: dominantPollutant,
       airQualityFeature: true,
@@ -4371,9 +4438,16 @@ function buildSituationRenderProperties(
       airQualityLabel: label,
       airQualityLevel,
       mapLabel: label,
+      mapPointSuppressed: weatherGrid ? true : undefined,
       situationStatusColor: color,
       situationStatusLabel: formatAirQualityStatusLabel(airQualityIndex, airQualityLevel, status.label),
-      situationStatusTone: airQualityTone(airQualityIndex, airQualityLevel, status.tone)
+      situationStatusTone: airQualityTone(airQualityIndex, airQualityLevel, status.tone),
+      weatherFillColor: weatherGrid ? color : undefined,
+      weatherFillOpacity: weatherGrid ? weatherGridFillOpacity(feature) : undefined,
+      weatherGrid: weatherGrid ? true : undefined,
+      weatherGridKind: weatherGrid ? "air_quality" : undefined,
+      weatherLineColor: weatherGrid ? color : undefined,
+      weatherMetricLabel: weatherGrid ? label.replace("\n", " ") : undefined
     };
   }
   if (!isWeatherContextFeature(feature)) {
@@ -4395,20 +4469,30 @@ function buildSituationRenderProperties(
   const pressureHpa = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
   const stationIcao = stringProperty(tags.icaoId);
   const providerLayerId = stringProperty(feature.properties.providerLayerId);
-  const weatherObservation = feature.properties.layer !== "weather"
+  const weatherGrid = isWeatherGridFeature(feature);
+  const color = weatherContextColor(feature, status.color);
+  const weatherLabel = aviationCategory ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label) : formatWeatherContextMapLabel(feature, temperatureC, windSpeedMps, precipitationMm, humidityPercent, pressureHpa);
+  const weatherObservation = !weatherGrid && (feature.properties.layer !== "weather"
     || feature.properties.sourceId === "chmi_weather_stations"
-    || providerLayerId?.includes("chmi_station") === true;
+    || providerLayerId?.includes("chmi_station") === true);
   return {
     weatherCloudCoverPercent: cloudCoverPercent,
+    weatherFillColor: weatherGrid ? color : undefined,
+    weatherFillOpacity: weatherGrid ? weatherGridFillOpacity(feature) : undefined,
     weatherFlightCategoryColor: aviationCategory ? aviationCategory.color : undefined,
-    weatherLabel: aviationCategory ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label) : formatWeatherContextMapLabel(feature, temperatureC, windSpeedMps, precipitationMm, humidityPercent, pressureHpa),
+    weatherGrid: weatherGrid ? true : undefined,
+    weatherGridKind: weatherGrid ? feature.properties.layer : undefined,
+    weatherLabel,
+    weatherLineColor: weatherGrid ? color : undefined,
+    weatherMetricLabel: weatherGrid ? weatherLabel.replace("\n", " ") : undefined,
     weatherObservation,
     weatherPrecipitationMm: precipitationMm,
     weatherStationIcao: stationIcao,
     weatherTemperatureC: temperatureC,
     weatherWindDirectionDeg: windDirectionDeg,
     weatherWindSpeedMps: windSpeedMps,
-    situationStatusColor: weatherContextColor(feature, status.color),
+    mapPointSuppressed: weatherGrid ? true : undefined,
+    situationStatusColor: color,
     situationStatusLabel: weatherContextStatusLabel(feature, status.label),
     situationStatusTone: status.tone
   };
@@ -4500,6 +4584,36 @@ function isWeatherContextFeature(feature: SituationFeature): boolean {
     || feature.properties.layer === "weather_precipitation_grid"
     || feature.properties.layer === "weather_humidity_grid"
     || feature.properties.layer === "weather_pressure_grid";
+}
+
+function isWeatherGridFeature(feature: SituationFeature): boolean {
+  if (feature.geometry.type === "Point") {
+    return false;
+  }
+  return feature.properties.layer === "weather_temperature_grid"
+    || feature.properties.layer === "weather_wind_field"
+    || feature.properties.layer === "weather_precipitation_grid"
+    || feature.properties.layer === "weather_humidity_grid"
+    || feature.properties.layer === "weather_pressure_grid";
+}
+
+function weatherGridFillOpacity(feature: SituationFeature): number {
+  switch (feature.properties.layer) {
+    case "weather_precipitation_grid":
+      return 0.34;
+    case "weather_temperature_grid":
+      return 0.3;
+    case "air_quality_grid":
+      return 0.28;
+    case "weather_humidity_grid":
+      return 0.24;
+    case "weather_pressure_grid":
+      return 0.2;
+    case "weather_wind_field":
+      return 0.18;
+    default:
+      return 0.24;
+  }
 }
 
 function formatBoundaryLabel(feature: SituationFeature): string {

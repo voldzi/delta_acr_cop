@@ -11492,7 +11492,9 @@ function catalogLayerSortKey(layer: MapCatalogLayer): number {
 }
 
 function isImplementedCatalogLayer(layer: MapCatalogLayer): boolean {
-  return (layer.query.mode === "bbox"
+  const supportedProviderQuery = layer.query.mode === "bbox"
+    || (layer.query.mode === "grid" && layer.query.providerId === "sim.situation-data");
+  return (supportedProviderQuery
     && (layer.query.providerId === "cop.community"
       || layer.query.providerId === "csm.mission-arena"
       || layer.query.providerId === "sim.flight-data"
@@ -11525,7 +11527,7 @@ function catalogLayerIdsForProviderSelection(catalog: MapCatalogResponse, provid
   const selected = new Set(selectedLayerIds);
   return catalog.layers
     .filter((layer) => selected.has(layer.layerId) && isImplementedCatalogLayer(layer))
-    .filter((layer) => layer.query.mode === "bbox" && layer.query.providerId === providerId)
+    .filter((layer) => (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === providerId)
     .map((layer) => layer.layerId);
 }
 
@@ -11628,7 +11630,10 @@ function catalogLayerMatchesLegacySelection(
     return false;
   }
   if (layer.query.providerId === "sim.situation-data") {
-    const layerMatch = providerLayerIds.some((layerId) => isSituationLayerId(layerId) && selection.situationLayerIds.includes(layerId));
+    const layerMatch = providerLayerIds.some((layerId) => {
+      const situationLayerId = situationLayerIdFromProviderLayerId(layerId);
+      return Boolean(situationLayerId && selection.situationLayerIds.includes(situationLayerId));
+    });
     const sourceMatch = selection.situationSourceIds.length === 0
       || providerSourceIds.length === 0
       || providerSourceIds.some((sourceId) => selection.situationSourceIds.includes(sourceId));
@@ -11674,8 +11679,9 @@ function legacySelectionFromCatalogLayerIds(
     }
     if (layer.query.providerId === "sim.situation-data") {
       for (const providerLayerId of layer.query.providerLayerIds ?? []) {
-        if (isSituationLayerId(providerLayerId)) {
-          situationLayerIds.add(providerLayerId);
+        const situationLayerId = situationLayerIdFromProviderLayerId(providerLayerId);
+        if (situationLayerId) {
+          situationLayerIds.add(situationLayerId);
         }
       }
       for (const sourceId of layer.query.providerSourceIds ?? []) {
@@ -11725,11 +11731,12 @@ function mapCatalogToSituationLayers(catalog: MapCatalogResponse): SituationLaye
       continue;
     }
     for (const providerLayerId of catalogLayer.query.providerLayerIds ?? []) {
-      if (!isSituationLayerId(providerLayerId) || providerLayerId === "mobile" || providerLayerId === "mobile_coverage") {
+      const situationLayerId = situationLayerIdFromProviderLayerId(providerLayerId);
+      if (!situationLayerId || situationLayerId === "mobile" || situationLayerId === "mobile_coverage") {
         continue;
       }
-      const current = layers.get(providerLayerId);
-      layers.set(providerLayerId, mergeSituationLayer(current, providerLayerId, catalogLayer));
+      const current = layers.get(situationLayerId);
+      layers.set(situationLayerId, mergeSituationLayer(current, situationLayerId, catalogLayer));
     }
   }
   return layers.size > 0 ? Array.from(layers.values()) : defaultSituationLayers();
@@ -11800,7 +11807,9 @@ function mapCatalogToSituationSources(catalog: MapCatalogResponse): SituationSou
     .map((source) => ({
       enabled: source.enabled,
       label: source.label,
-      layers: providerLayerIdsForCatalogSource(catalog, source).filter(isSituationLayerId),
+      layers: Array.from(new Set(providerLayerIdsForCatalogSource(catalog, source)
+        .map(situationLayerIdFromProviderLayerId)
+        .filter((value): value is SituationLayerId => Boolean(value)))),
       sourceId: source.sourceId,
       updateCadenceSeconds: source.updateCadenceSeconds
     }))
@@ -11851,8 +11860,14 @@ function mapCatalogLayerIdsForProviderSelection(
   const selectedLayers = new Set(providerLayerIds);
   const selectedSources = new Set(selectedSourceIds);
   return catalog.layers
-    .filter((layer) => layer.selectable && layer.query.mode === "bbox" && layer.query.providerId === providerId)
-    .filter((layer) => (layer.query.providerLayerIds ?? []).some((layerId) => selectedLayers.has(layerId)))
+    .filter((layer) => layer.selectable && (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === providerId)
+    .filter((layer) => (layer.query.providerLayerIds ?? []).some((layerId) => {
+      if (selectedLayers.has(layerId)) {
+        return true;
+      }
+      const situationLayerId = providerId === "sim.situation-data" ? situationLayerIdFromProviderLayerId(layerId) : undefined;
+      return Boolean(situationLayerId && selectedLayers.has(situationLayerId));
+    }))
     .filter((layer) => selectedSources.size === 0 || (layer.query.providerSourceIds ?? []).some((sourceId) => selectedSources.has(sourceId)))
     .map((layer) => layer.layerId);
 }
@@ -11981,6 +11996,40 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "flood"
     || value === "air_quality"
     || value === "air_quality_grid";
+}
+
+function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | undefined {
+  if (isSituationLayerId(value)) {
+    return value;
+  }
+  switch (value) {
+    case "air_quality.grid":
+    case "air_quality_grid":
+    case "public.safety.air_quality_grid":
+      return "air_quality_grid";
+    case "weather.humidity":
+    case "weather.humidity_grid":
+    case "public.weather.humidity_grid":
+      return "weather_humidity_grid";
+    case "weather.precipitation":
+    case "weather.precipitation_grid":
+    case "public.weather.precipitation_grid":
+      return "weather_precipitation_grid";
+    case "weather.pressure":
+    case "weather.pressure_grid":
+    case "public.weather.pressure_grid":
+      return "weather_pressure_grid";
+    case "weather.temperature":
+    case "weather.temperature_grid":
+    case "public.weather.temperature_grid":
+      return "weather_temperature_grid";
+    case "weather.wind":
+    case "weather.wind_field":
+    case "public.weather.wind_field":
+      return "weather_wind_field";
+    default:
+      return undefined;
+  }
 }
 
 function normalizeCoverageTechnology(value: string | undefined): CoverageTechnology {
