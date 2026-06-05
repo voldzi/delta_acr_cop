@@ -273,13 +273,14 @@ Recommended fields:
 - `vector_field`: dense vector field derived from sampled provider data, typically rendered as arrows/isolines/streamlines.
 - `grid_field`: raster-like numeric grid or interpolated field, typically rendered as heat/contour/wind overlay.
 - `mvt_tiles`: vector tiles for dense layers.
+- `raster_overlay`: one georeferenced image overlay. Provider features may carry a GeoJSON polygon only as image extent; clients must render `providerProperties.raster.url` at `providerProperties.raster.boundsWgs84` and must not fill the extent polygon as data.
 - `raster_tiles`: raster tile overlay.
 - `track_stream`: moving objects maintained by COP stream/state.
 - `user_objects`: user-owned COP data.
 - `static_reference`: slow-changing reference data.
 - `aggregate`: composed layer that fans out into several provider queries.
 
-For hundreds of layers, dense public/reference layers should move to `mvt_tiles`, `grid_field`, `vector_field` or server-side aggregation. Bbox GeoJSON is acceptable for low-volume overlays and detail inspection. Clients that do not yet support a kind must hide it from normal layer selection while preserving it in diagnostics/catalog inspection.
+For hundreds of layers, dense public/reference layers should move to `mvt_tiles`, `raster_overlay`, `grid_field`, `vector_field` or server-side aggregation. Bbox GeoJSON is acceptable for low-volume overlays and detail inspection. Clients that do not yet support a kind must hide it from normal layer selection while preserving it in diagnostics/catalog inspection.
 
 `query.mode` values:
 
@@ -444,9 +445,13 @@ Provider-native fields may be preserved under:
 | `public.safety.air_quality` | Kvalita ovzduší | `sim.situation-data` layer `air_quality`, source `chmi_air_quality` |
 | `public.weather.temperature_grid` | Teplota | `sim.situation-data` layer `weather_temperature_grid`, source `chmi_weather_stations` |
 | `public.weather.wind_field` | Vítr | `sim.situation-data` layer `weather_wind_field`, source `chmi_weather_stations` |
-| `public.weather.precipitation_grid` | Srážky | `sim.situation-data` layer `weather_precipitation_grid`, source `chmi_weather_stations` |
+| `public.weather.precipitation_grid` | Srážky | `sim.situation-data` layer `weather_precipitation_grid`, source `chmi_weather_stations`; hodnota je `mm/10min` |
 | `public.weather.humidity_grid` | Vlhkost | `sim.situation-data` layer `weather_humidity_grid`, source `chmi_weather_stations` |
 | `public.weather.pressure_grid` | Tlak | `sim.situation-data` layer `weather_pressure_grid`, source `chmi_weather_stations` |
+| `public.weather.radar_reflectivity` | Radarová odrazivost | `sim.situation-data` layer `weather_radar_reflectivity`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
+| `public.weather.radar_precipitation` | Radarové srážky | `sim.situation-data` layer `weather_radar_precipitation`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
+| `public.weather.radar_nowcast` | Radarový nowcast | `sim.situation-data` layer `weather_radar_nowcast`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
+| `public.safety.thunderstorm_risk` | Bouřkové riziko | `sim.situation-data` layer `weather_thunderstorm_risk`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
 | `public.safety.air_quality_grid` | Kvalita ovzduší - plocha | `sim.situation-data` layer `air_quality_grid`, source `chmi_air_quality` |
 | `public.mobile.network` | Mobilní síť | `sim.situation-data` layer `mobile_network`, source `mobile_network_model` |
 | `public.traffic.transit` | Doprava | `sim.situation-data` layer `traffic`, source `pid_gtfs_rt` |
@@ -465,6 +470,10 @@ Provider-native fields may be preserved under:
 | `user.sketch.drawings` | Zákresy | COP sketch drawing store |
 | `diagnostic.mobile.coverage` | Technický odhad pokrytí | `sim.situation-data` layer `mobile_coverage`, source `mobile_coverage_model` |
 | `diagnostic.mobile.ctu_measurements` | ČTÚ měření | `sim.situation-data` layer `mobile`, source `ctu_nettest` |
+
+For `grid_field` weather/environment layers, clients must color the geometry from the numeric value, not from generic severity. Prefer `properties.rendering.valueMetric`; otherwise use `properties.metrics.value`, then the layer-specific fallback metric. Use the catalog `legend` for labels, stops and units. For `public.weather.precipitation_grid`, the unit is `mm/10min`.
+
+For `raster_overlay` weather layers, provider GeoJSON geometry is only the raster extent. Clients must not render that geometry as a filled polygon. They render the image from `providerProperties.raster.url` with `providerProperties.raster.boundsWgs84`, opacity and attribution. If a client cannot render image overlays, it hides the layer from the normal picker.
 
 ## Safety Read Model Fields
 

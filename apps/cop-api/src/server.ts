@@ -4177,7 +4177,11 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "weather_humidity_grid"
     || value === "weather_precipitation_grid"
     || value === "weather_pressure_grid"
+    || value === "weather_radar_nowcast"
+    || value === "weather_radar_precipitation"
+    || value === "weather_radar_reflectivity"
     || value === "weather_temperature_grid"
+    || value === "weather_thunderstorm_risk"
     || value === "weather_wind_field";
 }
 
@@ -4202,10 +4206,26 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "weather.pressure_grid":
     case "public.weather.pressure_grid":
       return "weather_pressure_grid";
+    case "weather.radar_nowcast":
+    case "weather_radar_nowcast":
+    case "public.weather.radar_nowcast":
+      return "weather_radar_nowcast";
+    case "weather.radar_precipitation":
+    case "weather_radar_precipitation":
+    case "public.weather.radar_precipitation":
+      return "weather_radar_precipitation";
+    case "weather.radar_reflectivity":
+    case "weather_radar_reflectivity":
+    case "public.weather.radar_reflectivity":
+      return "weather_radar_reflectivity";
     case "weather.temperature":
     case "weather.temperature_grid":
     case "public.weather.temperature_grid":
       return "weather_temperature_grid";
+    case "weather.thunderstorm_risk":
+    case "weather_thunderstorm_risk":
+    case "public.safety.thunderstorm_risk":
+      return "weather_thunderstorm_risk";
     case "weather.wind":
     case "weather.wind_field":
     case "public.weather.wind_field":
@@ -5944,6 +5964,10 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
       "weather_precipitation_grid",
       "weather_humidity_grid",
       "weather_pressure_grid",
+      "weather_radar_reflectivity",
+      "weather_radar_precipitation",
+      "weather_radar_nowcast",
+      "weather_thunderstorm_risk",
       "ground",
       "mobile",
       "mobile_network",

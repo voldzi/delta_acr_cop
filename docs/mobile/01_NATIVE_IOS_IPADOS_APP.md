@@ -158,9 +158,12 @@ Klient musí podporovat tyto druhy katalogových vrstev:
 - `user_objects`: uživatelská hlášení, zóny a komunitní prvky.
 - `aggregate`: složená vrstva, kterou COP rozpadá na více provider dotazů.
 - `mvt_tiles` a `raster_tiles`: dlaždicové vrstvy.
+- `raster_overlay`: jedna georeferencovaná obrazová vrstva; polygon ve feature je pouze rozsah rastru a nesmí se kreslit jako vyplněný polygon.
 - `grid_field` a `vector_field`: hustá pole pro počasí, kvalitu ovzduší, vítr nebo podobné analytické vrstvy.
 
 Pokud aktuální verze iOS klienta neumí některý `kind` vykreslit, nesmí kvůli tomu selhat katalog. Takovou vrstvu skryje z běžného výběru, zobrazí ji maximálně v diagnostice a dál respektuje `selectable`, `audience`, `role`, `minZoom`, `maxZoom`, `filters`, `legal` a `provenance`.
+
+U `raster_overlay` klient používá `providerProperties.raster.url`, `boundsWgs84`, `opacity` a případnou atribuci. Pokud image overlay nepodporuje, vrstvu nezobrazí; nikdy nesmí vybarvit extent polygon jako meteorologickou plochu.
 
 Provider identifikátory, sourceId a technické vstupy se v běžném UI nezobrazují jako mapové vrstvy. Patří do detailu/provenance a diagnostiky.
 

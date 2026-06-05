@@ -25,7 +25,11 @@ export type SituationLayerId =
   | "weather_humidity_grid"
   | "weather_precipitation_grid"
   | "weather_pressure_grid"
+  | "weather_radar_nowcast"
+  | "weather_radar_precipitation"
+  | "weather_radar_reflectivity"
   | "weather_temperature_grid"
+  | "weather_thunderstorm_risk"
   | "weather_wind_field";
 
 type SituationCacheStatus = "coalesced" | "hit" | "miss" | "stale";
@@ -153,6 +157,7 @@ export interface SituationFeatureProperties {
   providerLayerId?: string;
   providerProperties?: Record<string, unknown>;
   readModel?: boolean;
+  rendering?: Record<string, unknown>;
   resolutionM?: number;
   severity?: "advisory" | "critical" | "info" | "warning" | string;
   sourceId: string;
@@ -216,7 +221,11 @@ const defaultConfig: SituationDataSourceConfig = {
     weather_humidity_grid: 10 * 60 * 1000,
     weather_precipitation_grid: 10 * 60 * 1000,
     weather_pressure_grid: 10 * 60 * 1000,
+    weather_radar_nowcast: 5 * 60 * 1000,
+    weather_radar_precipitation: 5 * 60 * 1000,
+    weather_radar_reflectivity: 5 * 60 * 1000,
     weather_temperature_grid: 10 * 60 * 1000,
+    weather_thunderstorm_risk: 5 * 60 * 1000,
     weather_wind_field: 10 * 60 * 1000
   },
   maxLimit: 250,
@@ -224,6 +233,7 @@ const defaultConfig: SituationDataSourceConfig = {
     ardos_partner: 10 * 1000,
     aviation_weather: 120 * 1000,
     chmi_air_quality: 15 * 60 * 1000,
+    chmi_weather_radar: 5 * 60 * 1000,
     chmi_weather_stations: 10 * 60 * 1000,
     mobile_coverage_model: 10 * 60 * 1000,
     mobile_network_model: 10 * 60 * 1000,
@@ -240,6 +250,10 @@ const allowedLayerIds: SituationLayerId[] = [
   "weather_precipitation_grid",
   "weather_humidity_grid",
   "weather_pressure_grid",
+  "weather_radar_reflectivity",
+  "weather_radar_precipitation",
+  "weather_radar_nowcast",
+  "weather_thunderstorm_risk",
   "air_quality",
   "air_quality_grid",
   "ground",
@@ -289,7 +303,11 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       weather_humidity_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_HUMIDITY_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_precipitation_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_PRECIPITATION_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_pressure_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_PRESSURE_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_radar_nowcast: readInteger(env.COP_SITUATION_DATA_WEATHER_RADAR_NOWCAST_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_radar_precipitation: readInteger(env.COP_SITUATION_DATA_WEATHER_RADAR_PRECIPITATION_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_radar_reflectivity: readInteger(env.COP_SITUATION_DATA_WEATHER_RADAR_REFLECTIVITY_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_temperature_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_TEMPERATURE_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_thunderstorm_risk: readInteger(env.COP_SITUATION_DATA_WEATHER_THUNDERSTORM_RISK_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_wind_field: readInteger(env.COP_SITUATION_DATA_WEATHER_WIND_FIELD_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
     },
     maxLimit: readInteger(env.COP_SITUATION_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 1000),
@@ -297,6 +315,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       ardos_partner: readInteger(env.COP_SITUATION_DATA_ARDOS_CACHE_TTL_MS, 10 * 1000, 1000, 5 * 60 * 1000),
       aviation_weather: readInteger(env.COP_SITUATION_DATA_AVIATION_WEATHER_CACHE_TTL_MS, 120 * 1000, 1000, 24 * 60 * 60 * 1000),
       chmi_air_quality: readInteger(env.COP_SITUATION_DATA_CHMI_AIR_QUALITY_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      chmi_weather_radar: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_RADAR_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       chmi_weather_stations: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_coverage_model: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_network_model: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
@@ -834,6 +853,7 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     providerLayerId: optionalString(value.providerLayerId),
     providerProperties: isRecord(value.providerProperties) ? value.providerProperties : undefined,
     readModel: optionalBoolean(value.readModel),
+    rendering: isRecord(value.rendering) ? value.rendering : undefined,
     resolutionM: optionalNumber(value.resolutionM),
     severity: optionalString(value.severity),
     sourceId,

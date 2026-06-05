@@ -962,6 +962,143 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("does not render weather raster extents as filled polygons", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [11.267, 48.047],
+              [20.77, 48.047],
+              [20.77, 52.167],
+              [11.267, 52.167],
+              [11.267, 48.047]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            category: "weather",
+            confidence: 0.9,
+            featureId: "weather:radar:reflectivity",
+            label: "Radarová odrazivost",
+            layer: "weather_radar_reflectivity",
+            metrics: {
+              value: 12
+            },
+            observedAt: "2026-06-05T17:10:00Z",
+            providerProperties: {
+              raster: {
+                boundsWgs84: [11.267, 48.047, 20.77, 52.167],
+                opacity: 0.58,
+                renderMode: "image_overlay",
+                url: "https://example.test/radar.png"
+              },
+              renderAs: "raster_overlay"
+            },
+            rendering: {
+              doNotRenderGeometryFill: true,
+              geometryRole: "raster_extent",
+              mode: "raster_overlay"
+            },
+            sourceId: "chmi_weather_radar",
+            stale: false,
+            tags: {
+              geometryRole: "raster_extent",
+              renderAs: "raster_overlay"
+            }
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-06-05T17:11:00Z",
+      query: {
+        bbox: { east: 20, north: 52, south: 48, west: 11 },
+        layers: ["weather_radar_reflectivity"],
+        limit: 1
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features).toHaveLength(0);
+  });
+
+  it("uses metrics.value for precipitation grid fields", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [14.1, 50.0],
+              [14.2, 50.0],
+              [14.2, 50.1],
+              [14.1, 50.1],
+              [14.1, 50.0]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            category: "weather",
+            confidence: 0.82,
+            featureId: "weather:grid:precipitation",
+            label: "Srážkové pole",
+            layer: "weather_precipitation_grid",
+            metrics: {
+              value: 1.2
+            },
+            observedAt: "2026-06-05T17:10:00Z",
+            rendering: {
+              valueMetric: "value"
+            },
+            sourceId: "chmi_weather_stations",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-06-05T17:11:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["weather_precipitation_grid"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      mapPointSuppressed: true,
+      weatherFillColor: "#0ea5e9",
+      weatherGrid: true,
+      weatherMetricLabel: "1 mm",
+      weatherPrecipitationMm: 1.2
+    });
+  });
+
   it("renders air-quality grid polygons as thematic map fields", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",

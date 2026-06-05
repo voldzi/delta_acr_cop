@@ -156,7 +156,11 @@ export type SituationLayerId =
   | "weather_humidity_grid"
   | "weather_precipitation_grid"
   | "weather_pressure_grid"
+  | "weather_radar_nowcast"
+  | "weather_radar_precipitation"
+  | "weather_radar_reflectivity"
   | "weather_temperature_grid"
+  | "weather_thunderstorm_risk"
   | "weather_wind_field";
 export type SafetyLayerId = "boundary_admin" | "fire" | "flood" | "warnings" | "weather_alerts";
 export type TakLayerId = "ground" | "mobile" | "traffic";
@@ -392,6 +396,7 @@ export interface SituationFeatureProperties {
   readModel?: boolean;
   receivedAt?: string;
   recommendedAction?: string;
+  rendering?: Record<string, unknown>;
   reportId?: string;
   resolutionM?: number;
   riverName?: string;
@@ -963,7 +968,7 @@ export interface TakFeatureOptions {
 }
 
 export type MapCatalogAudience = "admin" | "authenticated" | "diagnostic" | "partner" | "public";
-export type MapCatalogLayerKind = "aggregate" | "grid_field" | "mvt_tiles" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features" | "vector_field";
+export type MapCatalogLayerKind = "aggregate" | "grid_field" | "mvt_tiles" | "raster_overlay" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features" | "vector_field";
 export type MapCatalogLayerRole = "diagnostic" | "overlay" | "partner" | "primary" | "reference" | "user";
 export type MapCatalogSourceRole = "aggregate" | "diagnostic" | "final" | "input" | "mock" | "projection" | "reference";
 

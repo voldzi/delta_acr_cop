@@ -29,6 +29,7 @@ import maplibregl, {
   type ExpressionSpecification,
   type GeoJSONSource,
   type MapLayerMouseEvent,
+  type SourceSpecification,
   type StyleSpecification
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -101,6 +102,8 @@ const alertAreaFillLayerId = "cop-alert-area-fill";
 const alertAreaLineLayerId = "cop-alert-area-line";
 const situationFillLayerId = "cop-situation-fill";
 const situationLineLayerId = "cop-situation-line";
+const situationRasterOverlayLayerPrefix = "cop-situation-raster-overlay-layer";
+const situationRasterOverlaySourcePrefix = "cop-situation-raster-overlay-source";
 const situationPointSelectedLayerId = "cop-situation-point-selected";
 const situationWeatherGridFillLayerId = "cop-situation-weather-grid-fill";
 const situationWeatherGridLineLayerId = "cop-situation-weather-grid-line";
@@ -169,6 +172,17 @@ const mapFeatureClickPriorityLayerIds = [
   situationLineLayerId,
   situationFillLayerId
 ] as const;
+
+type RasterOverlayCoordinates = [[number, number], [number, number], [number, number], [number, number]];
+
+interface SituationRasterOverlaySpec {
+  coordinates: RasterOverlayCoordinates;
+  id: string;
+  layerId: string;
+  opacity: number;
+  sourceId: string;
+  url: string;
+}
 
 const mapPointRaiseLayerIds = [
   sketchFillLayerId,
@@ -694,6 +708,7 @@ export function CopMap({
     width: number;
   } | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
+  const situationRasterOverlayIdsRef = React.useRef<Set<string>>(new Set());
   const objectsRef = React.useRef(objects);
   const situationFeaturesRef = React.useRef<SituationFeature[]>([]);
   const onBoundsChangeRef = React.useRef(onBoundsChange);
@@ -2866,6 +2881,18 @@ export function CopMap({
 
   React.useEffect(() => {
     const map = mapRef.current;
+    if (!mapReady || !map) {
+      return;
+    }
+    syncSituationRasterOverlays(
+      map,
+      situationRasterOverlaySpecs(situationFeatures?.features ?? []),
+      situationRasterOverlayIdsRef.current
+    );
+  }, [mapReady, situationFeatures]);
+
+  React.useEffect(() => {
+    const map = mapRef.current;
     if (!mapReady || !map || typeof window === "undefined") {
       return;
     }
@@ -4350,6 +4377,9 @@ export function situationFeaturesToFeatureCollection(
 ): SituationContextFeatureCollection {
   const features: SituationContextFeatureCollection["features"] = [];
   for (const feature of collection?.features ?? []) {
+    if (isSituationRasterOverlayFeature(feature)) {
+      continue;
+    }
     const renderedFeature = renderSituationFeature(feature, selectedFeatureId, mapSymbolMode);
     features.push(renderedFeature);
     const pulseFeature = buildWeatherPulseFeature(feature, renderedFeature.properties);
@@ -4361,6 +4391,154 @@ export function situationFeaturesToFeatureCollection(
     type: "FeatureCollection",
     features
   };
+}
+
+function situationRasterOverlaySpecs(features: SituationFeature[]): SituationRasterOverlaySpec[] {
+  return features.flatMap((feature) => {
+    const spec = situationRasterOverlaySpec(feature);
+    return spec ? [spec] : [];
+  });
+}
+
+function situationRasterOverlaySpec(feature: SituationFeature): SituationRasterOverlaySpec | null {
+  if (!isSituationRasterOverlayFeature(feature)) {
+    return null;
+  }
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const raster = isRecord(providerProperties.raster) ? providerProperties.raster : {};
+  const url = stringProperty(raster.url);
+  const bounds = rasterBoundsWgs84(raster) ?? geometryBoundsWgs84(feature.geometry);
+  if (!url || !bounds) {
+    return null;
+  }
+  const overlayId = sanitizeMapLibreId(feature.properties.featureId || String(feature.id ?? "raster"));
+  const rasterOpacity = recordNumber(raster, "opacity");
+  const rendering = isRecord(feature.properties.rendering) ? feature.properties.rendering : {};
+  const providerRendering = isRecord(providerProperties.rendering) ? providerProperties.rendering : {};
+  const opacity = clampUnit(rasterOpacity ?? recordNumber(rendering, "opacity") ?? recordNumber(providerRendering, "opacity") ?? 0.58);
+  const [west, south, east, north] = bounds;
+  return {
+    coordinates: [
+      [west, north],
+      [east, north],
+      [east, south],
+      [west, south]
+    ],
+    id: overlayId,
+    layerId: `${situationRasterOverlayLayerPrefix}-${overlayId}`,
+    opacity,
+    sourceId: `${situationRasterOverlaySourcePrefix}-${overlayId}`,
+    url
+  };
+}
+
+function syncSituationRasterOverlays(
+  map: maplibregl.Map,
+  overlays: SituationRasterOverlaySpec[],
+  activeOverlayIds: Set<string>
+): void {
+  const nextOverlayIds = new Set(overlays.map((overlay) => overlay.id));
+  for (const overlayId of Array.from(activeOverlayIds)) {
+    if (!nextOverlayIds.has(overlayId)) {
+      removeSituationRasterOverlay(map, overlayId);
+      activeOverlayIds.delete(overlayId);
+    }
+  }
+  for (const overlay of overlays) {
+    const source = map.getSource(overlay.sourceId);
+    if (source) {
+      const imageSource = source as { updateImage?: (options: { coordinates: RasterOverlayCoordinates; url: string }) => void };
+      imageSource.updateImage?.({ coordinates: overlay.coordinates, url: overlay.url });
+    } else {
+      map.addSource(overlay.sourceId, {
+        coordinates: overlay.coordinates,
+        type: "image",
+        url: overlay.url
+      } as SourceSpecification);
+    }
+    if (!map.getLayer(overlay.layerId)) {
+      const beforeLayerId = map.getLayer(situationFillLayerId) ? situationFillLayerId : undefined;
+      map.addLayer({
+        id: overlay.layerId,
+        paint: {
+          "raster-fade-duration": 0,
+          "raster-opacity": overlay.opacity
+        },
+        source: overlay.sourceId,
+        type: "raster"
+      }, beforeLayerId);
+    } else {
+      map.setPaintProperty(overlay.layerId, "raster-opacity", overlay.opacity);
+    }
+    activeOverlayIds.add(overlay.id);
+  }
+}
+
+function removeSituationRasterOverlay(map: maplibregl.Map, overlayId: string): void {
+  const layerId = `${situationRasterOverlayLayerPrefix}-${overlayId}`;
+  const sourceId = `${situationRasterOverlaySourcePrefix}-${overlayId}`;
+  if (map.getLayer(layerId)) {
+    map.removeLayer(layerId);
+  }
+  if (map.getSource(sourceId)) {
+    map.removeSource(sourceId);
+  }
+}
+
+function isSituationRasterOverlayFeature(feature: SituationFeature): boolean {
+  const rendering = isRecord(feature.properties.rendering) ? feature.properties.rendering : {};
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerRendering = isRecord(providerProperties.rendering) ? providerProperties.rendering : {};
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return stringProperty(rendering.mode) === "raster_overlay"
+    || stringProperty(providerRendering.mode) === "raster_overlay"
+    || stringProperty(providerProperties.renderAs) === "raster_overlay"
+    || stringProperty(tags.renderAs) === "raster_overlay"
+    || stringProperty(tags.geometryRole) === "raster_extent"
+    || feature.properties.layer === "weather_radar_reflectivity"
+    || feature.properties.layer === "weather_radar_precipitation"
+    || feature.properties.layer === "weather_radar_nowcast"
+    || feature.properties.layer === "weather_thunderstorm_risk";
+}
+
+function rasterBoundsWgs84(raster: Record<string, unknown>): [number, number, number, number] | null {
+  const raw = raster.boundsWgs84;
+  if (!Array.isArray(raw) || raw.length < 4) {
+    return null;
+  }
+  const west = Number(raw[0]);
+  const south = Number(raw[1]);
+  const east = Number(raw[2]);
+  const north = Number(raw[3]);
+  return Number.isFinite(west) && Number.isFinite(south) && Number.isFinite(east) && Number.isFinite(north)
+    ? [west, south, east, north]
+    : null;
+}
+
+function geometryBoundsWgs84(geometry: SituationFeature["geometry"]): [number, number, number, number] | null {
+  const points: Array<[number, number]> = [];
+  collectGeometryCoordinates(geometry.coordinates, points);
+  if (points.length === 0) {
+    return null;
+  }
+  const bounds = points.reduce(
+    (acc, [lon, lat]) => ({
+      east: Math.max(acc.east, lon),
+      north: Math.max(acc.north, lat),
+      south: Math.min(acc.south, lat),
+      west: Math.min(acc.west, lon)
+    }),
+    { east: -Infinity, north: -Infinity, south: Infinity, west: Infinity }
+  );
+  return [bounds.west, bounds.south, bounds.east, bounds.north];
+}
+
+function sanitizeMapLibreId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "raster";
+}
+
+function clampUnit(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }
 
 function renderSituationFeature(
@@ -4564,7 +4742,7 @@ function buildSituationRenderProperties(
   if (feature.properties.layer === "air_quality" || feature.properties.layer === "air_quality_grid") {
     const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
     const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-    const airQualityIndex = recordNumber(metrics, "airQualityIndex");
+    const airQualityIndex = weatherMetricValue(feature, metrics, "airQualityIndex");
     const airQualityLevel = recordString(tags, "airQualityLevel") ?? stringProperty(feature.properties.status) ?? stringProperty(feature.properties.quality);
     const dominantPollutant = recordString(tags, "dominantPollutant");
     const color = airQualityColor(airQualityIndex, airQualityLevel, status.color);
@@ -4599,13 +4777,13 @@ function buildSituationRenderProperties(
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
   const aviationCategory = aviationFlightCategory(feature);
-  const temperatureC = recordNumber(metrics, "temperatureC");
-  const windSpeedMps = recordNumber(metrics, "windSpeedMps");
+  const temperatureC = weatherMetricValue(feature, metrics, "temperatureC");
+  const windSpeedMps = weatherMetricValue(feature, metrics, "windSpeedMps");
   const windDirectionDeg = recordNumber(metrics, "windDirectionDeg");
-  const precipitationMm = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+  const precipitationMm = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
   const cloudCoverPercent = recordNumber(metrics, "cloudCoverPercent");
-  const humidityPercent = firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent");
-  const pressureHpa = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
+  const humidityPercent = weatherMetricValue(feature, metrics, "relativeHumidityPercent", "humidityPercent");
+  const pressureHpa = weatherMetricValue(feature, metrics, "pressureHpa", "pressureHpaSeaLevel");
   const stationIcao = stringProperty(tags.icaoId);
   const providerLayerId = stringProperty(feature.properties.providerLayerId);
   const weatherGrid = isWeatherGridFeature(feature);
@@ -5268,15 +5446,15 @@ function weatherContextColor(feature: SituationFeature, fallback: string): strin
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   switch (feature.properties.layer) {
     case "weather_temperature_grid":
-      return temperatureColor(recordNumber(metrics, "temperatureC"), fallback);
+      return temperatureColor(weatherMetricValue(feature, metrics, "temperatureC"), fallback);
     case "weather_wind_field":
-      return windSpeedColor(recordNumber(metrics, "windSpeedMps"), fallback);
+      return windSpeedColor(weatherMetricValue(feature, metrics, "windSpeedMps"), fallback);
     case "weather_precipitation_grid":
-      return precipitationColor(firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm"), fallback);
+      return precipitationColor(weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm"), fallback);
     case "weather_humidity_grid":
-      return humidityColor(firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent"), fallback);
+      return humidityColor(weatherMetricValue(feature, metrics, "relativeHumidityPercent", "humidityPercent"), fallback);
     case "weather_pressure_grid":
-      return pressureColor(firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel"), fallback);
+      return pressureColor(weatherMetricValue(feature, metrics, "pressureHpa", "pressureHpaSeaLevel"), fallback);
     default:
       return fallback;
   }
@@ -5299,13 +5477,27 @@ function weatherContextStatusLabel(feature: SituationFeature, fallback: string):
   }
 }
 
+function weatherMetricValue(feature: SituationFeature, metrics: Record<string, unknown>, ...fallbackKeys: string[]): number | undefined {
+  const rendering = isRecord(feature.properties.rendering) ? feature.properties.rendering : {};
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerRendering = isRecord(providerProperties.rendering) ? providerProperties.rendering : {};
+  const metricKey = stringProperty(rendering.valueMetric) ?? stringProperty(providerRendering.valueMetric);
+  if (metricKey) {
+    const metricValue = recordNumber(metrics, metricKey);
+    if (metricValue !== undefined) {
+      return metricValue;
+    }
+  }
+  return recordNumber(metrics, "value") ?? firstRecordNumber(metrics, ...fallbackKeys);
+}
+
 function formatWeatherFeatureHeadline(feature: SituationFeature): string {
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
-  const temperatureC = recordNumber(metrics, "temperatureC");
-  const windSpeedMps = recordNumber(metrics, "windSpeedMps");
-  const precipitationMm = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
-  const humidityPercent = firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent");
-  const pressureHpa = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
+  const temperatureC = weatherMetricValue(feature, metrics, "temperatureC");
+  const windSpeedMps = weatherMetricValue(feature, metrics, "windSpeedMps");
+  const precipitationMm = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
+  const humidityPercent = weatherMetricValue(feature, metrics, "relativeHumidityPercent", "humidityPercent");
+  const pressureHpa = weatherMetricValue(feature, metrics, "pressureHpa", "pressureHpaSeaLevel");
   switch (feature.properties.layer) {
     case "weather_temperature_grid":
       return temperatureC !== undefined ? `Teplota ${Math.round(temperatureC)} °C` : "Teplotní pole";
@@ -5337,11 +5529,11 @@ function formatWeatherFeatureSubtitle(feature: SituationFeature): string {
 function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<string, unknown>): string | undefined {
   switch (feature.properties.layer) {
     case "weather_temperature_grid": {
-      const value = recordNumber(metrics, "temperatureC");
+      const value = weatherMetricValue(feature, metrics, "temperatureC");
       return value !== undefined ? `${Math.round(value)} °C` : undefined;
     }
     case "weather_wind_field": {
-      const speed = recordNumber(metrics, "windSpeedMps");
+      const speed = weatherMetricValue(feature, metrics, "windSpeedMps");
       const direction = recordNumber(metrics, "windDirectionDeg");
       return [
         speed !== undefined ? `${Math.round(speed)} m/s` : undefined,
@@ -5349,15 +5541,15 @@ function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<str
       ].filter(Boolean).join(", ") || undefined;
     }
     case "weather_precipitation_grid": {
-      const value = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+      const value = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
       return value !== undefined ? `${formatPrecipitationAmount(value)} za 10 min` : undefined;
     }
     case "weather_humidity_grid": {
-      const value = firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent");
+      const value = weatherMetricValue(feature, metrics, "relativeHumidityPercent", "humidityPercent");
       return value !== undefined ? `${Math.round(value)} %` : undefined;
     }
     case "weather_pressure_grid": {
-      const value = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
+      const value = weatherMetricValue(feature, metrics, "pressureHpa", "pressureHpaSeaLevel");
       return value !== undefined ? `${Math.round(value)} hPa` : undefined;
     }
     default:

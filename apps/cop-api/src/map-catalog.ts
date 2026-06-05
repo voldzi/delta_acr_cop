@@ -5,7 +5,7 @@ import type { MissionArenaLayerDescriptor, MissionArenaSourceDescriptor } from "
 import type { ProviderCatalogLayer, ProviderCatalogSource, ProviderMapCatalog } from "./provider-map-catalog.js";
 
 export type MapCatalogAudience = "admin" | "authenticated" | "diagnostic" | "partner" | "public";
-export type MapCatalogLayerKind = "aggregate" | "grid_field" | "mvt_tiles" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features" | "vector_field";
+export type MapCatalogLayerKind = "aggregate" | "grid_field" | "mvt_tiles" | "raster_overlay" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features" | "vector_field";
 export type MapCatalogLayerRole = "diagnostic" | "overlay" | "partner" | "primary" | "reference" | "user";
 export type MapCatalogSourceRole = "aggregate" | "diagnostic" | "final" | "input" | "mock" | "projection" | "reference";
 
@@ -460,7 +460,7 @@ function normalizeAudience(value: string | undefined): MapCatalogAudience {
 }
 
 function normalizeLayerKind(value: string | undefined): MapCatalogLayerKind {
-  return value === "aggregate" || value === "grid_field" || value === "mvt_tiles" || value === "raster_tiles" || value === "static_reference" || value === "track_stream" || value === "user_objects" || value === "vector_features" || value === "vector_field"
+  return value === "aggregate" || value === "grid_field" || value === "mvt_tiles" || value === "raster_overlay" || value === "raster_tiles" || value === "static_reference" || value === "track_stream" || value === "user_objects" || value === "vector_features" || value === "vector_field"
     ? value
     : "vector_features";
 }

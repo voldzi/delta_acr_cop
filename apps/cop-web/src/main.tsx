@@ -10356,7 +10356,11 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     weather_humidity_grid: "Vlhkost",
     weather_precipitation_grid: "Srážky",
     weather_pressure_grid: "Tlak",
+    weather_radar_nowcast: "Radarový nowcast",
+    weather_radar_precipitation: "Radarové srážky",
+    weather_radar_reflectivity: "Radarová odrazivost",
     weather_temperature_grid: "Teplota",
+    weather_thunderstorm_risk: "Bouřkové riziko",
     weather_wind_field: "Vítr"
   };
   return labels[layerId];
@@ -10713,32 +10717,44 @@ function isWeatherContextFeature(feature: SituationFeature): boolean {
     || feature.properties.layer === "weather_wind_field"
     || feature.properties.layer === "weather_precipitation_grid"
     || feature.properties.layer === "weather_humidity_grid"
-    || feature.properties.layer === "weather_pressure_grid";
+    || feature.properties.layer === "weather_pressure_grid"
+    || feature.properties.layer === "weather_radar_reflectivity"
+    || feature.properties.layer === "weather_radar_precipitation"
+    || feature.properties.layer === "weather_radar_nowcast"
+    || feature.properties.layer === "weather_thunderstorm_risk";
 }
 
 function weatherFeatureHeadline(feature: SituationFeature): string {
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   switch (feature.properties.layer) {
     case "weather_temperature_grid": {
-      const value = recordNumber(metrics, "temperatureC");
+      const value = weatherMetricValue(feature, metrics, "temperatureC");
       return value !== undefined ? `Teplota ${Math.round(value)} °C` : "Teplotní pole";
     }
     case "weather_wind_field": {
-      const value = recordNumber(metrics, "windSpeedMps");
+      const value = weatherMetricValue(feature, metrics, "windSpeedMps");
       return value !== undefined ? `Vítr ${Math.round(value)} m/s` : "Pole větru";
     }
     case "weather_precipitation_grid": {
-      const value = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+      const value = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
       return value !== undefined ? `Srážky: ${precipitationIntensityLabel(value)}` : "Srážky";
     }
     case "weather_humidity_grid": {
-      const value = firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent");
+      const value = weatherMetricValue(feature, metrics, "relativeHumidityPercent", "humidityPercent");
       return value !== undefined ? `Vlhkost ${Math.round(value)} %` : "Vlhkost vzduchu";
     }
     case "weather_pressure_grid": {
-      const value = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
+      const value = weatherMetricValue(feature, metrics, "pressureHpa", "pressureHpaSeaLevel");
       return value !== undefined ? `Tlak ${Math.round(value)} hPa` : "Tlak vzduchu";
     }
+    case "weather_radar_reflectivity":
+      return "Radarová odrazivost";
+    case "weather_radar_precipitation":
+      return "Radarové srážky";
+    case "weather_radar_nowcast":
+      return "Radarový nowcast";
+    case "weather_thunderstorm_risk":
+      return "Bouřkové riziko";
     default:
       return feature.properties.headline ?? feature.properties.label ?? "Počasí";
   }
@@ -10766,6 +10782,14 @@ function weatherFeatureTypeLabel(feature: SituationFeature): string {
       return "Vlhkostní vrstva";
     case "weather_pressure_grid":
       return "Tlaková vrstva";
+    case "weather_radar_reflectivity":
+      return "Radarová vrstva";
+    case "weather_radar_precipitation":
+      return "Radarová srážková vrstva";
+    case "weather_radar_nowcast":
+      return "Nowcasting srážek";
+    case "weather_thunderstorm_risk":
+      return "Bouřkové riziko";
     default:
       return "Měřené počasí";
   }
@@ -10774,11 +10798,11 @@ function weatherFeatureTypeLabel(feature: SituationFeature): string {
 function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<string, unknown>): string | undefined {
   switch (feature.properties.layer) {
     case "weather_temperature_grid": {
-      const value = recordNumber(metrics, "temperatureC");
+      const value = weatherMetricValue(feature, metrics, "temperatureC");
       return value !== undefined ? `${Math.round(value)} °C` : undefined;
     }
     case "weather_wind_field": {
-      const speed = recordNumber(metrics, "windSpeedMps");
+      const speed = weatherMetricValue(feature, metrics, "windSpeedMps");
       const direction = recordNumber(metrics, "windDirectionDeg");
       return [
         speed !== undefined ? `${Math.round(speed)} m/s` : undefined,
@@ -10786,15 +10810,15 @@ function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<str
       ].filter(Boolean).join(", ") || undefined;
     }
     case "weather_precipitation_grid": {
-      const value = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+      const value = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
       return value !== undefined ? `${formatPrecipitationAmount(value)} za 10 min` : undefined;
     }
     case "weather_humidity_grid": {
-      const value = firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent");
+      const value = weatherMetricValue(feature, metrics, "relativeHumidityPercent", "humidityPercent");
       return value !== undefined ? `${Math.round(value)} %` : undefined;
     }
     case "weather_pressure_grid": {
-      const value = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
+      const value = weatherMetricValue(feature, metrics, "pressureHpa", "pressureHpaSeaLevel");
       return value !== undefined ? `${Math.round(value)} hPa` : undefined;
     }
     default:
@@ -10805,11 +10829,11 @@ function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<str
 function weatherFeatureConditionLabel(feature: SituationFeature, metrics: Record<string, unknown>): string {
   switch (feature.properties.layer) {
     case "weather_precipitation_grid": {
-      const value = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+      const value = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
       return value !== undefined ? precipitationIntensityLabel(value) : "srážky";
     }
     case "weather_wind_field": {
-      const value = recordNumber(metrics, "windSpeedMps");
+      const value = weatherMetricValue(feature, metrics, "windSpeedMps");
       if (value === undefined) {
         return "vítr";
       }
@@ -10830,9 +10854,31 @@ function weatherFeatureConditionLabel(feature: SituationFeature, metrics: Record
       return "vlhkost";
     case "weather_pressure_grid":
       return "tlak";
+    case "weather_radar_reflectivity":
+      return "radarová odrazivost";
+    case "weather_radar_precipitation":
+      return "radarové srážky";
+    case "weather_radar_nowcast":
+      return "krátkodobá predikce srážek";
+    case "weather_thunderstorm_risk":
+      return "riziko bouřek";
     default:
       return "počasí";
   }
+}
+
+function weatherMetricValue(feature: SituationFeature, metrics: Record<string, unknown>, ...fallbackKeys: string[]): number | undefined {
+  const rendering = isRecord(feature.properties.rendering) ? feature.properties.rendering : {};
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerRendering = isRecord(providerProperties.rendering) ? providerProperties.rendering : {};
+  const metricKey = stringProperty(rendering.valueMetric) ?? stringProperty(providerRendering.valueMetric);
+  if (metricKey) {
+    const metricValue = recordNumber(metrics, metricKey);
+    if (metricValue !== undefined) {
+      return metricValue;
+    }
+  }
+  return recordNumber(metrics, "value") ?? firstRecordNumber(metrics, ...fallbackKeys);
 }
 
 function weatherFeatureTone(feature: SituationFeature): "neutral" | "ok" | "warn" | "critical" {
@@ -10841,7 +10887,7 @@ function weatherFeatureTone(feature: SituationFeature): "neutral" | "ok" | "warn
     return "warn";
   }
   if (feature.properties.layer === "weather_precipitation_grid") {
-    const value = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+    const value = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
     if (value === undefined || value <= 0.02) {
       return "neutral";
     }
@@ -10851,7 +10897,7 @@ function weatherFeatureTone(feature: SituationFeature): "neutral" | "ok" | "warn
     return value >= 2 ? "warn" : "ok";
   }
   if (feature.properties.layer === "weather_wind_field") {
-    const value = recordNumber(metrics, "windSpeedMps");
+    const value = weatherMetricValue(feature, metrics, "windSpeedMps");
     if (value === undefined) {
       return "neutral";
     }
@@ -12233,6 +12279,10 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "weather_precipitation_grid"
     || value === "weather_humidity_grid"
     || value === "weather_pressure_grid"
+    || value === "weather_radar_reflectivity"
+    || value === "weather_radar_precipitation"
+    || value === "weather_radar_nowcast"
+    || value === "weather_thunderstorm_risk"
     || value === "boundary_admin"
     || value === "boundary_country"
     || value === "boundary_region"
@@ -12278,10 +12328,26 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "weather.pressure_grid":
     case "public.weather.pressure_grid":
       return "weather_pressure_grid";
+    case "weather.radar_nowcast":
+    case "weather_radar_nowcast":
+    case "public.weather.radar_nowcast":
+      return "weather_radar_nowcast";
+    case "weather.radar_precipitation":
+    case "weather_radar_precipitation":
+    case "public.weather.radar_precipitation":
+      return "weather_radar_precipitation";
+    case "weather.radar_reflectivity":
+    case "weather_radar_reflectivity":
+    case "public.weather.radar_reflectivity":
+      return "weather_radar_reflectivity";
     case "weather.temperature":
     case "weather.temperature_grid":
     case "public.weather.temperature_grid":
       return "weather_temperature_grid";
+    case "weather.thunderstorm_risk":
+    case "weather_thunderstorm_risk":
+    case "public.safety.thunderstorm_risk":
+      return "weather_thunderstorm_risk";
     case "weather.wind":
     case "weather.wind_field":
     case "public.weather.wind_field":

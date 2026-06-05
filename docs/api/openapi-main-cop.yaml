@@ -2226,7 +2226,7 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, ground, mobile, mobile_network, mobile_coverage, traffic, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
+            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, weather_radar_reflectivity, weather_radar_precipitation, weather_radar_nowcast, weather_thunderstorm_risk, ground, mobile, mobile_network, mobile_coverage, traffic, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
         situationSourceIds:
           type: array
           maxItems: 32
@@ -3255,7 +3255,7 @@ components:
           type: string
         kind:
           type: string
-          enum: [aggregate, grid_field, mvt_tiles, raster_tiles, static_reference, track_stream, user_objects, vector_features, vector_field]
+          enum: [aggregate, grid_field, mvt_tiles, raster_overlay, raster_tiles, static_reference, track_stream, user_objects, vector_features, vector_field]
         label:
           type: string
         layerId:
@@ -4298,7 +4298,7 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
+            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, weather_radar_reflectivity, weather_radar_precipitation, weather_radar_nowcast, weather_thunderstorm_risk, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
         limit:
           type: integer
           minimum: 1
@@ -4359,7 +4359,7 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
+            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, weather_radar_reflectivity, weather_radar_precipitation, weather_radar_nowcast, weather_thunderstorm_risk, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
         license:
           type: object
           additionalProperties: true
@@ -4453,7 +4453,7 @@ components:
           description: Fire-specific status such as risk, thermal_anomaly, active, confirmed, contained, or unknown.
         layer:
           type: string
-          enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
+          enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, weather_radar_reflectivity, weather_radar_precipitation, weather_radar_nowcast, weather_thunderstorm_risk, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
         layerId:
           type: string
         label:
