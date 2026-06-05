@@ -315,6 +315,12 @@ const predictionModeOptions: Array<[PredictionMode, string]> = [
 ];
 const defaultAoiCenter = { lat: 50.0755, lon: 14.4378 };
 const messagingDockWidthStorageKey = "cop.messaging.dockWidth.v1";
+
+interface StableFeatureRequest {
+  bounds: MapBounds;
+  key: string;
+}
+
 const defaultWorkspaceLayout: Required<WorkspaceLayoutPreferences> = {
   contextRailVisible: true,
   leftPanelMode: "open",
@@ -564,6 +570,7 @@ export function App() {
   const [aiResult, setAiResult] = React.useState("AI asistent je připraven zkontrolovat kvalitu zobrazených dat.");
   const loadInFlightRef = React.useRef(false);
   const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
+  const situationFeatureRequestRef = React.useRef<StableFeatureRequest | null>(null);
   const profileHydratedRef = React.useRef(false);
   const profileLoadKeyRef = React.useRef<string | null>(null);
   const profileSaveTimerRef = React.useRef<number | undefined>(undefined);
@@ -1210,6 +1217,7 @@ export function App() {
       return;
     }
     if (visibleSituationLayerIds.length === 0) {
+      situationFeatureRequestRef.current = null;
       setSituationFeatures(null);
       setSituationStatus("disabled");
       setSituationWarnings([]);
@@ -1219,28 +1227,37 @@ export function App() {
       return;
     }
     if (shouldSkipSituationFeatureLoad(mapBounds, mapView?.zoom)) {
+      situationFeatureRequestRef.current = null;
       setSituationFeatures(null);
       setSituationStatus("zoom");
       setSituationWarnings(["Situační kontext se načítá až po přiblížení mapy na rozumný výřez."]);
       return;
     }
+    if (!mapCatalog) {
+      return;
+    }
+    const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.situation-data", effectiveVisibleCatalogLayerIds);
+    if (catalogLayerIds.length === 0) {
+      situationFeatureRequestRef.current = null;
+      setSituationFeatures(null);
+      setSituationStatus("disabled");
+      setSituationWarnings([]);
+      return;
+    }
+    const filters = buildCatalogFeatureFilters(catalogLayerIds, hasMobileCatalogSelection(catalogLayerIds) ? coverageTechnology : undefined);
+    const requestKey = stableSituationRequestKey(catalogLayerIds, filters);
+    const previousRequest = situationFeatureRequestRef.current;
+    if (previousRequest?.key === requestKey && mapBoundsContainedBy(previousRequest.bounds, mapBounds)) {
+      return;
+    }
+    const queryBounds = buildStableSituationQueryBounds(mapBounds);
 
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      if (!mapCatalog) {
-        return;
-      }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.situation-data", effectiveVisibleCatalogLayerIds);
-      if (catalogLayerIds.length === 0) {
-        setSituationFeatures(null);
-        setSituationStatus("disabled");
-        setSituationWarnings([]);
-        return;
-      }
       setSituationStatus((current) => current === "online" ? "online" : "loading");
       fetchMapFeatures(apiBase, authToken, {
-        bbox: mapBounds,
-        filters: buildCatalogFeatureFilters(catalogLayerIds, hasMobileCatalogSelection(catalogLayerIds) ? coverageTechnology : undefined),
+        bbox: queryBounds,
+        filters,
         layerIds: catalogLayerIds,
         limit: 250,
       })
@@ -1250,6 +1267,7 @@ export function App() {
           }
           const collection = response.situation ?? null;
           setSituationFeatures(collection);
+          situationFeatureRequestRef.current = collection ? { bounds: queryBounds, key: requestKey } : null;
           setSituationWarnings([
             ...response.warnings,
             ...(collection?.warnings ?? []),
@@ -1259,6 +1277,7 @@ export function App() {
         })
         .catch((error: unknown) => {
           if (!cancelled) {
+            situationFeatureRequestRef.current = null;
             setSituationFeatures(null);
             setSituationStatus("degraded");
             setSituationWarnings([error instanceof Error ? error.message : "Situační kontext není dostupný."]);
@@ -12092,6 +12111,49 @@ function writeMessagingDockWidth(width: number): void {
   } catch {
     // Local storage can be disabled in private/degraded browser contexts.
   }
+}
+
+export function buildStableSituationQueryBounds(bounds: MapBounds): MapBounds {
+  const width = Math.max(0.01, Math.abs(bounds.east - bounds.west));
+  const height = Math.max(0.01, Math.abs(bounds.north - bounds.south));
+  const centerLon = (bounds.east + bounds.west) / 2;
+  const centerLat = (bounds.north + bounds.south) / 2;
+  const queryWidth = Math.min(11, Math.max(width * 1.8, 1.2));
+  const queryHeight = Math.min(7, Math.max(height * 1.8, 0.9));
+  return snapBoundsToGrid({
+    east: centerLon + queryWidth / 2,
+    north: centerLat + queryHeight / 2,
+    south: centerLat - queryHeight / 2,
+    west: centerLon - queryWidth / 2
+  }, 0.25);
+}
+
+export function mapBoundsContainedBy(container: MapBounds, bounds: MapBounds): boolean {
+  const epsilon = 0.000001;
+  return bounds.west >= container.west - epsilon
+    && bounds.east <= container.east + epsilon
+    && bounds.south >= container.south - epsilon
+    && bounds.north <= container.north + epsilon;
+}
+
+function snapBoundsToGrid(bounds: MapBounds, gridDegrees: number): MapBounds {
+  return {
+    east: roundBoundsCoordinate(Math.ceil(bounds.east / gridDegrees) * gridDegrees),
+    north: roundBoundsCoordinate(Math.ceil(bounds.north / gridDegrees) * gridDegrees),
+    south: roundBoundsCoordinate(Math.floor(bounds.south / gridDegrees) * gridDegrees),
+    west: roundBoundsCoordinate(Math.floor(bounds.west / gridDegrees) * gridDegrees)
+  };
+}
+
+function roundBoundsCoordinate(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function stableSituationRequestKey(layerIds: string[], filters: Record<string, Record<string, unknown>>): string {
+  return JSON.stringify({
+    filters,
+    layerIds: [...layerIds].sort()
+  });
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {

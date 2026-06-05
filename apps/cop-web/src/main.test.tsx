@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App } from "./main";
+import { App, buildStableSituationQueryBounds, mapBoundsContainedBy } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
 
 vi.mock("./CopMap", async () => {
@@ -34,6 +34,20 @@ afterEach(() => {
 });
 
 describe("COP web dashboard", () => {
+  it("keeps situation provider bounds stable while zooming into weather grids", () => {
+    const initialBounds = { east: 16.2, north: 50.3, south: 49.4, west: 14.6 };
+    const queryBounds = buildStableSituationQueryBounds(initialBounds);
+
+    expect(queryBounds).toEqual({
+      east: 17,
+      north: 50.75,
+      south: 49,
+      west: 13.75
+    });
+    expect(mapBoundsContainedBy(queryBounds, { east: 15.85, north: 50.15, south: 49.55, west: 14.9 })).toBe(true);
+    expect(mapBoundsContainedBy(queryBounds, { east: 17.1, north: 50.15, south: 49.55, west: 14.9 })).toBe(false);
+  });
+
   it("renders SIM tracks returned from COP API", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
