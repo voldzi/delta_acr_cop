@@ -26,6 +26,7 @@ import {
   X
 } from "lucide-react";
 import maplibregl, {
+  type ExpressionSpecification,
   type GeoJSONSource,
   type MapLayerMouseEvent,
   type StyleSpecification
@@ -104,6 +105,7 @@ const situationPointSelectedLayerId = "cop-situation-point-selected";
 const situationWeatherGridFillLayerId = "cop-situation-weather-grid-fill";
 const situationWeatherGridLineLayerId = "cop-situation-weather-grid-line";
 const situationWeatherGridLabelLayerId = "cop-situation-weather-grid-label";
+const situationWeatherPulseLayerId = "cop-situation-weather-pulse";
 const situationWeatherHeatLayerId = "cop-situation-weather-heat";
 const situationWeatherPointLayerId = "cop-situation-weather-point";
 const situationWeatherWindLayerId = "cop-situation-weather-wind";
@@ -387,10 +389,16 @@ export interface SituationContextFeatureCollection {
       weatherFlightCategoryColor?: string;
       weatherGrid?: boolean;
       weatherGridKind?: string;
+      weatherHeadline?: string;
       weatherLabel?: string;
       weatherLineColor?: string;
       weatherMetricLabel?: string;
       weatherObservation?: boolean;
+      weatherPulse?: boolean;
+      weatherPulseColor?: string;
+      weatherPulseOpacity?: number;
+      weatherPulseRadius?: number;
+      weatherSubtitle?: string;
       weatherPrecipitationMm?: number;
       weatherStationIcao?: string;
       weatherTemperatureC?: number;
@@ -1534,6 +1542,24 @@ export function CopMap({
             "text-halo-color": "#061019",
             "text-halo-width": 1.6,
             "text-halo-blur": 0.35
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherPulseLayerId,
+          type: "circle",
+          source: situationSourceId,
+          minzoom: 6,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherPulse"], true]],
+          paint: {
+            "circle-color": ["coalesce", ["get", "weatherPulseColor"], ["get", "weatherFillColor"], "#38bdf8"],
+            "circle-opacity": weatherPulseOpacityExpression(false),
+            "circle-radius": weatherPulseRadiusExpression(false),
+            "circle-stroke-color": "#e0f7ff",
+            "circle-stroke-opacity": ["case", ["get", "stale"], 0.18, 0.54],
+            "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 6, 0.7, 11, 1.4, 14, 2.1],
+            "circle-radius-transition": { duration: 1300 },
+            "circle-opacity-transition": { duration: 1300 }
           }
         });
 
@@ -2837,6 +2863,30 @@ export function CopMap({
       (source as GeoJSONSource).setData(situationFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
     }
   }, [mapReady, situationFeatureCollection]);
+
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || typeof window === "undefined") {
+      return;
+    }
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+    let expanded = false;
+    const applyPulseFrame = () => {
+      if (!map.getLayer(situationWeatherPulseLayerId)) {
+        return;
+      }
+      expanded = !expanded;
+      map.setPaintProperty(situationWeatherPulseLayerId, "circle-radius", weatherPulseRadiusExpression(expanded));
+      map.setPaintProperty(situationWeatherPulseLayerId, "circle-opacity", weatherPulseOpacityExpression(expanded));
+    };
+    applyPulseFrame();
+    const timer = window.setInterval(applyPulseFrame, 1500);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [mapReady]);
 
   React.useEffect(() => {
     if (!mapReady || !userLocation || focusUserLocationRequest === 0) {
@@ -4298,18 +4348,107 @@ export function situationFeaturesToFeatureCollection(
   selectedFeatureId?: string,
   mapSymbolMode: PublicFlightSymbolMode = "civil"
 ): SituationContextFeatureCollection {
+  const features: SituationContextFeatureCollection["features"] = [];
+  for (const feature of collection?.features ?? []) {
+    const renderedFeature = renderSituationFeature(feature, selectedFeatureId, mapSymbolMode);
+    features.push(renderedFeature);
+    const pulseFeature = buildWeatherPulseFeature(feature, renderedFeature.properties);
+    if (pulseFeature) {
+      features.push(pulseFeature);
+    }
+  }
   return {
     type: "FeatureCollection",
-    features: (collection?.features ?? []).map((feature) => ({
-      geometry: feature.geometry,
-      properties: {
-        ...feature.properties,
-        ...buildSituationRenderProperties(feature, mapSymbolMode),
-        selected: feature.properties.featureId === selectedFeatureId
-      },
-      type: "Feature"
-    }))
+    features
   };
+}
+
+function renderSituationFeature(
+  feature: SituationFeature,
+  selectedFeatureId: string | undefined,
+  mapSymbolMode: PublicFlightSymbolMode
+): SituationContextFeatureCollection["features"][number] {
+  return {
+    geometry: feature.geometry,
+    properties: {
+      ...feature.properties,
+      ...buildSituationRenderProperties(feature, mapSymbolMode),
+      selected: feature.properties.featureId === selectedFeatureId
+    },
+    type: "Feature"
+  };
+}
+
+function buildWeatherPulseFeature(
+  feature: SituationFeature,
+  properties: SituationContextFeatureCollection["features"][number]["properties"]
+): SituationContextFeatureCollection["features"][number] | null {
+  if (feature.properties.layer !== "weather_precipitation_grid") {
+    return null;
+  }
+  const precipitationMm = properties.weatherPrecipitationMm;
+  if (precipitationMm === undefined || precipitationMm <= 0.02) {
+    return null;
+  }
+  const coordinates = geometryVisualCentroid(feature.geometry);
+  if (!coordinates) {
+    return null;
+  }
+  const intensity = Math.min(1, Math.max(0.18, Math.sqrt(precipitationMm) / 2.4));
+  return {
+    geometry: {
+      coordinates,
+      type: "Point"
+    },
+    properties: {
+      ...properties,
+      mapLabel: undefined,
+      mapPointSuppressed: true,
+      weatherGrid: false,
+      weatherMetricLabel: undefined,
+      weatherObservation: false,
+      weatherPulse: true,
+      weatherPulseColor: properties.weatherFillColor ?? "#38bdf8",
+      weatherPulseOpacity: 0.18 + intensity * 0.28,
+      weatherPulseRadius: 6 + intensity * 12
+    },
+    type: "Feature"
+  };
+}
+
+function geometryVisualCentroid(geometry: SituationFeature["geometry"]): [number, number] | null {
+  const points: Array<[number, number]> = [];
+  collectGeometryCoordinates(geometry.coordinates, points);
+  if (points.length === 0) {
+    return null;
+  }
+  const bounds = points.reduce(
+    (acc, point) => ({
+      east: Math.max(acc.east, point[0]),
+      north: Math.max(acc.north, point[1]),
+      south: Math.min(acc.south, point[1]),
+      west: Math.min(acc.west, point[0])
+    }),
+    { east: -Infinity, north: -Infinity, south: Infinity, west: Infinity }
+  );
+  return [(bounds.west + bounds.east) / 2, (bounds.south + bounds.north) / 2];
+}
+
+function collectGeometryCoordinates(value: unknown, points: Array<[number, number]>): void {
+  if (!Array.isArray(value)) {
+    return;
+  }
+  if (value.length >= 2 && typeof value[0] === "number" && typeof value[1] === "number") {
+    const lon = value[0];
+    const lat = value[1];
+    if (Number.isFinite(lon) && Number.isFinite(lat)) {
+      points.push([lon, lat]);
+    }
+    return;
+  }
+  for (const child of value) {
+    collectGeometryCoordinates(child, points);
+  }
 }
 
 function buildSituationRenderProperties(
@@ -4472,6 +4611,7 @@ function buildSituationRenderProperties(
   const weatherGrid = isWeatherGridFeature(feature);
   const color = weatherContextColor(feature, status.color);
   const weatherLabel = aviationCategory ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label) : formatWeatherContextMapLabel(feature, temperatureC, windSpeedMps, precipitationMm, humidityPercent, pressureHpa);
+  const weatherHeadline = aviationCategory ? undefined : formatWeatherFeatureHeadline(feature);
   const weatherObservation = !weatherGrid && (feature.properties.layer !== "weather"
     || feature.properties.sourceId === "chmi_weather_stations"
     || providerLayerId?.includes("chmi_station") === true);
@@ -4482,10 +4622,12 @@ function buildSituationRenderProperties(
     weatherFlightCategoryColor: aviationCategory ? aviationCategory.color : undefined,
     weatherGrid: weatherGrid ? true : undefined,
     weatherGridKind: weatherGrid ? feature.properties.layer : undefined,
+    weatherHeadline,
     weatherLabel,
     weatherLineColor: weatherGrid ? color : undefined,
     weatherMetricLabel: weatherGrid ? weatherLabel.replace("\n", " ") : undefined,
     weatherObservation,
+    weatherSubtitle: aviationCategory ? undefined : formatWeatherFeatureSubtitle(feature),
     weatherPrecipitationMm: precipitationMm,
     weatherStationIcao: stationIcao,
     weatherTemperatureC: temperatureC,
@@ -4584,6 +4726,10 @@ function isWeatherContextFeature(feature: SituationFeature): boolean {
     || feature.properties.layer === "weather_precipitation_grid"
     || feature.properties.layer === "weather_humidity_grid"
     || feature.properties.layer === "weather_pressure_grid";
+}
+
+function isAviationWeatherFeature(feature: SituationFeature): boolean {
+  return feature.properties.sourceId === "aviation_weather" || feature.properties.category === "aviation_weather_station";
 }
 
 function isWeatherGridFeature(feature: SituationFeature): boolean {
@@ -5108,7 +5254,7 @@ function formatWeatherContextMapLabel(
     case "weather_wind_field":
       return windSpeedMps !== undefined ? `${Math.round(windSpeedMps)} m/s` : "Vítr";
     case "weather_precipitation_grid":
-      return precipitationMm !== undefined ? `${precipitationMm.toFixed(1)} mm` : "Srážky";
+      return precipitationMm !== undefined ? formatPrecipitationAmount(precipitationMm) : "Srážky";
     case "weather_humidity_grid":
       return humidityPercent !== undefined ? `${Math.round(humidityPercent)} %` : "Vlhkost";
     case "weather_pressure_grid":
@@ -5139,17 +5285,132 @@ function weatherContextColor(feature: SituationFeature, fallback: string): strin
 function weatherContextStatusLabel(feature: SituationFeature, fallback: string): string {
   switch (feature.properties.layer) {
     case "weather_temperature_grid":
-      return "TEPLOTA";
+      return "Teplota";
     case "weather_wind_field":
-      return "VÍTR";
+      return "Vítr";
     case "weather_precipitation_grid":
-      return "SRÁŽKY";
+      return "Srážky";
     case "weather_humidity_grid":
-      return "VLHKOST";
+      return "Vlhkost";
     case "weather_pressure_grid":
-      return "TLAK";
+      return "Tlak";
     default:
       return fallback;
+  }
+}
+
+function formatWeatherFeatureHeadline(feature: SituationFeature): string {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const temperatureC = recordNumber(metrics, "temperatureC");
+  const windSpeedMps = recordNumber(metrics, "windSpeedMps");
+  const precipitationMm = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+  const humidityPercent = firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent");
+  const pressureHpa = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
+  switch (feature.properties.layer) {
+    case "weather_temperature_grid":
+      return temperatureC !== undefined ? `Teplota ${Math.round(temperatureC)} °C` : "Teplotní pole";
+    case "weather_wind_field":
+      return windSpeedMps !== undefined ? `Vítr ${Math.round(windSpeedMps)} m/s` : "Pole větru";
+    case "weather_precipitation_grid":
+      return precipitationMm !== undefined ? `Srážky: ${precipitationIntensityLabel(precipitationMm)}` : "Srážky";
+    case "weather_humidity_grid":
+      return humidityPercent !== undefined ? `Vlhkost ${Math.round(humidityPercent)} %` : "Vlhkost vzduchu";
+    case "weather_pressure_grid":
+      return pressureHpa !== undefined ? `Tlak ${Math.round(pressureHpa)} hPa` : "Tlak vzduchu";
+    default:
+      return feature.properties.headline ?? feature.properties.label ?? "Počasí";
+  }
+}
+
+function formatWeatherFeatureSubtitle(feature: SituationFeature): string {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const value = weatherFeatureValueLabel(feature, metrics);
+  const source = feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId);
+  return [
+    value,
+    source,
+    weatherDataQualityLabel(stringProperty(feature.properties.dataQuality)),
+    feature.properties.stale ? "starší data" : undefined
+  ].filter(Boolean).join(" · ");
+}
+
+function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<string, unknown>): string | undefined {
+  switch (feature.properties.layer) {
+    case "weather_temperature_grid": {
+      const value = recordNumber(metrics, "temperatureC");
+      return value !== undefined ? `${Math.round(value)} °C` : undefined;
+    }
+    case "weather_wind_field": {
+      const speed = recordNumber(metrics, "windSpeedMps");
+      const direction = recordNumber(metrics, "windDirectionDeg");
+      return [
+        speed !== undefined ? `${Math.round(speed)} m/s` : undefined,
+        direction !== undefined ? `${Math.round(direction)}°` : undefined
+      ].filter(Boolean).join(", ") || undefined;
+    }
+    case "weather_precipitation_grid": {
+      const value = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+      return value !== undefined ? `${formatPrecipitationAmount(value)} za 10 min` : undefined;
+    }
+    case "weather_humidity_grid": {
+      const value = firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent");
+      return value !== undefined ? `${Math.round(value)} %` : undefined;
+    }
+    case "weather_pressure_grid": {
+      const value = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
+      return value !== undefined ? `${Math.round(value)} hPa` : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function formatPrecipitationAmount(value: number): string {
+  return value < 0.05 ? "0 mm" : `${value.toFixed(value < 1 ? 1 : 0)} mm`;
+}
+
+function precipitationIntensityLabel(value: number): string {
+  if (value <= 0.02) {
+    return "beze srážek";
+  }
+  if (value < 0.2) {
+    return "mrholení";
+  }
+  if (value < 0.8) {
+    return "slabé";
+  }
+  if (value < 2) {
+    return "mírné";
+  }
+  if (value < 5) {
+    return "výrazné";
+  }
+  return "silné";
+}
+
+function weatherDataQualityLabel(value: string | undefined): string | undefined {
+  switch (value) {
+    case "observed":
+      return "měřeno";
+    case "mixed":
+      return "měřeno + model";
+    case "modelled":
+      return "model";
+    default:
+      return undefined;
+  }
+}
+
+function sourceDisplayName(sourceId: string | undefined): string | undefined {
+  switch (sourceId) {
+    case "chmi_weather_stations":
+      return "ČHMÚ";
+    case "open_meteo":
+      return "Open-Meteo";
+    case "aviation_weather":
+      return "METAR/TAF";
+    default:
+      return sourceId;
   }
 }
 
@@ -5353,6 +5614,32 @@ function pressureColor(value: number | undefined, fallback: string): string {
   return "#facc15";
 }
 
+function weatherPulseRadiusExpression(expanded: boolean): ExpressionSpecification {
+  const factor = expanded ? 1.7 : 0.82;
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    6,
+    ["*", ["coalesce", ["get", "weatherPulseRadius"], 7], factor * 0.72],
+    10,
+    ["*", ["coalesce", ["get", "weatherPulseRadius"], 9], factor],
+    14,
+    ["*", ["coalesce", ["get", "weatherPulseRadius"], 11], factor * 1.18]
+  ] as ExpressionSpecification;
+}
+
+function weatherPulseOpacityExpression(expanded: boolean): ExpressionSpecification {
+  return [
+    "case",
+    ["get", "stale"],
+    expanded ? 0.08 : 0.14,
+    expanded
+      ? ["*", ["coalesce", ["get", "weatherPulseOpacity"], 0.24], 0.42]
+      : ["coalesce", ["get", "weatherPulseOpacity"], 0.24]
+  ] as ExpressionSpecification;
+}
+
 function normalizeAirQualityLevel(level: string | undefined): "fair" | "good" | "moderate" | "poor" | "very_poor" | "unknown" {
   const normalized = level?.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (!normalized) {
@@ -5535,6 +5822,9 @@ function formatSituationFeatureTitle(feature: SituationFeature): string {
   if (isMissionArenaFeature(feature)) {
     return missionArenaDetailTitle(feature);
   }
+  if (isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature)) {
+    return formatWeatherFeatureHeadline(feature);
+  }
   if (feature.properties.layer === "traffic") {
     const presentation = resolveTransportPresentation(feature);
     if (presentation) {
@@ -5558,6 +5848,9 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
       role === "task_state" ? task?.priority : undefined,
       typeof feature.properties.aggregate === "number" ? `${Math.round(feature.properties.aggregate)} bodů` : undefined
     ].filter(Boolean).join(" · ");
+  }
+  if (isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature)) {
+    return formatWeatherFeatureSubtitle(feature);
   }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     return [

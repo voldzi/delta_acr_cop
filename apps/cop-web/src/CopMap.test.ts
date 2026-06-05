@@ -951,12 +951,14 @@ describe("COP map data helpers", () => {
 
     expect(collection.features[0]?.properties).toMatchObject({
       mapPointSuppressed: true,
-      situationStatusLabel: "TEPLOTA",
+      situationStatusLabel: "Teplota",
       weatherFillColor: "#fb923c",
       weatherFillOpacity: 0.3,
       weatherGrid: true,
+      weatherHeadline: "Teplota 31 °C",
       weatherMetricLabel: "31°C",
-      weatherObservation: false
+      weatherObservation: false,
+      weatherSubtitle: "31 °C · ČHMÚ"
     });
   });
 

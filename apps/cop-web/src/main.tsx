@@ -5265,12 +5265,13 @@ function SelectedObjectDataCard({ object }: { object: CopObject }) {
 
 function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
   const status = situationFeatureStatusModel(feature);
+  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature);
   const rows: Array<[string, React.ReactNode]> = [
-    ["Název", feature.properties.headline ?? feature.properties.label],
+    ["Název", weatherContext ? weatherFeatureHeadline(feature) : feature.properties.headline ?? feature.properties.label],
     ["Vrstva", situationDisplayLayerLabel(feature)],
     ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
-    ["Kategorie", feature.properties.category],
-    ["Zdroj", feature.properties.sourceId],
+    [weatherContext ? "Typ" : "Kategorie", weatherContext ? weatherFeatureTypeLabel(feature) : feature.properties.category],
+    ["Zdroj", feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)],
     ["Aktualizace", formatShortDateTime(feature.properties.observedAt)]
   ];
   if (isTakGatewayFeature(feature)) {
@@ -5289,6 +5290,7 @@ function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
       {feature.properties.layer === "traffic" ? <TrafficSummary feature={feature} /> : null}
       {isSafetyLayerId(feature.properties.layer) ? <SafetyRiskSummary feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
+      {weatherContext ? <WeatherContextSummary feature={feature} /> : null}
     </ObjectDetailSection>
   );
 }
@@ -5384,6 +5386,18 @@ function AviationWeatherSummary({ feature }: { feature: SituationFeature }) {
       <DataMetric label="Vítr" value={formatWind(recordNumber(metrics, "windDirectionDeg"), recordNumber(metrics, "windSpeedMps"), recordNumber(metrics, "windSpeedKt"))} tone="neutral" />
       <DataMetric label="Teplota" value={formatOptionalNumber(recordNumber(metrics, "temperatureC"), " °C")} tone="neutral" />
       <DataMetric label="QNH" value={formatOptionalNumber(recordNumber(metrics, "altimeterHpa"), " hPa")} tone="neutral" />
+    </div>
+  );
+}
+
+function WeatherContextSummary({ feature }: { feature: SituationFeature }) {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  return (
+    <div className="mobile-status-summary weather-context-summary">
+      <DataMetric label="Hodnota" value={weatherFeatureValueLabel(feature, metrics) ?? "n/a"} tone={weatherFeatureTone(feature)} />
+      <DataMetric label="Charakter" value={weatherFeatureConditionLabel(feature, metrics)} tone={weatherFeatureTone(feature)} />
+      <DataMetric label="Podklad" value={weatherDataQualityLabel(stringProperty(feature.properties.dataQuality)) ?? "měření/model"} tone="neutral" />
+      <DataMetric label="Zdroj" value={feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)} tone="neutral" />
     </div>
   );
 }
@@ -8579,20 +8593,28 @@ function SituationFeatureDetail({
   const status = situationFeatureStatusModel(feature);
   const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
   const trafficPresentation = properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
+  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature);
   const title = isMissionArenaFeature(feature)
     ? missionArenaDetailTitle(feature)
-    : trafficPresentation
+    : weatherContext
+      ? weatherFeatureHeadline(feature)
+      : trafficPresentation
       ? [trafficPresentation.label, trafficPresentation.routeShortName].filter(Boolean).join(" ")
       : properties.headline ?? properties.label;
+  const subtitle = weatherContext
+    ? weatherFeatureSubtitle(feature)
+    : isCommunityReport
+      ? [properties.groupName, properties.reportId].filter(Boolean).join(" · ")
+      : properties.featureId;
   return (
     <div className="object-detail situation-feature-detail">
       <div className="object-header">
         <div>
           <strong>{title}</strong>
-          <span>{isCommunityReport ? [properties.groupName, properties.reportId].filter(Boolean).join(" · ") : properties.featureId}</span>
+          <span>{subtitle}</span>
         </div>
         <div className="object-header-badges">
-          <em>{properties.layer}</em>
+          <em>{situationDisplayLayerLabel(feature)}</em>
           <StatusBadge label={status.label} tone={status.tone} />
         </div>
       </div>
@@ -8608,14 +8630,14 @@ function SituationFeatureDetail({
         <DetailGrid
           rows={[
             [isCommunityReport ? "Typ" : "Vrstva", isCommunityReport ? communityReportCategoryDisplay(properties.category) : situationLayerLabel(properties.layer)],
-            [isCommunityReport ? "Skupina" : "Kategorie", isCommunityReport ? properties.groupName ?? "bez skupiny" : properties.category],
-            ["Zdroj", properties.sourceName ?? properties.sourceId],
+            [isCommunityReport ? "Skupina" : weatherContext ? "Typ" : "Kategorie", isCommunityReport ? properties.groupName ?? "bez skupiny" : weatherContext ? weatherFeatureTypeLabel(feature) : properties.category],
+            ["Zdroj", properties.sourceName ?? sourceDisplayName(properties.sourceId)],
             [isCommunityReport ? "Vloženo" : "Pozorováno", formatShortDateTime(properties.observedAt)],
             [isCommunityReport ? "Platnost" : "Platí do", formatShortDateTime(properties.validUntil)],
             ["Stáří", formatAge(properties.observedAt)],
             [isCommunityReport ? "Riziko" : "Naléhavost", communitySeverityDisplay(properties.hazardSeverity ?? properties.severity ?? properties.urgency)],
             ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
-            ...(isCommunityReport ? [] : [
+            ...(isCommunityReport || weatherContext ? [] : [
               ["Účinné od", formatShortDateTime(properties.effectiveAt)],
               ["Konec platnosti", formatShortDateTime(properties.expiresAt)],
               ["Jistota", formatOptionalPercent(properties.confidence)],
@@ -8671,6 +8693,18 @@ function SituationFeatureDetail({
       {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {properties.layer === "traffic" ? <TrafficDetailSection feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
+      {weatherContext ? (
+        <ObjectDetailSection title="Počasí">
+          <WeatherContextSummary feature={feature} />
+          <DetailGrid
+            rows={[
+              ["Charakter", weatherFeatureConditionLabel(feature, isRecord(properties.metrics) ? properties.metrics : {})],
+              ["Kvalita dat", weatherDataQualityLabel(stringProperty(properties.dataQuality)) ?? "n/a"],
+              ["Jistota", formatOptionalPercent(properties.confidence)]
+            ]}
+          />
+        </ObjectDetailSection>
+      ) : null}
       {properties.description || properties.recommendedAction ? (
         <ObjectDetailSection title="Popis">
           <DetailGrid
@@ -10673,6 +10707,198 @@ function isAviationWeatherFeature(feature: SituationFeature): boolean {
   return feature.properties.sourceId === "aviation_weather" || feature.properties.category === "aviation_weather_station";
 }
 
+function isWeatherContextFeature(feature: SituationFeature): boolean {
+  return feature.properties.layer === "weather"
+    || feature.properties.layer === "weather_temperature_grid"
+    || feature.properties.layer === "weather_wind_field"
+    || feature.properties.layer === "weather_precipitation_grid"
+    || feature.properties.layer === "weather_humidity_grid"
+    || feature.properties.layer === "weather_pressure_grid";
+}
+
+function weatherFeatureHeadline(feature: SituationFeature): string {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  switch (feature.properties.layer) {
+    case "weather_temperature_grid": {
+      const value = recordNumber(metrics, "temperatureC");
+      return value !== undefined ? `Teplota ${Math.round(value)} °C` : "Teplotní pole";
+    }
+    case "weather_wind_field": {
+      const value = recordNumber(metrics, "windSpeedMps");
+      return value !== undefined ? `Vítr ${Math.round(value)} m/s` : "Pole větru";
+    }
+    case "weather_precipitation_grid": {
+      const value = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+      return value !== undefined ? `Srážky: ${precipitationIntensityLabel(value)}` : "Srážky";
+    }
+    case "weather_humidity_grid": {
+      const value = firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent");
+      return value !== undefined ? `Vlhkost ${Math.round(value)} %` : "Vlhkost vzduchu";
+    }
+    case "weather_pressure_grid": {
+      const value = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
+      return value !== undefined ? `Tlak ${Math.round(value)} hPa` : "Tlak vzduchu";
+    }
+    default:
+      return feature.properties.headline ?? feature.properties.label ?? "Počasí";
+  }
+}
+
+function weatherFeatureSubtitle(feature: SituationFeature): string {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  return [
+    weatherFeatureValueLabel(feature, metrics),
+    feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId),
+    weatherDataQualityLabel(stringProperty(feature.properties.dataQuality)),
+    feature.properties.stale ? "starší data" : undefined
+  ].filter(Boolean).join(" · ");
+}
+
+function weatherFeatureTypeLabel(feature: SituationFeature): string {
+  switch (feature.properties.layer) {
+    case "weather_temperature_grid":
+      return "Teplotní vrstva";
+    case "weather_wind_field":
+      return "Vrstva větru";
+    case "weather_precipitation_grid":
+      return "Srážková vrstva";
+    case "weather_humidity_grid":
+      return "Vlhkostní vrstva";
+    case "weather_pressure_grid":
+      return "Tlaková vrstva";
+    default:
+      return "Měřené počasí";
+  }
+}
+
+function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<string, unknown>): string | undefined {
+  switch (feature.properties.layer) {
+    case "weather_temperature_grid": {
+      const value = recordNumber(metrics, "temperatureC");
+      return value !== undefined ? `${Math.round(value)} °C` : undefined;
+    }
+    case "weather_wind_field": {
+      const speed = recordNumber(metrics, "windSpeedMps");
+      const direction = recordNumber(metrics, "windDirectionDeg");
+      return [
+        speed !== undefined ? `${Math.round(speed)} m/s` : undefined,
+        direction !== undefined ? `${Math.round(direction)}°` : undefined
+      ].filter(Boolean).join(", ") || undefined;
+    }
+    case "weather_precipitation_grid": {
+      const value = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+      return value !== undefined ? `${formatPrecipitationAmount(value)} za 10 min` : undefined;
+    }
+    case "weather_humidity_grid": {
+      const value = firstRecordNumber(metrics, "relativeHumidityPercent", "humidityPercent");
+      return value !== undefined ? `${Math.round(value)} %` : undefined;
+    }
+    case "weather_pressure_grid": {
+      const value = firstRecordNumber(metrics, "pressureHpa", "pressureHpaSeaLevel");
+      return value !== undefined ? `${Math.round(value)} hPa` : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function weatherFeatureConditionLabel(feature: SituationFeature, metrics: Record<string, unknown>): string {
+  switch (feature.properties.layer) {
+    case "weather_precipitation_grid": {
+      const value = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+      return value !== undefined ? precipitationIntensityLabel(value) : "srážky";
+    }
+    case "weather_wind_field": {
+      const value = recordNumber(metrics, "windSpeedMps");
+      if (value === undefined) {
+        return "vítr";
+      }
+      if (value < 3) {
+        return "slabý vítr";
+      }
+      if (value < 8) {
+        return "mírný vítr";
+      }
+      if (value < 14) {
+        return "čerstvý vítr";
+      }
+      return "silný vítr";
+    }
+    case "weather_temperature_grid":
+      return "teplota";
+    case "weather_humidity_grid":
+      return "vlhkost";
+    case "weather_pressure_grid":
+      return "tlak";
+    default:
+      return "počasí";
+  }
+}
+
+function weatherFeatureTone(feature: SituationFeature): "neutral" | "ok" | "warn" | "critical" {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  if (feature.properties.stale) {
+    return "warn";
+  }
+  if (feature.properties.layer === "weather_precipitation_grid") {
+    const value = firstRecordNumber(metrics, "precipitationMm", "precipitation10mMm");
+    if (value === undefined || value <= 0.02) {
+      return "neutral";
+    }
+    if (value >= 5) {
+      return "critical";
+    }
+    return value >= 2 ? "warn" : "ok";
+  }
+  if (feature.properties.layer === "weather_wind_field") {
+    const value = recordNumber(metrics, "windSpeedMps");
+    if (value === undefined) {
+      return "neutral";
+    }
+    if (value >= 22) {
+      return "critical";
+    }
+    return value >= 14 ? "warn" : "ok";
+  }
+  return "neutral";
+}
+
+function formatPrecipitationAmount(value: number): string {
+  return value < 0.05 ? "0 mm" : `${value.toFixed(value < 1 ? 1 : 0)} mm`;
+}
+
+function precipitationIntensityLabel(value: number): string {
+  if (value <= 0.02) {
+    return "beze srážek";
+  }
+  if (value < 0.2) {
+    return "mrholení";
+  }
+  if (value < 0.8) {
+    return "slabé";
+  }
+  if (value < 2) {
+    return "mírné";
+  }
+  if (value < 5) {
+    return "výrazné";
+  }
+  return "silné";
+}
+
+function weatherDataQualityLabel(value: string | undefined): string | undefined {
+  switch (value) {
+    case "observed":
+      return "měřeno";
+    case "mixed":
+      return "měřeno + model";
+    case "modelled":
+      return "model";
+    default:
+      return undefined;
+  }
+}
+
 function aviationFlightCategoryModel(feature: SituationFeature): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } | null {
   if (!isAviationWeatherFeature(feature)) {
     return null;
@@ -10808,6 +11034,16 @@ function formatMissionArenaScore(value: Record<string, number> | undefined): str
 function recordNumber(record: Record<string, unknown>, key: string): number | undefined {
   const value = Number(record[key]);
   return Number.isFinite(value) ? value : undefined;
+}
+
+function firstRecordNumber(record: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = recordNumber(record, key);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function safetyMetricNumber(
@@ -11035,8 +11271,12 @@ function sourceDisplayName(sourceSystemId: string | undefined): string {
     return "zdroj není dostupný";
   }
   const labels: Record<string, string> = {
+    aviation_weather: "METAR/TAF",
+    chmi_air_quality: "ČHMÚ",
+    chmi_weather_stations: "ČHMÚ",
     "flight-data-api": "Veřejná letecká data",
     "mission-arena": "Mission Arena",
+    open_meteo: "Open-Meteo",
     "safety-data-api": "Výstražná data",
     "sim-air-situation-001": "Cvičná letecká situace",
     "situation-data-api": "Situační vrstvy",
