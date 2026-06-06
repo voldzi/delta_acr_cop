@@ -225,6 +225,7 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
     || path === "/api/v1/flight-data/airports"
     || path === "/api/v1/geocode/search"
     || path === "/api/v1/map/catalog"
+    || path === "/api/v1/map/raster-overlay"
     || path === "/api/v1/cop/tracks"
     || path === "/api/v1/cop/conflicts"
     || path === "/api/v1/cop/track-history"

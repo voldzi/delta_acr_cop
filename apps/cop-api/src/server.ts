@@ -157,6 +157,8 @@ export interface BuildServerOptions {
 type DependencyStatus = "disabled" | "degraded" | "ok";
 type CommunityReportHazardSeverity = "advisory" | "warning" | "critical";
 type MobilePlatform = "ios" | "ipados";
+const defaultRasterOverlayAllowedHosts = "opendata.chmi.cz";
+const rasterOverlayMaxBytes = 8 * 1024 * 1024;
 
 type CommunityAttachmentResponse = CommunityReportAttachmentRecord & {
   contentUrl?: string;
@@ -2581,6 +2583,49 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       situation: providers.situation,
       tak: providers.tak
     });
+  });
+
+  app.get("/api/v1/map/raster-overlay", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const query = request.query as Record<string, unknown>;
+    const requestedUrl = optionalTrimmedString(query.url, 2048);
+    const rasterUrl = parseRasterOverlayUrl(requestedUrl);
+    if (!rasterUrl) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Raster overlay request requires a valid absolute image URL.", correlationId);
+    }
+    if (!isAllowedRasterOverlayUrl(rasterUrl)) {
+      return sendError(reply, 403, "FORBIDDEN", "Raster overlay host is not allowed.", correlationId);
+    }
+
+    try {
+      const rasterResponse = await fetchRasterOverlay(rasterUrl);
+      if (!rasterResponse.ok) {
+        return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", `Raster overlay provider returned HTTP ${rasterResponse.status}.`, correlationId);
+      }
+      const contentType = rasterResponse.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+      if (!contentType.startsWith("image/")) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Raster overlay provider did not return an image.", correlationId);
+      }
+
+      const contentLength = Number(rasterResponse.headers.get("content-length"));
+      if (Number.isFinite(contentLength) && contentLength > rasterOverlayMaxBytes) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Raster overlay image is too large.", correlationId);
+      }
+      const body = Buffer.from(await rasterResponse.arrayBuffer());
+      if (body.byteLength > rasterOverlayMaxBytes) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Raster overlay image is too large.", correlationId);
+      }
+
+      const cacheSeconds = readPositiveInteger(process.env.COP_RASTER_OVERLAY_CACHE_SECONDS, 300);
+      return reply
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Cache-Control", `public, max-age=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`)
+        .header("Content-Type", contentType)
+        .send(body);
+    } catch (error) {
+      app.log.warn({ error, rasterHost: rasterUrl.hostname }, "Raster overlay request failed.");
+      return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
   });
 
   app.get("/api/v1/geocode/search", async (request, reply) => {
@@ -5853,6 +5898,7 @@ function mobileEndpoints() {
     communityReportUpdate: "/api/v1/community/reports/{reportId}",
     communityReports: "/api/v1/community/reports",
     deviceRegistration: "/api/v1/mobile/devices",
+    mapRasterOverlay: "/api/v1/map/raster-overlay?url={encodedUrl}",
     mapQuery: "/api/v1/map/query",
     offlineSnapshot: "/api/v1/mobile/offline-snapshot",
     preferences: "/api/v1/me/preferences",
@@ -6172,6 +6218,49 @@ function optionalTrimmedString(value: unknown, maxLength: number): string | unde
   }
   const normalized = value.trim();
   return normalized ? normalized.slice(0, maxLength) : undefined;
+}
+
+function parseRasterOverlayUrl(value: string | undefined): URL | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedRasterOverlayUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
+  const allowedHosts = new Set((env.COP_RASTER_OVERLAY_ALLOWED_HOSTS ?? defaultRasterOverlayAllowedHosts)
+    .split(",")
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean));
+  if (!allowedHosts.has(url.hostname.toLowerCase())) {
+    return false;
+  }
+  if (!/\.(png|jpg|jpeg|webp)$/iu.test(url.pathname)) {
+    return false;
+  }
+  return true;
+}
+
+async function fetchRasterOverlay(url: URL): Promise<Response> {
+  const timeoutMs = readPositiveInteger(process.env.COP_RASTER_OVERLAY_TIMEOUT_MS, 8000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url.toString(), {
+      headers: {
+        accept: "image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
+        "user-agent": "CSM-COP raster overlay proxy"
+      },
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function optionalUuid(value: unknown): string | undefined {

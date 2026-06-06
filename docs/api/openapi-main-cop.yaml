@@ -232,6 +232,57 @@ paths:
                 $ref: "#/components/schemas/MapCatalog"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/map/raster-overlay:
+    get:
+      tags: [Map Catalog]
+      summary: Proxy an allowlisted georeferenced raster overlay image.
+      operationId: getMapRasterOverlay
+      description: >
+        Returns a client-safe raster image for catalog layers with
+        kind=raster_overlay. Browser and native clients must use this COP
+        endpoint for provider raster URLs returned by /api/v1/map/query instead
+        of calling external weather providers directly. COP validates the
+        upstream host against a strict allowlist and accepts only image content.
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Percent-encoded raster URL from providerProperties.raster.url.
+      responses:
+        "200":
+          description: Raster overlay image.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          description: Upstream raster provider failed or returned non-image content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/geocode/search:
     get:
       tags: [Map Catalog]

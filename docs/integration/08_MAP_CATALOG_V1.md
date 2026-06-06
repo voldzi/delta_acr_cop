@@ -365,6 +365,37 @@ COP may internally fan out to SIM, TAK, COP database, tile services or partner A
 
 The response may contain provider result buckets such as `situation`, `safety`, `flight`, `community` and `tak`. A bucket is present only when the requested catalog layers require that provider family. A public catalog layer with `query.kind=vector_features`, `static_reference`, `user_objects` or `aggregate` must be backed by `/api/v1/map/query`; it must not appear as selectable in the normal map menu if COP cannot fetch and render it.
 
+### Raster Overlay Images
+
+Catalog layers with `kind=raster_overlay` are represented in `/api/v1/map/query` as GeoJSON features whose geometry is only the raster extent. Clients must not render that extent as a filled polygon.
+
+The actual image is described by `properties.providerProperties.raster`:
+
+```json
+{
+  "rendering": {
+    "mode": "raster_overlay",
+    "geometryRole": "raster_extent",
+    "doNotRenderGeometryFill": true
+  },
+  "providerProperties": {
+    "raster": {
+      "url": "https://opendata.chmi.cz/.../radar.png",
+      "boundsWgs84": [11.267, 48.047, 20.77, 52.167],
+      "opacity": 0.58
+    }
+  }
+}
+```
+
+Web and native clients must load the image through COP:
+
+```http
+GET /api/v1/map/raster-overlay?url=<percent-encoded providerProperties.raster.url>
+```
+
+COP validates the upstream host against a strict allowlist, accepts only image responses and adds cache headers. Clients must not call ČHMÚ, SIM provider URLs or other external raster URLs directly from the browser or native app. If a client does not support raster image overlays, it must hide the layer instead of drawing the extent polygon.
+
 Provider-specific metadata endpoints such as SIM `/layers` and `/sources` are
 legacy adapter details and must not be used by new COP integrations. Provider
 catalogs are read from `/catalog`; feature queries use the provider's current

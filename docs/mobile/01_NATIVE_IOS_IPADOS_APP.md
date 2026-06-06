@@ -147,6 +147,7 @@ Nativní klient nesmí skládat menu vrstev z provider `/layers`, `/sources` ani
 
 - `GET /api/v1/map/catalog?locale=cs-CZ`
 - `POST /api/v1/map/query`
+- `GET /api/v1/map/raster-overlay?url=<encodedUrl>` pro `kind=raster_overlay`
 
 Uživatelův výběr vrstev se ukládá do `preferences.catalogLayerIds`. Jazyk aplikace se ukládá do `preferences.language` (`cs` nebo `en`). Podklad mapy se ukládá do `preferences.mapBasemapMode`. Webový klient navíc ukládá rozložení pracovní plochy do `preferences.workspaceLayout`, vizuální skin do `preferences.workspaceSkin` (`civil`, `operations`, `field`) a profilovou kartu do `preferences.operatorProfile`; nativní klient může tato pole zobrazit nebo ignorovat, ale nesmí je mazat při ukládání vlastních preferencí.
 
@@ -163,7 +164,7 @@ Klient musí podporovat tyto druhy katalogových vrstev:
 
 Pokud aktuální verze iOS klienta neumí některý `kind` vykreslit, nesmí kvůli tomu selhat katalog. Takovou vrstvu skryje z běžného výběru, zobrazí ji maximálně v diagnostice a dál respektuje `selectable`, `audience`, `role`, `minZoom`, `maxZoom`, `filters`, `legal` a `provenance`.
 
-U `raster_overlay` klient používá `providerProperties.raster.url`, `boundsWgs84`, `opacity` a případnou atribuci. Pokud image overlay nepodporuje, vrstvu nezobrazí; nikdy nesmí vybarvit extent polygon jako meteorologickou plochu.
+U `raster_overlay` klient používá `providerProperties.raster.url`, `boundsWgs84`, `opacity` a případnou atribuci. Obrázek ale nenačítá přímo z externí URL; hodnotu `providerProperties.raster.url` percent-encoduje a volá COP endpoint `/api/v1/map/raster-overlay`. Pokud image overlay nepodporuje, vrstvu nezobrazí; nikdy nesmí vybarvit extent polygon jako meteorologickou plochu.
 
 Provider identifikátory, sourceId a technické vstupy se v běžném UI nezobrazují jako mapové vrstvy. Patří do detailu/provenance a diagnostiky.
 
@@ -253,7 +254,7 @@ MDM/MAM příprava:
 2. Načíst lokální snapshot pro `subjectId`, pokud existuje.
 3. Pokud je token platný, volat `/api/v1/mobile/bootstrap`.
 4. Zobrazit bootstrap snapshot a uložit ho do `OfflineStore`.
-5. Načíst katalog mapových vrstev přes `/api/v1/map/catalog` a podle aktuálního bbox mapy volat `/api/v1/map/query` s vybranými katalogovými `layerIds`.
+5. Načíst katalog mapových vrstev přes `/api/v1/map/catalog` a podle aktuálního bbox mapy volat `/api/v1/map/query` s vybranými katalogovými `layerIds`. Raster overlay obrázky načítat jen přes `/api/v1/map/raster-overlay`.
 6. Načíst komunitní hlášení přes `/api/v1/community/reports` podle aktuálního bbox mapy.
 7. Otevřít SSE `/api/v1/stream/cop/live`.
 8. `snapshot` zprávou nahradit current state.

@@ -4428,8 +4428,15 @@ function situationRasterOverlaySpec(feature: SituationFeature): SituationRasterO
     layerId: `${situationRasterOverlayLayerPrefix}-${overlayId}`,
     opacity,
     sourceId: `${situationRasterOverlaySourcePrefix}-${overlayId}`,
-    url
+    url: rasterOverlayProxyUrl(url)
   };
+}
+
+function rasterOverlayProxyUrl(url: string): string {
+  if (url.startsWith("/")) {
+    return url;
+  }
+  return `/api/v1/map/raster-overlay?url=${encodeURIComponent(url)}`;
 }
 
 function syncSituationRasterOverlays(

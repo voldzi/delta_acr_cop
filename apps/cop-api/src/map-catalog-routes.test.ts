@@ -39,6 +39,8 @@ import type { ProviderMapCatalog } from "./provider-map-catalog.js";
 describe("map catalog route", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("returns a public source-neutral catalog without exposing diagnostic layers as map choices", async () => {
@@ -439,6 +441,49 @@ describe("map catalog route", () => {
     expect(body.flight?.query.layers).toEqual(["flight.airports", "flight.airspaces"]);
     expect(body.flight?.features.map((feature) => feature.properties.layer)).toEqual(["flight_airports", "flight_airspaces"]);
     expect(body.summary.featureCount).toBe(2);
+  });
+
+  it("proxies allowed raster overlay images through COP instead of exposing provider URLs to clients", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), {
+      headers: { "content-type": "image/png" },
+      status: 200
+    })));
+    const app = buildServer({
+      now: () => new Date("2026-06-06T08:00:00Z")
+    });
+    const rasterUrl = "https://opendata.chmi.cz/meteorology/weather/radar/composite/pseudocappi2km/png/sample.png";
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/map/raster-overlay?url=${encodeURIComponent(rasterUrl)}`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("image/png");
+    expect(response.headers["cache-control"]).toContain("public");
+    expect(fetch).toHaveBeenCalledWith(rasterUrl, expect.objectContaining({
+      headers: expect.objectContaining({
+        accept: expect.stringContaining("image/png")
+      })
+    }));
+  });
+
+  it("rejects raster overlay proxy requests for untrusted hosts", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      now: () => new Date("2026-06-06T08:00:00Z")
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/map/raster-overlay?url=${encodeURIComponent("https://example.invalid/radar.png")}`
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("allows authenticated map feature queries to include partner layers", async () => {
