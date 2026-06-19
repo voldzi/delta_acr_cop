@@ -131,6 +131,12 @@ export interface DomainDeadLetterRecord {
   errorCode: string;
   message: string;
   receivedAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  retryCount?: number;
+  retryLastAt?: string;
+  retryLastEventId?: string;
+  status?: "open" | "redriven" | "resolved";
 }
 
 export interface DomainEventPublishInput {
@@ -179,6 +185,20 @@ export interface EdgeOutboxFlushItemResult {
 export interface DomainEventPublishResult {
   duplicate: boolean;
   event: DomainEventRecord;
+}
+
+export interface EdgeReplayCursorRecord {
+  ackedAt: string;
+  lastAckedOffset: number;
+  lastReplayAt?: string;
+  nodeId: string;
+  updatedBy?: string;
+}
+
+export interface DomainDeadLetterRedriveResult {
+  deadLetter: DomainDeadLetterRecord;
+  event: DomainEventRecord;
+  status: "duplicate" | "redriven";
 }
 
 export function createDefaultFederatedNodes(now: Date = new Date()): Map<string, FederatedNodeRecord> {
@@ -376,7 +396,9 @@ export function buildDomainDeadLetterRecord(input: {
     deadLetterId: randomUUID(),
     errorCode: input.errorCode,
     message: input.message,
-    receivedAt: (input.now ?? new Date()).toISOString()
+    receivedAt: (input.now ?? new Date()).toISOString(),
+    retryCount: 0,
+    status: "open"
   };
 }
 

@@ -69,8 +69,8 @@ První implementovaná runtime vrstva je server-side v COP API. Slouží jako
 broker facade a append-only event log pro pilotní federaci. Pokud je dostupná
 `COP_DATABASE_URL`, používá persistentní PostgreSQL runtime store
 (`COP_FEDERATION_STORE=auto|postgres`) s tabulkami `cop_federation_nodes`,
-`cop_domain_events` a `cop_domain_dead_letters`. Bez databáze běží in-memory
-fallback vhodný pouze pro vývoj.
+`cop_domain_events`, `cop_domain_dead_letters` a `cop_edge_replay_cursors`. Bez
+databáze běží in-memory fallback vhodný pouze pro vývoj.
 
 Aktuální endpointy jsou chráněné bearer autentizací a nejsou veřejným klientským
 API:
@@ -82,8 +82,13 @@ API:
 | `POST /api/v1/federation/nodes/{nodeId}/heartbeat` | registrace/heartbeat uzlu |
 | `POST /api/v1/events/domain` | publikace COP domain eventu |
 | `POST /api/v1/edge/outbox/flush` | dávkové odeslání offline eventů registrovaného edge uzlu |
+| `GET /api/v1/edge/replay-cursors/{nodeId}` | čtení potvrzeného replay cursoru edge uzlu |
+| `POST /api/v1/edge/replay-cursors/{nodeId}/ack` | monotónní potvrzení zpracovaného replay offsetu |
 | `GET /api/v1/events/domain` | replay eventů podle offsetu, času, typu nebo entity |
 | `GET /api/v1/events/dead-letter` | audit odmítnutých eventů |
+| `GET /api/v1/events/dead-letter/{deadLetterId}` | detail odmítnutého eventu |
+| `POST /api/v1/events/dead-letter/{deadLetterId}/redrive` | opětovné vložení opraveného eventu do runtime logu |
+| `POST /api/v1/events/dead-letter/{deadLetterId}/resolve` | uzavření DLQ záznamu bez publikace náhradního eventu |
 
 `POST /api/v1/events/domain` přijímá zjednodušený COP event command i
 CloudEvents-like pole. COP jej normalizuje do CloudEvent `specversion=1.0`,
@@ -99,7 +104,19 @@ CloudEvent ID.
 
 `fromOffset` u replay dotazu je exkluzivní: klient posílá poslední potvrzený
 offset a COP vrací novější eventy. Edge klient po úspěšném flushi uloží nejvyšší
-vrácený `replayOffset` a používá jej pro následný replay.
+vrácený `replayOffset` a potvrzuje jej přes
+`POST /api/v1/edge/replay-cursors/{nodeId}/ack`. Uložený cursor je monotónní:
+nižší nebo opakovaný offset neposune serverový stav zpět. `GET
+/api/v1/edge/replay-cursors/{nodeId}` vrací poslední durable acknowledgement
+nebo implicitní offset `0`, pokud edge uzel ještě nic nepotvrdil.
+
+DLQ workflow je operátorské. `GET /api/v1/events/dead-letter/{deadLetterId}`
+zobrazí původní odmítnutý payload, stav (`open`, `redriven`, `resolved`) a
+počet retry. Re-drive přijímá buď přímo opravený domain event command, nebo
+objekt `{ "event": ... }`; prázdné tělo se pokusí znovu použít původní payload.
+Nevalidní re-drive payload vrací validační chybu a nezakládá další DLQ záznam.
+`resolve` slouží pro ruční uzavření záznamu, pokud byl odmítnutý event záměrně
+zahozen nebo nahrazen jiným postupem.
 
 Perzistence je idempotentní podle CloudEvent `id`/`eventId`. Replay offset je
 serverem přidělený monotónní `bigserial` offset, nikoli klientský čas ani
@@ -107,12 +124,12 @@ lokální pořadí edge zařízení.
 
 Další runtime kroky:
 
-1. přidat explicitní ack cursor pro edge uzly,
-2. zavést DLQ retry/re-drive workflow pro operátora,
-3. filtrovat replay podle classification/releasePolicy a subject role,
-4. doplnit broker adapter pod stejným kontraktem, pokud pilot vyžádá externí
+1. filtrovat replay podle classification/releasePolicy a subject role,
+2. doplnit broker adapter pod stejným kontraktem, pokud pilot vyžádá externí
    message broker,
-5. napojit edge outbox na iOS/PWA offline frontu a konfliktní dialogy.
+3. napojit edge outbox na iOS/PWA offline frontu a konfliktní dialogy,
+4. doplnit MCP gateway/tool registry nad stejným auditovaným domain event logem,
+5. přidat retention/archivaci domain eventů a DLQ podle pilotní provozní politiky.
 
 ## CloudEvent Baseline
 
@@ -173,9 +190,11 @@ Edge uzel ukládá lokální event log a outbox. Po návratu spojení:
 2. odešle lokální eventy přes `POST /api/v1/edge/outbox/flush`,
    `producerNodeId` vynutí COP podle registrovaného `nodeId`,
 3. přijme centrální replay od posledního potvrzeného offsetu,
-4. vyhodnotí konflikty podle entity `revision`,
-5. konflikt publikuje jako `sync.conflict.detected`,
-6. vyžádá si ruční potvrzení operátora, pokud by došlo k přepsání dat.
+4. po durable zpracování potvrdí cursor přes
+   `POST /api/v1/edge/replay-cursors/{nodeId}/ack`,
+5. vyhodnotí konflikty podle entity `revision`,
+6. konflikt publikuje jako `sync.conflict.detected`,
+7. vyžádá si ruční potvrzení operátora, pokud by došlo k přepsání dat.
 
 Tiché přepsání není povolené.
 

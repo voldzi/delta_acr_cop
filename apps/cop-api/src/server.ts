@@ -44,9 +44,11 @@ import {
   appendDomainDeadLetter,
   type EdgeOutboxFlushItemResult,
   type DomainDeadLetterRecord,
+  type DomainDeadLetterRedriveResult,
   type DomainEventChannel,
   type DomainEventPublishInput,
   type DomainEventPublishResult,
+  type EdgeReplayCursorRecord,
   type FederatedNodeRecord,
   parseDomainEventPublishRequest,
   parseDomainEventReplayQuery,
@@ -265,6 +267,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
   const takGatewaySource = options.takGatewaySource ?? createTakGatewaySourceFromEnv();
   const mobileDeviceRegistrations = new Map<string, MobileDeviceRegistration>();
+  const edgeReplayCursors = new Map<string, EdgeReplayCursorRecord>();
   let federationRuntimeStoreStatus: DependencyStatus = federationRuntimeStore ? "degraded" : "disabled";
   let federationRuntimeStoreDetail = federationRuntimeStore ? `${federationRuntimeStore.name}: initializing` : "in-memory only";
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
@@ -2886,6 +2889,137 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   }
 
+  async function getRuntimeDomainDeadLetter(deadLetterId: string): Promise<DomainDeadLetterRecord | null> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        const record = await federationRuntimeStore.getDeadLetter(deadLetterId);
+        if (record && !state.domainDeadLetters.some((deadLetter) => deadLetter.deadLetterId === record.deadLetterId)) {
+          state.domainDeadLetters.push(record);
+        }
+        return record;
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+    return state.domainDeadLetters.find((deadLetter) => deadLetter.deadLetterId === deadLetterId) ?? null;
+  }
+
+  async function redriveRuntimeDomainDeadLetter(
+    deadLetterId: string,
+    input: DomainEventPublishInput,
+    options: { now?: Date; resolvedBy?: string }
+  ): Promise<DomainDeadLetterRedriveResult> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        const result = await federationRuntimeStore.redriveDeadLetter(deadLetterId, input, options);
+        if (!state.domainEvents.some((event) => event.id === result.event.id)) {
+          state.domainEvents.push(result.event);
+        }
+        const index = state.domainDeadLetters.findIndex((deadLetter) => deadLetter.deadLetterId === deadLetterId);
+        if (index >= 0) {
+          state.domainDeadLetters[index] = result.deadLetter;
+        } else {
+          state.domainDeadLetters.push(result.deadLetter);
+        }
+        return result;
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+
+    const result = publishDomainEventWithResult(state, input, options.now ?? now());
+    const timestamp = (options.now ?? now()).toISOString();
+    const deadLetter = state.domainDeadLetters.find((item) => item.deadLetterId === deadLetterId);
+    if (!deadLetter) {
+      throw new Error(`Dead-letter ${deadLetterId} was not found during re-drive.`);
+    }
+    deadLetter.status = "redriven";
+    deadLetter.retryCount = (deadLetter.retryCount ?? 0) + 1;
+    deadLetter.retryLastAt = timestamp;
+    deadLetter.retryLastEventId = result.event.id;
+    deadLetter.resolvedAt ??= timestamp;
+    deadLetter.resolvedBy ??= options.resolvedBy;
+    return {
+      deadLetter,
+      event: result.event,
+      status: result.duplicate ? "duplicate" : "redriven"
+    };
+  }
+
+  async function resolveRuntimeDomainDeadLetter(
+    deadLetterId: string,
+    options: { now?: Date; resolvedBy?: string }
+  ): Promise<DomainDeadLetterRecord | null> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        const record = await federationRuntimeStore.resolveDeadLetter(deadLetterId, options);
+        if (record) {
+          const index = state.domainDeadLetters.findIndex((deadLetter) => deadLetter.deadLetterId === deadLetterId);
+          if (index >= 0) {
+            state.domainDeadLetters[index] = record;
+          } else {
+            state.domainDeadLetters.push(record);
+          }
+        }
+        return record;
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+    const deadLetter = state.domainDeadLetters.find((item) => item.deadLetterId === deadLetterId);
+    if (!deadLetter) {
+      return null;
+    }
+    const timestamp = (options.now ?? now()).toISOString();
+    deadLetter.status = "resolved";
+    deadLetter.resolvedAt ??= timestamp;
+    deadLetter.resolvedBy ??= options.resolvedBy;
+    return deadLetter;
+  }
+
+  async function getRuntimeEdgeCursor(nodeId: string): Promise<EdgeReplayCursorRecord | null> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        const cursor = await federationRuntimeStore.getEdgeCursor(nodeId);
+        if (cursor) {
+          edgeReplayCursors.set(nodeId, cursor);
+        }
+        return cursor;
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+    return edgeReplayCursors.get(nodeId) ?? null;
+  }
+
+  async function updateRuntimeEdgeCursor(input: {
+    lastAckedOffset: number;
+    nodeId: string;
+    now?: Date;
+    updatedBy?: string;
+  }): Promise<EdgeReplayCursorRecord> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        const cursor = await federationRuntimeStore.updateEdgeCursor(input);
+        edgeReplayCursors.set(input.nodeId, cursor);
+        return cursor;
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+    const timestamp = (input.now ?? now()).toISOString();
+    const previous = edgeReplayCursors.get(input.nodeId);
+    const cursor: EdgeReplayCursorRecord = {
+      ackedAt: input.lastAckedOffset >= (previous?.lastAckedOffset ?? 0) ? timestamp : previous?.ackedAt ?? timestamp,
+      lastAckedOffset: Math.max(previous?.lastAckedOffset ?? 0, input.lastAckedOffset),
+      lastReplayAt: timestamp,
+      nodeId: input.nodeId,
+      ...(input.updatedBy ? { updatedBy: input.updatedBy } : previous?.updatedBy ? { updatedBy: previous.updatedBy } : {})
+    };
+    edgeReplayCursors.set(input.nodeId, cursor);
+    return cursor;
+  }
+
   app.get("/api/v1/federation/nodes", async () => ({
     contractVersion: "cop-federation-node-list-v1",
     generatedAt: now().toISOString(),
@@ -3081,6 +3215,56 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
+  app.get("/api/v1/edge/replay-cursors/:nodeId", async (request, reply) => {
+    const params = request.params as { nodeId: string };
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const node = await getFederatedNode(params.nodeId);
+    if (!node || node.nodeRole !== "edge-node") {
+      return sendError(reply, 422, "UNKNOWN_EDGE_NODE", "Replay cursor is available only for registered edge-node.", correlationId);
+    }
+    const cursor = await getRuntimeEdgeCursor(node.nodeId);
+    return {
+      contractVersion: "cop-edge-replay-cursor-v1",
+      cursor: cursor ?? {
+        ackedAt: node.lastSeenAt,
+        lastAckedOffset: 0,
+        nodeId: node.nodeId
+      },
+      generatedAt: now().toISOString()
+    };
+  });
+
+  app.post("/api/v1/edge/replay-cursors/:nodeId/ack", async (request, reply) => {
+    const params = request.params as { nodeId: string };
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const node = await getFederatedNode(params.nodeId);
+    if (!node || node.nodeRole !== "edge-node") {
+      return sendError(reply, 422, "UNKNOWN_EDGE_NODE", "Replay cursor can be acknowledged only by registered edge-node.", correlationId);
+    }
+    const body = isRecord(request.body) ? request.body : {};
+    const offset = Number(body.lastAckedOffset);
+    if (!Number.isInteger(offset) || offset < 0) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Replay cursor acknowledgement requires lastAckedOffset as a non-negative integer.", correlationId);
+    }
+    const actor = actorFromRequest(request);
+    const cursor = await updateRuntimeEdgeCursor({
+      lastAckedOffset: offset,
+      nodeId: node.nodeId,
+      now: now(),
+      updatedBy: actor?.subjectId ?? "cop-api"
+    });
+    appendAudit(state, "EDGE_REPLAY_CURSOR_ACKED", {
+      actorSubjectId: actor?.subjectId,
+      lastAckedOffset: cursor.lastAckedOffset,
+      nodeId: node.nodeId
+    }, correlationId);
+    return {
+      contractVersion: "cop-edge-replay-cursor-v1",
+      cursor,
+      generatedAt: now().toISOString()
+    };
+  });
+
   app.get("/api/v1/events/domain", async (request) => {
     const query = parseDomainEventReplayQuery(request.query);
     const result = await queryRuntimeDomainEvents(query);
@@ -3095,6 +3279,95 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         count: items.length,
         totalAvailable: result.totalAvailable
       }
+    };
+  });
+
+  app.get("/api/v1/events/dead-letter/:deadLetterId", async (request, reply) => {
+    const params = request.params as { deadLetterId: string };
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const deadLetter = await getRuntimeDomainDeadLetter(params.deadLetterId);
+    if (!deadLetter) {
+      return sendError(reply, 404, "NOT_FOUND", "Domain event dead-letter record was not found.", correlationId);
+    }
+    return {
+      contractVersion: "cop-domain-event-dlq-detail-v1",
+      deadLetter,
+      generatedAt: now().toISOString()
+    };
+  });
+
+  app.post("/api/v1/events/dead-letter/:deadLetterId/redrive", async (request, reply) => {
+    const params = request.params as { deadLetterId: string };
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const deadLetter = await getRuntimeDomainDeadLetter(params.deadLetterId);
+    if (!deadLetter) {
+      return sendError(reply, 404, "NOT_FOUND", "Domain event dead-letter record was not found.", correlationId);
+    }
+    const body = isRecord(request.body) ? request.body : undefined;
+    const candidate = body && isRecord(body.event)
+      ? body.event
+      : body && Object.keys(body).length > 0
+        ? body
+        : deadLetter.body;
+    const parsed = parseDomainEventPublishRequest(candidate, correlationId);
+    if (!parsed.ok || !parsed.input) {
+      appendAudit(state, "DOMAIN_EVENT_DLQ_REDRIVE_REJECTED", {
+        deadLetterId: deadLetter.deadLetterId,
+        reason: "validation"
+      }, correlationId);
+      return sendError(reply, 400, "VALIDATION_ERROR", parsed.message ?? "Dead-letter re-drive event payload does not match contract.", correlationId);
+    }
+    const producerNode = await getFederatedNode(parsed.input.producerNodeId);
+    if (!producerNode) {
+      appendAudit(state, "DOMAIN_EVENT_DLQ_REDRIVE_REJECTED", {
+        deadLetterId: deadLetter.deadLetterId,
+        producerNodeId: parsed.input.producerNodeId,
+        reason: "unknown-producer-node"
+      }, correlationId);
+      return sendError(reply, 422, "UNKNOWN_PRODUCER_NODE", "Dead-letter re-drive producer node is not registered.", correlationId);
+    }
+    const actor = actorFromRequest(request);
+    const result = await redriveRuntimeDomainDeadLetter(deadLetter.deadLetterId, parsed.input, {
+      now: now(),
+      resolvedBy: actor?.subjectId ?? "cop-api"
+    });
+    appendAudit(state, "DOMAIN_EVENT_DLQ_REDRIVEN", {
+      actorSubjectId: actor?.subjectId,
+      deadLetterId: result.deadLetter.deadLetterId,
+      eventId: result.event.id,
+      replayOffset: result.event.replayOffset,
+      status: result.status
+    }, correlationId);
+    return reply.code(202).send({
+      contractVersion: "cop-domain-event-dlq-redrive-v1",
+      correlationId,
+      deadLetter: result.deadLetter,
+      event: result.event,
+      generatedAt: now().toISOString(),
+      status: result.status
+    });
+  });
+
+  app.post("/api/v1/events/dead-letter/:deadLetterId/resolve", async (request, reply) => {
+    const params = request.params as { deadLetterId: string };
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const actor = actorFromRequest(request);
+    const deadLetter = await resolveRuntimeDomainDeadLetter(params.deadLetterId, {
+      now: now(),
+      resolvedBy: actor?.subjectId ?? "cop-api"
+    });
+    if (!deadLetter) {
+      return sendError(reply, 404, "NOT_FOUND", "Domain event dead-letter record was not found.", correlationId);
+    }
+    appendAudit(state, "DOMAIN_EVENT_DLQ_RESOLVED", {
+      actorSubjectId: actor?.subjectId,
+      deadLetterId: deadLetter.deadLetterId
+    }, correlationId);
+    return {
+      contractVersion: "cop-domain-event-dlq-resolve-v1",
+      correlationId,
+      deadLetter,
+      generatedAt: now().toISOString()
     };
   });
 

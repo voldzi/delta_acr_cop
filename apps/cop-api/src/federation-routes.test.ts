@@ -278,4 +278,169 @@ describe("federation runtime routes", () => {
       await app.close();
     }
   });
+
+  it("persists edge replay cursor acknowledgements monotonically", async () => {
+    const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
+    try {
+      await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        payload: {
+          capabilities: ["offline-outbox", "domain-events"],
+          classificationMax: "INTERNAL",
+          health: "ok",
+          nodeName: "offline edge cursor",
+          nodeRole: "edge-node",
+          softwareVersion: "0.1.0"
+        },
+        url: "/api/v1/federation/nodes/node_edge_cursor_01/heartbeat"
+      });
+
+      const firstAck = await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        payload: { lastAckedOffset: 3 },
+        url: "/api/v1/edge/replay-cursors/node_edge_cursor_01/ack"
+      });
+      expect(firstAck.statusCode).toBe(200);
+      expect(firstAck.json()).toMatchObject({
+        contractVersion: "cop-edge-replay-cursor-v1",
+        cursor: {
+          ackedAt: "2026-06-19T12:00:00.000Z",
+          lastAckedOffset: 3,
+          nodeId: "node_edge_cursor_01",
+          updatedBy: "lab"
+        }
+      });
+
+      const staleAck = await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        payload: { lastAckedOffset: 2 },
+        url: "/api/v1/edge/replay-cursors/node_edge_cursor_01/ack"
+      });
+      expect(staleAck.statusCode).toBe(200);
+      expect(staleAck.json()).toMatchObject({
+        cursor: {
+          lastAckedOffset: 3,
+          nodeId: "node_edge_cursor_01"
+        }
+      });
+
+      const cursor = await app.inject({
+        headers: authHeaders,
+        method: "GET",
+        url: "/api/v1/edge/replay-cursors/node_edge_cursor_01"
+      });
+      expect(cursor.statusCode).toBe(200);
+      expect(cursor.json()).toMatchObject({
+        cursor: {
+          lastAckedOffset: 3,
+          nodeId: "node_edge_cursor_01"
+        }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("allows operators to inspect, redrive and resolve dead-letter events", async () => {
+    const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
+    try {
+      const rejected = await app.inject({
+        headers: {
+          ...authHeaders,
+          "x-correlation-id": "corr-dlq-operator"
+        },
+        method: "POST",
+        payload: {
+          entityId: "incident-dlq-1",
+          entityType: "incident",
+          payload: {
+            title: "Rejected incident"
+          },
+          producerNodeId: "node_missing",
+          type: "incident.created"
+        },
+        url: "/api/v1/events/domain"
+      });
+      expect(rejected.statusCode).toBe(422);
+
+      const list = await app.inject({
+        headers: authHeaders,
+        method: "GET",
+        url: "/api/v1/events/dead-letter"
+      });
+      expect(list.statusCode).toBe(200);
+      const deadLetterId = list.json().items[0].deadLetterId as string;
+
+      const detail = await app.inject({
+        headers: authHeaders,
+        method: "GET",
+        url: `/api/v1/events/dead-letter/${deadLetterId}`
+      });
+      expect(detail.statusCode).toBe(200);
+      expect(detail.json()).toMatchObject({
+        contractVersion: "cop-domain-event-dlq-detail-v1",
+        deadLetter: {
+          correlationId: "corr-dlq-operator",
+          deadLetterId,
+          errorCode: "UNKNOWN_PRODUCER_NODE",
+          retryCount: 0,
+          status: "open"
+        }
+      });
+
+      const redrive = await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        payload: {
+          event: {
+            entityId: "incident-dlq-1",
+            entityType: "incident",
+            eventId: "event-redrive-001",
+            payload: {
+              title: "Recovered incident"
+            },
+            producerNodeId: "node_central_cop",
+            type: "incident.created"
+          }
+        },
+        url: `/api/v1/events/dead-letter/${deadLetterId}/redrive`
+      });
+      expect(redrive.statusCode).toBe(202);
+      expect(redrive.json()).toMatchObject({
+        contractVersion: "cop-domain-event-dlq-redrive-v1",
+        deadLetter: {
+          deadLetterId,
+          resolvedBy: "lab",
+          retryCount: 1,
+          retryLastEventId: "event-redrive-001",
+          status: "redriven"
+        },
+        event: {
+          id: "event-redrive-001",
+          replayOffset: 1,
+          type: "incident.created"
+        },
+        status: "redriven"
+      });
+
+      const resolve = await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        url: `/api/v1/events/dead-letter/${deadLetterId}/resolve`
+      });
+      expect(resolve.statusCode).toBe(200);
+      expect(resolve.json()).toMatchObject({
+        contractVersion: "cop-domain-event-dlq-resolve-v1",
+        deadLetter: {
+          deadLetterId,
+          status: "resolved"
+        }
+      });
+    } finally {
+      await app.close();
+    }
+  });
 });

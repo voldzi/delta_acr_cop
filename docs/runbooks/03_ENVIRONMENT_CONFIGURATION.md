@@ -137,9 +137,25 @@ COP_DATABASE_SSL=false
 ```
 
 Store při inicializaci vytvoří tabulky `cop_federation_nodes`,
-`cop_domain_events` a `cop_domain_dead_letters`. `cop_domain_events` používá
-serverem přidělený `replay_offset` a idempotenci podle `event_id`, takže edge
-klient může bezpečně opakovat flush offline outboxu.
+`cop_domain_events`, `cop_domain_dead_letters` a `cop_edge_replay_cursors`.
+`cop_domain_events` používá serverem přidělený `replay_offset` a idempotenci
+podle `event_id`, takže edge klient může bezpečně opakovat flush offline
+outboxu. `cop_edge_replay_cursors` drží monotónní durable acknowledgement pro
+edge replay. `cop_domain_dead_letters` drží i lifecycle stav (`open`,
+`redriven`, `resolved`), počet re-drive pokusů a operátora, který záznam
+uzavřel.
+
+Provozní obsluha DLQ používá výhradně COP API:
+
+- `GET /api/v1/events/dead-letter` pro seznam odmítnutých eventů,
+- `GET /api/v1/events/dead-letter/{deadLetterId}` pro detail,
+- `POST /api/v1/events/dead-letter/{deadLetterId}/redrive` pro publikaci
+  opraveného eventu,
+- `POST /api/v1/events/dead-letter/{deadLetterId}/resolve` pro uzavření bez
+  publikace náhradního eventu.
+
+Nevalidní re-drive payload se vrací jako validační chyba a nezakládá další DLQ
+záznam. To je záměrné, aby operátor neopakoval chybu rekurzivně.
 
 ## Map Tiles
 

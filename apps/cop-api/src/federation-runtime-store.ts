@@ -4,12 +4,14 @@ import {
   buildDomainEventRecord,
   createDefaultFederatedNodes,
   type DomainDeadLetterRecord,
+  type DomainDeadLetterRedriveResult,
   type DomainEventChannel,
   type DomainEventPublishInput,
   type DomainEventPublishResult,
   type DomainEventRecord,
   type DomainEventReplayQuery,
   type DomainEventType,
+  type EdgeReplayCursorRecord,
   type FederatedNodeHealth,
   type FederatedNodeRecord,
   type FederatedNodeRole,
@@ -42,12 +44,17 @@ export interface FederationRuntimeStore {
   countDeadLetters(): Promise<number>;
   countEvents(): Promise<number>;
   diagnostics?(): string | undefined;
+  getDeadLetter(deadLetterId: string): Promise<DomainDeadLetterRecord | null>;
+  getEdgeCursor(nodeId: string): Promise<EdgeReplayCursorRecord | null>;
   getNode(nodeId: string): Promise<FederatedNodeRecord | null>;
   init(defaultNodes?: FederatedNodeRecord[]): Promise<void>;
   listDeadLetters(limit: number): Promise<DomainDeadLetterQueryResult>;
   listNodes(): Promise<FederatedNodeRecord[]>;
   publishEvent(input: DomainEventPublishInput, now?: Date): Promise<DomainEventPublishResult>;
   queryEvents(query: DomainEventReplayQuery): Promise<DomainEventReplayResult>;
+  redriveDeadLetter(deadLetterId: string, input: DomainEventPublishInput, options: { now?: Date; resolvedBy?: string }): Promise<DomainDeadLetterRedriveResult>;
+  resolveDeadLetter(deadLetterId: string, options: { now?: Date; resolvedBy?: string }): Promise<DomainDeadLetterRecord | null>;
+  updateEdgeCursor(input: { lastAckedOffset: number; nodeId: string; now?: Date; updatedBy?: string }): Promise<EdgeReplayCursorRecord>;
   upsertNode(node: FederatedNodeRecord): Promise<void>;
 }
 
@@ -257,7 +264,8 @@ export class PostgresFederationRuntimeStore implements FederationRuntimeStore {
 
   async listDeadLetters(limit: number): Promise<DomainDeadLetterQueryResult> {
     const result = await this.pool.query<DomainDeadLetterRow>(
-      `SELECT dead_letter_id, channel, correlation_id, error_code, message, body_json, received_at
+      `SELECT dead_letter_id, channel, correlation_id, error_code, message, body_json, received_at,
+        status, retry_count, retry_last_at, retry_last_event_id, resolved_at, resolved_by
       FROM cop_domain_dead_letters
       ORDER BY received_at DESC
       LIMIT $1`,
@@ -267,6 +275,99 @@ export class PostgresFederationRuntimeStore implements FederationRuntimeStore {
       items: result.rows.map(deadLetterFromRow).reverse(),
       totalAvailable: await this.countDeadLetters()
     };
+  }
+
+  async getDeadLetter(deadLetterId: string): Promise<DomainDeadLetterRecord | null> {
+    const result = await this.pool.query<DomainDeadLetterRow>(
+      `SELECT dead_letter_id, channel, correlation_id, error_code, message, body_json, received_at,
+        status, retry_count, retry_last_at, retry_last_event_id, resolved_at, resolved_by
+      FROM cop_domain_dead_letters
+      WHERE dead_letter_id = $1`,
+      [deadLetterId]
+    );
+    const row = result.rows[0];
+    return row ? deadLetterFromRow(row) : null;
+  }
+
+  async redriveDeadLetter(
+    deadLetterId: string,
+    input: DomainEventPublishInput,
+    options: { now?: Date; resolvedBy?: string }
+  ): Promise<DomainDeadLetterRedriveResult> {
+    const result = await this.publishEvent(input, options.now);
+    const timestamp = (options.now ?? new Date()).toISOString();
+    const updated = await this.pool.query<DomainDeadLetterRow>(
+      `UPDATE cop_domain_dead_letters
+      SET status = 'redriven',
+        retry_count = retry_count + 1,
+        retry_last_at = $2::timestamptz,
+        retry_last_event_id = $3,
+        resolved_at = COALESCE(resolved_at, $2::timestamptz),
+        resolved_by = COALESCE(resolved_by, $4)
+      WHERE dead_letter_id = $1
+      RETURNING dead_letter_id, channel, correlation_id, error_code, message, body_json, received_at,
+        status, retry_count, retry_last_at, retry_last_event_id, resolved_at, resolved_by`,
+      [deadLetterId, timestamp, result.event.id, options.resolvedBy ?? null]
+    );
+    const row = updated.rows[0];
+    if (!row) {
+      throw new Error(`Dead-letter ${deadLetterId} was not found during re-drive.`);
+    }
+    return {
+      deadLetter: deadLetterFromRow(row),
+      event: result.event,
+      status: result.duplicate ? "duplicate" : "redriven"
+    };
+  }
+
+  async resolveDeadLetter(deadLetterId: string, options: { now?: Date; resolvedBy?: string }): Promise<DomainDeadLetterRecord | null> {
+    const timestamp = (options.now ?? new Date()).toISOString();
+    const result = await this.pool.query<DomainDeadLetterRow>(
+      `UPDATE cop_domain_dead_letters
+      SET status = 'resolved',
+        resolved_at = COALESCE(resolved_at, $2::timestamptz),
+        resolved_by = COALESCE(resolved_by, $3)
+      WHERE dead_letter_id = $1
+      RETURNING dead_letter_id, channel, correlation_id, error_code, message, body_json, received_at,
+        status, retry_count, retry_last_at, retry_last_event_id, resolved_at, resolved_by`,
+      [deadLetterId, timestamp, options.resolvedBy ?? null]
+    );
+    const row = result.rows[0];
+    return row ? deadLetterFromRow(row) : null;
+  }
+
+  async getEdgeCursor(nodeId: string): Promise<EdgeReplayCursorRecord | null> {
+    const result = await this.pool.query<EdgeReplayCursorRow>(
+      `SELECT node_id, last_acked_offset, acked_at, last_replay_at, updated_by
+      FROM cop_edge_replay_cursors
+      WHERE node_id = $1`,
+      [nodeId]
+    );
+    const row = result.rows[0];
+    return row ? edgeCursorFromRow(row) : null;
+  }
+
+  async updateEdgeCursor(input: { lastAckedOffset: number; nodeId: string; now?: Date; updatedBy?: string }): Promise<EdgeReplayCursorRecord> {
+    const timestamp = (input.now ?? new Date()).toISOString();
+    const result = await this.pool.query<EdgeReplayCursorRow>(
+      `INSERT INTO cop_edge_replay_cursors (node_id, last_acked_offset, acked_at, last_replay_at, updated_by)
+      VALUES ($1, $2, $3::timestamptz, $3::timestamptz, $4)
+      ON CONFLICT (node_id) DO UPDATE SET
+        last_acked_offset = GREATEST(cop_edge_replay_cursors.last_acked_offset, EXCLUDED.last_acked_offset),
+        acked_at = CASE
+          WHEN EXCLUDED.last_acked_offset >= cop_edge_replay_cursors.last_acked_offset THEN EXCLUDED.acked_at
+          ELSE cop_edge_replay_cursors.acked_at
+        END,
+        last_replay_at = EXCLUDED.last_replay_at,
+        updated_by = EXCLUDED.updated_by
+      RETURNING node_id, last_acked_offset, acked_at, last_replay_at, updated_by`,
+      [input.nodeId, input.lastAckedOffset, timestamp, input.updatedBy ?? null]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error(`Edge replay cursor for ${input.nodeId} was not returned after acknowledgement.`);
+    }
+    return edgeCursorFromRow(row);
   }
 
   async countEvents(): Promise<number> {
@@ -324,6 +425,20 @@ interface DomainDeadLetterRow extends QueryResultRow {
   error_code: string;
   message: string;
   received_at: Date | string;
+  resolved_at: Date | string | null;
+  resolved_by: string | null;
+  retry_count: number | string;
+  retry_last_at: Date | string | null;
+  retry_last_event_id: string | null;
+  status: "open" | "redriven" | "resolved";
+}
+
+interface EdgeReplayCursorRow extends QueryResultRow {
+  acked_at: Date | string;
+  last_acked_offset: number | string;
+  last_replay_at: Date | string | null;
+  node_id: string;
+  updated_by: string | null;
 }
 
 const createFederationRuntimeTablesSql = `
@@ -381,14 +496,49 @@ CREATE TABLE IF NOT EXISTS cop_domain_dead_letters (
   error_code text NOT NULL,
   message text NOT NULL,
   body_json jsonb NOT NULL,
-  received_at timestamptz NOT NULL
+  received_at timestamptz NOT NULL,
+  status text NOT NULL DEFAULT 'open',
+  retry_count integer NOT NULL DEFAULT 0,
+  retry_last_at timestamptz,
+  retry_last_event_id text,
+  resolved_at timestamptz,
+  resolved_by text
 );
+
+ALTER TABLE cop_domain_dead_letters
+  ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'open';
+
+ALTER TABLE cop_domain_dead_letters
+  ADD COLUMN IF NOT EXISTS retry_count integer NOT NULL DEFAULT 0;
+
+ALTER TABLE cop_domain_dead_letters
+  ADD COLUMN IF NOT EXISTS retry_last_at timestamptz;
+
+ALTER TABLE cop_domain_dead_letters
+  ADD COLUMN IF NOT EXISTS retry_last_event_id text;
+
+ALTER TABLE cop_domain_dead_letters
+  ADD COLUMN IF NOT EXISTS resolved_at timestamptz;
+
+ALTER TABLE cop_domain_dead_letters
+  ADD COLUMN IF NOT EXISTS resolved_by text;
 
 CREATE INDEX IF NOT EXISTS cop_domain_dead_letters_received_idx
   ON cop_domain_dead_letters (received_at DESC);
 
 CREATE INDEX IF NOT EXISTS cop_domain_dead_letters_error_idx
   ON cop_domain_dead_letters (error_code, received_at DESC);
+
+CREATE INDEX IF NOT EXISTS cop_domain_dead_letters_status_idx
+  ON cop_domain_dead_letters (status, received_at DESC);
+
+CREATE TABLE IF NOT EXISTS cop_edge_replay_cursors (
+  node_id text PRIMARY KEY,
+  last_acked_offset bigint NOT NULL DEFAULT 0,
+  acked_at timestamptz NOT NULL,
+  last_replay_at timestamptz,
+  updated_by text
+);
 `;
 
 function nodeFromRow(row: FederatedNodeRow): FederatedNodeRecord {
@@ -432,7 +582,23 @@ function deadLetterFromRow(row: DomainDeadLetterRow): DomainDeadLetterRecord {
     deadLetterId: row.dead_letter_id,
     errorCode: row.error_code,
     message: row.message,
-    receivedAt: isoString(row.received_at)
+    receivedAt: isoString(row.received_at),
+    ...(row.resolved_at ? { resolvedAt: isoString(row.resolved_at) } : {}),
+    ...(row.resolved_by ? { resolvedBy: row.resolved_by } : {}),
+    retryCount: Number(row.retry_count ?? 0),
+    ...(row.retry_last_at ? { retryLastAt: isoString(row.retry_last_at) } : {}),
+    ...(row.retry_last_event_id ? { retryLastEventId: row.retry_last_event_id } : {}),
+    status: row.status ?? "open"
+  };
+}
+
+function edgeCursorFromRow(row: EdgeReplayCursorRow): EdgeReplayCursorRecord {
+  return {
+    ackedAt: isoString(row.acked_at),
+    lastAckedOffset: Number(row.last_acked_offset),
+    ...(row.last_replay_at ? { lastReplayAt: isoString(row.last_replay_at) } : {}),
+    nodeId: row.node_id,
+    ...(row.updated_by ? { updatedBy: row.updated_by } : {})
   };
 }
 

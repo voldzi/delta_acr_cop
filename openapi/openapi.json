@@ -3426,6 +3426,249 @@
           }
         }
       }
+    },
+    "/api/v1/edge/replay-cursors/{nodeId}": {
+      "get": {
+        "tags": [
+          "Domain Events"
+        ],
+        "summary": "Read edge replay cursor",
+        "description": "Returns the durable replay acknowledgement cursor for a registered edge-node. Missing cursors default to offset 0.",
+        "operationId": "getEdgeReplayCursor",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current edge replay cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeReplayCursorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
+        }
+      }
+    },
+    "/api/v1/edge/replay-cursors/{nodeId}/ack": {
+      "post": {
+        "tags": [
+          "Domain Events"
+        ],
+        "summary": "Acknowledge edge replay cursor",
+        "description": "Stores the highest replay offset durably processed by an edge-node. The stored cursor is monotonic and will not move backwards.",
+        "operationId": "ackEdgeReplayCursor",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EdgeReplayCursorAckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Replay cursor acknowledged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeReplayCursorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
+        }
+      }
+    },
+    "/api/v1/events/dead-letter/{deadLetterId}": {
+      "get": {
+        "tags": [
+          "Domain Events"
+        ],
+        "summary": "Read dead-letter domain event",
+        "operationId": "getDomainEventDeadLetter",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deadLetterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dead-letter record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainDeadLetterDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/events/dead-letter/{deadLetterId}/redrive": {
+      "post": {
+        "tags": [
+          "Domain Events"
+        ],
+        "summary": "Re-drive a dead-letter domain event",
+        "description": "Publishes a corrected dead-letter event back into the domain event log and marks the dead-letter as redriven. COP does not create another dead-letter for invalid re-drive payloads; the operator receives a validation error instead.",
+        "operationId": "redriveDomainEventDeadLetter",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deadLetterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DomainDeadLetterRedriveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Dead-letter re-driven.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainDeadLetterRedriveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
+        }
+      }
+    },
+    "/api/v1/events/dead-letter/{deadLetterId}/resolve": {
+      "post": {
+        "tags": [
+          "Domain Events"
+        ],
+        "summary": "Resolve a dead-letter domain event",
+        "description": "Marks a dead-letter as resolved without publishing a replacement event. Use when the rejected payload is intentionally discarded or superseded externally.",
+        "operationId": "resolveDomainEventDeadLetter",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deadLetterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dead-letter resolved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainDeadLetterResolveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -10860,7 +11103,34 @@
             "type": "string",
             "format": "date-time"
           },
-          "body": {}
+          "body": {},
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "redriven",
+              "resolved"
+            ],
+            "description": "Operator lifecycle status for a rejected domain event."
+          },
+          "retryCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "retryLastAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "retryLastEventId": {
+            "type": "string"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedBy": {
+            "type": "string"
+          }
         },
         "additionalProperties": false
       },
@@ -11031,6 +11301,177 @@
           "rejectedCount": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "EdgeReplayCursor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nodeId",
+          "lastAckedOffset",
+          "ackedAt"
+        ],
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          },
+          "lastAckedOffset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ackedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastReplayAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        }
+      },
+      "EdgeReplayCursorAckRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lastAckedOffset"
+        ],
+        "properties": {
+          "lastAckedOffset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Highest replay offset durably processed by the edge node. COP stores this monotonically and never moves the cursor backwards."
+          }
+        }
+      },
+      "EdgeReplayCursorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "generatedAt",
+          "cursor"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-edge-replay-cursor-v1"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cursor": {
+            "$ref": "#/components/schemas/EdgeReplayCursor"
+          }
+        }
+      },
+      "DomainDeadLetterDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "generatedAt",
+          "deadLetter"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-domain-event-dlq-detail-v1"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadLetter": {
+            "$ref": "#/components/schemas/DomainDeadLetter"
+          }
+        }
+      },
+      "DomainDeadLetterRedriveRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DomainEventPublishRequest"
+          },
+          {
+            "type": "object",
+            "required": [
+              "event"
+            ],
+            "properties": {
+              "event": {
+                "$ref": "#/components/schemas/DomainEventPublishRequest"
+              }
+            },
+            "additionalProperties": false
+          }
+        ],
+        "description": "Either a corrected domain event publish request or an object with event. Empty body reuses the original dead-letter body."
+      },
+      "DomainDeadLetterRedriveResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "correlationId",
+          "generatedAt",
+          "status",
+          "deadLetter",
+          "event"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-domain-event-dlq-redrive-v1"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "duplicate",
+              "redriven"
+            ]
+          },
+          "deadLetter": {
+            "$ref": "#/components/schemas/DomainDeadLetter"
+          },
+          "event": {
+            "$ref": "#/components/schemas/DomainCloudEvent"
+          }
+        }
+      },
+      "DomainDeadLetterResolveResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "correlationId",
+          "generatedAt",
+          "deadLetter"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-domain-event-dlq-resolve-v1"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadLetter": {
+            "$ref": "#/components/schemas/DomainDeadLetter"
           }
         }
       }
