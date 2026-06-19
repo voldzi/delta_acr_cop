@@ -22,6 +22,29 @@ The catalog separates user-facing map products from technical data sources:
 
 `enabled=true` on a source only means that the provider runs that source. It does not mean that COP should show it as a normal map layer.
 
+## COP Public Menu Curation
+
+The provider catalog can contain more map products than the public COP layer
+menu should expose. COP is allowed to keep a layer in `/api/v1/map/catalog`
+while marking it `selectable=false` for the basic public UI when the layer is a
+technical variant, a low-density fallback or a future advanced product.
+
+Current weather curation:
+
+| Provider layer purpose | Public COP behavior |
+| --- | --- |
+| Current weather summary | selectable as `public.weather.current` |
+| ČHMÚ station observations | selectable as `public.weather.observations` |
+| ČHMÚ radar precipitation overlay | selectable as `public.weather.radar_precipitation` |
+| Air quality station observations | selectable as `public.safety.air_quality` |
+| Radar reflectivity / nowcast variants | kept in catalog, hidden from basic public selection until timeline/animation UI is ready |
+| Temperature, precipitation, humidity, pressure and air-quality grid fallbacks | kept in catalog, hidden from basic public selection until SIM provides dense stable tiles or a documented grid endpoint |
+| Wind vector field | kept in catalog, hidden from basic public selection until COP has a proper animated wind renderer |
+
+Native clients should use the `selectable` flag for the normal user-facing
+layer picker and may expose non-selectable public layers only in an explicit
+advanced/diagnostic view.
+
 ## Design Principles
 
 1. Layer ids are opaque strings, not frontend enums.

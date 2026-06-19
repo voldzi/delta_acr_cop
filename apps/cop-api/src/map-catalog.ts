@@ -370,14 +370,41 @@ function shouldIncludeCatalogAudience(value: string | undefined, includeDiagnost
   return true;
 }
 
+const curatedWeatherLayerLabels: Record<string, string> = {
+  "public.safety.air_quality": "Kvalita ovzduší",
+  "public.weather.current": "Počasí v oblasti",
+  "public.weather.observations": "Měřené stanice ČHMÚ",
+  "public.weather.radar_precipitation": "Radar srážek"
+};
+
+const basicUiHiddenWeatherLayerIds = new Set([
+  "public.safety.air_quality_grid",
+  "public.safety.thunderstorm_risk",
+  "public.weather.aviation",
+  "public.weather.humidity_grid",
+  "public.weather.precipitation_grid",
+  "public.weather.pressure_grid",
+  "public.weather.radar_nowcast",
+  "public.weather.radar_reflectivity",
+  "public.weather.temperature_grid",
+  "public.weather.wind_field"
+]);
+
 function selectableForCatalogLayer(layer: ProviderCatalogLayer): boolean {
   if (layer.recommendedCatalogLayerId === "reference.infrastructure.communications") {
     return true;
+  }
+  if (basicUiHiddenWeatherLayerIds.has(layer.recommendedCatalogLayerId)) {
+    return false;
   }
   return layer.selectable === true;
 }
 
 function labelForCatalogLayer(layer: ProviderCatalogLayer): string {
+  const curatedLabel = curatedWeatherLayerLabels[layer.recommendedCatalogLayerId];
+  if (curatedLabel) {
+    return curatedLabel;
+  }
   if (layer.recommendedCatalogLayerId === "reference.infrastructure.communications") {
     return "BTS / komunikační stožáry";
   }

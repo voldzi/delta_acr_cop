@@ -503,6 +503,7 @@ export function App() {
   const [situationFeatures, setSituationFeatures] = React.useState<SituationFeatureCollectionResponse | null>(null);
   const [situationStatus, setSituationStatus] = React.useState<SituationLayerStatus>("loading");
   const [situationWarnings, setSituationWarnings] = React.useState<string[]>([]);
+  const [situationRasterRefreshTick, setSituationRasterRefreshTick] = React.useState(0);
   const [safetyLayers, setSafetyLayers] = React.useState<SafetyLayer[]>([]);
   const [visibleSafetyLayerIds, setVisibleSafetyLayerIds] = React.useState<SafetyLayerId[]>(() =>
     normalizeSafetyLayerIds(initialPreferences.safetyLayerIds)
@@ -1198,6 +1199,10 @@ export function App() {
   const visibleCatalogLayerKey = visibleCatalogLayerIds.join(",");
   const effectiveVisibleCatalogLayerKey = effectiveVisibleCatalogLayerIds.join(",");
   const outlineBoundaryLayerEnabled = effectiveVisibleCatalogLayerIds.includes("public.boundary.admin") && !visibleCatalogLayerIds.includes("public.boundary.admin");
+  const situationRasterRefreshSeconds = React.useMemo(
+    () => selectedSituationRasterRefreshSeconds(mapCatalog, effectiveVisibleCatalogLayerIds),
+    [effectiveVisibleCatalogLayerKey, mapCatalog]
+  );
 
   React.useEffect(() => {
     if (!mapCatalog) {
@@ -1211,6 +1216,17 @@ export function App() {
     setVisibleTrackLayerIds(legacySelection.trackLayerIds);
     setSelectedLayer(legacySelection.trackLayerIds[0] ?? "air-situation");
   }, [mapCatalog, visibleCatalogLayerKey]);
+
+  React.useEffect(() => {
+    if (!autoRefresh || !dataAccessReady || !mapBounds || situationRasterRefreshSeconds === undefined) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      situationFeatureRequestRef.current = null;
+      setSituationRasterRefreshTick((current) => current + 1);
+    }, situationRasterRefreshSeconds * 1000);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, dataAccessReady, mapBounds, situationRasterRefreshSeconds]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -1289,7 +1305,7 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, coverageTechnology, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
+  }, [apiBase, authToken, coverageTechnology, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom, situationRasterRefreshTick]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -11638,6 +11654,24 @@ function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
   if (!operable) {
     return "Připraveno v katalogu, zobrazení se doplní v další integraci";
   }
+  if (layer.layerId === "public.weather.current") {
+    return "Aktuální stav v mapovém výřezu";
+  }
+  if (layer.layerId === "public.weather.observations") {
+    return "Měřené hodnoty ze stanic";
+  }
+  if (layer.layerId === "public.weather.radar_precipitation") {
+    return "Radarová mapa s automatickou obnovou";
+  }
+  if (layer.layerId === "public.safety.air_quality") {
+    return "Měřicí stanice kvality ovzduší";
+  }
+  if (layer.kind === "raster_overlay") {
+    return "Rastrová mapa nad podkladem";
+  }
+  if (layer.kind === "grid_field" || layer.kind === "vector_field") {
+    return "Plošný model ze zdrojových měření";
+  }
   const geometry = layer.geometryTypes && layer.geometryTypes.length > 0 ? layer.geometryTypes.join("/") : "data";
   const cadence = typeof layer.refreshSeconds === "number" ? `${layer.refreshSeconds}s` : "dle zdroje";
   return `${geometry} · ${cadence}`;
@@ -11645,6 +11679,18 @@ function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
 
 function catalogLayerProviderLabel(layer: MapCatalogLayer): string {
   if (layer.query.providerId === "sim.situation-data") {
+    if (layer.groupId === "risks.weather" || layer.layerId.startsWith("public.weather.") || layer.layerId === "public.safety.air_quality") {
+      if ((layer.query.providerSourceIds ?? []).includes("chmi_weather_radar")) {
+        return "ČHMÚ radar";
+      }
+      if ((layer.query.providerSourceIds ?? []).includes("chmi_weather_stations")) {
+        return "ČHMÚ stanice";
+      }
+      if ((layer.query.providerSourceIds ?? []).includes("chmi_air_quality")) {
+        return "ČHMÚ ovzduší";
+      }
+      return "Počasí";
+    }
     return "Situační data";
   }
   if (layer.query.providerId === "sim.safety-data") {
@@ -11834,6 +11880,23 @@ function catalogLayerIdsForProviderSelection(catalog: MapCatalogResponse, provid
     .filter((layer) => selected.has(layer.layerId) && isImplementedCatalogLayer(layer))
     .filter((layer) => (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === providerId)
     .map((layer) => layer.layerId);
+}
+
+function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | null, selectedLayerIds: string[]): number | undefined {
+  if (!catalog) {
+    return undefined;
+  }
+  const selected = new Set(selectedLayerIds);
+  const refreshSeconds = catalog.layers
+    .filter((layer) => selected.has(layer.layerId))
+    .filter((layer) => layer.query.providerId === "sim.situation-data" && layer.kind === "raster_overlay")
+    .map((layer) => layer.refreshSeconds)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  if (refreshSeconds.length === 0) {
+    return undefined;
+  }
+  const seconds = Math.min(...refreshSeconds);
+  return Math.max(60, Math.min(seconds, 900));
 }
 
 function withOutlineBoundaryLayer(selectedLayerIds: string[], mode: MapBasemapMode, catalog: MapCatalogResponse | null): string[] {

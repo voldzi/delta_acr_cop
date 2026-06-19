@@ -381,6 +381,59 @@ timestamps, provenance and cache metadata.
 
 COP will use this server-side for provider health panels. It is not a public map layer.
 
+## Weather Radar Timeline And Archive
+
+Current COP behavior:
+
+- `public.weather.radar_precipitation` is the public radar layer in the basic
+  weather menu.
+- Additional radar products such as reflectivity and nowcast are accepted in the
+  catalog but hidden from the basic public layer picker until COP has a
+  timeline/animation control.
+- When a selected SIM situation-data layer has `kind=raster_overlay`, COP
+  refreshes the provider query according to the layer `refreshSeconds` value
+  with a lower bound of 60 seconds. The browser still calls COP only; COP calls
+  SIM server-side and SIM protects upstream providers through its cache.
+
+Recommended SIM next step for future replay/animation:
+
+1. Store every fetched ČHMÚ radar frame server-side before exposing it to COP.
+2. Keep the original upstream URL, local object-store key, observed/valid time,
+   product id, projection, bounds, checksum, content type and source revision.
+3. Use a retention policy suitable for pilot replay, for example 72 hours by
+   default and configurable per environment.
+4. Do not make COP or browsers call ČHMÚ directly.
+5. Add a server-side frame index endpoint when playback is ready, for example:
+
+```http
+GET /situation-data/api/v1/weather/radar/frames?product=precipitation&from=2026-06-19T10:00:00Z&to=2026-06-19T11:00:00Z
+```
+
+Suggested storage model:
+
+```text
+weather_radar_frames(
+  id,
+  product_id,
+  observed_at,
+  valid_from,
+  valid_until,
+  forecast_offset_minutes,
+  source_url,
+  object_key,
+  content_type,
+  projection,
+  bounds_wgs84,
+  data_bounds_wgs84,
+  checksum_sha256,
+  source_revision,
+  created_at
+)
+```
+
+Until the frame index exists, COP should display only the latest radar overlay
+and refresh it from SIM by catalog TTL.
+
 ## Degraded Behavior
 
 SIM should fail per layer, not per whole provider:

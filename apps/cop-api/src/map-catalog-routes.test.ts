@@ -161,7 +161,8 @@ describe("map catalog route", () => {
           mode: "grid",
           providerLayerIds: ["weather.temperature_grid"],
           providerSourceIds: ["chmi_weather_stations"]
-        })
+        }),
+        selectable: false
       })
     ]));
     expect(body.layers.map((layer) => layer.layerId)).not.toContain("diagnostic.mobile.coverage");
