@@ -109,6 +109,10 @@
     {
       "name": "MCP",
       "description": "Client-safe, audited COP tool registry and read-only tool invocation facade."
+    },
+    {
+      "name": "Edge Runtime",
+      "description": "Local pilot edge node runtime published under /edge when enabled."
     }
   ],
   "paths": {
@@ -3857,6 +3861,186 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/edge/health/live": {
+      "get": {
+        "tags": [
+          "Edge Runtime"
+        ],
+        "summary": "Edge node liveness probe.",
+        "description": "Served by the optional cop-edge-node runtime when it is published under /edge. This endpoint only confirms that the edge process is running.",
+        "operationId": "edgeRuntimeHealthLive",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Edge process is alive.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeRuntimeHealthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/edge/health/ready": {
+      "get": {
+        "tags": [
+          "Edge Runtime"
+        ],
+        "summary": "Edge node readiness probe.",
+        "description": "Returns degraded when the local edge runtime is alive but cannot synchronize with central COP.",
+        "operationId": "edgeRuntimeHealthReady",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Edge runtime is ready or degraded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeRuntimeReadyStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/edge/status": {
+      "get": {
+        "tags": [
+          "Edge Runtime"
+        ],
+        "summary": "Read local edge node status.",
+        "description": "Returns local file-backed edge runtime state, recent replayed events and local dead letters. The edge runtime never calls SIM directly; it synchronizes only with COP central API.",
+        "operationId": "edgeRuntimeStatus",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Local edge node status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeRuntimeStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/edge/events": {
+      "get": {
+        "tags": [
+          "Edge Runtime"
+        ],
+        "summary": "Read local edge replay cache.",
+        "description": "Returns the same local status envelope as /edge/status, with recentEvents bounded by the optional limit query parameter.",
+        "operationId": "edgeRuntimeEvents",
+        "security": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Local edge replay cache.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeRuntimeStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/edge/sync": {
+      "post": {
+        "tags": [
+          "Edge Runtime"
+        ],
+        "summary": "Trigger local edge synchronization.",
+        "description": "Admin-only local command. Flushes the local edge outbox, pulls policy-filtered central replay and acknowledges the replay cursor after durable local write.",
+        "operationId": "edgeRuntimeSync",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Synchronization attempt completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeRuntimeSyncResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/edge/outbox": {
+      "post": {
+        "tags": [
+          "Edge Runtime"
+        ],
+        "summary": "Queue a local edge outbox event.",
+        "description": "Admin-only local command for pilot edge integrations. Queues a domain event command locally for later flush through central COP /api/v1/edge/outbox/flush.",
+        "operationId": "edgeRuntimeQueueOutboxEvent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EdgeRuntimeOutboxQueueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Event queued locally.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeRuntimeOutboxQueueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
           }
         }
       }
@@ -11922,6 +12106,418 @@
             "description": "Tool-specific read-only result. No provider service tokens or plaintext chat payloads are returned."
           }
         }
+      },
+      "EdgeRuntimeHealthStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ]
+          }
+        }
+      },
+      "EdgeRuntimeState": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "nodeId",
+          "nodeName",
+          "nodeRole",
+          "contractVersion",
+          "health",
+          "queueDepth",
+          "lastSyncAt",
+          "lastReplayOffset",
+          "lastError",
+          "centralApiUrl",
+          "classificationMax",
+          "autoSync",
+          "syncIntervalMs",
+          "outboxDepth",
+          "inboundEventCount",
+          "deadLetterCount",
+          "updatedAt"
+        ],
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "example": "node_edge_pilot_01"
+          },
+          "nodeName": {
+            "type": "string",
+            "example": "CSM Edge Pilot Node"
+          },
+          "nodeRole": {
+            "type": "string",
+            "enum": [
+              "edge-node"
+            ]
+          },
+          "contractVersion": {
+            "type": "string",
+            "example": "cop-edge-runtime-v1"
+          },
+          "health": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ]
+          },
+          "queueDepth": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "outboxDepth": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inboundEventCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deadLetterCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastSyncAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastReplayOffset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "centralApiUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "classificationMax": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "INTERNAL",
+              "SENSITIVE",
+              "RESTRICTED_SIMULATED"
+            ]
+          },
+          "autoSync": {
+            "type": "boolean"
+          },
+          "syncIntervalMs": {
+            "type": "integer",
+            "minimum": 1000
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "EdgeRuntimeStatusResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "generatedAt",
+          "node",
+          "status",
+          "summary",
+          "recentEvents"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-edge-node-status-v1"
+            ]
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "node": {
+            "$ref": "#/components/schemas/EdgeRuntimeNode"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EdgeRuntimeStatus"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/EdgeRuntimeSummary"
+          },
+          "recentEvents": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "eventId": {
+                  "type": "string"
+                },
+                "replayOffset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "receivedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "event": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "EdgeRuntimeSyncResponse": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "contractVersion",
+          "generatedAt",
+          "result"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-edge-sync-result-v1"
+            ]
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "flushed",
+              "mode",
+              "pulled",
+              "replayOffset",
+              "status"
+            ],
+            "properties": {
+              "flushed": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "ONLINE",
+                  "DEGRADED",
+                  "OFFLINE"
+                ]
+              },
+              "pulled": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "replayOffset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "degraded"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "EdgeRuntimeOutboxQueueRequest": {
+        "$ref": "#/components/schemas/DomainEventPublishRequest"
+      },
+      "EdgeRuntimeOutboxQueueResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "item"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-edge-outbox-queued-v1"
+            ]
+          },
+          "item": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "clientEventId",
+              "createdAt",
+              "status"
+            ],
+            "properties": {
+              "clientEventId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "rejected"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "EdgeRuntimeNode": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "classificationMax",
+          "lastHeartbeatAt",
+          "nodeId",
+          "nodeName",
+          "softwareVersion"
+        ],
+        "properties": {
+          "classificationMax": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "INTERNAL",
+              "SENSITIVE",
+              "RESTRICTED_SIMULATED"
+            ]
+          },
+          "lastHeartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "nodeId": {
+            "type": "string",
+            "example": "node_edge_pilot_01"
+          },
+          "nodeName": {
+            "type": "string",
+            "example": "CSM Edge Pilot Node"
+          },
+          "softwareVersion": {
+            "type": "string",
+            "example": "0.1.0"
+          }
+        }
+      },
+      "EdgeRuntimeStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cachedSnapshotObjects",
+          "lastError",
+          "lastSyncAt",
+          "mode",
+          "outboxItems",
+          "replayOffset"
+        ],
+        "properties": {
+          "cachedSnapshotObjects": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastSyncAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "ONLINE",
+              "DEGRADED",
+              "OFFLINE"
+            ]
+          },
+          "outboxItems": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "replayOffset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "EdgeRuntimeSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cachedEvents",
+          "deadLetters",
+          "outboxItems",
+          "replayOffset"
+        ],
+        "properties": {
+          "cachedEvents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deadLetters": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "outboxItems": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "replayOffset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "EdgeRuntimeReadyStatus": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EdgeRuntimeHealthStatus"
+          },
+          {
+            "$ref": "#/components/schemas/EdgeRuntimeStatus"
+          }
+        ]
       }
     }
   }

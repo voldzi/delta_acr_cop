@@ -153,3 +153,37 @@ services:
     depends_on:
       cop-api:
         condition: service_healthy
+
+  cop-edge:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile.edge
+    image: delta-acr-cop-edge:local
+    environment:
+      COP_EDGE_HOST: "0.0.0.0"
+      COP_EDGE_PORT: "4312"
+      COP_EDGE_NODE_ID: "${COP_EDGE_NODE_ID:-node_edge_pilot_01}"
+      COP_EDGE_NODE_NAME: "${COP_EDGE_NODE_NAME:-CSM Edge Pilot Node}"
+      COP_EDGE_CLASSIFICATION_MAX: "${COP_EDGE_CLASSIFICATION_MAX:-INTERNAL}"
+      COP_EDGE_CENTRAL_API_URL: "${COP_EDGE_CENTRAL_API_URL:-http://cop-api:4310}"
+      COP_EDGE_CENTRAL_TOKEN: "${COP_EDGE_CENTRAL_TOKEN:-dev-lab-token}"
+      COP_EDGE_ADMIN_TOKEN: "${COP_EDGE_ADMIN_TOKEN:-}"
+      COP_EDGE_AUTO_SYNC: "${COP_EDGE_AUTO_SYNC:-true}"
+      COP_EDGE_SYNC_INTERVAL_MS: "${COP_EDGE_SYNC_INTERVAL_MS:-10000}"
+      COP_EDGE_DATA_DIR: "/data/edge"
+    ports:
+      - "${COP_EDGE_PORT:-4312}:4312"
+    volumes:
+      - cop-edge-data:/data/edge
+    depends_on:
+      cop-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4312/health/live"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  cop-edge-data:

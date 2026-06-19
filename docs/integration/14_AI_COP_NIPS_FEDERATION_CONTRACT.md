@@ -72,6 +72,16 @@ broker facade a append-only event log pro pilotní federaci. Pokud je dostupná
 `cop_domain_events`, `cop_domain_dead_letters` a `cop_edge_replay_cursors`. Bez
 databáze běží in-memory fallback vhodný pouze pro vývoj.
 
+Pilot současně obsahuje samostatný `cop-edge-node` runtime. Ten běží jako
+lokální edge služba s file-backed stavem, lokálním outboxem a replay cache. Edge
+runtime nevolá SIM ani externí providery přímo. Připojuje se pouze k centrálnímu
+COP API, přes heartbeat se registruje jako `edge-node`, flushuje lokální outbox,
+stahuje policy-filtered replay a po durable zápisu potvrzuje cursor. V
+produkčním pilotu se publikuje pod COP doménou jako `/edge/`, například
+`GET /edge/status` a `POST /edge/sync`. Mutující lokální edge endpointy vyžadují
+samostatný `COP_EDGE_ADMIN_TOKEN`; token centrálního COP API zůstává jen
+server-side v edge procesu.
+
 Aktuální endpointy jsou chráněné bearer autentizací a nejsou veřejným klientským
 API:
 
@@ -156,12 +166,14 @@ skutečnou změnu provede až explicitní COP command API s potvrzením uživate
 
 Další runtime kroky:
 
-1. doplnit broker adapter pod stejným kontraktem, pokud pilot vyžádá externí
+1. doplnit DMZ publikaci `/edge/`, pokud má být edge runtime dostupný veřejně
+   přes `cop.zeleznalady.cz`,
+2. doplnit broker adapter pod stejným kontraktem, pokud pilot vyžádá externí
    message broker,
-2. napojit edge outbox na iOS/PWA offline frontu a konfliktní dialogy,
-3. rozšířit edge replay o subject/group ACL podle finální pilotní identity
+3. napojit edge outbox na iOS/PWA offline frontu a konfliktní dialogy,
+4. rozšířit edge replay o subject/group ACL podle finální pilotní identity
    matice,
-4. přidat retention/archivaci domain eventů a DLQ podle pilotní provozní politiky.
+5. přidat retention/archivaci domain eventů a DLQ podle pilotní provozní politiky.
 
 ## CloudEvent Baseline
 

@@ -153,6 +153,32 @@ operátorský replay a diagnostiku, ne jako běžný sync endpoint pro terénní
 zařízení. Po durable zpracování položek z edge replay odpovědi klient potvrzuje
 `nextOffset` přes `POST /api/v1/edge/replay-cursors/{nodeId}/ack`.
 
+## Edge Node Runtime
+
+Pilotní `cop-edge-node` služba běží jako samostatný kontejner. Nepřistupuje
+přímo do SIM. Komunikuje pouze s centrálním COP API přes server-side bearer
+token, drží lokální file-backed state a pravidelně provádí heartbeat, outbox
+flush a edge replay pull.
+
+```env
+COP_EDGE_PORT=4312
+COP_EDGE_NODE_ID=node_edge_pilot_01
+COP_EDGE_NODE_NAME="CSM Edge Pilot Node"
+COP_EDGE_CLASSIFICATION_MAX=INTERNAL
+COP_EDGE_CENTRAL_API_URL=http://cop-api:4310
+COP_EDGE_CENTRAL_TOKEN=<same-value-as-COP_LAB_TOKEN-or-service-token>
+COP_EDGE_ADMIN_TOKEN=<random-long-secret-for-edge-admin-posts>
+COP_EDGE_AUTO_SYNC=true
+COP_EDGE_SYNC_INTERVAL_MS=10000
+```
+
+Pokud se edge publikuje z DMZ, má být pod cestou
+`https://cop.zeleznalady.cz/edge/` a proxy má směřovat na
+`http://docker.home.cz:4312/edge/`. Měnící endpointy `POST /edge/sync` a
+`POST /edge/outbox` vyžadují `COP_EDGE_ADMIN_TOKEN`; bez něj fail-closed vrací
+`401`. Detailní provozní postup je v
+[13 Edge Node Runtime](13_EDGE_NODE_RUNTIME.md).
+
 Provozní obsluha DLQ používá výhradně COP API:
 
 - `GET /api/v1/events/dead-letter` pro seznam odmítnutých eventů,

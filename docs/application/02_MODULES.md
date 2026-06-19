@@ -4,7 +4,9 @@
 
 - `apps/cop-api`: API Gateway, ingest, query, Source Registry, audit a AI endpointy.
 - `apps/cop-web`: webový COP klient.
-- `apps/cop-edge-node`: edge/degraded runtime skeleton.
+- `apps/cop-edge-node`: edge/degraded runtime, lokální file-backed outbox,
+  heartbeat, policy-filtered replay pull a status endpointy pro publikaci pod
+  `/edge`.
 - `packages/canonical-model`: sdílené typy a validace canonical modelu.
 - `packages/ingest-contracts`: OpenAPI/JSON Schema kontrakty.
 - `packages/source-adapters`: adapter framework.
