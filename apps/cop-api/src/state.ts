@@ -1,4 +1,5 @@
 import { createSimSourceSystem } from "@cop/canonical-model";
+import { createDefaultFederatedNodes } from "./federation.js";
 import type { CopState } from "./types.js";
 
 export function createInitialState(): CopState {
@@ -10,7 +11,10 @@ export function createInitialState(): CopState {
     trackHistory: new Map(),
     idempotency: new Map(),
     alertAcknowledgements: new Map(),
-    auditEvents: []
+    auditEvents: [],
+    federatedNodes: createDefaultFederatedNodes(),
+    domainEvents: [],
+    domainDeadLetters: []
   };
 }
 

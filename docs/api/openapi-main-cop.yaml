@@ -57,6 +57,10 @@ tags:
     description: Liveness, readiness and dependency health endpoints.
   - name: Metrics
     description: Operational metrics endpoints.
+  - name: Federation
+    description: Federated COP node registry and node health coordination.
+  - name: Domain Events
+    description: CloudEvents-compatible domain event publish, replay and dead-letter inspection.
 paths:
   /api/v1/me/preferences:
     get:
@@ -1969,6 +1973,237 @@ paths:
                 type: string
         "429":
           $ref: "#/components/responses/TooManyRequests"
+  /api/v1/federation/nodes:
+    get:
+      tags:
+        - Federation
+      summary: List federated COP nodes.
+      operationId: listFederatedNodes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Federated node registry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FederatedNodeList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/federation/nodes/{nodeId}:
+    get:
+      tags:
+        - Federation
+      summary: Get a federated node record.
+      operationId: getFederatedNode
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Federated node record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FederatedNode"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/federation/nodes/{nodeId}/heartbeat:
+    post:
+      tags:
+        - Federation
+      summary: Register or update a federated node heartbeat.
+      operationId: upsertFederatedNodeHeartbeat
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FederatedNodeHeartbeatRequest"
+      responses:
+        "200":
+          description: Existing node heartbeat accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FederatedNode"
+        "201":
+          description: New node registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FederatedNode"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/events/domain:
+    post:
+      tags:
+        - Domain Events
+      summary: Publish a COP domain event.
+      operationId: publishDomainEvent
+      description: Accepts CloudEvents-compatible domain event commands into the local COP event log. This
+        pilot runtime is an append-only broker facade; external broker transport is added in a later
+        ADR.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainEventPublishRequest"
+      responses:
+        "202":
+          description: Domain event accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainEventPublishResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    get:
+      tags:
+        - Domain Events
+      summary: Replay COP domain events.
+      operationId: replayDomainEvents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: fromOffset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DomainEventType"
+        - name: entityId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: producerNodeId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Replay result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainEventReplayResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/events/dead-letter:
+    get:
+      tags:
+        - Domain Events
+      summary: List rejected domain events.
+      operationId: listDomainEventDeadLetters
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Dead-letter queue records.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainDeadLetterList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/edge/outbox/flush:
+    post:
+      tags:
+        - Domain Events
+      summary: Flush offline edge outbox events
+      description: Accepts a bounded batch of CloudEvents-compatible domain events produced by a
+        registered edge-node. The server enforces producer identity from nodeId and returns per-item
+        accepted, duplicate, or rejected status.
+      operationId: flushEdgeOutbox
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EdgeOutboxFlushRequest"
+      responses:
+        "202":
+          description: Outbox flush processed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeOutboxFlushResponse"
+        "207":
+          description: Outbox flush processed with only rejected items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeOutboxFlushResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "413":
+          $ref: "#/components/responses/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
 components:
   securitySchemes:
     bearerAuth:
@@ -6941,3 +7176,539 @@ components:
                     type: string
             correlationId:
               type: string
+    FederatedNodeRole:
+      type: string
+      enum:
+        - central-orchestrator
+        - civil-crisis-node
+        - edge-node
+        - provider-node
+        - messaging-node
+    FederatedNodeHealth:
+      type: string
+      enum:
+        - ok
+        - degraded
+        - offline
+    PilotClassificationLevel:
+      type: string
+      enum:
+        - PUBLIC
+        - INTERNAL
+        - SENSITIVE
+        - RESTRICTED_SIMULATED
+    FederatedNode:
+      type: object
+      required:
+        - contractVersion
+        - nodeId
+        - nodeRole
+        - nodeName
+        - capabilities
+        - classificationMax
+        - softwareVersion
+        - lastSeenAt
+        - health
+      properties:
+        contractVersion:
+          type: string
+          const: cop-federation-node-v1
+        nodeId:
+          type: string
+        nodeRole:
+          $ref: "#/components/schemas/FederatedNodeRole"
+        nodeName:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        classificationMax:
+          $ref: "#/components/schemas/PilotClassificationLevel"
+        softwareVersion:
+          type: string
+        lastSeenAt:
+          type: string
+          format: date-time
+        health:
+          $ref: "#/components/schemas/FederatedNodeHealth"
+        detail:
+          type: string
+      additionalProperties: false
+    FederatedNodeList:
+      type: object
+      required:
+        - contractVersion
+        - generatedAt
+        - items
+      properties:
+        contractVersion:
+          type: string
+          const: cop-federation-node-list-v1
+        generatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FederatedNode"
+      additionalProperties: false
+    FederatedNodeHeartbeatRequest:
+      type: object
+      properties:
+        nodeRole:
+          $ref: "#/components/schemas/FederatedNodeRole"
+        nodeName:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        classificationMax:
+          $ref: "#/components/schemas/PilotClassificationLevel"
+        softwareVersion:
+          type: string
+        health:
+          $ref: "#/components/schemas/FederatedNodeHealth"
+        detail:
+          type: string
+      additionalProperties: false
+    DomainEventType:
+      type: string
+      enum:
+        - incident.created
+        - incident.updated
+        - incident.merged
+        - unit.status.updated
+        - resource.capacity.updated
+        - sensor.observation.created
+        - alert.raised
+        - alert.acknowledged
+        - task.created
+        - task.status.changed
+        - node.disconnected
+        - node.reconnected
+        - sync.conflict.detected
+        - ai.summary.generated
+        - ai.tool.invoked
+        - report.created
+        - report.updated
+        - media.attached
+        - media.derivative.created
+        - sketch.drawing.created
+        - sketch.drawing.updated
+        - sketch.drawing.deleted
+        - notification.requested
+        - source.status.changed
+    DomainEntityType:
+      type: string
+      enum:
+        - incident
+        - unit
+        - resource
+        - sensorObservation
+        - alert
+        - task
+        - communityReport
+        - evidence
+        - sketchDrawing
+        - userZone
+        - sourceSystem
+        - auditRecord
+    DomainEventChannel:
+      type: string
+      enum:
+        - cop.domain.events
+        - cop.audit.events
+        - cop.notifications.requested
+        - cop.provider.health
+        - cop.ai.audit
+        - cop.node.sync
+    DomainClassification:
+      type: object
+      required:
+        - level
+        - releasability
+        - handlingCaveats
+      properties:
+        level:
+          $ref: "#/components/schemas/PilotClassificationLevel"
+        releasability:
+          type: array
+          items:
+            type: string
+        handlingCaveats:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    DomainReleasePolicy:
+      type: object
+      required:
+        - visibility
+        - allowedScopes
+      properties:
+        visibility:
+          type: string
+          enum:
+            - private
+            - group
+            - event
+            - internal
+            - public
+        allowedScopes:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    DomainEventQuality:
+      type: object
+      properties:
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        dataQuality:
+          type: string
+          enum:
+            - observed
+            - modelled
+            - mixed
+            - unknown
+        sourceReliability:
+          type: string
+        stale:
+          type: boolean
+      additionalProperties: false
+    CopDomainEventData:
+      type: object
+      required:
+        - contractVersion
+        - correlationId
+        - producerNodeId
+        - entityId
+        - entityType
+        - classification
+        - releasePolicy
+        - quality
+        - provenance
+        - payload
+      properties:
+        contractVersion:
+          type: string
+          const: cop-domain-event-v1
+        correlationId:
+          type: string
+        producerNodeId:
+          type: string
+        entityId:
+          type: string
+        entityType:
+          $ref: "#/components/schemas/DomainEntityType"
+        classification:
+          $ref: "#/components/schemas/DomainClassification"
+        releasePolicy:
+          $ref: "#/components/schemas/DomainReleasePolicy"
+        quality:
+          $ref: "#/components/schemas/DomainEventQuality"
+        provenance:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        payload:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    DomainCloudEvent:
+      type: object
+      required:
+        - specversion
+        - id
+        - source
+        - type
+        - time
+        - datacontenttype
+        - data
+      properties:
+        specversion:
+          type: string
+          const: "1.0"
+        id:
+          type: string
+        source:
+          type: string
+        type:
+          $ref: "#/components/schemas/DomainEventType"
+        subject:
+          type: string
+        time:
+          type: string
+          format: date-time
+        datacontenttype:
+          type: string
+          const: application/json
+        data:
+          $ref: "#/components/schemas/CopDomainEventData"
+        channel:
+          $ref: "#/components/schemas/DomainEventChannel"
+        replayOffset:
+          type: integer
+          minimum: 1
+        receivedAt:
+          type: string
+          format: date-time
+      additionalProperties: true
+    DomainEventPublishRequest:
+      type: object
+      required:
+        - type
+        - producerNodeId
+        - entityId
+        - entityType
+        - payload
+      properties:
+        id:
+          type: string
+        eventId:
+          type: string
+        channel:
+          $ref: "#/components/schemas/DomainEventChannel"
+        source:
+          type: string
+        subject:
+          type: string
+        time:
+          type: string
+          format: date-time
+        type:
+          $ref: "#/components/schemas/DomainEventType"
+        correlationId:
+          type: string
+        producerNodeId:
+          type: string
+        entityId:
+          type: string
+        entityType:
+          $ref: "#/components/schemas/DomainEntityType"
+        classification:
+          $ref: "#/components/schemas/DomainClassification"
+        releasePolicy:
+          $ref: "#/components/schemas/DomainReleasePolicy"
+        quality:
+          $ref: "#/components/schemas/DomainEventQuality"
+        provenance:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        payload:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+    DomainEventPublishResponse:
+      type: object
+      required:
+        - accepted
+        - channel
+        - contractVersion
+        - correlationId
+        - event
+      properties:
+        accepted:
+          type: boolean
+        channel:
+          $ref: "#/components/schemas/DomainEventChannel"
+        contractVersion:
+          type: string
+          const: cop-domain-event-publish-v1
+        correlationId:
+          type: string
+        event:
+          $ref: "#/components/schemas/DomainCloudEvent"
+      additionalProperties: false
+    DomainEventReplayResponse:
+      type: object
+      required:
+        - contractVersion
+        - generatedAt
+        - items
+        - nextOffset
+        - query
+        - summary
+      properties:
+        contractVersion:
+          type: string
+          const: cop-domain-event-replay-v1
+        generatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DomainCloudEvent"
+        nextOffset:
+          type: integer
+          minimum: 0
+        query:
+          type: object
+          additionalProperties: true
+        summary:
+          type: object
+          required:
+            - count
+            - totalAvailable
+          properties:
+            count:
+              type: integer
+            totalAvailable:
+              type: integer
+          additionalProperties: false
+      additionalProperties: false
+    DomainDeadLetter:
+      type: object
+      required:
+        - deadLetterId
+        - channel
+        - correlationId
+        - errorCode
+        - message
+        - receivedAt
+        - body
+      properties:
+        deadLetterId:
+          type: string
+        channel:
+          $ref: "#/components/schemas/DomainEventChannel"
+        correlationId:
+          type: string
+        errorCode:
+          type: string
+        message:
+          type: string
+        receivedAt:
+          type: string
+          format: date-time
+        body: {}
+      additionalProperties: false
+    DomainDeadLetterList:
+      type: object
+      required:
+        - contractVersion
+        - generatedAt
+        - items
+        - summary
+      properties:
+        contractVersion:
+          type: string
+          const: cop-domain-event-dlq-v1
+        generatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DomainDeadLetter"
+        summary:
+          type: object
+          required:
+            - count
+            - totalAvailable
+          properties:
+            count:
+              type: integer
+            totalAvailable:
+              type: integer
+          additionalProperties: false
+      additionalProperties: false
+    EdgeOutboxFlushRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - nodeId
+        - events
+      properties:
+        nodeId:
+          type: string
+          description: Registered federation nodeId with nodeRole=edge-node.
+        lastKnownOffset:
+          type: integer
+          minimum: 0
+          description: Optional last replay offset known by the edge node before reconnecting.
+        events:
+          type: array
+          minItems: 0
+          maxItems: 100
+          items:
+            allOf:
+              - $ref: "#/components/schemas/DomainEventPublishRequest"
+              - type: object
+                properties:
+                  clientEventId:
+                    type: string
+                    description: Stable client-generated id used for idempotent retry. If id/eventId is missing, COP
+                      uses this value as the CloudEvent id.
+    EdgeOutboxFlushItemResult:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        clientEventId:
+          type: string
+        eventId:
+          type: string
+        replayOffset:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+            - accepted
+            - duplicate
+            - rejected
+        errorCode:
+          type: string
+        message:
+          type: string
+    EdgeOutboxFlushResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - acceptedCount
+        - contractVersion
+        - correlationId
+        - duplicateCount
+        - generatedAt
+        - items
+        - nextOffset
+        - nodeId
+        - rejectedCount
+      properties:
+        acceptedCount:
+          type: integer
+          minimum: 0
+        contractVersion:
+          type: string
+          enum:
+            - cop-edge-outbox-flush-v1
+        correlationId:
+          type: string
+        duplicateCount:
+          type: integer
+          minimum: 0
+        generatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EdgeOutboxFlushItemResult"
+        nextOffset:
+          type: integer
+          minimum: 0
+        nodeId:
+          type: string
+        rejectedCount:
+          type: integer
+          minimum: 0

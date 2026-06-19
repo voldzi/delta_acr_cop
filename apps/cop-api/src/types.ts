@@ -1,4 +1,5 @@
 import type { Affiliation, CanonicalEventEnvelope, ObjectStatus, ObjectType, ObservedObject, SourceSystem } from "@cop/canonical-model";
+import type { DomainDeadLetterRecord, DomainEventRecord, FederatedNodeRecord } from "./federation.js";
 
 export interface ErrorResponse {
   error: {
@@ -17,6 +18,9 @@ export interface CopState {
   idempotency: Map<string, { hash: string; response: unknown }>;
   alertAcknowledgements: Map<string, AlertAcknowledgement>;
   auditEvents: Array<Record<string, unknown>>;
+  federatedNodes: Map<string, FederatedNodeRecord>;
+  domainEvents: DomainEventRecord[];
+  domainDeadLetters: DomainDeadLetterRecord[];
 }
 
 export type SourceHealthOverrideStatus = "DEGRADED" | "ONLINE" | "STALE" | "UNAVAILABLE" | "WAITING";

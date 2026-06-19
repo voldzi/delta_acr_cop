@@ -40,6 +40,15 @@ import {
   type FlightReferenceFeatureQuery,
   type FlightReferenceLayerId
 } from "./flight-data-source.js";
+import {
+  appendDomainDeadLetter,
+  type EdgeOutboxFlushItemResult,
+  parseDomainEventPublishRequest,
+  parseDomainEventReplayQuery,
+  publishDomainEvent,
+  queryDomainEvents,
+  updateFederatedNodeHeartbeat
+} from "./federation.js";
 import { buildMapCatalog, type BuildMapCatalogInput, type MapCatalogLayer } from "./map-catalog.js";
 import {
   buildMissionArenaHealth,
@@ -2714,6 +2723,230 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       },
       tak: takCollection,
       warnings
+    };
+  });
+
+  app.get("/api/v1/federation/nodes", async () => ({
+    contractVersion: "cop-federation-node-list-v1",
+    generatedAt: now().toISOString(),
+    items: Array.from(state.federatedNodes.values()).sort((left, right) => left.nodeId.localeCompare(right.nodeId))
+  }));
+
+  app.get("/api/v1/federation/nodes/:nodeId", async (request, reply) => {
+    const params = request.params as { nodeId: string };
+    const node = state.federatedNodes.get(params.nodeId);
+    if (!node) {
+      return sendError(reply, 404, "NOT_FOUND", "Federated node was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    return node;
+  });
+
+  app.post("/api/v1/federation/nodes/:nodeId/heartbeat", async (request, reply) => {
+    const params = request.params as { nodeId: string };
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const previous = state.federatedNodes.get(params.nodeId);
+    const result = updateFederatedNodeHeartbeat(state, params.nodeId, request.body, now());
+    if (!result.ok || !result.node) {
+      return sendError(reply, 400, "VALIDATION_ERROR", result.message ?? "Federated node heartbeat is invalid.", correlationId);
+    }
+    const eventType = result.node.health === "offline"
+      ? "node.disconnected"
+      : previous?.health === "offline"
+        ? "node.reconnected"
+        : undefined;
+    if (eventType) {
+      publishDomainEvent(state, {
+        classification: { level: "INTERNAL", releasability: ["CIVIL"] },
+        correlationId,
+        entityId: result.node.nodeId,
+        entityType: "sourceSystem",
+        payload: {
+          health: result.node.health,
+          nodeId: result.node.nodeId,
+          nodeName: result.node.nodeName,
+          nodeRole: result.node.nodeRole
+        },
+        producerNodeId: "node_central_cop",
+        releasePolicy: { allowedScopes: ["internal"], visibility: "internal" },
+        type: eventType
+      }, now());
+    }
+    appendAudit(state, "FEDERATED_NODE_HEARTBEAT", {
+      health: result.node.health,
+      nodeId: result.node.nodeId,
+      nodeRole: result.node.nodeRole
+    }, correlationId);
+    return reply.code(previous ? 200 : 201).send(result.node);
+  });
+
+  app.post("/api/v1/events/domain", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const parsed = parseDomainEventPublishRequest(request.body, correlationId);
+    if (!parsed.ok || !parsed.input) {
+      appendDomainDeadLetter(state, {
+        body: request.body,
+        correlationId,
+        errorCode: "VALIDATION_ERROR",
+        message: parsed.message ?? "Domain event payload does not match contract.",
+        now: now()
+      });
+      appendAudit(state, "DOMAIN_EVENT_REJECTED", {
+        reason: "validation"
+      }, correlationId);
+      return sendError(reply, 400, "VALIDATION_ERROR", parsed.message ?? "Domain event payload does not match contract.", correlationId);
+    }
+    if (!state.federatedNodes.has(parsed.input.producerNodeId)) {
+      appendDomainDeadLetter(state, {
+        body: request.body,
+        correlationId,
+        errorCode: "UNKNOWN_PRODUCER_NODE",
+        message: "Domain event producer node is not registered.",
+        now: now()
+      });
+      appendAudit(state, "DOMAIN_EVENT_REJECTED", {
+        producerNodeId: parsed.input.producerNodeId,
+        reason: "unknown-producer-node"
+      }, correlationId);
+      return sendError(reply, 422, "UNKNOWN_PRODUCER_NODE", "Domain event producer node is not registered.", correlationId);
+    }
+    const event = publishDomainEvent(state, parsed.input, now());
+    appendAudit(state, "DOMAIN_EVENT_PUBLISHED", {
+      channel: event.channel,
+      eventId: event.id,
+      eventType: event.type,
+      producerNodeId: event.data.producerNodeId,
+      replayOffset: event.replayOffset
+    }, correlationId);
+    return reply.code(202).send({
+      accepted: true,
+      channel: event.channel,
+      contractVersion: "cop-domain-event-publish-v1",
+      correlationId,
+      event
+    });
+  });
+
+  app.post("/api/v1/edge/outbox/flush", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const body = isRecord(request.body) ? request.body : undefined;
+    const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
+    const events = Array.isArray(body?.events) ? body.events : undefined;
+    if (!nodeId || !events) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Edge outbox flush requires nodeId and events array.", correlationId);
+    }
+    if (events.length > 100) {
+      return sendError(reply, 413, "BATCH_TOO_LARGE", "Edge outbox flush supports at most 100 events per request.", correlationId);
+    }
+    const node = state.federatedNodes.get(nodeId);
+    if (!node || node.nodeRole !== "edge-node") {
+      return sendError(reply, 422, "UNKNOWN_EDGE_NODE", "Edge outbox node is not registered as an edge-node.", correlationId);
+    }
+
+    const results: EdgeOutboxFlushItemResult[] = [];
+    for (const [index, rawEvent] of events.entries()) {
+      const rawRecord = isRecord(rawEvent) ? rawEvent : undefined;
+      const clientEventId = typeof rawRecord?.clientEventId === "string"
+        ? rawRecord.clientEventId.trim()
+        : typeof rawRecord?.eventId === "string"
+          ? rawRecord.eventId.trim()
+          : typeof rawRecord?.id === "string"
+            ? rawRecord.id.trim()
+            : undefined;
+      const normalizedEvent = rawRecord
+        ? {
+            ...rawRecord,
+            id: rawRecord.id ?? rawRecord.eventId ?? rawRecord.clientEventId,
+            producerNodeId: nodeId
+          }
+        : rawEvent;
+      const parsed = parseDomainEventPublishRequest(normalizedEvent, correlationId);
+      if (!parsed.ok || !parsed.input) {
+        appendDomainDeadLetter(state, {
+          body: rawEvent,
+          channel: "cop.node.sync",
+          correlationId,
+          errorCode: "VALIDATION_ERROR",
+          message: parsed.message ?? "Edge outbox event payload does not match contract.",
+          now: now()
+        });
+        results.push({
+          ...(clientEventId ? { clientEventId } : {}),
+          errorCode: "VALIDATION_ERROR",
+          message: parsed.message ?? `Edge outbox event ${index + 1} is invalid.`,
+          status: "rejected"
+        });
+        continue;
+      }
+      const duplicate = Boolean(parsed.input.eventId && state.domainEvents.some((event) => event.id === parsed.input?.eventId));
+      const event = publishDomainEvent(state, {
+        ...parsed.input,
+        producerNodeId: nodeId,
+        provenance: parsed.input.provenance ?? [
+          {
+            nodeId,
+            observedAt: now().toISOString(),
+            source: "edge-outbox"
+          }
+        ]
+      }, now());
+      results.push({
+        ...(clientEventId ? { clientEventId } : {}),
+        eventId: event.id,
+        replayOffset: event.replayOffset,
+        status: duplicate ? "duplicate" : "accepted"
+      });
+    }
+
+    const acceptedCount = results.filter((item) => item.status === "accepted").length;
+    const duplicateCount = results.filter((item) => item.status === "duplicate").length;
+    const rejectedCount = results.filter((item) => item.status === "rejected").length;
+    appendAudit(state, "EDGE_OUTBOX_FLUSHED", {
+      acceptedCount,
+      duplicateCount,
+      nodeId,
+      rejectedCount
+    }, correlationId);
+    return reply.code(rejectedCount > 0 && acceptedCount === 0 && duplicateCount === 0 ? 207 : 202).send({
+      acceptedCount,
+      contractVersion: "cop-edge-outbox-flush-v1",
+      correlationId,
+      duplicateCount,
+      generatedAt: now().toISOString(),
+      items: results,
+      nextOffset: state.domainEvents.at(-1)?.replayOffset ?? 0,
+      nodeId,
+      rejectedCount
+    });
+  });
+
+  app.get("/api/v1/events/domain", async (request) => {
+    const query = parseDomainEventReplayQuery(request.query);
+    const items = queryDomainEvents(state, query);
+    return {
+      contractVersion: "cop-domain-event-replay-v1",
+      generatedAt: now().toISOString(),
+      items,
+      nextOffset: items.at(-1)?.replayOffset ?? query.fromOffset ?? 0,
+      query,
+      summary: {
+        count: items.length,
+        totalAvailable: state.domainEvents.length
+      }
+    };
+  });
+
+  app.get("/api/v1/events/dead-letter", async (request) => {
+    const query = request.query as { limit?: string };
+    const parsedLimit = Number.parseInt(query.limit ?? "", 10);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 100;
+    return {
+      contractVersion: "cop-domain-event-dlq-v1",
+      generatedAt: now().toISOString(),
+      items: state.domainDeadLetters.slice(-limit),
+      summary: {
+        count: Math.min(limit, state.domainDeadLetters.length),
+        totalAvailable: state.domainDeadLetters.length
+      }
     };
   });
 

@@ -63,6 +63,50 @@ Povinné technické vlastnosti:
 - audit odmítnutých nebo nevalidních eventů,
 - correlationId přes REST, eventy, AI a audit.
 
+## Runtime API Stav
+
+První implementovaná runtime vrstva je server-side v COP API. Slouží jako
+broker facade a append-only event log pro pilotní federaci. Není to finální
+produkční broker; ten přijde v další fázi jako samostatné ADR a výměna
+transportu pod stejným kontraktem.
+
+Aktuální endpointy jsou chráněné bearer autentizací a nejsou veřejným klientským
+API:
+
+| Endpoint | Účel |
+| --- | --- |
+| `GET /api/v1/federation/nodes` | seznam registrovaných uzlů |
+| `GET /api/v1/federation/nodes/{nodeId}` | detail uzlu |
+| `POST /api/v1/federation/nodes/{nodeId}/heartbeat` | registrace/heartbeat uzlu |
+| `POST /api/v1/events/domain` | publikace COP domain eventu |
+| `POST /api/v1/edge/outbox/flush` | dávkové odeslání offline eventů registrovaného edge uzlu |
+| `GET /api/v1/events/domain` | replay eventů podle offsetu, času, typu nebo entity |
+| `GET /api/v1/events/dead-letter` | audit odmítnutých eventů |
+
+`POST /api/v1/events/domain` přijímá zjednodušený COP event command i
+CloudEvents-like pole. COP jej normalizuje do CloudEvent `specversion=1.0`,
+doplní `replayOffset`, `receivedAt` a zapíše jej do runtime logu. Neznámý
+`producerNodeId` nebo nevalidní payload je odmítnut a uložen do DLQ.
+
+`POST /api/v1/edge/outbox/flush` vyžaduje `nodeId` registrovaný přes heartbeat
+jako `edge-node`. COP přepíše `producerNodeId` na tento uzel, takže odpojený
+klient nemůže podvrhnout jiný zdroj. Dávka je limitovaná na 100 eventů. Každá
+položka vrací stav `accepted`, `duplicate` nebo `rejected`; idempotence je podle
+`id`/`eventId`, případně podle `clientEventId`, pokud klient neposlal vlastní
+CloudEvent ID.
+
+`fromOffset` u replay dotazu je exkluzivní: klient posílá poslední potvrzený
+offset a COP vrací novější eventy. Edge klient po úspěšném flushi uloží nejvyšší
+vrácený `replayOffset` a používá jej pro následný replay.
+
+Další runtime kroky:
+
+1. nahradit in-memory event log perzistentním brokerem/replay storem,
+2. přidat explicitní ack cursor pro edge uzly,
+3. zavést DLQ retry/re-drive workflow pro operátora,
+4. filtrovat replay podle classification/releasePolicy a subject role,
+5. napojit edge outbox na iOS/PWA offline frontu a konfliktní dialogy.
+
 ## CloudEvent Baseline
 
 CloudEvent musí mít:
@@ -117,11 +161,14 @@ se na stejný envelope.
 
 Edge uzel ukládá lokální event log a outbox. Po návratu spojení:
 
-1. odešle lokální eventy s původním `producerNodeId`,
-2. přijme centrální replay od posledního potvrzeného offsetu,
-3. vyhodnotí konflikty podle entity `revision`,
-4. konflikt publikuje jako `sync.conflict.detected`,
-5. vyžádá si ruční potvrzení operátora, pokud by došlo k přepsání dat.
+1. ověří/obnoví registraci přes
+   `POST /api/v1/federation/nodes/{nodeId}/heartbeat`,
+2. odešle lokální eventy přes `POST /api/v1/edge/outbox/flush`,
+   `producerNodeId` vynutí COP podle registrovaného `nodeId`,
+3. přijme centrální replay od posledního potvrzeného offsetu,
+4. vyhodnotí konflikty podle entity `revision`,
+5. konflikt publikuje jako `sync.conflict.detected`,
+6. vyžádá si ruční potvrzení operátora, pokud by došlo k přepsání dat.
 
 Tiché přepsání není povolené.
 
@@ -191,4 +238,3 @@ Povinné testy:
 - RBAC/ABAC filtr eventu a AI dotazu,
 - audit `ai.tool.invoked` a `alert.acknowledged`,
 - export respektující classification/releasePolicy.
-

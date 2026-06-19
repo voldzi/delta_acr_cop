@@ -18,6 +18,7 @@ Human API documentation remains in the established numbered documentation set:
 - [Map catalog provider contract](integration/08_MAP_CATALOG_V1.md)
 - [CSM Messaging integration](integration/09_CSM_MESSAGING_INTEGRATION.md)
 - [COP notification decision and push](integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md)
+- [AI-COP/NIPS federation contract](integration/14_AI_COP_NIPS_FEDERATION_CONTRACT.md)
 - [Native iOS/iPadOS API guide](mobile/01_NATIVE_IOS_IPADOS_APP.md)
 
 Existing live system endpoints are `/health/live`, `/health/ready` and
