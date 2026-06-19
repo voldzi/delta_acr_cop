@@ -61,6 +61,8 @@ tags:
     description: Federated COP node registry and node health coordination.
   - name: Domain Events
     description: CloudEvents-compatible domain event publish, replay and dead-letter inspection.
+  - name: MCP
+    description: Client-safe, audited COP tool registry and read-only tool invocation facade.
 paths:
   /api/v1/me/preferences:
     get:
@@ -2204,6 +2206,279 @@ paths:
           $ref: "#/components/responses/ErrorResponse"
         "422":
           $ref: "#/components/responses/ErrorResponse"
+  /api/v1/edge/replay-cursors/{nodeId}:
+    get:
+      tags:
+        - Domain Events
+      summary: Read edge replay cursor
+      description: Returns the durable replay acknowledgement cursor for a registered edge-node. Missing
+        cursors default to offset 0.
+      operationId: getEdgeReplayCursor
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current edge replay cursor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeReplayCursorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+  /api/v1/edge/replay-cursors/{nodeId}/ack:
+    post:
+      tags:
+        - Domain Events
+      summary: Acknowledge edge replay cursor
+      description: Stores the highest replay offset durably processed by an edge-node. The stored cursor
+        is monotonic and will not move backwards.
+      operationId: ackEdgeReplayCursor
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EdgeReplayCursorAckRequest"
+      responses:
+        "200":
+          description: Replay cursor acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeReplayCursorResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+  /api/v1/events/dead-letter/{deadLetterId}:
+    get:
+      tags:
+        - Domain Events
+      summary: Read dead-letter domain event
+      operationId: getDomainEventDeadLetter
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: deadLetterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Dead-letter record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainDeadLetterDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/events/dead-letter/{deadLetterId}/redrive:
+    post:
+      tags:
+        - Domain Events
+      summary: Re-drive a dead-letter domain event
+      description: Publishes a corrected dead-letter event back into the domain event log and marks the
+        dead-letter as redriven. COP does not create another dead-letter for invalid re-drive
+        payloads; the operator receives a validation error instead.
+      operationId: redriveDomainEventDeadLetter
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: deadLetterId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainDeadLetterRedriveRequest"
+      responses:
+        "202":
+          description: Dead-letter re-driven.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainDeadLetterRedriveResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+  /api/v1/events/dead-letter/{deadLetterId}/resolve:
+    post:
+      tags:
+        - Domain Events
+      summary: Resolve a dead-letter domain event
+      description: Marks a dead-letter as resolved without publishing a replacement event. Use when the
+        rejected payload is intentionally discarded or superseded externally.
+      operationId: resolveDomainEventDeadLetter
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: deadLetterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Dead-letter resolved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainDeadLetterResolveResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/edge/replay/{nodeId}:
+    get:
+      tags:
+        - Domain Events
+      summary: Replay policy-filtered domain events for an edge node
+      description: Returns CloudEvents-compatible domain events visible to a registered edge-node. The
+        default offset comes from the durable edge replay cursor; explicit fromOffset may be
+        supplied for recovery. Events blocked by classification or release policy are not returned.
+      operationId: replayEdgeDomainEvents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fromOffset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DomainEventType"
+        - name: entityId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: producerNodeId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: fromTime
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: toTime
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Policy-filtered edge replay batch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeDomainEventReplayResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+  /api/v1/mcp/tools:
+    get:
+      tags:
+        - MCP
+      summary: List audited COP MCP tools.
+      operationId: listCopMcpTools
+      description: Returns the allowlisted COP tool registry. The registry is client-safe metadata only;
+        it does not expose provider tokens or arbitrary execution.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: MCP tool registry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopMcpToolRegistryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/mcp/tools/{toolId}/invoke:
+    post:
+      tags:
+        - MCP
+      summary: Invoke an audited read-only COP MCP tool.
+      operationId: invokeCopMcpTool
+      description: Invokes a server-side allowlisted read-only COP tool and publishes an ai.tool.invoked
+        audit domain event. The endpoint never proxies plaintext messages, Matrix provider tokens or
+        arbitrary commands.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: toolId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopMcpToolInvocationRequest"
+      responses:
+        "200":
+          description: Tool invocation result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopMcpToolInvocationResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     bearerAuth:
@@ -7590,6 +7865,26 @@ components:
           type: string
           format: date-time
         body: {}
+        status:
+          type: string
+          enum:
+            - open
+            - redriven
+            - resolved
+          description: Operator lifecycle status for a rejected domain event.
+        retryCount:
+          type: integer
+          minimum: 0
+        retryLastAt:
+          type: string
+          format: date-time
+        retryLastEventId:
+          type: string
+        resolvedAt:
+          type: string
+          format: date-time
+        resolvedBy:
+          type: string
       additionalProperties: false
     DomainDeadLetterList:
       type: object
@@ -7712,3 +8007,315 @@ components:
         rejectedCount:
           type: integer
           minimum: 0
+    EdgeReplayCursor:
+      type: object
+      additionalProperties: false
+      required:
+        - nodeId
+        - lastAckedOffset
+        - ackedAt
+      properties:
+        nodeId:
+          type: string
+        lastAckedOffset:
+          type: integer
+          minimum: 0
+        ackedAt:
+          type: string
+          format: date-time
+        lastReplayAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+    EdgeReplayCursorAckRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - lastAckedOffset
+      properties:
+        lastAckedOffset:
+          type: integer
+          minimum: 0
+          description: Highest replay offset durably processed by the edge node. COP stores this monotonically
+            and never moves the cursor backwards.
+    EdgeReplayCursorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - generatedAt
+        - cursor
+      properties:
+        contractVersion:
+          type: string
+          const: cop-edge-replay-cursor-v1
+        generatedAt:
+          type: string
+          format: date-time
+        cursor:
+          $ref: "#/components/schemas/EdgeReplayCursor"
+    DomainDeadLetterDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - generatedAt
+        - deadLetter
+      properties:
+        contractVersion:
+          type: string
+          const: cop-domain-event-dlq-detail-v1
+        generatedAt:
+          type: string
+          format: date-time
+        deadLetter:
+          $ref: "#/components/schemas/DomainDeadLetter"
+    DomainDeadLetterRedriveRequest:
+      oneOf:
+        - $ref: "#/components/schemas/DomainEventPublishRequest"
+        - type: object
+          required:
+            - event
+          properties:
+            event:
+              $ref: "#/components/schemas/DomainEventPublishRequest"
+          additionalProperties: false
+      description: Either a corrected domain event publish request or an object with event. Empty body
+        reuses the original dead-letter body.
+    DomainDeadLetterRedriveResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - correlationId
+        - generatedAt
+        - status
+        - deadLetter
+        - event
+      properties:
+        contractVersion:
+          type: string
+          const: cop-domain-event-dlq-redrive-v1
+        correlationId:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - duplicate
+            - redriven
+        deadLetter:
+          $ref: "#/components/schemas/DomainDeadLetter"
+        event:
+          $ref: "#/components/schemas/DomainCloudEvent"
+    DomainDeadLetterResolveResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - correlationId
+        - generatedAt
+        - deadLetter
+      properties:
+        contractVersion:
+          type: string
+          const: cop-domain-event-dlq-resolve-v1
+        correlationId:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        deadLetter:
+          $ref: "#/components/schemas/DomainDeadLetter"
+    EdgeDomainEventReplayPolicy:
+      type: object
+      required:
+        - classificationMax
+        - filteredOut
+        - nodeId
+        - nodeRole
+      properties:
+        classificationMax:
+          $ref: "#/components/schemas/PilotClassificationLevel"
+        filteredOut:
+          type: object
+          required:
+            - classification
+            - releasePolicy
+          properties:
+            classification:
+              type: integer
+              minimum: 0
+            releasePolicy:
+              type: integer
+              minimum: 0
+          additionalProperties: false
+        nodeId:
+          type: string
+        nodeRole:
+          $ref: "#/components/schemas/FederatedNodeRole"
+      additionalProperties: false
+    EdgeDomainEventReplayResponse:
+      type: object
+      required:
+        - contractVersion
+        - cursor
+        - generatedAt
+        - items
+        - nextOffset
+        - policy
+        - query
+        - summary
+      properties:
+        contractVersion:
+          type: string
+          const: cop-edge-domain-event-replay-v1
+        cursor:
+          $ref: "#/components/schemas/EdgeReplayCursor"
+        generatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DomainCloudEvent"
+        nextOffset:
+          type: integer
+          minimum: 0
+          description: Highest scanned replay offset. Edge nodes should acknowledge this value after durably
+            applying returned items and intentionally skipping filtered events.
+        policy:
+          $ref: "#/components/schemas/EdgeDomainEventReplayPolicy"
+        query:
+          type: object
+          additionalProperties: true
+        summary:
+          type: object
+          required:
+            - count
+            - scanned
+            - totalAvailable
+          properties:
+            count:
+              type: integer
+              minimum: 0
+            scanned:
+              type: integer
+              minimum: 0
+            totalAvailable:
+              type: integer
+              minimum: 0
+          additionalProperties: false
+      additionalProperties: false
+    CopMcpTool:
+      type: object
+      required:
+        - toolId
+        - title
+        - description
+        - mode
+        - inputSchema
+        - output
+      properties:
+        toolId:
+          type: string
+          enum:
+            - cop.audit.events.list
+            - cop.events.dead_letters.list
+            - cop.events.replay
+            - cop.federation.nodes.list
+        title:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+          enum:
+            - read_only
+        inputSchema:
+          type: object
+          additionalProperties: true
+        output:
+          type: string
+    CopMcpToolRegistryResponse:
+      type: object
+      required:
+        - contractVersion
+        - generatedAt
+        - items
+        - summary
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-mcp-tool-registry-v1
+        generatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CopMcpTool"
+        summary:
+          type: object
+          required:
+            - count
+          properties:
+            count:
+              type: integer
+              minimum: 0
+    CopMcpToolInvocationRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        input:
+          type: object
+          additionalProperties: true
+          description: Tool-specific input. If omitted, the top-level object is treated as the input for
+            compatibility with simple callers.
+    CopMcpToolInvocationResponse:
+      type: object
+      required:
+        - contractVersion
+        - generatedAt
+        - invocationId
+        - result
+        - status
+        - tool
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-mcp-tool-invocation-v1
+        generatedAt:
+          type: string
+          format: date-time
+        invocationId:
+          type: string
+        status:
+          type: string
+          enum:
+            - ok
+        tool:
+          type: object
+          required:
+            - toolId
+            - title
+            - mode
+          properties:
+            toolId:
+              type: string
+            title:
+              type: string
+            mode:
+              type: string
+              enum:
+                - read_only
+        result:
+          type: object
+          additionalProperties: true
+          description: Tool-specific read-only result. No provider service tokens or plaintext chat payloads
+            are returned.

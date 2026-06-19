@@ -145,6 +145,14 @@ edge replay. `cop_domain_dead_letters` drží i lifecycle stav (`open`,
 `redriven`, `resolved`), počet re-drive pokusů a operátora, který záznam
 uzavřel.
 
+Edge klienti pro stahování centrálních eventů používají
+`GET /api/v1/edge/replay/{nodeId}`. Tento endpoint je policy-filtered: vrací jen
+eventy, které registrovaný `edge-node` smí vidět podle `classificationMax` a
+`releasePolicy`. Globální `GET /api/v1/events/domain` je určený pro centrální
+operátorský replay a diagnostiku, ne jako běžný sync endpoint pro terénní
+zařízení. Po durable zpracování položek z edge replay odpovědi klient potvrzuje
+`nextOffset` přes `POST /api/v1/edge/replay-cursors/{nodeId}/ack`.
+
 Provozní obsluha DLQ používá výhradně COP API:
 
 - `GET /api/v1/events/dead-letter` pro seznam odmítnutých eventů,
@@ -156,6 +164,20 @@ Provozní obsluha DLQ používá výhradně COP API:
 
 Nevalidní re-drive payload se vrací jako validační chyba a nezakládá další DLQ
 záznam. To je záměrné, aby operátor neopakoval chybu rekurzivně.
+
+## MCP Tool Gateway
+
+Pilotní MCP gateway běží v COP API a nevyžaduje samostatný provider token.
+Používá stejnou bearer autentizaci jako ostatní chráněné COP endpointy.
+
+- `GET /api/v1/mcp/tools` vrací allowlist read-only nástrojů.
+- `POST /api/v1/mcp/tools/{toolId}/invoke` volá konkrétní read-only nástroj a
+  publikuje auditní domain event `ai.tool.invoked`.
+
+Endpointy neslouží jako proxy do SIM, CSM Messaging ani Matrixu. Do klienta se
+přes ně nesmí dostat provider service tokeny, Matrix admin tokeny, plaintext
+chat zprávy ani binární média. Měnící workflow musí dál probíhat přes běžné COP
+command API s explicitním potvrzením uživatele.
 
 ## Map Tiles
 

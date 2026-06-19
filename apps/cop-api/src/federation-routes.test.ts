@@ -344,6 +344,206 @@ describe("federation runtime routes", () => {
     }
   });
 
+  it("replays only policy-authorized domain events to edge nodes", async () => {
+    const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
+    try {
+      await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        payload: {
+          capabilities: ["offline-outbox", "domain-events"],
+          classificationMax: "INTERNAL",
+          health: "ok",
+          nodeName: "policy edge",
+          nodeRole: "edge-node",
+          softwareVersion: "0.1.0"
+        },
+        url: "/api/v1/federation/nodes/node_edge_policy_01/heartbeat"
+      });
+
+      const events = [
+        {
+          classification: { level: "PUBLIC" },
+          entityId: "alert-public-1",
+          entityType: "alert",
+          eventId: "event-public-1",
+          payload: { title: "Public alert" },
+          producerNodeId: "node_central_cop",
+          releasePolicy: { allowedScopes: ["public"], visibility: "public" },
+          type: "alert.raised"
+        },
+        {
+          classification: { level: "SENSITIVE" },
+          entityId: "alert-sensitive-1",
+          entityType: "alert",
+          eventId: "event-sensitive-1",
+          payload: { title: "Sensitive alert" },
+          producerNodeId: "node_central_cop",
+          releasePolicy: { allowedScopes: ["public"], visibility: "public" },
+          type: "alert.raised"
+        },
+        {
+          classification: { level: "INTERNAL" },
+          entityId: "task-edge-1",
+          entityType: "task",
+          eventId: "event-edge-internal-1",
+          payload: { title: "Edge internal task" },
+          producerNodeId: "node_central_cop",
+          releasePolicy: { allowedScopes: ["edge-node"], visibility: "internal" },
+          type: "task.created"
+        },
+        {
+          classification: { level: "INTERNAL" },
+          entityId: "task-private-1",
+          entityType: "task",
+          eventId: "event-private-other-node-1",
+          payload: { title: "Private task" },
+          producerNodeId: "node_central_cop",
+          releasePolicy: { allowedScopes: ["node:other-edge"], visibility: "private" },
+          type: "task.created"
+        }
+      ];
+
+      for (const event of events) {
+        const response = await app.inject({
+          headers: authHeaders,
+          method: "POST",
+          payload: event,
+          url: "/api/v1/events/domain"
+        });
+        expect(response.statusCode).toBe(202);
+      }
+
+      const replay = await app.inject({
+        headers: authHeaders,
+        method: "GET",
+        url: "/api/v1/edge/replay/node_edge_policy_01?fromOffset=0&limit=10"
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toMatchObject({
+        contractVersion: "cop-edge-domain-event-replay-v1",
+        items: [
+          expect.objectContaining({ id: "event-public-1", replayOffset: 1 }),
+          expect.objectContaining({ id: "event-edge-internal-1", replayOffset: 3 })
+        ],
+        nextOffset: 4,
+        policy: {
+          classificationMax: "INTERNAL",
+          filteredOut: {
+            classification: 1,
+            releasePolicy: 1
+          },
+          nodeId: "node_edge_policy_01",
+          nodeRole: "edge-node"
+        },
+        summary: {
+          count: 2,
+          scanned: 4,
+          totalAvailable: 4
+        }
+      });
+
+      const ack = await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        payload: { lastAckedOffset: replay.json().nextOffset },
+        url: "/api/v1/edge/replay-cursors/node_edge_policy_01/ack"
+      });
+      expect(ack.statusCode).toBe(200);
+      expect(ack.json()).toMatchObject({
+        cursor: {
+          lastAckedOffset: 4,
+          nodeId: "node_edge_policy_01"
+        }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("exposes audited read-only MCP tools", async () => {
+    const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
+    try {
+      const registry = await app.inject({
+        headers: authHeaders,
+        method: "GET",
+        url: "/api/v1/mcp/tools"
+      });
+      expect(registry.statusCode).toBe(200);
+      expect(registry.json()).toMatchObject({
+        contractVersion: "cop-mcp-tool-registry-v1",
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            mode: "read_only",
+            toolId: "cop.federation.nodes.list"
+          }),
+          expect.objectContaining({
+            mode: "read_only",
+            toolId: "cop.events.replay"
+          })
+        ]),
+        summary: {
+          count: 4
+        }
+      });
+
+      const invocation = await app.inject({
+        headers: {
+          ...authHeaders,
+          "x-correlation-id": "corr-mcp-tool"
+        },
+        method: "POST",
+        payload: {},
+        url: "/api/v1/mcp/tools/cop.federation.nodes.list/invoke"
+      });
+      expect(invocation.statusCode).toBe(200);
+      expect(invocation.json()).toMatchObject({
+        contractVersion: "cop-mcp-tool-invocation-v1",
+        result: {
+          contractVersion: "cop-federation-node-list-v1",
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              nodeId: "node_central_cop"
+            })
+          ])
+        },
+        status: "ok",
+        tool: {
+          mode: "read_only",
+          toolId: "cop.federation.nodes.list"
+        }
+      });
+
+      const auditReplay = await app.inject({
+        headers: authHeaders,
+        method: "GET",
+        url: "/api/v1/events/domain?fromOffset=0&limit=10&type=ai.tool.invoked"
+      });
+      expect(auditReplay.statusCode).toBe(200);
+      expect(auditReplay.json()).toMatchObject({
+        items: [
+          expect.objectContaining({
+            data: expect.objectContaining({
+              correlationId: "corr-mcp-tool",
+              entityType: "auditRecord",
+              payload: expect.objectContaining({
+                status: "ok",
+                toolId: "cop.federation.nodes.list"
+              })
+            }),
+            type: "ai.tool.invoked"
+          })
+        ],
+        summary: {
+          count: 1,
+          totalAvailable: 1
+        }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("allows operators to inspect, redrive and resolve dead-letter events", async () => {
     const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
     try {

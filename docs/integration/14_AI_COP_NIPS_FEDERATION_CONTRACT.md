@@ -84,11 +84,14 @@ API:
 | `POST /api/v1/edge/outbox/flush` | dávkové odeslání offline eventů registrovaného edge uzlu |
 | `GET /api/v1/edge/replay-cursors/{nodeId}` | čtení potvrzeného replay cursoru edge uzlu |
 | `POST /api/v1/edge/replay-cursors/{nodeId}/ack` | monotónní potvrzení zpracovaného replay offsetu |
+| `GET /api/v1/edge/replay/{nodeId}` | policy-filtered replay centrálních eventů pro registrovaný edge uzel |
 | `GET /api/v1/events/domain` | replay eventů podle offsetu, času, typu nebo entity |
 | `GET /api/v1/events/dead-letter` | audit odmítnutých eventů |
 | `GET /api/v1/events/dead-letter/{deadLetterId}` | detail odmítnutého eventu |
 | `POST /api/v1/events/dead-letter/{deadLetterId}/redrive` | opětovné vložení opraveného eventu do runtime logu |
 | `POST /api/v1/events/dead-letter/{deadLetterId}/resolve` | uzavření DLQ záznamu bez publikace náhradního eventu |
+| `GET /api/v1/mcp/tools` | client-safe seznam allowlistovaných COP MCP nástrojů |
+| `POST /api/v1/mcp/tools/{toolId}/invoke` | auditované volání read-only COP MCP nástroje |
 
 `POST /api/v1/events/domain` přijímá zjednodušený COP event command i
 CloudEvents-like pole. COP jej normalizuje do CloudEvent `specversion=1.0`,
@@ -110,6 +113,18 @@ nižší nebo opakovaný offset neposune serverový stav zpět. `GET
 /api/v1/edge/replay-cursors/{nodeId}` vrací poslední durable acknowledgement
 nebo implicitní offset `0`, pokud edge uzel ještě nic nepotvrdil.
 
+Edge klient nemá pro běžnou synchronizaci číst globální
+`GET /api/v1/events/domain`. Používá `GET /api/v1/edge/replay/{nodeId}`. COP
+vezme uložený cursor jako výchozí `fromOffset`, případně respektuje explicitní
+`fromOffset` pro recovery, načte centrální event log a vrátí jen eventy povolené
+pro daný `edge-node`. Filtr kontroluje `classification.level` proti
+`classificationMax` uzlu a `releasePolicy` proti veřejnému, internímu,
+role-based nebo explicitnímu node scope. Odfiltrované eventy nejsou vráceny do
+payloadu; odpověď uvádí pouze počty podle důvodu (`classification`,
+`releasePolicy`). `nextOffset` je nejvyšší prohledaný offset, aby edge mohl po
+durable zpracování vrácených položek a vědomém přeskočení nepovolených eventů
+bezpečně potvrdit cursor.
+
 DLQ workflow je operátorské. `GET /api/v1/events/dead-letter/{deadLetterId}`
 zobrazí původní odmítnutý payload, stav (`open`, `redriven`, `resolved`) a
 počet retry. Re-drive přijímá buď přímo opravený domain event command, nebo
@@ -122,14 +137,31 @@ Perzistence je idempotentní podle CloudEvent `id`/`eventId`. Replay offset je
 serverem přidělený monotónní `bigserial` offset, nikoli klientský čas ani
 lokální pořadí edge zařízení.
 
+`GET /api/v1/mcp/tools` a `POST /api/v1/mcp/tools/{toolId}/invoke` tvoří
+pilotní MCP gateway facade. Nejde o obecnou exekuci nástrojů. Registry vrací
+pouze allowlistované, client-safe metadata. Aktuální implementované nástroje
+jsou read-only:
+
+- `cop.federation.nodes.list`,
+- `cop.events.replay`,
+- `cop.events.dead_letters.list`,
+- `cop.audit.events.list`.
+
+Každé úspěšné volání zapisuje audit `MCP_TOOL_INVOKED` a současně publikuje
+domain event `ai.tool.invoked` na kanál `cop.ai.audit`. Payload auditního
+eventu obsahuje identitu nástroje, subject volajícího, výsledek a dobu běhu,
+nikoli provider tokeny, plaintext chat zprávy ani citlivé binární přílohy.
+Měnící AI/MCP nástroje zůstávají mimo tento endpoint; musí vrátit návrh a
+skutečnou změnu provede až explicitní COP command API s potvrzením uživatele.
+
 Další runtime kroky:
 
-1. filtrovat replay podle classification/releasePolicy a subject role,
-2. doplnit broker adapter pod stejným kontraktem, pokud pilot vyžádá externí
+1. doplnit broker adapter pod stejným kontraktem, pokud pilot vyžádá externí
    message broker,
-3. napojit edge outbox na iOS/PWA offline frontu a konfliktní dialogy,
-4. doplnit MCP gateway/tool registry nad stejným auditovaným domain event logem,
-5. přidat retention/archivaci domain eventů a DLQ podle pilotní provozní politiky.
+2. napojit edge outbox na iOS/PWA offline frontu a konfliktní dialogy,
+3. rozšířit edge replay o subject/group ACL podle finální pilotní identity
+   matice,
+4. přidat retention/archivaci domain eventů a DLQ podle pilotní provozní politiky.
 
 ## CloudEvent Baseline
 
@@ -189,7 +221,8 @@ Edge uzel ukládá lokální event log a outbox. Po návratu spojení:
    `POST /api/v1/federation/nodes/{nodeId}/heartbeat`,
 2. odešle lokální eventy přes `POST /api/v1/edge/outbox/flush`,
    `producerNodeId` vynutí COP podle registrovaného `nodeId`,
-3. přijme centrální replay od posledního potvrzeného offsetu,
+3. přijme centrální policy-filtered replay přes
+   `GET /api/v1/edge/replay/{nodeId}`,
 4. po durable zpracování potvrdí cursor přes
    `POST /api/v1/edge/replay-cursors/{nodeId}/ack`,
 5. vyhodnotí konflikty podle entity `revision`,
@@ -252,6 +285,10 @@ MCP Gateway je povolená pouze pro nástroje v allowlistu. Každé volání obsa
 
 Nástroje měnící stav vrací návrh. Provedení vyžaduje explicitní potvrzení
 uživatele přes COP command API.
+
+Pilotní COP API proto publikuje jen read-only nástroje přes
+`/api/v1/mcp/tools`. Browser ani iOS klient nesmí dostat SIM provider token,
+CSM Messaging service token, Matrix admin token ani payload plaintext zpráv.
 
 ## Ověření Pilotní Federace
 

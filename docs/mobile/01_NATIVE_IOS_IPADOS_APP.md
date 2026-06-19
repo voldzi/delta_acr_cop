@@ -270,6 +270,17 @@ MDM/MAM příprava:
 11. Při výpadku API přepnout na `OFFLINE` a držet read-only snapshot.
 12. Po obnově spojení znovu zavolat bootstrap/offline snapshot a přepnout stav podle streamu.
 13. Pokud `CommunityOutbox` obsahuje čekající hlášení, odeslat je v pořadí: report, upload slot, upload média, complete, submit.
+14. Pokud klient používá federovaný edge režim, obnovit heartbeat přes
+    `POST /api/v1/federation/nodes/{nodeId}/heartbeat`, odeslat lokální domain
+    eventy přes `POST /api/v1/edge/outbox/flush`, stáhnout centrální
+    policy-filtered replay přes `GET /api/v1/edge/replay/{nodeId}` a po
+    durable zpracování potvrdit `nextOffset` přes
+    `POST /api/v1/edge/replay-cursors/{nodeId}/ack`.
+
+Edge klient nesmí pro běžnou synchronizaci používat globální
+`GET /api/v1/events/domain`; tento endpoint je určený pro centrální replay a
+diagnostiku. MCP registry (`/api/v1/mcp/tools`) je read-only, auditovaný a
+neslouží jako mobilní write API.
 
 ## Generování klienta
 
@@ -292,6 +303,10 @@ Modely, které musí být stabilní:
 - `SituationLayer`,
 - `SituationFeatureCollection`,
 - `UserPreferenceProfile`.
+- `DomainEventRecord`,
+- `EdgeDomainEventReplayResponse`,
+- `EdgeReplayCursor`,
+- `CopMcpTool`.
 
 ## Build a distribuce
 

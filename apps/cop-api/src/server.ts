@@ -42,6 +42,7 @@ import {
 } from "./flight-data-source.js";
 import {
   appendDomainDeadLetter,
+  canDeliverDomainEventToNode,
   type EdgeOutboxFlushItemResult,
   type DomainDeadLetterRecord,
   type DomainDeadLetterRedriveResult,
@@ -218,6 +219,84 @@ interface MobileSnapshotQuery {
   includeExpired: boolean;
   historyQuery: TrackHistoryQuery;
 }
+
+type CopMcpToolId =
+  | "cop.audit.events.list"
+  | "cop.events.dead_letters.list"
+  | "cop.events.replay"
+  | "cop.federation.nodes.list";
+
+interface CopMcpToolDefinition {
+  description: string;
+  inputSchema: Record<string, unknown>;
+  mode: "read_only";
+  output: string;
+  toolId: CopMcpToolId;
+  title: string;
+}
+
+const copMcpTools: CopMcpToolDefinition[] = [
+  {
+    description: "List registered COP federation nodes for operator diagnostics and edge sync planning.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {},
+      type: "object"
+    },
+    mode: "read_only",
+    output: "cop-federation-node-list-v1",
+    title: "List federation nodes",
+    toolId: "cop.federation.nodes.list"
+  },
+  {
+    description: "Replay COP domain events with the same filters as the operator replay endpoint.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        entityId: { type: "string" },
+        fromOffset: { minimum: 0, type: "integer" },
+        fromTime: { format: "date-time", type: "string" },
+        limit: { maximum: 500, minimum: 1, type: "integer" },
+        producerNodeId: { type: "string" },
+        toTime: { format: "date-time", type: "string" },
+        type: { type: "string" }
+      },
+      type: "object"
+    },
+    mode: "read_only",
+    output: "cop-domain-event-replay-v1",
+    title: "Replay domain events",
+    toolId: "cop.events.replay"
+  },
+  {
+    description: "List open and recent dead-letter domain events for operator recovery workflows.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        limit: { maximum: 200, minimum: 1, type: "integer" }
+      },
+      type: "object"
+    },
+    mode: "read_only",
+    output: "cop-domain-event-dlq-v1",
+    title: "List domain event dead letters",
+    toolId: "cop.events.dead_letters.list"
+  },
+  {
+    description: "List recent COP audit records for operator diagnostics. This exposes only COP audit metadata.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        limit: { maximum: 200, minimum: 1, type: "integer" }
+      },
+      type: "object"
+    },
+    mode: "read_only",
+    output: "cop-audit-event-list-v1",
+    title: "List audit events",
+    toolId: "cop.audit.events.list"
+  }
+];
 
 interface MobileDeviceRegistration {
   appVersion: string;
@@ -3265,6 +3344,72 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
+  app.get("/api/v1/edge/replay/:nodeId", async (request, reply) => {
+    const params = request.params as { nodeId: string };
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const node = await getFederatedNode(params.nodeId);
+    if (!node || node.nodeRole !== "edge-node") {
+      return sendError(reply, 422, "UNKNOWN_EDGE_NODE", "Replay is available only for registered edge-node.", correlationId);
+    }
+
+    const cursor = await getRuntimeEdgeCursor(node.nodeId);
+    const query = parseDomainEventReplayQuery({
+      ...(request.query as Record<string, unknown>),
+      fromOffset: (request.query as Record<string, unknown>).fromOffset ?? cursor?.lastAckedOffset ?? 0
+    });
+    const result = await queryRuntimeDomainEvents(query);
+    const blockedByClassification: string[] = [];
+    const blockedByReleasePolicy: string[] = [];
+    const items = result.items.filter((event) => {
+      const decision = canDeliverDomainEventToNode(event, node);
+      if (decision.allowed) {
+        return true;
+      }
+      if (decision.reason === "classification") {
+        blockedByClassification.push(event.id);
+      } else {
+        blockedByReleasePolicy.push(event.id);
+      }
+      return false;
+    });
+    const highestScannedOffset = Math.max(query.fromOffset ?? 0, ...result.items.map((event) => event.replayOffset));
+    appendAudit(state, "EDGE_DOMAIN_EVENTS_REPLAYED", {
+      blockedByClassification: blockedByClassification.length,
+      blockedByReleasePolicy: blockedByReleasePolicy.length,
+      deliveredCount: items.length,
+      fromOffset: query.fromOffset ?? 0,
+      highestScannedOffset,
+      nodeId: node.nodeId,
+      scannedCount: result.items.length
+    }, correlationId);
+    return {
+      contractVersion: "cop-edge-domain-event-replay-v1",
+      cursor: cursor ?? {
+        ackedAt: node.lastSeenAt,
+        lastAckedOffset: 0,
+        nodeId: node.nodeId
+      },
+      generatedAt: now().toISOString(),
+      items,
+      nextOffset: highestScannedOffset,
+      policy: {
+        classificationMax: node.classificationMax,
+        filteredOut: {
+          classification: blockedByClassification.length,
+          releasePolicy: blockedByReleasePolicy.length
+        },
+        nodeId: node.nodeId,
+        nodeRole: node.nodeRole
+      },
+      query,
+      summary: {
+        count: items.length,
+        scanned: result.items.length,
+        totalAvailable: result.totalAvailable
+      }
+    };
+  });
+
   app.get("/api/v1/events/domain", async (request) => {
     const query = parseDomainEventReplayQuery(request.query);
     const result = await queryRuntimeDomainEvents(query);
@@ -3775,6 +3920,142 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const response = await aiGateway.queryCopAssistant(validation.data as Parameters<AiGateway["queryCopAssistant"]>[0]);
     appendAudit(state, `AI_REQUEST_${response.status}`, { requestId: response.requestId, provider: response.provider }, correlationId);
     return response;
+  });
+
+  app.get("/api/v1/mcp/tools", async () => ({
+    contractVersion: "cop-mcp-tool-registry-v1",
+    generatedAt: now().toISOString(),
+    items: copMcpTools,
+    summary: {
+      count: copMcpTools.length
+    }
+  }));
+
+  app.post("/api/v1/mcp/tools/:toolId/invoke", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const params = request.params as { toolId: string };
+    const tool = copMcpTools.find((item) => item.toolId === params.toolId);
+    if (!tool) {
+      return sendError(reply, 404, "NOT_FOUND", "COP MCP tool was not found.", correlationId);
+    }
+
+    const actor = actorFromRequest(request);
+    const startedAt = Date.now();
+    const invocationId = crypto.randomUUID();
+    const body = isRecord(request.body) ? request.body : {};
+    const input = isRecord(body.input) ? body.input : body;
+    let result: Record<string, unknown>;
+
+    switch (tool.toolId) {
+      case "cop.federation.nodes.list": {
+        const nodes = await listFederatedNodes();
+        result = {
+          contractVersion: "cop-federation-node-list-v1",
+          generatedAt: now().toISOString(),
+          items: nodes,
+          summary: {
+            count: nodes.length
+          }
+        };
+        break;
+      }
+      case "cop.events.replay": {
+        const query = parseDomainEventReplayQuery(input);
+        const replay = await queryRuntimeDomainEvents(query);
+        const items = replay.items;
+        result = {
+          contractVersion: "cop-domain-event-replay-v1",
+          generatedAt: now().toISOString(),
+          items,
+          nextOffset: items.at(-1)?.replayOffset ?? query.fromOffset ?? 0,
+          query,
+          summary: {
+            count: items.length,
+            totalAvailable: replay.totalAvailable
+          }
+        };
+        break;
+      }
+      case "cop.events.dead_letters.list": {
+        const requestedLimit = Number(input.limit);
+        const limit = Number.isInteger(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 200) : 50;
+        const deadLetters = await listRuntimeDomainDeadLetters(limit);
+        result = {
+          contractVersion: "cop-domain-event-dlq-v1",
+          generatedAt: now().toISOString(),
+          items: deadLetters.items,
+          summary: {
+            count: deadLetters.items.length,
+            totalAvailable: deadLetters.totalAvailable
+          }
+        };
+        break;
+      }
+      case "cop.audit.events.list": {
+        const requestedLimit = Number(input.limit);
+        const limit = Number.isInteger(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 200) : 50;
+        const items = state.auditEvents.slice(-limit);
+        result = {
+          contractVersion: "cop-audit-event-list-v1",
+          generatedAt: now().toISOString(),
+          items,
+          summary: {
+            count: items.length,
+            totalAvailable: state.auditEvents.length
+          }
+        };
+        break;
+      }
+    }
+
+    const durationMs = Date.now() - startedAt;
+    appendAudit(state, "MCP_TOOL_INVOKED", {
+      actorSubjectId: actor?.subjectId,
+      durationMs,
+      invocationId,
+      mode: tool.mode,
+      status: "ok",
+      toolId: tool.toolId
+    }, correlationId);
+    await publishRuntimeDomainEvent({
+      channel: "cop.ai.audit",
+      classification: {
+        handlingCaveats: ["NO_PLAINTEXT_MESSAGES", "NO_PROVIDER_TOKENS"],
+        level: "INTERNAL",
+        releasability: ["CIVIL"]
+      },
+      correlationId,
+      entityId: invocationId,
+      entityType: "auditRecord",
+      payload: {
+        actorSubjectId: actor?.subjectId,
+        durationMs,
+        mode: tool.mode,
+        status: "ok",
+        toolId: tool.toolId
+      },
+      producerNodeId: "node_central_cop",
+      quality: {
+        dataQuality: "observed"
+      },
+      releasePolicy: {
+        allowedScopes: ["internal"],
+        visibility: "internal"
+      },
+      type: "ai.tool.invoked"
+    });
+    return {
+      contractVersion: "cop-mcp-tool-invocation-v1",
+      generatedAt: now().toISOString(),
+      invocationId,
+      result,
+      status: "ok",
+      tool: {
+        mode: tool.mode,
+        toolId: tool.toolId,
+        title: tool.title
+      }
+    };
   });
 
   async function readFlightCatalogProvider(requestNow: Date) {

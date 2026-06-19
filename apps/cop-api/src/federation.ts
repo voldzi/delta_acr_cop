@@ -201,6 +201,11 @@ export interface DomainDeadLetterRedriveResult {
   status: "duplicate" | "redriven";
 }
 
+export interface DomainEventDeliveryDecision {
+  allowed: boolean;
+  reason: "allowed" | "classification" | "release-policy";
+}
+
 export function createDefaultFederatedNodes(now: Date = new Date()): Map<string, FederatedNodeRecord> {
   const timestamp = now.toISOString();
   return new Map([
@@ -413,6 +418,44 @@ export function queryDomainEvents(state: CopState, query: DomainEventReplayQuery
     .slice(0, query.limit);
 }
 
+export function canDeliverDomainEventToNode(event: DomainEventRecord, node: FederatedNodeRecord): DomainEventDeliveryDecision {
+  if (classificationRank(event.data.classification.level) > classificationRank(node.classificationMax)) {
+    return { allowed: false, reason: "classification" };
+  }
+
+  const releasePolicy = event.data.releasePolicy;
+  if (releasePolicy.visibility === "public") {
+    return { allowed: true, reason: "allowed" };
+  }
+
+  const scopes = new Set(releasePolicy.allowedScopes.map((scope) => scope.trim().toLowerCase()).filter(Boolean));
+  const nodeId = node.nodeId.toLowerCase();
+  const nodeRole = node.nodeRole.toLowerCase();
+  const capabilities = new Set(node.capabilities.map((capability) => capability.trim().toLowerCase()).filter(Boolean));
+
+  if (
+    scopes.has("*")
+    || scopes.has("all")
+    || scopes.has(nodeId)
+    || scopes.has(`node:${nodeId}`)
+    || scopes.has(`edge:${nodeId}`)
+    || scopes.has(nodeRole)
+    || scopes.has(`role:${nodeRole}`)
+  ) {
+    return { allowed: true, reason: "allowed" };
+  }
+
+  if (node.nodeRole === "edge-node" && (scopes.has("edge") || scopes.has("edge-node"))) {
+    return { allowed: true, reason: "allowed" };
+  }
+
+  if (releasePolicy.visibility === "internal" && scopes.has("internal") && capabilities.has("domain-events")) {
+    return { allowed: true, reason: "allowed" };
+  }
+
+  return { allowed: false, reason: "release-policy" };
+}
+
 export function parseDomainEventReplayQuery(query: unknown): DomainEventReplayQuery {
   const record = isRecord(query) ? query : {};
   const type = stringValue(record.type);
@@ -429,6 +472,19 @@ export function parseDomainEventReplayQuery(query: unknown): DomainEventReplayQu
     ...(toTime ? { toTime } : {}),
     ...(isDomainEventType(type) ? { type } : {})
   };
+}
+
+function classificationRank(level: PilotClassificationLevel): number {
+  switch (level) {
+    case "PUBLIC":
+      return 0;
+    case "INTERNAL":
+      return 1;
+    case "RESTRICTED_SIMULATED":
+      return 2;
+    case "SENSITIVE":
+      return 3;
+  }
 }
 
 export function updateFederatedNodeHeartbeat(
