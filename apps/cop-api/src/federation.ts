@@ -176,6 +176,11 @@ export interface EdgeOutboxFlushItemResult {
   status: "accepted" | "duplicate" | "rejected";
 }
 
+export interface DomainEventPublishResult {
+  duplicate: boolean;
+  event: DomainEventRecord;
+}
+
 export function createDefaultFederatedNodes(now: Date = new Date()): Map<string, FederatedNodeRecord> {
   const timestamp = now.toISOString();
   return new Map([
@@ -280,14 +285,24 @@ export function parseDomainEventPublishRequest(body: unknown, correlationId: str
 }
 
 export function publishDomainEvent(state: CopState, input: DomainEventPublishInput, now: Date = new Date()): DomainEventRecord {
+  return publishDomainEventWithResult(state, input, now).event;
+}
+
+export function publishDomainEventWithResult(state: CopState, input: DomainEventPublishInput, now: Date = new Date()): DomainEventPublishResult {
   const existing = input.eventId ? state.domainEvents.find((event) => event.id === input.eventId) : undefined;
   if (existing) {
-    return existing;
+    return { duplicate: true, event: existing };
   }
+  const replayOffset = state.domainEvents.length + 1;
+  const event = buildDomainEventRecord(input, replayOffset, now);
+  state.domainEvents.push(event);
+  return { duplicate: false, event };
+}
+
+export function buildDomainEventRecord(input: DomainEventPublishInput, replayOffset: number, now: Date = new Date()): DomainEventRecord {
   const time = input.time && !Number.isNaN(Date.parse(input.time)) ? new Date(input.time).toISOString() : now.toISOString();
   const channel = input.channel ?? defaultChannelForEventType(input.type);
-  const replayOffset = state.domainEvents.length + 1;
-  const event: DomainEventRecord = {
+  return {
     channel,
     data: {
       classification: {
@@ -328,8 +343,6 @@ export function publishDomainEvent(state: CopState, input: DomainEventPublishInp
     time,
     type: input.type
   };
-  state.domainEvents.push(event);
-  return event;
 }
 
 export function appendDomainDeadLetter(
@@ -343,7 +356,20 @@ export function appendDomainDeadLetter(
     now?: Date;
   }
 ): DomainDeadLetterRecord {
-  const record: DomainDeadLetterRecord = {
+  const record = buildDomainDeadLetterRecord(input);
+  state.domainDeadLetters.push(record);
+  return record;
+}
+
+export function buildDomainDeadLetterRecord(input: {
+  body: unknown;
+  channel?: DomainEventChannel;
+  correlationId: string;
+  errorCode: string;
+  message: string;
+  now?: Date;
+}): DomainDeadLetterRecord {
+  return {
     body: sanitizeDeadLetterBody(input.body),
     channel: input.channel ?? "cop.domain.events",
     correlationId: input.correlationId,
@@ -352,8 +378,6 @@ export function appendDomainDeadLetter(
     message: input.message,
     receivedAt: (input.now ?? new Date()).toISOString()
   };
-  state.domainDeadLetters.push(record);
-  return record;
 }
 
 export function queryDomainEvents(state: CopState, query: DomainEventReplayQuery): DomainEventRecord[] {

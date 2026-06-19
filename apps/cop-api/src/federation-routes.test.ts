@@ -10,6 +10,7 @@ describe("federation runtime routes", () => {
   beforeEach(() => {
     vi.stubEnv("COP_CSM_MESSAGING_ENABLED", "false");
     vi.stubEnv("COP_FLIGHT_DATA_ENABLED", "false");
+    vi.stubEnv("COP_FEDERATION_STORE", "memory");
     vi.stubEnv("COP_MISSION_ARENA_ENABLED", "false");
     vi.stubEnv("COP_SAFETY_DATA_ENABLED", "false");
     vi.stubEnv("COP_SITUATION_DATA_ENABLED", "false");

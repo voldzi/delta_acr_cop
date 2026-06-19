@@ -43,12 +43,23 @@ import {
 import {
   appendDomainDeadLetter,
   type EdgeOutboxFlushItemResult,
+  type DomainDeadLetterRecord,
+  type DomainEventChannel,
+  type DomainEventPublishInput,
+  type DomainEventPublishResult,
+  type FederatedNodeRecord,
   parseDomainEventPublishRequest,
   parseDomainEventReplayQuery,
-  publishDomainEvent,
+  publishDomainEventWithResult,
   queryDomainEvents,
   updateFederatedNodeHeartbeat
 } from "./federation.js";
+import {
+  createFederationRuntimeStoreFromEnv,
+  type DomainDeadLetterQueryResult,
+  type DomainEventReplayResult,
+  type FederationRuntimeStore
+} from "./federation-runtime-store.js";
 import { buildMapCatalog, type BuildMapCatalogInput, type MapCatalogLayer } from "./map-catalog.js";
 import {
   buildMissionArenaHealth,
@@ -146,6 +157,7 @@ import {
 export interface BuildServerOptions {
   flightDataSource?: FlightDataSource;
   communityReportStore?: CommunityReportStore;
+  federationRuntimeStore?: FederationRuntimeStore;
   mediaStorage?: MediaStorage;
   messagingProvider?: MessagingProvider;
   missionArenaSource?: MissionArenaSource;
@@ -231,6 +243,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const now = options.now ?? (() => new Date());
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
+  const federationRuntimeStore = options.federationRuntimeStore ?? createFederationRuntimeStoreFromEnv();
   const streamBroadcaster = options.streamBroadcaster ?? createStreamBroadcasterFromEnv();
   const userProfileStore = options.userProfileStore ?? createUserProfileStoreFromEnv();
   const userProfileFallbackStore = new InMemoryUserProfileStore("memory-fallback");
@@ -252,6 +265,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
   const takGatewaySource = options.takGatewaySource ?? createTakGatewaySourceFromEnv();
   const mobileDeviceRegistrations = new Map<string, MobileDeviceRegistration>();
+  let federationRuntimeStoreStatus: DependencyStatus = federationRuntimeStore ? "degraded" : "disabled";
+  let federationRuntimeStoreDetail = federationRuntimeStore ? `${federationRuntimeStore.name}: initializing` : "in-memory only";
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
   let userProfileStoreStatus: DependencyStatus = "degraded";
@@ -301,6 +316,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   );
   app.addHook("preHandler", requireBearerToken);
   app.addHook("onReady", async () => {
+    await initializeFederationRuntimeStore();
     await initializeUserProfileStore();
     await initializeCommunityReportStore();
     await initializeSketchDrawingStore();
@@ -331,6 +347,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       await flushQueuedTrackPersistence();
     }
     await trackHistoryStore?.close();
+    await federationRuntimeStore?.close();
     await userProfileStore.close();
     await userProfileFallbackStore.close();
     await communityReportStore?.close();
@@ -366,6 +383,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       dependencies: [
       { name: "source-registry", status: "ok" },
       { name: "in-memory-cop-state", status: "ok" },
+      { name: "federation-runtime-store", status: federationRuntimeStoreStatus, detail: federationRuntimeStoreDependencyDetail() },
       { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
       { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
       { name: "community-report-store", status: communityReportStoreStatus, detail: communityReportStoreDependencyDetail() },
@@ -436,6 +454,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     ];
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
+
+  async function initializeFederationRuntimeStore(): Promise<void> {
+    if (!federationRuntimeStore) {
+      return;
+    }
+    try {
+      await federationRuntimeStore.init(Array.from(state.federatedNodes.values()));
+      const persistedNodes = await federationRuntimeStore.listNodes();
+      state.federatedNodes.clear();
+      for (const node of persistedNodes) {
+        state.federatedNodes.set(node.nodeId, node);
+      }
+      federationRuntimeStoreStatus = "ok";
+      federationRuntimeStoreDetail = `${federationRuntimeStore.name}: ready; nodes ${persistedNodes.length}; events ${await federationRuntimeStore.countEvents()}`;
+    } catch (error) {
+      federationRuntimeStoreStatus = "degraded";
+      federationRuntimeStoreDetail = `${federationRuntimeStore.name}: ${errorMessage(error)}`;
+      app.log.error({ error }, "Federation runtime store initialization failed; using in-memory fallback.");
+    }
+  }
 
   async function initializeUserProfileStore(): Promise<void> {
     try {
@@ -540,6 +578,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     trackHistoryStoreStatus = "degraded";
     trackHistoryStoreDetail = `${trackHistoryStore.name}: ${errorMessage(error)}`;
     app.log.error({ error }, "Track history store failed; using in-memory fallback.");
+  }
+
+  function markFederationRuntimeStoreDegraded(error: unknown): void {
+    if (!federationRuntimeStore) {
+      return;
+    }
+    federationRuntimeStoreStatus = "degraded";
+    federationRuntimeStoreDetail = `${federationRuntimeStore.name}: ${errorMessage(error)}`;
+    app.log.error({ error }, "Federation runtime store failed; using in-memory fallback.");
+  }
+
+  function federationRuntimeStoreDependencyDetail(): string {
+    const diagnostics = federationRuntimeStore?.diagnostics?.();
+    return diagnostics ? `${federationRuntimeStoreDetail}; ${diagnostics}` : federationRuntimeStoreDetail;
   }
 
   function trackHistoryStoreDependencyDetail(): string {
@@ -2726,15 +2778,123 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
+  async function listFederatedNodes(): Promise<FederatedNodeRecord[]> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        const nodes = await federationRuntimeStore.listNodes();
+        state.federatedNodes.clear();
+        for (const node of nodes) {
+          state.federatedNodes.set(node.nodeId, node);
+        }
+        return nodes;
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+    return Array.from(state.federatedNodes.values()).sort((left, right) => left.nodeId.localeCompare(right.nodeId));
+  }
+
+  async function getFederatedNode(nodeId: string): Promise<FederatedNodeRecord | null> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        const node = await federationRuntimeStore.getNode(nodeId);
+        if (node) {
+          state.federatedNodes.set(node.nodeId, node);
+        }
+        return node;
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+    return state.federatedNodes.get(nodeId) ?? null;
+  }
+
+  async function upsertFederatedNode(node: FederatedNodeRecord): Promise<void> {
+    state.federatedNodes.set(node.nodeId, node);
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        await federationRuntimeStore.upsertNode(node);
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+  }
+
+  async function publishRuntimeDomainEvent(input: DomainEventPublishInput): Promise<DomainEventPublishResult> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        const result = await federationRuntimeStore.publishEvent(input, now());
+        if (!state.domainEvents.some((event) => event.id === result.event.id)) {
+          state.domainEvents.push(result.event);
+        }
+        return result;
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+    return publishDomainEventWithResult(state, input, now());
+  }
+
+  async function appendRuntimeDomainDeadLetter(input: {
+    body: unknown;
+    channel?: DomainEventChannel;
+    correlationId: string;
+    errorCode: string;
+    message: string;
+    now?: Date;
+  }): Promise<DomainDeadLetterRecord> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        const record = await federationRuntimeStore.appendDeadLetter(input);
+        if (!state.domainDeadLetters.some((deadLetter) => deadLetter.deadLetterId === record.deadLetterId)) {
+          state.domainDeadLetters.push(record);
+        }
+        return record;
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+    return appendDomainDeadLetter(state, input);
+  }
+
+  async function queryRuntimeDomainEvents(query: ReturnType<typeof parseDomainEventReplayQuery>): Promise<DomainEventReplayResult> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        return await federationRuntimeStore.queryEvents(query);
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+    const items = queryDomainEvents(state, query);
+    return {
+      items,
+      totalAvailable: state.domainEvents.length
+    };
+  }
+
+  async function listRuntimeDomainDeadLetters(limit: number): Promise<DomainDeadLetterQueryResult> {
+    if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
+      try {
+        return await federationRuntimeStore.listDeadLetters(limit);
+      } catch (error) {
+        markFederationRuntimeStoreDegraded(error);
+      }
+    }
+    return {
+      items: state.domainDeadLetters.slice(-limit),
+      totalAvailable: state.domainDeadLetters.length
+    };
+  }
+
   app.get("/api/v1/federation/nodes", async () => ({
     contractVersion: "cop-federation-node-list-v1",
     generatedAt: now().toISOString(),
-    items: Array.from(state.federatedNodes.values()).sort((left, right) => left.nodeId.localeCompare(right.nodeId))
+    items: await listFederatedNodes()
   }));
 
   app.get("/api/v1/federation/nodes/:nodeId", async (request, reply) => {
     const params = request.params as { nodeId: string };
-    const node = state.federatedNodes.get(params.nodeId);
+    const node = await getFederatedNode(params.nodeId);
     if (!node) {
       return sendError(reply, 404, "NOT_FOUND", "Federated node was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
     }
@@ -2744,18 +2904,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.post("/api/v1/federation/nodes/:nodeId/heartbeat", async (request, reply) => {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const previous = state.federatedNodes.get(params.nodeId);
+    const previous = await getFederatedNode(params.nodeId);
     const result = updateFederatedNodeHeartbeat(state, params.nodeId, request.body, now());
     if (!result.ok || !result.node) {
       return sendError(reply, 400, "VALIDATION_ERROR", result.message ?? "Federated node heartbeat is invalid.", correlationId);
     }
+    await upsertFederatedNode(result.node);
     const eventType = result.node.health === "offline"
       ? "node.disconnected"
       : previous?.health === "offline"
         ? "node.reconnected"
         : undefined;
     if (eventType) {
-      publishDomainEvent(state, {
+      await publishRuntimeDomainEvent({
         classification: { level: "INTERNAL", releasability: ["CIVIL"] },
         correlationId,
         entityId: result.node.nodeId,
@@ -2769,7 +2930,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         producerNodeId: "node_central_cop",
         releasePolicy: { allowedScopes: ["internal"], visibility: "internal" },
         type: eventType
-      }, now());
+      });
     }
     appendAudit(state, "FEDERATED_NODE_HEARTBEAT", {
       health: result.node.health,
@@ -2783,7 +2944,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const parsed = parseDomainEventPublishRequest(request.body, correlationId);
     if (!parsed.ok || !parsed.input) {
-      appendDomainDeadLetter(state, {
+      await appendRuntimeDomainDeadLetter({
         body: request.body,
         correlationId,
         errorCode: "VALIDATION_ERROR",
@@ -2795,8 +2956,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }, correlationId);
       return sendError(reply, 400, "VALIDATION_ERROR", parsed.message ?? "Domain event payload does not match contract.", correlationId);
     }
-    if (!state.federatedNodes.has(parsed.input.producerNodeId)) {
-      appendDomainDeadLetter(state, {
+    const producerNode = await getFederatedNode(parsed.input.producerNodeId);
+    if (!producerNode) {
+      await appendRuntimeDomainDeadLetter({
         body: request.body,
         correlationId,
         errorCode: "UNKNOWN_PRODUCER_NODE",
@@ -2809,7 +2971,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }, correlationId);
       return sendError(reply, 422, "UNKNOWN_PRODUCER_NODE", "Domain event producer node is not registered.", correlationId);
     }
-    const event = publishDomainEvent(state, parsed.input, now());
+    const { event } = await publishRuntimeDomainEvent(parsed.input);
     appendAudit(state, "DOMAIN_EVENT_PUBLISHED", {
       channel: event.channel,
       eventId: event.id,
@@ -2837,7 +2999,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (events.length > 100) {
       return sendError(reply, 413, "BATCH_TOO_LARGE", "Edge outbox flush supports at most 100 events per request.", correlationId);
     }
-    const node = state.federatedNodes.get(nodeId);
+    const node = await getFederatedNode(nodeId);
     if (!node || node.nodeRole !== "edge-node") {
       return sendError(reply, 422, "UNKNOWN_EDGE_NODE", "Edge outbox node is not registered as an edge-node.", correlationId);
     }
@@ -2861,7 +3023,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         : rawEvent;
       const parsed = parseDomainEventPublishRequest(normalizedEvent, correlationId);
       if (!parsed.ok || !parsed.input) {
-        appendDomainDeadLetter(state, {
+        await appendRuntimeDomainDeadLetter({
           body: rawEvent,
           channel: "cop.node.sync",
           correlationId,
@@ -2877,8 +3039,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         });
         continue;
       }
-      const duplicate = Boolean(parsed.input.eventId && state.domainEvents.some((event) => event.id === parsed.input?.eventId));
-      const event = publishDomainEvent(state, {
+      const published = await publishRuntimeDomainEvent({
         ...parsed.input,
         producerNodeId: nodeId,
         provenance: parsed.input.provenance ?? [
@@ -2888,7 +3049,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             source: "edge-outbox"
           }
         ]
-      }, now());
+      });
+      const { duplicate, event } = published;
       results.push({
         ...(clientEventId ? { clientEventId } : {}),
         eventId: event.id,
@@ -2913,7 +3075,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       duplicateCount,
       generatedAt: now().toISOString(),
       items: results,
-      nextOffset: state.domainEvents.at(-1)?.replayOffset ?? 0,
+      nextOffset: Math.max(0, ...results.map((item) => item.replayOffset ?? 0)),
       nodeId,
       rejectedCount
     });
@@ -2921,7 +3083,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   app.get("/api/v1/events/domain", async (request) => {
     const query = parseDomainEventReplayQuery(request.query);
-    const items = queryDomainEvents(state, query);
+    const result = await queryRuntimeDomainEvents(query);
+    const items = result.items;
     return {
       contractVersion: "cop-domain-event-replay-v1",
       generatedAt: now().toISOString(),
@@ -2930,7 +3093,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       query,
       summary: {
         count: items.length,
-        totalAvailable: state.domainEvents.length
+        totalAvailable: result.totalAvailable
       }
     };
   });
@@ -2939,13 +3102,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const query = request.query as { limit?: string };
     const parsedLimit = Number.parseInt(query.limit ?? "", 10);
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 100;
+    const result = await listRuntimeDomainDeadLetters(limit);
     return {
       contractVersion: "cop-domain-event-dlq-v1",
       generatedAt: now().toISOString(),
-      items: state.domainDeadLetters.slice(-limit),
+      items: result.items,
       summary: {
-        count: Math.min(limit, state.domainDeadLetters.length),
-        totalAvailable: state.domainDeadLetters.length
+        count: result.items.length,
+        totalAvailable: result.totalAvailable
       }
     };
   });

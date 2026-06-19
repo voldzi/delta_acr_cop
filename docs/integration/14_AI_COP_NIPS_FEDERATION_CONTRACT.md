@@ -66,9 +66,11 @@ Povinné technické vlastnosti:
 ## Runtime API Stav
 
 První implementovaná runtime vrstva je server-side v COP API. Slouží jako
-broker facade a append-only event log pro pilotní federaci. Není to finální
-produkční broker; ten přijde v další fázi jako samostatné ADR a výměna
-transportu pod stejným kontraktem.
+broker facade a append-only event log pro pilotní federaci. Pokud je dostupná
+`COP_DATABASE_URL`, používá persistentní PostgreSQL runtime store
+(`COP_FEDERATION_STORE=auto|postgres`) s tabulkami `cop_federation_nodes`,
+`cop_domain_events` a `cop_domain_dead_letters`. Bez databáze běží in-memory
+fallback vhodný pouze pro vývoj.
 
 Aktuální endpointy jsou chráněné bearer autentizací a nejsou veřejným klientským
 API:
@@ -99,12 +101,17 @@ CloudEvent ID.
 offset a COP vrací novější eventy. Edge klient po úspěšném flushi uloží nejvyšší
 vrácený `replayOffset` a používá jej pro následný replay.
 
+Perzistence je idempotentní podle CloudEvent `id`/`eventId`. Replay offset je
+serverem přidělený monotónní `bigserial` offset, nikoli klientský čas ani
+lokální pořadí edge zařízení.
+
 Další runtime kroky:
 
-1. nahradit in-memory event log perzistentním brokerem/replay storem,
-2. přidat explicitní ack cursor pro edge uzly,
-3. zavést DLQ retry/re-drive workflow pro operátora,
-4. filtrovat replay podle classification/releasePolicy a subject role,
+1. přidat explicitní ack cursor pro edge uzly,
+2. zavést DLQ retry/re-drive workflow pro operátora,
+3. filtrovat replay podle classification/releasePolicy a subject role,
+4. doplnit broker adapter pod stejným kontraktem, pokud pilot vyžádá externí
+   message broker,
 5. napojit edge outbox na iOS/PWA offline frontu a konfliktní dialogy.
 
 ## CloudEvent Baseline

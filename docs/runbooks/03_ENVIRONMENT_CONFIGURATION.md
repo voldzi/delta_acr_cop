@@ -10,6 +10,7 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 - Source Registry bootstrap,
 - AI provider enable/disable flags,
 - track lifecycle thresholds (`COP_TRACK_STALE_AFTER_MS`, `COP_TRACK_EXPIRE_AFTER_MS`),
+- federation runtime persistence (`COP_FEDERATION_STORE`, volitelně stejný `COP_DATABASE_URL`),
 - temporal history persistence (`COP_TRACK_HISTORY_STORE`, `COP_DATABASE_URL`, `COP_DATABASE_SSL`),
 - user profile persistence (`COP_USER_PROFILE_STORE`, volitelně stejný `COP_DATABASE_URL` jako temporal store),
 - community report persistence (`COP_COMMUNITY_REPORT_STORE`, vyžaduje PostGIS při PostgreSQL backendu),
@@ -122,6 +123,23 @@ COP_DATABASE_SSL=false
 ```
 
 Store při inicializaci vytvoří/aktualizuje tabulky `cop_community_reports` a `cop_community_report_attachments`, doplní `geometry(Point,4326)` sloupce a GiST indexy. Binární média se neukládají do PostgreSQL; metadata příloh odkazují na SeaweedFS/S3 objekt přes `bucket` a `objectKey`.
+
+## Federation Runtime Store
+
+Federace, edge outbox a replay domain eventů jsou aplikační runtime data COP.
+Produkční režim má používat stejný HA PostgreSQL/Patroni endpoint jako ostatní
+COP stores. Bez databáze zůstává in-memory fallback pouze pro vývoj.
+
+```env
+COP_FEDERATION_STORE=auto
+COP_DATABASE_URL=postgresql://cop_app:<password>@haproxy.home.cz:5000/cop
+COP_DATABASE_SSL=false
+```
+
+Store při inicializaci vytvoří tabulky `cop_federation_nodes`,
+`cop_domain_events` a `cop_domain_dead_letters`. `cop_domain_events` používá
+serverem přidělený `replay_offset` a idempotenci podle `event_id`, takže edge
+klient může bezpečně opakovat flush offline outboxu.
 
 ## Map Tiles
 
