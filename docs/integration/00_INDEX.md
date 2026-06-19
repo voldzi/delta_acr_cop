@@ -12,3 +12,5 @@
 - [10 SIM Flight Data Presentation Hints](10_SIM_FLIGHT_DATA_PRESENTATION_HINTS.md)
 - [11 SIM Environment And Basemap Requirements](11_SIM_ENVIRONMENT_AND_BASEMAP_REQUIREMENTS.md)
 - [12 COP Notification Decision And Push](12_COP_NOTIFICATION_DECISION_AND_PUSH.md)
+- [13 Event Contract and AsyncAPI Direction](13_EVENT_CONTRACT_AND_ASYNCAPI.md)
+- [14 AI-COP/NIPS Federation Contract](14_AI_COP_NIPS_FEDERATION_CONTRACT.md)

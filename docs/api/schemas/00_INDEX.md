@@ -1,6 +1,7 @@
 # Schemas Index
 
 - [Canonical Event Envelope](canonical-event-envelope.schema.json)
+- [Canonical Entity](canonical-entity.schema.json)
 - [Observed Object](observed-object.schema.json)
 - [Source System](source-system.schema.json)
 - [COP Subscription](cop-subscription.schema.json)

@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "test:contracts": "vitest run tests/contract packages/nato-symbol-renderer/test",
     "lint": "tsc -b --pretty false",
-    "validate:openapi": "redocly lint docs/api/openapi-main-cop.yaml",
+    "openapi:sync-yaml": "node scripts/sync-openapi-yaml.mjs",
+    "validate:openapi": "redocly lint openapi/openapi.json",
     "validate:schemas": "tsx scripts/validate-schemas.ts",
     "check": "pnpm validate:schemas && pnpm validate:openapi && pnpm lint && pnpm test"
   },

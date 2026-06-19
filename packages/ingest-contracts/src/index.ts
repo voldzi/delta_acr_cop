@@ -13,6 +13,7 @@ export interface ContractValidationResult<T> {
 }
 
 export type ContractSchemaName =
+  | "canonical-entity.schema.json"
   | "canonical-event-envelope.schema.json"
   | "observed-object.schema.json"
   | "source-system.schema.json"
@@ -22,6 +23,7 @@ export type ContractSchemaName =
   | "ai-cop-query.schema.json";
 
 const schemaNames: ContractSchemaName[] = [
+  "canonical-entity.schema.json",
   "observed-object.schema.json",
   "canonical-event-envelope.schema.json",
   "source-system.schema.json",
@@ -95,6 +97,10 @@ export class ContractValidators {
 
   validateCanonicalEvent(data: unknown): ContractValidationResult<CanonicalEventEnvelope> {
     return this.validate("canonical-event-envelope.schema.json", data);
+  }
+
+  validateCanonicalEntity<T = unknown>(data: unknown): ContractValidationResult<T> {
+    return this.validate("canonical-entity.schema.json", data);
   }
 
   validateSourceSystem(data: unknown): ContractValidationResult<SourceSystem> {

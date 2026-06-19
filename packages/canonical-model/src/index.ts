@@ -6,20 +6,52 @@ export const eventTypes = [
   "track.deleted",
   "incident.created",
   "incident.updated",
+  "incident.closed",
   "report.created",
+  "report.updated",
+  "report.submitted",
+  "media.attached",
+  "media.derivative.created",
+  "community.group.created",
+  "community.group.updated",
+  "community.group.member.updated",
+  "alert.created",
+  "alert.updated",
+  "alert.acknowledged",
+  "user.zone.created",
+  "user.zone.updated",
+  "user.zone.deleted",
+  "zone.entered",
+  "zone.exited",
+  "sketch.drawing.created",
+  "sketch.drawing.updated",
+  "sketch.drawing.deleted",
+  "notification.requested",
+  "ai.summary.created",
+  "data.conflict.detected",
   "source.status.changed"
 ] as const;
 
 export type EventType = (typeof eventTypes)[number];
 
 export const objectTypes = [
+  "MAP_FEATURE",
   "AIRCRAFT",
   "UAV",
   "MISSILE_TRACK",
   "GROUND_UNIT",
   "RESCUE_ASSET",
+  "SENSOR_OBSERVATION",
+  "WEATHER_OBSERVATION",
+  "MOBILE_NETWORK_OBSERVATION",
+  "TRAFFIC_OBSERVATION",
   "INCIDENT",
+  "ALERT",
   "REPORT",
+  "EVIDENCE",
+  "TASK",
+  "USER_ZONE",
+  "SKETCH_DRAWING",
   "UNKNOWN"
 ] as const;
 
@@ -34,11 +66,98 @@ export type Affiliation =
   | "HOSTILE"
   | "PENDING";
 
-export type Domain = "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
+export type Domain =
+  | "AIR"
+  | "LAND"
+  | "SEA"
+  | "RESCUE"
+  | "WEATHER"
+  | "SAFETY"
+  | "COMMUNICATIONS"
+  | "TRANSPORT"
+  | "COMMUNITY"
+  | "OTHER";
 
 export type ObjectStatus = "ACTIVE" | "INACTIVE" | "LOST" | "STALE" | "CONFLICTED";
 
 export type ClassificationLevel = "UNCLASSIFIED" | "RESTRICTED" | "CONFIDENTIAL" | "SECRET";
+
+export type CanonicalEntityType =
+  | "mapFeature"
+  | "observedObject"
+  | "sensorObservation"
+  | "incident"
+  | "alert"
+  | "communityReport"
+  | "evidence"
+  | "task"
+  | "userZone"
+  | "sketchDrawing"
+  | "sourceSystem";
+
+export type Visibility = "public" | "group" | "event" | "private" | "restricted";
+
+export type DataQuality = "observed" | "modelled" | "mixed" | "inferred" | "synthetic" | "unknown";
+
+export type ReleaseScope = "public" | "authenticated" | "group" | "event" | "operator" | "admin";
+
+export interface ReleasePolicy {
+  visibility: Visibility;
+  allowedScopes: ReleaseScope[];
+  groupIds?: string[];
+  eventIds?: string[];
+  userIds?: string[];
+  mediaAccess?: Visibility;
+  expiresAt?: string | null;
+  reason?: string | null;
+}
+
+export interface ProvenanceRecord {
+  provenanceId: string;
+  sourceSystemId: string;
+  sourceName?: string | null;
+  sourceFeatureId?: string | null;
+  adapterId?: string | null;
+  adapterVersion?: string | null;
+  eventId?: string | null;
+  transformedAt: string;
+  transformation: string;
+  basis?: string[];
+  sourceRevision?: string | null;
+}
+
+export interface ConfidenceAssessment {
+  confidence: number;
+  dataQuality: DataQuality;
+  stale?: boolean;
+  sourceReliability?: "A" | "B" | "C" | "D" | "E" | "F" | "UNKNOWN";
+  informationCredibility?: "1" | "2" | "3" | "4" | "5" | "6" | "UNKNOWN";
+  factors?: Array<{
+    name: string;
+    value: number | string | boolean;
+    effect: "positive" | "negative" | "neutral";
+    explanation?: string;
+  }>;
+  explanation?: string;
+}
+
+export interface CanonicalEntityBase {
+  id: string;
+  entityType: CanonicalEntityType;
+  title?: string;
+  summary?: string;
+  source: SourceRef;
+  classification: Classification;
+  releasePolicy: ReleasePolicy;
+  confidence: ConfidenceAssessment;
+  provenance: ProvenanceRecord[];
+  createdAt: string;
+  updatedAt: string;
+  validFrom?: string | null;
+  validUntil?: string | null;
+  ownerSubjectId?: string | null;
+  correlationId?: string | null;
+}
 
 export interface SourceRef {
   sourceSystemId: string;
@@ -76,12 +195,86 @@ export interface ObservedObject {
   headingDeg?: number | null;
   verticalRateMps?: number | null;
   confidence?: number;
+  dataQuality?: DataQuality;
   lastUpdatedAt?: string;
+  validFrom?: string | null;
+  validUntil?: string | null;
   synthetic?: boolean;
   symbol?: Record<string, unknown>;
   provenanceIds?: string[];
+  provenance?: ProvenanceRecord[];
+  releasePolicy?: ReleasePolicy;
+  ownerSubjectId?: string | null;
   attributes?: Record<string, unknown>;
 }
+
+export interface SensorObservation extends CanonicalEntityBase {
+  entityType: "sensorObservation";
+  observationType: "weather" | "airQuality" | "mobileNetwork" | "traffic" | "safety" | "other";
+  geometry?: GeoPoint | Record<string, unknown>;
+  metrics: Record<string, number | string | boolean | null>;
+  tags?: Record<string, string | number | boolean | null>;
+}
+
+export interface IncidentEntity extends CanonicalEntityBase {
+  entityType: "incident";
+  status: "new" | "active" | "monitoring" | "resolved" | "archived";
+  severity: "info" | "warning" | "critical";
+  geometry?: GeoPoint | Record<string, unknown>;
+  affectedArea?: Record<string, unknown>;
+}
+
+export interface AlertEntity extends CanonicalEntityBase {
+  entityType: "alert";
+  alertType: string;
+  severity: "info" | "warning" | "critical";
+  urgency?: "immediate" | "expected" | "future" | "past" | "unknown";
+  certainty?: "observed" | "likely" | "possible" | "unlikely" | "unknown";
+  recommendedAction?: string | null;
+  evidence?: Record<string, unknown>;
+}
+
+export interface EvidenceEntity extends CanonicalEntityBase {
+  entityType: "evidence";
+  evidenceType: "photo" | "video" | "spatialVideo" | "document" | "audio" | "text" | "other";
+  reportId?: string | null;
+  groupId?: string | null;
+  location?: GeoPoint | null;
+  media?: {
+    bucket?: string;
+    objectKey?: string;
+    contentType?: string;
+    byteSize?: number;
+    checksumSha256?: string | null;
+    derivativeIds?: string[];
+  };
+}
+
+export interface UserZoneEntity extends CanonicalEntityBase {
+  entityType: "userZone";
+  zoneType: "watch" | "warning" | "operational" | "custom";
+  geometry: Record<string, unknown>;
+  style?: Record<string, unknown>;
+  alertRules?: Array<Record<string, unknown>>;
+}
+
+export interface SketchDrawingEntity extends CanonicalEntityBase {
+  entityType: "sketchDrawing";
+  geometry: Record<string, unknown>;
+  drawingKind: "marker" | "line" | "polygon" | "circle" | "text" | "arrow" | "measurement";
+  style: Record<string, unknown>;
+  symbol?: Record<string, unknown>;
+  revision: number;
+}
+
+export type CanonicalEntity =
+  | ObservedObject
+  | SensorObservation
+  | IncidentEntity
+  | AlertEntity
+  | EvidenceEntity
+  | UserZoneEntity
+  | SketchDrawingEntity;
 
 export interface CanonicalEventEnvelope {
   eventId: string;
@@ -114,6 +307,22 @@ export interface CanonicalEventEnvelope {
     keyId?: string | null;
     algorithm?: string | null;
   };
+}
+
+export interface CopDomainEventEnvelope {
+  eventId: string;
+  eventType: EventType;
+  contractVersion: "cop-domain-event-v1";
+  source: SourceRef;
+  correlationId: string;
+  producerTimestamp: string;
+  ingestTimestamp?: string;
+  classification: Classification;
+  releasePolicy: ReleasePolicy;
+  payload: CanonicalEntity;
+  quality: ConfidenceAssessment;
+  provenance?: ProvenanceRecord[];
+  signature?: CanonicalEventEnvelope["signature"];
 }
 
 export interface SourceSystem {

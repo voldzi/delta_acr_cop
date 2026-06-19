@@ -1,0 +1,491 @@
+{
+  "asyncapi": "3.0.0",
+  "info": {
+    "title": "CSM/COP Federated Domain Events",
+    "version": "0.1.0",
+    "description": "Pilotni AsyncAPI kontrakt pro federovane udalosti CSM/COP. REST/OpenAPI zustava command/query kontrakt; tento soubor popisuje auditovatelne domain eventy, replay a integraci uzlu."
+  },
+  "defaultContentType": "application/cloudevents+json",
+  "servers": {
+    "pilotEventBus": {
+      "host": "event-bus.internal:4222",
+      "protocol": "nats",
+      "description": "Pilotni event bus. Konkretni technologie a retence budou potvrzeny ADR pred produkcnim pouzitim."
+    }
+  },
+  "channels": {
+    "domainEvents": {
+      "address": "cop.domain.events",
+      "messages": {
+        "domainEvent": {
+          "$ref": "#/components/messages/DomainEvent"
+        }
+      }
+    },
+    "auditEvents": {
+      "address": "cop.audit.events",
+      "messages": {
+        "auditEvent": {
+          "$ref": "#/components/messages/AuditEvent"
+        }
+      }
+    },
+    "notificationRequests": {
+      "address": "cop.notifications.requested",
+      "messages": {
+        "notificationRequested": {
+          "$ref": "#/components/messages/NotificationRequested"
+        }
+      }
+    },
+    "providerHealth": {
+      "address": "cop.provider.health",
+      "messages": {
+        "providerHealth": {
+          "$ref": "#/components/messages/ProviderHealth"
+        }
+      }
+    },
+    "aiAudit": {
+      "address": "cop.ai.audit",
+      "messages": {
+        "aiToolInvoked": {
+          "$ref": "#/components/messages/AiToolInvoked"
+        }
+      }
+    },
+    "nodeSync": {
+      "address": "cop.node.sync",
+      "messages": {
+        "nodeSync": {
+          "$ref": "#/components/messages/NodeSyncEvent"
+        }
+      }
+    }
+  },
+  "operations": {
+    "publishDomainEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/domainEvents"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/domainEvents/messages/domainEvent"
+        }
+      ]
+    },
+    "consumeDomainEvent": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/domainEvents"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/domainEvents/messages/domainEvent"
+        }
+      ]
+    },
+    "publishAuditEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auditEvents"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auditEvents/messages/auditEvent"
+        }
+      ]
+    },
+    "requestNotification": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/notificationRequests"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notificationRequests/messages/notificationRequested"
+        }
+      ]
+    },
+    "publishProviderHealth": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/providerHealth"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/providerHealth/messages/providerHealth"
+        }
+      ]
+    },
+    "auditAiTool": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/aiAudit"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/aiAudit/messages/aiToolInvoked"
+        }
+      ]
+    },
+    "publishNodeSync": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/nodeSync"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/nodeSync/messages/nodeSync"
+        }
+      ]
+    }
+  },
+  "components": {
+    "messages": {
+      "DomainEvent": {
+        "name": "DomainEvent",
+        "title": "COP domain event",
+        "payload": {
+          "$ref": "#/components/schemas/CloudEvent"
+        },
+        "examples": [
+          {
+            "name": "incidentCreated",
+            "payload": {
+              "specversion": "1.0",
+              "id": "evt_01HX0000000000000000000000",
+              "source": "urn:csm:node:central-orchestrator",
+              "type": "incident.created",
+              "subject": "incident_01HX0000000000000000000000",
+              "time": "2026-06-19T12:00:00Z",
+              "datacontenttype": "application/json",
+              "data": {
+                "contractVersion": "cop-domain-event-v1",
+                "correlationId": "corr_01HX0000000000000000000000",
+                "producerNodeId": "node_central_cop",
+                "entityId": "incident_01HX0000000000000000000000",
+                "entityType": "incident",
+                "classification": {
+                  "level": "INTERNAL",
+                  "releasability": [
+                    "CIVIL"
+                  ],
+                  "handlingCaveats": []
+                },
+                "releasePolicy": {
+                  "visibility": "event",
+                  "allowedScopes": [
+                    "event"
+                  ],
+                  "groupIds": [],
+                  "eventIds": [
+                    "event_flood_demo"
+                  ]
+                },
+                "quality": {
+                  "confidence": 0.82,
+                  "dataQuality": "observed",
+                  "stale": false
+                },
+                "provenance": [],
+                "payload": {
+                  "title": "Povoden - demo incident",
+                  "severity": "warning"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AuditEvent": {
+        "name": "AuditEvent",
+        "title": "COP audit event",
+        "payload": {
+          "$ref": "#/components/schemas/CloudEvent"
+        }
+      },
+      "NotificationRequested": {
+        "name": "NotificationRequested",
+        "title": "Notification requested by COP decision layer",
+        "payload": {
+          "$ref": "#/components/schemas/CloudEvent"
+        }
+      },
+      "ProviderHealth": {
+        "name": "ProviderHealth",
+        "title": "Provider health and observability event",
+        "payload": {
+          "$ref": "#/components/schemas/CloudEvent"
+        }
+      },
+      "AiToolInvoked": {
+        "name": "AiToolInvoked",
+        "title": "AI or MCP tool invocation audit event",
+        "payload": {
+          "$ref": "#/components/schemas/CloudEvent"
+        }
+      },
+      "NodeSyncEvent": {
+        "name": "NodeSyncEvent",
+        "title": "Federated node sync event",
+        "payload": {
+          "$ref": "#/components/schemas/CloudEvent"
+        }
+      }
+    },
+    "schemas": {
+      "CloudEvent": {
+        "type": "object",
+        "required": [
+          "specversion",
+          "id",
+          "source",
+          "type",
+          "time",
+          "datacontenttype",
+          "data"
+        ],
+        "properties": {
+          "specversion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "id": {
+            "type": "string",
+            "description": "Globally unique event id."
+          },
+          "source": {
+            "type": "string",
+            "description": "Stable node or service identifier."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "incident.created",
+              "incident.updated",
+              "incident.merged",
+              "unit.status.updated",
+              "resource.capacity.updated",
+              "sensor.observation.created",
+              "alert.raised",
+              "alert.acknowledged",
+              "task.created",
+              "task.status.changed",
+              "node.disconnected",
+              "node.reconnected",
+              "sync.conflict.detected",
+              "ai.summary.generated",
+              "ai.tool.invoked",
+              "report.created",
+              "report.updated",
+              "media.attached",
+              "media.derivative.created",
+              "sketch.drawing.created",
+              "sketch.drawing.updated",
+              "sketch.drawing.deleted",
+              "notification.requested",
+              "source.status.changed"
+            ]
+          },
+          "subject": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "datacontenttype": {
+            "type": "string",
+            "const": "application/json"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CopDomainEventData"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CopDomainEventData": {
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "correlationId",
+          "producerNodeId",
+          "entityId",
+          "entityType",
+          "classification",
+          "releasePolicy",
+          "quality",
+          "provenance",
+          "payload"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-domain-event-v1"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "producerNodeId": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string",
+            "enum": [
+              "incident",
+              "unit",
+              "resource",
+              "sensorObservation",
+              "alert",
+              "task",
+              "communityReport",
+              "evidence",
+              "sketchDrawing",
+              "userZone",
+              "sourceSystem",
+              "auditRecord"
+            ]
+          },
+          "classification": {
+            "$ref": "#/components/schemas/Classification"
+          },
+          "releasePolicy": {
+            "$ref": "#/components/schemas/ReleasePolicy"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/EventQuality"
+          },
+          "provenance": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "Classification": {
+        "type": "object",
+        "required": [
+          "level",
+          "releasability"
+        ],
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "INTERNAL",
+              "SENSITIVE",
+              "RESTRICTED_SIMULATED"
+            ]
+          },
+          "releasability": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "handlingCaveats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReleasePolicy": {
+        "type": "object",
+        "required": [
+          "visibility",
+          "allowedScopes"
+        ],
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "group",
+              "event",
+              "private",
+              "restricted"
+            ]
+          },
+          "allowedScopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "public",
+                "authenticated",
+                "group",
+                "event",
+                "private",
+                "restricted"
+              ]
+            }
+          },
+          "groupIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "eventIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false
+      },
+      "EventQuality": {
+        "type": "object",
+        "required": [
+          "confidence",
+          "dataQuality",
+          "stale"
+        ],
+        "properties": {
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "dataQuality": {
+            "type": "string",
+            "enum": [
+              "observed",
+              "modelled",
+              "mixed",
+              "inferred",
+              "synthetic",
+              "unknown"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "explanation": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

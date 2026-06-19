@@ -2,6 +2,10 @@
 
 Event envelope je základní kontrakt pro změny přicházející do COP systému.
 
+Původní schéma `cop-ingest-v1` zůstává baseline pro ingest objektů. Rozšířený
+domain-event směr pro civilní COP je v
+[13 Event Contract and AsyncAPI Direction](../integration/13_EVENT_CONTRACT_AND_ASYNCAPI.md).
+
 ## Povinné koncepty
 
 - `eventId`: idempotentní identita události.

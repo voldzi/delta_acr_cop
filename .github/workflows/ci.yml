@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: Validate Application
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate repository skeleton
+        run: bash scripts/validate-skeleton.sh
+
+      - name: Validate schemas
+        run: pnpm validate:schemas
+
+      - name: Validate OpenAPI
+        run: pnpm validate:openapi
+
+      - name: Lint and type-check
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Dependency audit
+        run: pnpm audit --audit-level critical
+
+      - name: Docker build API
+        run: docker build -f Dockerfile.api -t delta-acr-cop-api:ci .
+
+      - name: Docker build web
+        run: docker build -f Dockerfile.web -t delta-acr-cop-web:ci .
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

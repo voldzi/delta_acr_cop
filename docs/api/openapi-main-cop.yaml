@@ -1,3 +1,6 @@
+# This file is generated from openapi/openapi.json.
+# Do not edit manually.
+
 openapi: 3.1.0
 info:
   title: Civil Situation Map API
@@ -7,10 +10,9 @@ info:
     name: Internal baseline - license pending
     identifier: LicenseRef-Internal-Baseline
   description: >
-    API baseline for ingest, situation queries, subscriptions, source registry,
-    symbology, audit, AI assistance, health and metrics. The API supports
-    situational awareness and data interoperability only; it does not define
-    targeting, weapon control or use-of-force workflows.
+    API baseline for ingest, situation queries, subscriptions, source registry, symbology, audit, AI
+    assistance, health and metrics. The API supports situational awareness and data interoperability
+    only; it does not define targeting, weapon control or use-of-force workflows.
 servers:
   - url: /
     description: Relative server URL for local, test and deployed environments.
@@ -58,12 +60,13 @@ tags:
 paths:
   /api/v1/me/preferences:
     get:
-      tags: [Identity]
+      tags:
+        - Identity
       summary: Read authenticated operator preferences.
       operationId: getMyCopPreferences
       description: >
-        Returns the Keycloak/lab actor identity plus server-side COP workspace,
-        map, replay and alert preferences for the authenticated operator.
+        Returns the Keycloak/lab actor identity plus server-side COP workspace, map, replay and
+        alert preferences for the authenticated operator.
       responses:
         "200":
           description: Operator preference profile.
@@ -74,13 +77,13 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     put:
-      tags: [Identity]
+      tags:
+        - Identity
       summary: Upsert authenticated operator preferences.
       operationId: putMyCopPreferences
       description: >
-        Persists only display, workspace, replay and informational alert
-        preferences. This endpoint does not create tasking, targeting or
-        weapon workflow state.
+        Persists only display, workspace, replay and informational alert preferences. This endpoint
+        does not create tasking, targeting or weapon workflow state.
       requestBody:
         required: true
         content:
@@ -98,13 +101,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
   /api/v1/users/search:
     get:
-      tags: [Identity]
+      tags:
+        - Identity
       summary: Search COP user directory.
       operationId: searchCopUsers
       description: >
-        Authenticated operator lookup for adding COP community group members.
-        Results expose canonical OIDC subject ids plus display handles; clients
-        must persist `subjectId`, not usernames or email addresses.
+        Authenticated operator lookup for adding COP community group members. Results expose
+        canonical OIDC subject ids plus display handles; clients must persist `subjectId`, not
+        usernames or email addresses.
       parameters:
         - name: q
           in: query
@@ -134,13 +138,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
   /api/v1/mobile/bootstrap:
     get:
-      tags: [Mobile]
+      tags:
+        - Mobile
       summary: Read native mobile bootstrap payload.
       operationId: getMobileBootstrap
       description: >
-        Single startup endpoint for iPhone/iPad clients. It returns safe public
-        mobile configuration, user profile, map settings, endpoint discovery,
-        capabilities and the current policy-filtered read-only COP snapshot.
+        Single startup endpoint for iPhone/iPad clients. It returns safe public mobile
+        configuration, user profile, map settings, endpoint discovery, capabilities and the current
+        policy-filtered read-only COP snapshot.
       parameters:
         - $ref: "#/components/parameters/HistorySecondsQuery"
         - $ref: "#/components/parameters/HistoryLimitQuery"
@@ -164,13 +169,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
   /api/v1/mobile/offline-snapshot:
     get:
-      tags: [Mobile]
+      tags:
+        - Mobile
       summary: Read native mobile offline snapshot.
       operationId: getMobileOfflineSnapshot
       description: >
-        Returns the same policy-filtered read-only COP data used by bootstrap,
-        without profile/config metadata. Native clients store this in encrypted
-        device storage and must mark it stale according to cachePolicy.
+        Returns the same policy-filtered read-only COP data used by bootstrap, without
+        profile/config metadata. Native clients store this in encrypted device storage and must mark
+        it stale according to cachePolicy.
       parameters:
         - $ref: "#/components/parameters/HistorySecondsQuery"
         - $ref: "#/components/parameters/HistoryLimitQuery"
@@ -193,14 +199,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
   /api/v1/map/catalog:
     get:
-      tags: [Map Catalog]
+      tags:
+        - Map Catalog
       summary: Read source-neutral map catalog.
       operationId: getMapCatalog
       description: >
-        Returns the authoritative COP map catalog. The catalog groups user-facing
-        layers independently from provider internals, separates technical inputs
-        from citizen-visible layers, and preserves provider/source provenance for
-        diagnostics and future providers.
+        Returns the authoritative COP map catalog. The catalog groups user-facing layers
+        independently from provider internals, separates technical inputs from citizen-visible
+        layers, and preserves provider/source provenance for diagnostics and future providers.
       parameters:
         - name: includeDiagnostics
           in: query
@@ -208,14 +214,16 @@ paths:
           schema:
             type: boolean
             default: false
-          description: Include diagnostic layers and source inputs. Ignored for unauthenticated public-read requests.
+          description: Include diagnostic layers and source inputs. Ignored for unauthenticated public-read
+            requests.
         - name: includePartner
           in: query
           required: false
           schema:
             type: boolean
             default: false
-          description: Include partner/private layers such as TAK Gateway. Ignored for unauthenticated public-read requests.
+          description: Include partner/private layers such as TAK Gateway. Ignored for unauthenticated
+            public-read requests.
         - name: locale
           in: query
           required: false
@@ -234,14 +242,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
   /api/v1/map/raster-overlay:
     get:
-      tags: [Map Catalog]
+      tags:
+        - Map Catalog
       summary: Proxy an allowlisted georeferenced raster overlay image.
       operationId: getMapRasterOverlay
       description: >
-        Returns a client-safe raster image for catalog layers with
-        kind=raster_overlay. Browser and native clients must use this COP
-        endpoint for provider raster URLs returned by /api/v1/map/query instead
-        of calling external weather providers directly. COP validates the
+        Returns a client-safe raster image for catalog layers with kind=raster_overlay. Browser and
+        native clients must use this COP endpoint for provider raster URLs returned by
+        /api/v1/map/query instead of calling external weather providers directly. COP validates the
         upstream host against a strict allowlist and accepts only image content.
       parameters:
         - name: url
@@ -285,13 +293,14 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/geocode/search:
     get:
-      tags: [Map Catalog]
+      tags:
+        - Map Catalog
       summary: Search public places for map navigation.
       operationId: searchPlaces
       description: >
-        Returns client-safe geocoding results for map navigation. COP calls the
-        configured geocoder server-side and caches repeated searches so web and
-        native clients do not need direct external geocoder access.
+        Returns client-safe geocoding results for map navigation. COP calls the configured geocoder
+        server-side and caches repeated searches so web and native clients do not need direct
+        external geocoder access.
       parameters:
         - name: q
           in: query
@@ -331,14 +340,14 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/map/query:
     post:
-      tags: [Map Catalog]
+      tags:
+        - Map Catalog
       summary: Query source-neutral map features.
       operationId: queryMapFeatures
       description: >
-        Single public COP feature query endpoint. Clients select catalog layer
-        IDs from /api/v1/map/catalog; COP translates those layer IDs to internal
-        provider queries server-side. Provider-specific SIM endpoints are not
-        part of the COP public API.
+        Single public COP feature query endpoint. Clients select catalog layer IDs from
+        /api/v1/map/catalog; COP translates those layer IDs to internal provider queries
+        server-side. Provider-specific SIM endpoints are not part of the COP public API.
       requestBody:
         required: true
         content:
@@ -360,14 +369,14 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/mobile/devices:
     post:
-      tags: [Mobile]
+      tags:
+        - Mobile
       summary: Register or refresh a native mobile device session.
       operationId: registerMobileDevice
       description: >
-        Pilot endpoint for native COP device/session policy and audit. This is
-        not the APNs push registry. Production push tokens are registered with
-        CSM Messaging /api/v1/devices; COP does not send APNs pushes and does
-        not persist raw APNs tokens.
+        Pilot endpoint for native COP device/session policy and audit. This is not the APNs push
+        registry. Production push tokens are registered with CSM Messaging /api/v1/devices; COP does
+        not send APNs pushes and does not persist raw APNs tokens.
       parameters:
         - $ref: "#/components/parameters/CorrelationIdHeader"
       requestBody:
@@ -389,7 +398,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
   /api/v1/community/reports:
     get:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: List community reports for a map viewport.
       operationId: listCommunityReports
       parameters:
@@ -398,8 +408,8 @@ paths:
           required: false
           schema:
             type: string
-            pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
-          description: "west,south,east,north"
+            pattern: ^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$
+          description: west,south,east,north
         - name: category
           in: query
           required: false
@@ -436,7 +446,8 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Create a draft community report.
       operationId: createCommunityReport
       parameters:
@@ -460,7 +471,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
   /api/v1/community/reports/{reportId}:
     get:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Read one community report.
       operationId: getCommunityReport
       parameters:
@@ -477,7 +489,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     patch:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Update an owned community report.
       operationId: updateCommunityReport
       parameters:
@@ -505,7 +518,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Delete an owned community report and its media metadata.
       operationId: deleteCommunityReport
       parameters:
@@ -520,7 +534,8 @@ paths:
           $ref: "#/components/responses/NotFound"
   /api/v1/community/reports/{reportId}/submit:
     post:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Submit an owned draft report for sharing/moderation.
       operationId: submitCommunityReport
       parameters:
@@ -539,7 +554,8 @@ paths:
           $ref: "#/components/responses/NotFound"
   /api/v1/community/reports/{reportId}/attachments:
     post:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Create a media upload slot for an owned report.
       operationId: createCommunityReportAttachmentUpload
       parameters:
@@ -568,7 +584,8 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete:
     post:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Mark an uploaded community report attachment as complete.
       operationId: completeCommunityReportAttachmentUpload
       parameters:
@@ -592,7 +609,7 @@ paths:
                   minimum: 1
                 checksumSha256:
                   type: string
-                  pattern: "^[0-9a-fA-F]{64}$"
+                  pattern: ^[0-9a-fA-F]{64}$
       responses:
         "200":
           description: Completed attachment metadata.
@@ -606,7 +623,8 @@ paths:
           $ref: "#/components/responses/NotFound"
   /api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload:
     post:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Upload an attachment through COP API as a fallback to direct object-storage PUT.
       operationId: proxyUploadCommunityReportAttachment
       parameters:
@@ -669,7 +687,8 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/community/reports/{reportId}/attachments/{attachmentId}/content:
     get:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Stream uploaded community media for map/details playback.
       operationId: getCommunityReportAttachmentContent
       parameters:
@@ -718,7 +737,8 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/community/reports/{reportId}/attachments/{attachmentId}/derivatives/{derivativeId}/content:
     get:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Stream an authorized derived media object, such as XR side-by-side video.
       operationId: getCommunityReportAttachmentDerivativeContent
       parameters:
@@ -734,7 +754,8 @@ paths:
           required: true
           schema:
             type: string
-            enum: [xr-sbs]
+            enum:
+              - xr-sbs
       responses:
         "200":
           description: Derived media content.
@@ -753,7 +774,8 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/community/groups:
     get:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: List community sharing groups visible to the authenticated user.
       operationId: listCommunityGroups
       responses:
@@ -766,7 +788,8 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Create a community sharing group for restricted media access.
       operationId: createCommunityGroup
       parameters:
@@ -790,7 +813,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
   /api/v1/community/groups/{groupId}:
     get:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Read one community sharing group.
       operationId: getCommunityGroup
       parameters:
@@ -808,7 +832,8 @@ paths:
           $ref: "#/components/responses/NotFound"
   /api/v1/community/groups/{groupId}/join-request:
     post:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Request membership in a community sharing group.
       operationId: requestCommunityGroupMembership
       parameters:
@@ -827,7 +852,8 @@ paths:
           $ref: "#/components/responses/NotFound"
   /api/v1/community/groups/{groupId}/members:
     post:
-      tags: [Community Reports]
+      tags:
+        - Community Reports
       summary: Add or approve a member in a managed community sharing group.
       operationId: upsertCommunityGroupMember
       parameters:
@@ -854,7 +880,8 @@ paths:
           $ref: "#/components/responses/NotFound"
   /api/v1/sketch/palettes:
     get:
-      tags: [Sketch Drawings]
+      tags:
+        - Sketch Drawings
       summary: Read supported sketch symbol palettes.
       operationId: getSketchPalettes
       parameters:
@@ -863,7 +890,9 @@ paths:
           required: false
           schema:
             type: string
-            enum: [civil, professional]
+            enum:
+              - civil
+              - professional
           description: Optional palette mode filter.
       responses:
         "200":
@@ -876,7 +905,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
   /api/v1/sketch/drawings:
     get:
-      tags: [Sketch Drawings]
+      tags:
+        - Sketch Drawings
       summary: List map sketches for a viewport.
       operationId: listSketchDrawings
       parameters:
@@ -885,7 +915,7 @@ paths:
           required: false
           schema:
             type: string
-            pattern: "^-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?$"
+            pattern: ^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$
           description: Comma-separated west,south,east,north bounding box in WGS84.
         - name: groupId
           in: query
@@ -917,7 +947,8 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
-      tags: [Sketch Drawings]
+      tags:
+        - Sketch Drawings
       summary: Create a map sketch.
       operationId: createSketchDrawing
       parameters:
@@ -943,7 +974,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/sketch/drawings/{drawingId}:
     get:
-      tags: [Sketch Drawings]
+      tags:
+        - Sketch Drawings
       summary: Read one map sketch.
       operationId: getSketchDrawing
       parameters:
@@ -960,7 +992,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     patch:
-      tags: [Sketch Drawings]
+      tags:
+        - Sketch Drawings
       summary: Update an owned map sketch.
       operationId: updateSketchDrawing
       parameters:
@@ -988,7 +1021,8 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
-      tags: [Sketch Drawings]
+      tags:
+        - Sketch Drawings
       summary: Soft-delete an owned map sketch.
       operationId: deleteSketchDrawing
       parameters:
@@ -1005,7 +1039,8 @@ paths:
           $ref: "#/components/responses/NotFound"
   /api/v1/ingest/events:
     post:
-      tags: [Ingest]
+      tags:
+        - Ingest
       summary: Accept one canonical event envelope.
       operationId: ingestEvent
       parameters:
@@ -1018,7 +1053,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "./schemas/canonical-event-envelope.schema.json"
+              $ref: ./schemas/canonical-event-envelope.schema.json
       responses:
         "202":
           description: Event accepted for asynchronous processing.
@@ -1042,7 +1077,8 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/ingest/batches:
     post:
-      tags: [Ingest]
+      tags:
+        - Ingest
       summary: Accept a batch of canonical event envelopes.
       operationId: ingestBatch
       parameters:
@@ -1079,7 +1115,8 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/cop/tracks:
     get:
-      tags: [COP]
+      tags:
+        - COP
       summary: Query policy-filtered COP tracks.
       operationId: listCopTracks
       parameters:
@@ -1146,15 +1183,15 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/cop/conflicts:
     get:
-      tags: [COP]
+      tags:
+        - COP
       summary: Query server-side COP conflict evidence.
       operationId: listCopConflictEvidence
       description: >
-        Returns derived data-quality conflict evidence for current COP objects.
-        Evidence may include affiliation variance, lifecycle variance, source
-        position variance, low confidence, degraded source health and object
-        states already marked as conflicted. This endpoint is informational only
-        and does not provide targeting or action recommendations.
+        Returns derived data-quality conflict evidence for current COP objects. Evidence may include
+        affiliation variance, lifecycle variance, source position variance, low confidence, degraded
+        source health and object states already marked as conflicted. This endpoint is informational
+        only and does not provide targeting or action recommendations.
       parameters:
         - name: objectIds
           in: query
@@ -1199,13 +1236,14 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/cop/alerts:
     get:
-      tags: [COP]
+      tags:
+        - COP
       summary: Query policy-filtered COP alerts.
       operationId: listCopAlerts
       description: >
-        Returns derived informational alerts from current COP tracks, server-side
-        conflict evidence and source health. Alerts support operator
-        acknowledgement, but do not provide tasking, targeting or weapon workflow.
+        Returns derived informational alerts from current COP tracks, server-side conflict evidence
+        and source health. Alerts support operator acknowledgement, but do not provide tasking,
+        targeting or weapon workflow.
       parameters:
         - name: includeAcknowledged
           in: query
@@ -1234,7 +1272,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/cop/alerts/{alertId}/acknowledge:
     post:
-      tags: [COP]
+      tags:
+        - COP
       summary: Acknowledge an informational COP alert.
       operationId: acknowledgeCopAlert
       parameters:
@@ -1268,13 +1307,14 @@ paths:
           $ref: "#/components/responses/NotFound"
   /api/v1/cop/track-history:
     get:
-      tags: [COP]
+      tags:
+        - COP
       summary: Query policy-filtered temporal history for COP tracks.
       operationId: listCopTrackHistory
       description: >
-        Returns retained server-side temporal history points for one or more
-        tracks. The result is intended for timeline/replay and route-history
-        visualization; it is not an action or targeting workflow.
+        Returns retained server-side temporal history points for one or more tracks. The result is
+        intended for timeline/replay and route-history visualization; it is not an action or
+        targeting workflow.
       parameters:
         - name: objectIds
           in: query
@@ -1323,7 +1363,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/cop/subscriptions:
     post:
-      tags: [COP]
+      tags:
+        - COP
       summary: Create a COP subscription for snapshot and delta distribution.
       operationId: createCopSubscription
       requestBody:
@@ -1331,7 +1372,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "./schemas/cop-subscription.schema.json"
+              $ref: ./schemas/cop-subscription.schema.json
       responses:
         "201":
           description: Subscription created.
@@ -1347,12 +1388,13 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/stream/cop/{subscriptionId}:
     get:
-      tags: [Streaming]
+      tags:
+        - Streaming
       summary: Read COP snapshot for a subscription.
       operationId: streamCopSubscription
       description: >
-        Returns the current subscription snapshot. The live browser stream is
-        exposed at /api/v1/stream/cop/live.
+        Returns the current subscription snapshot. The live browser stream is exposed at
+        /api/v1/stream/cop/live.
       parameters:
         - name: subscriptionId
           in: path
@@ -1378,13 +1420,14 @@ paths:
           $ref: "#/components/responses/NotFound"
   /api/v1/stream/cop/live:
     get:
-      tags: [Streaming]
+      tags:
+        - Streaming
       summary: Open live COP Server-Sent Events stream.
       operationId: streamLiveCop
       description: >
-        SSE stream that emits a policy-filtered snapshot, object delta messages
-        from accepted ingest events, and heartbeat messages. Clients authenticate
-        with the standard Authorization bearer header.
+        SSE stream that emits a policy-filtered snapshot, object delta messages from accepted ingest
+        events, and heartbeat messages. Clients authenticate with the standard Authorization bearer
+        header.
       responses:
         "200":
           description: Stream established.
@@ -1398,10 +1441,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/stream/cop/health:
     get:
-      tags: [Streaming]
+      tags:
+        - Streaming
       summary: Read COP stream health and backpressure metrics.
       operationId: getCopStreamHealth
-      description: Operational health for the live COP stream. This endpoint reports distribution metrics only; it does not expose targeting or action workflow.
+      description: Operational health for the live COP stream. This endpoint reports distribution metrics
+        only; it does not expose targeting or action workflow.
       responses:
         "200":
           description: Stream health.
@@ -1415,7 +1460,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/symbology/resolve:
     post:
-      tags: [Symbology]
+      tags:
+        - Symbology
       summary: Resolve a canonical object into NATO symbol metadata.
       operationId: resolveSymbol
       requestBody:
@@ -1423,19 +1469,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "./schemas/symbol-resolve-request.schema.json"
+              $ref: ./schemas/symbol-resolve-request.schema.json
       responses:
         "200":
           description: Symbol resolution.
           content:
             application/json:
               schema:
-                $ref: "./schemas/symbol-resolve-response.schema.json"
+                $ref: ./schemas/symbol-resolve-response.schema.json
         "400":
           $ref: "#/components/responses/BadRequest"
   /api/v1/sources:
     get:
-      tags: [Sources]
+      tags:
+        - Sources
       summary: List registered source systems.
       operationId: listSources
       responses:
@@ -1445,18 +1492,20 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required:
+                  - items
                 properties:
                   items:
                     type: array
                     items:
-                      $ref: "./schemas/source-system.schema.json"
+                      $ref: ./schemas/source-system.schema.json
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
     post:
-      tags: [Sources]
+      tags:
+        - Sources
       summary: Register a source system.
       operationId: createSource
       requestBody:
@@ -1464,14 +1513,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "./schemas/source-system.schema.json"
+              $ref: ./schemas/source-system.schema.json
       responses:
         "201":
           description: Source system registered.
           content:
             application/json:
               schema:
-                $ref: "./schemas/source-system.schema.json"
+                $ref: ./schemas/source-system.schema.json
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1480,7 +1529,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/sources/health:
     get:
-      tags: [Sources]
+      tags:
+        - Sources
       summary: List source health summaries.
       operationId: listSourceHealth
       responses:
@@ -1496,7 +1546,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/sources/{sourceSystemId}:
     get:
-      tags: [Sources]
+      tags:
+        - Sources
       summary: Get one source system.
       operationId: getSource
       parameters:
@@ -1507,11 +1558,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./schemas/source-system.schema.json"
+                $ref: ./schemas/source-system.schema.json
         "404":
           $ref: "#/components/responses/NotFound"
     patch:
-      tags: [Sources]
+      tags:
+        - Sources
       summary: Update source system metadata and permissions.
       operationId: updateSource
       parameters:
@@ -1529,12 +1581,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./schemas/source-system.schema.json"
+                $ref: ./schemas/source-system.schema.json
         "404":
           $ref: "#/components/responses/NotFound"
   /api/v1/sources/{sourceSystemId}/revoke:
     post:
-      tags: [Sources]
+      tags:
+        - Sources
       summary: Revoke a source system.
       operationId: revokeSource
       parameters:
@@ -1550,7 +1603,8 @@ paths:
           $ref: "#/components/responses/NotFound"
   /api/v1/audit/events:
     get:
-      tags: [Audit]
+      tags:
+        - Audit
       summary: Query audit events.
       operationId: listAuditEvents
       parameters:
@@ -1587,16 +1641,18 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/ai/cop-assistant/query:
     post:
-      tags: [AI]
+      tags:
+        - AI
       summary: Ask the AI COP assistant for allowed data assistance.
       operationId: queryCopAssistant
-      description: AI assistance is limited to explanation, summarization, query help, data quality and documentation support.
+      description: AI assistance is limited to explanation, summarization, query help, data quality and
+        documentation support.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "./schemas/ai-cop-query.schema.json"
+              $ref: ./schemas/ai-cop-query.schema.json
       responses:
         "200":
           description: AI assistant response.
@@ -1612,12 +1668,12 @@ paths:
           $ref: "#/components/responses/UnprocessableEntity"
   /api/v1/messaging/status:
     get:
-      tags: [Messaging]
+      tags:
+        - Messaging
       summary: Read CSM Messaging provider status.
       description: >
-        Server-side capability and health bridge for the standalone CSM Messaging
-        service. The browser must not call the messaging provider directly or
-        receive service tokens.
+        Server-side capability and health bridge for the standalone CSM Messaging service. The
+        browser must not call the messaging provider directly or receive service tokens.
       operationId: getMessagingStatus
       responses:
         "200":
@@ -1632,13 +1688,13 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
   /api/v1/messaging/bootstrap:
     post:
-      tags: [Messaging]
+      tags:
+        - Messaging
       summary: Create client-safe Matrix bootstrap for the authenticated user.
       description: >
-        Authenticated COP users may request a short-lived Matrix user token for
-        direct Matrix client-server communication with E2EE. This endpoint never
-        returns provider, service or Synapse admin tokens and does not proxy
-        plaintext messages.
+        Authenticated COP users may request a short-lived Matrix user token for direct Matrix
+        client-server communication with E2EE. This endpoint never returns provider, service or
+        Synapse admin tokens and does not proxy plaintext messages.
       operationId: createMessagingBootstrap
       requestBody:
         required: false
@@ -1659,11 +1715,12 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
   /api/v1/messaging/conversations:
     get:
-      tags: [Messaging]
+      tags:
+        - Messaging
       summary: List CSM Messaging conversation metadata for the authenticated user.
       description: >
-        Server-side metadata bridge to CSM Messaging. It returns conversation
-        metadata only; no plaintext message content is stored or proxied by COP.
+        Server-side metadata bridge to CSM Messaging. It returns conversation metadata only; no
+        plaintext message content is stored or proxied by COP.
       operationId: listMessagingConversations
       responses:
         "200":
@@ -1675,11 +1732,12 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
-      tags: [Messaging]
+      tags:
+        - Messaging
       summary: Create CSM Messaging conversation metadata.
       description: >
-        Creates only metadata, members and optional map links. Plaintext message
-        fields are rejected; real messages go directly through Matrix SDK.
+        Creates only metadata, members and optional map links. Plaintext message fields are
+        rejected; real messages go directly through Matrix SDK.
       operationId: createMessagingConversation
       requestBody:
         required: true
@@ -1706,12 +1764,12 @@ paths:
                 $ref: "#/components/schemas/MessagingConversationCreateResponse"
   /api/v1/messaging/conversations/{conversationId}/members:
     post:
-      tags: [Messaging]
+      tags:
+        - Messaging
       summary: Synchronize safe conversation members with CSM Messaging.
       description: >
-        Metadata-only bridge used after COP community group membership changes.
-        It forwards member identifiers/display metadata only and rejects
-        plaintext message fields.
+        Metadata-only bridge used after COP community group membership changes. It forwards member
+        identifiers/display metadata only and rejects plaintext message fields.
       operationId: syncMessagingConversationMembers
       parameters:
         - name: conversationId
@@ -1745,12 +1803,12 @@ paths:
                 $ref: "#/components/schemas/MessagingConversationMemberSyncResponse"
   /api/v1/messaging/matrix/identities/resolve:
     post:
-      tags: [Messaging]
+      tags:
+        - Messaging
       summary: Resolve COP/CSM users to Matrix user IDs through the Messaging provider.
       description: >
-        Server-side identity resolution used only for Matrix room invitations.
-        The response never contains passwords, service tokens or Matrix access
-        tokens for other users.
+        Server-side identity resolution used only for Matrix room invitations. The response never
+        contains passwords, service tokens or Matrix access tokens for other users.
       operationId: resolveMessagingMatrixIdentities
       requestBody:
         required: true
@@ -1771,12 +1829,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
   /api/v1/messaging/conversations/{conversationId}/matrix-room:
     post:
-      tags: [Messaging]
+      tags:
+        - Messaging
       summary: Store the Matrix room binding for a Messaging conversation.
       description: >
-        Stores Matrix room metadata only. COP still does not proxy or persist
-        plaintext chat messages and Matrix room membership is not used as media
-        authorization.
+        Stores Matrix room metadata only. COP still does not proxy or persist plaintext chat
+        messages and Matrix room membership is not used as media authorization.
       operationId: bindMessagingConversationMatrixRoom
       parameters:
         - name: conversationId
@@ -1810,15 +1868,15 @@ paths:
                 $ref: "#/components/schemas/MessagingMatrixRoomBindingResponse"
   /api/v1/notifications/safety/evaluate:
     post:
-      tags: [Notifications]
+      tags:
+        - Notifications
       summary: Evaluate SIM safety features for citizen push notification dispatch.
       description: >
-        Authenticated server/operator endpoint used by COP to decide whether
-        safety features from SIM are relevant to the current user, explicit
-        audience or watched areas. By default this endpoint is a dry run. When
-        dryRun=false, COP submits only minimized notification metadata to CSM
-        Messaging through server-to-server notification intake. COP never stores
-        APNs tokens and never sends push directly.
+        Authenticated server/operator endpoint used by COP to decide whether safety features from
+        SIM are relevant to the current user, explicit audience or watched areas. By default this
+        endpoint is a dry run. When dryRun=false, COP submits only minimized notification metadata
+        to CSM Messaging through server-to-server notification intake. COP never stores APNs tokens
+        and never sends push directly.
       operationId: evaluateSafetyNotifications
       parameters:
         - $ref: "#/components/parameters/CorrelationIdHeader"
@@ -1847,7 +1905,8 @@ paths:
                 $ref: "#/components/schemas/SafetyNotificationEvaluationResponse"
   /health/live:
     get:
-      tags: [Health]
+      tags:
+        - Health
       summary: Liveness probe.
       operationId: healthLive
       security: []
@@ -1862,7 +1921,8 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
   /health/ready:
     get:
-      tags: [Health]
+      tags:
+        - Health
       summary: Readiness probe.
       operationId: healthReady
       security: []
@@ -1873,13 +1933,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
-        "503":
-          $ref: "#/components/responses/ServiceUnavailable"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /health/dependencies:
     get:
-      tags: [Health]
+      tags:
+        - Health
       summary: Dependency health.
       operationId: healthDependencies
       security: []
@@ -1894,7 +1955,8 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
   /metrics:
     get:
-      tags: [Metrics]
+      tags:
+        - Metrics
       summary: Prometheus metrics endpoint.
       operationId: metrics
       security: []
@@ -2060,11 +2122,17 @@ components:
   schemas:
     AuthenticatedActor:
       type: object
-      required: [authMode, displayName, subjectId, username]
+      required:
+        - authMode
+        - displayName
+        - subjectId
+        - username
       properties:
         authMode:
           type: string
-          enum: [lab, oidc]
+          enum:
+            - lab
+            - oidc
         displayName:
           type: string
         email:
@@ -2084,7 +2152,11 @@ components:
           $ref: "#/components/schemas/UserDisplayPreferences"
     UserPreferenceProfile:
       type: object
-      required: [actor, alertPreferences, preferences, updatedAt]
+      required:
+        - actor
+        - alertPreferences
+        - preferences
+        - updatedAt
       properties:
         actor:
           $ref: "#/components/schemas/AuthenticatedActor"
@@ -2099,7 +2171,10 @@ components:
           format: date-time
     UserDirectoryEntry:
       type: object
-      required: [displayName, subjectId, username]
+      required:
+        - displayName
+        - subjectId
+        - username
       properties:
         displayName:
           type: string
@@ -2113,7 +2188,10 @@ components:
           type: string
     UserDirectorySearchResponse:
       type: object
-      required: [contractVersion, items, serverTimestamp]
+      required:
+        - contractVersion
+        - items
+        - serverTimestamp
       properties:
         contractVersion:
           type: string
@@ -2136,21 +2214,40 @@ components:
           type: array
           items:
             type: string
-            enum: [AOI_ENTRY, LOW_CONFIDENCE, SOURCE_DEGRADED, TRACK_CONFLICT, TRACK_LOST, TRACK_STALE]
+            enum:
+              - AOI_ENTRY
+              - LOW_CONFIDENCE
+              - SOURCE_DEGRADED
+              - TRACK_CONFLICT
+              - TRACK_LOST
+              - TRACK_STALE
         minimumSeverity:
           type: string
-          enum: [info, warning, critical]
+          enum:
+            - info
+            - warning
+            - critical
       additionalProperties: false
     AoiRule:
       type: object
-      required: [enabled, id, lat, lon, name, radiusKm]
+      required:
+        - enabled
+        - id
+        - lat
+        - lon
+        - name
+        - radiusKm
       properties:
         affiliationScope:
           type: string
-          enum: [all, friend, hostile, unknown]
+          enum:
+            - all
+            - friend
+            - hostile
+            - unknown
         color:
           type: string
-          pattern: "^#[0-9a-fA-F]{6}$"
+          pattern: ^#[0-9a-fA-F]{6}$
         enabled:
           type: boolean
         fillOpacity:
@@ -2177,15 +2274,21 @@ components:
           maximum: 500
         severity:
           type: string
-          enum: [info, warning, critical]
+          enum:
+            - info
+            - warning
+            - critical
       additionalProperties: false
     AoiPolygon:
       type: object
-      required: [type, coordinates]
+      required:
+        - type
+        - coordinates
       properties:
         type:
           type: string
-          enum: [Polygon]
+          enum:
+            - Polygon
         coordinates:
           type: array
           minItems: 1
@@ -2204,10 +2307,20 @@ components:
       properties:
         activeWorkspace:
           type: string
-          enum: [map, data, sources, alerts, replay]
+          enum:
+            - map
+            - data
+            - sources
+            - alerts
+            - replay
         affiliationScope:
           type: string
-          enum: [all, friend, hostile, neutral, unknown]
+          enum:
+            - all
+            - friend
+            - hostile
+            - neutral
+            - unknown
         alertRadiusKm:
           type: number
           minimum: 1
@@ -2224,15 +2337,28 @@ components:
             maxLength: 140
         domainScope:
           type: string
-          enum: [all, AIR, LAND, SEA, RESCUE, OTHER]
+          enum:
+            - all
+            - AIR
+            - LAND
+            - SEA
+            - RESCUE
+            - OTHER
         includeSynthetic:
           type: boolean
         language:
           type: string
-          enum: [cs, en]
+          enum:
+            - cs
+            - en
         mapBasemapMode:
           type: string
-          enum: [standard, civil, risk, dark, outline]
+          enum:
+            - standard
+            - civil
+            - risk
+            - dark
+            - outline
         mapClusterEnabled:
           type: boolean
         mapView:
@@ -2249,12 +2375,18 @@ components:
           maximum: 20
         predictionMode:
           type: string
-          enum: [adaptive, telemetry, history, maneuver]
+          enum:
+            - adaptive
+            - telemetry
+            - history
+            - maneuver
         proximityAlertEnabled:
           type: boolean
         publicFlightSymbolMode:
           type: string
-          enum: [civil, standard]
+          enum:
+            - civil
+            - standard
         refreshSeconds:
           type: number
           minimum: 1
@@ -2263,10 +2395,22 @@ components:
           type: array
           items:
             type: string
-            enum: [boundary_admin, fire, flood, warnings, weather_alerts]
+            enum:
+              - boundary_admin
+              - fire
+              - flood
+              - warnings
+              - weather_alerts
         selectedLayer:
           type: string
-          enum: [air-situation, sim-air, uav, friendly, foreign, public-flights, data-quality]
+          enum:
+            - air-situation
+            - sim-air
+            - uav
+            - friendly
+            - foreign
+            - public-flights
+            - data-quality
         showAlertAreas:
           type: boolean
         showHistory:
@@ -2277,7 +2421,31 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, weather_radar_reflectivity, weather_radar_precipitation, weather_radar_nowcast, weather_thunderstorm_risk, ground, mobile, mobile_network, mobile_coverage, traffic, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
+            enum:
+              - weather
+              - weather_temperature_grid
+              - weather_wind_field
+              - weather_precipitation_grid
+              - weather_humidity_grid
+              - weather_pressure_grid
+              - weather_radar_reflectivity
+              - weather_radar_precipitation
+              - weather_radar_nowcast
+              - weather_thunderstorm_risk
+              - ground
+              - mobile
+              - mobile_network
+              - mobile_coverage
+              - traffic
+              - air_quality
+              - air_quality_grid
+              - boundary_admin
+              - boundary_country
+              - boundary_region
+              - boundary_district
+              - boundary_orp
+              - boundary_municipality
+              - place_settlements
         situationSourceIds:
           type: array
           maxItems: 32
@@ -2288,15 +2456,27 @@ components:
           type: array
           items:
             type: string
-            enum: [mobile, ground, traffic]
+            enum:
+              - mobile
+              - ground
+              - traffic
         trackLayerIds:
           type: array
           items:
             type: string
-            enum: [air-situation, sim-air, uav, friendly, foreign, public-flights, data-quality]
+            enum:
+              - air-situation
+              - sim-air
+              - uav
+              - friendly
+              - foreign
+              - public-flights
+              - data-quality
         trackHistoryDisplayMode:
           type: string
-          enum: [all, selected]
+          enum:
+            - all
+            - selected
         trackHistoryLimit:
           type: number
           minimum: 1
@@ -2309,15 +2489,20 @@ components:
           $ref: "#/components/schemas/WorkspaceLayoutPreferences"
         workspaceSkin:
           type: string
-          description: Visual skin for the web workspace. Templates may set this together with layout and map preferences.
-          enum: [civil, operations, field]
+          description: Visual skin for the web workspace. Templates may set this together with layout and map
+            preferences.
+          enum:
+            - civil
+            - operations
+            - field
       additionalProperties: false
     OperatorProfilePreferences:
       type: object
       properties:
         avatarDataUrl:
           type: string
-          description: Small data URL avatar generated by the client. Server accepts PNG, JPEG or WebP data URLs up to 250 kB.
+          description: Small data URL avatar generated by the client. Server accepts PNG, JPEG or WebP data
+            URLs up to 250 kB.
           maxLength: 250000
         contactNote:
           type: string
@@ -2347,14 +2532,20 @@ components:
           type: boolean
         leftPanelMode:
           type: string
-          enum: [open, collapsed, hidden]
+          enum:
+            - open
+            - collapsed
+            - hidden
         leftPanelWidth:
           type: number
           minimum: 220
           maximum: 460
         rightPanelMode:
           type: string
-          enum: [open, collapsed, hidden]
+          enum:
+            - open
+            - collapsed
+            - hidden
         rightPanelWidth:
           type: number
           minimum: 280
@@ -2364,7 +2555,9 @@ components:
       additionalProperties: false
     MapViewPreference:
       type: object
-      required: [center, zoom]
+      required:
+        - center
+        - zoom
       properties:
         bearing:
           type: number
@@ -2382,7 +2575,13 @@ components:
           maximum: 22
     IngestAccepted:
       type: object
-      required: [accepted, eventId, ingestId, receivedAt, status, correlationId]
+      required:
+        - accepted
+        - eventId
+        - ingestId
+        - receivedAt
+        - status
+        - correlationId
       properties:
         accepted:
           type: boolean
@@ -2397,13 +2596,19 @@ components:
           format: date-time
         status:
           type: string
-          enum: [QUEUED, ACCEPTED]
+          enum:
+            - QUEUED
+            - ACCEPTED
         correlationId:
           type: string
           format: uuid
     IngestBatchRequest:
       type: object
-      required: [batchId, contractVersion, sourceSystemId, events]
+      required:
+        - batchId
+        - contractVersion
+        - sourceSystemId
+        - events
       properties:
         batchId:
           type: string
@@ -2416,10 +2621,14 @@ components:
           type: array
           minItems: 1
           items:
-            $ref: "./schemas/canonical-event-envelope.schema.json"
+            $ref: ./schemas/canonical-event-envelope.schema.json
     IngestBatchAccepted:
       type: object
-      required: [batchId, acceptedCount, rejectedCount, items]
+      required:
+        - batchId
+        - acceptedCount
+        - rejectedCount
+        - items
       properties:
         batchId:
           type: string
@@ -2434,19 +2643,25 @@ components:
           type: array
           items:
             type: object
-            required: [eventId, status]
+            required:
+              - eventId
+              - status
             properties:
               eventId:
                 type: string
                 format: uuid
               status:
                 type: string
-                enum: [QUEUED, REJECTED]
+                enum:
+                  - QUEUED
+                  - REJECTED
               errorCode:
                 type: string
     CommunityReportCreateRequest:
       type: object
-      required: [category, location]
+      required:
+        - category
+        - location
       properties:
         category:
           $ref: "#/components/schemas/CommunityReportCategory"
@@ -2517,7 +2732,11 @@ components:
           additionalProperties: true
     CommunityReportListResponse:
       type: object
-      required: [featureCollection, items, nextCursor, serverTimestamp]
+      required:
+        - featureCollection
+        - items
+        - nextCursor
+        - serverTimestamp
       properties:
         featureCollection:
           type: object
@@ -2535,7 +2754,19 @@ components:
           format: date-time
     CommunityReport:
       type: object
-      required: [attachments, category, createdAt, createdBy, location, observedAt, properties, reportId, status, title, updatedAt, visibility]
+      required:
+        - attachments
+        - category
+        - createdAt
+        - createdBy
+        - location
+        - observedAt
+        - properties
+        - reportId
+        - status
+        - title
+        - updatedAt
+        - visibility
       properties:
         reportId:
           type: string
@@ -2569,7 +2800,10 @@ components:
           format: date-time
         createdBy:
           type: object
-          required: [displayName, subjectId, username]
+          required:
+            - displayName
+            - subjectId
+            - username
           properties:
             displayName:
               type: string
@@ -2586,7 +2820,19 @@ components:
             $ref: "#/components/schemas/CommunityReportAttachment"
     CommunityReportAttachment:
       type: object
-      required: [attachmentId, bucket, byteSize, contentType, createdAt, kind, metadata, objectKey, reportId, status, subjectId, uploadExpiresAt]
+      required:
+        - attachmentId
+        - bucket
+        - byteSize
+        - contentType
+        - createdAt
+        - kind
+        - metadata
+        - objectKey
+        - reportId
+        - status
+        - subjectId
+        - uploadExpiresAt
       properties:
         attachmentId:
           type: string
@@ -2598,10 +2844,17 @@ components:
           type: string
         kind:
           type: string
-          enum: [photo, video, document]
+          enum:
+            - photo
+            - video
+            - document
         status:
           type: string
-          enum: [pending_upload, uploaded, failed, removed]
+          enum:
+            - pending_upload
+            - uploaded
+            - failed
+            - removed
         bucket:
           type: string
         objectKey:
@@ -2635,38 +2888,54 @@ components:
           description: May include media ACL under metadata.access.
         accessDenied:
           type: boolean
-          description: Present in map/list responses when the caller may see the report but not the media object.
+          description: Present in map/list responses when the caller may see the report but not the media
+            object.
         contentUrl:
           type: string
-          description: Relative COP API URL for reading uploaded media. Present only after upload completion and only when the caller is authorized for the media object.
+          description: Relative COP API URL for reading uploaded media. Present only after upload completion
+            and only when the caller is authorized for the media object.
         derivatives:
           type: array
-          description: Derived media objects, for example XR side-by-side video generated from iPhone Spatial MOV.
+          description: Derived media objects, for example XR side-by-side video generated from iPhone Spatial
+            MOV.
           items:
             $ref: "#/components/schemas/CommunityAttachmentDerivative"
     CommunityAttachmentDerivative:
       type: object
-      required: [derivativeId, kind, layout, status, updatedAt]
+      required:
+        - derivativeId
+        - kind
+        - layout
+        - status
+        - updatedAt
       properties:
         derivativeId:
           type: string
-          enum: [xr-sbs]
+          enum:
+            - xr-sbs
         kind:
           type: string
-          enum: [video]
+          enum:
+            - video
         layout:
           type: string
-          enum: [side_by_side]
+          enum:
+            - side_by_side
         status:
           type: string
-          enum: [queued, processing, ready, failed]
+          enum:
+            - queued
+            - processing
+            - ready
+            - failed
         contentType:
           type: string
         byteSize:
           type: integer
         contentUrl:
           type: string
-          description: Relative COP API URL for reading the derived media. Present only when ready and authorized.
+          description: Relative COP API URL for reading the derived media. Present only when ready and
+            authorized.
         error:
           type: string
         updatedAt:
@@ -2674,7 +2943,9 @@ components:
           format: date-time
     CommunityGroupListResponse:
       type: object
-      required: [items, serverTimestamp]
+      required:
+        - items
+        - serverTimestamp
       properties:
         items:
           type: array
@@ -2685,7 +2956,8 @@ components:
           format: date-time
     CommunityGroupCreateRequest:
       type: object
-      required: [name]
+      required:
+        - name
       properties:
         name:
           type: string
@@ -2697,13 +2969,15 @@ components:
           $ref: "#/components/schemas/CommunityGroupVisibility"
         anchorLocation:
           $ref: "#/components/schemas/CommunityReportLocation"
-          description: Optional primary event location for map display of the group. Report-created groups use the first report location.
+          description: Optional primary event location for map display of the group. Report-created groups use
+            the first report location.
         metadata:
           type: object
           additionalProperties: true
     CommunityGroupMemberUpsertRequest:
       type: object
-      required: [subjectId]
+      required:
+        - subjectId
       properties:
         subjectId:
           type: string
@@ -2720,7 +2994,14 @@ components:
           $ref: "#/components/schemas/CommunityGroupMemberStatus"
     CommunityGroup:
       type: object
-      required: [createdAt, createdBy, groupId, members, name, updatedAt, visibility]
+      required:
+        - createdAt
+        - createdBy
+        - groupId
+        - members
+        - name
+        - updatedAt
+        - visibility
       properties:
         groupId:
           type: string
@@ -2738,7 +3019,10 @@ components:
           additionalProperties: true
         createdBy:
           type: object
-          required: [displayName, subjectId, username]
+          required:
+            - displayName
+            - subjectId
+            - username
           properties:
             displayName:
               type: string
@@ -2758,7 +3042,12 @@ components:
           format: date-time
     CommunityGroupMember:
       type: object
-      required: [displayName, role, status, subjectId, username]
+      required:
+        - displayName
+        - role
+        - status
+        - subjectId
+        - username
       properties:
         subjectId:
           type: string
@@ -2778,26 +3067,49 @@ components:
           format: date-time
     CommunityGroupVisibility:
       type: string
-      enum: [private, public]
+      enum:
+        - private
+        - public
     CommunityGroupMemberRole:
       type: string
-      enum: [owner, admin, member]
+      enum:
+        - owner
+        - admin
+        - member
     CommunityGroupMemberStatus:
       type: string
-      enum: [active, pending]
+      enum:
+        - active
+        - pending
     SketchDrawingKind:
       type: string
-      enum: [arrow, circle, line, marker, measurement, point, polygon, text]
+      enum:
+        - arrow
+        - circle
+        - line
+        - marker
+        - measurement
+        - point
+        - polygon
+        - text
     SketchDrawingVisibility:
       type: string
-      enum: [private, group, event, public]
+      enum:
+        - private
+        - group
+        - event
+        - public
     SketchPaletteMode:
       type: string
-      enum: [civil, professional]
+      enum:
+        - civil
+        - professional
     SketchGeometry:
       oneOf:
         - type: object
-          required: [type, coordinates]
+          required:
+            - type
+            - coordinates
           properties:
             type:
               type: string
@@ -2810,7 +3122,9 @@ components:
                 type: number
           additionalProperties: false
         - type: object
-          required: [type, coordinates]
+          required:
+            - type
+            - coordinates
           properties:
             type:
               type: string
@@ -2826,7 +3140,9 @@ components:
                   type: number
           additionalProperties: false
         - type: object
-          required: [type, coordinates]
+          required:
+            - type
+            - coordinates
           properties:
             type:
               type: string
@@ -2849,11 +3165,11 @@ components:
       properties:
         stroke:
           type: string
-          pattern: "^#[0-9a-fA-F]{6}$"
+          pattern: ^#[0-9a-fA-F]{6}$
           example: "#2f80ed"
         fill:
           type: string
-          pattern: "^#[0-9a-fA-F]{6}$"
+          pattern: ^#[0-9a-fA-F]{6}$
           example: "#2f80ed"
         opacity:
           type: number
@@ -2878,11 +3194,15 @@ components:
         sidc:
           type: string
           maxLength: 40
-          description: Optional APP-6/NATO SIDC for professional mode. COP does not use this for targeting or weapon workflows.
+          description: Optional APP-6/NATO SIDC for professional mode. COP does not use this for targeting or
+            weapon workflows.
       additionalProperties: false
     SketchDrawingCreateRequest:
       type: object
-      required: [geometry, kind, visibility]
+      required:
+        - geometry
+        - kind
+        - visibility
       properties:
         kind:
           $ref: "#/components/schemas/SketchDrawingKind"
@@ -2932,7 +3252,11 @@ components:
       additionalProperties: false
     SketchDrawing:
       type: object
-      required: [type, id, geometry, properties]
+      required:
+        - type
+        - id
+        - geometry
+        - properties
       properties:
         type:
           type: string
@@ -2944,7 +3268,21 @@ components:
           $ref: "#/components/schemas/SketchGeometry"
         properties:
           type: object
-          required: [createdAt, drawingId, kind, label, locked, ownerDisplayName, ownerSubjectId, ownerUsername, properties, revision, style, symbol, updatedAt, visibility]
+          required:
+            - createdAt
+            - drawingId
+            - kind
+            - label
+            - locked
+            - ownerDisplayName
+            - ownerSubjectId
+            - ownerUsername
+            - properties
+            - revision
+            - style
+            - symbol
+            - updatedAt
+            - visibility
           properties:
             drawingId:
               type: string
@@ -2987,7 +3325,12 @@ components:
           additionalProperties: true
     SketchDrawingCollection:
       type: object
-      required: [contractVersion, type, generatedAt, features, summary]
+      required:
+        - contractVersion
+        - type
+        - generatedAt
+        - features
+        - summary
       properties:
         contractVersion:
           type: string
@@ -3004,7 +3347,8 @@ components:
             $ref: "#/components/schemas/SketchDrawing"
         summary:
           type: object
-          required: [featureCount]
+          required:
+            - featureCount
           properties:
             featureCount:
               type: integer
@@ -3012,7 +3356,10 @@ components:
           additionalProperties: true
     SketchPaletteResponse:
       type: object
-      required: [contractVersion, generatedAt, modes]
+      required:
+        - contractVersion
+        - generatedAt
+        - modes
       properties:
         contractVersion:
           type: string
@@ -3024,7 +3371,9 @@ components:
           type: object
           additionalProperties:
             type: object
-            required: [label, symbols]
+            required:
+              - label
+              - symbols
             properties:
               label:
                 type: string
@@ -3032,7 +3381,9 @@ components:
                 type: array
                 items:
                   type: object
-                  required: [iconId, label]
+                  required:
+                    - iconId
+                    - label
                   properties:
                     iconId:
                       type: string
@@ -3046,14 +3397,27 @@ components:
                   additionalProperties: true
     CommunityAttachmentUploadRequest:
       type: object
-      required: [contentType, byteSize]
+      required:
+        - contentType
+        - byteSize
       properties:
         kind:
           type: string
-          enum: [photo, video, document]
+          enum:
+            - photo
+            - video
+            - document
         contentType:
           type: string
-          enum: [image/jpeg, image/png, image/webp, image/heic, image/heif, video/mp4, video/quicktime, application/pdf]
+          enum:
+            - image/jpeg
+            - image/png
+            - image/webp
+            - image/heic
+            - image/heif
+            - video/mp4
+            - video/quicktime
+            - application/pdf
         byteSize:
           type: integer
           minimum: 1
@@ -3062,7 +3426,7 @@ components:
           maxLength: 160
         checksumSha256:
           type: string
-          pattern: "^[0-9a-fA-F]{64}$"
+          pattern: ^[0-9a-fA-F]{64}$
         capturedAt:
           type: string
           format: date-time
@@ -3073,13 +3437,21 @@ components:
           additionalProperties: true
     CommunityAttachmentUploadResponse:
       type: object
-      required: [attachment, upload]
+      required:
+        - attachment
+        - upload
       properties:
         attachment:
           $ref: "#/components/schemas/CommunityReportAttachment"
         upload:
           type: object
-          required: [bucket, expiresAt, headers, method, objectKey, uploadUrl]
+          required:
+            - bucket
+            - expiresAt
+            - headers
+            - method
+            - objectKey
+            - uploadUrl
           properties:
             bucket:
               type: string
@@ -3092,7 +3464,8 @@ components:
                 type: string
             method:
               type: string
-              enum: [PUT]
+              enum:
+                - PUT
             objectKey:
               type: string
             uploadUrl:
@@ -3100,17 +3473,22 @@ components:
               format: uri
     CommunityAttachmentProxyUploadRequest:
       type: object
-      required: [dataBase64]
+      required:
+        - dataBase64
       properties:
         byteSize:
           type: integer
           minimum: 1
         dataBase64:
           type: string
-          description: Base64 encoded file data. Used as HTTPS-safe fallback when direct browser PUT to object storage is unavailable.
+          description: Base64 encoded file data. Used as HTTPS-safe fallback when direct browser PUT to object
+            storage is unavailable.
     CommunityReportLocation:
       type: object
-      required: [lat, lon, source]
+      required:
+        - lat
+        - lon
+        - source
       properties:
         lat:
           type: number
@@ -3125,32 +3503,70 @@ components:
           minimum: 0
         source:
           type: string
-          enum: [device, manual, media_metadata, photo_exif, unknown]
+          enum:
+            - device
+            - manual
+            - media_metadata
+            - photo_exif
+            - unknown
     CommunityReportCategory:
       type: string
-      enum: [fire, flood, bridge_damage, road_blockage, infrastructure_damage, medical, utility_outage, hazard, other]
+      enum:
+        - fire
+        - flood
+        - bridge_damage
+        - road_blockage
+        - infrastructure_damage
+        - medical
+        - utility_outage
+        - hazard
+        - other
     CommunityReportHazardSeverity:
       type: string
-      enum: [advisory, warning, critical]
+      enum:
+        - advisory
+        - warning
+        - critical
     CommunityReportStatus:
       type: string
-      enum: [draft, submitted, published, hidden, rejected]
+      enum:
+        - draft
+        - submitted
+        - published
+        - hidden
+        - rejected
     CommunityReportVisibility:
       type: string
-      enum: [private, community, public]
+      enum:
+        - private
+        - community
+        - public
     PlaceGeocodeSearchResponse:
       type: object
-      required: [cache, contractVersion, items, providerId, query, serverTimestamp, warnings]
+      required:
+        - cache
+        - contractVersion
+        - items
+        - providerId
+        - query
+        - serverTimestamp
+        - warnings
       properties:
         cache:
           type: object
-          required: [key, status, ttlSeconds]
+          required:
+            - key
+            - status
+            - ttlSeconds
           properties:
             key:
               type: string
             status:
               type: string
-              enum: [disabled, hit, miss]
+              enum:
+                - disabled
+                - hit
+                - miss
             ttlSeconds:
               type: integer
               minimum: 0
@@ -3165,7 +3581,10 @@ components:
           type: string
         query:
           type: object
-          required: [language, limit, q]
+          required:
+            - language
+            - limit
+            - q
           properties:
             language:
               type: string
@@ -3182,11 +3601,19 @@ components:
             type: string
     PlaceGeocodeResult:
       type: object
-      required: [center, displayName, id, providerId]
+      required:
+        - center
+        - displayName
+        - id
+        - providerId
       properties:
         bbox:
           type: object
-          required: [east, north, south, west]
+          required:
+            - east
+            - north
+            - south
+            - west
           properties:
             east:
               type: number
@@ -3222,7 +3649,15 @@ components:
           maximum: 18
     MapCatalog:
       type: object
-      required: [catalogVersion, generatedAt, groups, layers, locale, providers, sources, warnings]
+      required:
+        - catalogVersion
+        - generatedAt
+        - groups
+        - layers
+        - locale
+        - providers
+        - sources
+        - warnings
       properties:
         catalogVersion:
           type: string
@@ -3254,7 +3689,10 @@ components:
             type: string
     MapCatalogProvider:
       type: object
-      required: [label, providerId, status]
+      required:
+        - label
+        - providerId
+        - status
       properties:
         label:
           type: string
@@ -3262,10 +3700,16 @@ components:
           type: string
         status:
           type: string
-          enum: [disabled, online, unavailable]
+          enum:
+            - disabled
+            - online
+            - unavailable
     MapCatalogGroup:
       type: object
-      required: [groupId, label, order]
+      required:
+        - groupId
+        - label
+        - order
       properties:
         groupId:
           type: string
@@ -3279,17 +3723,33 @@ components:
           type: string
     MapCatalogLayer:
       type: object
-      required: [audience, defaultVisible, groupId, kind, label, layerId, query, role, selectable, styleProfile]
+      required:
+        - audience
+        - defaultVisible
+        - groupId
+        - kind
+        - label
+        - layerId
+        - query
+        - role
+        - selectable
+        - styleProfile
       properties:
         audience:
           type: string
-          enum: [admin, authenticated, diagnostic, partner, public]
+          enum:
+            - admin
+            - authenticated
+            - diagnostic
+            - partner
+            - public
         cacheTtlSeconds:
           type: integer
           minimum: 0
         compatibilityOnly:
           type: boolean
-          description: True when the layer is only a fallback/compatibility projection and should be hidden while preferredProviderId is online with the same layerId.
+          description: True when the layer is only a fallback/compatibility projection and should be hidden
+            while preferredProviderId is online with the same layerId.
         defaultVisible:
           type: boolean
         description:
@@ -3306,7 +3766,17 @@ components:
           type: string
         kind:
           type: string
-          enum: [aggregate, grid_field, mvt_tiles, raster_overlay, raster_tiles, static_reference, track_stream, user_objects, vector_features, vector_field]
+          enum:
+            - aggregate
+            - grid_field
+            - mvt_tiles
+            - raster_overlay
+            - raster_tiles
+            - static_reference
+            - track_stream
+            - user_objects
+            - vector_features
+            - vector_field
         label:
           type: string
         layerId:
@@ -3345,14 +3815,23 @@ components:
           minimum: 0
         role:
           type: string
-          enum: [diagnostic, overlay, partner, primary, reference, user]
+          enum:
+            - diagnostic
+            - overlay
+            - partner
+            - primary
+            - reference
+            - user
         selectable:
           type: boolean
         styleProfile:
           type: string
     MapCatalogFilter:
       type: object
-      required: [filterId, label, type]
+      required:
+        - filterId
+        - label
+        - type
       properties:
         defaultValue: {}
         filterId:
@@ -3361,14 +3840,20 @@ components:
           type: string
         type:
           type: string
-          enum: [multi_select, select, toggle]
+          enum:
+            - multi_select
+            - select
+            - toggle
         values:
           type: array
           items:
             type: string
     MapCatalogQuery:
       type: object
-      required: [mode, providerId, streamId]
+      required:
+        - mode
+        - providerId
+        - streamId
       properties:
         categoryIds:
           type: array
@@ -3379,7 +3864,12 @@ components:
           minimum: 1
         mode:
           type: string
-          enum: [bbox, grid, internal, stream, tile]
+          enum:
+            - bbox
+            - grid
+            - internal
+            - stream
+            - tile
         providerId:
           type: string
         providerLayerIds:
@@ -3394,17 +3884,31 @@ components:
           type: string
     MapCatalogSource:
       type: object
-      required: [audience, enabled, label, providerId, selectableInMap, sourceId, sourceRole, visibleInDiagnostics]
+      required:
+        - audience
+        - enabled
+        - label
+        - providerId
+        - selectableInMap
+        - sourceId
+        - sourceRole
+        - visibleInDiagnostics
       properties:
         audience:
           type: string
-          enum: [admin, authenticated, diagnostic, partner, public]
+          enum:
+            - admin
+            - authenticated
+            - diagnostic
+            - partner
+            - public
         cacheTtlSeconds:
           type: integer
           minimum: 0
         compatibilityOnly:
           type: boolean
-          description: True when the source is only a fallback/compatibility projection for a preferred provider.
+          description: True when the source is only a fallback/compatibility projection for a preferred
+            provider.
         enabled:
           type: boolean
         feedsCatalogLayerIds:
@@ -3424,7 +3928,14 @@ components:
           type: string
         sourceRole:
           type: string
-          enum: [aggregate, diagnostic, final, input, mock, projection, reference]
+          enum:
+            - aggregate
+            - diagnostic
+            - final
+            - input
+            - mock
+            - projection
+            - reference
         updateCadenceSeconds:
           type: integer
           minimum: 0
@@ -3436,7 +3947,9 @@ components:
           type: boolean
     MapFeatureQueryRequest:
       type: object
-      required: [bbox, layerIds]
+      required:
+        - bbox
+        - layerIds
       properties:
         bbox:
           type: array
@@ -3469,7 +3982,12 @@ components:
           default: 250
     MapFeatureQueryResponse:
       type: object
-      required: [contractVersion, generatedAt, query, summary, warnings]
+      required:
+        - contractVersion
+        - generatedAt
+        - query
+        - summary
+        - warnings
       properties:
         contractVersion:
           type: string
@@ -3483,7 +4001,10 @@ components:
           format: date-time
         query:
           type: object
-          required: [bbox, layerIds, limit]
+          required:
+            - bbox
+            - layerIds
+            - limit
           properties:
             bbox:
               $ref: "#/components/schemas/SituationBbox"
@@ -3499,7 +4020,10 @@ components:
           $ref: "#/components/schemas/SituationFeatureCollection"
         summary:
           type: object
-          required: [featureCount, layerCount, warningCount]
+          required:
+            - featureCount
+            - layerCount
+            - warningCount
           properties:
             featureCount:
               type: integer
@@ -3515,7 +4039,16 @@ components:
             type: string
     MobileBootstrap:
       type: object
-      required: [actor, auth, capabilities, endpoints, map, policy, profile, snapshot, serverTimestamp]
+      required:
+        - actor
+        - auth
+        - capabilities
+        - endpoints
+        - map
+        - policy
+        - profile
+        - snapshot
+        - serverTimestamp
       properties:
         actor:
           $ref: "#/components/schemas/AuthenticatedActor"
@@ -3531,7 +4064,10 @@ components:
           $ref: "#/components/schemas/MobileNativePolicy"
         profile:
           type: object
-          required: [alertPreferences, preferences, updatedAt]
+          required:
+            - alertPreferences
+            - preferences
+            - updatedAt
           properties:
             alertPreferences:
               $ref: "#/components/schemas/UserAlertPreferences"
@@ -3549,11 +4085,18 @@ components:
           format: date-time
     MobileAuthConfig:
       type: object
-      required: [clientId, mode, redirectUriScheme, scope]
+      required:
+        - clientId
+        - mode
+        - redirectUriScheme
+        - scope
       properties:
         mode:
           type: string
-          enum: [lab, hybrid, oidc]
+          enum:
+            - lab
+            - hybrid
+            - oidc
         issuer:
           type:
             - string
@@ -3607,7 +4150,12 @@ components:
         type: string
     MobileMapConfig:
       type: object
-      required: [attribution, defaultCenter, defaultZoom, glyphsTemplateUrl, tileTemplateUrl]
+      required:
+        - attribution
+        - defaultCenter
+        - defaultZoom
+        - glyphsTemplateUrl
+        - tileTemplateUrl
       properties:
         attribution:
           type: string
@@ -3628,12 +4176,18 @@ components:
           type: string
         styleUrl:
           type: string
-          description: Optional MapLibre style URL. When present, clients should prefer it over the raster tile template.
+          description: Optional MapLibre style URL. When present, clients should prefer it over the raster
+            tile template.
         tileTemplateUrl:
           type: string
     MobileNativePolicy:
       type: object
-      required: [minimumAppVersion, offlineCacheTtlSeconds, pushNotifications, requireBiometricUnlock, requireManagedDevice]
+      required:
+        - minimumAppVersion
+        - offlineCacheTtlSeconds
+        - pushNotifications
+        - requireBiometricUnlock
+        - requireManagedDevice
       properties:
         minimumAppVersion:
           type: string
@@ -3642,7 +4196,9 @@ components:
           minimum: 1
         pushNotifications:
           type: string
-          enum: [not_configured, enabled]
+          enum:
+            - not_configured
+            - enabled
         requireBiometricUnlock:
           type: boolean
         requireManagedDevice:
@@ -3672,7 +4228,7 @@ components:
         objects:
           type: array
           items:
-            $ref: "./schemas/observed-object.schema.json"
+            $ref: ./schemas/observed-object.schema.json
         serverTimestamp:
           type: string
           format: date-time
@@ -3685,14 +4241,16 @@ components:
         sources:
           type: array
           items:
-            $ref: "./schemas/source-system.schema.json"
+            $ref: ./schemas/source-system.schema.json
         streamHealth:
           $ref: "#/components/schemas/StreamHealth"
         trackHistory:
           type: array
           items:
             type: object
-            required: [objectId, points]
+            required:
+              - objectId
+              - points
             properties:
               objectId:
                 type: string
@@ -3702,11 +4260,18 @@ components:
                   $ref: "#/components/schemas/TrackHistoryPoint"
     MobileCachePolicy:
       type: object
-      required: [apiResponses, maxHistoryPointsPerObject, maxHistorySeconds, mode, offlineCacheTtlSeconds, recommendedStorage]
+      required:
+        - apiResponses
+        - maxHistoryPointsPerObject
+        - maxHistorySeconds
+        - mode
+        - offlineCacheTtlSeconds
+        - recommendedStorage
       properties:
         apiResponses:
           type: string
-          enum: [network-only]
+          enum:
+            - network-only
         maxHistoryPointsPerObject:
           type: integer
           minimum: 1
@@ -3715,16 +4280,21 @@ components:
           minimum: 1
         mode:
           type: string
-          enum: [read-only]
+          enum:
+            - read-only
         offlineCacheTtlSeconds:
           type: integer
           minimum: 1
         recommendedStorage:
           type: string
-          enum: [encrypted-device-storage]
+          enum:
+            - encrypted-device-storage
     MobileDeviceRegistrationRequest:
       type: object
-      required: [appVersion, deviceId, platform]
+      required:
+        - appVersion
+        - deviceId
+        - platform
       properties:
         appVersion:
           type: string
@@ -3742,20 +4312,35 @@ components:
           type: string
         platform:
           type: string
-          enum: [ios, ipados]
+          enum:
+            - ios
+            - ipados
         pushToken:
           type: string
           deprecated: true
-          description: Deprecated compatibility field. COP does not persist raw APNs tokens; CSM Messenger must register them with CSM Messaging /api/v1/devices.
+          description: Deprecated compatibility field. COP does not persist raw APNs tokens; CSM Messenger
+            must register them with CSM Messaging /api/v1/devices.
     MobileDeviceRegistrationResponse:
       type: object
-      required: [actor, device, policy, serverTimestamp]
+      required:
+        - actor
+        - device
+        - policy
+        - serverTimestamp
       properties:
         actor:
           $ref: "#/components/schemas/AuthenticatedActor"
         device:
           type: object
-          required: [appVersion, capabilities, deviceId, deviceSessionId, platform, pushTokenRegistered, registeredAt, subjectId]
+          required:
+            - appVersion
+            - capabilities
+            - deviceId
+            - deviceSessionId
+            - platform
+            - pushTokenRegistered
+            - registeredAt
+            - subjectId
           properties:
             appVersion:
               type: string
@@ -3776,7 +4361,9 @@ components:
               type: string
             platform:
               type: string
-              enum: [ios, ipados]
+              enum:
+                - ios
+                - ipados
             pushTokenRegistered:
               type: boolean
             registeredAt:
@@ -3791,19 +4378,22 @@ components:
           format: date-time
     CopTrackList:
       type: object
-      required: [items]
+      required:
+        - items
       properties:
         items:
           type: array
           items:
-            $ref: "./schemas/observed-object.schema.json"
+            $ref: ./schemas/observed-object.schema.json
         nextCursor:
           type:
             - string
             - "null"
     CopConflictEvidenceList:
       type: object
-      required: [items, serverTimestamp]
+      required:
+        - items
+        - serverTimestamp
       properties:
         items:
           type: array
@@ -3818,16 +4408,26 @@ components:
           format: date-time
     ObjectConflictEvidence:
       type: object
-      required: [objectId, state, severity, sourceSystemIds, signals, evaluatedAt]
+      required:
+        - objectId
+        - state
+        - severity
+        - sourceSystemIds
+        - signals
+        - evaluatedAt
       properties:
         objectId:
           type: string
         state:
           type: string
-          enum: [CLEAR, CONFLICTED]
+          enum:
+            - CLEAR
+            - CONFLICTED
         severity:
           type: string
-          enum: [info, warning]
+          enum:
+            - info
+            - warning
         sourceSystemIds:
           type: array
           items:
@@ -3841,18 +4441,31 @@ components:
           format: date-time
     ConflictSignal:
       type: object
-      required: [type, title, detail, severity, sourceSystemIds]
+      required:
+        - type
+        - title
+        - detail
+        - severity
+        - sourceSystemIds
       properties:
         type:
           type: string
-          enum: [AFFILIATION_VARIANCE, LOW_CONFIDENCE, POSITION_VARIANCE, SOURCE_DEGRADED, STATE_CONFLICTED, STATUS_VARIANCE]
+          enum:
+            - AFFILIATION_VARIANCE
+            - LOW_CONFIDENCE
+            - POSITION_VARIANCE
+            - SOURCE_DEGRADED
+            - STATE_CONFLICTED
+            - STATUS_VARIANCE
         title:
           type: string
         detail:
           type: string
         severity:
           type: string
-          enum: [info, warning]
+          enum:
+            - info
+            - warning
         sourceSystemIds:
           type: array
           items:
@@ -3862,7 +4475,9 @@ components:
           format: date-time
     CopAlertList:
       type: object
-      required: [items, serverTimestamp]
+      required:
+        - items
+        - serverTimestamp
       properties:
         items:
           type: array
@@ -3877,19 +4492,38 @@ components:
           format: date-time
     CopAlert:
       type: object
-      required: [alertId, type, severity, status, title, detail, observedAt, updatedAt]
+      required:
+        - alertId
+        - type
+        - severity
+        - status
+        - title
+        - detail
+        - observedAt
+        - updatedAt
       properties:
         alertId:
           type: string
         type:
           type: string
-          enum: [AOI_ENTRY, LOW_CONFIDENCE, SOURCE_DEGRADED, TRACK_CONFLICT, TRACK_LOST, TRACK_STALE]
+          enum:
+            - AOI_ENTRY
+            - LOW_CONFIDENCE
+            - SOURCE_DEGRADED
+            - TRACK_CONFLICT
+            - TRACK_LOST
+            - TRACK_STALE
         severity:
           type: string
-          enum: [info, warning, critical]
+          enum:
+            - info
+            - warning
+            - critical
         status:
           type: string
-          enum: [ACTIVE, ACKNOWLEDGED]
+          enum:
+            - ACTIVE
+            - ACKNOWLEDGED
         title:
           type: string
         detail:
@@ -3914,7 +4548,10 @@ components:
           additionalProperties: true
     CopAlertMapArea:
       type: object
-      required: [lat, lon, radiusKm]
+      required:
+        - lat
+        - lon
+        - radiusKm
       properties:
         lat:
           type: number
@@ -3929,7 +4566,10 @@ components:
           minimum: 0
     CopSubscriptionCreated:
       type: object
-      required: [subscriptionId, streamUrl, expiresAt]
+      required:
+        - subscriptionId
+        - streamUrl
+        - expiresAt
       properties:
         subscriptionId:
           type: string
@@ -3941,13 +4581,17 @@ components:
           format: date-time
     CopTrackHistoryList:
       type: object
-      required: [items, serverTimestamp]
+      required:
+        - items
+        - serverTimestamp
       properties:
         items:
           type: array
           items:
             type: object
-            required: [objectId, points]
+            required:
+              - objectId
+              - points
             properties:
               objectId:
                 type: string
@@ -3964,7 +4608,18 @@ components:
           format: date-time
     TrackHistoryPoint:
       type: object
-      required: [objectId, objectType, affiliation, status, lat, lon, timestamp, producerTimestamp, sourceSystemId, eventId, synthetic]
+      required:
+        - objectId
+        - objectType
+        - affiliation
+        - status
+        - lat
+        - lon
+        - timestamp
+        - producerTimestamp
+        - sourceSystemId
+        - eventId
+        - synthetic
       properties:
         objectId:
           type: string
@@ -3999,11 +4654,21 @@ components:
           maximum: 1
     StreamMessage:
       type: object
-      required: [type, serverTimestamp, sequence]
+      required:
+        - type
+        - serverTimestamp
+        - sequence
       properties:
         type:
           type: string
-          enum: [snapshot, delta, heartbeat, policy_update, backpressure, reconnect_required, error]
+          enum:
+            - snapshot
+            - delta
+            - heartbeat
+            - policy_update
+            - backpressure
+            - reconnect_required
+            - error
         subscriptionId:
           type: string
           format: uuid
@@ -4029,16 +4694,23 @@ components:
           type: string
         severity:
           type: string
-          enum: [info, warning]
+          enum:
+            - info
+            - warning
         writeErrorsTotal:
           type: integer
     StreamHealth:
       type: object
-      required: [status, serverTimestamp, metrics]
+      required:
+        - status
+        - serverTimestamp
+        - metrics
       properties:
         status:
           type: string
-          enum: [ok, degraded]
+          enum:
+            - ok
+            - degraded
         serverTimestamp:
           type: string
           format: date-time
@@ -4110,7 +4782,9 @@ components:
           type: integer
     SourceHealthList:
       type: object
-      required: [items, serverTimestamp]
+      required:
+        - items
+        - serverTimestamp
       properties:
         items:
           type: array
@@ -4146,7 +4820,14 @@ components:
           type: boolean
         health:
           type: string
-          enum: [ONLINE, QUIET, STALE, WAITING, DISABLED, DEGRADED, UNAVAILABLE]
+          enum:
+            - ONLINE
+            - QUIET
+            - STALE
+            - WAITING
+            - DISABLED
+            - DEGRADED
+            - UNAVAILABLE
         detail:
           type: string
         lastError:
@@ -4199,7 +4880,16 @@ components:
             minimum: 0
     FlightReferenceFeatureCollection:
       type: object
-      required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
+      required:
+        - contractVersion
+        - features
+        - generatedAt
+        - query
+        - source
+        - sources
+        - summary
+        - type
+        - warnings
       properties:
         contractVersion:
           type: string
@@ -4212,7 +4902,10 @@ components:
           format: date-time
         query:
           type: object
-          required: [bbox, layers, limit]
+          required:
+            - bbox
+            - layers
+            - limit
           properties:
             bbox:
               $ref: "#/components/schemas/SituationBbox"
@@ -4220,14 +4913,18 @@ components:
               type: array
               items:
                 type: string
-                enum: [flight.airports, flight.airspaces]
+                enum:
+                  - flight.airports
+                  - flight.airspaces
             limit:
               type: integer
               minimum: 1
               maximum: 500
         source:
           type: object
-          required: [sourceId, sourceType]
+          required:
+            - sourceId
+            - sourceType
           properties:
             generatedAt:
               type: string
@@ -4256,7 +4953,12 @@ components:
             type: string
     CommunityFeatureCollection:
       type: object
-      required: [features, generatedAt, source, summary, type]
+      required:
+        - features
+        - generatedAt
+        - source
+        - summary
+        - type
       properties:
         type:
           type: string
@@ -4277,7 +4979,9 @@ components:
               type: integer
         source:
           type: object
-          required: [sourceId, sourceType]
+          required:
+            - sourceId
+            - sourceType
           properties:
             generatedAt:
               type: string
@@ -4294,7 +4998,8 @@ components:
             $ref: "#/components/schemas/SituationFeature"
         summary:
           type: object
-          required: [featureCount]
+          required:
+            - featureCount
           properties:
             featureCount:
               type: integer
@@ -4308,7 +5013,16 @@ components:
             type: string
     SituationFeatureCollection:
       type: object
-      required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
+      required:
+        - contractVersion
+        - features
+        - generatedAt
+        - query
+        - source
+        - sources
+        - summary
+        - type
+        - warnings
       properties:
         contractVersion:
           type: string
@@ -4341,7 +5055,10 @@ components:
             type: string
     SituationFeatureQuery:
       type: object
-      required: [bbox, layers, limit]
+      required:
+        - bbox
+        - layers
+        - limit
       properties:
         bbox:
           $ref: "#/components/schemas/SituationBbox"
@@ -4349,7 +5066,35 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, weather_radar_reflectivity, weather_radar_precipitation, weather_radar_nowcast, weather_thunderstorm_risk, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
+            enum:
+              - weather
+              - weather_temperature_grid
+              - weather_wind_field
+              - weather_precipitation_grid
+              - weather_humidity_grid
+              - weather_pressure_grid
+              - weather_radar_reflectivity
+              - weather_radar_precipitation
+              - weather_radar_nowcast
+              - weather_thunderstorm_risk
+              - ground
+              - mobile
+              - mobile_network
+              - mobile_coverage
+              - traffic
+              - warnings
+              - weather_alerts
+              - flood
+              - fire
+              - air_quality
+              - air_quality_grid
+              - boundary_admin
+              - boundary_country
+              - boundary_region
+              - boundary_district
+              - boundary_orp
+              - boundary_municipality
+              - place_settlements
         limit:
           type: integer
           minimum: 1
@@ -4360,10 +5105,17 @@ components:
             type: string
         technology:
           type: string
-          enum: [2G, 4G, 5G]
+          enum:
+            - 2G
+            - 4G
+            - 5G
     SituationBbox:
       type: object
-      required: [east, north, south, west]
+      required:
+        - east
+        - north
+        - south
+        - west
       properties:
         east:
           type: number
@@ -4375,7 +5127,9 @@ components:
           type: number
     SituationRootSource:
       type: object
-      required: [sourceId, sourceType]
+      required:
+        - sourceId
+        - sourceType
       properties:
         generatedAt:
           type: string
@@ -4388,7 +5142,8 @@ components:
           const: PUBLIC_SITUATION_AGGREGATE
     SituationSourceDescriptor:
       type: object
-      required: [sourceId]
+      required:
+        - sourceId
       properties:
         sourceId:
           type: string
@@ -4410,13 +5165,44 @@ components:
           type: array
           items:
             type: string
-            enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, weather_radar_reflectivity, weather_radar_precipitation, weather_radar_nowcast, weather_thunderstorm_risk, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
+            enum:
+              - weather
+              - weather_temperature_grid
+              - weather_wind_field
+              - weather_precipitation_grid
+              - weather_humidity_grid
+              - weather_pressure_grid
+              - weather_radar_reflectivity
+              - weather_radar_precipitation
+              - weather_radar_nowcast
+              - weather_thunderstorm_risk
+              - ground
+              - mobile
+              - mobile_network
+              - mobile_coverage
+              - traffic
+              - warnings
+              - weather_alerts
+              - flood
+              - fire
+              - air_quality
+              - air_quality_grid
+              - boundary_admin
+              - boundary_country
+              - boundary_region
+              - boundary_district
+              - boundary_orp
+              - boundary_municipality
+              - place_settlements
         license:
           type: object
           additionalProperties: true
     SituationFeature:
       type: object
-      required: [geometry, properties, type]
+      required:
+        - geometry
+        - properties
+        - type
       properties:
         type:
           type: string
@@ -4435,7 +5221,9 @@ components:
           $ref: "#/components/schemas/SituationFeatureProperties"
     GeoJsonPoint:
       type: object
-      required: [coordinates, type]
+      required:
+        - coordinates
+        - type
       properties:
         type:
           type: string
@@ -4444,7 +5232,9 @@ components:
           $ref: "#/components/schemas/Coordinate"
     GeoJsonLineString:
       type: object
-      required: [coordinates, type]
+      required:
+        - coordinates
+        - type
       properties:
         type:
           type: string
@@ -4456,7 +5246,9 @@ components:
             $ref: "#/components/schemas/Coordinate"
     GeoJsonPolygon:
       type: object
-      required: [coordinates, type]
+      required:
+        - coordinates
+        - type
       properties:
         type:
           type: string
@@ -4471,7 +5263,9 @@ components:
               $ref: "#/components/schemas/Coordinate"
     GeoJsonMultiPolygon:
       type: object
-      required: [coordinates, type]
+      required:
+        - coordinates
+        - type
       properties:
         type:
           type: string
@@ -4495,16 +5289,50 @@ components:
         type: number
     SituationFeatureProperties:
       type: object
-      required: [category, featureId, label, layer, sourceId]
+      required:
+        - category
+        - featureId
+        - label
+        - layer
+        - sourceId
       properties:
         featureId:
           type: string
         fireStatus:
           type: string
-          description: Fire-specific status such as risk, thermal_anomaly, active, confirmed, contained, or unknown.
+          description: Fire-specific status such as risk, thermal_anomaly, active, confirmed, contained, or
+            unknown.
         layer:
           type: string
-          enum: [weather, weather_temperature_grid, weather_wind_field, weather_precipitation_grid, weather_humidity_grid, weather_pressure_grid, weather_radar_reflectivity, weather_radar_precipitation, weather_radar_nowcast, weather_thunderstorm_risk, ground, mobile, mobile_network, mobile_coverage, traffic, warnings, weather_alerts, flood, fire, air_quality, air_quality_grid, boundary_admin, boundary_country, boundary_region, boundary_district, boundary_orp, boundary_municipality, place_settlements]
+          enum:
+            - weather
+            - weather_temperature_grid
+            - weather_wind_field
+            - weather_precipitation_grid
+            - weather_humidity_grid
+            - weather_pressure_grid
+            - weather_radar_reflectivity
+            - weather_radar_precipitation
+            - weather_radar_nowcast
+            - weather_thunderstorm_risk
+            - ground
+            - mobile
+            - mobile_network
+            - mobile_coverage
+            - traffic
+            - warnings
+            - weather_alerts
+            - flood
+            - fire
+            - air_quality
+            - air_quality_grid
+            - boundary_admin
+            - boundary_country
+            - boundary_region
+            - boundary_district
+            - boundary_orp
+            - boundary_municipality
+            - place_settlements
         layerId:
           type: string
         label:
@@ -4533,7 +5361,12 @@ components:
           type: string
         quality:
           type: string
-          enum: [good, fair, weak, none, unknown]
+          enum:
+            - good
+            - fair
+            - weak
+            - none
+            - unknown
         status:
           type: string
         dataQuality:
@@ -4541,7 +5374,8 @@ components:
           description: Data provenance quality such as modelled, observed, mixed, or unknown.
         readModel:
           type: boolean
-          description: True when the provider returned a prepared read model instead of an ad-hoc viewport estimate.
+          description: True when the provider returned a prepared read model instead of an ad-hoc viewport
+            estimate.
         sourceRevision:
           type: string
           description: Provider technical model/source revision string for diagnostics.
@@ -4592,7 +5426,11 @@ components:
           additionalProperties: true
     SituationSummary:
       type: object
-      required: [featureCount, sourceCount, staleFeatureCount, warningCount]
+      required:
+        - featureCount
+        - sourceCount
+        - staleFeatureCount
+        - warningCount
       properties:
         featureCount:
           type: integer
@@ -4608,7 +5446,16 @@ components:
           minimum: 0
     TakGatewayFeatureCollection:
       type: object
-      required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
+      required:
+        - contractVersion
+        - features
+        - generatedAt
+        - query
+        - source
+        - sources
+        - summary
+        - type
+        - warnings
       properties:
         contractVersion:
           type: string
@@ -4641,7 +5488,10 @@ components:
             type: string
     TakGatewayFeatureQuery:
       type: object
-      required: [bbox, layers, limit]
+      required:
+        - bbox
+        - layers
+        - limit
       properties:
         bbox:
           $ref: "#/components/schemas/SituationBbox"
@@ -4649,14 +5499,19 @@ components:
           type: array
           items:
             type: string
-            enum: [mobile, ground, traffic]
+            enum:
+              - mobile
+              - ground
+              - traffic
         limit:
           type: integer
           minimum: 1
           maximum: 1000
     TakGatewayRootSource:
       type: object
-      required: [sourceId, sourceType]
+      required:
+        - sourceId
+        - sourceType
       properties:
         generatedAt:
           type: string
@@ -4669,7 +5524,8 @@ components:
           const: TAK_COT_GATEWAY
     TakGatewaySourceDescriptor:
       type: object
-      required: [sourceId]
+      required:
+        - sourceId
       properties:
         sourceId:
           type: string
@@ -4691,13 +5547,19 @@ components:
           type: array
           items:
             type: string
-            enum: [mobile, ground, traffic]
+            enum:
+              - mobile
+              - ground
+              - traffic
         license:
           type: object
           additionalProperties: true
     TakGatewayFeature:
       type: object
-      required: [geometry, properties, type]
+      required:
+        - geometry
+        - properties
+        - type
       properties:
         type:
           type: string
@@ -4716,13 +5578,21 @@ components:
           $ref: "#/components/schemas/TakGatewayFeatureProperties"
     TakGatewayFeatureProperties:
       type: object
-      required: [category, featureId, label, layer, sourceId]
+      required:
+        - category
+        - featureId
+        - label
+        - layer
+        - sourceId
       properties:
         featureId:
           type: string
         layer:
           type: string
-          enum: [mobile, ground, traffic]
+          enum:
+            - mobile
+            - ground
+            - traffic
         label:
           type: string
         category:
@@ -4731,7 +5601,11 @@ components:
           type: string
         affiliation:
           type: string
-          enum: [friend, hostile, neutral, unknown]
+          enum:
+            - friend
+            - hostile
+            - neutral
+            - unknown
         observedAt:
           type: string
           format: date-time
@@ -4758,7 +5632,12 @@ components:
           additionalProperties: true
     TakGatewaySummary:
       type: object
-      required: [eventCount, featureCount, sourceCount, staleFeatureCount, warningCount]
+      required:
+        - eventCount
+        - featureCount
+        - sourceCount
+        - staleFeatureCount
+        - warningCount
       properties:
         eventCount:
           type: integer
@@ -4792,7 +5671,16 @@ components:
               minimum: 0
     SafetyFeatureCollection:
       type: object
-      required: [contractVersion, features, generatedAt, query, source, sources, summary, type, warnings]
+      required:
+        - contractVersion
+        - features
+        - generatedAt
+        - query
+        - source
+        - sources
+        - summary
+        - type
+        - warnings
       properties:
         contractVersion:
           type: string
@@ -4825,7 +5713,10 @@ components:
             type: string
     SafetyFeatureQuery:
       type: object
-      required: [bbox, layers, limit]
+      required:
+        - bbox
+        - layers
+        - limit
       properties:
         bbox:
           $ref: "#/components/schemas/SituationBbox"
@@ -4833,7 +5724,12 @@ components:
           type: array
           items:
             type: string
-            enum: [boundary_admin, fire, flood, warnings, weather_alerts]
+            enum:
+              - boundary_admin
+              - fire
+              - flood
+              - warnings
+              - weather_alerts
         limit:
           type: integer
           minimum: 1
@@ -4842,10 +5738,20 @@ components:
           type: array
           items:
             type: string
-            enum: [admin_boundaries, chmi_alerts, chmi_hydro, fire_hotspots, fire_incidents, mock, nasa_firms, weather_alerts]
+            enum:
+              - admin_boundaries
+              - chmi_alerts
+              - chmi_hydro
+              - fire_hotspots
+              - fire_incidents
+              - mock
+              - nasa_firms
+              - weather_alerts
     SafetyRootSource:
       type: object
-      required: [sourceId, sourceType]
+      required:
+        - sourceId
+        - sourceType
       properties:
         generatedAt:
           type: string
@@ -4858,11 +5764,20 @@ components:
           const: PUBLIC_SAFETY_AGGREGATE
     SafetySourceDescriptor:
       type: object
-      required: [sourceId]
+      required:
+        - sourceId
       properties:
         sourceId:
           type: string
-          enum: [admin_boundaries, chmi_alerts, chmi_hydro, fire_hotspots, fire_incidents, mock, nasa_firms, weather_alerts]
+          enum:
+            - admin_boundaries
+            - chmi_alerts
+            - chmi_hydro
+            - fire_hotspots
+            - fire_incidents
+            - mock
+            - nasa_firms
+            - weather_alerts
         label:
           type: string
         enabled:
@@ -4881,13 +5796,21 @@ components:
           type: array
           items:
             type: string
-            enum: [boundary_admin, fire, flood, warnings, weather_alerts]
+            enum:
+              - boundary_admin
+              - fire
+              - flood
+              - warnings
+              - weather_alerts
         license:
           type: object
           additionalProperties: true
     SafetyFeature:
       type: object
-      required: [geometry, properties, type]
+      required:
+        - geometry
+        - properties
+        - type
       properties:
         type:
           type: string
@@ -4905,13 +5828,23 @@ components:
           $ref: "#/components/schemas/SafetyFeatureProperties"
     SafetyFeatureProperties:
       type: object
-      required: [category, featureId, headline, layer, sourceId]
+      required:
+        - category
+        - featureId
+        - headline
+        - layer
+        - sourceId
       properties:
         featureId:
           type: string
         layer:
           type: string
-          enum: [boundary_admin, fire, flood, warnings, weather_alerts]
+          enum:
+            - boundary_admin
+            - fire
+            - flood
+            - warnings
+            - weather_alerts
         headline:
           type: string
         category:
@@ -4922,7 +5855,8 @@ components:
           type: string
         sourceIncident:
           type: string
-          description: Source-specific incident classification, for example CHMI_CAP_FIRE_DANGER or NASA_FIRMS_HOTSPOT.
+          description: Source-specific incident classification, for example CHMI_CAP_FIRE_DANGER or
+            NASA_FIRMS_HOTSPOT.
         sourceName:
           type: string
         layerId:
@@ -4949,7 +5883,9 @@ components:
             - type: string
         geometryMode:
           type: string
-          enum: [admin_boundary, representative_point]
+          enum:
+            - admin_boundary
+            - representative_point
         basis:
           type: array
           items:
@@ -4968,7 +5904,11 @@ components:
           description: Flood activity level, where 0 means no SPA and 1-3 are Czech SPA levels.
         trend:
           type: string
-          enum: [falling, rising, stable, unknown]
+          enum:
+            - falling
+            - rising
+            - stable
+            - unknown
         basin:
           type: string
         catchmentAreaKm2:
@@ -4990,7 +5930,11 @@ components:
           type: boolean
         severity:
           type: string
-          enum: [advisory, critical, info, warning]
+          enum:
+            - advisory
+            - critical
+            - info
+            - warning
         urgency:
           type: string
         certainty:
@@ -5003,7 +5947,9 @@ components:
           type: array
           items:
             type: object
-            required: [scheme, value]
+            required:
+              - scheme
+              - value
             properties:
               scheme:
                 type: string
@@ -5024,7 +5970,13 @@ components:
           additionalProperties: true
     SafetySummary:
       type: object
-      required: [advisoryCount, criticalCount, featureCount, sourceCount, staleFeatureCount, warningCount]
+      required:
+        - advisoryCount
+        - criticalCount
+        - featureCount
+        - sourceCount
+        - staleFeatureCount
+        - warningCount
       properties:
         advisoryCount:
           type: integer
@@ -5046,11 +5998,18 @@ components:
           minimum: 0
     SourceHealthOverride:
       type: object
-      required: [evaluatedAt, health]
+      required:
+        - evaluatedAt
+        - health
       properties:
         health:
           type: string
-          enum: [DEGRADED, ONLINE, STALE, UNAVAILABLE, WAITING]
+          enum:
+            - DEGRADED
+            - ONLINE
+            - STALE
+            - UNAVAILABLE
+            - WAITING
         evaluatedAt:
           type: string
           format: date-time
@@ -5076,25 +6035,36 @@ components:
             type: string
     SourceLifecycleResult:
       type: object
-      required: [sourceSystemId, status, changedAt]
+      required:
+        - sourceSystemId
+        - status
+        - changedAt
       properties:
         sourceSystemId:
           type: string
         status:
           type: string
-          enum: [REGISTERED, ACTIVE, SUSPENDED, REVOKED]
+          enum:
+            - REGISTERED
+            - ACTIVE
+            - SUSPENDED
+            - REVOKED
         changedAt:
           type: string
           format: date-time
     AuditEventList:
       type: object
-      required: [items]
+      required:
+        - items
       properties:
         items:
           type: array
           items:
             type: object
-            required: [auditId, eventType, timestamp]
+            required:
+              - auditId
+              - eventType
+              - timestamp
             properties:
               auditId:
                 type: string
@@ -5110,22 +6080,37 @@ components:
                 type: string
     AiCopResponse:
       type: object
-      required: [requestId, status, policy, result, auditId]
+      required:
+        - requestId
+        - status
+        - policy
+        - result
+        - auditId
       properties:
         requestId:
           type: string
           format: uuid
         status:
           type: string
-          enum: [COMPLETED, REJECTED, NEEDS_HUMAN_REVIEW]
+          enum:
+            - COMPLETED
+            - REJECTED
+            - NEEDS_HUMAN_REVIEW
         provider:
           type: string
-          enum: [openai, codex, local, mock]
+          enum:
+            - openai
+            - codex
+            - local
+            - mock
         model:
           type: string
         policy:
           type: object
-          required: [allowed, reason, redactionsApplied]
+          required:
+            - allowed
+            - reason
+            - redactionsApplied
           properties:
             allowed:
               type: boolean
@@ -5141,17 +6126,30 @@ components:
           format: uuid
     HealthStatus:
       type: object
-      required: [status, timestamp]
+      required:
+        - status
+        - timestamp
       properties:
         status:
           type: string
-          enum: [ok, degraded, unavailable]
+          enum:
+            - ok
+            - degraded
+            - unavailable
         timestamp:
           type: string
           format: date-time
     MessagingStatus:
       type: object
-      required: [chatAvailable, checkedAt, contractVersion, enabled, providerId, serviceName, status, warnings]
+      required:
+        - chatAvailable
+        - checkedAt
+        - contractVersion
+        - enabled
+        - providerId
+        - serviceName
+        - status
+        - warnings
       properties:
         architecture:
           type: object
@@ -5159,14 +6157,15 @@ components:
         chatAvailable:
           type: boolean
           description: >
-            True only after a client-safe Matrix/E2EE bootstrap contract is
-            advertised by provider metadata and provider health is operational.
+            True only after a client-safe Matrix/E2EE bootstrap contract is advertised by provider
+            metadata and provider health is operational.
         checkedAt:
           type: string
           format: date-time
         contractVersion:
           type: string
-          enum: [cop-messaging-status-v1]
+          enum:
+            - cop-messaging-status-v1
         detail:
           type: string
         enabled:
@@ -5176,7 +6175,8 @@ components:
           additionalProperties: true
         providerId:
           type: string
-          enum: [csm.messaging]
+          enum:
+            - csm.messaging
         publicUrl:
           type: string
           format: uri
@@ -5187,14 +6187,24 @@ components:
           type: string
         status:
           type: string
-          enum: [online, degraded, disabled]
+          enum:
+            - online
+            - degraded
+            - disabled
         warnings:
           type: array
           items:
             type: string
     MessagingBootstrap:
       type: object
-      required: [chatAvailable, contractVersion, enabled, providerId, status, tokenAvailable, warnings]
+      required:
+        - chatAvailable
+        - contractVersion
+        - enabled
+        - providerId
+        - status
+        - tokenAvailable
+        - warnings
       properties:
         accessToken:
           type: string
@@ -5203,7 +6213,8 @@ components:
           type: boolean
         contractVersion:
           type: string
-          enum: [cop-messaging-bootstrap-v1]
+          enum:
+            - cop-messaging-bootstrap-v1
         detail:
           type: string
         deviceId:
@@ -5220,12 +6231,16 @@ components:
           format: uri
         providerId:
           type: string
-          enum: [csm.messaging]
+          enum:
+            - csm.messaging
         serverName:
           type: string
         status:
           type: string
-          enum: [online, degraded, disabled]
+          enum:
+            - online
+            - degraded
+            - disabled
         tokenAvailable:
           type: boolean
         userId:
@@ -5241,15 +6256,24 @@ components:
         deviceId:
           type: string
           maxLength: 64
-          pattern: "^[A-Za-z0-9._=-]{1,64}$"
-          description: Stable per-browser Matrix device identifier generated by the client and sent in the request body and as x-csm-device-id to Messaging.
+          pattern: ^[A-Za-z0-9._=-]{1,64}$
+          description: Stable per-browser Matrix device identifier generated by the client and sent in the
+            request body and as x-csm-device-id to Messaging.
     MessagingConversationList:
       type: object
-      required: [contractVersion, conversations, count, enabled, providerId, status, warnings]
+      required:
+        - contractVersion
+        - conversations
+        - count
+        - enabled
+        - providerId
+        - status
+        - warnings
       properties:
         contractVersion:
           type: string
-          enum: [cop-messaging-conversations-v1]
+          enum:
+            - cop-messaging-conversations-v1
         conversations:
           type: array
           items:
@@ -5261,17 +6285,22 @@ components:
           type: boolean
         providerId:
           type: string
-          enum: [csm.messaging]
+          enum:
+            - csm.messaging
         status:
           type: string
-          enum: [online, degraded, disabled]
+          enum:
+            - online
+            - degraded
+            - disabled
         warnings:
           type: array
           items:
             type: string
     MessagingConversationCreateRequest:
       type: object
-      required: [title]
+      required:
+        - title
       additionalProperties: false
       properties:
         title:
@@ -5280,7 +6309,9 @@ components:
           maxLength: 120
         type:
           type: string
-          enum: [direct, group]
+          enum:
+            - direct
+            - group
           default: group
         members:
           type: array
@@ -5298,28 +6329,39 @@ components:
           description: Safe metadata only. Plaintext message fields are rejected by COP and CSM Messaging.
     MessagingConversationCreateResponse:
       type: object
-      required: [contractVersion, enabled, providerId, status, warnings]
+      required:
+        - contractVersion
+        - enabled
+        - providerId
+        - status
+        - warnings
       properties:
         contractVersion:
           type: string
-          enum: [cop-messaging-conversations-v1]
+          enum:
+            - cop-messaging-conversations-v1
         conversation:
           $ref: "#/components/schemas/MessagingConversation"
         enabled:
           type: boolean
         providerId:
           type: string
-          enum: [csm.messaging]
+          enum:
+            - csm.messaging
         status:
           type: string
-          enum: [online, degraded, disabled]
+          enum:
+            - online
+            - degraded
+            - disabled
         warnings:
           type: array
           items:
             type: string
     MessagingConversationMembersRequest:
       type: object
-      required: [members]
+      required:
+        - members
       additionalProperties: false
       properties:
         members:
@@ -5330,28 +6372,41 @@ components:
             $ref: "#/components/schemas/MessagingConversationMember"
     MessagingConversationMemberSyncResponse:
       type: object
-      required: [contractVersion, enabled, providerId, status, warnings]
+      required:
+        - contractVersion
+        - enabled
+        - providerId
+        - status
+        - warnings
       properties:
         contractVersion:
           type: string
-          enum: [cop-messaging-conversations-v1]
+          enum:
+            - cop-messaging-conversations-v1
         conversation:
           $ref: "#/components/schemas/MessagingConversation"
         enabled:
           type: boolean
         providerId:
           type: string
-          enum: [csm.messaging]
+          enum:
+            - csm.messaging
         status:
           type: string
-          enum: [online, degraded, disabled]
+          enum:
+            - online
+            - degraded
+            - disabled
         warnings:
           type: array
           items:
             type: string
     MessagingConversation:
       type: object
-      required: [conversationId, title, type]
+      required:
+        - conversationId
+        - title
+        - type
       properties:
         conversationId:
           type: string
@@ -5359,7 +6414,9 @@ components:
           type: string
         type:
           type: string
-          enum: [direct, group]
+          enum:
+            - direct
+            - group
         status:
           type: string
         encrypted:
@@ -5404,7 +6461,8 @@ components:
           type: string
     MessagingConversationMember:
       type: object
-      required: [userId]
+      required:
+        - userId
       properties:
         userId:
           type: string
@@ -5414,7 +6472,8 @@ components:
           type: string
     MessagingMapLink:
       type: object
-      required: [targetId]
+      required:
+        - targetId
       properties:
         targetId:
           type: string
@@ -5430,7 +6489,8 @@ components:
             type: number
     MessagingMatrixIdentityResolveRequest:
       type: object
-      required: [userIds]
+      required:
+        - userIds
       additionalProperties: false
       properties:
         userIds:
@@ -5442,11 +6502,18 @@ components:
             maxLength: 160
     MessagingMatrixIdentityResolution:
       type: object
-      required: [contractVersion, enabled, identities, providerId, status, warnings]
+      required:
+        - contractVersion
+        - enabled
+        - identities
+        - providerId
+        - status
+        - warnings
       properties:
         contractVersion:
           type: string
-          enum: [cop-messaging-identities-v1]
+          enum:
+            - cop-messaging-identities-v1
         enabled:
           type: boolean
         identities:
@@ -5455,17 +6522,23 @@ components:
             $ref: "#/components/schemas/MessagingMatrixIdentity"
         providerId:
           type: string
-          enum: [csm.messaging]
+          enum:
+            - csm.messaging
         status:
           type: string
-          enum: [online, degraded, disabled]
+          enum:
+            - online
+            - degraded
+            - disabled
         warnings:
           type: array
           items:
             type: string
     MessagingMatrixIdentity:
       type: object
-      required: [userId, matrixUserId]
+      required:
+        - userId
+        - matrixUserId
       properties:
         userId:
           type: string
@@ -5475,39 +6548,51 @@ components:
           type: string
     MessagingMatrixRoomBindingRequest:
       type: object
-      required: [roomId]
+      required:
+        - roomId
       additionalProperties: false
       properties:
         roomId:
           type: string
           maxLength: 512
-          pattern: "^![^\\s:]+:.+$"
+          pattern: ^![^\s:]+:.+$
         encrypted:
           type: boolean
     MessagingMatrixRoomBindingResponse:
       type: object
-      required: [contractVersion, enabled, providerId, status, warnings]
+      required:
+        - contractVersion
+        - enabled
+        - providerId
+        - status
+        - warnings
       properties:
         contractVersion:
           type: string
-          enum: [cop-messaging-room-binding-v1]
+          enum:
+            - cop-messaging-room-binding-v1
         conversation:
           $ref: "#/components/schemas/MessagingConversation"
         enabled:
           type: boolean
         providerId:
           type: string
-          enum: [csm.messaging]
+          enum:
+            - csm.messaging
         status:
           type: string
-          enum: [online, degraded, disabled]
+          enum:
+            - online
+            - degraded
+            - disabled
         warnings:
           type: array
           items:
             type: string
     SafetyNotificationEvaluationRequest:
       type: object
-      required: [bbox]
+      required:
+        - bbox
       additionalProperties: false
       properties:
         audience:
@@ -5521,7 +6606,7 @@ components:
                 type: number
               description: "[west, south, east, north]"
             - type: string
-              pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
+              pattern: ^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$
             - $ref: "#/components/schemas/SituationBbox"
         currentLocation:
           $ref: "#/components/schemas/NotificationLocation"
@@ -5533,13 +6618,22 @@ components:
           type: array
           items:
             type: string
-            enum: [fire, flood, warnings, weather_alerts]
-          description: Alias for layers. Reference layer boundary_admin is intentionally excluded from push evaluation.
+            enum:
+              - fire
+              - flood
+              - warnings
+              - weather_alerts
+          description: Alias for layers. Reference layer boundary_admin is intentionally excluded from push
+            evaluation.
         layers:
           type: array
           items:
             type: string
-            enum: [fire, flood, warnings, weather_alerts]
+            enum:
+              - fire
+              - flood
+              - warnings
+              - weather_alerts
           description: Safety layers eligible for citizen notification evaluation.
         limit:
           type: integer
@@ -5548,7 +6642,14 @@ components:
           default: 100
     SafetyNotificationEvaluationResponse:
       type: object
-      required: [contractVersion, decisions, dispatch, dryRun, query, serverTimestamp, summary]
+      required:
+        - contractVersion
+        - decisions
+        - dispatch
+        - dryRun
+        - query
+        - serverTimestamp
+        - summary
       properties:
         contractVersion:
           type: string
@@ -5570,7 +6671,11 @@ components:
           format: date-time
         summary:
           type: object
-          required: [dispatchedCount, eligibleCount, featureCount, skippedCount]
+          required:
+            - dispatchedCount
+            - eligibleCount
+            - featureCount
+            - skippedCount
           properties:
             dispatchedCount:
               type: integer
@@ -5586,7 +6691,14 @@ components:
               minimum: 0
     NotificationDecision:
       type: object
-      required: [contractVersion, decisionId, idempotencyKey, notification, reason, relevance, shouldSend]
+      required:
+        - contractVersion
+        - decisionId
+        - idempotencyKey
+        - notification
+        - reason
+        - relevance
+        - shouldSend
       properties:
         contractVersion:
           type: string
@@ -5602,7 +6714,9 @@ components:
           type: string
         relevance:
           type: object
-          required: [matchedAoiRuleIds, source]
+          required:
+            - matchedAoiRuleIds
+            - source
           properties:
             matchedAoiRuleIds:
               type: array
@@ -5610,12 +6724,25 @@ components:
                 type: string
             source:
               type: string
-              enum: [community-group, current-location, explicit-audience, none, watched-area]
+              enum:
+                - community-group
+                - current-location
+                - explicit-audience
+                - none
+                - watched-area
         shouldSend:
           type: boolean
     NotificationRequest:
       type: object
-      required: [audience, body, deepLink, priority, severity, source, title, type]
+      required:
+        - audience
+        - body
+        - deepLink
+        - priority
+        - severity
+        - source
+        - title
+        - type
       properties:
         audience:
           $ref: "#/components/schemas/NotificationAudience"
@@ -5637,17 +6764,27 @@ components:
               - type: "null"
         priority:
           type: string
-          enum: [high, low, normal, time_sensitive]
+          enum:
+            - high
+            - low
+            - normal
+            - time_sensitive
         severity:
           type: string
-          enum: [advisory, critical, info, warning]
+          enum:
+            - advisory
+            - critical
+            - info
+            - warning
         source:
           $ref: "#/components/schemas/NotificationSource"
         title:
           $ref: "#/components/schemas/LocalizedNotificationText"
         type:
           type: string
-          enum: [community.report, safety.alert]
+          enum:
+            - community.report
+            - safety.alert
     NotificationAudience:
       type: object
       additionalProperties: false
@@ -5672,7 +6809,8 @@ components:
             maxLength: 160
     LocalizedNotificationText:
       type: object
-      required: [cs]
+      required:
+        - cs
       additionalProperties: false
       properties:
         cs:
@@ -5683,7 +6821,10 @@ components:
           maxLength: 240
     NotificationSource:
       type: object
-      required: [featureId, layerId, providerId]
+      required:
+        - featureId
+        - layerId
+        - providerId
       additionalProperties: false
       properties:
         featureId:
@@ -5696,7 +6837,12 @@ components:
           type: string
     NotificationDispatchResult:
       type: object
-      required: [decisionId, idempotencyKey, reason, status, warnings]
+      required:
+        - decisionId
+        - idempotencyKey
+        - reason
+        - status
+        - warnings
       properties:
         decisionId:
           type: string
@@ -5708,14 +6854,20 @@ components:
           type: string
         status:
           type: string
-          enum: [degraded, disabled, online, skipped]
+          enum:
+            - degraded
+            - disabled
+            - online
+            - skipped
         warnings:
           type: array
           items:
             type: string
     NotificationLocation:
       type: object
-      required: [lat, lon]
+      required:
+        - lat
+        - lon
       additionalProperties: false
       properties:
         lat:
@@ -5732,31 +6884,47 @@ components:
           maximum: 100
     DependencyHealth:
       type: object
-      required: [status, dependencies]
+      required:
+        - status
+        - dependencies
       properties:
         status:
           type: string
-          enum: [ok, degraded, unavailable, disabled]
+          enum:
+            - ok
+            - degraded
+            - unavailable
+            - disabled
         dependencies:
           type: array
           items:
             type: object
-            required: [name, status]
+            required:
+              - name
+              - status
             properties:
               name:
                 type: string
               status:
                 type: string
-                enum: [ok, degraded, unavailable, disabled]
+                enum:
+                  - ok
+                  - degraded
+                  - unavailable
+                  - disabled
               detail:
                 type: string
     ErrorResponse:
       type: object
-      required: [error]
+      required:
+        - error
       properties:
         error:
           type: object
-          required: [code, message, correlationId]
+          required:
+            - code
+            - message
+            - correlationId
           properties:
             code:
               type: string

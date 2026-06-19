@@ -139,6 +139,13 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `POST /api/v1/notifications/safety/evaluate` pouze pro operator/diagnostický tok vyhodnocení safety výstrah; běžný iOS push přijde přes CSM Messaging,
 - `POST /api/v1/ai/cop-assistant/query` pouze pro povolené informační dotazy.
 
+Sdíleným datovým základem pro web i iOS je
+[Canonical Entity Model v2](../data/07_CANONICAL_ENTITY_MODEL_V2.md). Nativní
+klient nemusí zobrazit všechna governance pole, ale musí respektovat
+`releasePolicy`, `confidence`, `dataQuality`, `provenance`, časovou platnost a
+stale stav. Eventové chování a budoucí AsyncAPI směr jsou popsány v
+[Event Contract and AsyncAPI Direction](../integration/13_EVENT_CONTRACT_AND_ASYNCAPI.md).
+
 Nativní iOS klient má před vytvořením hlášení načíst polohu z média, pokud je dostupná. Pro fotky použít metadata z Photos/EXIF, pro video a iPhone Spatial Video preferovat AVFoundation/Photos metadata. Pokud uživatel polohu z média potvrdí, poslat `location.source="media_metadata"`. Hlášení musí být vždy přiřazené do COP skupiny; nová skupina vytvořená z hlášení má dostat `anchorLocation` z první polohy reportu.
 
 ## Mapový katalog pro nativní klienty

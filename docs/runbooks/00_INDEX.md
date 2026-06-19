@@ -11,3 +11,4 @@
 - [09 PostgreSQL Patroni COP Store](09_POSTGRES_PATRONI_TEMPORAL_STORE.md)
 - [10 Tile Cache and Map Tiles](10_TILE_CACHE_AND_MAP_TILES.md)
 - [11 User Identity Reconciliation for COP Groups](11_USER_IDENTITY_RECONCILIATION.md)
+- [12 ChromaDB and OpenTelemetry](12_CHROMADB_AND_OPENTELEMETRY.md)
