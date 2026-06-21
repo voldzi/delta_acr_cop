@@ -320,7 +320,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   });
   const state = options.state ?? createInitialState();
   const validators = new ContractValidators();
-  const aiGateway = new AiGateway();
+  const aiGateway = AiGateway.fromEnv(process.env);
   const now = options.now ?? (() => new Date());
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
@@ -460,6 +460,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         status: "degraded"
       }
     );
+    const aiGatewayDependency = await withDependencyTimeout(
+      "ai-gateway",
+      aiGateway.health().then((status) => ({
+        name: "ai-gateway",
+        status: status.status,
+        detail: status.detail
+      })),
+      {
+        name: "ai-gateway",
+        status: "degraded",
+        detail: `AI gateway dependency check timed out after ${healthDependencyTimeoutMs()} ms.`
+      }
+    );
     return {
       status: "ok",
       dependencies: [
@@ -478,7 +491,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ...(safetyDataSource ? [safetyDataDependency()] : []),
       ...(missionArenaSource ? [missionArenaDependency()] : []),
       ...(takGatewaySource ? [takGatewayDependency()] : []),
-      { name: "ai-gateway", status: "degraded", detail: "mock provider only" }
+      aiGatewayDependency
     ]
     };
   });

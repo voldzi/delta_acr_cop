@@ -2260,7 +2260,7 @@ export function App() {
         context: {
           objectIds: visibleObjects.map((object) => object.objectId)
         },
-        providerPreference: "mock",
+        providerPreference: "auto",
         outputFormat: "MARKDOWN",
         safetyScope: "COP_DATA_ASSISTANCE_ONLY"
       })

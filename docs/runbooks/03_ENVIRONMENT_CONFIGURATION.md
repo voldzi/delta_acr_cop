@@ -8,7 +8,8 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 - database/cache/event bus connection strings,
 - OIDC issuer/client configuration,
 - Source Registry bootstrap,
-- AI provider enable/disable flags,
+- AI provider enable/disable flags (`COP_EXTERNAL_AI_ENABLED`,
+  `COP_AI_DEFAULT_PROVIDER`, `COP_AI_LOCAL_*`),
 - track lifecycle thresholds (`COP_TRACK_STALE_AFTER_MS`, `COP_TRACK_EXPIRE_AFTER_MS`),
 - federation runtime persistence (`COP_FEDERATION_STORE`, volitelně stejný `COP_DATABASE_URL`),
 - temporal history persistence (`COP_TRACK_HISTORY_STORE`, `COP_DATABASE_URL`, `COP_DATABASE_SSL`),
@@ -27,6 +28,37 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 - feature flags pro degraded/offline režim.
 
 Citlivé hodnoty nesmí být commitované do repozitáře.
+
+## AI Provider / Local LLM Gateway
+
+COP podporuje asistivní AI přes `@cop/ai-gateway`. Produkční lokální režim
+nevolá Ollamu přímo z browseru; `cop-api` volá server-side AI KnowledgeBase LLM
+Gateway a ta teprve volá Ollamu.
+
+```env
+COP_EXTERNAL_AI_ENABLED=true
+COP_AI_DEFAULT_PROVIDER=local
+COP_AI_LOCAL_GATEWAY_URL=http://docker.home.cz:3220/llm-gateway
+COP_AI_LOCAL_GATEWAY_TOKEN=<service-token-pokud-ho-AKB-vyžaduje>
+COP_AI_LOCAL_MODEL=gemma4:12b
+COP_AI_LOCAL_MAX_TOKENS=512
+COP_AI_LOCAL_TIMEOUT_MS=30000
+COP_AI_LOCAL_RETRY_ATTEMPTS=2
+COP_AI_LOCAL_THINK=false
+```
+
+Bezpečný vývojový default zůstává:
+
+```env
+COP_EXTERNAL_AI_ENABLED=false
+COP_AI_DEFAULT_PROVIDER=mock
+```
+
+`COP_AI_LOCAL_GATEWAY_TOKEN` je server-side hodnota a nesmí mít prefix
+`VITE_`. Web klient posílá `providerPreference=auto`, takže provider volí až
+COP API podle konfigurace. Guardrails se vyhodnocují před každým voláním LLM
+Gateway. `/health/dependencies` ukazuje `ai-gateway` jako `ok`, `degraded` nebo
+`disabled`; degraded AI nesmí blokovat mapu, reporting ani chat.
 
 ## Flight Data Source
 

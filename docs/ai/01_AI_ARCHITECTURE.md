@@ -15,6 +15,8 @@ flowchart LR
     OPENAI["OpenAI provider"]
     CODEX["Codex provider"]
     LOCAL["Local LLM provider"]
+    AKB["AI KnowledgeBase LLM Gateway"]
+    OLLAMA["Ollama"]
     MOCK["Mock provider"]
     VALID["Structured output validation"]
     HUMAN["Human review when required"]
@@ -23,7 +25,7 @@ flowchart LR
     USER --> GW --> CLASS --> REDACT --> POLICY --> ROUTER
     ROUTER --> OPENAI
     ROUTER --> CODEX
-    ROUTER --> LOCAL
+    ROUTER --> LOCAL --> AKB --> OLLAMA
     ROUTER --> MOCK
     OPENAI --> VALID
     CODEX --> VALID
