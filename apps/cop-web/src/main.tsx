@@ -3779,7 +3779,6 @@ export function App() {
                 profiles={viewProfiles}
                 userScope={userStorageScope}
                 onApply={applyViewProfile}
-                onLogin={() => openLoginPrompt("profile")}
                 onSave={saveCurrentViewProfile}
               />
 
@@ -4110,7 +4109,6 @@ export function App() {
                 alerts={serverAlerts}
                 canAcknowledge={profileAccessReady}
                 onAcknowledge={(alertId) => void acknowledgeServerAlert(alertId)}
-                onLogin={() => openLoginPrompt("alert")}
                 onSelectObject={(objectId) => {
                   const isSelected = selectedObjectId === objectId;
                   setSelectedObjectId(isSelected ? null : objectId);
@@ -4265,8 +4263,6 @@ export function App() {
               <AccountAccessBox
                 authenticated={profileAccessReady}
                 session={authSession}
-                onLoginDifferent={loginDifferentOperator}
-                onLogin={() => openLoginPrompt("account")}
               />
               <div className="personal-awareness-box">
                 <PanelTitle icon={<MapPin size={17} />} title="Moje poloha" />
@@ -4295,10 +4291,7 @@ export function App() {
                 Zkontrolovat kvalitu dat
               </button>
             ) : (
-              <button className="primary-button secondary" onClick={() => openLoginPrompt("ai")} type="button">
-                <LogIn size={16} />
-                Přihlásit pro AI
-              </button>
+              <span className="auth-hint">Přihlášení najdete v horní liště.</span>
             )}
           </div>
           ) : null}
@@ -4550,8 +4543,6 @@ export function App() {
           onWorkspaceTemplateApply={applyWorkspaceTemplate}
           onWorkspaceLayoutChange={updateWorkspaceLayout}
           onHelp={(section) => setHelpSection(section)}
-          onLogin={loginOperator}
-          onLoginDifferent={loginDifferentOperator}
           onLogout={logoutOperator}
         />
       ) : null}
@@ -5184,13 +5175,11 @@ function AlertCenterBoard({
   alerts,
   canAcknowledge,
   onAcknowledge,
-  onLogin,
   onSelectObject
 }: {
   alerts: CopAlert[];
   canAcknowledge: boolean;
   onAcknowledge: (alertId: string) => void;
-  onLogin: () => void;
   onSelectObject: (objectId: string) => void;
 }) {
   const summary = summarizeAlerts(alerts, []);
@@ -5227,9 +5216,7 @@ function AlertCenterBoard({
                 Potvrdit
               </button>
             ) : (
-              <button className="mini-button" onClick={onLogin} type="button">
-                Přihlásit
-              </button>
+              <span className="auth-hint">Potvrzení vyžaduje účet.</span>
             )}
           </article>
         ))}
@@ -5240,14 +5227,10 @@ function AlertCenterBoard({
 
 function AccountAccessBox({
   authenticated,
-  session,
-  onLogin,
-  onLoginDifferent
+  session
 }: {
   authenticated: boolean;
   session: AuthSession;
-  onLogin: () => void;
-  onLoginDifferent: () => void;
 }) {
   const displayName = session.profile?.name ?? session.profile?.username ?? "Přihlášený uživatel";
   return (
@@ -5257,18 +5240,11 @@ function AccountAccessBox({
         <div className="account-access-summary">
           <strong>{displayName}</strong>
           <span>Profil, hlášení a komunikace jsou dostupné.</span>
-          <button className="mini-button" onClick={onLoginDifferent} type="button">
-            <LogIn size={14} />
-            Přihlásit jiný účet
-          </button>
         </div>
       ) : (
         <>
           <p>Mapu lze prohlížet bez účtu. Přihlášení zapne ukládání profilu, hlášení a komunikaci.</p>
-          <button className="primary-button secondary" onClick={onLogin} type="button">
-            <LogIn size={16} />
-            Přihlásit
-          </button>
+          <span className="auth-hint">Přihlášení najdete v horní liště.</span>
         </>
       )}
     </div>
@@ -5820,7 +5796,6 @@ function ViewProfilesPanel({
   profiles,
   userScope,
   onApply,
-  onLogin,
   onSave
 }: {
   activeProfileName: string | null;
@@ -5828,7 +5803,6 @@ function ViewProfilesPanel({
   profiles: ViewProfile[];
   userScope: string;
   onApply: (profile: ViewProfile) => void;
-  onLogin: () => void;
   onSave: () => void;
   }) {
   return (
@@ -5859,10 +5833,7 @@ function ViewProfilesPanel({
       ) : (
         <div className="profile-login-gate">
           <span>Ukládání vlastních profilů je dostupné po přihlášení.</span>
-          <button className="mini-button wide save-profile-button" onClick={onLogin} type="button">
-            <LogIn size={14} />
-            Přihlásit pro uložení
-          </button>
+          <span className="auth-hint">Přihlášení najdete v horní liště.</span>
         </div>
       )}
       {activeProfileName ? <div className="profile-applied-note">Aktivní: {activeProfileName}</div> : null}
@@ -6317,8 +6288,6 @@ function SettingsDrawer({
   onWorkspaceTemplateApply,
   onWorkspaceLayoutChange,
   onHelp,
-  onLogin,
-  onLoginDifferent,
   onLogout
 }: {
   activeTab: SettingsTab;
@@ -6379,8 +6348,6 @@ function SettingsDrawer({
   onWorkspaceTemplateApply: (value: WorkspaceTemplateId) => void;
   onWorkspaceLayoutChange: (value: Partial<WorkspaceLayoutPreferences>) => void;
   onHelp: (section: HelpSection) => void;
-  onLogin: () => void;
-  onLoginDifferent: () => void;
   onLogout: () => void;
 }) {
   return (
@@ -6627,22 +6594,9 @@ function SettingsDrawer({
                       <LogOut size={16} />
                       Odhlásit
                     </button>
-                    <button className="ghost-button" onClick={onLoginDifferent} type="button">
-                      <LogIn size={16} />
-                      Přihlásit jiný účet
-                    </button>
                   </div>
                 ) : (
-                  <div className="settings-button-row">
-                    <button className="primary-button" onClick={onLogin} type="button">
-                      <LogIn size={16} />
-                      Přihlásit
-                    </button>
-                    <button className="ghost-button" onClick={onLoginDifferent} type="button">
-                      <LogIn size={16} />
-                      Přihlásit jiný účet
-                    </button>
-                  </div>
+                  <div className="empty-mini">Přihlášení najdete v horní liště.</div>
                 )
               ) : (
                 <div className="empty-mini">Přihlášení není v této konfiguraci zapnuté. Aplikace běží v laboratorním režimu.</div>

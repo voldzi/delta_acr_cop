@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, CheckCircle2, Crown, Download, FileText, Globe2, Image, Info, Lock, LogIn, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, ShieldCheck, Star, UserPlus, Users, Video, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Crown, Download, FileText, Globe2, Image, Info, Lock, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, ShieldCheck, Star, UserPlus, Users, Video, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
 import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse, UserDirectoryEntry } from "../cop-data";
 import { SelectField } from "../ui/select";
@@ -693,10 +693,7 @@ export function MessagingPanel({
           <div className="messaging-empty-state">
             <strong>Komunikace je přihlášená funkce.</strong>
             <p>Mapa zůstává dostupná i bez účtu, ale zprávy musí být svázané s ověřenou identitou uživatele.</p>
-            <button className="primary-button secondary" onClick={onLogin} type="button">
-              <LogIn size={16} />
-              Přihlásit
-            </button>
+            <span className="auth-hint">Přihlášení najdete v horní liště.</span>
           </div>
         ) : activeDockTab === "chat" && matrixSession ? (
           <MatrixChatShell

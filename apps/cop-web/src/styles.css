@@ -3595,6 +3595,14 @@ h1 {
   line-height: 1.35;
 }
 
+.auth-hint {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .profile-applied-note {
   margin-top: 8px;
   overflow: hidden;
