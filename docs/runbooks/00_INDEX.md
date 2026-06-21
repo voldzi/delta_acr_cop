@@ -13,3 +13,4 @@
 - [11 User Identity Reconciliation for COP Groups](11_USER_IDENTITY_RECONCILIATION.md)
 - [12 ChromaDB and OpenTelemetry](12_CHROMADB_AND_OPENTELEMETRY.md)
 - [13 Edge Node Runtime](13_EDGE_NODE_RUNTIME.md)
+- [14 Client PoC Demo Guide](14_CLIENT_POC_DEMO_GUIDE.md)

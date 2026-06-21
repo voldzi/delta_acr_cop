@@ -2,6 +2,125 @@
 
 COP web obsahuje vestavěný manuál pro občany i operátory. Manuál je dostupný z topbaru a přes malé kontextové otazníky u nastavení, profilů a rozložení plochy.
 
+## Rychlý Návod Pro Uživatele
+
+### Bez Přihlášení
+
+Bez přihlášení lze aplikaci použít pro základní orientaci:
+
+1. otevřít mapu,
+2. zapnout veřejné vrstvy,
+3. zobrazit detail veřejného objektu,
+4. vyhledat místo,
+5. sledovat veřejné výstrahy a kontextové vrstvy.
+
+Bez účtu nelze ukládat profil, přidávat hlášení, zakládat skupiny, ukládat
+zákresy ani otevírat neveřejná média.
+
+### Přihlášení
+
+Přihlášení slouží k práci s osobními a skupinovými daty. Po přihlášení může
+uživatel:
+
+- uložit rozložení pracovní plochy,
+- vytvořit nebo upravit profil,
+- vložit komunitní hlášení,
+- nahrát média k hlášení,
+- pracovat ve skupinách a chatu,
+- vytvářet uživatelské zóny,
+- vytvářet a sdílet zákresy,
+- spravovat přístup k médiím podle skupiny nebo uživatelů.
+
+### Mapové Vrstvy
+
+Vrstvy jsou rozdělené podle účelu. Běžný uživatel má pracovat hlavně s
+uživatelskými kategoriemi, ne s technickými zdroji:
+
+- Rizika a výstrahy,
+- Počasí,
+- Doprava,
+- Komunikace,
+- Letecký provoz,
+- Hlášení,
+- Zákresy,
+- Referenční vrstvy.
+
+Technické zdroje, diagnostika, raw feedy a provider metadata patří do detailu
+nebo provozní obrazovky. Nemají být hlavní navigací pro občana.
+
+### Hlášení
+
+Tlačítko `Nahlásit` slouží pro vložení informace z terénu:
+
+1. vybrat typ rizika nebo události,
+2. doplnit stručný název a popis,
+3. nastavit polohu z aktuální polohy, mapy nebo média,
+4. určit stupeň nebezpečí,
+5. nastavit očekávanou platnost,
+6. přiložit fotografii, video, PDF nebo jiný dokument,
+7. zvolit přístup k médiím,
+8. uložit hlášení.
+
+Text hlášení a stupeň výstrahy jsou mapová informace. Média mohou být chráněná
+ACL a otevře je jen oprávněný uživatel.
+
+### Chat A Skupiny
+
+Chat je určený pro lidskou komunikaci kolem události nebo skupiny. Doporučený
+postup:
+
+1. vybrat existující skupinu nebo vytvořit novou,
+2. připnout kontext mapy, pokud se zprávy týkají místa,
+3. psát zprávy běžným jazykem,
+4. sdílet média přes hlášení nebo přílohu,
+5. nepoužívat chat jako úložiště technických logů.
+
+Skupina může být veřejná nebo s povolením správce. Média vložená do skupiny
+respektují oprávnění skupiny.
+
+### Zákresy
+
+Zákresy jsou samostatná vrstva pro ruční situační náčrt:
+
+- značka,
+- linie,
+- šipka,
+- polygon,
+- kruh/oblast,
+- text,
+- měření.
+
+Zákres lze uložit jako soukromý, skupinový, událostní nebo veřejný. Na mobilu
+musí být jasně zvolen režim `Pohyb mapy` nebo `Zákres`, aby kreslení
+nepřekáželo běžnému posunu mapy.
+
+### Média A Galerie
+
+Detail hlášení nebo skupiny může obsahovat multimediální galerii:
+
+- fotografie,
+- PDF,
+- video,
+- 3D/XR derivát videa, pokud existuje,
+- zvuk nebo jiné dokumenty v další fázi.
+
+Po otevření galerie má uživatel vidět náhled, název, krátký popis, autora,
+čas, polohu a informaci o oprávnění.
+
+### Mobilní Použití
+
+Na telefonu má být mapový režim jednoduchý:
+
+- spodní navigace,
+- mapový detail jako malý bottom sheet,
+- chat jako samostatná obrazovka,
+- vrstvy jako bottom sheet,
+- zákres jako explicitní režim,
+- žádné překrývající se technické panely.
+
+Pokud některá funkce vyžaduje větší prostor, má se otevřít jako samostatný
+mobilní režim místo plovoucího desktop panelu.
+
 ## Pracovní plocha
 
 Mapa je primární plocha aplikace. Uživatel může:
