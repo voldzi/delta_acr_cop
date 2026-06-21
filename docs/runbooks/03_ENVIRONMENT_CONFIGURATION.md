@@ -104,9 +104,15 @@ COP_SITUATION_DATA_MOBILE_NETWORK_CACHE_TTL_MS=600000
 COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS=600000
 COP_SITUATION_DATA_CHMI_AIR_QUALITY_CACHE_TTL_MS=900000
 COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS=600000
+COP_WEATHER_RADAR_FRAMES_CACHE_SECONDS=120
 ```
 
 Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora. Při výpadku SIM endpointu vrací prázdný degraded `FeatureCollection`, aby mapa zůstala použitelná. Timeout je vyšší než běžná obnovovací kadence mapy, protože kombinované veřejné vrstvy mohou po studeném startu trvat několik sekund.
+
+ČHMÚ radar COP načítá pouze přes SIM. Aktuální raster overlay používá SIM clean
+URL z `providerProperties.raster.url`; frame katalog pro animaci jde přes COP
+endpoint `/api/v1/weather-radar/frames` a jeho krátkou serverovou cache řídí
+`COP_WEATHER_RADAR_FRAMES_CACHE_SECONDS` v rozsahu 60-300 sekund.
 
 ## Safety Data Source
 

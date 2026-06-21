@@ -446,14 +446,16 @@ describe("map catalog route", () => {
 
   it("proxies allowed raster overlay images through COP instead of exposing provider URLs to clients", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), {
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), {
       headers: { "content-type": "image/png" },
       status: 200
-    })));
+    }));
+    vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
+      situationDataSource: new FakeSituationDataSource(),
       now: () => new Date("2026-06-06T08:00:00Z")
     });
-    const rasterUrl = "https://opendata.chmi.cz/meteorology/weather/radar/composite/pseudocappi2km/png/sample.png";
+    const rasterUrl = "/api/v1/weather-radar/clean/merge1h/sample.png";
 
     const response = await app.inject({
       method: "GET",
@@ -463,9 +465,55 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("image/png");
     expect(response.headers["cache-control"]).toContain("public");
-    expect(fetch).toHaveBeenCalledWith(rasterUrl, expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather-radar/clean/merge1h/sample.png", expect.objectContaining({
       headers: expect.objectContaining({
         accept: expect.stringContaining("image/png")
+      })
+    }));
+  });
+
+  it("fetches the weather radar frame catalog through the server-side SIM provider", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const fetchMock = vi.fn(async () => Response.json({
+      products: [
+        {
+          frames: [
+            {
+              cleanUrl: "/api/v1/weather-radar/clean/merge1h/frame.png",
+              observedAt: "2026-06-06T08:45:00Z"
+            }
+          ],
+          product: "merge1h"
+        }
+      ]
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      situationDataSource: new FakeSituationDataSource(),
+      now: () => new Date("2026-06-06T08:00:00Z")
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/weather-radar/frames?product=merge1h&hours=6&limit=2"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      products: [
+        {
+          frames: [
+            {
+              cleanUrl: "/api/v1/weather-radar/clean/merge1h/frame.png",
+              observedAt: "2026-06-06T08:45:00Z"
+            }
+          ]
+        }
+      ]
+    });
+    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather-radar/frames?product=merge1h&hours=6&limit=2", expect.objectContaining({
+      headers: expect.objectContaining({
+        accept: "application/json"
       })
     }));
   });

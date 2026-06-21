@@ -180,6 +180,28 @@ Pokud aktuální verze iOS klienta neumí některý `kind` vykreslit, nesmí kv�
 
 U `raster_overlay` klient používá `providerProperties.raster.url`, `boundsWgs84`, `opacity` a případnou atribuci. Obrázek ale nenačítá přímo z externí URL; hodnotu `providerProperties.raster.url` percent-encoduje a volá COP endpoint `/api/v1/map/raster-overlay`. Pokud image overlay nepodporuje, vrstvu nezobrazí; nikdy nesmí vybarvit extent polygon jako meteorologickou plochu.
 
+ČHMÚ radar je speciální případ `raster_overlay`. Nativní klient nikdy nevolá
+ČHMÚ ani SIM přímo. Použije jen URL z `providerProperties.raster.url`; ta má v
+produkci směřovat na SIM clean endpoint `/api/v1/weather-radar/clean/...` a
+klient ji znovu předá přes COP `/api/v1/map/raster-overlay`. Pole
+`rawUrl`/`sourceUrl` jsou pouze diagnostika. Pro animaci radaru klient načítá
+COP endpoint:
+
+```http
+GET /api/v1/weather-radar/frames?product=merge1h&hours=6&limit=24
+```
+
+Snímky se seřadí podle `observedAt` vzestupně a přehrávají se přes
+`frame.cleanUrl`, opět výhradně přes `/api/v1/map/raster-overlay`. Živý režim
+může obnovit katalog přibližně každých 300 sekund.
+
+Vrstva `public.weather.current` není plošná vrstva. Je to bodový aktuální
+souhrn počasí pro střed aktuálního mapového výřezu. Klient ji zobrazí jako jeden
+marker nebo detail "Počasí ve středu oblasti"; pro plošné počasí použije grid a
+field vrstvy (`public.weather.temperature_grid`,
+`public.weather.precipitation_grid`, `public.weather.wind_field`,
+`public.weather.humidity_grid`, `public.weather.pressure_grid`).
+
 Provider identifikátory, sourceId a technické vstupy se v běžném UI nezobrazují jako mapové vrstvy. Patří do detailu/provenance a diagnostiky.
 
 ## Doporučená architektura iOS aplikace

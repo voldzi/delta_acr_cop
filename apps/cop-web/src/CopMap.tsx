@@ -4433,7 +4433,7 @@ function situationRasterOverlaySpec(feature: SituationFeature): SituationRasterO
 }
 
 function rasterOverlayProxyUrl(url: string): string {
-  if (url.startsWith("/")) {
+  if (url.startsWith("/api/v1/map/raster-overlay")) {
     return url;
   }
   return `/api/v1/map/raster-overlay?url=${encodeURIComponent(url)}`;
@@ -4502,6 +4502,10 @@ function isSituationRasterOverlayFeature(feature: SituationFeature): boolean {
     || stringProperty(providerProperties.renderAs) === "raster_overlay"
     || stringProperty(tags.renderAs) === "raster_overlay"
     || stringProperty(tags.geometryRole) === "raster_extent"
+    || feature.properties.layerId === "public.weather.radar_reflectivity"
+    || feature.properties.layerId === "public.weather.radar_precipitation"
+    || feature.properties.layerId === "public.weather.radar_nowcast"
+    || feature.properties.layerId === "public.safety.thunderstorm_risk"
     || feature.properties.layer === "weather_radar_reflectivity"
     || feature.properties.layer === "weather_radar_precipitation"
     || feature.properties.layer === "weather_radar_nowcast"
@@ -4794,10 +4798,11 @@ function buildSituationRenderProperties(
   const stationIcao = stringProperty(tags.icaoId);
   const providerLayerId = stringProperty(feature.properties.providerLayerId);
   const weatherGrid = isWeatherGridFeature(feature);
+  const currentWeatherSummary = isCurrentWeatherSummaryFeature(feature);
   const color = weatherContextColor(feature, status.color);
   const weatherLabel = aviationCategory ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label) : formatWeatherContextMapLabel(feature, temperatureC, windSpeedMps, precipitationMm, humidityPercent, pressureHpa);
-  const weatherHeadline = aviationCategory ? undefined : formatWeatherFeatureHeadline(feature);
-  const weatherObservation = !weatherGrid && (feature.properties.layer !== "weather"
+  const weatherHeadline = aviationCategory ? undefined : currentWeatherSummary ? "Počasí ve středu oblasti" : formatWeatherFeatureHeadline(feature);
+  const weatherObservation = !weatherGrid && (currentWeatherSummary || feature.properties.layer !== "weather"
     || feature.properties.sourceId === "chmi_weather_stations"
     || providerLayerId?.includes("chmi_station") === true);
   return {
@@ -4911,6 +4916,14 @@ function isWeatherContextFeature(feature: SituationFeature): boolean {
     || feature.properties.layer === "weather_precipitation_grid"
     || feature.properties.layer === "weather_humidity_grid"
     || feature.properties.layer === "weather_pressure_grid";
+}
+
+function isCurrentWeatherSummaryFeature(feature: SituationFeature): boolean {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return feature.properties.layerId === "public.weather.current"
+    || feature.properties.providerLayerId === "weather.open_meteo"
+    || (feature.properties.layer === "weather" && feature.properties.sourceId === "open_meteo")
+    || stringProperty(tags.mapDisplayHint) === "weather_observation_point";
 }
 
 function isAviationWeatherFeature(feature: SituationFeature): boolean {

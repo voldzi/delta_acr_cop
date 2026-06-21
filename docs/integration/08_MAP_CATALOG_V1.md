@@ -419,6 +419,37 @@ GET /api/v1/map/raster-overlay?url=<percent-encoded providerProperties.raster.ur
 
 COP validates the upstream host against a strict allowlist, accepts only image responses and adds cache headers. Clients must not call ČHMÚ, SIM provider URLs or other external raster URLs directly from the browser or native app. If a client does not support raster image overlays, it must hide the layer instead of drawing the extent polygon.
 
+For ČHMÚ radar, SIM is the only data provider. Radar features are metadata
+carriers for server-cleaned raster images; their geometry is only the raster
+extent. COP must use `providerProperties.raster.url`, which points to the SIM
+clean endpoint `/api/v1/weather-radar/clean/{productId}/{fileName}`. Fields
+such as `providerProperties.raster.rawUrl` and `sourceUrl` are diagnostic only
+and must not be used for normal rendering. COP accepts SIM clean relative paths
+in `/api/v1/map/raster-overlay`; it resolves them server-side against the
+configured situation-data provider URL.
+
+Radar playback is exposed by COP, not directly by SIM:
+
+```http
+GET /api/v1/weather-radar/frames?product=merge1h&hours=6&limit=24
+```
+
+COP fetches the SIM frame catalog server-side and caches it for a short window
+(`COP_WEATHER_RADAR_FRAMES_CACHE_SECONDS`, default 120 seconds). Clients sort
+frames by `observedAt`, use `frame.cleanUrl` through `/api/v1/map/raster-overlay`
+and refresh the catalog in live mode approximately every five minutes. Warnings
+from the frame catalog are source-quality diagnostics, not citizen safety
+alerts.
+
+`public.weather.current` is a point summary for the center of the current map
+view. It is identified by `providerLayerId=weather.open_meteo` or
+`tags.mapDisplayHint=weather_observation_point` and should be rendered as one
+weather marker/detail panel labeled "Počasí ve středu oblasti". It is not a
+polygon, grid or raster. Area weather visualization must use the grid/field
+layers such as `public.weather.temperature_grid`,
+`public.weather.precipitation_grid`, `public.weather.wind_field`,
+`public.weather.humidity_grid` and `public.weather.pressure_grid`.
+
 Provider-specific metadata endpoints such as SIM `/layers` and `/sources` are
 legacy adapter details and must not be used by new COP integrations. Provider
 catalogs are read from `/catalog`; feature queries use the provider's current

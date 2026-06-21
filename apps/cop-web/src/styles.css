@@ -5254,6 +5254,45 @@ h1 {
   background: #0d1418;
 }
 
+.weather-radar-playback-panel {
+  position: absolute;
+  right: clamp(78px, 8vw, 124px);
+  bottom: clamp(92px, 12vh, 142px);
+  z-index: 44;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 6px 8px;
+  border: 1px solid rgba(164, 210, 235, 0.34);
+  border-radius: 8px;
+  background: rgba(10, 18, 23, 0.88);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(14px);
+}
+
+.weather-radar-playback-panel .icon-chip {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(164, 210, 235, 0.34);
+  border-radius: 7px;
+  background: rgba(18, 30, 39, 0.88);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.weather-radar-playback-panel .icon-chip:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .map-global-search {
   position: absolute;
   top: 72px;

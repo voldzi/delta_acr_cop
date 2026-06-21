@@ -432,6 +432,33 @@ export interface SituationFeatureProperties {
   waterLevelCm?: number;
 }
 
+export interface WeatherRadarFrame {
+  boundsWgs84?: [number, number, number, number];
+  cleanUrl?: string;
+  dataBoundsWgs84?: [number, number, number, number];
+  fileName?: string;
+  observedAt?: string;
+  opacity?: number;
+  productId?: string;
+  url?: string;
+  warnings?: string[];
+}
+
+export interface WeatherRadarFramesProduct {
+  frames: WeatherRadarFrame[];
+  product?: string;
+  productId?: string;
+  warnings?: string[];
+}
+
+export interface WeatherRadarFramesResponse {
+  frames?: WeatherRadarFrame[];
+  generatedAt?: string;
+  product?: string;
+  products?: WeatherRadarFramesProduct[];
+  warnings?: string[];
+}
+
 export interface MissionArenaTeamScore {
   aggregate?: number;
   aggregateDelta?: number;
@@ -1515,6 +1542,20 @@ export async function fetchMapFeatures(
       "Content-Type": "application/json"
     },
     method: "POST"
+  });
+}
+
+export async function fetchWeatherRadarFrames(
+  apiBase: string,
+  token: string | undefined,
+  options: { hours?: number; limit?: number; product?: string } = {}
+): Promise<WeatherRadarFramesResponse> {
+  const query = new URLSearchParams();
+  query.set("product", options.product ?? "merge1h");
+  query.set("hours", String(options.hours ?? 6));
+  query.set("limit", String(options.limit ?? 24));
+  return fetchJson<WeatherRadarFramesResponse>(`${apiBase}/api/v1/weather-radar/frames?${query.toString()}`, {
+    headers: authHeaders(token)
   });
 }
 

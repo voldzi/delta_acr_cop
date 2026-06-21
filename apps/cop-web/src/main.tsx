@@ -89,6 +89,7 @@ import {
   fetchPlaceGeocode,
   fetchSketchDrawings,
   fetchUserProfile,
+  fetchWeatherRadarFrames,
   resolveMessagingMatrixIdentities,
   syncMessagingConversationMembers,
   filterObjectsByLayers,
@@ -158,7 +159,8 @@ import {
   type TakLayer,
   type TakLayerId,
   type TakSourceDescriptor,
-  type UserDirectoryEntry
+  type UserDirectoryEntry,
+  type WeatherRadarFrame
 } from "./cop-data";
 import { CopMap, formatTrackLabel, type CreateSketchDrawingRequest, type SketchToolMode, type UpdateSketchDrawingRequest } from "./CopMap";
 import type { MessagingReportSeed } from "./messaging/types";
@@ -500,6 +502,11 @@ export function App() {
   const [situationStatus, setSituationStatus] = React.useState<SituationLayerStatus>("loading");
   const [situationWarnings, setSituationWarnings] = React.useState<string[]>([]);
   const [situationRasterRefreshTick, setSituationRasterRefreshTick] = React.useState(0);
+  const [weatherRadarFrames, setWeatherRadarFrames] = React.useState<WeatherRadarFrame[]>([]);
+  const [weatherRadarFrameIndex, setWeatherRadarFrameIndex] = React.useState(0);
+  const [weatherRadarFrameCatalogTick, setWeatherRadarFrameCatalogTick] = React.useState(0);
+  const [weatherRadarPlaybackEnabled, setWeatherRadarPlaybackEnabled] = React.useState(true);
+  const [weatherRadarPlaybackStatus, setWeatherRadarPlaybackStatus] = React.useState<SituationLayerStatus>("disabled");
   const [safetyLayers, setSafetyLayers] = React.useState<SafetyLayer[]>([]);
   const [visibleSafetyLayerIds, setVisibleSafetyLayerIds] = React.useState<SafetyLayerId[]>(() =>
     normalizeSafetyLayerIds(initialPreferences.safetyLayerIds)
@@ -1199,6 +1206,10 @@ export function App() {
     () => selectedSituationRasterRefreshSeconds(mapCatalog, effectiveVisibleCatalogLayerIds),
     [effectiveVisibleCatalogLayerKey, mapCatalog]
   );
+  const weatherRadarSelected = React.useMemo(
+    () => effectiveVisibleCatalogLayerIds.some(isWeatherRadarCatalogLayerId),
+    [effectiveVisibleCatalogLayerKey]
+  );
 
   React.useEffect(() => {
     if (!mapCatalog) {
@@ -1223,6 +1234,58 @@ export function App() {
     }, situationRasterRefreshSeconds * 1000);
     return () => window.clearInterval(timer);
   }, [autoRefresh, dataAccessReady, mapBounds, situationRasterRefreshSeconds]);
+
+  React.useEffect(() => {
+    if (!dataAccessReady || !weatherRadarSelected) {
+      setWeatherRadarFrames([]);
+      setWeatherRadarFrameIndex(0);
+      setWeatherRadarPlaybackStatus("disabled");
+      return;
+    }
+    let cancelled = false;
+    setWeatherRadarPlaybackStatus((current) => current === "online" ? "online" : "loading");
+    fetchWeatherRadarFrames(apiBase, authToken, { hours: 6, limit: 24, product: "merge1h" })
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        const frames = normalizeWeatherRadarFrames(response);
+        setWeatherRadarFrames(frames);
+        setWeatherRadarFrameIndex((current) => frames.length === 0 ? 0 : Math.min(current, frames.length - 1));
+        setWeatherRadarPlaybackStatus(frames.length > 0 ? "online" : "degraded");
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setWeatherRadarFrames([]);
+        setWeatherRadarFrameIndex(0);
+        setWeatherRadarPlaybackStatus("degraded");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, authToken, dataAccessReady, weatherRadarFrameCatalogTick, weatherRadarSelected]);
+
+  React.useEffect(() => {
+    if (!autoRefresh || !dataAccessReady || !weatherRadarSelected) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setWeatherRadarFrameCatalogTick((current) => current + 1);
+    }, 300 * 1000);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, dataAccessReady, weatherRadarSelected]);
+
+  React.useEffect(() => {
+    if (!weatherRadarPlaybackEnabled || weatherRadarFrames.length < 2) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setWeatherRadarFrameIndex((current) => (current + 1) % weatherRadarFrames.length);
+    }, 1400);
+    return () => window.clearInterval(timer);
+  }, [weatherRadarFrames.length, weatherRadarPlaybackEnabled]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -1735,9 +1798,14 @@ export function App() {
     () => filterObjectsByLayers(scopedObjects, visibleTrackLayerIds),
     [scopedObjects, visibleTrackLayerIds]
   );
+  const weatherRadarCurrentFrame = weatherRadarFrames[weatherRadarFrameIndex];
+  const animatedSituationFeatures = React.useMemo(
+    () => applyWeatherRadarFrameToSituationFeatures(situationFeatures, weatherRadarCurrentFrame),
+    [situationFeatures, weatherRadarCurrentFrame]
+  );
   const combinedSituationFeatures = React.useMemo(
-    () => mergeSituationSafetyFlightCommunityMissionAndTakFeatures(situationFeatures, safetyFeatures, flightFeatures, communityFeatures, missionArenaFeatures, takFeatures),
-    [communityFeatures, flightFeatures, missionArenaFeatures, safetyFeatures, situationFeatures, takFeatures]
+    () => mergeSituationSafetyFlightCommunityMissionAndTakFeatures(animatedSituationFeatures, safetyFeatures, flightFeatures, communityFeatures, missionArenaFeatures, takFeatures),
+    [animatedSituationFeatures, communityFeatures, flightFeatures, missionArenaFeatures, safetyFeatures, takFeatures]
   );
   const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
@@ -3867,6 +3935,28 @@ export function App() {
                   setMapSearchQuery("");
                 }}
               />
+            ) : null}
+            {activeWorkspace === "map" && weatherRadarSelected && weatherRadarFrames.length > 1 ? (
+              <div className="weather-radar-playback-panel" aria-label="Přehrávání radarových snímků">
+                <button
+                  className="icon-chip"
+                  onClick={() => setWeatherRadarPlaybackEnabled((current) => !current)}
+                  type="button"
+                >
+                  {weatherRadarPlaybackEnabled ? <Pause size={15} /> : <Play size={15} />}
+                </button>
+                <span>
+                  Radar {formatWeatherRadarFrameTime(weatherRadarCurrentFrame)}
+                </span>
+                <button
+                  className="icon-chip"
+                  disabled={weatherRadarPlaybackStatus === "loading"}
+                  onClick={() => setWeatherRadarFrameCatalogTick((current) => current + 1)}
+                  type="button"
+                >
+                  <RefreshCw size={15} />
+                </button>
+              </div>
             ) : null}
             <CopMap
               alerts={mapAlerts}
@@ -10637,7 +10727,18 @@ function isWeatherContextFeature(feature: SituationFeature): boolean {
     || feature.properties.layer === "weather_thunderstorm_risk";
 }
 
+function isCurrentWeatherSummaryFeature(feature: SituationFeature): boolean {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return feature.properties.layerId === "public.weather.current"
+    || feature.properties.providerLayerId === "weather.open_meteo"
+    || (feature.properties.layer === "weather" && feature.properties.sourceId === "open_meteo")
+    || stringProperty(tags.mapDisplayHint) === "weather_observation_point";
+}
+
 function weatherFeatureHeadline(feature: SituationFeature): string {
+  if (isCurrentWeatherSummaryFeature(feature)) {
+    return "Počasí ve středu oblasti";
+  }
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   switch (feature.properties.layer) {
     case "weather_temperature_grid": {
@@ -10684,6 +10785,9 @@ function weatherFeatureSubtitle(feature: SituationFeature): string {
 }
 
 function weatherFeatureTypeLabel(feature: SituationFeature): string {
+  if (isCurrentWeatherSummaryFeature(feature)) {
+    return "Aktuální souhrn oblasti";
+  }
   switch (feature.properties.layer) {
     case "weather_temperature_grid":
       return "Teplotní vrstva";
@@ -10740,6 +10844,16 @@ function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<str
 }
 
 function weatherFeatureConditionLabel(feature: SituationFeature, metrics: Record<string, unknown>): string {
+  if (isCurrentWeatherSummaryFeature(feature)) {
+    const temperature = weatherMetricValue(feature, metrics, "temperatureC");
+    const wind = weatherMetricValue(feature, metrics, "windSpeedMps");
+    const precipitation = weatherMetricValue(feature, metrics, "precipitationMm");
+    return [
+      temperature !== undefined ? `${Math.round(temperature)} °C` : undefined,
+      wind !== undefined ? `vítr ${Math.round(wind)} m/s` : undefined,
+      precipitation !== undefined ? `${formatPrecipitationAmount(precipitation)} srážek` : undefined
+    ].filter(Boolean).join(" · ") || "aktuální počasí";
+  }
   switch (feature.properties.layer) {
     case "weather_precipitation_grid": {
       const value = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
@@ -11794,6 +11908,86 @@ function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | nul
   }
   const seconds = Math.min(...refreshSeconds);
   return Math.max(60, Math.min(seconds, 900));
+}
+
+function isWeatherRadarCatalogLayerId(layerId: string): boolean {
+  return layerId === "public.weather.radar_reflectivity"
+    || layerId === "public.weather.radar_precipitation"
+    || layerId === "public.weather.radar_nowcast"
+    || layerId === "public.safety.thunderstorm_risk";
+}
+
+function normalizeWeatherRadarFrames(response: { frames?: WeatherRadarFrame[]; products?: Array<{ frames?: WeatherRadarFrame[] }> }): WeatherRadarFrame[] {
+  const frames = [
+    ...(Array.isArray(response.frames) ? response.frames : []),
+    ...(Array.isArray(response.products) ? response.products.flatMap((product) => Array.isArray(product.frames) ? product.frames : []) : [])
+  ]
+    .filter((frame) => typeof frame.cleanUrl === "string" && frame.cleanUrl.length > 0 && typeof frame.observedAt === "string")
+    .sort((a, b) => Date.parse(a.observedAt ?? "") - Date.parse(b.observedAt ?? ""));
+  const seen = new Set<string>();
+  return frames.filter((frame) => {
+    const key = `${frame.productId ?? ""}:${frame.cleanUrl}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function applyWeatherRadarFrameToSituationFeatures(
+  collection: SituationFeatureCollectionResponse | null,
+  frame: WeatherRadarFrame | undefined
+): SituationFeatureCollectionResponse | null {
+  if (!collection || !frame?.cleanUrl) {
+    return collection;
+  }
+  let changed = false;
+  const features = collection.features.map((feature) => {
+    if (!isWeatherRadarSituationFeature(feature)) {
+      return feature;
+    }
+    const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+    const raster = isRecord(providerProperties.raster) ? providerProperties.raster : {};
+    changed = true;
+    return {
+      ...feature,
+      properties: {
+        ...feature.properties,
+        providerProperties: {
+          ...providerProperties,
+          raster: {
+            ...raster,
+            boundsWgs84: frame.boundsWgs84 ?? raster.boundsWgs84,
+            dataBoundsWgs84: frame.dataBoundsWgs84 ?? raster.dataBoundsWgs84,
+            observedAt: frame.observedAt ?? raster.observedAt,
+            opacity: frame.opacity ?? raster.opacity,
+            url: frame.cleanUrl
+          }
+        }
+      }
+    };
+  });
+  return changed ? { ...collection, features } : collection;
+}
+
+function isWeatherRadarSituationFeature(feature: SituationFeature): boolean {
+  return isWeatherRadarCatalogLayerId(feature.properties.layerId ?? "")
+    || feature.properties.layer === "weather_radar_reflectivity"
+    || feature.properties.layer === "weather_radar_precipitation"
+    || feature.properties.layer === "weather_radar_nowcast"
+    || feature.properties.layer === "weather_thunderstorm_risk";
+}
+
+function formatWeatherRadarFrameTime(frame: WeatherRadarFrame | undefined): string {
+  if (!frame?.observedAt) {
+    return "aktuální";
+  }
+  const date = new Date(frame.observedAt);
+  if (Number.isNaN(date.getTime())) {
+    return "aktuální";
+  }
+  return date.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
 }
 
 function withOutlineBoundaryLayer(selectedLayerIds: string[], mode: MapBasemapMode, catalog: MapCatalogResponse | null): string[] {

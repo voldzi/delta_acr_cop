@@ -386,7 +386,7 @@
         ],
         "summary": "Proxy an allowlisted georeferenced raster overlay image.",
         "operationId": "getMapRasterOverlay",
-        "description": "Returns a client-safe raster image for catalog layers with kind=raster_overlay. Browser and native clients must use this COP endpoint for provider raster URLs returned by /api/v1/map/query instead of calling external weather providers directly. COP validates the upstream host against a strict allowlist and accepts only image content.\n",
+        "description": "Returns a client-safe raster image for catalog layers with kind=raster_overlay. Browser and native clients must use this COP endpoint for provider raster URLs returned by /api/v1/map/query instead of calling SIM or external weather providers directly. ČHMÚ radar layers must use the SIM clean raster URL from providerProperties.raster.url; rawUrl and sourceUrl are diagnostic only. COP accepts allowlisted absolute URLs and SIM clean relative paths under /api/v1/weather-radar/clean/.\n",
         "parameters": [
           {
             "name": "url",
@@ -394,9 +394,10 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uri"
+              "minLength": 1,
+              "maxLength": 2048
             },
-            "description": "Percent-encoded raster URL from providerProperties.raster.url."
+            "description": "Percent-encoded raster URL from providerProperties.raster.url. May be an allowlisted absolute URL or a SIM clean radar relative path such as /api/v1/weather-radar/clean/merge1h/frame.png."
           }
         ],
         "responses": {
@@ -441,6 +442,84 @@
           },
           "502": {
             "description": "Upstream raster provider failed or returned non-image content.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/weather-radar/frames": {
+      "get": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Return server-side SIM weather radar frame catalog.",
+        "operationId": "getWeatherRadarFrames",
+        "description": "Returns a short-lived, client-safe frame catalog for radar playback. COP calls SIM server-to-server and clients use the cleanUrl values only through /api/v1/map/raster-overlay. Browser and native clients must not call SIM weather-radar or ČHMÚ URLs directly.\n",
+        "parameters": [
+          {
+            "name": "product",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "merge1h",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 24,
+              "default": 6
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 48,
+              "default": 24
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SIM weather radar frame catalog.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "description": "SIM weather radar frame catalog is unavailable.",
             "content": {
               "application/json": {
                 "schema": {

@@ -101,6 +101,7 @@ import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from ".
 import { buildSourceHealthItems, type SourceHealthItem } from "./source-health.js";
 import {
   buildSituationDataHealth,
+  createSituationDataSourceConfigFromEnv,
   createSituationDataSourceFromEnv,
   emptySituationFeatureCollection,
   unavailableSituationDataHealth,
@@ -181,8 +182,13 @@ export interface BuildServerOptions {
 type DependencyStatus = "disabled" | "degraded" | "ok";
 type CommunityReportHazardSeverity = "advisory" | "warning" | "critical";
 type MobilePlatform = "ios" | "ipados";
-const defaultRasterOverlayAllowedHosts = "opendata.chmi.cz";
+const defaultRasterOverlayAllowedHosts = "docker.home.cz,sim.zeleznalady.cz";
 const rasterOverlayMaxBytes = 8 * 1024 * 1024;
+
+interface WeatherRadarFramesCacheEntry {
+  body: unknown;
+  expiresAtMs: number;
+}
 
 type CommunityAttachmentResponse = CommunityReportAttachmentRecord & {
   contentUrl?: string;
@@ -344,7 +350,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
   const safetyDataSource = options.safetyDataSource ?? createSafetyDataSourceFromEnv();
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
+  const situationDataBaseUrl = situationDataSource?.config.baseUrl ?? createSituationDataSourceConfigFromEnv().baseUrl;
   const takGatewaySource = options.takGatewaySource ?? createTakGatewaySourceFromEnv();
+  const weatherRadarFramesCache = new Map<string, WeatherRadarFramesCacheEntry>();
   const mobileDeviceRegistrations = new Map<string, MobileDeviceRegistration>();
   const edgeReplayCursors = new Map<string, EdgeReplayCursorRecord>();
   let federationRuntimeStoreStatus: DependencyStatus = federationRuntimeStore ? "degraded" : "disabled";
@@ -2745,9 +2753,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const query = request.query as Record<string, unknown>;
     const requestedUrl = optionalTrimmedString(query.url, 2048);
-    const rasterUrl = parseRasterOverlayUrl(requestedUrl);
+    const rasterUrl = parseRasterOverlayUrl(requestedUrl, situationDataBaseUrl);
     if (!rasterUrl) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Raster overlay request requires a valid absolute image URL.", correlationId);
+      return sendError(reply, 400, "VALIDATION_ERROR", "Raster overlay request requires a valid allowlisted raster URL or SIM clean radar path.", correlationId);
     }
     if (!isAllowedRasterOverlayUrl(rasterUrl)) {
       return sendError(reply, 403, "FORBIDDEN", "Raster overlay host is not allowed.", correlationId);
@@ -2780,6 +2788,42 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         .send(body);
     } catch (error) {
       app.log.warn({ error, rasterHost: rasterUrl.hostname }, "Raster overlay request failed.");
+      return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
+  app.get("/api/v1/weather-radar/frames", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const query = request.query as Record<string, unknown>;
+    const product = optionalRadarProduct(query.product) ?? "merge1h";
+    const hours = boundedQueryInteger(query.hours, 6, 1, 24);
+    const limit = boundedQueryInteger(query.limit, 24, 1, 48);
+    const cacheSeconds = boundedInteger(readPositiveInteger(process.env.COP_WEATHER_RADAR_FRAMES_CACHE_SECONDS, 120), 60, 300);
+    const cacheKey = `${product}:${hours}:${limit}`;
+    const requestNowMs = Date.now();
+    const cached = weatherRadarFramesCache.get(cacheKey);
+    if (cached && cached.expiresAtMs > requestNowMs) {
+      return reply
+        .header("Cache-Control", `public, max-age=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`)
+        .send(cached.body);
+    }
+
+    const upstreamUrl = new URL(`${trimTrailingSlash(situationDataBaseUrl)}/weather-radar/frames`);
+    upstreamUrl.searchParams.set("product", product);
+    upstreamUrl.searchParams.set("hours", String(hours));
+    upstreamUrl.searchParams.set("limit", String(limit));
+
+    try {
+      const body = await fetchWeatherRadarFrames(upstreamUrl, situationDataSource?.config.timeoutMs);
+      weatherRadarFramesCache.set(cacheKey, {
+        body,
+        expiresAtMs: requestNowMs + cacheSeconds * 1000
+      });
+      return reply
+        .header("Cache-Control", `public, max-age=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`)
+        .send(body);
+    } catch (error) {
+      app.log.warn({ error, upstreamUrl: upstreamUrl.toString() }, "Weather radar frame catalog request failed.");
       return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
     }
   });
@@ -7303,13 +7347,30 @@ function optionalTrimmedString(value: unknown, maxLength: number): string | unde
   return normalized ? normalized.slice(0, maxLength) : undefined;
 }
 
-function parseRasterOverlayUrl(value: string | undefined): URL | null {
+function parseRasterOverlayUrl(value: string | undefined, situationDataBaseUrl: string): URL | null {
   if (!value) {
     return null;
+  }
+  if (value.startsWith("/")) {
+    return resolveSituationDataRelativeUrl(value, situationDataBaseUrl);
   }
   try {
     const url = new URL(value);
     return url.protocol === "https:" || url.protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveSituationDataRelativeUrl(value: string, situationDataBaseUrl: string): URL | null {
+  if (!value.startsWith("/api/v1/weather-radar/clean/") && !value.startsWith("/weather-radar/clean/")) {
+    return null;
+  }
+  const normalizedPath = value.startsWith("/api/v1/")
+    ? value.slice("/api/v1/".length)
+    : value.replace(/^\/+/, "");
+  try {
+    return new URL(normalizedPath, `${trimTrailingSlash(situationDataBaseUrl)}/`);
   } catch {
     return null;
   }
@@ -7344,6 +7405,48 @@ async function fetchRasterOverlay(url: URL): Promise<Response> {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchWeatherRadarFrames(url: URL, timeoutMsOverride?: number): Promise<unknown> {
+  const timeoutMs = timeoutMsOverride ?? readPositiveInteger(process.env.COP_SITUATION_DATA_TIMEOUT_MS, 8000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        accept: "application/json",
+        "user-agent": "CSM-COP weather radar frame proxy"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`SIM weather radar frame catalog returned HTTP ${response.status}.`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function optionalRadarProduct(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return /^[a-z0-9_-]{1,64}$/iu.test(normalized) ? normalized : undefined;
+}
+
+function boundedQueryInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === "string" || typeof value === "number" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? boundedInteger(Math.trunc(parsed), min, max) : fallback;
+}
+
+function boundedInteger(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/u, "");
 }
 
 function optionalUuid(value: unknown): string | undefined {

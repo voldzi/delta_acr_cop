@@ -135,6 +135,7 @@ describe("COP map data helpers", () => {
             featureId: "weather:prague",
             label: "Praha weather",
             layer: "weather",
+            layerId: "public.weather.current",
             metrics: {
               cloudCoverPercent: 82,
               precipitationMm: 0,
@@ -143,8 +144,12 @@ describe("COP map data helpers", () => {
               windSpeedMps: 3.2
             },
             observedAt: "2026-05-20T10:00:00Z",
+            providerLayerId: "weather.open_meteo",
             sourceId: "open_meteo",
-            stale: false
+            stale: false,
+            tags: {
+              mapDisplayHint: "weather_observation_point"
+            }
           },
           type: "Feature"
         }
@@ -179,7 +184,9 @@ describe("COP map data helpers", () => {
             layer: "weather",
             selected: true,
             weatherCloudCoverPercent: 82,
+            weatherHeadline: "Počasí ve středu oblasti",
             weatherLabel: "19°C\n3 m/s",
+            weatherObservation: true,
             weatherTemperatureC: 19.4,
             weatherWindDirectionDeg: 230,
             weatherWindSpeedMps: 3.2

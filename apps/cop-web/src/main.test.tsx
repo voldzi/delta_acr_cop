@@ -207,7 +207,7 @@ describe("COP web dashboard", () => {
     expect(screen.getByText("Profily pohledu")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /UAV watch/u }));
     expect(screen.getByText("Aktivní: UAV watch")).toBeTruthy();
-    expect(screen.getAllByText("UAV").some((node) => node.closest("button")?.textContent?.includes("1"))).toBe(true);
+    expect(screen.getAllByText("UAV").some((node) => node.closest(".source-layer-toggle")?.textContent?.includes("1"))).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /Zdroje/u }));
     expect(screen.getByRole("button", { name: /Zdroje/u }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getAllByText("COP Air Situation Simulator").length).toBeGreaterThan(0);
