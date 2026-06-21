@@ -33,3 +33,25 @@ Globální vyhledávací pole v mapovém režimu kombinuje dvě kategorie výsle
 - veřejná místa přes serverový endpoint `GET /api/v1/geocode/search`.
 
 Web klient nevolá externí geocoder přímo. Dotaz jde přes COP API, kde je možné provider vyměnit, omezovat a cacheovat. Výběr místa nevybírá žádný COP objekt, pouze vyčistí aktivní detail a plynule přesune mapu na souřadnice se zoomem doporučeným providerem.
+
+## Výkon klienta
+
+Mapa je primární pracovní plocha, proto úvodní bundle nesmí nést těžké moduly,
+které uživatel nepotřebuje při prvním zobrazení. Web klient proto drží tyto
+části jako lazy-loaded workspace moduly:
+
+- komunikace a Matrix chat panel,
+- datová tabulka objektů nad TanStack Table,
+- XR/WebXR workspace,
+- renderer NATO/APP-6 symbolů používaný až při registraci mapových ikon,
+- MapLibre runtime v samostatném bundlu řízeném Vite manual chunkem.
+
+Při dalších úpravách platí:
+
+- nové velké panely přidávat přes `React.lazy` nebo samostatný route/workspace
+  chunk,
+- MapLibre, Matrix SDK, Three.js, NATO symbol renderer a tabulkové/grid
+  knihovny nenačítat do hlavního mapového shellu, pokud nejsou potřeba ihned,
+- po větších změnách kontrolovat výpis `pnpm --filter @cop/cop-web build` a
+  sledovat hlavně první `index-*.js` bundle,
+- veřejný build nesmí obsahovat serverové tokeny ani interní provider URL.

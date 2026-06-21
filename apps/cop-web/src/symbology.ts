@@ -1,5 +1,5 @@
 import { resolveSymbol, type SymbolResolution, type SymbolResolveRequest } from "@cop/nato-symbol-renderer";
-import ms, { type ColorMode } from "milsymbol";
+import type { ColorMode } from "milsymbol";
 import type { CopObject } from "./cop-data";
 
 type Affiliation = SymbolResolveRequest["affiliation"];
@@ -110,7 +110,8 @@ export function getNatoSidc(objectType: string, affiliation: string): string {
   ].join("");
 }
 
-export function createNatoSymbolSvg(objectType: string, affiliation: string): string {
+export async function createNatoSymbolSvg(objectType: string, affiliation: string): Promise<string> {
+  const { default: ms } = await import("milsymbol");
   const symbol = new ms.Symbol(getNatoSidc(objectType, affiliation), {
     standard: "APP6",
     size: 64,

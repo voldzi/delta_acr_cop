@@ -6828,7 +6828,7 @@ async function createNatoSymbolImage(objectType: string, affiliation: string): P
   }
 
   context.clearRect(0, 0, size, size);
-  const image = await loadSvgImage(createNatoSymbolSvg(objectType, affiliation));
+  const image = await loadSvgImage(await createNatoSymbolSvg(objectType, affiliation));
   const scale = Math.min(82 / image.width, 82 / image.height);
   const width = image.width * scale;
   const height = image.height * scale;

@@ -1,13 +1,5 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type SortingState
-} from "@tanstack/react-table";
 import clsx from "clsx";
 import {
   Activity,
@@ -169,7 +161,6 @@ import {
   type UserDirectoryEntry
 } from "./cop-data";
 import { CopMap, formatTrackLabel, type CreateSketchDrawingRequest, type SketchToolMode, type UpdateSketchDrawingRequest } from "./CopMap";
-import { MessagingPanel } from "./messaging/MessagingPanel";
 import type { MessagingReportSeed } from "./messaging/types";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
@@ -268,6 +259,11 @@ import "./styles.css";
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? (import.meta.env.DEV ? "dev-lab-token" : "");
 const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_COP_REFRESH_MS ?? "5000");
+const MessagingPanel = React.lazy(async () => {
+  const module = await import("./messaging/MessagingPanel");
+  return { default: module.MessagingPanel };
+});
+const TrackTable = React.lazy(() => import("./TrackTable"));
 const XrWorkspace = React.lazy(() => import("./XrWorkspace"));
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
@@ -3973,16 +3969,18 @@ export function App() {
                   value={searchQuery}
                   onChange={setSearchQuery}
                 />
-                <TrackTable
-                  objects={visibleObjects}
-                  selectedObjectId={explicitlySelectedObject?.objectId}
-                  onSelect={(objectId) => {
-                    const isSelected = selectedObjectId === objectId;
-                    setSelectedObjectId(isSelected ? null : objectId);
-                    setSelectedSituationFeatureId(null);
-                    setMobileSheet(isSelected ? null : "detail");
-                  }}
-                />
+                <React.Suspense fallback={<div className="empty-state compact">Načítám datovou tabulku...</div>}>
+                  <TrackTable
+                    objects={visibleObjects}
+                    selectedObjectId={explicitlySelectedObject?.objectId}
+                    onSelect={(objectId) => {
+                      const isSelected = selectedObjectId === objectId;
+                      setSelectedObjectId(isSelected ? null : objectId);
+                      setSelectedSituationFeatureId(null);
+                      setMobileSheet(isSelected ? null : "detail");
+                    }}
+                  />
+                </React.Suspense>
               </div>
               <DataWorkspaceBoard
                 metrics={metrics}
@@ -4051,16 +4049,18 @@ export function App() {
                   value={searchQuery}
                   onChange={setSearchQuery}
                 />
-                <TrackTable
-                  objects={visibleObjects}
-                  selectedObjectId={explicitlySelectedObject?.objectId}
-                  onSelect={(objectId) => {
-                    const isSelected = selectedObjectId === objectId;
-                    setSelectedObjectId(isSelected ? null : objectId);
-                    setSelectedSituationFeatureId(null);
-                    setMobileSheet(isSelected ? null : "detail");
-                  }}
-                />
+                <React.Suspense fallback={<div className="empty-state compact">Načítám datovou tabulku...</div>}>
+                  <TrackTable
+                    objects={visibleObjects}
+                    selectedObjectId={explicitlySelectedObject?.objectId}
+                    onSelect={(objectId) => {
+                      const isSelected = selectedObjectId === objectId;
+                      setSelectedObjectId(isSelected ? null : objectId);
+                      setSelectedSituationFeatureId(null);
+                      setMobileSheet(isSelected ? null : "detail");
+                    }}
+                  />
+                </React.Suspense>
               </div>
               <div className="replay-board">
                 <div className="deck-header">
@@ -4467,48 +4467,56 @@ export function App() {
       ) : null}
 
       {messagingOpen ? (
-        <MessagingPanel
-          apiBase={apiBase}
-          authenticated={messagingAuthenticated}
-          authConfig={authConfig}
-          authToken={messagingAuthenticated ? authSession.accessToken : undefined}
-          conversations={messagingConversations}
-          conversationsError={messagingConversationsError}
-          communityGroups={communityGroups}
-          communityGroupsError={communityGroupsError}
-          dockWidth={messagingDockWidth}
-          error={messagingError}
-          loading={messagingLoading}
-          mapContext={messagingMapContext}
-          pinned={messagingPinned}
-          session={authSession}
-          status={messagingStatus}
-          onAddGroupMember={(groupId, subjectId, displayName) => addCommunityGroupMemberForUi(groupId, subjectId, displayName)}
-          onBindMatrixRoom={(conversationId, roomId, encrypted) =>
-            bindMessagingConversationMatrixRoom(apiBase, authSession.accessToken ?? "", conversationId, { encrypted, roomId })
+        <React.Suspense
+          fallback={
+            <aside className="messaging-panel messaging-panel-loading" style={{ "--messaging-dock-width": `${messagingDockWidth}px` } as React.CSSProperties}>
+              <div className="empty-state compact">Načítám komunikaci...</div>
+            </aside>
           }
-          onClose={() => setMessagingOpen(false)}
-          onCreateDirectConversation={(user) => createDirectConversationForUi(user)}
-          onCreateGroup={(name, visibility) => createCommunityGroupBundleForUi(name, visibility)}
-          onCreateReportFromChat={startCommunityReportFromChat}
-          onDockWidthChange={(width) => {
-            const nextWidth = clamp(width, 420, 760);
-            setMessagingDockWidth(nextWidth);
-            writeMessagingDockWidth(nextWidth);
-          }}
-          onLogin={() => openLoginPrompt("chat")}
-          onPinnedChange={setMessagingPinned}
-          onRefresh={() => {
-            void loadMessagingStatus();
-            void loadCommunityGroups();
-          }}
-          onResolveMatrixIdentities={(userIds) =>
-            resolveMessagingMatrixIdentities(apiBase, authSession.accessToken ?? "", userIds)
-          }
-          onSearchUsers={(query) =>
-            searchUserDirectory(apiBase, authSession.accessToken ?? "", query).then((response) => response.items)
-          }
-        />
+        >
+          <MessagingPanel
+            apiBase={apiBase}
+            authenticated={messagingAuthenticated}
+            authConfig={authConfig}
+            authToken={messagingAuthenticated ? authSession.accessToken : undefined}
+            conversations={messagingConversations}
+            conversationsError={messagingConversationsError}
+            communityGroups={communityGroups}
+            communityGroupsError={communityGroupsError}
+            dockWidth={messagingDockWidth}
+            error={messagingError}
+            loading={messagingLoading}
+            mapContext={messagingMapContext}
+            pinned={messagingPinned}
+            session={authSession}
+            status={messagingStatus}
+            onAddGroupMember={(groupId, subjectId, displayName) => addCommunityGroupMemberForUi(groupId, subjectId, displayName)}
+            onBindMatrixRoom={(conversationId, roomId, encrypted) =>
+              bindMessagingConversationMatrixRoom(apiBase, authSession.accessToken ?? "", conversationId, { encrypted, roomId })
+            }
+            onClose={() => setMessagingOpen(false)}
+            onCreateDirectConversation={(user) => createDirectConversationForUi(user)}
+            onCreateGroup={(name, visibility) => createCommunityGroupBundleForUi(name, visibility)}
+            onCreateReportFromChat={startCommunityReportFromChat}
+            onDockWidthChange={(width) => {
+              const nextWidth = clamp(width, 420, 760);
+              setMessagingDockWidth(nextWidth);
+              writeMessagingDockWidth(nextWidth);
+            }}
+            onLogin={() => openLoginPrompt("chat")}
+            onPinnedChange={setMessagingPinned}
+            onRefresh={() => {
+              void loadMessagingStatus();
+              void loadCommunityGroups();
+            }}
+            onResolveMatrixIdentities={(userIds) =>
+              resolveMessagingMatrixIdentities(apiBase, authSession.accessToken ?? "", userIds)
+            }
+            onSearchUsers={(query) =>
+              searchUserDirectory(apiBase, authSession.accessToken ?? "", query).then((response) => response.items)
+            }
+          />
+        </React.Suspense>
       ) : null}
 
       {loginPromptReason ? (
@@ -8350,117 +8358,6 @@ function ObjectSearchControl({
         </button>
       ) : null}
       <span className="object-search-count">{formatObjectSearchCount(resultCount, totalCount, value)}</span>
-    </div>
-  );
-}
-
-const objectColumnHelper = createColumnHelper<CopObject>();
-
-function TrackTable({
-  objects,
-  selectedObjectId,
-  onSelect
-}: {
-  objects: CopObject[];
-  selectedObjectId?: string;
-  onSelect: (objectId: string) => void;
-}) {
-  const [sorting, setSorting] = React.useState<SortingState>([]);
-  const columns = React.useMemo(
-    () => [
-      objectColumnHelper.accessor((object) => formatObjectListLabel(object), {
-        id: "label",
-        header: "ID",
-        cell: (info) => info.getValue()
-      }),
-      objectColumnHelper.accessor("objectType", {
-        header: "Type",
-        cell: (info) => info.getValue()
-      }),
-      objectColumnHelper.accessor("affiliation", {
-        header: "Vztah",
-        cell: ({ row }) => {
-          const affiliation = getAffiliationPresentation(row.original.affiliation);
-          return (
-            <>
-              <i className={`affiliation-dot ${affiliation.disposition}`} />
-              {affiliation.label}
-            </>
-          );
-        }
-      }),
-      objectColumnHelper.accessor((object) => Math.round((object.confidence ?? 0) * 100), {
-        id: "confidence",
-        header: "Jistota",
-        cell: (info) => `${info.getValue()} %`
-      })
-    ],
-    []
-  );
-  const table = useReactTable({
-    columns,
-    data: objects,
-    getCoreRowModel: getCoreRowModel(),
-    getRowId: (object) => object.objectId,
-    getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
-    state: { sorting }
-  });
-
-  if (objects.length === 0) {
-    return <div className="empty-state compact">Žádné objekty neodpovídají aktivním filtrům.</div>;
-  }
-
-  return (
-    <div className="track-table" role="table" aria-label="Seznam situačních objektů">
-      {table.getHeaderGroups().map((headerGroup) => (
-        <div className="track-table-head" key={headerGroup.id} role="row">
-          {headerGroup.headers.map((header) => {
-            const sortState = header.column.getIsSorted();
-            const sortLabel = sortState === "asc" ? "vzestupně" : sortState === "desc" ? "sestupně" : "bez řazení";
-            const ariaSort = sortState === "asc" ? "ascending" : sortState === "desc" ? "descending" : "none";
-            const label = flexRender(header.column.columnDef.header, header.getContext());
-            const content = (
-              <button
-                aria-label={`Seřadit podle sloupce ${header.column.id}`}
-                className={clsx("track-table-sort inline-flex items-center gap-1", sortState && "active")}
-                disabled={!header.column.getCanSort()}
-                onClick={header.column.getToggleSortingHandler()}
-                type="button"
-              >
-                <span>{label}</span>
-                <span aria-hidden="true" className="track-table-sort-indicator">
-                  {sortState === "asc" ? "↑" : sortState === "desc" ? "↓" : "↕"}
-                </span>
-              </button>
-            );
-            return (
-              <span aria-sort={ariaSort} key={header.id} role="columnheader">
-                <Tooltip label={`Řazení: ${sortLabel}`}>{content}</Tooltip>
-              </span>
-            );
-          })}
-        </div>
-      ))}
-      {table.getRowModel().rows.slice(0, 10).map((row) => {
-        const object = row.original;
-        return (
-          <button
-            className={clsx("track-row", object.objectId === selectedObjectId && "selected")}
-            key={object.objectId}
-            onClick={() => onSelect(object.objectId)}
-            aria-selected={object.objectId === selectedObjectId}
-            role="row"
-            type="button"
-          >
-            {row.getVisibleCells().map((cell) => (
-              <span key={cell.id} title={cell.column.id === "label" ? object.objectId : undefined}>
-                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-              </span>
-            ))}
-          </button>
-        );
-      })}
     </div>
   );
 }

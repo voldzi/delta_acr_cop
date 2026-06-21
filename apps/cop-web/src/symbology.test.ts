@@ -9,7 +9,7 @@ import {
 import type { CopObject } from "./cop-data";
 
 describe("COP web symbology", () => {
-  it("maps own affiliation to blue NATO presentation", () => {
+  it("maps own affiliation to blue NATO presentation", async () => {
     const presentation = getAffiliationPresentation("FRIEND");
     const assumedFriend = getAffiliationPresentation("ASSUMED_FRIEND");
 
@@ -25,10 +25,10 @@ describe("COP web symbology", () => {
     });
     expect(getNatoIconKey("AIRCRAFT", "FRIEND")).toBe("nato-friend-aircraft");
     expect(getNatoSidc("AIRCRAFT", "FRIEND")).toBe("SFAP-----------");
-    expect(createNatoSymbolSvg("AIRCRAFT", "ASSUMED_FRIEND")).toContain("#3b82f6");
+    await expect(createNatoSymbolSvg("AIRCRAFT", "ASSUMED_FRIEND")).resolves.toContain("#3b82f6");
   });
 
-  it("maps foreign hostile affiliation to red NATO presentation", () => {
+  it("maps foreign hostile affiliation to red NATO presentation", async () => {
     const presentation = getAffiliationPresentation("HOSTILE");
     const suspect = getAffiliationPresentation("SUSPECT");
 
@@ -44,7 +44,7 @@ describe("COP web symbology", () => {
     });
     expect(getNatoIconKey("UAV", "HOSTILE")).toBe("nato-hostile-uav");
     expect(getNatoSidc("UAV", "HOSTILE")).toBe("SHAPMFQ--------");
-    expect(createNatoSymbolSvg("UAV", "HOSTILE")).toContain("#ef4444");
+    await expect(createNatoSymbolSvg("UAV", "HOSTILE")).resolves.toContain("#ef4444");
   });
 
   it("resolves a COP object through the NATO symbol resolver", () => {
