@@ -462,11 +462,7 @@ async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
 
 export function formatMatrixClientError(caught: unknown, baseUrl: string, action: string): Error {
   if (isLikelyBrowserNetworkError(caught)) {
-    return new Error(
-      `Nelze ${action}: prohlížeč se nedostal ke službě zpráv ${baseUrl}. ` +
-      `Otevřete ${baseUrl.replace(/\/+$/u, "")}/_matrix/client/versions na stejném zařízení; ` +
-      "pokud endpoint funguje, proveďte tvrdé obnovení stránky nebo vyčistěte DNS/site cache pro cop.zeleznalady.cz a msg.zeleznalady.cz."
-    );
+    return new Error(`Nelze ${action}. Služba zpráv teď není z tohoto zařízení dostupná. Zkontrolujte připojení nebo VPN a zkuste to znovu.`);
   }
   return caught instanceof Error ? caught : new Error(`Nelze ${action}: ${String(caught)}`);
 }

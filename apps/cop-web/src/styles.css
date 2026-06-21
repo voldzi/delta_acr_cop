@@ -5951,6 +5951,7 @@ h1 {
 .map-sketch-palette.collapsed .map-sketch-toggle {
   width: 44px;
   min-width: 44px;
+  height: 44px;
   min-height: 44px;
   padding: 0;
   border-color: rgba(164, 210, 235, 0.34);
@@ -6173,6 +6174,25 @@ h1 {
 .map-sketch-palette.expanded ~ .map-sketch-create-hint,
 .map-sketch-palette.expanded ~ .map-sketch-edit-hint {
   bottom: min(52vh, 478px);
+}
+
+@media (min-width: 861px) {
+  .shell.app-shell-v2 .map-stage,
+  .shell.app-shell-v2 .map-container {
+    overflow: visible;
+  }
+
+  .shell.app-shell-v2 .map-canvas {
+    overflow: hidden;
+  }
+
+  .shell.app-shell-v2 .map-sketch-palette.collapsed {
+    left: -52px;
+    bottom: 58px;
+    width: 44px;
+    max-width: 44px;
+    z-index: 45;
+  }
 }
 
 @media (max-width: 860px) {

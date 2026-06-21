@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { formatMatrixClientError, normalizeMatrixMessageBody } from "./matrixClient";
 
 describe("Matrix client diagnostics", () => {
-  it("turns browser network failures into actionable homeserver diagnostics", () => {
+  it("turns browser network failures into user-facing messaging errors", () => {
     const error = formatMatrixClientError(
       new TypeError("fetch failed: Load failed"),
       "https://msg.zeleznalady.cz",
       "založit chatovou místnost"
     );
 
-    expect(error.message).toContain("prohlížeč se nedostal ke službě zpráv https://msg.zeleznalady.cz");
-    expect(error.message).toContain("/_matrix/client/versions");
+    expect(error.message).toContain("Služba zpráv teď není z tohoto zařízení dostupná");
+    expect(error.message).not.toContain("/_matrix/client/versions");
   });
 
   it("keeps Matrix protocol errors unchanged", () => {

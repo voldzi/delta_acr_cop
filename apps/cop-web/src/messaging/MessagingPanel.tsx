@@ -681,10 +681,10 @@ export function MessagingPanel({
 
         {hasMessagingErrors ? (
           <div className="messaging-error-stack">
-            {error ? <div className="error-banner">Zprávy: {error}</div> : null}
-            {conversationsError ? <div className="error-banner">Konverzace: {conversationsError}</div> : null}
-            {bootstrapError ? <div className="error-banner">Chat: {bootstrapError}</div> : null}
-            {composerError ? <div className="error-banner">Odeslání: {composerError}</div> : null}
+            {error ? <div className="error-banner">Zprávy: {userFacingMessagingError(error)}</div> : null}
+            {conversationsError ? <div className="error-banner">Konverzace: {userFacingMessagingError(conversationsError)}</div> : null}
+            {bootstrapError ? <div className="error-banner">Chat: {userFacingMessagingError(bootstrapError)}</div> : null}
+            {composerError ? <div className="error-banner">Odeslání: {userFacingMessagingError(composerError)}</div> : null}
           </div>
         ) : null}
 
@@ -1736,9 +1736,26 @@ function messagingStatusLabel(status: "degraded" | "disabled" | "online", loadin
     return "online";
   }
   if (status === "degraded") {
-    return "degraded";
+    return "omezené";
   }
   return "vypnuto";
+}
+
+function userFacingMessagingError(message: string): string {
+  const normalized = message.trim();
+  if (!normalized) {
+    return "Akci se nepodařilo dokončit. Zkuste to prosím znovu.";
+  }
+  if (/\b(401|403)\b/u.test(normalized) || /unauthori[sz]ed|forbidden|přihlášen/i.test(normalized)) {
+    return "Pro tuto akci je potřeba platné přihlášení.";
+  }
+  if (/\b(500|502|503|504)\b/u.test(normalized) || /api request failed|internal server error|bad gateway|service unavailable|gateway timeout/i.test(normalized)) {
+    return "Služba zpráv je dočasně nedostupná. Zkuste to prosím za chvíli.";
+  }
+  if (/fetch failed|load failed|failed to fetch|network/i.test(normalized)) {
+    return "Služba zpráv není z tohoto zařízení dostupná. Zkontrolujte připojení nebo VPN.";
+  }
+  return normalized.length > 180 ? `${normalized.slice(0, 177)}...` : normalized;
 }
 
 function matrixSyncLabel(state: string): string {
