@@ -47,6 +47,7 @@ observability dashboard a formální akceptační protokol.
 | Chat/skupiny | messaging bridge existuje | připravit 2-3 demo skupiny, lidské názvy, avatar a ne-technické texty |
 | AI/MCP | roadmap a guardrails existují | pro PoC ukázat minimálně auditované situační shrnutí, ne autonomní rozhodnutí |
 | Edge/offline | edge kontejner běží | připravit offline outbox demo nebo jasně označit jako další fázi |
+| Demo launcher | zatím runbook/seed záměr | přidat operátorskou položku menu pro seed, reset, stav a průvodce |
 | Observability | health/dependencies existují | připravit dashboard/stránku: zdroje, cache, latence, stale data, poslední import |
 | Security package | bezpečnostní dokumenty existují | doplnit scan/SBOM/audit coverage report před formálním předáním |
 
@@ -63,6 +64,9 @@ observability dashboard a formální akceptační protokol.
 8. Health/observability obrazovka pro důvěryhodnost technického zázemí.
 9. Mobilní průchod na iPhone/iPad.
 10. Export nebo sdílení odkazu na situaci.
+11. Demo launcher v menu operátora: seed, reset, status a krokový průvodce.
+12. MCP ukázka: read-only tool registry, auditované volání a audit event.
+13. Edge ukázka: heartbeat, offline outbox, flush, replay a cursor ack.
 
 ## Demo Seed Je Nutný
 
@@ -84,6 +88,31 @@ zrovna stane. Seed musí vytvořit ucelený příběh:
 Seed musí být resetovatelný a označený jako demonstrační data. Produkční systém
 nesmí míchat demo data s reálnými incidenty bez jasného štítku.
 
+Seed má spouštět COP, protože COP je autoritativní pro skupiny, hlášení,
+média, zákresy, audit, MCP a edge runtime. SIM zůstává provider a vlastní
+scénářová data má připravovat jen přes své provider kontrakty. COP demo
+launcher nesmí zapisovat do SIM databáze ani obcházet provider API.
+
+## MCP A Edge V PoC
+
+Ano, MCP i edge musí být součástí PoC ukázky. Ne jako skryté technické detaily,
+ale jako jasné schopnosti systému:
+
+- **MCP** ukazuje, že asistivní AI/tool vrstva pracuje jen přes allowlistované
+  read-only nástroje, dostává policy-filtered data a každé volání je auditované.
+  Minimální demo: `GET /api/v1/mcp/tools`, volání
+  `cop.federation.nodes.list`, audit `MCP_TOOL_INVOKED` a viditelné omezení, že
+  nástroj nemění stav systému.
+- **Edge** ukazuje, že lokální pracoviště umí fungovat v degraded/offline
+  režimu: registrovat se přes heartbeat, držet lokální outbox, po návratu
+  konektivity flushnout eventy do COP, stáhnout replay a potvrdit replay cursor.
+  Minimální demo: `node_edge_pilot_01`, jeden lokální event, flush, zobrazení
+  v centrálním COP a cursor acknowledgement.
+
+Tím se pokryje požadavek na federované uzly, auditovatelný event model,
+degraded/offline provoz a bezpečnou asistivní AI vrstvu bez autonomního
+rozhodování.
+
 ## Akceptace Pro Klientskou PoC Ukázku
 
 Před prezentací musí být splněno:
@@ -98,6 +127,11 @@ Před prezentací musí být splněno:
 - chat má lidské názvy účastníků a nezobrazuje technické Matrix chyby běžnému
   uživateli,
 - zákres lze vytvořit, upravit a po reloadu zůstane uložený,
+- demo se dá spustit/resetovat z menu oprávněného operátora,
+- MCP registry a jedno auditované volání nástroje jsou ukázatelné bez
+  technických tokenů,
+- edge runtime ukáže heartbeat, outbox, sync a replay nebo je jasně označený
+  jako řízená simulace offline režimu,
 - health/dependencies ukáže stav providerů a store bez kritické chyby,
 - demo lze po ukázce obnovit do výchozího stavu.
 
@@ -113,4 +147,3 @@ Pro PoC se doporučuje prezentovat systém jako:
 
 Nedoporučuje se tvrdit, že jde o finální veřejnou produkci, plně certifikovaný
 krizový systém, garantované mobilní pokrytí operátorů nebo plně autonomní AI.
-

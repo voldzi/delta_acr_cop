@@ -56,6 +56,37 @@ secret managementu nebo se před ukázkou vytvoří ručně v Keycloaku.
 8. Ověřit, že galerie médií otevře fotku, PDF a video.
 9. Ověřit, že zákres po refreshi zůstane na mapě.
 
+## Spuštění Dema Z Menu
+
+Pro klientskou ukázku má být demo spouštěné z aplikace, ne jen ručním SQL nebo
+skriptem. V menu operátora/admina má být položka `Demo scénáře`, viditelná jen
+v pilotním režimu a jen pro oprávněné účty.
+
+Položka má nabízet:
+
+- `Připravit demo Povodeň` - vytvoří nebo obnoví scénář
+  `flood-central-bohemia`,
+- `Resetovat demo` - smaže pouze objekty označené tímto demo scénářem,
+- `Spustit průvodce demo` - otevře krokový průchod mapou, chatem, hlášením,
+  zákresem, MCP a edge částí,
+- `Stav demo` - ukáže, zda jsou připravené vrstvy, skupiny, média, chat,
+  edge uzel a MCP nástroje.
+
+Demo launcher nesmí zapisovat přímo z browseru do databáze. Web má volat pouze
+chráněné COP API endpointy. Ty spouští server-side seed/reset přes běžné domain
+služby a auditují akci operátora. Všechny demo objekty musí nést
+`demoScenarioId=flood-central-bohemia` a v UI musí být jasný štítek
+`DEMO DATA`.
+
+Doporučený API kontrakt pro implementaci:
+
+| Endpoint | Účel |
+| --- | --- |
+| `GET /api/v1/demo/scenarios` | seznam dostupných scénářů a jejich stav |
+| `POST /api/v1/demo/scenarios/{scenarioId}/seed` | idempotentně připraví demo data |
+| `POST /api/v1/demo/scenarios/{scenarioId}/reset` | smaže jen data daného scénáře |
+| `GET /api/v1/demo/scenarios/{scenarioId}/status` | stav seedovaných objektů a závislostí |
+
 ## Doporučený Demo Seed
 
 Demo seed se má připravit jako resetovatelný scénář `flood-central-bohemia`.
@@ -130,6 +161,23 @@ Seed má připravit:
   - žádost o doplnění fotografie,
   - rozhodnutí o uzávěře,
   - odkaz na mapový detail.
+
+### Edge A MCP
+
+Seed má připravit také demonstraci technických požadavků, ale v uživatelsky
+srozumitelné podobě:
+
+- federovaný uzel `node_edge_pilot_01` se stavem `online` nebo `degraded`,
+- jeden offline event vložený do edge outboxu, například hlášení z lokálního
+  pracoviště,
+- centrální replay event, který se po synchronizaci objeví v COP mapě,
+- jeden DLQ/rejected příklad jen pro technickou část ukázky,
+- auditovaný MCP dotaz na seznam uzlů nebo situační replay.
+
+MCP se v demo neukazuje jako surový protokol. V UI má být prezentovaný jako
+`Analytický asistent` nebo `Auditovaný asistent`, který používá pouze
+allowlistované read-only nástroje. Edge se ukazuje jako `Lokální pracoviště`
+nebo `Terénní uzel`, ne jako náhrada centrálního COP.
 
 ## Demo Flow
 
@@ -211,6 +259,51 @@ Na závěr ukázat provozní stav:
 - cache/stale informaci,
 - auditovatelný tok dat.
 
+### 8. MCP/Auditovaný Asistent
+
+Otevřít část `Analytický asistent` nebo technický panel pro operátora a ukázat:
+
+- registry dostupných MCP nástrojů z `GET /api/v1/mcp/tools`,
+- auditované volání `cop.federation.nodes.list`,
+- audit událost `MCP_TOOL_INVOKED`,
+- že nástroj vrací pouze policy-filtered data a neumí měnit stav systému.
+
+V demo je důležité říct, že MCP není integrační backbone a není autonomní
+rozhodovač. Je to kontrolovaná read-only vrstva pro asistivní analýzu,
+diagnostiku a auditovatelné dotazy.
+
+### 9. Edge/Offline Režim
+
+Ukázat edge část jako krátký řízený scénář:
+
+1. Otevřít `https://cop.zeleznalady.cz/edge/status` nebo interní provozní panel.
+2. Ukázat registraci uzlu `node_edge_pilot_01` a heartbeat.
+3. Simulovat lokální offline hlášení do edge outboxu.
+4. Spustit sync a ukázat `POST /api/v1/edge/outbox/flush`.
+5. Ukázat, že centrální COP event/replay obsahuje novou událost.
+6. Ukázat potvrzení replay cursoru přes
+   `POST /api/v1/edge/replay-cursors/{nodeId}/ack`.
+
+Tato část má prokázat, že systém umí pracovat s lokálním outboxem, pozdější
+synchronizací, replayem a auditem. Není cílem tvrdit, že pilotní edge runtime
+je finální air-gapped produkt.
+
+## Pokrytí Požadavků V Demo
+
+| Požadavek | Jak se demonstruje |
+| --- | --- |
+| Server-to-server provider data | SIM vrstvy počasí, safety, flight, mobile a provider health |
+| Civilní mapový obraz | vrstvy rizik, radar, hlášení, zákresy a zjednodušené mapové režimy |
+| Uživatelská hlášení | report s polohou, rizikem, platností, fotkou/PDF/videem a ACL |
+| Skupiny a komunikace | chat skupiny s připnutým mapovým kontextem |
+| Média a oprávnění | galerie médií dostupná jen oprávněným uživatelům |
+| Zákresy | polygon/linie/bod/text/measure jako samostatná vrstva |
+| Audit | audit akcí operátora, MCP tool invoke, report a změny zákresu |
+| MCP | read-only tool registry a auditované volání nástroje |
+| Edge | edge node heartbeat, lokální outbox, flush, replay a cursor ack |
+| Mobilní návaznost | iPhone/iPad průchod, deep linky a iOS API kontrakt |
+| Observability | health/dependencies/provider observability/stale data |
+
 ## Co Neříkat A Neukazovat
 
 - Netvrdit, že data o stavu BTS jsou potvrzený realtime stav operátora.
@@ -224,4 +317,3 @@ Na závěr ukázat provozní stav:
 „Toto není jen mapa. Je to společný krizový workspace: data od providerů,
 hlášení od lidí, komunikace skupin, média, zákresy, oprávnění, audit a
 připravená cesta k mobilnímu a edge použití.“
-
