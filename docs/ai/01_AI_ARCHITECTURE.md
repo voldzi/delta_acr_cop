@@ -14,7 +14,8 @@ flowchart LR
     ROUTER["Provider router"]
     OPENAI["OpenAI provider"]
     CODEX["Codex provider"]
-    LOCAL["Local LLM provider"]
+    OLLAMA_PROVIDER["COP Ollama provider"]
+    LOCAL["Compatibility Local LLM Gateway provider"]
     AKB["AI KnowledgeBase LLM Gateway"]
     OLLAMA["Ollama"]
     MOCK["Mock provider"]
@@ -25,10 +26,12 @@ flowchart LR
     USER --> GW --> CLASS --> REDACT --> POLICY --> ROUTER
     ROUTER --> OPENAI
     ROUTER --> CODEX
+    ROUTER --> OLLAMA_PROVIDER --> OLLAMA
     ROUTER --> LOCAL --> AKB --> OLLAMA
     ROUTER --> MOCK
     OPENAI --> VALID
     CODEX --> VALID
+    OLLAMA_PROVIDER --> VALID
     LOCAL --> VALID
     MOCK --> VALID
     VALID --> HUMAN
@@ -37,3 +40,7 @@ flowchart LR
 ```
 
 Externí AI provider musí být vypnutelný. Local-only režim musí být podporovaný pro prostředí, kde data nesmí opustit kontrolovanou infrastrukturu.
+
+Produkční lokální režim COP používá primárně `ollama` provider, který běží
+server-side v COP API a volá Ollama runtime přímo. Provider `local` přes AI
+KnowledgeBase LLM Gateway zůstává kompatibilní fallback, ne primární cesta.

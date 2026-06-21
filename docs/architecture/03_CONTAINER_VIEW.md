@@ -12,7 +12,7 @@ flowchart TB
     STATE["COP State Store\nPostgreSQL/PostGIS + Redis candidate"]
     DIST["Distribution Gateway\nsnapshot + delta + stream"]
     SYMBOL["NATO Symbol Renderer"]
-    AI["AI Gateway\nOpenAI/Codex/local/mock"]
+    AI["AI Gateway\nOpenAI/Codex/Ollama/local/mock"]
     POLICY["Policy Engine\nRBAC/ABAC"]
     AUDIT["Audit/Provenance Store"]
     REG["Source Registry"]

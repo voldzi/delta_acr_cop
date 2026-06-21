@@ -1,7 +1,7 @@
 import cors from "@fastify/cors";
 import sensible from "@fastify/sensible";
 import websocket from "@fastify/websocket";
-import { AiGateway } from "@cop/ai-gateway";
+import { AiGateway, type AiCopQuery, type AiCopResponse } from "@cop/ai-gateway";
 import { createCopObjectFromEvent, type CanonicalEventEnvelope, type ObservedObject, type SourceSystem } from "@cop/canonical-model";
 import { ContractValidators, formatValidationErrors } from "@cop/ingest-contracts";
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
@@ -98,7 +98,7 @@ import {
 import { createPlaceGeocoderFromEnv, type PlaceGeocoder } from "./place-geocoder.js";
 import { withEventProvenance } from "./provenance.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
-import { buildSourceHealthItems } from "./source-health.js";
+import { buildSourceHealthItems, type SourceHealthItem } from "./source-health.js";
 import {
   buildSituationDataHealth,
   createSituationDataSourceFromEnv,
@@ -3935,6 +3935,123 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return response;
   });
 
+  app.post("/api/v1/ai/situation-summary", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
+    const body = isRecord(request.body) ? request.body : {};
+    const subject = defaultSystemSubject();
+    const maxObjects = readBoundedInteger(body.maxObjects, 40, 1, 80);
+    const includeAlerts = body.includeAlerts !== false;
+    const readableObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
+      .filter((object) => canReadObject(subject, object))
+      .slice(0, maxObjects);
+    const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
+    const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const alerts = includeAlerts
+      ? (await buildAlertItems({
+          actor,
+          includeAcknowledged: false,
+          includeExpired: false,
+          requestNow
+        })).slice(0, 25)
+      : [];
+    const aiRequest: AiCopQuery = {
+      requestId: aiRequestId(body.requestId),
+      purpose: "COP_EXPLANATION",
+      prompt: [
+        `Vytvoř stručný situační souhrn pro civilní mapu v jazyce ${aiLanguage(body.language)}.`,
+        "Odděl ověřená data, modelované odhady a chybějící informace.",
+        "Nepřidávej vlastní fakta a neformuluj operační pokyny."
+      ].join(" "),
+      context: {
+        contractVersion: "cop-ai-situation-summary-v1",
+        generatedAt: requestNow.toISOString(),
+        scope: {
+          objectCount: readableObjects.length,
+          alertCount: alerts.length,
+          sourceCount: sourceHealth.length
+        },
+        objects: decoratedObjects.map(summarizeObjectForAi),
+        alerts: alerts.map(summarizeAlertForAi),
+        sourceHealth: sourceHealth.map(summarizeSourceHealthForAi)
+      },
+      providerPreference: "auto",
+      outputFormat: "MARKDOWN",
+      safetyScope: "COP_DATA_ASSISTANCE_ONLY"
+    };
+    const response = await aiGateway.queryCopAssistant(aiRequest);
+    appendAudit(state, `AI_SITUATION_SUMMARY_${response.status}`, aiAuditMetadata(response, actor), correlationId);
+    return response;
+  });
+
+  app.post("/api/v1/ai/source-health-summary", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
+    const body = isRecord(request.body) ? request.body : {};
+    const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const aiRequest: AiCopQuery = {
+      requestId: aiRequestId(body.requestId),
+      purpose: "DATA_QUALITY_CHECK",
+      prompt: [
+        `Vysvětli stav datových zdrojů pro civilního operátora v jazyce ${aiLanguage(body.language)}.`,
+        "Piš srozumitelně, bez interních tokenů, bez stack trace a bez strašení občana.",
+        "Uveď, které vrstvy mohou být neúplné nebo starší."
+      ].join(" "),
+      context: {
+        contractVersion: "cop-ai-source-health-summary-v1",
+        generatedAt: requestNow.toISOString(),
+        sources: sourceHealth.map(summarizeSourceHealthForAi)
+      },
+      providerPreference: "auto",
+      outputFormat: "MARKDOWN",
+      safetyScope: "COP_DATA_ASSISTANCE_ONLY"
+    };
+    const response = await aiGateway.queryCopAssistant(aiRequest);
+    appendAudit(state, `AI_SOURCE_HEALTH_SUMMARY_${response.status}`, aiAuditMetadata(response, actor), correlationId);
+    return response;
+  });
+
+  app.post("/api/v1/ai/community-report/draft", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const body = isRecord(request.body) ? request.body : {};
+    const aiRequest: AiCopQuery = {
+      requestId: aiRequestId(body.requestId),
+      purpose: "REPORT_DRAFT",
+      prompt: [
+        `Pomoz upravit civilní hlášení v jazyce ${aiLanguage(body.language)}.`,
+        "Vrať stručný název, popis, navrženou kategorii, stupeň rizika a otázky na chybějící údaje.",
+        "Nečti média, nevymýšlej chybějící fakta a neopakuj osobní údaje."
+      ].join(" "),
+      context: {
+        contractVersion: "cop-ai-community-report-draft-v1",
+        category: optionalText(body.category),
+        description: optionalText(body.description)?.slice(0, 2000),
+        hazardSeverity: optionalText(body.hazardSeverity),
+        language: aiLanguage(body.language),
+        location: summarizeLocationForAi(body.location),
+        title: optionalText(body.title)?.slice(0, 200)
+      },
+      providerPreference: "auto",
+      outputFormat: "JSON",
+      safetyScope: "COP_DATA_ASSISTANCE_ONLY"
+    };
+    const response = await aiGateway.queryCopAssistant(aiRequest);
+    appendAudit(state, `AI_COMMUNITY_REPORT_DRAFT_${response.status}`, aiAuditMetadata(response, actor), correlationId);
+    return response;
+  });
+
   app.get("/api/v1/mcp/tools", async () => ({
     contractVersion: "cop-mcp-tool-registry-v1",
     generatedAt: now().toISOString(),
@@ -7151,7 +7268,9 @@ function normalizeMapViewPreference(value: unknown): Record<string, unknown> | u
 }
 
 function compactRecord(value: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && !(Array.isArray(entry) && entry.length === 0))
+  );
 }
 
 function optionalBoolean(value: unknown): boolean | undefined {
@@ -7256,6 +7375,122 @@ function isAoiRuleAffiliationScope(value: unknown): value is AoiRuleAffiliationS
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function aiRequestId(value: unknown): string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : crypto.randomUUID();
+}
+
+function aiLanguage(value: unknown): "cs" | "en" {
+  return value === "en" ? "en" : "cs";
+}
+
+function readBoundedInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function summarizeObjectForAi(object: ObservedObject): Record<string, unknown> {
+  const conflict = isRecord(object.attributes?.conflictEvidence) ? object.attributes.conflictEvidence : undefined;
+  return compactRecord({
+    affiliation: object.affiliation,
+    confidence: object.confidence,
+    dataQuality: object.dataQuality,
+    domain: object.domain,
+    headingDeg: object.headingDeg ?? object.movement?.headingDeg ?? undefined,
+    lastUpdatedAt: object.lastUpdatedAt,
+    objectId: object.objectId,
+    objectType: object.objectType,
+    position: object.position
+      ? {
+          lat: roundCoordinate(object.position.lat),
+          lon: roundCoordinate(object.position.lon)
+        }
+      : undefined,
+    sourceSystemIds: object.provenance?.map((item) => item.sourceSystemId).filter(Boolean).slice(0, 5),
+    speedMps: object.speedMps ?? object.movement?.speedMps ?? undefined,
+    status: object.status,
+    synthetic: object.synthetic,
+    validUntil: object.validUntil,
+    warning: conflict ? "conflict evidence present" : undefined
+  });
+}
+
+function summarizeAlertForAi(alert: CopAlert): Record<string, unknown> {
+  return compactRecord({
+    alertId: alert.alertId,
+    detail: alert.detail,
+    objectId: alert.objectId,
+    observedAt: alert.observedAt,
+    severity: alert.severity,
+    sourceSystemId: alert.sourceSystemId,
+    status: alert.status,
+    title: alert.title,
+    type: alert.type,
+    updatedAt: alert.updatedAt
+  });
+}
+
+function summarizeSourceHealthForAi(source: SourceHealthItem): Record<string, unknown> {
+  return compactRecord({
+    acceptedEvents: source.acceptedEvents,
+    avgConfidence: source.avgConfidence,
+    currentTracks: source.currentTracks,
+    detail: source.detail,
+    displayName: source.displayName,
+    expiredTracks: source.expiredTracks,
+    health: source.health,
+    lastObservationAgeSeconds: source.lastObservationAgeSeconds,
+    lowConfidenceTracks: source.lowConfidenceTracks,
+    sourceSystemId: source.sourceSystemId,
+    sourceType: source.sourceType,
+    staleTracks: source.staleTracks,
+    status: source.status,
+    totalTracks: source.totalTracks,
+    warnings: source.warnings?.slice(0, 5)
+  });
+}
+
+function summarizeLocationForAi(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const lat = optionalFiniteNumber(value.lat, -90, 90);
+  const lon = optionalFiniteNumber(value.lon, -180, 180);
+  if (lat === undefined || lon === undefined) {
+    return undefined;
+  }
+  return compactRecord({
+    accuracyM: optionalFiniteNumber(value.accuracyM, 0, 100000),
+    lat: roundCoordinate(lat),
+    lon: roundCoordinate(lon),
+    source: optionalText(value.source)
+  });
+}
+
+function aiAuditMetadata(response: AiCopResponse, actor: AuthenticatedActor): Record<string, unknown> {
+  return {
+    actorAuthMode: actor.authMode,
+    actorSubjectId: actor.subjectId,
+    auditId: response.auditId,
+    model: response.model,
+    provider: response.provider,
+    requestId: response.requestId,
+    status: response.status
+  };
+}
+
+function roundCoordinate(value: number): number {
+  return Math.round(value * 100000) / 100000;
 }
 
 function hasOwn(value: Record<string, unknown>, key: string): boolean {

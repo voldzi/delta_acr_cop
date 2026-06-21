@@ -70,6 +70,7 @@
       "enum": [
         "openai",
         "codex",
+        "ollama",
         "local",
         "mock",
         "auto"

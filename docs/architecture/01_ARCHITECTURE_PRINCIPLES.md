@@ -34,7 +34,7 @@ COP a SIM jsou samostatné projekty. Komponenty COP mají mít jasné ownership 
 
 ## Provider abstraction for AI
 
-AI Gateway abstrahuje OpenAI, Codex, local LLM a mock providera. Externí provideři musí být vypnutelní a local-only režim musí být architektonicky podporovaný.
+AI Gateway abstrahuje OpenAI, Codex, COP Ollama, kompatibilní local LLM gateway a mock providera. Externí provideři musí být vypnutelní a local-only režim musí být architektonicky podporovaný.
 
 ## NATO renderer only in main COP
 

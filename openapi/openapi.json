@@ -2615,6 +2615,138 @@
         }
       }
     },
+    "/api/v1/ai/situation-summary": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "Create a server-side AI situation summary from current readable COP data.",
+        "operationId": "createAiSituationSummary",
+        "description": "COP builds a bounded, policy-filtered context from current objects, alerts and source health, then calls the configured server-side AI provider.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiSituationSummaryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "AI assistant response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiCopResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/source-health-summary": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "Explain provider/source health using the server-side AI assistant.",
+        "operationId": "createAiSourceHealthSummary",
+        "description": "Summarizes stale, degraded or partial provider states without exposing internal tokens or raw diagnostics to the browser.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiSourceHealthSummaryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "AI assistant response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiCopResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/community-report/draft": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "Draft and improve a community report using server-side AI.",
+        "operationId": "createAiCommunityReportDraft",
+        "description": "Assists with title, description, category and missing-field questions from user-provided report metadata. Media content is not read by this endpoint.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiCommunityReportDraftRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "AI assistant response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiCopResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
     "/api/v1/messaging/status": {
       "get": {
         "tags": [
@@ -9738,6 +9870,7 @@
             "enum": [
               "openai",
               "codex",
+              "ollama",
               "local",
               "mock"
             ]
@@ -12518,6 +12651,112 @@
             "$ref": "#/components/schemas/EdgeRuntimeStatus"
           }
         ]
+      },
+      "AiSituationSummaryRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "cs",
+              "en"
+            ],
+            "default": "cs"
+          },
+          "maxObjects": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 80,
+            "default": 40
+          },
+          "includeAlerts": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "AiSourceHealthSummaryRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "cs",
+              "en"
+            ],
+            "default": "cs"
+          }
+        }
+      },
+      "AiCommunityReportDraftRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "cs",
+              "en"
+            ],
+            "default": "cs"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "category": {
+            "type": "string"
+          },
+          "hazardSeverity": {
+            "type": "string",
+            "enum": [
+              "advisory",
+              "warning",
+              "critical"
+            ]
+          },
+          "location": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "lat": {
+                "type": "number",
+                "minimum": -90,
+                "maximum": 90
+              },
+              "lon": {
+                "type": "number",
+                "minimum": -180,
+                "maximum": 180
+              },
+              "accuracyM": {
+                "type": "number",
+                "minimum": 0
+              },
+              "source": {
+                "type": "string"
+              }
+            }
+          }
+        }
       }
     }
   }

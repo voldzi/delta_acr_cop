@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AiGateway, LocalLlmGatewayProvider, createProviderRegistry } from "./index.js";
+import { AiGateway, LocalLlmGatewayProvider, OllamaAiProvider, createProviderRegistry } from "./index.js";
 
 const baseQuery = {
   requestId: "req_test",
@@ -16,6 +16,56 @@ afterEach(() => {
 });
 
 describe("AiGateway", () => {
+  it("uses the COP-owned Ollama provider before the compatibility gateway", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      new Response(
+        JSON.stringify({
+          model: "gemma4:12b",
+          message: {
+            role: "assistant",
+            content: "Ollama odpověděla přes COP server-side provider."
+          },
+          done_reason: "stop",
+          prompt_eval_count: 10,
+          eval_count: 8
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const gateway = AiGateway.fromEnv({
+      COP_EXTERNAL_AI_ENABLED: "true",
+      COP_AI_DEFAULT_PROVIDER: "auto",
+      COP_AI_OLLAMA_BASE_URLS: "http://ollama-primary:11434,http://ollama-secondary:11434",
+      COP_AI_LOCAL_GATEWAY_URL: "http://llm-gateway:8080",
+      COP_AI_OLLAMA_MODEL: "gemma4:12b",
+      COP_AI_OLLAMA_MAX_TOKENS: "384",
+      COP_AI_OLLAMA_THINK: "false"
+    });
+
+    const response = await gateway.queryCopAssistant(baseQuery);
+
+    expect(response.status).toBe("COMPLETED");
+    expect(response.provider).toBe("ollama");
+    expect(response.model).toBe("gemma4:12b");
+    expect(response.result.summary).toBe("Ollama odpověděla přes COP server-side provider.");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://ollama-primary:11434/api/chat",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          "X-Service-Name": "cop-api"
+        })
+      })
+    );
+    const fetchInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const requestBody = JSON.parse(fetchInit.body as string);
+    expect(requestBody.think).toBe(false);
+    expect(requestBody.options.num_predict).toBe(384);
+  });
+
   it("uses the local LLM Gateway provider when enabled", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(
@@ -118,6 +168,34 @@ describe("AiGateway", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Bearer service-secret"
+        })
+      })
+    );
+  });
+
+  it("checks direct Ollama readiness without exposing tokens", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ models: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OllamaAiProvider({
+      baseUrls: ["http://ollama:11434/"],
+      token: "ollama-secret",
+      model: "gemma4:12b",
+      maxTokens: 512,
+      timeoutMs: 30000,
+      retryAttempts: 0,
+      think: false
+    });
+
+    const health = await provider.health();
+
+    expect(health.status).toBe("ok");
+    expect(health.detail).toContain("gemma4:12b");
+    expect(health.detail).not.toContain("ollama-secret");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://ollama:11434/api/tags",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer ollama-secret"
         })
       })
     );

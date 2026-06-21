@@ -19,6 +19,7 @@ Human API documentation remains in the established numbered documentation set:
 - [CSM Messaging integration](integration/09_CSM_MESSAGING_INTEGRATION.md)
 - [COP notification decision and push](integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md)
 - [AI-COP/NIPS federation contract](integration/14_AI_COP_NIPS_FEDERATION_CONTRACT.md)
+- [Local AI provider and assistant endpoints](ai/05_LOCAL_LLM_PROVIDER.md)
 - [Native iOS/iPadOS API guide](mobile/01_NATIVE_IOS_IPADOS_APP.md)
 
 Existing live system endpoints are `/health/live`, `/health/ready` and
@@ -29,3 +30,8 @@ Current COP error responses use the repository's compatibility envelope with
 `correlationId`; this shape is documented in the OpenAPI contract and
 [Error model](integration/06_ERROR_MODEL.md). Any migration to a different
 request-id field must be compatibility-safe and recorded in an ADR.
+
+AI clients must call only COP API endpoints such as
+`/api/v1/ai/situation-summary`, `/api/v1/ai/source-health-summary` and
+`/api/v1/ai/community-report/draft`. Browser and native clients must never call
+Ollama, AI KnowledgeBase LLM Gateway or any provider service token directly.

@@ -137,7 +137,14 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `POST /api/v1/community/reports/{reportId}/submit` pro odeslání hlášení ke sdílení,
 - `GET /api/v1/sources` a `/api/v1/sources/health`,
 - `POST /api/v1/notifications/safety/evaluate` pouze pro operator/diagnostický tok vyhodnocení safety výstrah; běžný iOS push přijde přes CSM Messaging,
-- `POST /api/v1/ai/cop-assistant/query` pouze pro povolené informační dotazy.
+- `POST /api/v1/ai/situation-summary` pro serverový situační souhrn,
+- `POST /api/v1/ai/source-health-summary` pro srozumitelné vysvětlení kvality zdrojů,
+- `POST /api/v1/ai/community-report/draft` pro pomoc s textem hlášení,
+- `POST /api/v1/ai/cop-assistant/query` pouze pro pokročilé povolené informační dotazy.
+
+Nativní klient nevolá Ollama, AI KnowledgeBase LLM Gateway ani žádný modelový
+provider přímo. AI kontext skládá COP server podle oprávnění uživatele a výsledek
+audituje.
 
 Sdíleným datovým základem pro web i iOS je
 [Canonical Entity Model v2](../data/07_CANONICAL_ENTITY_MODEL_V2.md). Nativní

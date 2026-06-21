@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-COP má používat OpenAI, Codex, lokální LLM a mock providera, ale policy může externí AI omezit nebo vypnout.
+COP má používat OpenAI, Codex, vlastní server-side Ollama provider, kompatibilní lokální LLM gateway a mock providera, ale policy může externí AI omezit nebo vypnout.
 
 ## Decision
 
@@ -14,7 +14,7 @@ AI bude přístupná pouze přes AI Gateway s provider abstraction, guardrails, 
 
 ## Consequences
 
-Systém může měnit providery a podporovat local-only režim. Implementace vyžaduje jasné provider capability metadata.
+Systém může měnit providery a podporovat local-only režim. Primární local-only cesta je COP-owned `ollama`; `local` přes AI KnowledgeBase LLM Gateway je kompatibilní fallback. Implementace vyžaduje jasné provider capability metadata.
 
 ## Alternatives Considered
 

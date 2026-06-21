@@ -83,6 +83,27 @@ flowchart LR
 
 AI provider nikdy nedostane data, která uživatel nemá právo vidět v COP UI.
 
+## Implementovaný Runtime Stav
+
+COP má server-side AI runtime za `@cop/ai-gateway`:
+
+- primární lokální provider `ollama` volaný pouze z `cop-api`,
+- kompatibilní fallback `local` pro AI KnowledgeBase LLM Gateway,
+- bezpečný vývojový `mock` provider,
+- guardrails před každým voláním modelu,
+- audit pro každý AI request,
+- health signal `ai-gateway` v `/health/dependencies`.
+
+Aktivní aplikační endpointy:
+
+- `POST /api/v1/ai/cop-assistant/query` pro obecné povolené dotazy,
+- `POST /api/v1/ai/situation-summary` pro situační souhrn z COP objektů, výstrah a provider health,
+- `POST /api/v1/ai/source-health-summary` pro vysvětlení kvality zdrojů,
+- `POST /api/v1/ai/community-report/draft` pro pomoc s občanským hlášením.
+
+Tyto endpointy jsou určeny i pro iOS/iPadOS klienty. Klienti nemají znát Ollama
+URL, LLM Gateway URL ani service tokeny.
+
 ## Model Registry
 
 Před produkčním použitím externího nebo lokálního modelu musí být evidováno:
@@ -98,9 +119,9 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
 
 ## Implementační Priorita
 
-1. Policy-filtered AI query context nad canonical entity modelem.
-2. Audit a structured output validation.
-3. Data quality assistant pro source conflict/stale/confidence.
-4. Situation summary pro událost/workspace.
-5. Community report assistant pro text a kategorie.
+1. Policy-filtered AI query context nad canonical entity modelem. Stav: hotovo pro základní objekty, alerty a source health.
+2. Audit a structured output validation. Stav: audit hotový, structured validation rozšířit pro specializované JSON odpovědi.
+3. Data quality assistant pro source conflict/stale/confidence. Stav: základ přes source health summary, rozšířit o detail confidence faktorů.
+4. Situation summary pro událost/workspace. Stav: základní endpoint hotový.
+5. Community report assistant pro text a kategorie. Stav: základní endpoint hotový bez čtení médií.
 6. Až potom multimediální shrnutí, a jen s media ACL.

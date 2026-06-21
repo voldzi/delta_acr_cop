@@ -1,6 +1,6 @@
 import { evaluateAiGuardrails } from "@cop/ai-guardrails";
 
-export type AiProviderId = "openai" | "codex" | "local" | "mock";
+export type AiProviderId = "openai" | "codex" | "ollama" | "local" | "mock";
 export type AiDependencyStatus = "ok" | "degraded" | "disabled";
 
 export interface AiCopQuery {
@@ -111,6 +111,150 @@ interface LlmGatewayChatResponse {
     completion_tokens?: number;
     total_tokens?: number;
   };
+}
+
+export interface OllamaProviderOptions {
+  baseUrls: string[];
+  token?: string;
+  model: string;
+  maxTokens: number;
+  timeoutMs: number;
+  retryAttempts: number;
+  think: boolean;
+}
+
+interface OllamaChatResponse {
+  model?: string;
+  message?: {
+    content?: string;
+    role?: string;
+    thinking?: unknown;
+  };
+  done_reason?: string;
+  prompt_eval_count?: number;
+  eval_count?: number;
+}
+
+export class OllamaAiProvider implements AiProvider {
+  id: AiProviderId = "ollama";
+  available = true;
+
+  constructor(private readonly options: OllamaProviderOptions) {}
+
+  get model(): string {
+    return this.options.model;
+  }
+
+  async execute(query: AiCopQuery): Promise<Record<string, unknown>> {
+    const response = await this.postChat(query);
+    const content = typeof response.message?.content === "string" ? response.message.content.trim() : "";
+    if (!content) {
+      throw new Error("Ollama returned an empty response.");
+    }
+
+    const promptTokens = Number.isFinite(response.prompt_eval_count) ? Number(response.prompt_eval_count) : 0;
+    const completionTokens = Number.isFinite(response.eval_count) ? Number(response.eval_count) : 0;
+    return {
+      summary: content,
+      structured: {
+        provider: "ollama",
+        model: response.model ?? this.model,
+        finishReason: response.done_reason ?? "unknown",
+        usage: {
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: promptTokens + completionTokens
+        }
+      }
+    };
+  }
+
+  async health(): Promise<AiProviderHealth> {
+    try {
+      await this.requestJsonWithFallback(
+        "/api/tags",
+        {
+          method: "GET",
+          headers: this.headers()
+        },
+        Math.min(this.options.timeoutMs, 3000)
+      );
+      return {
+        status: "ok",
+        detail: `COP Ollama provider ready; model ${this.model}`
+      };
+    } catch (error) {
+      return {
+        status: "degraded",
+        detail: `COP Ollama provider unavailable: ${errorMessage(error)}`
+      };
+    }
+  }
+
+  private async postChat(query: AiCopQuery): Promise<OllamaChatResponse> {
+    const body = {
+      model: this.options.model,
+      messages: [
+        {
+          role: "system",
+          content: buildSystemPrompt(query.outputFormat)
+        },
+        {
+          role: "user",
+          content: buildUserPrompt(query)
+        }
+      ],
+      stream: false,
+      think: this.options.think,
+      options: {
+        num_predict: this.options.maxTokens
+      }
+    };
+
+    return this.requestJsonWithFallback(
+      "/api/chat",
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify(body)
+      },
+      this.options.timeoutMs
+    ) as Promise<OllamaChatResponse>;
+  }
+
+  private async requestJsonWithFallback(path: string, init: RequestInit, timeoutMs: number): Promise<Record<string, unknown>> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= this.options.retryAttempts; attempt += 1) {
+      for (const baseUrl of this.normalizedBaseUrls()) {
+        try {
+          const response = await fetchWithTimeout(`${baseUrl}${path}`, init, timeoutMs);
+          if (!response.ok) {
+            const detail = await readShortResponse(response);
+            throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+          }
+          return (await response.json()) as Record<string, unknown>;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+    }
+    throw new Error(`Ollama request failed: ${errorMessage(lastError)}`);
+  }
+
+  private normalizedBaseUrls(): string[] {
+    return this.options.baseUrls.map((baseUrl) => baseUrl.replace(/\/+$/, ""));
+  }
+
+  private headers(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Service-Name": "cop-api"
+    };
+    if (this.options.token) {
+      headers.Authorization = `Bearer ${this.options.token}`;
+    }
+    return headers;
+  }
 }
 
 export class LocalLlmGatewayProvider implements AiProvider {
@@ -238,6 +382,14 @@ export class LocalLlmGatewayProvider implements AiProvider {
 export interface AiGatewayEnv {
   COP_EXTERNAL_AI_ENABLED?: string;
   COP_AI_DEFAULT_PROVIDER?: string;
+  COP_AI_OLLAMA_BASE_URL?: string;
+  COP_AI_OLLAMA_BASE_URLS?: string;
+  COP_AI_OLLAMA_TOKEN?: string;
+  COP_AI_OLLAMA_MODEL?: string;
+  COP_AI_OLLAMA_MAX_TOKENS?: string;
+  COP_AI_OLLAMA_TIMEOUT_MS?: string;
+  COP_AI_OLLAMA_RETRY_ATTEMPTS?: string;
+  COP_AI_OLLAMA_THINK?: string;
   COP_AI_LOCAL_GATEWAY_URL?: string;
   COP_AI_LOCAL_GATEWAY_TOKEN?: string;
   COP_AI_LOCAL_MODEL?: string;
@@ -250,6 +402,19 @@ export interface AiGatewayEnv {
 export function createProviderRegistry(env: AiGatewayEnv = process.env): Map<AiProviderId, AiProvider> {
   const mock = new MockAiProvider();
   const externalAiEnabled = parseBoolean(env.COP_EXTERNAL_AI_ENABLED, false);
+  const ollamaBaseUrls = parseCsv(env.COP_AI_OLLAMA_BASE_URLS ?? env.COP_AI_OLLAMA_BASE_URL);
+  const ollamaProvider =
+    externalAiEnabled && ollamaBaseUrls.length > 0
+      ? new OllamaAiProvider({
+          baseUrls: ollamaBaseUrls,
+          token: env.COP_AI_OLLAMA_TOKEN?.trim() || undefined,
+          model: env.COP_AI_OLLAMA_MODEL?.trim() || env.COP_AI_LOCAL_MODEL?.trim() || "gemma4:12b",
+          maxTokens: parsePositiveInteger(env.COP_AI_OLLAMA_MAX_TOKENS ?? env.COP_AI_LOCAL_MAX_TOKENS, 512),
+          timeoutMs: parsePositiveInteger(env.COP_AI_OLLAMA_TIMEOUT_MS ?? env.COP_AI_LOCAL_TIMEOUT_MS, 30000),
+          retryAttempts: parseNonNegativeInteger(env.COP_AI_OLLAMA_RETRY_ATTEMPTS ?? env.COP_AI_LOCAL_RETRY_ATTEMPTS, 2),
+          think: parseBoolean(env.COP_AI_OLLAMA_THINK ?? env.COP_AI_LOCAL_THINK, false)
+        })
+      : new DisabledAiProvider("ollama", "ollama-provider-disabled");
   const localGatewayUrl = env.COP_AI_LOCAL_GATEWAY_URL?.trim();
   const localProvider =
     externalAiEnabled && localGatewayUrl
@@ -265,6 +430,7 @@ export function createProviderRegistry(env: AiGatewayEnv = process.env): Map<AiP
       : new DisabledAiProvider("local", "local-llm-gateway-disabled");
   return new Map<AiProviderId, AiProvider>([
     ["mock", mock],
+    ["ollama", ollamaProvider],
     ["local", localProvider],
     ["openai", new DisabledAiProvider("openai", "openai-provider-disabled")],
     ["codex", new DisabledAiProvider("codex", "codex-provider-disabled")]
@@ -372,6 +538,10 @@ export class AiGateway {
       return configuredDefault;
     }
     const local = this.providers.get("local");
+    const ollama = this.providers.get("ollama");
+    if (ollama?.available) {
+      return ollama;
+    }
     if (local?.available) {
       return local;
     }
@@ -433,10 +603,17 @@ function parseNonNegativeInteger(value: string | undefined, fallback: number): n
 }
 
 function parseProviderId(value: string | undefined, fallback: AiProviderId | "auto"): AiProviderId | "auto" {
-  if (value === "openai" || value === "codex" || value === "local" || value === "mock" || value === "auto") {
+  if (value === "openai" || value === "codex" || value === "ollama" || value === "local" || value === "mock" || value === "auto") {
     return value;
   }
   return fallback;
+}
+
+function parseCsv(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function errorMessage(error: unknown): string {
