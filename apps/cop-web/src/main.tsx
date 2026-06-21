@@ -3649,7 +3649,7 @@ export function App() {
                 openSettings("account");
                 return;
               }
-              openLoginPrompt("account");
+              loginOperator({ promptLogin: true });
             }}
             title={profileAccessReady ? "Účet - otevřít nastavení" : "Přihlásit"}
             type="button"
