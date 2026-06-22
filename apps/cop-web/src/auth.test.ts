@@ -8,8 +8,10 @@ import {
   initializeAuth,
   isAuthSessionActive,
   isOidcEnabled,
+  plannedAuthRefreshDelayMs,
   readAuthDiagnostics,
   refreshAuthSession,
+  shouldExpireAuthSessionAfterRefreshFailure,
   subjectIdFromAuthSession,
   subjectIdFromStoredAuthValue,
   type AuthConfig
@@ -57,6 +59,25 @@ describe("web auth helpers", () => {
 
     expect(isAuthSessionActive(expired)).toBe(false);
     expect(getAuthorizationToken(expired, "lab-token")).toBeUndefined();
+  });
+
+  it("plans proactive refresh before short OIDC tokens become inactive", () => {
+    const now = 1_000_000;
+
+    expect(plannedAuthRefreshDelayMs(now + 60_000, now)).toBe(18_000);
+    expect(plannedAuthRefreshDelayMs(now + 5 * 60_000, now)).toBe(210_000);
+    expect(plannedAuthRefreshDelayMs(now + 20 * 60_000, now)).toBe(18 * 60_000);
+    expect(plannedAuthRefreshDelayMs(now - 1, now)).toBe(0);
+  });
+
+  it("retries refresh without expiring the session until the current token is effectively gone", () => {
+    const now = 1_000_000;
+
+    expect(plannedAuthRefreshDelayMs(now + 60_000, now, 1)).toBe(15_000);
+    expect(plannedAuthRefreshDelayMs(now + 20_000, now, 1)).toBe(2_000);
+    expect(shouldExpireAuthSessionAfterRefreshFailure(now + 60_000, now)).toBe(false);
+    expect(shouldExpireAuthSessionAfterRefreshFailure(now + 5_000, now)).toBe(true);
+    expect(shouldExpireAuthSessionAfterRefreshFailure(undefined, now)).toBe(true);
   });
 
   it("decodes JWT payloads for operator display data", () => {
@@ -132,6 +153,29 @@ describe("web auth helpers", () => {
       status: "authenticated"
     });
     expect(stored.refreshToken).toBe("next-refresh");
+  });
+
+  it("does not clear a still-valid stored session when startup refresh temporarily fails", async () => {
+    window.localStorage.setItem("cop.oidc.session.v1", JSON.stringify({
+      accessToken: "near-expiry-token",
+      expiresAt: Date.now() + 20_000,
+      profile: { name: "COP Operator", username: "operator" },
+      refreshToken: "persisted-refresh"
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      json: async () => ({ error: "temporarily_unavailable" }),
+      ok: false,
+      status: 503
+    } as Response)));
+
+    const session = await initializeAuth(oidcConfig());
+
+    expect(session).toMatchObject({
+      accessToken: "near-expiry-token",
+      error: "Obnova přihlášení se dočasně nepodařila, zkusím to znovu.",
+      status: "authenticated"
+    });
+    expect(window.localStorage.getItem("cop.oidc.session.v1")).toContain("near-expiry-token");
   });
 
   it("records session diagnostics without storing token values", async () => {

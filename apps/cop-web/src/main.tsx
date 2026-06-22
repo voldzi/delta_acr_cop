@@ -58,10 +58,12 @@ import {
   initializeAuth,
   isAuthSessionActive,
   isOidcEnabled,
+  plannedAuthRefreshDelayMs,
   readAuthDiagnostics,
   recordAuthDiagnosticEvent,
   readAuthConfig,
   refreshAuthSession,
+  shouldExpireAuthSessionAfterRefreshFailure,
   subjectIdFromAuthSession,
   subjectIdFromStoredAuthValue,
   type AuthConfig,
@@ -390,6 +392,7 @@ interface AccountChangeNotice {
 export function App() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
+  const [authRefreshRetry, setAuthRefreshRetry] = React.useState(0);
   const [authDiagnostics, setAuthDiagnostics] = React.useState<AuthDiagnostics>(() => readAuthDiagnostics());
   const userStorageScope = React.useMemo(
     () => userPreferenceScope(authSession),
@@ -643,29 +646,75 @@ export function App() {
     if (authSession.status !== "authenticated" || !authSession.expiresAt || !isOidcEnabled(authConfig)) {
       return;
     }
-    const refreshDelayMs = Math.max(0, authSession.expiresAt - Date.now() - 60_000);
+    const refreshDelayMs = plannedAuthRefreshDelayMs(authSession.expiresAt, Date.now(), authRefreshRetry);
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      initializeAuth(authConfig)
+      refreshAuthSession(authConfig, authSession)
         .then((nextSession) => {
-          if (!cancelled) {
-            setAuthSession(nextSession);
+          if (cancelled) {
+            return;
           }
+          if (nextSession?.status === "authenticated") {
+            setAuthRefreshRetry(0);
+            setAuthSession(nextSession);
+            setAuthDiagnostics(readAuthDiagnostics());
+            return;
+          }
+          if (shouldExpireAuthSessionAfterRefreshFailure(authSession.expiresAt)) {
+            recordAuthDiagnosticEvent("session_expired", {
+              detail: "Obnova přihlášení se nezdařila před expirací tokenu.",
+              expiresAt: authSession.expiresAt,
+              hasRefreshToken: Boolean(authSession.refreshToken),
+              status: authSession.status,
+              subjectId: authSubjectId,
+              username: authSession.profile?.username
+            });
+            setAuthSession({
+              error: "Přihlášení vypršelo. Přihlaste se znovu.",
+              status: "anonymous"
+            });
+            setAuthDiagnostics(readAuthDiagnostics());
+            return;
+          }
+          setAuthRefreshRetry((current) => current + 1);
+          setAuthSession((current) => current.status === "authenticated"
+            ? { ...current, error: "Obnova přihlášení se dočasně nepodařila, zkusím to znovu." }
+            : current);
+          setAuthDiagnostics(readAuthDiagnostics());
         })
         .catch((error: unknown) => {
-          if (!cancelled) {
+          if (cancelled) {
+            return;
+          }
+          if (shouldExpireAuthSessionAfterRefreshFailure(authSession.expiresAt)) {
             setAuthSession({
               error: error instanceof Error ? error.message : "Přihlášení vypršelo.",
               status: "anonymous"
             });
+            setAuthDiagnostics(readAuthDiagnostics());
+            return;
           }
+          setAuthRefreshRetry((current) => current + 1);
+          setAuthSession((current) => current.status === "authenticated"
+            ? { ...current, error: error instanceof Error ? error.message : "Obnova přihlášení se dočasně nepodařila, zkusím to znovu." }
+            : current);
+          setAuthDiagnostics(readAuthDiagnostics());
         });
     }, refreshDelayMs);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [authConfig, authSession.expiresAt, authSession.status]);
+  }, [
+    authConfig,
+    authRefreshRetry,
+    authSession.accessToken,
+    authSession.expiresAt,
+    authSession.profile?.username,
+    authSession.refreshToken,
+    authSession.status,
+    authSubjectId
+  ]);
 
   React.useEffect(() => {
     if (!communityReportSubmitting) {
@@ -726,6 +775,7 @@ export function App() {
       initializeAuth(authConfig)
         .then((nextSession) => {
           if (!cancelled) {
+            setAuthRefreshRetry(0);
             setAuthSession(nextSession);
           }
         })
@@ -2872,7 +2922,10 @@ export function App() {
     setAccountChangeNotice(null);
     setAuthSession((current) => ({ ...current, status: "authenticating" }));
     initializeAuth(authConfig)
-      .then((nextSession) => setAuthSession(nextSession))
+      .then((nextSession) => {
+        setAuthRefreshRetry(0);
+        setAuthSession(nextSession);
+      })
       .catch((error: unknown) => {
         setAuthSession({
           error: error instanceof Error ? error.message : "Přepnutí účtu selhalo.",
@@ -2888,6 +2941,7 @@ export function App() {
       // Session storage may be unavailable in restricted browser modes.
     }
     setAccountChangeNotice(null);
+    setAuthRefreshRetry(0);
     setAuthSession({ status: "anonymous" });
   }
 
@@ -3391,6 +3445,7 @@ export function App() {
 
   function logoutOperator() {
     endSession(authConfig, authSession);
+    setAuthRefreshRetry(0);
     setAuthSession(createInitialAuthSession(authConfig));
   }
 

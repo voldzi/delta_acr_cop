@@ -166,6 +166,13 @@ export async function initializeAuth(config: AuthConfig): Promise<AuthSession> {
     }
     recordAuthDiagnosticEvent("refresh_failed", snapshotFromStoredSession(stored, detectedSessionStorage()));
   }
+  if (!shouldExpireAuthSessionAfterRefreshFailure(stored.expiresAt)) {
+    return {
+      ...stored,
+      error: "Obnova přihlášení se dočasně nepodařila, zkusím to znovu.",
+      status: "authenticated"
+    };
+  }
   clearStoredSession();
   return { status: "anonymous" };
 }
@@ -197,6 +204,24 @@ export function isAuthSessionActive(session: AuthSession, skewMs = 30_000): sess
   return session.status === "authenticated"
     && Boolean(session.accessToken)
     && (!session.expiresAt || session.expiresAt > Date.now() + skewMs);
+}
+
+export function plannedAuthRefreshDelayMs(expiresAt: number, now = Date.now(), retryAttempt = 0): number {
+  const remainingMs = expiresAt - now;
+  if (remainingMs <= 0) {
+    return 0;
+  }
+  if (retryAttempt > 0) {
+    return Math.min(30_000, Math.max(2_000, remainingMs - 45_000));
+  }
+  const leadMs = remainingMs > 10 * 60_000
+    ? 2 * 60_000
+    : Math.max(20_000, Math.min(90_000, Math.floor(remainingMs * 0.7)));
+  return Math.max(0, remainingMs - leadMs);
+}
+
+export function shouldExpireAuthSessionAfterRefreshFailure(expiresAt: number | undefined, now = Date.now()): boolean {
+  return typeof expiresAt !== "number" || expiresAt <= now + 5_000;
 }
 
 export async function beginLogin(config: AuthConfig, options: BeginLoginOptions = {}): Promise<void> {
