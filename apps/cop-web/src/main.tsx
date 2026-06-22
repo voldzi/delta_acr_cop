@@ -3712,7 +3712,7 @@ export function App() {
           </a>
           <button
             aria-label={profileAccessReady ? "Účet - otevřít nastavení" : "Přihlásit"}
-            className="operator-button"
+            className="operator-button account-entry-button"
             onClick={() => {
               if (profileAccessReady || !isOidcEnabled(authConfig)) {
                 openSettings("account");
@@ -4612,6 +4612,7 @@ export function App() {
           onWorkspaceTemplateApply={applyWorkspaceTemplate}
           onWorkspaceLayoutChange={updateWorkspaceLayout}
           onHelp={(section) => setHelpSection(section)}
+          onLogin={() => loginOperator({ promptLogin: true })}
           onLogout={logoutOperator}
         />
       ) : null}
@@ -6358,6 +6359,7 @@ function SettingsDrawer({
   onWorkspaceTemplateApply,
   onWorkspaceLayoutChange,
   onHelp,
+  onLogin,
   onLogout
 }: {
   activeTab: SettingsTab;
@@ -6418,6 +6420,7 @@ function SettingsDrawer({
   onWorkspaceTemplateApply: (value: WorkspaceTemplateId) => void;
   onWorkspaceLayoutChange: (value: Partial<WorkspaceLayoutPreferences>) => void;
   onHelp: (section: HelpSection) => void;
+  onLogin: () => void;
   onLogout: () => void;
 }) {
   return (
@@ -6666,7 +6669,12 @@ function SettingsDrawer({
                     </button>
                   </div>
                 ) : (
-                  <div className="empty-mini">Přihlášení najdete v horní liště.</div>
+                  <div className="settings-button-row">
+                    <button className="primary-button" onClick={onLogin} type="button">
+                      <LogIn size={16} />
+                      Přihlásit
+                    </button>
+                  </div>
                 )
               ) : (
                 <div className="empty-mini">Přihlášení není v této konfiguraci zapnuté. Aplikace běží v laboratorním režimu.</div>

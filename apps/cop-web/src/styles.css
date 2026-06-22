@@ -8515,7 +8515,7 @@ dd {
   .shell.app-shell-v2 .topbar {
     position: relative;
     z-index: 82;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
     min-height: 54px;
     padding: 6px 8px;
@@ -8571,8 +8571,46 @@ dd {
     white-space: nowrap;
   }
 
+  .shell.app-shell-v2 .topbar-actions {
+    display: flex;
+    grid-column: auto;
+    align-items: center;
+    justify-content: flex-end;
+    justify-self: end;
+    flex: initial;
+    gap: 0;
+    min-width: 42px;
+    margin-left: 0;
+  }
+
+  .shell.app-shell-v2 .topbar-actions > :not(.account-entry-button) {
+    display: none;
+  }
+
+  .shell.app-shell-v2 .account-entry-button {
+    display: inline-grid;
+    grid-template-columns: 1fr;
+    flex: 0 0 42px;
+    place-items: center;
+    width: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    padding: 0;
+    border-radius: 10px;
+  }
+
+  .shell.app-shell-v2 .account-entry-button > span,
+  .shell.app-shell-v2 .account-entry-button > svg {
+    display: none;
+  }
+
+  .shell.app-shell-v2 .account-entry-button .operator-avatar.small {
+    width: 30px;
+    height: 30px;
+    font-size: 10px;
+  }
+
   .shell.app-shell-v2 .event-summary-strip,
-  .shell.app-shell-v2 .topbar-actions,
   .shell.app-shell-v2 .workspace-nav,
   .shell.app-shell-v2 .context-rail,
   .shell.app-shell-v2 .app-statusbar,
