@@ -8599,7 +8599,7 @@ dd {
     border-radius: 10px;
   }
 
-  .shell.app-shell-v2 .account-entry-button > span,
+  .shell.app-shell-v2 .account-entry-button > span:not(.operator-avatar),
   .shell.app-shell-v2 .account-entry-button > svg {
     display: none;
   }
