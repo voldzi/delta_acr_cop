@@ -78,7 +78,7 @@ služby a auditují akci operátora. Všechny demo objekty musí nést
 `demoScenarioId=flood-central-bohemia` a v UI musí být jasný štítek
 `DEMO DATA`.
 
-Doporučený API kontrakt pro implementaci:
+Produkční API kontrakt:
 
 | Endpoint | Účel |
 | --- | --- |
@@ -86,6 +86,16 @@ Doporučený API kontrakt pro implementaci:
 | `POST /api/v1/demo/scenarios/{scenarioId}/seed` | idempotentně připraví demo data |
 | `POST /api/v1/demo/scenarios/{scenarioId}/reset` | smaže jen data daného scénáře |
 | `GET /api/v1/demo/scenarios/{scenarioId}/status` | stav seedovaných objektů a závislostí |
+
+Endpointy vyžadují přihlášeného operátora nebo autorizovaný lab token. Seed je
+idempotentní: opakované spuštění nevytváří duplicitní skupiny, hlášení ani
+zákresy. Reset maže pouze objekty označené `demoScenarioId` pro daný scénář,
+včetně demo skupiny, demo hlášení, demo zákresů a demo auditních záznamů.
+
+Seed zároveň vloží do metadata demo skupiny `demoConversation`, aby webový a
+nativní klient mohly ukázat živě působící konverzaci s krátkým vláknem,
+připnutým kontextem a kartami médií. Jde o prezentační metadata, ne o plaintext
+náhradu Matrix/E2EE chatu.
 
 ## Doporučený Demo Seed
 

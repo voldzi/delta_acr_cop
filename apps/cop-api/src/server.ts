@@ -304,6 +304,15 @@ const copMcpTools: CopMcpToolDefinition[] = [
   }
 ];
 
+const floodDemoScenarioId = "flood-central-bohemia";
+const floodDemoEventId = "demo-flood-central-bohemia";
+const floodDemoBbox = {
+  east: 15.6,
+  north: 50.65,
+  south: 49.75,
+  west: 13.75
+};
+
 interface MobileDeviceRegistration {
   appVersion: string;
   buildNumber?: string;
@@ -1233,6 +1242,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function deleteCommunityGroup(groupId: string, actor: AuthenticatedActor, requestNow: Date): Promise<boolean> {
+    try {
+      return await activeCommunityReportStore().deleteGroup(groupId, actor.subjectId, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.deleteGroup(groupId, actor.subjectId, requestNow);
+    }
+  }
+
   async function requestCommunityGroupMembership(groupId: string, actor: AuthenticatedActor, requestNow: Date) {
     try {
       return await activeCommunityReportStore().requestGroupMembership(groupId, actorToCommunityActor(actor), requestNow);
@@ -1347,6 +1365,172 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       markSketchDrawingStoreDegraded(error);
       return sketchDrawingFallbackStore.delete(drawingId, actorToSketchActor(actor), requestNow);
     }
+  }
+
+  async function listFloodDemoObjects(actor: AuthenticatedActor): Promise<{
+    drawings: SketchDrawingFeature[];
+    groups: CommunityGroupRecord[];
+    reports: CommunityReportRecord[];
+  }> {
+    const groups = (await listCommunityGroups({
+      includePublic: true,
+      subjectId: actor.subjectId
+    })).filter(isFloodDemoGroup);
+    const reports = (await listCommunityReports({
+      bbox: floodDemoBbox,
+      includeOwnDrafts: true,
+      limit: 500,
+      statuses: ["draft", "submitted", "published"],
+      subjectId: actor.subjectId
+    })).filter(isFloodDemoReport);
+    const actorGroupIds = await readCommunityActorGroupIds(actor);
+    for (const group of groups) {
+      actorGroupIds.add(group.groupId);
+    }
+    const drawings = (await listSketchDrawings({
+      allowedGroupIds: Array.from(actorGroupIds),
+      bbox: floodDemoBbox,
+      limit: 500,
+      subjectId: actor.subjectId
+    })).filter(isFloodDemoDrawing);
+    return { drawings, groups, reports };
+  }
+
+  function floodDemoStatusPayload(
+    objects: {
+      drawings: SketchDrawingFeature[];
+      groups: CommunityGroupRecord[];
+      reports: CommunityReportRecord[];
+    },
+    requestNow: Date,
+    operation?: Record<string, unknown>
+  ) {
+    return {
+      contractVersion: "cop-demo-scenarios-v1",
+      generatedAt: requestNow.toISOString(),
+      scenario: {
+        bbox: floodDemoBbox,
+        demoScenarioId: floodDemoScenarioId,
+        description: "Předpřipravená ukázka povodňové situace pro PoC a klientskou prezentaci.",
+        eventId: floodDemoEventId,
+        label: "Povodeň - Středočeský kraj",
+        status: objects.groups.length > 0 || objects.reports.length > 0 || objects.drawings.length > 0 ? "ready" : "empty",
+        summary: {
+          drawingCount: objects.drawings.length,
+          groupCount: objects.groups.length,
+          reportCount: objects.reports.length
+        }
+      },
+      ...(operation ? { operation } : {})
+    };
+  }
+
+  async function seedFloodDemoScenario(actor: AuthenticatedActor, requestNow: Date) {
+    const before = await listFloodDemoObjects(actor);
+    let group = before.groups[0] ?? null;
+    const operation = {
+      createdDrawings: 0,
+      createdGroups: 0,
+      createdReports: 0
+    };
+    if (!group) {
+      group = await createCommunityGroup({
+        anchorLocation: {
+          lat: 50.0755,
+          lon: 14.4378,
+          source: "manual"
+        },
+        createdBy: actorToCommunityActor(actor),
+        description: "Demo skupina pro koordinaci povodňové situace, hlášení z terénu a sdílená média.",
+        metadata: floodDemoGroupMetadata(actor),
+        name: "DEMO Povodeň - Středočeský kraj",
+        visibility: "public"
+      }, requestNow);
+      operation.createdGroups += 1;
+    }
+
+    const reportTitles = new Set(before.reports.map((report) => report.title));
+    for (const seed of floodDemoReportSeeds(group.groupId, requestNow)) {
+      if (reportTitles.has(seed.title)) {
+        continue;
+      }
+      const report = await createCommunityReport({
+        category: seed.category,
+        createdBy: actorToCommunityActor(actor),
+        description: seed.description,
+        location: seed.location,
+        observedAt: seed.observedAt,
+        properties: seed.properties,
+        title: seed.title,
+        visibility: seed.visibility
+      }, requestNow);
+      await submitCommunityReport(report.reportId, actor, requestNow);
+      operation.createdReports += 1;
+    }
+
+    const drawingLabels = new Set(before.drawings.map((drawing) => drawing.properties.label));
+    for (const seed of floodDemoDrawingSeeds(group.groupId)) {
+      if (drawingLabels.has(seed.label ?? "")) {
+        continue;
+      }
+      await createSketchDrawing({
+        actor: actorToSketchActor(actor),
+        eventId: floodDemoEventId,
+        geometry: seed.geometry,
+        groupId: group.groupId,
+        kind: seed.kind,
+        label: seed.label,
+        locked: false,
+        properties: seed.properties,
+        style: seed.style,
+        symbol: seed.symbol,
+        visibility: seed.visibility
+      }, requestNow);
+      operation.createdDrawings += 1;
+    }
+
+    appendAudit(state, "DEMO_SCENARIO_SEEDED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      demoScenarioId: floodDemoScenarioId,
+      ...operation
+    });
+    return floodDemoStatusPayload(await listFloodDemoObjects(actor), requestNow, operation);
+  }
+
+  async function resetFloodDemoScenario(actor: AuthenticatedActor, requestNow: Date) {
+    const objects = await listFloodDemoObjects(actor);
+    const operation = {
+      deletedAuditRecords: 0,
+      deletedDrawings: 0,
+      deletedGroups: 0,
+      deletedReports: 0
+    };
+    for (const report of objects.reports) {
+      if (await deleteCommunityReport(report.reportId, actor, requestNow)) {
+        operation.deletedReports += 1;
+      }
+    }
+    for (const drawing of objects.drawings) {
+      if (await deleteSketchDrawing(drawing.id, actor, requestNow)) {
+        operation.deletedDrawings += 1;
+      }
+    }
+    for (const group of objects.groups) {
+      if (await deleteCommunityGroup(group.groupId, actor, requestNow)) {
+        operation.deletedGroups += 1;
+      }
+    }
+    const auditCountBefore = state.auditEvents.length;
+    state.auditEvents = state.auditEvents.filter((event) => event.demoScenarioId !== floodDemoScenarioId);
+    operation.deletedAuditRecords = auditCountBefore - state.auditEvents.length;
+    appendAudit(state, "DEMO_SCENARIO_RESET", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      demoScenarioId: floodDemoScenarioId,
+      ...operation
+    });
+    return floodDemoStatusPayload(await listFloodDemoObjects(actor), requestNow, operation);
   }
 
   function requireActor(request: FastifyRequest, reply: FastifyReply): AuthenticatedActor | null {
@@ -1924,6 +2108,75 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         skippedCount: decisions.filter((decision) => !decision.shouldSend).length
       }
     };
+  });
+
+  app.get("/api/v1/demo/scenarios", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const requestNow = now();
+    const status = floodDemoStatusPayload(await listFloodDemoObjects(actor), requestNow);
+    return {
+      contractVersion: status.contractVersion,
+      generatedAt: status.generatedAt,
+      items: [status.scenario]
+    };
+  });
+
+  app.get("/api/v1/demo/scenarios/:scenarioId/status", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { scenarioId: string };
+    if (params.scenarioId !== floodDemoScenarioId) {
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Demo scenario was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const requestNow = now();
+    return floodDemoStatusPayload(await listFloodDemoObjects(actor), requestNow);
+  });
+
+  app.post("/api/v1/demo/scenarios/:scenarioId/seed", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { scenarioId: string };
+    if (params.scenarioId !== floodDemoScenarioId) {
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Demo scenario was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    return seedFloodDemoScenario(actor, now());
+  });
+
+  app.post("/api/v1/demo/scenarios/:scenarioId/reset", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { scenarioId: string };
+    if (params.scenarioId !== floodDemoScenarioId) {
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Demo scenario was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    return resetFloodDemoScenario(actor, now());
   });
 
   app.get("/api/v1/community/groups", async (request, reply) => {
@@ -5718,6 +5971,253 @@ function actorToSketchActor(actor: AuthenticatedActor) {
     subjectId: actor.subjectId,
     username: actor.username
   };
+}
+
+function isFloodDemoGroup(group: CommunityGroupRecord): boolean {
+  return isFloodDemoMetadata(group.metadata);
+}
+
+function isFloodDemoReport(report: CommunityReportRecord): boolean {
+  return isFloodDemoMetadata(report.properties);
+}
+
+function isFloodDemoDrawing(drawing: SketchDrawingFeature): boolean {
+  return isFloodDemoMetadata(drawing.properties.properties);
+}
+
+function isFloodDemoMetadata(value: unknown): boolean {
+  return isRecord(value) && value.demoScenarioId === floodDemoScenarioId;
+}
+
+function floodDemoBaseMetadata(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    demo: true,
+    demoLabel: "DEMO DATA",
+    demoScenarioId: floodDemoScenarioId,
+    eventId: floodDemoEventId,
+    ...extra
+  };
+}
+
+function floodDemoGroupMetadata(actor: AuthenticatedActor): Record<string, unknown> {
+  return floodDemoBaseMetadata({
+    demoConversation: {
+      media: [
+        {
+          byteSizeLabel: "2,4 MB",
+          caption: "Rozliv u silnice",
+          kind: "photo",
+          title: "IMG_4821.jpg"
+        },
+        {
+          byteSizeLabel: "18 MB",
+          caption: "Prutok u mostu",
+          kind: "video",
+          title: "IMG_4822.mp4"
+        },
+        {
+          byteSizeLabel: "1,2 MB",
+          caption: "Koordinacni podklady",
+          kind: "document",
+          title: "Situacni_zprava.pdf"
+        },
+        {
+          caption: "50.1047, 14.4252",
+          kind: "location",
+          title: "Most Zelezny"
+        }
+      ],
+      messages: [
+        {
+          authorName: "Jan Novak",
+          body: "Aktualizace stavu hladiny na tocich v postizene oblasti. Zadame potvrzeni prujezdnosti mostu.",
+          direction: "incoming",
+          id: "demo-msg-1",
+          role: "operacni dustojnik",
+          sentAt: "2026-05-16T10:18:00Z"
+        },
+        {
+          authorName: "Petr Svoboda",
+          body: "Na rece Berounce bude 3. SPA dosazen v odpolednich hodinach. Doplnuji prioritu evakuacni trasy.",
+          direction: "incoming",
+          id: "demo-msg-2",
+          link: {
+            label: "Udalost: E2025-0516-0001"
+          },
+          role: "HZS Stredocesky kraj",
+          sentAt: "2026-05-16T10:21:00Z"
+        },
+        {
+          authorName: actor.displayName,
+          body: "Prosim o upresneni predpokladaneho casu a mista. Zanesu to do situacni mapy.",
+          direction: "outgoing",
+          id: "demo-msg-3",
+          role: "COP",
+          sentAt: "2026-05-16T10:24:00Z"
+        }
+      ],
+      pinnedContext: "Dulezite kontakty, odkazy a media k povodnove udalosti.",
+      summary: "Koordinace povodnove situace, hlaseni z terenu a sdilena media.",
+      title: "test_cop1"
+    },
+    event: {
+      id: "E2025-0516-0001",
+      kind: "flood",
+      startedAt: "2026-05-16T08:30:00Z",
+      status: "active",
+      title: "Povoden - Stredocesky kraj"
+    }
+  });
+}
+
+function floodDemoReportSeeds(groupId: string, requestNow: Date) {
+  const groupName = "DEMO Povoden - Stredocesky kraj";
+  return [
+    {
+      category: "flood" as const,
+      description: "Voda postupne zaplavuje podjezd. Prijezd je vhodny jen pro slozky s vyssi prujezdnosti.",
+      location: { accuracyM: 20, lat: 50.1585, lon: 14.3974, source: "manual" as const },
+      observedAt: "2026-05-16T10:12:00Z",
+      properties: floodDemoBaseMetadata({
+        groupId,
+        groupName,
+        hazardSeverity: "warning",
+        recommendedAction: "Zobrazit v mape, overit prujezdnost a informovat mistni skupinu.",
+        validUntil: isoAfter(requestNow, 8)
+      }),
+      title: "Zaplaveny podjezd u Roztok",
+      visibility: "public" as const
+    },
+    {
+      category: "bridge_damage" as const,
+      description: "Most ma poskozeny kraj vozovky a je nutne jej oznacit jako rizikove misto.",
+      location: { accuracyM: 18, lat: 49.9781, lon: 14.392, source: "manual" as const },
+      observedAt: "2026-05-16T10:18:00Z",
+      properties: floodDemoBaseMetadata({
+        groupId,
+        groupName,
+        hazardSeverity: "critical",
+        recommendedAction: "Omezit prujezd, pripojit fotografii a predat do udalosti.",
+        validUntil: isoAfter(requestNow, 12)
+      }),
+      title: "Poskozeny most Zbraslav",
+      visibility: "public" as const
+    },
+    {
+      category: "road_blockage" as const,
+      description: "Nabrezi je neprujezdne kvuli stojici vode a naplaveninam.",
+      location: { accuracyM: 15, lat: 50.0912, lon: 14.414, source: "manual" as const },
+      observedAt: "2026-05-16T10:24:00Z",
+      properties: floodDemoBaseMetadata({
+        groupId,
+        groupName,
+        hazardSeverity: "warning",
+        recommendedAction: "Pouzit navrzenou objizdnou trasu v zakresu.",
+        validUntil: isoAfter(requestNow, 6)
+      }),
+      title: "Uzavirka nabrezi",
+      visibility: "public" as const
+    }
+  ];
+}
+
+function floodDemoDrawingSeeds(groupId: string): Array<Omit<CreateSketchDrawingInput, "actor">> {
+  return [
+    {
+      eventId: floodDemoEventId,
+      geometry: {
+        coordinates: [[
+          [14.245, 50.195],
+          [14.49, 50.215],
+          [14.56, 50.08],
+          [14.36, 49.99],
+          [14.18, 50.06],
+          [14.245, 50.195]
+        ]],
+        type: "Polygon"
+      },
+      groupId,
+      kind: "polygon",
+      label: "Evakuacni oblast Praha sever",
+      locked: false,
+      properties: floodDemoBaseMetadata({
+        groupId,
+        purpose: "evacuation_area"
+      }),
+      style: {
+        fill: "#2f80ed",
+        lineWidth: 2,
+        opacity: 0.24,
+        stroke: "#2f80ed"
+      },
+      symbol: {
+        iconId: "evacuation",
+        palette: "civil"
+      },
+      visibility: "public"
+    },
+    {
+      eventId: floodDemoEventId,
+      geometry: {
+        coordinates: [
+          [14.39, 50.08],
+          [14.31, 50.03],
+          [14.24, 49.99],
+          [14.18, 49.94]
+        ],
+        type: "LineString"
+      },
+      groupId,
+      kind: "line",
+      label: "Doporucena evakuacni trasa",
+      locked: false,
+      properties: floodDemoBaseMetadata({
+        groupId,
+        purpose: "route"
+      }),
+      style: {
+        fill: "#22c55e",
+        lineWidth: 4,
+        opacity: 0.9,
+        stroke: "#22c55e"
+      },
+      symbol: {
+        iconId: "route",
+        palette: "civil"
+      },
+      visibility: "public"
+    },
+    {
+      eventId: floodDemoEventId,
+      geometry: {
+        coordinates: [14.345, 50.035],
+        type: "Point"
+      },
+      groupId,
+      kind: "marker",
+      label: "Misto setkani",
+      locked: false,
+      properties: floodDemoBaseMetadata({
+        groupId,
+        purpose: "meeting_point"
+      }),
+      style: {
+        fill: "#22c55e",
+        lineWidth: 2,
+        opacity: 0.95,
+        stroke: "#ffffff"
+      },
+      symbol: {
+        iconId: "meeting_point",
+        palette: "civil"
+      },
+      visibility: "public"
+    }
+  ];
+}
+
+function isoAfter(now: Date, hours: number): string {
+  return new Date(now.getTime() + hours * 60 * 60 * 1000).toISOString();
 }
 
 function userDirectoryEntry(profile: UserProfileRecord) {

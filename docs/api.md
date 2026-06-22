@@ -21,6 +21,7 @@ Human API documentation remains in the established numbered documentation set:
 - [AI-COP/NIPS federation contract](integration/14_AI_COP_NIPS_FEDERATION_CONTRACT.md)
 - [Local AI provider and assistant endpoints](ai/05_LOCAL_LLM_PROVIDER.md)
 - [Native iOS/iPadOS API guide](mobile/01_NATIVE_IOS_IPADOS_APP.md)
+- [PoC demo runbook and resettable seed](runbooks/14_CLIENT_POC_DEMO_GUIDE.md)
 
 Existing live system endpoints are `/health/live`, `/health/ready` and
 `/health/dependencies`. They are intentionally kept for compatibility and
@@ -35,3 +36,8 @@ AI clients must call only COP API endpoints such as
 `/api/v1/ai/situation-summary`, `/api/v1/ai/source-health-summary` and
 `/api/v1/ai/community-report/draft`. Browser and native clients must never call
 Ollama, AI KnowledgeBase LLM Gateway or any provider service token directly.
+
+The resettable PoC demo is exposed through `/api/v1/demo/scenarios` and
+documented in the OpenAPI contract. Demo seeding and reset are server-side
+operations; browser and native clients only launch them through authenticated COP
+API calls.

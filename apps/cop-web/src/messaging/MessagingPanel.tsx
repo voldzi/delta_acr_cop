@@ -18,6 +18,30 @@ interface PendingChatAttachment {
   kind: MatrixAttachmentKind;
 }
 
+interface DemoConversation {
+  media: DemoConversationMedia[];
+  messages: DemoConversationMessage[];
+  pinnedContext?: string;
+  summary?: string;
+  title: string;
+}
+
+interface DemoConversationMessage {
+  authorName: string;
+  body: string;
+  direction: "incoming" | "outgoing";
+  id: string;
+  role?: string;
+  sentAt: string;
+}
+
+interface DemoConversationMedia {
+  byteSizeLabel?: string;
+  caption?: string;
+  kind: "document" | "location" | "photo" | "video";
+  title: string;
+}
+
 const communityGroupVisibilityOptions: Array<{ label: string; value: "private" | "public" }> = [
   { label: "S povolením", value: "private" },
   { label: "Veřejná", value: "public" }
@@ -279,6 +303,7 @@ export function MessagingPanel({
   const selectedConversationGroup = selectedConversation
     ? communityGroups.find((group) => group.groupId === conversationCommunityGroupId(selectedConversation)) ?? null
     : null;
+  const demoConversation = React.useMemo(() => demoConversationFromGroups(communityGroups), [communityGroups]);
 
   async function createGroup() {
     const name = newGroupName.trim();
@@ -731,6 +756,13 @@ export function MessagingPanel({
             onStartDirectConversation={(user) => void startDirectConversation(user)}
             onStartRoom={(conversationId) => void startRoomForConversation(conversationId)}
           />
+        ) : activeDockTab === "chat" && demoConversation ? (
+          <DemoConversationPreview
+            chatReady={chatReady}
+            conversation={demoConversation}
+            loading={bootstrapLoading}
+            onOpenChat={() => void openConversations()}
+          />
         ) : activeDockTab === "chat" && chatReady ? (
           <div className="messaging-empty-state">
             <strong>{conversations.length > 0 ? `${conversations.length} konverzací připraveno.` : "Zatím nemáte žádnou konverzaci."}</strong>
@@ -1159,6 +1191,94 @@ function CommunityGroupsPanel({
   );
 }
 
+function DemoConversationPreview({
+  chatReady,
+  conversation,
+  loading,
+  onOpenChat
+}: {
+  chatReady: boolean;
+  conversation: DemoConversation;
+  loading: boolean;
+  onOpenChat: () => void;
+}) {
+  return (
+    <div className="demo-conversation-preview" aria-label="Ukázková konverzace">
+      <header>
+        <div>
+          <span className="demo-conversation-eyebrow">Ukázková konverzace</span>
+          <strong>{conversation.title}</strong>
+          {conversation.summary ? <small>{conversation.summary}</small> : null}
+        </div>
+        <button className="mini-button" disabled={!chatReady || loading} onClick={onOpenChat} type="button">
+          <Lock size={14} />
+          {loading ? "Spouštím" : "Otevřít chat"}
+        </button>
+      </header>
+      {conversation.pinnedContext ? (
+        <div className="demo-conversation-context">
+          <Pin size={14} />
+          <span>{conversation.pinnedContext}</span>
+        </div>
+      ) : null}
+      <div className="demo-conversation-thread">
+        {conversation.messages.map((message) => (
+          <article className={`demo-conversation-bubble ${message.direction === "outgoing" ? "own" : ""}`} key={message.id}>
+            <small>
+              <strong>{message.authorName}</strong>
+              {message.role ? <span>{message.role}</span> : null}
+              <time dateTime={message.sentAt}>{formatDemoMessageTime(message.sentAt)}</time>
+            </small>
+            <p>{message.body}</p>
+          </article>
+        ))}
+      </div>
+      {conversation.media.length > 0 ? (
+        <div className="demo-conversation-media" aria-label="Sdílená média">
+          {conversation.media.map((item) => (
+            <div className="demo-media-card" key={`${item.kind}-${item.title}`}>
+              {demoMediaIcon(item.kind)}
+              <strong>{item.title}</strong>
+              {item.caption ? <span>{item.caption}</span> : null}
+              {item.byteSizeLabel ? <small>{item.byteSizeLabel}</small> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {!chatReady ? (
+        <div className="messaging-security-note">
+          <ShieldCheck size={15} />
+          Skutečné psaní zpráv se zapne po bezpečném Matrix/E2EE bootstrapu.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function demoMediaIcon(kind: DemoConversationMedia["kind"]) {
+  if (kind === "photo") {
+    return <Image size={20} />;
+  }
+  if (kind === "video") {
+    return <Video size={20} />;
+  }
+  if (kind === "location") {
+    return <MapPin size={20} />;
+  }
+  return <FileText size={20} />;
+}
+
+function formatDemoMessageTime(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return "";
+  }
+  return new Intl.DateTimeFormat("cs-CZ", {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
 function MatrixChatShell({
   chatListWidth,
   conversations,
@@ -1581,6 +1701,91 @@ function ensureRoomSummary(rooms: MatrixRoomSummary[], room: MatrixRoomSummary):
     return rooms;
   }
   return [room, ...rooms];
+}
+
+function demoConversationFromGroups(groups: MessagingPanelProps["communityGroups"]): DemoConversation | null {
+  for (const group of groups) {
+    const metadata = group.metadata;
+    if (!isPlainRecord(metadata)) {
+      continue;
+    }
+    const candidate = metadata.demoConversation;
+    if (!isPlainRecord(candidate)) {
+      continue;
+    }
+    const title = stringValue(candidate.title) ?? group.name;
+    const messages = Array.isArray(candidate.messages)
+      ? candidate.messages.map(demoConversationMessageFromValue).filter((message): message is DemoConversationMessage => Boolean(message))
+      : [];
+    const media = Array.isArray(candidate.media)
+      ? candidate.media.map(demoConversationMediaFromValue).filter((item): item is DemoConversationMedia => Boolean(item))
+      : [];
+    if (messages.length === 0 && media.length === 0) {
+      continue;
+    }
+    const pinnedContext = stringValue(candidate.pinnedContext);
+    const summary = stringValue(candidate.summary);
+    return {
+      media,
+      messages,
+      ...(pinnedContext ? { pinnedContext } : {}),
+      ...(summary ? { summary } : {}),
+      title
+    };
+  }
+  return null;
+}
+
+function demoConversationMessageFromValue(value: unknown): DemoConversationMessage | null {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  const id = stringValue(value.id);
+  const authorName = stringValue(value.authorName);
+  const body = stringValue(value.body);
+  const sentAt = stringValue(value.sentAt);
+  const direction = value.direction === "outgoing" ? "outgoing" : "incoming";
+  if (!id || !authorName || !body || !sentAt) {
+    return null;
+  }
+  const role = stringValue(value.role);
+  return {
+    authorName,
+    body,
+    direction,
+    id,
+    ...(role ? { role } : {}),
+    sentAt
+  };
+}
+
+function demoConversationMediaFromValue(value: unknown): DemoConversationMedia | null {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  const title = stringValue(value.title);
+  const kind = value.kind === "photo" || value.kind === "video" || value.kind === "document" || value.kind === "location"
+    ? value.kind
+    : null;
+  if (!title || !kind) {
+    return null;
+  }
+  const byteSizeLabel = stringValue(value.byteSizeLabel);
+  const caption = stringValue(value.caption);
+  return {
+    kind,
+    title,
+    ...(byteSizeLabel ? { byteSizeLabel } : {}),
+    ...(caption ? { caption } : {})
+  };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function isValidMatrixDeviceId(value: string | null): value is string {

@@ -43,6 +43,10 @@
       "description": "User-created map sketches, text labels, markers and measurements."
     },
     {
+      "name": "Demo",
+      "description": "Resettable proof-of-concept demo scenarios and launch status."
+    },
+    {
       "name": "Ingest",
       "description": "Event and batch ingest endpoints for registered external sources."
     },
@@ -4255,6 +4259,132 @@
           }
         }
       }
+    },
+    "/api/v1/demo/scenarios": {
+      "get": {
+        "tags": [
+          "Demo"
+        ],
+        "summary": "List available resettable demo scenarios.",
+        "operationId": "listDemoScenarios",
+        "responses": {
+          "200": {
+            "description": "Available demo scenarios and current seed state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoScenarioListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/demo/scenarios/{scenarioId}/status": {
+      "get": {
+        "tags": [
+          "Demo"
+        ],
+        "summary": "Read current seed status for a demo scenario.",
+        "operationId": "getDemoScenarioStatus",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DemoScenarioIdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Demo scenario status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoScenarioResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/demo/scenarios/{scenarioId}/seed": {
+      "post": {
+        "tags": [
+          "Demo"
+        ],
+        "summary": "Idempotently seed a demo scenario with groups, reports and sketches.",
+        "operationId": "seedDemoScenario",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DemoScenarioIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Demo scenario seed result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoScenarioResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/demo/scenarios/{scenarioId}/reset": {
+      "post": {
+        "tags": [
+          "Demo"
+        ],
+        "summary": "Delete demo data owned by the scenario operator.",
+        "operationId": "resetDemoScenario",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DemoScenarioIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Demo scenario reset result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoScenarioResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4385,6 +4515,18 @@
           "default": false
         },
         "description": "Include tracks older than the configured active display lifecycle."
+      },
+      "DemoScenarioIdPath": {
+        "name": "scenarioId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "flood-central-bohemia"
+          ]
+        },
+        "description": "Resettable demo scenario identifier."
       }
     },
     "responses": {
@@ -12836,6 +12978,159 @@
             }
           }
         }
+      },
+      "DemoScenarioStatus": {
+        "type": "object",
+        "required": [
+          "bbox",
+          "demoScenarioId",
+          "description",
+          "eventId",
+          "label",
+          "status",
+          "summary"
+        ],
+        "properties": {
+          "bbox": {
+            "type": "object",
+            "required": [
+              "east",
+              "north",
+              "south",
+              "west"
+            ],
+            "properties": {
+              "east": {
+                "type": "number"
+              },
+              "north": {
+                "type": "number"
+              },
+              "south": {
+                "type": "number"
+              },
+              "west": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false
+          },
+          "demoScenarioId": {
+            "type": "string",
+            "example": "flood-central-bohemia"
+          },
+          "description": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "example": "demo-flood-central-bohemia"
+          },
+          "label": {
+            "type": "string",
+            "example": "Povodeň - Středočeský kraj"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "ready"
+            ]
+          },
+          "summary": {
+            "type": "object",
+            "required": [
+              "drawingCount",
+              "groupCount",
+              "reportCount"
+            ],
+            "properties": {
+              "drawingCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "groupCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reportCount": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoScenarioOperation": {
+        "type": "object",
+        "additionalProperties": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "DemoScenarioResponse": {
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "generatedAt",
+          "scenario"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-demo-scenarios-v1"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scenario": {
+            "$ref": "#/components/schemas/DemoScenarioStatus"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/DemoScenarioOperation"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoScenarioListResponse": {
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "generatedAt",
+          "items"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-demo-scenarios-v1"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DemoScenarioStatus"
+            }
+          }
+        },
+        "additionalProperties": false
       }
     }
   }

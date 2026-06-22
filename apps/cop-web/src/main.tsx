@@ -1118,12 +1118,12 @@ export function App() {
         setSafetyConfig(null);
         setTakLayers(nextTakLayers);
         setTakSources(mapCatalogToTakSources(catalog));
-        setSituationWarnings(catalog.warnings);
-        setSafetyWarnings(catalog.warnings);
-        setFlightWarnings(catalog.warnings);
-        setCommunityWarnings(catalog.warnings);
-        setMissionArenaWarnings(catalog.warnings);
-        setTakWarnings(authToken ? catalog.warnings : ["Partnerské vrstvy vyžadují přihlášení."]);
+        setSituationWarnings(sourceQualityWarnings(catalog.warnings));
+        setSafetyWarnings(sourceQualityWarnings(catalog.warnings));
+        setFlightWarnings(sourceQualityWarnings(catalog.warnings));
+        setCommunityWarnings(sourceQualityWarnings(catalog.warnings));
+        setMissionArenaWarnings(sourceQualityWarnings(catalog.warnings));
+        setTakWarnings(authToken ? sourceQualityWarnings(catalog.warnings) : ["Partnerské vrstvy vyžadují přihlášení."]);
         setSituationStatus(providerStatusFromCatalog(catalog, "sim.situation-data"));
         setSafetyStatus(providerStatusFromCatalog(catalog, "sim.safety-data"));
         setFlightStatus(providerStatusFromCatalog(catalog, "sim.flight-data"));
@@ -1343,11 +1343,11 @@ export function App() {
           const collection = response.situation ?? null;
           setSituationFeatures(collection);
           situationFeatureRequestRef.current = collection ? { bounds: queryBounds, key: requestKey } : null;
-          setSituationWarnings([
+          setSituationWarnings(sourceQualityWarnings([
             ...response.warnings,
             ...(collection?.warnings ?? []),
             ...(collection?.sourceHealth?.warnings ?? [])
-          ]);
+          ]));
           setSituationStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
@@ -1404,11 +1404,11 @@ export function App() {
           }
           const collection = response.safety ?? null;
           setSafetyFeatures(collection);
-          setSafetyWarnings([
+          setSafetyWarnings(sourceQualityWarnings([
             ...response.warnings,
             ...(collection?.warnings ?? []),
             ...(collection?.sourceHealth?.warnings ?? [])
-          ]);
+          ]));
           setSafetyStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
@@ -1464,11 +1464,11 @@ export function App() {
           }
           const collection = response.flight ?? null;
           setFlightFeatures(collection);
-          setFlightWarnings([
+          setFlightWarnings(sourceQualityWarnings([
             ...response.warnings,
             ...(collection?.warnings ?? []),
             ...(collection?.sourceHealth?.warnings ?? [])
-          ]);
+          ]));
           setFlightStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
@@ -1532,11 +1532,11 @@ export function App() {
           }
           const collection = response.tak ?? null;
           setTakFeatures(collection);
-          setTakWarnings([
+          setTakWarnings(sourceQualityWarnings([
             ...response.warnings,
             ...(collection?.warnings ?? []),
             ...(collection?.sourceHealth?.warnings ?? [])
-          ]);
+          ]));
           setTakStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
@@ -1592,10 +1592,10 @@ export function App() {
           }
           const collection = response.community ?? null;
           setCommunityFeatures(collection);
-          setCommunityWarnings([
+          setCommunityWarnings(sourceQualityWarnings([
             ...response.warnings,
             ...(collection?.warnings ?? [])
-          ]);
+          ]));
           setCommunityStatus("online");
         })
         .catch((error: unknown) => {
@@ -1645,11 +1645,11 @@ export function App() {
           }
           const collection = response.missionArena ?? null;
           setMissionArenaFeatures(collection);
-          setMissionArenaWarnings([
+          setMissionArenaWarnings(sourceQualityWarnings([
             ...response.warnings,
             ...(collection?.warnings ?? []),
             ...(collection?.sourceHealth?.warnings ?? [])
-          ]);
+          ]));
           setMissionArenaStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
@@ -12580,6 +12580,52 @@ function shouldSkipSafetyFeatureLoad(bounds: MapBounds, zoom: number | undefined
   const width = Math.abs(bounds.east - bounds.west);
   const height = Math.abs(bounds.north - bounds.south);
   return (zoom ?? 0) < 4 || width > 16 || height > 10;
+}
+
+function sourceQualityWarnings(warnings: string[]): string[] {
+  const labels = warnings
+    .map(sourceQualityWarningText)
+    .filter((warning) => warning.length > 0);
+  return Array.from(new Set(labels));
+}
+
+function sourceQualityWarningText(warning: string): string {
+  const normalized = warning.trim();
+  if (!normalized) {
+    return "";
+  }
+  const lower = normalized.toLowerCase();
+  if (
+    lower.includes("stale")
+    || lower.includes("expired")
+    || lower.includes("freshness")
+    || lower.includes("age")
+    || lower.includes("cache")
+    || lower.includes("old")
+  ) {
+    return "Některá data jsou starší. Mapa zůstává dostupná a kvalitu zdroje najdete v panelu Zdroje.";
+  }
+  if (
+    lower.includes("degraded")
+    || lower.includes("warning")
+    || lower.includes("provider")
+    || lower.includes("source")
+    || lower.includes("partial")
+  ) {
+    return "Některý zdroj běží v omezené kvalitě. Zobrazení pokračuje s dostupnými daty.";
+  }
+  if (
+    lower.includes("timeout")
+    || lower.includes("unavailable")
+    || lower.includes("failed")
+    || lower.includes("fetch")
+    || lower.includes("network")
+  ) {
+    return "Některý zdroj se dočasně nenačetl. Aplikace používá dostupná data.";
+  }
+  return normalized.length > 120
+    ? "Některý zdroj vrátil provozní upozornění. Detail je dostupný v panelu Zdroje."
+    : normalized;
 }
 
 registerCopServiceWorker();

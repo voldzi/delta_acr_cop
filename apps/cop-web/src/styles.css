@@ -1914,6 +1914,131 @@ h1 {
   font-weight: 900;
 }
 
+.demo-conversation-preview {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(134, 170, 205, 0.28);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(74, 163, 255, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(13, 27, 39, 0.92), rgba(7, 12, 17, 0.88));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
+}
+
+.demo-conversation-preview header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.demo-conversation-preview header > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.demo-conversation-preview strong {
+  color: #f2f7fb;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.demo-conversation-preview small,
+.demo-conversation-preview span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.demo-conversation-eyebrow {
+  color: var(--accent-strong) !important;
+  font-size: 10px !important;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.demo-conversation-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(88, 151, 222, 0.26);
+  background: rgba(14, 28, 42, 0.72);
+  color: #cde7ff;
+}
+
+.demo-conversation-thread {
+  display: grid;
+  gap: 10px;
+}
+
+.demo-conversation-bubble {
+  width: min(78%, 440px);
+  padding: 10px 12px;
+  border: 1px solid rgba(139, 167, 190, 0.24);
+  border-radius: 13px 13px 13px 4px;
+  background: rgba(27, 38, 50, 0.92);
+}
+
+.demo-conversation-bubble.own {
+  justify-self: end;
+  border-color: rgba(74, 131, 255, 0.5);
+  border-radius: 13px 13px 4px 13px;
+  background: linear-gradient(135deg, rgba(34, 95, 218, 0.94), rgba(37, 99, 235, 0.88));
+}
+
+.demo-conversation-bubble small {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: baseline;
+  color: rgba(213, 225, 236, 0.72);
+}
+
+.demo-conversation-bubble small strong {
+  color: inherit;
+  font-size: 11px;
+}
+
+.demo-conversation-bubble p {
+  margin: 5px 0 0;
+  color: #f4f8fb;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.demo-conversation-media {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.demo-media-card {
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  padding: 10px;
+  border: 1px solid rgba(139, 167, 190, 0.22);
+  background: rgba(15, 24, 33, 0.86);
+}
+
+.demo-media-card svg {
+  color: #bfe7ff;
+}
+
+.demo-media-card strong {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.demo-media-card span,
+.demo-media-card small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .matrix-chat-shell {
   display: grid;
   grid-template-rows: minmax(96px, 0.34fr) minmax(240px, 1fr);

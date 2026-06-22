@@ -126,6 +126,7 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `PATCH /api/v1/community/reports/{reportId}` pro úpravu vlastního hlášení,
 - `DELETE /api/v1/community/reports/{reportId}` pro smazání vlastního hlášení,
 - `GET/POST /api/v1/community/groups` pro skupiny, do kterých se hlášení a média ukládají,
+- `GET /api/v1/demo/scenarios` a `POST /api/v1/demo/scenarios/flood-central-bohemia/seed` pro kontrolovanou PoC ukázku,
 - `GET /api/v1/sketch/palettes` pro civilní a profesionální palety zákresů,
 - `GET /api/v1/sketch/drawings` pro zákresovou vrstvu podle aktuálního bbox mapy,
 - `POST /api/v1/sketch/drawings` pro vytvoření zákresu,
@@ -145,6 +146,11 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 Nativní klient nevolá Ollama, AI KnowledgeBase LLM Gateway ani žádný modelový
 provider přímo. AI kontext skládá COP server podle oprávnění uživatele a výsledek
 audituje.
+
+Demo endpointy jsou určeny jen pro pilotní prezentace a testovací účty. Klient
+nesmí demo data zapisovat lokálně mimo běžný offline cache/outbox mechanismus;
+seed/reset vždy spouští COP server-side a objekty jsou označené
+`demoScenarioId=flood-central-bohemia`.
 
 Sdíleným datovým základem pro web i iOS je
 [Canonical Entity Model v2](../data/07_CANONICAL_ENTITY_MODEL_V2.md). Nativní

@@ -483,6 +483,132 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("seeds and resets the flood demo scenario without duplicate objects", async () => {
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+    const headers = { authorization: "Bearer dev-lab-token" };
+
+    const seedResponse = await app.inject({
+      headers,
+      method: "POST",
+      url: "/api/v1/demo/scenarios/flood-central-bohemia/seed"
+    });
+    expect(seedResponse.statusCode).toBe(200);
+    expect(seedResponse.json()).toMatchObject({
+      operation: {
+        createdDrawings: 3,
+        createdGroups: 1,
+        createdReports: 3
+      },
+      scenario: {
+        demoScenarioId: "flood-central-bohemia",
+        status: "ready",
+        summary: {
+          drawingCount: 3,
+          groupCount: 1,
+          reportCount: 3
+        }
+      }
+    });
+
+    const secondSeedResponse = await app.inject({
+      headers,
+      method: "POST",
+      url: "/api/v1/demo/scenarios/flood-central-bohemia/seed"
+    });
+    expect(secondSeedResponse.statusCode).toBe(200);
+    expect(secondSeedResponse.json()).toMatchObject({
+      operation: {
+        createdDrawings: 0,
+        createdGroups: 0,
+        createdReports: 0
+      },
+      scenario: {
+        summary: {
+          drawingCount: 3,
+          groupCount: 1,
+          reportCount: 3
+        }
+      }
+    });
+
+    const groupResponse = await app.inject({
+      headers,
+      method: "GET",
+      url: "/api/v1/community/groups"
+    });
+    expect(groupResponse.statusCode).toBe(200);
+    const demoGroup = (groupResponse.json() as { items: Array<{ metadata?: Record<string, unknown> }> }).items.find(
+      (group) => group.metadata?.demoScenarioId === "flood-central-bohemia"
+    );
+    expect(demoGroup?.metadata?.demoConversation).toMatchObject({
+      title: "test_cop1",
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          body: expect.stringContaining("Aktualizace stavu hladiny")
+        })
+      ]),
+      media: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "photo",
+          title: "IMG_4821.jpg"
+        })
+      ])
+    });
+
+    const reportResponse = await app.inject({
+      headers,
+      method: "GET",
+      url: "/api/v1/community/reports?bbox=13.75,49.75,15.6,50.65"
+    });
+    expect(reportResponse.statusCode).toBe(200);
+    expect(reportResponse.json()).toMatchObject({
+      featureCollection: {
+        summary: {
+          featureCount: 3
+        }
+      }
+    });
+
+    const drawingResponse = await app.inject({
+      headers,
+      method: "GET",
+      url: "/api/v1/sketch/drawings?bbox=13.75,49.75,15.6,50.65"
+    });
+    expect(drawingResponse.statusCode).toBe(200);
+    expect(drawingResponse.json()).toMatchObject({
+      summary: {
+        featureCount: 3
+      }
+    });
+
+    const resetResponse = await app.inject({
+      headers,
+      method: "POST",
+      url: "/api/v1/demo/scenarios/flood-central-bohemia/reset"
+    });
+    expect(resetResponse.statusCode).toBe(200);
+    expect(resetResponse.json()).toMatchObject({
+      operation: {
+        deletedDrawings: 3,
+        deletedGroups: 1,
+        deletedReports: 3
+      },
+      scenario: {
+        status: "empty",
+        summary: {
+          drawingCount: 0,
+          groupCount: 0,
+          reportCount: 0
+        }
+      }
+    });
+
+    await app.close();
+  });
+
   it("resolves community group members through the COP user profile directory", async () => {
     const userProfileStore = new InMemoryUserProfileStore();
     await userProfileStore.upsertProfile({

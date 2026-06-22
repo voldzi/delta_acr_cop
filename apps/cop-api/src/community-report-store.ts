@@ -197,6 +197,7 @@ export interface CommunityReportStore {
   createAttachment(input: CreateCommunityAttachmentInput): Promise<CommunityReportAttachmentRecord>;
   createGroup(input: CreateCommunityGroupInput, now: Date): Promise<CommunityGroupRecord>;
   createReport(input: CreateCommunityReportInput, now: Date): Promise<CommunityReportRecord>;
+  deleteGroup(groupId: string, subjectId: string, now: Date): Promise<boolean>;
   deleteReport(reportId: string, subjectId: string, now: Date): Promise<boolean>;
   diagnostics?(): string | undefined;
   getGroup(groupId: string): Promise<CommunityGroupRecord | null>;
@@ -302,6 +303,15 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
   async getGroup(groupId: string): Promise<CommunityGroupRecord | null> {
     const group = this.groups.get(groupId);
     return group ? cloneCommunityGroup(group) : null;
+  }
+
+  async deleteGroup(groupId: string, subjectId: string, _now: Date): Promise<boolean> {
+    const group = this.groups.get(groupId);
+    if (!group || !canManageCommunityGroup(group, subjectId)) {
+      return false;
+    }
+    this.groups.delete(groupId);
+    return true;
   }
 
   async updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null> {
@@ -642,6 +652,23 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     const result = await this.pool.query<CommunityGroupRow>("SELECT * FROM cop_community_groups WHERE group_id = $1", [groupId]);
     const row = result.rows[0];
     return row ? groupFromRow(row, await this.membersForGroups([groupId])) : null;
+  }
+
+  async deleteGroup(groupId: string, subjectId: string, _now: Date): Promise<boolean> {
+    const result = await this.pool.query(
+      `DELETE FROM cop_community_groups g
+      WHERE g.group_id = $1
+        AND EXISTS (
+          SELECT 1
+          FROM cop_community_group_members m
+          WHERE m.group_id = g.group_id
+            AND m.subject_id = $2
+            AND m.status = 'active'
+            AND m.role IN ('owner', 'admin')
+        )`,
+      [groupId, subjectId]
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async listGroups(query: CommunityGroupQuery): Promise<CommunityGroupRecord[]> {
