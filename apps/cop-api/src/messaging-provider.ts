@@ -1285,16 +1285,25 @@ function isClientSafeMatrixBootstrapReady(capabilities: CsmMessagingCapabilities
 
 function actorHeaders(actor: AuthenticatedActor, deviceId?: string): Record<string, string> {
   const headers: Record<string, string> = {
-    "x-csm-user-id": actor.subjectId,
-    "x-csm-user-name": actor.displayName || actor.username,
-    "x-csm-user-role": actor.roles?.[0] ?? actor.authMode
+    "x-csm-user-id": safeHeaderValue(actor.subjectId, "unknown"),
+    "x-csm-user-name": safeHeaderValue(actor.displayName || actor.username, actor.subjectId),
+    "x-csm-user-role": safeHeaderValue(actor.roles?.[0] ?? actor.authMode, "user")
   };
 
   if (deviceId) {
-    headers["x-csm-device-id"] = deviceId;
+    headers["x-csm-device-id"] = safeHeaderValue(deviceId, "COPWEB.device");
   }
 
   return headers;
+}
+
+function safeHeaderValue(value: string | undefined, fallback: string): string {
+  const normalized = (value?.trim() || fallback)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .replace(/[^\x20-\x7E]/gu, "");
+  const collapsed = normalized.replace(/\s+/gu, " ").trim();
+  return collapsed || fallback.replace(/[^\x20-\x7E]/gu, "").trim() || "unknown";
 }
 
 function clientSafeHomeserverBaseUrl(providerBaseUrl: string, config: MessagingProviderConfig): string {

@@ -945,9 +945,9 @@ function MessagingContextPanel({
       </button>
       <div className="messaging-context-link-grid">
         <span>Konverzace</span>
-        <strong>{selectedConversation?.conversationId ?? "není vybraná"}</strong>
-        <span>Zabezpečený chat</span>
-        <strong>{selectedRoomId ?? "čeká"}</strong>
+        <strong>{selectedConversation?.title ?? "není vybraná"}</strong>
+        <span>Stav chatu</span>
+        <strong>{selectedRoomId ? "připravený" : "čeká"}</strong>
         <span>Skupina</span>
         <strong>{selectedGroup?.name ?? "bez skupiny"}</strong>
       </div>

@@ -587,6 +587,41 @@ describe("CsmMessagingProvider", () => {
     await app.close();
   });
 
+  it("normalizes COP user headers before proxying conversation metadata", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "x-csm-user-id": "subject-1",
+        "x-csm-user-name": "Jiri Volek",
+        "x-csm-user-role": "krizovy-operator"
+      });
+      return new Response(JSON.stringify({
+        contractVersion: "csm-messaging-provider-v1",
+        conversations: [],
+        count: 0,
+        providerId: "csm.messaging"
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token"
+    });
+
+    const result = await provider.fetchConversations({
+      authMode: "oidc",
+      displayName: "Jiří Volek",
+      roles: ["krizový-operátor"],
+      subjectId: "subject-1",
+      username: "jiri.volek"
+    }, new Date("2026-05-22T12:00:00Z"));
+
+    expect(result.status).toBe("online");
+  });
+
   it("returns conversation detail metadata without requiring clients to list locally", async () => {
     vi.stubEnv("COP_AUTH_MODE", "lab");
     vi.stubEnv("COP_LAB_TOKEN", "lab-secret");

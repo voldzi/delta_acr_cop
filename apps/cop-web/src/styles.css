@@ -380,6 +380,9 @@ h1 {
   display: flex;
   gap: 8px;
   align-items: stretch;
+  justify-content: flex-end;
+  justify-self: end;
+  margin-left: auto;
   min-width: 0;
 }
 
@@ -1141,15 +1144,15 @@ h1 {
 
 .chat-group-empty-detail {
   display: grid;
-  place-content: center;
-  justify-items: center;
+  align-content: start;
+  justify-items: start;
   gap: 8px;
-  min-height: 240px;
-  padding: 22px;
+  min-height: 0;
+  padding: 14px;
   border: 1px solid rgba(142, 157, 170, 0.18);
   background: rgba(9, 14, 18, 0.42);
   color: var(--muted);
-  text-align: center;
+  text-align: left;
 }
 
 .chat-group-empty-detail svg {
@@ -2629,8 +2632,10 @@ h1 {
 
 .messaging-context-panel {
   display: grid;
+  align-content: start;
   gap: 10px;
   min-height: 0;
+  overflow: auto;
 }
 
 .messaging-context-card,
@@ -2887,7 +2892,7 @@ h1 {
 }
 
 .shell.app-shell-v2 .topbar {
-  grid-template-columns: minmax(154px, 174px) minmax(300px, 420px) minmax(280px, 1fr) auto;
+  grid-template-columns: minmax(154px, 174px) minmax(300px, 430px) minmax(200px, 1fr) minmax(max-content, auto);
   gap: 12px;
   min-height: 58px;
   padding: 0 13px 0 16px;
@@ -2972,6 +2977,9 @@ h1 {
 
 .shell.app-shell-v2 .topbar-actions {
   gap: 7px;
+  justify-content: flex-end;
+  justify-self: end;
+  margin-left: auto;
 }
 
 .shell.app-shell-v2 .top-command-button,
@@ -2984,6 +2992,7 @@ h1 {
 }
 
 .shell.app-shell-v2 .top-command-button {
+  min-width: 86px;
   padding: 0 11px;
   font-size: 10px;
 }
@@ -2994,6 +3003,7 @@ h1 {
 
 .shell.app-shell-v2 .operator-button {
   min-width: 118px;
+  max-width: 168px;
   padding-inline: 8px;
 }
 
@@ -3192,10 +3202,10 @@ h1 {
 
 .shell.app-shell-v2 .messaging-panel.pinned {
   top: 58px;
-  right: 66px;
+  right: 0;
   bottom: 38px;
   grid-template-columns: minmax(0, 1fr) 58px;
-  width: min(max(var(--messaging-dock-width, 640px), 560px), calc(100vw - 170px));
+  width: min(max(var(--messaging-dock-width, 640px), 560px), calc(100vw - 96px));
   border-width: 0 0 0 1px;
   border-color: rgba(122, 148, 172, 0.24);
   background:
@@ -3210,6 +3220,18 @@ h1 {
 
 .shell.app-shell-v2 .messaging-panel.pinned .matrix-chat-shell {
   grid-template-columns: minmax(214px, var(--chat-list-width, 258px)) 1px minmax(0, 1fr);
+}
+
+.shell.app-shell-v2 .messaging-panel.pinned .chat-groups-workspace {
+  grid-template-columns: minmax(220px, 0.36fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: start;
+}
+
+.shell.app-shell-v2 .messaging-panel.pinned .chat-group-members,
+.shell.app-shell-v2 .messaging-panel.pinned .chat-group-empty-detail,
+.shell.app-shell-v2 .messaging-panel.pinned .messaging-context-panel {
+  align-content: start;
 }
 
 .shell.app-shell-v2 .matrix-chat-split-handle {
@@ -3330,7 +3352,7 @@ h1 {
 
 @media (min-width: 1181px) {
   .shell.app-shell-v2.shell-messaging-docked {
-    padding-right: calc(max(var(--messaging-dock-width, 640px), 560px) + 66px);
+    padding-right: min(max(var(--messaging-dock-width, 640px), 560px), calc(100vw - 96px));
   }
 }
 
