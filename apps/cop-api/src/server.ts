@@ -1258,12 +1258,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function deleteCommunityGroup(groupId: string, actor: AuthenticatedActor, requestNow: Date): Promise<boolean> {
-    try {
-      return await activeCommunityReportStore().deleteGroup(groupId, actor.subjectId, requestNow);
-    } catch (error) {
-      markCommunityReportStoreDegraded(error);
-      return communityReportFallbackStore.deleteGroup(groupId, actor.subjectId, requestNow);
+    for (const subjectId of actorCommunitySubjectAliases(actor)) {
+      try {
+        if (await activeCommunityReportStore().deleteGroup(groupId, subjectId, requestNow)) {
+          return true;
+        }
+      } catch (error) {
+        markCommunityReportStoreDegraded(error);
+        if (await communityReportFallbackStore.deleteGroup(groupId, subjectId, requestNow)) {
+          return true;
+        }
+      }
     }
+    return false;
   }
 
   async function requestCommunityGroupMembership(groupId: string, actor: AuthenticatedActor, requestNow: Date) {
@@ -2254,6 +2261,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 404, "NOT_FOUND", "Community group was not found.", crypto.randomUUID());
     }
     return group;
+  });
+
+  app.delete("/api/v1/community/groups/:groupId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { groupId: string };
+    const requestNow = now();
+    if (!await deleteCommunityGroup(params.groupId, actor, requestNow)) {
+      return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be managed by current user.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    appendAudit(state, "COMMUNITY_GROUP_DELETED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      groupId: params.groupId
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return reply.code(204).send();
   });
 
   app.post("/api/v1/community/groups/:groupId/join-request", async (request, reply) => {
@@ -6105,6 +6130,14 @@ function actorToCommunityActor(actor: AuthenticatedActor) {
     subjectId: actor.subjectId,
     username: actor.username
   };
+}
+
+function actorCommunitySubjectAliases(actor: AuthenticatedActor): string[] {
+  return Array.from(new Set([
+    actor.subjectId,
+    actor.username,
+    actor.email
+  ].map((value) => value?.trim()).filter((value): value is string => Boolean(value))));
 }
 
 function actorToSketchActor(actor: AuthenticatedActor) {

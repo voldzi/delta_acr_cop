@@ -901,6 +901,21 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+    delete:
+      tags:
+        - Community Reports
+      summary: Delete a community sharing group managed by the authenticated user.
+      operationId: deleteCommunityGroup
+      parameters:
+        - $ref: "#/components/parameters/CommunityGroupIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      responses:
+        "204":
+          description: Community group deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/community/groups/{groupId}/join-request:
     post:
       tags:

@@ -126,6 +126,7 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `PATCH /api/v1/community/reports/{reportId}` pro úpravu vlastního hlášení,
 - `DELETE /api/v1/community/reports/{reportId}` pro smazání vlastního hlášení,
 - `GET/POST /api/v1/community/groups` pro skupiny, do kterých se hlášení a média ukládají,
+- `GET/DELETE /api/v1/community/groups/{groupId}` pro detail a smazání skupiny spravované aktuálním uživatelem,
 - `GET /api/v1/demo/scenarios` a `POST /api/v1/demo/scenarios/flood-central-bohemia/seed` pro kontrolovanou PoC ukázku,
 - `GET /api/v1/sketch/palettes` pro civilní a profesionální palety zákresů,
 - `GET /api/v1/sketch/drawings` pro zákresovou vrstvu podle aktuálního bbox mapy,

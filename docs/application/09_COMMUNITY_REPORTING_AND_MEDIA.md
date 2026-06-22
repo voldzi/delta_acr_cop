@@ -52,6 +52,7 @@ Nové endpointy:
 - `GET /api/v1/community/groups`
 - `POST /api/v1/community/groups`
 - `GET /api/v1/community/groups/{groupId}`
+- `DELETE /api/v1/community/groups/{groupId}`
 - `POST /api/v1/community/groups/{groupId}/join-request`
 - `POST /api/v1/community/groups/{groupId}/members`
 
@@ -181,7 +182,7 @@ Vlastnosti skupiny:
 - role členů: `owner`, `admin`, `member`;
 - stav členství: `active`, `pending`.
 
-Autor skupiny je automaticky `owner`. Pouze `owner` nebo `admin` mohou přidávat členy, potvrzovat žádosti a v další fázi měnit nastavení skupiny.
+Autor skupiny je automaticky `owner`. Pouze `owner` nebo `admin` mohou přidávat členy, potvrzovat žádosti a mazat skupinu. Mazání skupiny je COP metadata operace: zneaktivní sdílení médií a skupinu v seznamu, ale nemaže Matrix room, dokud CSM Messaging neposkytne samostatný bezpečný kontrakt pro archivaci konverzace.
 V pilotním webu lze skupinu založit přímo při nahrávání hlášení nebo v panelu Konverzace. Pro produkci je potřeba doplnit uživatelský adresář, aby běžný uživatel nepracoval se syrovým `subjectId`.
 
 Pravidlo pro provázání mapy a chatu:

@@ -32,6 +32,7 @@ export interface MessagingPanelProps {
   onCreateDirectConversation: (user: UserDirectoryEntry) => Promise<MessagingConversationSummary>;
   onCreateGroup: (name: string, visibility: CommunityGroupVisibility) => Promise<{ conversation?: MessagingConversationSummary; group: CommunityGroup }>;
   onCreateReportFromChat: (seed: MessagingReportSeed) => void;
+  onDeleteGroup: (groupId: string) => Promise<void>;
   onDockWidthChange: (width: number) => void;
   onLogin: () => void;
   onPinnedChange: (pinned: boolean) => void;

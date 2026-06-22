@@ -1,4 +1,6 @@
+import { createSign, generateKeyPairSync, type KeyObject } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { InMemoryCommunityReportStore } from "./community-report-store.js";
 import { buildServer } from "./server.js";
 import type { MediaObjectReadRequest, MediaObjectWriteRequest, MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
 import { InMemoryUserProfileStore } from "./user-profile-store.js";
@@ -479,6 +481,84 @@ describe("community report routes", () => {
         }
       ]
     });
+
+    const deleteResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "DELETE",
+      url: `/api/v1/community/groups/${group.groupId}`
+    });
+    expect(deleteResponse.statusCode).toBe(204);
+
+    const readDeletedResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: `/api/v1/community/groups/${group.groupId}`
+    });
+    expect(readDeletedResponse.statusCode).toBe(404);
+
+    const listAfterDeleteResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/community/groups"
+    });
+    expect(listAfterDeleteResponse.statusCode).toBe(200);
+    expect(listAfterDeleteResponse.json()).toMatchObject({ items: [] });
+
+    await app.close();
+  });
+
+  it("lets an OIDC owner delete legacy groups stored under preferred username", async () => {
+    const issuer = "https://login.zeleznalady.cz/realms/cop-community-legacy-test";
+    const keyId = "cop-community-legacy-test-key";
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const publicJwk = {
+      ...publicKey.export({ format: "jwk" }),
+      alg: "RS256",
+      kid: keyId,
+      use: "sig"
+    };
+    process.env.COP_AUTH_MODE = "oidc";
+    process.env.COP_OIDC_ISSUER = issuer;
+    process.env.COP_OIDC_ALLOWED_CLIENTS = "cop-web";
+    process.env.COP_OIDC_REQUIRED_ROLE = "cop_operator";
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ keys: [publicJwk] })));
+    const now = Math.floor(Date.now() / 1000);
+    const token = signJwt(privateKey, keyId, {
+      azp: "cop-web",
+      email: "cop.operator1@example.test",
+      exp: now + 300,
+      iat: now,
+      iss: issuer,
+      name: "COP Operator",
+      preferred_username: "cop.operator1",
+      realm_access: {
+        roles: ["cop_operator"]
+      },
+      sub: "000dfd66-c95c-4f58-8c1a-c40bf40c7ef1"
+    });
+    const communityReportStore = new InMemoryCommunityReportStore();
+    const legacyGroup = await communityReportStore.createGroup({
+      createdBy: {
+        displayName: "COP Operator",
+        subjectId: "cop.operator1",
+        username: "cop.operator1"
+      },
+      name: "Legacy test group",
+      visibility: "private"
+    }, new Date("2026-05-20T12:00:00Z"));
+    const app = buildServer({
+      communityReportStore,
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const deleteResponse = await app.inject({
+      headers: { authorization: `Bearer ${token}` },
+      method: "DELETE",
+      url: `/api/v1/community/groups/${legacyGroup.groupId}`
+    });
+    expect(deleteResponse.statusCode).toBe(204);
+    expect(await communityReportStore.getGroup(legacyGroup.groupId)).toBeNull();
 
     await app.close();
   });
@@ -1063,4 +1143,29 @@ class FakeMediaStorage implements MediaStorage {
   async putObject(request: MediaObjectWriteRequest): Promise<void> {
     this.objects.set(request.objectKey, request.body);
   }
+}
+
+function signJwt(privateKey: KeyObject, keyId: string, payload: Record<string, unknown>): string {
+  const header = {
+    alg: "RS256",
+    kid: keyId,
+    typ: "JWT"
+  };
+  const signedContent = `${base64Url(JSON.stringify(header))}.${base64Url(JSON.stringify(payload))}`;
+  const signer = createSign("RSA-SHA256");
+  signer.update(signedContent);
+  signer.end();
+  return `${signedContent}.${signer.sign(privateKey).toString("base64url")}`;
+}
+
+function base64Url(value: string): string {
+  return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function jsonResponse(body: unknown): Response {
+  return {
+    json: async () => body,
+    ok: true,
+    status: 200
+  } as Response;
 }

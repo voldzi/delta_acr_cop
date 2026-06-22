@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, CheckCircle2, Crown, Download, FileText, Globe2, Image, Info, Lock, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, ShieldCheck, Star, UserPlus, Users, Video, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Crown, Download, FileText, Globe2, Image, Info, Lock, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, ShieldCheck, Star, Trash2, UserPlus, Users, Video, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
 import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse, UserDirectoryEntry } from "../cop-data";
 import { SelectField } from "../ui/select";
@@ -121,6 +121,7 @@ export function MessagingPanel({
   onCreateDirectConversation,
   onCreateGroup,
   onCreateReportFromChat,
+  onDeleteGroup,
   onDockWidthChange,
   onLogin,
   onPinnedChange,
@@ -155,6 +156,7 @@ export function MessagingPanel({
   const [showGroupCreate, setShowGroupCreate] = React.useState(false);
   const [activeDockTab, setActiveDockTab] = React.useState<MessagingDockTab>("chat");
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
+  const [deleteGroupConfirmId, setDeleteGroupConfirmId] = React.useState<string | null>(null);
   const [chatListWidth, setChatListWidth] = React.useState(() => readChatListWidth());
   const [syncState, setSyncState] = React.useState("idle");
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -216,6 +218,10 @@ export function MessagingPanel({
     }
     setTimeline(matrixSession.getTimeline(selectedRoomId));
   }, [matrixSession, rooms, selectedRoomId]);
+
+  React.useEffect(() => {
+    setDeleteGroupConfirmId(null);
+  }, [selectedGroupId]);
 
   React.useEffect(() => {
     const query = groupMemberQuery.trim();
@@ -371,6 +377,30 @@ export function MessagingPanel({
       setSelectedGroupId(group.groupId);
     } catch (caught) {
       setGroupActionError(caught instanceof Error ? caught.message : "Žádost se nepodařilo potvrdit.");
+    } finally {
+      setGroupActionLoading(false);
+    }
+  }
+
+  async function deleteSelectedGroup(groupId: string) {
+    const group = communityGroups.find((item) => item.groupId === groupId);
+    if (!group) {
+      return;
+    }
+    if (deleteGroupConfirmId !== groupId) {
+      setDeleteGroupConfirmId(groupId);
+      setGroupActionError(null);
+      return;
+    }
+    setGroupActionLoading(true);
+    setGroupActionError(null);
+    try {
+      await onDeleteGroup(groupId);
+      setSelectedGroupId((current) => current === groupId ? null : current);
+      setDeleteGroupConfirmId(null);
+      onRefresh();
+    } catch (caught) {
+      setGroupActionError(caught instanceof Error ? caught.message : "Skupinu se nepodařilo smazat.");
     } finally {
       setGroupActionLoading(false);
     }
@@ -794,10 +824,13 @@ export function MessagingPanel({
             newGroupName={newGroupName}
             newGroupVisibility={newGroupVisibility}
             selectedGroup={selectedGroup}
+            session={session}
             showGroupCreate={showGroupCreate}
+            deleteConfirmGroupId={deleteGroupConfirmId}
             onAddMember={() => void addMember()}
             onApproveMember={(subjectId, displayName) => void approveMember(subjectId, displayName)}
             onCreateGroup={() => void createGroup()}
+            onDeleteGroup={(groupId) => void deleteSelectedGroup(groupId)}
             onGroupQueryChange={setGroupQuery}
             onMemberCandidateChange={setGroupMemberCandidate}
             onMemberQueryChange={(value) => {
@@ -936,10 +969,13 @@ function CommunityGroupsPanel({
   newGroupName,
   newGroupVisibility,
   selectedGroup,
+  session,
   showGroupCreate,
+  deleteConfirmGroupId,
   onAddMember,
   onApproveMember,
   onCreateGroup,
+  onDeleteGroup,
   onGroupQueryChange,
   onMemberCandidateChange,
   onMemberQueryChange,
@@ -962,10 +998,13 @@ function CommunityGroupsPanel({
   newGroupName: string;
   newGroupVisibility: "private" | "public";
   selectedGroup: MessagingPanelProps["communityGroups"][number] | null;
+  session: MessagingPanelProps["session"];
   showGroupCreate: boolean;
+  deleteConfirmGroupId: string | null;
   onAddMember: () => void;
   onApproveMember: (subjectId: string, displayName?: string) => void;
   onCreateGroup: () => void;
+  onDeleteGroup: (groupId: string) => void;
   onGroupQueryChange: (value: string) => void;
   onMemberCandidateChange: (value: UserDirectoryEntry | null) => void;
   onMemberQueryChange: (value: string) => void;
@@ -990,6 +1029,17 @@ function CommunityGroupsPanel({
     })
     : groups;
   const selectedVisibilityLabel = selectedGroup ? communityGroupVisibilityLabel(selectedGroup.visibility) : "";
+  const currentSubjectIds = new Set([
+    session.profile?.subjectId,
+    session.profile?.username,
+    session.profile?.email
+  ].filter((value): value is string => Boolean(value)));
+  const canManageSelectedGroup = Boolean(selectedGroup?.members.some((member) =>
+    member.status === "active"
+      && (member.role === "owner" || member.role === "admin")
+      && currentSubjectIds.has(member.subjectId)
+  ));
+  const deleteNeedsConfirmation = Boolean(selectedGroup && deleteConfirmGroupId === selectedGroup.groupId);
 
   return (
     <div className="chat-groups-panel">
@@ -1085,8 +1135,23 @@ function CommunityGroupsPanel({
                 ) : (
                   <span className="chat-group-state-pill">Chat vznikne při první konverzaci</span>
                 )}
+                {canManageSelectedGroup ? (
+                  <button
+                    className={`mini-button danger ${deleteNeedsConfirmation ? "active" : ""}`}
+                    disabled={actionLoading}
+                    onClick={() => onDeleteGroup(selectedGroup.groupId)}
+                    title="Smazat skupinu"
+                    type="button"
+                  >
+                    <Trash2 size={14} />
+                    {deleteNeedsConfirmation ? "Potvrdit" : "Smazat"}
+                  </button>
+                ) : null}
               </div>
             </header>
+            {deleteNeedsConfirmation ? (
+              <span className="chat-group-helper-text warn">Smazání odebere skupinu ze sdílení médií a ze seznamu konverzací v COP.</span>
+            ) : null}
             <div className="chat-group-summary-grid" aria-label="Souhrn skupiny">
               <span>
                 <Users size={14} />

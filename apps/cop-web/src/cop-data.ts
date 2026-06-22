@@ -1864,6 +1864,16 @@ export async function createCommunityGroup(
   });
 }
 
+export async function deleteCommunityGroup(apiBase: string, token: string, groupId: string): Promise<void> {
+  const response = await fetch(`${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}`, {
+    headers: authHeaders(token),
+    method: "DELETE"
+  });
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText || "API request failed"} for ${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}`);
+  }
+}
+
 export async function updateCommunityReport(
   apiBase: string,
   token: string,

@@ -77,6 +77,7 @@ import {
   createSketchDrawing,
   createMessagingConversation,
   bindMessagingConversationMatrixRoom,
+  deleteCommunityGroup,
   deleteCommunityReport,
   deleteSketchDrawing,
   fetchCopDashboardData,
@@ -3150,6 +3151,19 @@ export function App() {
     return group;
   }
 
+  async function deleteCommunityGroupForUi(groupId: string): Promise<void> {
+    if (!messagingAuthenticated || !authSession.accessToken) {
+      throw new Error("Pro smazání skupiny je potřeba přihlášení.");
+    }
+    await deleteCommunityGroup(apiBase, authSession.accessToken, groupId);
+    setCommunityGroups((current) => current.filter((group) => group.groupId !== groupId));
+    setMessagingConversations((current) => current.filter((conversation) => {
+      const externalId = conversation.metadata?.externalId;
+      return !(conversation.metadata?.source === "cop.community" && externalId === groupId);
+    }));
+    setCommunityGroupsError(null);
+  }
+
   async function syncCommunityGroupMemberToConversation(group: CommunityGroup): Promise<void> {
     if (!authSession.accessToken) {
       return;
@@ -4579,6 +4593,7 @@ export function App() {
             onCreateDirectConversation={(user) => createDirectConversationForUi(user)}
             onCreateGroup={(name, visibility) => createCommunityGroupBundleForUi(name, visibility)}
             onCreateReportFromChat={startCommunityReportFromChat}
+            onDeleteGroup={(groupId) => deleteCommunityGroupForUi(groupId)}
             onDockWidthChange={(width) => {
               const nextWidth = clamp(width, 420, 760);
               setMessagingDockWidth(nextWidth);
@@ -12500,8 +12515,7 @@ function communityGroupMembersToMessagingMembers(group: CommunityGroup): Array<{
 }
 
 function findMessagingConversationForCommunityGroup(group: CommunityGroup, conversations: MessagingConversationSummary[]): MessagingConversationSummary | undefined {
-  return conversations.find((conversation) => conversation.metadata?.externalId === group.groupId)
-    ?? conversations.find((conversation) => conversation.title === group.name);
+  return conversations.find((conversation) => conversation.metadata?.source === "cop.community" && conversation.metadata?.externalId === group.groupId);
 }
 
 function readMessagingDockWidth(): number {
