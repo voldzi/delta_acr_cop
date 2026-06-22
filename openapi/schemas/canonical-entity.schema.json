@@ -1,0 +1,363 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/acr-cop/schemas/canonical-entity.schema.json",
+  "title": "Canonical COP Entity",
+  "description": "Common metadata envelope for map features, incidents, alerts, reports, evidence, user zones and sketch drawings. Specific API endpoints may expose richer resource-specific schemas, but should preserve these governance fields.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "id",
+    "entityType",
+    "source",
+    "classification",
+    "releasePolicy",
+    "confidence",
+    "provenance",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entityType": {
+      "type": "string",
+      "enum": [
+        "mapFeature",
+        "observedObject",
+        "sensorObservation",
+        "incident",
+        "alert",
+        "communityReport",
+        "evidence",
+        "task",
+        "userZone",
+        "sketchDrawing",
+        "sourceSystem"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceSystemId",
+        "adapterId",
+        "adapterVersion"
+      ],
+      "properties": {
+        "sourceSystemId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceDeviceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "adapterId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapterVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "classification": {
+      "$ref": "#/$defs/Classification"
+    },
+    "releasePolicy": {
+      "$ref": "#/$defs/ReleasePolicy"
+    },
+    "confidence": {
+      "$ref": "#/$defs/ConfidenceAssessment"
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProvenanceRecord"
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validFrom": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "validUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "ownerSubjectId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "correlationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "$defs": {
+    "Classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "releasability",
+        "handlingCaveats"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "UNCLASSIFIED",
+            "RESTRICTED",
+            "CONFIDENTIAL",
+            "SECRET"
+          ]
+        },
+        "releasability": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "handlingCaveats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "ReleasePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "visibility",
+        "allowedScopes"
+      ],
+      "properties": {
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "public",
+            "group",
+            "event",
+            "private",
+            "restricted"
+          ]
+        },
+        "allowedScopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "public",
+              "authenticated",
+              "group",
+              "event",
+              "operator",
+              "admin"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "groupIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "eventIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "userIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "mediaAccess": {
+          "type": "string",
+          "enum": [
+            "public",
+            "group",
+            "event",
+            "private",
+            "restricted"
+          ]
+        },
+        "expiresAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ConfidenceAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "confidence",
+        "dataQuality"
+      ],
+      "properties": {
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "dataQuality": {
+          "type": "string",
+          "enum": [
+            "observed",
+            "modelled",
+            "mixed",
+            "inferred",
+            "synthetic",
+            "unknown"
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "sourceReliability": {
+          "type": "string",
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "UNKNOWN"
+          ]
+        },
+        "informationCredibility": {
+          "type": "string",
+          "enum": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "UNKNOWN"
+          ]
+        },
+        "explanation": {
+          "type": "string"
+        }
+      }
+    },
+    "ProvenanceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provenanceId",
+        "sourceSystemId",
+        "transformedAt",
+        "transformation"
+      ],
+      "properties": {
+        "provenanceId": {
+          "type": "string"
+        },
+        "sourceSystemId": {
+          "type": "string"
+        },
+        "sourceName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceFeatureId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "adapterId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "adapterVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "eventId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transformedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "transformation": {
+          "type": "string"
+        },
+        "basis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceRevision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

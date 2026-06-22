@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/acr-cop/schemas/symbol-resolve-response.schema.json",
+  "title": "Symbol Resolve Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "symbolSet",
+    "standardVersion",
+    "symbolCode",
+    "renderer",
+    "modifiers",
+    "fallback"
+  ],
+  "properties": {
+    "symbolSet": {
+      "type": "string",
+      "const": "APP6"
+    },
+    "standardVersion": {
+      "type": "string"
+    },
+    "symbolCode": {
+      "type": "string"
+    },
+    "renderer": {
+      "type": "string",
+      "enum": [
+        "SVG",
+        "CANVAS",
+        "NVG"
+      ]
+    },
+    "modifiers": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "fallback": {
+      "type": "boolean"
+    },
+    "extension": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

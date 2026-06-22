@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/acr-cop/schemas/cop-subscription.schema.json",
+  "title": "COP Subscription",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "area",
+    "layers",
+    "objectTypes",
+    "minConfidence",
+    "includeSynthetic",
+    "mode",
+    "maxUpdateRateHz"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "area": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bbox"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "BBOX"
+        },
+        "bbox": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "number"
+          },
+          "description": "minLon,minLat,maxLon,maxLat"
+        }
+      }
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "objectTypes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "minConfidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "includeSynthetic": {
+      "type": "boolean"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "REALTIME",
+        "DEGRADED",
+        "BATCH"
+      ]
+    },
+    "maxUpdateRateHz": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 60
+    }
+  }
+}

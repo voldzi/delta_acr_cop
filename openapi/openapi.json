@@ -4651,6 +4651,16 @@
       }
     },
     "responses": {
+      "ErrorResponse": {
+        "description": "COP error envelope.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
       "BadRequest": {
         "description": "Bad request or schema validation error.",
         "content": {

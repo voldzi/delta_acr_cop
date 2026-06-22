@@ -1,0 +1,371 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/acr-cop/schemas/observed-object.schema.json",
+  "title": "Observed Object",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "objectId",
+    "objectType",
+    "affiliation",
+    "domain",
+    "status"
+  ],
+  "properties": {
+    "objectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "objectType": {
+      "type": "string",
+      "enum": [
+        "MAP_FEATURE",
+        "AIRCRAFT",
+        "UAV",
+        "MISSILE_TRACK",
+        "GROUND_UNIT",
+        "RESCUE_ASSET",
+        "SENSOR_OBSERVATION",
+        "WEATHER_OBSERVATION",
+        "MOBILE_NETWORK_OBSERVATION",
+        "TRAFFIC_OBSERVATION",
+        "INCIDENT",
+        "ALERT",
+        "REPORT",
+        "EVIDENCE",
+        "TASK",
+        "USER_ZONE",
+        "SKETCH_DRAWING",
+        "UNKNOWN"
+      ]
+    },
+    "affiliation": {
+      "type": "string",
+      "enum": [
+        "FRIEND",
+        "ASSUMED_FRIEND",
+        "NEUTRAL",
+        "UNKNOWN",
+        "SUSPECT",
+        "HOSTILE",
+        "PENDING"
+      ]
+    },
+    "domain": {
+      "type": "string",
+      "enum": [
+        "AIR",
+        "LAND",
+        "SEA",
+        "RESCUE",
+        "WEATHER",
+        "SAFETY",
+        "COMMUNICATIONS",
+        "TRANSPORT",
+        "COMMUNITY",
+        "OTHER"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ACTIVE",
+        "INACTIVE",
+        "LOST",
+        "STALE",
+        "CONFLICTED"
+      ]
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "altitudeM": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "accuracyM": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "movement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "speedMps": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "headingDeg": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 360
+        },
+        "verticalRateMps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "speedMps": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "headingDeg": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 360
+    },
+    "verticalRateMps": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "dataQuality": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "modelled",
+        "mixed",
+        "inferred",
+        "synthetic",
+        "unknown"
+      ]
+    },
+    "lastUpdatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validFrom": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "validUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "synthetic": {
+      "type": "boolean"
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "provenanceIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProvenanceRecord"
+      }
+    },
+    "releasePolicy": {
+      "$ref": "#/$defs/ReleasePolicy"
+    },
+    "ownerSubjectId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "ReleasePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "visibility",
+        "allowedScopes"
+      ],
+      "properties": {
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "public",
+            "group",
+            "event",
+            "private",
+            "restricted"
+          ]
+        },
+        "allowedScopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "public",
+              "authenticated",
+              "group",
+              "event",
+              "operator",
+              "admin"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "groupIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "eventIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "userIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "mediaAccess": {
+          "type": "string",
+          "enum": [
+            "public",
+            "group",
+            "event",
+            "private",
+            "restricted"
+          ]
+        },
+        "expiresAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ProvenanceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provenanceId",
+        "sourceSystemId",
+        "transformedAt",
+        "transformation"
+      ],
+      "properties": {
+        "provenanceId": {
+          "type": "string"
+        },
+        "sourceSystemId": {
+          "type": "string"
+        },
+        "sourceName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceFeatureId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "adapterId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "adapterVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "eventId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transformedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "transformation": {
+          "type": "string"
+        },
+        "basis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceRevision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

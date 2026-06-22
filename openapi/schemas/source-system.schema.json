@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/acr-cop/schemas/source-system.schema.json",
+  "title": "Source System",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sourceSystemId",
+    "displayName",
+    "sourceType",
+    "owner",
+    "allowedEventTypes",
+    "allowedObjectTypes",
+    "trustProfile",
+    "classificationLimit",
+    "synthetic"
+  ],
+  "properties": {
+    "sourceSystemId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceType": {
+      "type": "string",
+      "enum": [
+        "SIMULATOR",
+        "AIR_SYSTEM",
+        "PUBLIC_FLIGHT_AGGREGATE",
+        "PUBLIC_SAFETY_AGGREGATE",
+        "PUBLIC_SITUATION_AGGREGATE",
+        "TAK_COT_GATEWAY",
+        "GROUND_SYSTEM",
+        "UAV_SYSTEM",
+        "RESCUE_SYSTEM",
+        "MANUAL_REPORTING"
+      ]
+    },
+    "owner": {
+      "type": "string"
+    },
+    "allowedEventTypes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "allowedObjectTypes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "trustProfile": {
+      "type": "string",
+      "enum": [
+        "LAB_SYNTHETIC",
+        "TRUSTED_INTERNAL",
+        "PARTNER",
+        "UNKNOWN"
+      ]
+    },
+    "classificationLimit": {
+      "type": "string",
+      "enum": [
+        "UNCLASSIFIED",
+        "RESTRICTED",
+        "CONFIDENTIAL",
+        "SECRET"
+      ]
+    },
+    "synthetic": {
+      "type": "boolean"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "REGISTERED",
+        "ACTIVE",
+        "SUSPENDED",
+        "REVOKED"
+      ],
+      "default": "REGISTERED"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

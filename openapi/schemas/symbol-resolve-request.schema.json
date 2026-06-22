@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/acr-cop/schemas/symbol-resolve-request.schema.json",
+  "title": "Symbol Resolve Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "objectType",
+    "affiliation",
+    "domain",
+    "status"
+  ],
+  "properties": {
+    "objectType": {
+      "type": "string"
+    },
+    "affiliation": {
+      "type": "string",
+      "enum": [
+        "FRIEND",
+        "ASSUMED_FRIEND",
+        "NEUTRAL",
+        "UNKNOWN",
+        "SUSPECT",
+        "HOSTILE",
+        "PENDING"
+      ]
+    },
+    "domain": {
+      "type": "string",
+      "enum": [
+        "AIR",
+        "LAND",
+        "SEA",
+        "RESCUE",
+        "OTHER"
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "modifiers": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "synthetic": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "echelon": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
