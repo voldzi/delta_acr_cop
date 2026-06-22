@@ -990,7 +990,7 @@ async function fetchJsonWithStatus(
     }
     const response = await fetch(url, {
       ...(options.body ? { body: options.body } : {}),
-      headers,
+      headers: safeHeaderRecord(headers),
       method: options.method ?? "GET",
       signal: controller.signal
     });
@@ -1304,6 +1304,12 @@ function safeHeaderValue(value: string | undefined, fallback: string): string {
     .replace(/[^\x20-\x7E]/gu, "");
   const collapsed = normalized.replace(/\s+/gu, " ").trim();
   return collapsed || fallback.replace(/[^\x20-\x7E]/gu, "").trim() || "unknown";
+}
+
+function safeHeaderRecord(headers: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => [key, safeHeaderValue(value, value)])
+  );
 }
 
 function clientSafeHomeserverBaseUrl(providerBaseUrl: string, config: MessagingProviderConfig): string {

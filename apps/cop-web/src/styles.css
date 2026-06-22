@@ -483,7 +483,7 @@ h1 {
   top: 86px;
   right: 10px;
   bottom: 46px;
-  grid-template-columns: minmax(0, 1fr) 54px;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   width: min(var(--messaging-dock-width, 520px), calc(100vw - 32px));
   max-height: none;
@@ -596,41 +596,15 @@ h1 {
   color: #eef5fb;
 }
 
-.messaging-dock-tabs.rail {
-  grid-template-columns: 1fr;
-  grid-template-rows: repeat(3, 64px) 1fr;
-  align-content: start;
-  gap: 6px;
-  height: 100%;
-  padding: 8px 7px;
-  border-width: 0 0 0 1px;
-  border-color: rgba(142, 157, 170, 0.22);
-  background: linear-gradient(180deg, rgba(17, 24, 31, 0.92), rgba(6, 10, 14, 0.96));
-}
-
-.messaging-dock-tabs.rail button {
-  grid-template-columns: 1fr;
-  justify-items: center;
-  min-height: 58px;
-  padding: 6px 2px;
-  border-radius: 8px;
-  font-size: 9px;
-}
-
-.messaging-dock-tabs.rail button span {
-  max-width: 42px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.messaging-mobile-tabs,
 .mobile-room-back {
   display: none;
 }
 
-.messaging-panel-header,
-.messaging-panel-actions {
+.messaging-mode-tabs {
+  display: block;
+}
+
+.messaging-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -665,30 +639,40 @@ h1 {
 
 .chat-status-strip {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .chat-status-strip span {
   display: inline-flex;
-  min-height: 24px;
+  min-height: auto;
   align-items: center;
-  padding: 0 8px;
-  border: 1px solid rgba(142, 157, 170, 0.22);
-  background: rgba(18, 25, 31, 0.72);
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #dce6ef;
-  font-size: 9px;
+  font-size: inherit;
   font-weight: 900;
   text-transform: uppercase;
 }
 
+.chat-status-strip span + span::before {
+  margin-right: 8px;
+  color: rgba(142, 157, 170, 0.72);
+  content: "·";
+}
+
 .chat-status-strip span.ok {
-  border-color: rgba(126, 211, 33, 0.38);
   color: var(--lime);
 }
 
 .chat-status-strip span.warn {
-  border-color: rgba(255, 216, 77, 0.42);
   color: var(--yellow);
 }
 
@@ -2012,34 +1996,66 @@ h1 {
   line-height: 1.45;
 }
 
-.demo-conversation-media {
+.demo-conversation-bubble.shared-media {
+  width: min(86%, 540px);
+  border-color: rgba(88, 151, 222, 0.34);
+  background: rgba(16, 30, 43, 0.9);
+}
+
+.demo-conversation-bubble.shared-media small {
+  margin-bottom: 8px;
+}
+
+.demo-inline-media-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.demo-media-card {
+.demo-inline-media-card {
   display: grid;
-  gap: 5px;
-  min-height: 92px;
-  padding: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 9px;
   border: 1px solid rgba(139, 167, 190, 0.22);
   background: rgba(15, 24, 33, 0.86);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
 }
 
-.demo-media-card svg {
+.demo-inline-media-card:hover {
+  border-color: rgba(74, 163, 255, 0.48);
+  background: rgba(24, 44, 62, 0.92);
+}
+
+.demo-inline-media-card svg {
   color: #bfe7ff;
 }
 
-.demo-media-card strong {
-  font-size: 12px;
-  line-height: 1.25;
+.demo-inline-media-card span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
-.demo-media-card span,
-.demo-media-card small {
+.demo-inline-media-card strong {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo-inline-media-card small {
+  display: block;
+  overflow: hidden;
   color: var(--muted);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .matrix-chat-shell {
@@ -2242,7 +2258,7 @@ h1 {
 
 .matrix-room-view {
   display: grid;
-  grid-template-rows: auto auto minmax(160px, 1fr) auto auto;
+  grid-template-rows: auto minmax(160px, 1fr) auto;
   min-height: 0;
   border: 1px solid rgba(142, 157, 170, 0.22);
   border-radius: 0;
@@ -2289,6 +2305,7 @@ h1 {
 .matrix-room-header-actions {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   min-width: 0;
 }
@@ -2297,7 +2314,7 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  max-width: 170px;
+  max-width: 220px;
   min-height: 30px;
   padding: 0 8px;
   border: 1px solid rgba(142, 157, 170, 0.22);
@@ -2314,42 +2331,6 @@ h1 {
 .matrix-room-context-chip svg {
   flex: 0 0 auto;
   color: var(--cyan);
-}
-
-.matrix-pinned-note {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-  margin: 10px 10px 0;
-  padding: 9px 10px;
-  border: 1px solid rgba(140, 182, 216, 0.24);
-  background: rgba(24, 36, 47, 0.58);
-}
-
-.matrix-pinned-note svg {
-  color: #60a5fa;
-}
-
-.matrix-pinned-note div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.matrix-pinned-note strong {
-  color: #93c5fd;
-  font-size: 10px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.matrix-pinned-note span {
-  overflow: hidden;
-  color: #dce7f1;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .messaging-panel:not(.pinned) .matrix-room-header {
@@ -2509,42 +2490,6 @@ h1 {
   gap: 5px;
   min-width: 0;
   overflow-x: auto;
-}
-
-.matrix-attachment-shortcuts {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 7px;
-  padding: 10px;
-  border-top: 1px solid rgba(142, 157, 170, 0.16);
-  background: rgba(10, 16, 21, 0.56);
-}
-
-.matrix-attachment-shortcuts button {
-  display: grid;
-  place-items: center;
-  gap: 5px;
-  min-height: 58px;
-  border: 1px solid rgba(142, 157, 170, 0.22);
-  background: linear-gradient(180deg, rgba(29, 41, 52, 0.84), rgba(18, 25, 31, 0.78));
-  color: #dbe7f2;
-  cursor: pointer;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.matrix-attachment-shortcuts button:hover:not(:disabled) {
-  border-color: rgba(74, 163, 255, 0.55);
-  background: rgba(74, 163, 255, 0.16);
-}
-
-.matrix-attachment-shortcuts button:disabled {
-  cursor: not-allowed;
-  opacity: 0.46;
-}
-
-.matrix-attachment-shortcuts svg {
-  color: #d8e8f6;
 }
 
 .matrix-attachment-chip {
@@ -3204,7 +3149,7 @@ h1 {
   top: 58px;
   right: 0;
   bottom: 38px;
-  grid-template-columns: minmax(0, 1fr) 58px;
+  grid-template-columns: minmax(0, 1fr);
   width: min(max(var(--messaging-dock-width, 640px), 560px), calc(100vw - 96px));
   border-width: 0 0 0 1px;
   border-color: rgba(122, 148, 172, 0.24);
@@ -3245,25 +3190,6 @@ h1 {
   display: none;
 }
 
-.shell.app-shell-v2 .messaging-dock-tabs.rail {
-  gap: 8px;
-  padding: 10px 7px;
-  border-color: rgba(122, 148, 172, 0.2);
-  background: linear-gradient(180deg, rgba(14, 21, 30, 0.98), rgba(6, 11, 17, 0.99));
-}
-
-.shell.app-shell-v2 .messaging-dock-tabs.rail button {
-  min-height: 64px;
-  border-radius: 8px;
-}
-
-.shell.app-shell-v2 .messaging-dock-tabs.rail button.active,
-.shell.app-shell-v2 .messaging-dock-tabs.rail button:hover {
-  border-color: rgba(63, 131, 207, 0.35);
-  background: linear-gradient(180deg, rgba(31, 82, 142, 0.54), rgba(15, 42, 72, 0.68));
-  color: #eaf4ff;
-}
-
 .shell.app-shell-v2 .matrix-room-list,
 .shell.app-shell-v2 .matrix-room-view {
   border: 0;
@@ -3298,7 +3224,7 @@ h1 {
 }
 
 .shell.app-shell-v2 .matrix-room-view {
-  grid-template-rows: auto auto minmax(160px, 1fr) auto auto;
+  grid-template-rows: auto minmax(160px, 1fr) auto;
 }
 
 .shell.app-shell-v2 .matrix-room-header {
@@ -3306,12 +3232,6 @@ h1 {
   padding: 0 14px;
   border-bottom-color: rgba(122, 148, 172, 0.18);
   background: rgba(9, 15, 22, 0.54);
-}
-
-.shell.app-shell-v2 .matrix-pinned-note {
-  margin: 12px 14px 0;
-  border-radius: 8px;
-  background: rgba(17, 26, 36, 0.74);
 }
 
 .shell.app-shell-v2 .matrix-timeline {
@@ -3332,16 +3252,9 @@ h1 {
   background: linear-gradient(135deg, rgba(37, 99, 235, 0.96), rgba(29, 78, 216, 0.8));
 }
 
-.shell.app-shell-v2 .matrix-attachment-shortcuts,
 .shell.app-shell-v2 .matrix-composer {
   border-top-color: rgba(122, 148, 172, 0.18);
   background: rgba(9, 15, 22, 0.72);
-}
-
-.shell.app-shell-v2 .matrix-attachment-shortcuts button {
-  min-height: 66px;
-  border-radius: 7px;
-  background: linear-gradient(180deg, rgba(31, 42, 54, 0.78), rgba(18, 25, 35, 0.78));
 }
 
 .shell.app-shell-v2 .matrix-composer textarea,
@@ -8030,7 +7943,7 @@ dd {
 
   .messaging-panel.pinned {
     inset: 0;
-    grid-template-columns: minmax(0, 1fr) 52px;
+    grid-template-columns: minmax(0, 1fr);
     width: 100vw;
     max-height: 100svh;
     padding: 0;
@@ -9233,20 +9146,19 @@ dd {
     min-height: 42px;
   }
 
-  .messaging-mobile-tabs {
-    display: block;
+  .messaging-mode-tabs {
     padding: 8px 10px;
     border-bottom: 1px solid rgba(122, 148, 172, 0.18);
     background: rgba(6, 11, 17, 0.98);
   }
 
-  .shell.app-shell-v2 .messaging-mobile-tabs .messaging-dock-tabs {
+  .shell.app-shell-v2 .messaging-mode-tabs .messaging-dock-tabs {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     border: 0;
     background: rgba(16, 25, 35, 0.72);
   }
 
-  .shell.app-shell-v2 .messaging-mobile-tabs .messaging-dock-tabs button {
+  .shell.app-shell-v2 .messaging-mode-tabs .messaging-dock-tabs button {
     min-height: 38px;
     border-radius: 10px;
     font-size: 10px;
@@ -9254,20 +9166,18 @@ dd {
 
   .shell.app-shell-v2 .chat-status-strip {
     display: flex;
-    gap: 6px;
-    min-height: 44px;
-    padding: 8px 10px;
-    overflow-x: auto;
-    flex-wrap: nowrap;
+    gap: 8px;
+    min-height: auto;
+    padding: 6px 12px 8px;
+    overflow: visible;
+    flex-wrap: wrap;
     border-bottom: 1px solid rgba(122, 148, 172, 0.18);
     background: rgba(6, 11, 17, 0.96);
-    overscroll-behavior-x: contain;
-    -webkit-overflow-scrolling: touch;
   }
 
   .shell.app-shell-v2 .chat-status-strip span {
     flex: 0 0 auto;
-    min-height: 28px;
+    min-height: auto;
     font-size: 10px;
   }
 
@@ -9422,11 +9332,6 @@ dd {
   }
 
   .shell.app-shell-v2 .matrix-room-header-actions,
-  .shell.app-shell-v2 .matrix-pinned-note,
-  .shell.app-shell-v2 .matrix-attachment-shortcuts {
-    display: none;
-  }
-
   .shell.app-shell-v2 .matrix-room-heading strong {
     font-size: 16px;
   }
@@ -9493,12 +9398,7 @@ dd {
     border-radius: 999px;
   }
 
-  .shell.app-shell-v2 .messaging-panel-actions,
   .shell.app-shell-v2 .messaging-warning-list {
-    display: none;
-  }
-
-  .shell.app-shell-v2 .messaging-dock-tabs.rail {
     display: none;
   }
 }

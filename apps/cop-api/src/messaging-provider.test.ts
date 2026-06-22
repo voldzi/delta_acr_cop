@@ -301,7 +301,7 @@ describe("CsmMessagingProvider", () => {
         Authorization: "Bearer provider-token",
         "x-csm-device-id": "COPWEB.device-1",
         "x-csm-user-id": "user-123",
-        "x-csm-user-name": "User One",
+        "x-csm-user-name": "Jiri Volek",
         "x-csm-user-role": "cop_operator"
       });
       return new Response(JSON.stringify({
@@ -331,7 +331,7 @@ describe("CsmMessagingProvider", () => {
 
     const bootstrap = await provider.fetchMatrixBootstrap({
       authMode: "oidc",
-      displayName: "User One",
+      displayName: "Jiří Volek",
       roles: ["cop_operator"],
       subjectId: "user-123",
       username: "user.one"

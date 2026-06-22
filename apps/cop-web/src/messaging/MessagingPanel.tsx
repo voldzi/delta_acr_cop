@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, CheckCircle2, Crown, Download, FileText, Globe2, Image, Info, Lock, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, ShieldCheck, Star, Trash2, UserPlus, Users, Video, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Crown, Download, FileText, Globe2, Image, Info, Lock, MapPin, MessageCircle, Paperclip, Pin, PinOff, Plus, Search, Send, ShieldCheck, Trash2, UserPlus, Users, Video, X } from "lucide-react";
 import { fetchMessagingBootstrap } from "../cop-data";
 import type { MessagingMatrixIdentityResolutionResponse, MessagingMatrixRoomBindingResponse, UserDirectoryEntry } from "../cop-data";
 import { SelectField } from "../ui/select";
@@ -720,18 +720,15 @@ export function MessagingPanel({
           </div>
         </div>
 
-        {pinned ? (
-          <div className="messaging-mobile-tabs">
-            <MessagingDockTabs activeTab={activeDockTab} onChange={setActiveDockTab} />
-          </div>
-        ) : null}
-        {!pinned ? <MessagingDockTabs activeTab={activeDockTab} onChange={setActiveDockTab} /> : null}
+        <div className="messaging-mode-tabs">
+          <MessagingDockTabs activeTab={activeDockTab} onChange={setActiveDockTab} />
+        </div>
 
-        <div className="chat-status-strip">
+        <div className="chat-status-strip" aria-label="Stav komunikace">
           <span className={messagingStatusTone(providerStatus)}>{messagingStatusLabel(providerStatus, loading)}</span>
-          <span>{authenticated ? operatorDisplayName(session, authConfig) : "bez účtu"}</span>
-          <span>{matrixSession ? matrixSyncLabel(syncState) : matrixBootstrapReady ? "zprávy připravené" : "čeká na zprávy"}</span>
-          {e2eeRequired ? <span>šifrováno</span> : null}
+          {authenticated ? <span>{operatorDisplayName(session, authConfig)}</span> : null}
+          <span>{matrixSession ? matrixSyncLabel(syncState) : matrixBootstrapReady ? "připraveno" : "čeká"}</span>
+          {e2eeRequired ? <span>zabezpečeno</span> : null}
         </div>
 
         {hasMessagingErrors ? (
@@ -777,7 +774,6 @@ export function MessagingPanel({
             onBackToList={() => setSelectedRoomId(null)}
             onAttachmentClear={() => setPendingAttachment(null)}
             onAttachmentPick={pickAttachment}
-            onCreateReport={createReportFromCurrentChat}
             onDirectQueryChange={setDirectQuery}
             onDownloadAttachment={(message) => void downloadAttachment(message)}
             onRoomSelect={setSelectedRoomId}
@@ -872,30 +868,19 @@ export function MessagingPanel({
           </div>
         ) : null}
 
-        <div className="messaging-panel-actions">
-          <button className="mini-button" disabled={loading} onClick={onRefresh} type="button">
-            <RefreshCw size={14} className={loading ? "spin" : ""} />
-            Obnovit stav
-          </button>
-          <button className="mini-button" disabled={!chatReady || bootstrapLoading} onClick={() => void openConversations()} type="button">
-            <Lock size={14} />
-            {bootstrapLoading ? "Spouštím chat" : matrixSession ? "Konverzace otevřeny" : "Otevřít chat"}
-          </button>
-        </div>
       </div>
-      {pinned ? <MessagingDockTabs activeTab={activeDockTab} rail onChange={setActiveDockTab} /> : null}
     </section>
   );
 }
 
-function MessagingDockTabs({ activeTab, onChange, rail = false }: { activeTab: MessagingDockTab; onChange: (tab: MessagingDockTab) => void; rail?: boolean }) {
+function MessagingDockTabs({ activeTab, onChange }: { activeTab: MessagingDockTab; onChange: (tab: MessagingDockTab) => void }) {
   const tabs: Array<{ icon: React.ReactNode; label: string; value: MessagingDockTab }> = [
     { icon: <MessageCircle size={15} />, label: "Chat", value: "chat" },
     { icon: <Users size={15} />, label: "Skupiny", value: "groups" },
     { icon: <Info size={15} />, label: "Kontext", value: "context" }
   ];
   return (
-    <div className={`messaging-dock-tabs ${rail ? "rail" : ""}`} role="tablist" aria-label="Zobrazení komunikace">
+    <div className="messaging-dock-tabs" role="tablist" aria-label="Zobrazení komunikace">
       {tabs.map((tab) => (
         <button
           aria-selected={activeTab === tab.value}
@@ -1299,16 +1284,24 @@ function DemoConversationPreview({
         ))}
       </div>
       {conversation.media.length > 0 ? (
-        <div className="demo-conversation-media" aria-label="Sdílená média">
+        <article className="demo-conversation-bubble shared-media" aria-label="Sdílená média">
+          <small>
+            <strong>Sdílené podklady</strong>
+            <span>v konverzaci</span>
+          </small>
+          <div className="demo-inline-media-grid">
           {conversation.media.map((item) => (
-            <div className="demo-media-card" key={`${item.kind}-${item.title}`}>
+            <button className="demo-inline-media-card" key={`${item.kind}-${item.title}`} type="button">
               {demoMediaIcon(item.kind)}
-              <strong>{item.title}</strong>
-              {item.caption ? <span>{item.caption}</span> : null}
-              {item.byteSizeLabel ? <small>{item.byteSizeLabel}</small> : null}
-            </div>
+              <span>
+                <strong>{item.title}</strong>
+                {item.caption ? <small>{item.caption}</small> : null}
+                {item.byteSizeLabel ? <small>{item.byteSizeLabel}</small> : null}
+              </span>
+            </button>
           ))}
-        </div>
+          </div>
+        </article>
       ) : null}
       {!chatReady ? (
         <div className="messaging-security-note">
@@ -1367,7 +1360,6 @@ function MatrixChatShell({
   onBackToList,
   onAttachmentClear,
   onAttachmentPick,
-  onCreateReport,
   onDirectQueryChange,
   onDownloadAttachment,
   onRoomSelect,
@@ -1398,7 +1390,6 @@ function MatrixChatShell({
   onBackToList: () => void;
   onAttachmentClear: () => void;
   onAttachmentPick: (kind: MatrixAttachmentKind) => void;
-  onCreateReport: () => void;
   onDirectQueryChange: (value: string) => void;
   onDownloadAttachment: (message: MatrixTimelineMessage) => void;
   onRoomSelect: (roomId: string) => void;
@@ -1522,31 +1513,12 @@ function MatrixChatShell({
             <small>{activeRoomMeta}</small>
           </div>
           <div className="matrix-room-header-actions">
-            <button className="icon-button compact" disabled={!selectedRoom && !selectedConversation} title="Připnout konverzaci" type="button">
-              <Star size={14} />
-            </button>
-            <button className="icon-button compact" disabled={!selectedRoom && !selectedConversation} title="Informace o konverzaci" type="button">
-              <Info size={14} />
-            </button>
-            <span className="matrix-room-context-chip" title={mapContextLabel}>
+            {hasActiveConversation ? <span className="matrix-room-context-chip" title={mapContextLabel}>
               <MapPin size={13} />
               {mapContextLabel}
-            </span>
-            <button className="mini-button" disabled={!selectedRoomId && !selectedConversation} onClick={onCreateReport} type="button">
-              <MapPin size={14} />
-              Nahlásit
-            </button>
+            </span> : null}
           </div>
         </div>
-        {(selectedRoom || selectedConversation) ? (
-          <div className="matrix-pinned-note">
-            <Pin size={15} />
-            <div>
-              <strong>Připnutý kontext</strong>
-              <span>{selectedConversation ? "Skupina, média a události jsou navázané na mapu." : `Kontext mapy: ${mapContextLabel}`}</span>
-            </div>
-          </div>
-        ) : null}
         <div className="matrix-timeline" aria-live="polite">
           {conversationOnlySelected ? (
             <div className="conversation-start-card">
@@ -1573,24 +1545,6 @@ function MatrixChatShell({
               <MatrixMessageBody message={message} onDownloadAttachment={onDownloadAttachment} />
             </div>
           ))}
-        </div>
-        <div className="matrix-attachment-shortcuts" aria-label="Rychlé vložení">
-          <button disabled={!canSend || messageSending} onClick={() => onAttachmentPick("image")} type="button">
-            <Image size={18} />
-            <span>Fotografie</span>
-          </button>
-          <button disabled={!canSend || messageSending} onClick={() => onAttachmentPick("video")} type="button">
-            <Video size={18} />
-            <span>Video</span>
-          </button>
-          <button disabled={!canSend || messageSending} onClick={() => onAttachmentPick("file")} type="button">
-            <FileText size={18} />
-            <span>Soubor</span>
-          </button>
-          <button disabled={!canSend || messageSending} onClick={onShareLocation} type="button">
-            <MapPin size={18} />
-            <span>Poloha</span>
-          </button>
         </div>
         <div className="matrix-composer">
           <div className="matrix-composer-tools" aria-label="Přílohy">
@@ -2015,6 +1969,9 @@ function userFacingMessagingError(message: string): string {
   }
   if (/\b(401|403)\b/u.test(normalized) || /unauthori[sz]ed|forbidden|přihlášen/i.test(normalized)) {
     return "Pro tuto akci je potřeba platné přihlášení.";
+  }
+  if (/ByteString|character at index|greater than 255|invalid character/i.test(normalized)) {
+    return "Služba zpráv odmítla neplatně zapsaný údaj profilu. Obnovte přihlášení a zkuste akci znovu.";
   }
   if (/\b(500|502|503|504)\b/u.test(normalized) || /api request failed|internal server error|bad gateway|service unavailable|gateway timeout/i.test(normalized)) {
     return "Služba zpráv je dočasně nedostupná. Zkuste to prosím za chvíli.";
