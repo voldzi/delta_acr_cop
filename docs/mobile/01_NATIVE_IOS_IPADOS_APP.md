@@ -314,8 +314,10 @@ MDM/MAM příprava:
 
 Edge klient nesmí pro běžnou synchronizaci používat globální
 `GET /api/v1/events/domain`; tento endpoint je určený pro centrální replay a
-diagnostiku. MCP registry (`/api/v1/mcp/tools`) je read-only, auditovaný a
-neslouží jako mobilní write API.
+diagnostiku. MCP endpoint (`POST /api/v1/mcp`) a kompatibilní registry
+(`/api/v1/mcp/tools`) jsou read-only, auditované a slouží pro externí
+asistivní agenty nebo operátorskou diagnostiku. Nejsou mobilní write API a iOS
+klient je nesmí používat k ukládání hlášení, médií, zákresů ani zpráv.
 
 ## Generování klienta
 

@@ -544,6 +544,157 @@ describe("federation runtime routes", () => {
     }
   });
 
+  it("exposes the same audited tools through the MCP JSON-RPC protocol endpoint", async () => {
+    const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
+    try {
+      const unauthenticated = await app.inject({
+        method: "POST",
+        payload: {
+          id: "mcp-init",
+          jsonrpc: "2.0",
+          method: "initialize",
+          params: {}
+        },
+        url: "/api/v1/mcp"
+      });
+      expect(unauthenticated.statusCode).toBe(401);
+
+      const initialized = await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        payload: {
+          id: "mcp-init",
+          jsonrpc: "2.0",
+          method: "initialize",
+          params: {}
+        },
+        url: "/api/v1/mcp"
+      });
+      expect(initialized.statusCode).toBe(200);
+      expect(initialized.json()).toMatchObject({
+        id: "mcp-init",
+        jsonrpc: "2.0",
+        result: {
+          capabilities: {
+            tools: {
+              listChanged: false
+            }
+          },
+          protocolVersion: "2025-06-18",
+          serverInfo: {
+            name: "csm-cop-mcp"
+          }
+        }
+      });
+
+      const toolList = await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        payload: {
+          id: "mcp-tools",
+          jsonrpc: "2.0",
+          method: "tools/list",
+          params: {}
+        },
+        url: "/api/v1/mcp"
+      });
+      expect(toolList.statusCode).toBe(200);
+      expect(toolList.json()).toMatchObject({
+        id: "mcp-tools",
+        jsonrpc: "2.0",
+        result: {
+          tools: expect.arrayContaining([
+            expect.objectContaining({
+              annotations: expect.objectContaining({
+                readOnlyHint: true
+              }),
+              name: "cop.federation.nodes.list",
+              title: "List federation nodes"
+            })
+          ])
+        }
+      });
+
+      const toolCall = await app.inject({
+        headers: {
+          ...authHeaders,
+          "x-correlation-id": "corr-mcp-json-rpc"
+        },
+        method: "POST",
+        payload: {
+          id: "mcp-call",
+          jsonrpc: "2.0",
+          method: "tools/call",
+          params: {
+            arguments: {},
+            name: "cop.federation.nodes.list"
+          }
+        },
+        url: "/api/v1/mcp"
+      });
+      expect(toolCall.statusCode).toBe(200);
+      expect(toolCall.json()).toMatchObject({
+        id: "mcp-call",
+        jsonrpc: "2.0",
+        result: {
+          content: [
+            expect.objectContaining({
+              type: "text"
+            })
+          ],
+          isError: false,
+          structuredContent: {
+            contractVersion: "cop-federation-node-list-v1",
+            items: expect.arrayContaining([
+              expect.objectContaining({
+                nodeId: "node_central_cop"
+              })
+            ])
+          }
+        }
+      });
+
+      const auditReplay = await app.inject({
+        headers: authHeaders,
+        method: "GET",
+        url: "/api/v1/events/domain?fromOffset=0&limit=10&type=ai.tool.invoked"
+      });
+      expect(auditReplay.statusCode).toBe(200);
+      expect(auditReplay.json()).toMatchObject({
+        items: [
+          expect.objectContaining({
+            data: expect.objectContaining({
+              correlationId: "corr-mcp-json-rpc",
+              payload: expect.objectContaining({
+                status: "ok",
+                toolId: "cop.federation.nodes.list"
+              })
+            }),
+            type: "ai.tool.invoked"
+          })
+        ],
+        summary: {
+          count: 1,
+          totalAvailable: 1
+        }
+      });
+
+      const notification = await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        payload: {
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+          params: {}
+        },
+        url: "/api/v1/mcp"
+      });
+      expect(notification.statusCode).toBe(204);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("allows operators to inspect, redrive and resolve dead-letter events", async () => {
     const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
     try {

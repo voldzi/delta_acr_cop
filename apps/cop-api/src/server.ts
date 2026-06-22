@@ -241,6 +241,21 @@ interface CopMcpToolDefinition {
   title: string;
 }
 
+interface CopMcpToolInvocationEnvelope {
+  contractVersion: "cop-mcp-tool-invocation-v1";
+  generatedAt: string;
+  invocationId: string;
+  result: Record<string, unknown>;
+  status: "ok";
+  tool: {
+    mode: "read_only";
+    toolId: CopMcpToolId;
+    title: string;
+  };
+}
+
+type McpJsonRpcId = string | number | null;
+
 const copMcpTools: CopMcpToolDefinition[] = [
   {
     description: "List registered COP federation nodes for operator diagnostics and edge sync planning.",
@@ -4349,28 +4364,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return response;
   });
 
-  app.get("/api/v1/mcp/tools", async () => ({
-    contractVersion: "cop-mcp-tool-registry-v1",
-    generatedAt: now().toISOString(),
-    items: copMcpTools,
-    summary: {
-      count: copMcpTools.length
-    }
-  }));
-
-  app.post("/api/v1/mcp/tools/:toolId/invoke", async (request, reply) => {
-    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const params = request.params as { toolId: string };
-    const tool = copMcpTools.find((item) => item.toolId === params.toolId);
-    if (!tool) {
-      return sendError(reply, 404, "NOT_FOUND", "COP MCP tool was not found.", correlationId);
-    }
-
-    const actor = actorFromRequest(request);
+  async function invokeCopMcpToolInternal(
+    tool: CopMcpToolDefinition,
+    input: Record<string, unknown>,
+    actor: AuthenticatedActor | null | undefined,
+    correlationId: string
+  ): Promise<CopMcpToolInvocationEnvelope> {
     const startedAt = Date.now();
     const invocationId = crypto.randomUUID();
-    const body = isRecord(request.body) ? request.body : {};
-    const input = isRecord(body.input) ? body.input : body;
     let result: Record<string, unknown>;
 
     switch (tool.toolId) {
@@ -4483,6 +4484,147 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         title: tool.title
       }
     };
+  }
+
+  app.get("/api/v1/mcp", async () => ({
+    contractVersion: "cop-mcp-http-server-v1",
+    generatedAt: now().toISOString(),
+    methods: ["initialize", "notifications/initialized", "ping", "tools/list", "tools/call"],
+    protocolVersion: "2025-06-18",
+    summary: {
+      toolCount: copMcpTools.length,
+      transport: "streamable-http-json-rpc"
+    },
+    toolsEndpoint: "/api/v1/mcp/tools"
+  }));
+
+  app.post("/api/v1/mcp", async (request, reply) => {
+    const body = request.body;
+    const isBatch = Array.isArray(body);
+    const messages = isBatch ? body : [body];
+    if (isBatch && messages.length === 0) {
+      return reply.code(400).send(mcpJsonRpcError(null, -32600, "Invalid Request", "JSON-RPC batch cannot be empty."));
+    }
+
+    const actor = actorFromRequest(request);
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const responses: Record<string, unknown>[] = [];
+
+    for (const message of messages) {
+      const response = await handleMcpJsonRpcMessage(message, actor, correlationId);
+      if (response) {
+        responses.push(response);
+      }
+    }
+
+    if (responses.length === 0) {
+      return reply.code(204).send();
+    }
+
+    return isBatch ? responses : responses[0];
+  });
+
+  async function handleMcpJsonRpcMessage(
+    message: unknown,
+    actor: AuthenticatedActor | null | undefined,
+    correlationId: string
+  ): Promise<Record<string, unknown> | undefined> {
+    if (!isRecord(message)) {
+      return mcpJsonRpcError(null, -32600, "Invalid Request", "MCP message must be a JSON object.");
+    }
+
+    const id = "id" in message ? mcpJsonRpcId(message.id) : undefined;
+    if ("id" in message && id === undefined) {
+      return mcpJsonRpcError(null, -32600, "Invalid Request", "JSON-RPC id must be a string, number or null.");
+    }
+    if (message.jsonrpc !== "2.0" || typeof message.method !== "string") {
+      return id === undefined ? undefined : mcpJsonRpcError(id, -32600, "Invalid Request", "Expected JSON-RPC 2.0 MCP request.");
+    }
+    if (id === undefined && message.method !== "notifications/initialized") {
+      return undefined;
+    }
+
+    switch (message.method) {
+      case "initialize":
+        return mcpJsonRpcResult(id, {
+          capabilities: {
+            tools: {
+              listChanged: false
+            }
+          },
+          instructions:
+            "Use only the advertised read-only COP tools. Tool calls are audited in COP and never expose provider tokens, plaintext chat payloads or arbitrary command execution.",
+          protocolVersion: "2025-06-18",
+          serverInfo: {
+            name: "csm-cop-mcp",
+            title: "CSM COP MCP Gateway",
+            version: "1.0.0"
+          }
+        });
+      case "notifications/initialized":
+        return undefined;
+      case "ping":
+        return mcpJsonRpcResult(id, {});
+      case "tools/list":
+        return mcpJsonRpcResult(id, {
+          tools: copMcpTools.map((tool) => ({
+            annotations: {
+              destructiveHint: false,
+              idempotentHint: true,
+              openWorldHint: false,
+              readOnlyHint: true
+            },
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            name: tool.toolId,
+            title: tool.title
+          }))
+        });
+      case "tools/call": {
+        const params = isRecord(message.params) ? message.params : {};
+        const toolName = typeof params.name === "string" ? params.name : "";
+        const tool = copMcpTools.find((item) => item.toolId === toolName);
+        if (!tool) {
+          return mcpJsonRpcError(id, -32602, "Invalid params", "Requested COP MCP tool is not allowlisted.");
+        }
+        const input = isRecord(params.arguments) ? params.arguments : {};
+        const invocation = await invokeCopMcpToolInternal(tool, input, actor, correlationId);
+        return mcpJsonRpcResult(id, {
+          content: [
+            {
+              text: JSON.stringify(invocation.result, null, 2),
+              type: "text"
+            }
+          ],
+          isError: false,
+          structuredContent: invocation.result
+        });
+      }
+      default:
+        return mcpJsonRpcError(id, -32601, "Method not found", `Unsupported MCP method: ${message.method}`);
+    }
+  }
+
+  app.get("/api/v1/mcp/tools", async () => ({
+    contractVersion: "cop-mcp-tool-registry-v1",
+    generatedAt: now().toISOString(),
+    items: copMcpTools,
+    summary: {
+      count: copMcpTools.length
+    }
+  }));
+
+  app.post("/api/v1/mcp/tools/:toolId/invoke", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const params = request.params as { toolId: string };
+    const tool = copMcpTools.find((item) => item.toolId === params.toolId);
+    if (!tool) {
+      return sendError(reply, 404, "NOT_FOUND", "COP MCP tool was not found.", correlationId);
+    }
+
+    const body = isRecord(request.body) ? request.body : {};
+    const input = isRecord(body.input) ? body.input : body;
+    return invokeCopMcpToolInternal(tool, input, actorFromRequest(request), correlationId);
   });
 
   async function readFlightCatalogProvider(requestNow: Date) {
@@ -7978,6 +8120,44 @@ function isAoiRuleAffiliationScope(value: unknown): value is AoiRuleAffiliationS
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function mcpJsonRpcId(value: unknown): McpJsonRpcId | undefined {
+  if (typeof value === "string" || typeof value === "number" || value === null) {
+    return value;
+  }
+  return undefined;
+}
+
+function mcpJsonRpcResult(id: McpJsonRpcId | undefined, result: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (id === undefined) {
+    return undefined;
+  }
+  return {
+    id,
+    jsonrpc: "2.0",
+    result
+  };
+}
+
+function mcpJsonRpcError(
+  id: McpJsonRpcId | undefined,
+  code: number,
+  message: string,
+  data?: unknown
+): Record<string, unknown> | undefined {
+  if (id === undefined) {
+    return undefined;
+  }
+  return {
+    error: {
+      code,
+      ...(data === undefined ? {} : { data }),
+      message
+    },
+    id,
+    jsonrpc: "2.0"
+  };
 }
 
 function aiRequestId(value: unknown): string {

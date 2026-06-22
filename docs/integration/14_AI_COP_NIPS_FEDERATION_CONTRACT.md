@@ -100,6 +100,8 @@ API:
 | `GET /api/v1/events/dead-letter/{deadLetterId}` | detail odmítnutého eventu |
 | `POST /api/v1/events/dead-letter/{deadLetterId}/redrive` | opětovné vložení opraveného eventu do runtime logu |
 | `POST /api/v1/events/dead-letter/{deadLetterId}/resolve` | uzavření DLQ záznamu bez publikace náhradního eventu |
+| `GET /api/v1/mcp` | client-safe popis MCP JSON-RPC endpointu |
+| `POST /api/v1/mcp` | stateless MCP JSON-RPC endpoint pro externí agenty |
 | `GET /api/v1/mcp/tools` | client-safe seznam allowlistovaných COP MCP nástrojů |
 | `POST /api/v1/mcp/tools/{toolId}/invoke` | auditované volání read-only COP MCP nástroje |
 
@@ -147,10 +149,15 @@ Perzistence je idempotentní podle CloudEvent `id`/`eventId`. Replay offset je
 serverem přidělený monotónní `bigserial` offset, nikoli klientský čas ani
 lokální pořadí edge zařízení.
 
-`GET /api/v1/mcp/tools` a `POST /api/v1/mcp/tools/{toolId}/invoke` tvoří
-pilotní MCP gateway facade. Nejde o obecnou exekuci nástrojů. Registry vrací
-pouze allowlistované, client-safe metadata. Aktuální implementované nástroje
-jsou read-only:
+`POST /api/v1/mcp` je skutečný MCP JSON-RPC vstup pro externí agenty. Podporuje
+metody `initialize`, `notifications/initialized`, `ping`, `tools/list` a
+`tools/call`. REST endpointy `GET /api/v1/mcp/tools` a
+`POST /api/v1/mcp/tools/{toolId}/invoke` zůstávají kompatibilní facade pro web,
+runbooky a jednoduché smoke testy. Obě cesty používají stejný server-side
+allowlist a stejný audit.
+
+Nejde o obecnou exekuci nástrojů. Registry vrací pouze allowlistované,
+client-safe metadata. Aktuální implementované nástroje jsou read-only:
 
 - `cop.federation.nodes.list`,
 - `cop.events.replay`,
@@ -298,9 +305,10 @@ MCP Gateway je povolená pouze pro nástroje v allowlistu. Každé volání obsa
 Nástroje měnící stav vrací návrh. Provedení vyžaduje explicitní potvrzení
 uživatele přes COP command API.
 
-Pilotní COP API proto publikuje jen read-only nástroje přes
-`/api/v1/mcp/tools`. Browser ani iOS klient nesmí dostat SIM provider token,
-CSM Messaging service token, Matrix admin token ani payload plaintext zpráv.
+Pilotní COP API proto publikuje jen read-only nástroje přes MCP JSON-RPC
+`/api/v1/mcp` a kompatibilní REST registry `/api/v1/mcp/tools`. Browser ani iOS
+klient nesmí dostat SIM provider token, CSM Messaging service token, Matrix
+admin token ani payload plaintext zpráv.
 
 ## Ověření Pilotní Federace
 

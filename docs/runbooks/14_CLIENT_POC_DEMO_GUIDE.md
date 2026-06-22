@@ -273,14 +273,16 @@ Na závěr ukázat provozní stav:
 
 Otevřít část `Analytický asistent` nebo technický panel pro operátora a ukázat:
 
-- registry dostupných MCP nástrojů z `GET /api/v1/mcp/tools`,
-- auditované volání `cop.federation.nodes.list`,
+- MCP handshake `POST /api/v1/mcp` s metodou `initialize`,
+- seznam dostupných nástrojů přes MCP metodu `tools/list`,
+- auditované volání `cop.federation.nodes.list` přes MCP metodu `tools/call`,
 - audit událost `MCP_TOOL_INVOKED`,
 - že nástroj vrací pouze policy-filtered data a neumí měnit stav systému.
 
 V demo je důležité říct, že MCP není integrační backbone a není autonomní
 rozhodovač. Je to kontrolovaná read-only vrstva pro asistivní analýzu,
-diagnostiku a auditovatelné dotazy.
+diagnostiku a auditovatelné dotazy. Kompatibilní REST endpoint
+`GET /api/v1/mcp/tools` lze použít jen jako jednoduchý smoke test.
 
 ### 9. Edge/Offline Režim
 

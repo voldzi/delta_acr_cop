@@ -100,9 +100,10 @@ ale jako jasné schopnosti systému:
 
 - **MCP** ukazuje, že asistivní AI/tool vrstva pracuje jen přes allowlistované
   read-only nástroje, dostává policy-filtered data a každé volání je auditované.
-  Minimální demo: `GET /api/v1/mcp/tools`, volání
-  `cop.federation.nodes.list`, audit `MCP_TOOL_INVOKED` a viditelné omezení, že
-  nástroj nemění stav systému.
+  Minimální demo: `POST /api/v1/mcp` s `tools/list`, následně `tools/call`
+  nástroje `cop.federation.nodes.list`, audit `MCP_TOOL_INVOKED` a viditelné
+  omezení, že nástroj nemění stav systému. REST registry `GET
+  /api/v1/mcp/tools` zůstává pro smoke testy a webovou diagnostiku.
 - **Edge** ukazuje, že lokální pracoviště umí fungovat v degraded/offline
   režimu: registrovat se přes heartbeat, držet lokální outbox, po návratu
   konektivity flushnout eventy do COP, stáhnout replay a potvrdit replay cursor.

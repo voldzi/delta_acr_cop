@@ -247,6 +247,10 @@ záznam. To je záměrné, aby operátor neopakoval chybu rekurzivně.
 Pilotní MCP gateway běží v COP API a nevyžaduje samostatný provider token.
 Používá stejnou bearer autentizaci jako ostatní chráněné COP endpointy.
 
+- `POST /api/v1/mcp` je stateless MCP JSON-RPC endpoint pro externí agenty.
+  Podporuje `initialize`, `notifications/initialized`, `ping`, `tools/list` a
+  `tools/call` nad stejným allowlistem.
+- `GET /api/v1/mcp` vrací client-safe popis MCP endpointu a podporovaných metod.
 - `GET /api/v1/mcp/tools` vrací allowlist read-only nástrojů.
 - `POST /api/v1/mcp/tools/{toolId}/invoke` volá konkrétní read-only nástroj a
   publikuje auditní domain event `ai.tool.invoked`.
