@@ -42,6 +42,16 @@ interface DemoConversationMedia {
   title: string;
 }
 
+interface MediaPreviewItem {
+  byteSizeLabel?: string;
+  caption?: string;
+  contentType?: string;
+  kind: "document" | "file" | "image" | "location" | "photo" | "video";
+  location?: MatrixLocationShare;
+  title: string;
+  url?: string;
+}
+
 const communityGroupVisibilityOptions: Array<{ label: string; value: "private" | "public" }> = [
   { label: "S povolením", value: "private" },
   { label: "Veřejná", value: "public" }
@@ -159,6 +169,7 @@ export function MessagingPanel({
   const [deleteGroupConfirmId, setDeleteGroupConfirmId] = React.useState<string | null>(null);
   const [chatListWidth, setChatListWidth] = React.useState(() => readChatListWidth());
   const [syncState, setSyncState] = React.useState("idle");
+  const [mediaPreviewItem, setMediaPreviewItem] = React.useState<MediaPreviewItem | null>(null);
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
   const matrixAccountOwnerId = session.profile?.subjectId ?? session.profile?.username ?? "anonymous";
   const previousMatrixAccountOwnerRef = React.useRef<string | null>(null);
@@ -776,6 +787,7 @@ export function MessagingPanel({
             onAttachmentPick={pickAttachment}
             onDirectQueryChange={setDirectQuery}
             onDownloadAttachment={(message) => void downloadAttachment(message)}
+            onOpenMediaPreview={setMediaPreviewItem}
             onRoomSelect={setSelectedRoomId}
             onSend={() => void sendMessage()}
             onShareLocation={() => void shareLocation()}
@@ -788,6 +800,7 @@ export function MessagingPanel({
             conversation={demoConversation}
             loading={bootstrapLoading}
             onOpenChat={() => void openConversations()}
+            onOpenMediaPreview={setMediaPreviewItem}
           />
         ) : activeDockTab === "chat" && chatReady ? (
           <div className="messaging-empty-state">
@@ -866,6 +879,10 @@ export function MessagingPanel({
               <span key={warning}>{warning}</span>
             ))}
           </div>
+        ) : null}
+
+        {mediaPreviewItem ? (
+          <MediaPreviewDialog item={mediaPreviewItem} onClose={() => setMediaPreviewItem(null)} />
         ) : null}
 
       </div>
@@ -1245,13 +1262,16 @@ function DemoConversationPreview({
   chatReady,
   conversation,
   loading,
-  onOpenChat
+  onOpenChat,
+  onOpenMediaPreview
 }: {
   chatReady: boolean;
   conversation: DemoConversation;
   loading: boolean;
   onOpenChat: () => void;
+  onOpenMediaPreview: (item: MediaPreviewItem) => void;
 }) {
+  const mediaInsertionIndex = Math.max(0, Math.min(1, conversation.messages.length - 1));
   return (
     <div className="demo-conversation-preview" aria-label="Ukázková konverzace">
       <header>
@@ -1272,37 +1292,24 @@ function DemoConversationPreview({
         </div>
       ) : null}
       <div className="demo-conversation-thread">
-        {conversation.messages.map((message) => (
-          <article className={`demo-conversation-bubble ${message.direction === "outgoing" ? "own" : ""}`} key={message.id}>
-            <small>
-              <strong>{message.authorName}</strong>
-              {message.role ? <span>{message.role}</span> : null}
-              <time dateTime={message.sentAt}>{formatDemoMessageTime(message.sentAt)}</time>
-            </small>
-            <p>{message.body}</p>
-          </article>
+        {conversation.messages.length > 0 ? conversation.messages.map((message, index) => (
+          <React.Fragment key={message.id}>
+            <article className={`demo-conversation-bubble ${message.direction === "outgoing" ? "own" : ""}`}>
+              <small>
+                <strong>{message.authorName}</strong>
+                {message.role ? <span>{message.role}</span> : null}
+                <time dateTime={message.sentAt}>{formatDemoMessageTime(message.sentAt)}</time>
+              </small>
+              <p>{message.body}</p>
+            </article>
+            {index === mediaInsertionIndex ? conversation.media.map((item) => (
+              <DemoMediaMessage item={item} key={`${item.kind}-${item.title}`} onOpenMediaPreview={onOpenMediaPreview} />
+            )) : null}
+          </React.Fragment>
+        )) : conversation.media.map((item) => (
+          <DemoMediaMessage item={item} key={`${item.kind}-${item.title}`} onOpenMediaPreview={onOpenMediaPreview} />
         ))}
       </div>
-      {conversation.media.length > 0 ? (
-        <article className="demo-conversation-bubble shared-media" aria-label="Sdílená média">
-          <small>
-            <strong>Sdílené podklady</strong>
-            <span>v konverzaci</span>
-          </small>
-          <div className="demo-inline-media-grid">
-          {conversation.media.map((item) => (
-            <button className="demo-inline-media-card" key={`${item.kind}-${item.title}`} type="button">
-              {demoMediaIcon(item.kind)}
-              <span>
-                <strong>{item.title}</strong>
-                {item.caption ? <small>{item.caption}</small> : null}
-                {item.byteSizeLabel ? <small>{item.byteSizeLabel}</small> : null}
-              </span>
-            </button>
-          ))}
-          </div>
-        </article>
-      ) : null}
       {!chatReady ? (
         <div className="messaging-security-note">
           <ShieldCheck size={15} />
@@ -1310,6 +1317,37 @@ function DemoConversationPreview({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function DemoMediaMessage({
+  item,
+  onOpenMediaPreview
+}: {
+  item: DemoConversationMedia;
+  onOpenMediaPreview: (item: MediaPreviewItem) => void;
+}) {
+  return (
+    <article className="demo-conversation-bubble demo-media-message">
+      <small>
+        <strong>Sdílený podklad</strong>
+        <span>{demoMediaKindLabel(item.kind)}</span>
+      </small>
+      <button
+        className={`demo-media-preview-card ${item.kind}`}
+        onClick={() => onOpenMediaPreview(demoMediaPreviewItem(item))}
+        type="button"
+      >
+        <span className={`demo-media-preview-visual ${item.kind}`} aria-hidden="true">
+          {demoMediaIcon(item.kind)}
+        </span>
+        <span className="demo-media-preview-copy">
+          <strong>{item.title}</strong>
+          {item.caption ? <small>{item.caption}</small> : null}
+          {item.byteSizeLabel ? <small>{item.byteSizeLabel}</small> : null}
+        </span>
+      </button>
+    </article>
   );
 }
 
@@ -1325,6 +1363,159 @@ function demoMediaIcon(kind: DemoConversationMedia["kind"]) {
   }
   return <FileText size={20} />;
 }
+
+function demoMediaKindLabel(kind: DemoConversationMedia["kind"]): string {
+  if (kind === "photo") {
+    return "fotografie";
+  }
+  if (kind === "video") {
+    return "video";
+  }
+  if (kind === "location") {
+    return "poloha";
+  }
+  return "dokument";
+}
+
+function demoMediaPreviewItem(item: DemoConversationMedia): MediaPreviewItem {
+  return {
+    kind: item.kind,
+    title: item.title,
+    ...(item.byteSizeLabel ? { byteSizeLabel: item.byteSizeLabel } : {}),
+    ...(item.caption ? { caption: item.caption } : {})
+  };
+}
+
+function MediaPreviewDialog({ item, onClose }: { item: MediaPreviewItem; onClose: () => void }) {
+  const kindLabel = mediaPreviewKindLabel(item.kind);
+  const canRenderImage = (item.kind === "image" || item.kind === "photo") && item.url;
+  const canRenderVideo = item.kind === "video" && item.url;
+  return (
+    <div className="media-preview-backdrop" onClick={onClose} role="presentation">
+      <section
+        aria-label={`Náhled: ${item.title}`}
+        aria-modal="true"
+        className="media-preview-dialog"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <header>
+          <div>
+            <span>{kindLabel}</span>
+            <strong>{item.title}</strong>
+          </div>
+          <button aria-label="Zavřít náhled" className="icon-button compact" onClick={onClose} type="button">
+            <X size={16} />
+          </button>
+        </header>
+        <div className={`media-preview-hero ${item.kind}`}>
+          {canRenderImage ? <img alt={item.title} src={item.url} /> : null}
+          {canRenderVideo ? <video controls src={item.url} /> : null}
+          {!canRenderImage && !canRenderVideo ? (
+            <div className="media-preview-placeholder">
+              {mediaPreviewIcon(item.kind)}
+              <strong>{mediaPreviewPlaceholderText(item)}</strong>
+              {item.location ? <span>{formatCoordinates(item.location)}</span> : null}
+            </div>
+          ) : null}
+        </div>
+        <dl className="media-preview-meta">
+          {item.caption ? (
+            <>
+              <dt>Popis</dt>
+              <dd>{item.caption}</dd>
+            </>
+          ) : null}
+          {item.byteSizeLabel ? (
+            <>
+              <dt>Velikost</dt>
+              <dd>{item.byteSizeLabel}</dd>
+            </>
+          ) : null}
+          {item.contentType ? (
+            <>
+              <dt>Typ</dt>
+              <dd>{item.contentType}</dd>
+            </>
+          ) : null}
+        </dl>
+      </section>
+    </div>
+  );
+}
+
+function mediaPreviewIcon(kind: MediaPreviewItem["kind"]) {
+  if (kind === "image" || kind === "photo") {
+    return <Image size={32} />;
+  }
+  if (kind === "video") {
+    return <Video size={32} />;
+  }
+  if (kind === "location") {
+    return <MapPin size={32} />;
+  }
+  return <FileText size={32} />;
+}
+
+function mediaPreviewKindLabel(kind: MediaPreviewItem["kind"]): string {
+  if (kind === "image" || kind === "photo") {
+    return "Fotografie";
+  }
+  if (kind === "video") {
+    return "Video";
+  }
+  if (kind === "location") {
+    return "Poloha";
+  }
+  if (kind === "document") {
+    return "Dokument";
+  }
+  return "Soubor";
+}
+
+function mediaPreviewPlaceholderText(item: MediaPreviewItem): string {
+  if (item.kind === "location") {
+    return "Sdílená poloha";
+  }
+  if (item.url) {
+    return "Náhled není v tomto formátu dostupný.";
+  }
+  return "Náhled je připravený jako položka konverzace.";
+}
+
+function matrixMessagePreviewItem(message: MatrixTimelineMessage): MediaPreviewItem {
+  if (message.kind === "location" && message.location) {
+    return {
+      kind: "location",
+      location: message.location,
+      title: message.location.label ?? "Sdílená poloha",
+      caption: message.location.source === "device" ? "Poloha sdílená ze zařízení" : "Poloha vybraná v mapě"
+    };
+  }
+  const attachment = message.attachment;
+  if (!attachment) {
+    return {
+      caption: message.body,
+      kind: "file",
+      title: "Zpráva"
+    };
+  }
+  const kind: MediaPreviewItem["kind"] = message.kind === "image"
+    ? "image"
+    : message.kind === "video"
+      ? "video"
+      : "file";
+  const browserUrl = attachment.mediaUrl?.startsWith("http") && !attachment.encrypted ? attachment.mediaUrl : undefined;
+  return {
+    kind,
+    title: attachment.fileName,
+    contentType: attachment.encrypted ? "chráněná příloha" : (attachment.contentType ?? "soubor"),
+    ...(attachment.size ? { byteSizeLabel: formatBytes(attachment.size) } : {}),
+    ...(message.body && message.body !== attachment.fileName ? { caption: message.body } : {}),
+    ...(browserUrl ? { url: browserUrl } : {})
+  };
+}
+
 
 function formatDemoMessageTime(value: string): string {
   const date = new Date(value);
@@ -1362,6 +1553,7 @@ function MatrixChatShell({
   onAttachmentPick,
   onDirectQueryChange,
   onDownloadAttachment,
+  onOpenMediaPreview,
   onRoomSelect,
   onSend,
   onShareLocation,
@@ -1392,6 +1584,7 @@ function MatrixChatShell({
   onAttachmentPick: (kind: MatrixAttachmentKind) => void;
   onDirectQueryChange: (value: string) => void;
   onDownloadAttachment: (message: MatrixTimelineMessage) => void;
+  onOpenMediaPreview: (item: MediaPreviewItem) => void;
   onRoomSelect: (roomId: string) => void;
   onSend: () => void;
   onShareLocation: () => void;
@@ -1542,7 +1735,11 @@ function MatrixChatShell({
                 <span>{matrixMessageAuthor(message, selectedConversation, session)}</span>
                 <time dateTime={message.timestamp}>{new Date(message.timestamp).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</time>
               </small>
-              <MatrixMessageBody message={message} onDownloadAttachment={onDownloadAttachment} />
+              <MatrixMessageBody
+                message={message}
+                onDownloadAttachment={onDownloadAttachment}
+                onOpenMediaPreview={onOpenMediaPreview}
+              />
             </div>
           ))}
         </div>
@@ -1594,7 +1791,15 @@ function MatrixChatShell({
   );
 }
 
-function MatrixMessageBody({ message, onDownloadAttachment }: { message: MatrixTimelineMessage; onDownloadAttachment: (message: MatrixTimelineMessage) => void }) {
+function MatrixMessageBody({
+  message,
+  onDownloadAttachment,
+  onOpenMediaPreview
+}: {
+  message: MatrixTimelineMessage;
+  onDownloadAttachment: (message: MatrixTimelineMessage) => void;
+  onOpenMediaPreview: (item: MediaPreviewItem) => void;
+}) {
   if (message.kind === "location" && message.location) {
     return (
       <div className="matrix-message-location">
@@ -1603,13 +1808,16 @@ function MatrixMessageBody({ message, onDownloadAttachment }: { message: MatrixT
           <strong>{message.location.label ?? "Sdílená poloha"}</strong>
           <span>{formatCoordinates(message.location)}</span>
         </div>
-        {message.geoUri ? <a href={message.geoUri}>Mapa</a> : null}
+        <button className="mini-button compact-text" onClick={() => onOpenMediaPreview(matrixMessagePreviewItem(message))} type="button">
+          Náhled
+        </button>
       </div>
     );
   }
 
   if (message.attachment) {
     const showCaption = Boolean(message.body && message.body !== message.attachment.fileName);
+    const previewItem = matrixMessagePreviewItem(message);
     return (
       <>
         {showCaption ? <span>{message.body}</span> : null}
@@ -1626,10 +1834,14 @@ function MatrixMessageBody({ message, onDownloadAttachment }: { message: MatrixT
               <strong>{message.attachment.fileName}</strong>
               <small>{message.attachment.encrypted ? "chráněná příloha" : message.attachment.contentType ?? "soubor"}{message.attachment.size ? ` · ${formatBytes(message.attachment.size)}` : ""}</small>
             </span>
-            <button className="mini-button" onClick={() => onDownloadAttachment(message)} type="button">
-              <Download size={14} />
-              Stáhnout
-            </button>
+            <span className="matrix-attachment-actions">
+              <button className="mini-button compact-text" onClick={() => onOpenMediaPreview(previewItem)} type="button">
+                Náhled
+              </button>
+              <button aria-label="Stáhnout přílohu" className="icon-button compact" onClick={() => onDownloadAttachment(message)} type="button">
+                <Download size={14} />
+              </button>
+            </span>
           </div>
         </div>
       </>

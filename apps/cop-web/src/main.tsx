@@ -3567,6 +3567,7 @@ export function App() {
     () => mergeOperatorProfile(authSession, operatorProfile),
     [authSession, operatorProfile]
   );
+  const showContextRail = workspaceLayout.contextRailVisible && !(messagingOpen && messagingPinned);
   const shellClassName = clsx(
     "shell",
     "app-shell-v2",
@@ -3574,7 +3575,7 @@ export function App() {
     mobileSheet && `mobile-sheet-${mobileSheet}`,
     mobileSheet && "mobile-sheet-open",
     messagingOpen && messagingPinned && "shell-messaging-docked",
-    !workspaceLayout.contextRailVisible && "shell-context-hidden",
+    !showContextRail && "shell-context-hidden",
     !workspaceLayout.statusbarVisible && "shell-statusbar-hidden"
   );
   const workspaceClassName = clsx(
@@ -4379,7 +4380,7 @@ export function App() {
         ) : null}
       </section>
 
-        {workspaceLayout.contextRailVisible ? <ContextRail
+        {showContextRail ? <ContextRail
           activeWorkspace={activeWorkspace}
           messagingOpen={messagingOpen}
           onOpenMessaging={() => {
