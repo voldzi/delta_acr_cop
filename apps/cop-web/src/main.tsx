@@ -9,9 +9,11 @@ import {
   Bot,
   Building2,
   Bus,
+  CheckCircle2,
   Clock3,
   CloudSun,
   ChevronDown,
+  ClipboardList,
   Database,
   Gauge,
   HelpCircle,
@@ -74,6 +76,8 @@ import {
 import {
   acknowledgeCopAlert,
   connectCopStream,
+  createIncident,
+  createIncidentTask,
   createCommunityAttachmentUpload,
   createCommunityGroup,
   createCommunityReport,
@@ -86,6 +90,9 @@ import {
   fetchCopDashboardData,
   fetchCopAlerts,
   fetchCommunityGroups,
+  fetchIncidentFusionSuggestions,
+  fetchIncidentTasks,
+  fetchIncidents,
   fetchMapCatalog,
   fetchMapFeatures,
   fetchMessagingConversations,
@@ -109,6 +116,8 @@ import {
   submitCommunityReport,
   updateSketchDrawing,
   updateCommunityReport,
+  updateIncident,
+  updateIncidentTask,
   upsertCommunityGroupMember,
   uploadCommunityAttachmentFile,
   type CopDashboardData,
@@ -133,6 +142,12 @@ import {
   type FlightDataAttributes,
   type FlightReferenceFeatureCollectionResponse,
   type HealthStatus,
+  type IncidentFusionSuggestion,
+  type IncidentRecord,
+  type IncidentSeverity,
+  type IncidentStatus,
+  type IncidentTaskRecord,
+  type IncidentTaskStatus,
   type MapCatalogLayer,
   type MapCatalogResponse,
   type MapCatalogSource,
@@ -585,6 +600,14 @@ export function App() {
   const [messagingConversationsError, setMessagingConversationsError] = React.useState<string | null>(null);
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [webPushBusy, setWebPushBusy] = React.useState(false);
+  const [incidentSuggestions, setIncidentSuggestions] = React.useState<IncidentFusionSuggestion[]>([]);
+  const [incidents, setIncidents] = React.useState<IncidentRecord[]>([]);
+  const [incidentTasksById, setIncidentTasksById] = React.useState<Record<string, IncidentTaskRecord[]>>({});
+  const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null);
+  const [incidentTaskDraft, setIncidentTaskDraft] = React.useState("");
+  const [incidentWorkflowLoading, setIncidentWorkflowLoading] = React.useState(false);
+  const [incidentWorkflowError, setIncidentWorkflowError] = React.useState<string | null>(null);
+  const [incidentWorkflowStatus, setIncidentWorkflowStatus] = React.useState<string | null>(null);
   const [aiResult, setAiResult] = React.useState("AI asistent je připraven zkontrolovat kvalitu zobrazených dat.");
   const loadInFlightRef = React.useRef(false);
   const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
@@ -3594,6 +3617,199 @@ export function App() {
   const showSourceControls = activeWorkspace === "sources";
   const showAlertControls = activeWorkspace === "alerts";
   const showReplayControls = activeWorkspace === "replay";
+  const openIncidentTaskStatuses = React.useMemo<IncidentTaskStatus[]>(() => ["open", "in_progress", "blocked"], []);
+
+  const loadIncidentTasks = React.useCallback(async (incidentId: string, token = authToken) => {
+    if (!token) {
+      return;
+    }
+    const response = await fetchIncidentTasks(apiBase, token, incidentId, {
+      limit: 20,
+      statuses: openIncidentTaskStatuses
+    });
+    setIncidentTasksById((current) => ({
+      ...current,
+      [incidentId]: response.items
+    }));
+  }, [apiBase, authToken, openIncidentTaskStatuses]);
+
+  const loadIncidentWorkflow = React.useCallback(async () => {
+    if (!authToken) {
+      setIncidentSuggestions([]);
+      setIncidents([]);
+      setIncidentTasksById({});
+      setSelectedIncidentId(null);
+      setIncidentWorkflowError(null);
+      setIncidentWorkflowStatus("Incidentní workflow je dostupné po přihlášení operátora.");
+      return;
+    }
+
+    setIncidentWorkflowLoading(true);
+    setIncidentWorkflowError(null);
+    try {
+      const [suggestionResponse, incidentResponse] = await Promise.all([
+        fetchIncidentFusionSuggestions(apiBase, authToken, {
+          bbox: mapBounds,
+          includeSingletons: true,
+          limit: 8,
+          radiusM: 1200,
+          timeWindowSeconds: 7200
+        }),
+        fetchIncidents(apiBase, authToken, {
+          bbox: mapBounds,
+          limit: 20,
+          statuses: ["active", "candidate", "monitoring"]
+        })
+      ]);
+      const nextIncidents = incidentResponse.items;
+      const nextSelectedIncidentId = selectedIncidentId && nextIncidents.some((incident) => incident.incidentId === selectedIncidentId)
+        ? selectedIncidentId
+        : nextIncidents[0]?.incidentId ?? null;
+
+      setIncidentSuggestions(suggestionResponse.items);
+      setIncidents(nextIncidents);
+      setSelectedIncidentId(nextSelectedIncidentId);
+      setIncidentWorkflowStatus(`Načteno ${nextIncidents.length} incidentů a ${suggestionResponse.items.length} návrhů.`);
+
+      const taskIncidentIds = [...new Set([
+        nextSelectedIncidentId,
+        ...nextIncidents.slice(0, 2).map((incident) => incident.incidentId)
+      ].filter((incidentId): incidentId is string => Boolean(incidentId)))];
+      const taskPairs = await Promise.all(taskIncidentIds.map(async (incidentId) => {
+        const response = await fetchIncidentTasks(apiBase, authToken, incidentId, {
+          limit: 20,
+          statuses: openIncidentTaskStatuses
+        });
+        return [incidentId, response.items] as const;
+      }));
+      setIncidentTasksById((current) => ({
+        ...current,
+        ...Object.fromEntries(taskPairs)
+      }));
+    } catch (error) {
+      setIncidentWorkflowError(error instanceof Error ? error.message : "Incidentní workflow není dostupné.");
+    } finally {
+      setIncidentWorkflowLoading(false);
+    }
+  }, [apiBase, authToken, mapBounds, openIncidentTaskStatuses, selectedIncidentId]);
+
+  React.useEffect(() => {
+    if (!showAlertControls) {
+      return;
+    }
+    void loadIncidentWorkflow();
+  }, [loadIncidentWorkflow, showAlertControls]);
+
+  const handleSelectIncident = React.useCallback((incidentId: string) => {
+    setSelectedIncidentId(incidentId);
+    setIncidentTaskDraft("");
+    void loadIncidentTasks(incidentId);
+  }, [loadIncidentTasks]);
+
+  const handleAcceptIncidentSuggestion = React.useCallback(async (suggestion: IncidentFusionSuggestion) => {
+    if (!authToken) {
+      setIncidentWorkflowError("Přijetí návrhu vyžaduje přihlášení.");
+      return;
+    }
+    setIncidentWorkflowLoading(true);
+    setIncidentWorkflowError(null);
+    try {
+      const incident = await createIncident(apiBase, authToken, {
+        category: suggestion.category,
+        confidence: suggestion.confidence,
+        description: suggestion.description ?? suggestion.explanation,
+        location: {
+          ...suggestion.location,
+          source: "fusion"
+        },
+        properties: {
+          ...suggestion.properties,
+          fusionSuggestionId: suggestion.suggestionId,
+          reportIds: suggestion.reportIds
+        },
+        provenance: [{
+          explanation: suggestion.explanation,
+          kind: "fusion_suggestion",
+          metrics: suggestion.metrics,
+          suggestionId: suggestion.suggestionId
+        }],
+        severity: suggestion.severity,
+        sourceRefs: suggestion.sourceRefs,
+        status: "active",
+        title: suggestion.title
+      });
+      setIncidents((current) => [incident, ...current.filter((candidate) => candidate.incidentId !== incident.incidentId)]);
+      setIncidentSuggestions((current) => current.filter((candidate) => candidate.suggestionId !== suggestion.suggestionId));
+      setSelectedIncidentId(incident.incidentId);
+      setIncidentWorkflowStatus("Návrh byl převeden na aktivní incident.");
+      void loadIncidentTasks(incident.incidentId, authToken);
+    } catch (error) {
+      setIncidentWorkflowError(error instanceof Error ? error.message : "Návrh se nepodařilo přijmout.");
+    } finally {
+      setIncidentWorkflowLoading(false);
+    }
+  }, [apiBase, authToken, loadIncidentTasks]);
+
+  const handleUpdateIncidentStatus = React.useCallback(async (incidentId: string, status: IncidentStatus) => {
+    if (!authToken) {
+      setIncidentWorkflowError("Změna incidentu vyžaduje přihlášení.");
+      return;
+    }
+    setIncidentWorkflowError(null);
+    try {
+      const incident = await updateIncident(apiBase, authToken, incidentId, { status });
+      setIncidents((current) => current.map((candidate) => candidate.incidentId === incident.incidentId ? incident : candidate));
+      setIncidentWorkflowStatus(`Incident je nyní ${incidentStatusLabel(status).toLowerCase()}.`);
+    } catch (error) {
+      setIncidentWorkflowError(error instanceof Error ? error.message : "Incident se nepodařilo aktualizovat.");
+    }
+  }, [apiBase, authToken]);
+
+  const handleCreateIncidentTask = React.useCallback(async (incidentId: string, title: string) => {
+    if (!authToken) {
+      setIncidentWorkflowError("Založení úkolu vyžaduje přihlášení.");
+      return;
+    }
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) {
+      return;
+    }
+    setIncidentWorkflowError(null);
+    try {
+      const task = await createIncidentTask(apiBase, authToken, incidentId, {
+        priority: "normal",
+        status: "open",
+        title: normalizedTitle
+      });
+      setIncidentTasksById((current) => ({
+        ...current,
+        [incidentId]: [task, ...(current[incidentId] ?? [])]
+      }));
+      setIncidentTaskDraft("");
+      setIncidentWorkflowStatus("Úkol byl založen.");
+    } catch (error) {
+      setIncidentWorkflowError(error instanceof Error ? error.message : "Úkol se nepodařilo založit.");
+    }
+  }, [apiBase, authToken]);
+
+  const handleUpdateIncidentTaskStatus = React.useCallback(async (incidentId: string, taskId: string, status: IncidentTaskStatus) => {
+    if (!authToken) {
+      setIncidentWorkflowError("Změna úkolu vyžaduje přihlášení.");
+      return;
+    }
+    setIncidentWorkflowError(null);
+    try {
+      const task = await updateIncidentTask(apiBase, authToken, incidentId, taskId, { status });
+      setIncidentTasksById((current) => ({
+        ...current,
+        [incidentId]: (current[incidentId] ?? []).map((candidate) => candidate.taskId === task.taskId ? task : candidate)
+      }));
+      setIncidentWorkflowStatus("Úkol byl aktualizován.");
+    } catch (error) {
+      setIncidentWorkflowError(error instanceof Error ? error.message : "Úkol se nepodařilo aktualizovat.");
+    }
+  }, [apiBase, authToken]);
+
   const operatingMode = React.useMemo(
     () => resolveOperatingMode({ browserOnline, health, loadError, offlineSnapshotState, streamStatus }),
     [browserOnline, health, loadError, offlineSnapshotState, streamStatus]
@@ -4264,6 +4480,24 @@ export function App() {
                   setSelectedSituationFeatureId(null);
                   setMobileSheet(isSelected ? null : "detail");
                 }}
+              />
+              <IncidentWorkflowBoard
+                authenticated={profileAccessReady}
+                error={incidentWorkflowError}
+                incidents={incidents}
+                loading={incidentWorkflowLoading}
+                selectedIncidentId={selectedIncidentId}
+                statusMessage={incidentWorkflowStatus}
+                suggestions={incidentSuggestions}
+                taskDraft={incidentTaskDraft}
+                tasksByIncidentId={incidentTasksById}
+                onAcceptSuggestion={(suggestion) => void handleAcceptIncidentSuggestion(suggestion)}
+                onCreateTask={(incidentId, title) => void handleCreateIncidentTask(incidentId, title)}
+                onRefresh={() => void loadIncidentWorkflow()}
+                onSelectIncident={handleSelectIncident}
+                onTaskDraftChange={setIncidentTaskDraft}
+                onUpdateIncidentStatus={(incidentId, status) => void handleUpdateIncidentStatus(incidentId, status)}
+                onUpdateTaskStatus={(incidentId, taskId, status) => void handleUpdateIncidentTaskStatus(incidentId, taskId, status)}
               />
               <PersonalAlertBoard
                 alerts={proximityAlerts}
@@ -5376,6 +5610,199 @@ function AlertCenterBoard({
           </article>
         ))}
       </div>
+    </div>
+  );
+}
+
+function IncidentWorkflowBoard({
+  authenticated,
+  error,
+  incidents,
+  loading,
+  selectedIncidentId,
+  statusMessage,
+  suggestions,
+  taskDraft,
+  tasksByIncidentId,
+  onAcceptSuggestion,
+  onCreateTask,
+  onRefresh,
+  onSelectIncident,
+  onTaskDraftChange,
+  onUpdateIncidentStatus,
+  onUpdateTaskStatus
+}: {
+  authenticated: boolean;
+  error: string | null;
+  incidents: IncidentRecord[];
+  loading: boolean;
+  selectedIncidentId: string | null;
+  statusMessage: string | null;
+  suggestions: IncidentFusionSuggestion[];
+  taskDraft: string;
+  tasksByIncidentId: Record<string, IncidentTaskRecord[]>;
+  onAcceptSuggestion: (suggestion: IncidentFusionSuggestion) => void;
+  onCreateTask: (incidentId: string, title: string) => void;
+  onRefresh: () => void;
+  onSelectIncident: (incidentId: string) => void;
+  onTaskDraftChange: (value: string) => void;
+  onUpdateIncidentStatus: (incidentId: string, status: IncidentStatus) => void;
+  onUpdateTaskStatus: (incidentId: string, taskId: string, status: IncidentTaskStatus) => void;
+}) {
+  const selectedIncident = incidents.find((incident) => incident.incidentId === selectedIncidentId) ?? incidents[0] ?? null;
+  const selectedTasks = selectedIncident ? tasksByIncidentId[selectedIncident.incidentId] ?? [] : [];
+
+  return (
+    <div className="incident-workflow-board">
+      <div className="deck-header">
+        <PanelTitle icon={<ClipboardList size={17} />} title="Incidenty a úkoly" />
+        <button className="mini-button" disabled={loading} onClick={onRefresh} type="button">
+          <RefreshCw size={14} />
+          {loading ? "Načítám" : "Obnovit"}
+        </button>
+      </div>
+
+      {!authenticated ? (
+        <div className="empty-mini">Incidentní workflow je dostupné po přihlášení operátora.</div>
+      ) : (
+        <>
+          <div className="incident-summary-grid">
+            <MetricTile label="Incidenty" value={incidents.length} tone={incidents.length > 0 ? "warn" : "ok"} />
+            <MetricTile label="Návrhy" value={suggestions.length} tone={suggestions.length > 0 ? "warn" : "ok"} />
+          </div>
+          {error ? <div className="incident-warning">{humanizeApiError(error)}</div> : null}
+          {statusMessage && !error ? <div className="incident-status-message">{statusMessage}</div> : null}
+
+          <section className="incident-section">
+            <div className="incident-section-heading">
+              <strong>Návrhy z fúze dat</strong>
+              <span>{suggestions.length}</span>
+            </div>
+            <div className="incident-suggestion-list">
+              {suggestions.length === 0 ? <div className="empty-mini">Žádné nové návrhy z hlášení v aktuálním pohledu.</div> : null}
+              {suggestions.map((suggestion) => (
+                <article className="incident-suggestion-card" key={suggestion.suggestionId}>
+                  <div>
+                    <div className="incident-card-title">
+                      <strong>{suggestion.title}</strong>
+                      <span className={`incident-pill ${suggestion.severity}`}>{incidentSeverityLabel(suggestion.severity)}</span>
+                    </div>
+                    <p>{suggestion.explanation}</p>
+                    <div className="incident-meta">
+                      <span>{suggestion.metrics.reportCount} hlášení</span>
+                      <span>{formatIncidentDistance(suggestion.metrics.maxDistanceM)}</span>
+                      <span>{formatIncidentTimeSpan(suggestion.metrics.timeSpanSeconds)}</span>
+                      <span>{formatIncidentConfidence(suggestion.confidence)}</span>
+                    </div>
+                  </div>
+                  <button className="mini-button" onClick={() => onAcceptSuggestion(suggestion)} type="button">
+                    <Plus size={14} />
+                    Převzít
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="incident-section">
+            <div className="incident-section-heading">
+              <strong>Aktivní incidenty</strong>
+              <span>{incidents.length}</span>
+            </div>
+            <div className="incident-list">
+              {incidents.length === 0 ? <div className="empty-mini">Zatím nejsou vytvořené incidenty.</div> : null}
+              {incidents.map((incident) => (
+                <button
+                  className={clsx("incident-card", incident.incidentId === selectedIncident?.incidentId && "selected")}
+                  key={incident.incidentId}
+                  onClick={() => onSelectIncident(incident.incidentId)}
+                  type="button"
+                >
+                  <span className={`incident-severity-dot ${incident.severity}`} aria-hidden="true" />
+                  <span>
+                    <strong>{incident.title}</strong>
+                    <small>{incidentCategoryLabel(incident.category)} · {incidentStatusLabel(incident.status)} · {formatIncidentConfidence(incident.confidence)}</small>
+                  </span>
+                  <span>{formatShortDateTime(incident.updatedAt)}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="incident-task-panel">
+            {selectedIncident ? (
+              <>
+                <div className="incident-card-title">
+                  <div>
+                    <span className="section-eyebrow">Vybraný incident</span>
+                    <strong>{selectedIncident.title}</strong>
+                  </div>
+                  <span className={`incident-pill ${selectedIncident.severity}`}>{incidentSeverityLabel(selectedIncident.severity)}</span>
+                </div>
+                <p>{selectedIncident.description ?? "Bez doplňujícího popisu."}</p>
+                <div className="incident-status-actions">
+                  {(["active", "monitoring", "resolved"] satisfies IncidentStatus[]).map((status) => (
+                    <button
+                      className={clsx("mini-button", selectedIncident.status === status && "active")}
+                      disabled={selectedIncident.status === status}
+                      key={status}
+                      onClick={() => onUpdateIncidentStatus(selectedIncident.incidentId, status)}
+                      type="button"
+                    >
+                      {status === "resolved" ? <CheckCircle2 size={14} /> : null}
+                      {incidentStatusLabel(status)}
+                    </button>
+                  ))}
+                </div>
+                <form
+                  className="incident-task-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    onCreateTask(selectedIncident.incidentId, taskDraft);
+                  }}
+                >
+                  <input
+                    aria-label="Nový úkol"
+                    onChange={(event) => onTaskDraftChange(event.target.value)}
+                    placeholder="Nový úkol k incidentu"
+                    value={taskDraft}
+                  />
+                  <button className="mini-button" disabled={!taskDraft.trim()} type="submit">
+                    <Plus size={14} />
+                    Přidat
+                  </button>
+                </form>
+                <div className="incident-task-list">
+                  {selectedTasks.length === 0 ? <div className="empty-mini">Zatím nejsou založené úkoly.</div> : null}
+                  {selectedTasks.map((task) => (
+                    <article className="incident-task-row" key={task.taskId}>
+                      <div>
+                        <strong>{task.title}</strong>
+                        <span>{incidentTaskPriorityLabel(task.priority)} · {incidentTaskStatusLabel(task.status)}</span>
+                      </div>
+                      <div className="incident-task-actions">
+                        {task.status !== "in_progress" && task.status !== "done" ? (
+                          <button className="mini-button" onClick={() => onUpdateTaskStatus(selectedIncident.incidentId, task.taskId, "in_progress")} type="button">
+                            Rozpracovat
+                          </button>
+                        ) : null}
+                        {task.status !== "done" ? (
+                          <button className="mini-button" onClick={() => onUpdateTaskStatus(selectedIncident.incidentId, task.taskId, "done")} type="button">
+                            <CheckCircle2 size={14} />
+                            Hotovo
+                          </button>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="empty-mini">Vyberte incident. Tady se zobrazí úkoly a stav řešení.</div>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }
@@ -11497,6 +11924,129 @@ function fireRiskNotice(properties: SituationFeature["properties"]): string {
     return "Tepelná anomálie ze satelitu, nikoli potvrzený incident HZS.";
   }
   return properties.description ?? "n/a";
+}
+
+function humanizeApiError(value: string): string {
+  if (value.includes("401")) {
+    return "Přihlášení už není platné. Přihlaste se znovu v horní liště.";
+  }
+  if (value.includes("403")) {
+    return "K této části nemáte oprávnění.";
+  }
+  if (value.includes("failed") || value.includes("Load failed")) {
+    return "Služba je dočasně nedostupná. Zkuste obnovit stav.";
+  }
+  return value;
+}
+
+function incidentCategoryLabel(value: IncidentRecord["category"]): string {
+  switch (value) {
+    case "community":
+      return "hlášení";
+    case "fire":
+      return "požár";
+    case "flood":
+      return "povodeň";
+    case "infrastructure":
+      return "infrastruktura";
+    case "medical":
+      return "zdravotní";
+    case "security":
+      return "bezpečnost";
+    case "traffic":
+      return "doprava";
+    case "weather":
+      return "počasí";
+    case "other":
+    default:
+      return "ostatní";
+  }
+}
+
+function incidentSeverityLabel(value: IncidentSeverity): string {
+  switch (value) {
+    case "critical":
+      return "kritické";
+    case "warning":
+      return "varování";
+    case "advisory":
+      return "upozornění";
+    case "info":
+    default:
+      return "info";
+  }
+}
+
+function incidentStatusLabel(value: IncidentStatus): string {
+  switch (value) {
+    case "active":
+      return "Aktivní";
+    case "candidate":
+      return "K ověření";
+    case "monitoring":
+      return "Sledování";
+    case "resolved":
+      return "Vyřešeno";
+    case "rejected":
+      return "Odmítnuto";
+    case "closed":
+    default:
+      return "Uzavřeno";
+  }
+}
+
+function incidentTaskPriorityLabel(value: IncidentTaskRecord["priority"]): string {
+  switch (value) {
+    case "urgent":
+      return "urgentní";
+    case "high":
+      return "vysoká priorita";
+    case "low":
+      return "nižší priorita";
+    case "normal":
+    default:
+      return "standardní priorita";
+  }
+}
+
+function incidentTaskStatusLabel(value: IncidentTaskStatus): string {
+  switch (value) {
+    case "blocked":
+      return "blokováno";
+    case "cancelled":
+      return "zrušeno";
+    case "done":
+      return "hotovo";
+    case "in_progress":
+      return "řeší se";
+    case "open":
+    default:
+      return "otevřeno";
+  }
+}
+
+function formatIncidentConfidence(value: number): string {
+  return `${Math.round(clamp(value, 0, 1) * 100)} % jistota`;
+}
+
+function formatIncidentDistance(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "rozptyl n/a";
+  }
+  if (value >= 1000) {
+    return `rozptyl ${(value / 1000).toFixed(value >= 10000 ? 0 : 1)} km`;
+  }
+  return `rozptyl ${Math.round(value)} m`;
+}
+
+function formatIncidentTimeSpan(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "časové okno n/a";
+  }
+  if (value < 3600) {
+    return `okno ${Math.round(value / 60)} min`;
+  }
+  return `okno ${(value / 3600).toFixed(value >= 36000 ? 0 : 1)} h`;
 }
 
 function formatDurationSeconds(value: number | undefined): string {

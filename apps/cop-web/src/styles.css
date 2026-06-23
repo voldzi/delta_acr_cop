@@ -6784,7 +6784,8 @@ h1 {
 .track-board,
 .replay-board,
 .alert-center-board,
-.personal-alert-board {
+.personal-alert-board,
+.incident-workflow-board {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -6794,7 +6795,7 @@ h1 {
 }
 
 .alert-operations-deck {
-  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(250px, 0.72fr) minmax(300px, 0.9fr);
 }
 
 .data-operations-deck {
@@ -6877,6 +6878,214 @@ h1 {
   display: inline-flex;
   gap: 6px;
   align-items: center;
+}
+
+.incident-workflow-board {
+  gap: 10px;
+  overflow: auto;
+}
+
+.incident-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.incident-status-message,
+.incident-warning {
+  padding: 9px 10px;
+  border: 1px solid rgba(140, 182, 216, 0.22);
+  background: rgba(12, 20, 27, 0.72);
+  color: #dbe7f2;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.incident-warning {
+  border-color: rgba(245, 158, 11, 0.48);
+  color: #f8e7a0;
+}
+
+.incident-section,
+.incident-task-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(140, 182, 216, 0.18);
+  background: rgba(5, 9, 12, 0.28);
+}
+
+.incident-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #edf3f8;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.incident-section-heading span {
+  color: var(--lime);
+}
+
+.incident-suggestion-list,
+.incident-list,
+.incident-task-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.incident-suggestion-card,
+.incident-card,
+.incident-task-row {
+  min-width: 0;
+  border: 1px solid rgba(140, 182, 216, 0.2);
+  background: rgba(13, 22, 31, 0.72);
+}
+
+.incident-suggestion-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+}
+
+.incident-suggestion-card p,
+.incident-task-panel p {
+  margin: 6px 0 0;
+  color: #c2cfda;
+  font-size: 12px;
+  line-height: 1.38;
+}
+
+.incident-card {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding: 9px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.incident-card.selected {
+  border-color: rgba(200, 240, 141, 0.68);
+  background: rgba(58, 88, 43, 0.28);
+}
+
+.incident-card strong,
+.incident-task-row strong,
+.incident-card-title strong {
+  display: block;
+  color: #f2f7fb;
+  overflow-wrap: anywhere;
+}
+
+.incident-card small,
+.incident-card > span:last-child,
+.incident-task-row span,
+.incident-meta {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.incident-card-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.incident-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.incident-meta span {
+  padding: 3px 6px;
+  border: 1px solid rgba(140, 182, 216, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.incident-pill {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid rgba(140, 182, 216, 0.22);
+  color: #dbe7f2;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.incident-pill.critical,
+.incident-severity-dot.critical {
+  border-color: rgba(239, 68, 68, 0.74);
+  background: rgba(239, 68, 68, 0.3);
+  color: #fecaca;
+}
+
+.incident-pill.warning,
+.incident-severity-dot.warning {
+  border-color: rgba(245, 158, 11, 0.74);
+  background: rgba(245, 158, 11, 0.24);
+  color: #fde68a;
+}
+
+.incident-pill.advisory,
+.incident-severity-dot.advisory {
+  border-color: rgba(56, 189, 248, 0.68);
+  background: rgba(56, 189, 248, 0.22);
+  color: #bae6fd;
+}
+
+.incident-severity-dot {
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgba(200, 240, 141, 0.6);
+  background: rgba(126, 211, 33, 0.35);
+}
+
+.incident-status-actions,
+.incident-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.incident-task-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.incident-task-form input {
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid rgba(140, 182, 216, 0.3);
+  background: rgba(8, 13, 18, 0.8);
+  color: #edf3f8;
+  padding: 0 10px;
+  font: inherit;
+  font-weight: 800;
+}
+
+.incident-task-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding: 9px;
 }
 
 .track-table {

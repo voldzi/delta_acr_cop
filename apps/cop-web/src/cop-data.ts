@@ -1505,6 +1505,309 @@ export async function fetchCopAlerts(apiBase: string, token: string | undefined)
   return response?.items ?? [];
 }
 
+export type IncidentCategory =
+  | "community"
+  | "fire"
+  | "flood"
+  | "infrastructure"
+  | "medical"
+  | "other"
+  | "security"
+  | "traffic"
+  | "weather";
+export type IncidentSeverity = "advisory" | "critical" | "info" | "warning";
+export type IncidentStatus = "active" | "candidate" | "closed" | "monitoring" | "rejected" | "resolved";
+export type IncidentLocationSource = "community_report" | "fusion" | "manual" | "provider";
+export type IncidentSourceRefKind = "alert" | "community_report" | "manual" | "provider_feature" | "sketch";
+export type IncidentTaskPriority = "high" | "low" | "normal" | "urgent";
+export type IncidentTaskStatus = "blocked" | "cancelled" | "done" | "in_progress" | "open";
+
+export interface IncidentActor {
+  displayName: string;
+  subjectId: string;
+  username: string;
+}
+
+export interface IncidentLocation {
+  accuracyM?: number;
+  label?: string;
+  lat: number;
+  lon: number;
+  source: IncidentLocationSource;
+}
+
+export interface IncidentSourceRef {
+  id: string;
+  kind: IncidentSourceRefKind;
+  observedAt?: string;
+  sourceId?: string;
+  title?: string;
+}
+
+export interface IncidentRecord {
+  category: IncidentCategory;
+  confidence: number;
+  createdAt: string;
+  createdBy: IncidentActor;
+  description?: string;
+  incidentId: string;
+  location: IncidentLocation;
+  properties: Record<string, unknown>;
+  provenance: Array<Record<string, unknown>>;
+  severity: IncidentSeverity;
+  sourceRefs: IncidentSourceRef[];
+  status: IncidentStatus;
+  title: string;
+  updatedAt: string;
+  updatedBy?: IncidentActor;
+}
+
+export interface IncidentTaskRecord {
+  assigneeSubjectId?: string;
+  createdAt: string;
+  createdBy: IncidentActor;
+  description?: string;
+  dueAt?: string;
+  incidentId: string;
+  priority: IncidentTaskPriority;
+  properties: Record<string, unknown>;
+  sourceRef?: IncidentSourceRef;
+  status: IncidentTaskStatus;
+  taskId: string;
+  title: string;
+  updatedAt: string;
+  updatedBy?: IncidentActor;
+}
+
+export interface IncidentFusionSuggestion {
+  category: IncidentCategory;
+  confidence: number;
+  description?: string;
+  explanation: string;
+  location: IncidentLocation;
+  metrics: {
+    maxDistanceM: number;
+    reportCount: number;
+    timeSpanSeconds: number;
+  };
+  properties: Record<string, unknown>;
+  reportIds: string[];
+  severity: IncidentSeverity;
+  sourceRefs: IncidentSourceRef[];
+  suggestionId: string;
+  title: string;
+}
+
+export interface IncidentListResponse {
+  contractVersion: "cop-incidents-v1";
+  featureCollection: unknown;
+  items: IncidentRecord[];
+  serverTimestamp: string;
+}
+
+export interface IncidentFusionSuggestionResponse {
+  contractVersion: "cop-incident-fusion-suggestions-v1";
+  generatedAt: string;
+  items: IncidentFusionSuggestion[];
+  sourceReportCount: number;
+}
+
+export interface IncidentTaskListResponse {
+  contractVersion: "cop-incident-tasks-v1";
+  incidentId: string;
+  items: IncidentTaskRecord[];
+  serverTimestamp: string;
+}
+
+export interface IncidentCreatePayload {
+  category: IncidentCategory;
+  confidence?: number;
+  description?: string;
+  location: IncidentLocation;
+  properties?: Record<string, unknown>;
+  provenance?: Array<Record<string, unknown>>;
+  severity: IncidentSeverity;
+  sourceRefs?: IncidentSourceRef[];
+  status?: IncidentStatus;
+  title: string;
+}
+
+export interface IncidentUpdatePayload {
+  category?: IncidentCategory;
+  confidence?: number;
+  description?: string;
+  location?: IncidentLocation;
+  properties?: Record<string, unknown>;
+  provenance?: Array<Record<string, unknown>>;
+  severity?: IncidentSeverity;
+  sourceRefs?: IncidentSourceRef[];
+  status?: IncidentStatus;
+  title?: string;
+}
+
+export interface IncidentTaskCreatePayload {
+  assigneeSubjectId?: string;
+  description?: string;
+  dueAt?: string;
+  priority?: IncidentTaskPriority;
+  properties?: Record<string, unknown>;
+  sourceRef?: IncidentSourceRef;
+  status?: IncidentTaskStatus;
+  title: string;
+}
+
+export interface IncidentTaskUpdatePayload {
+  assigneeSubjectId?: string;
+  description?: string;
+  dueAt?: string | null;
+  priority?: IncidentTaskPriority;
+  properties?: Record<string, unknown>;
+  sourceRef?: IncidentSourceRef;
+  status?: IncidentTaskStatus;
+  title?: string;
+}
+
+export interface IncidentFusionSuggestionOptions {
+  bbox?: MapBounds;
+  includeSingletons?: boolean;
+  limit?: number;
+  radiusM?: number;
+  timeWindowSeconds?: number;
+}
+
+export interface IncidentListOptions {
+  bbox?: MapBounds;
+  categories?: IncidentCategory[];
+  includeClosed?: boolean;
+  limit?: number;
+  statuses?: IncidentStatus[];
+}
+
+export interface IncidentTaskListOptions {
+  limit?: number;
+  statuses?: IncidentTaskStatus[];
+}
+
+export async function fetchIncidentFusionSuggestions(
+  apiBase: string,
+  token: string | undefined,
+  options: IncidentFusionSuggestionOptions = {}
+): Promise<IncidentFusionSuggestionResponse> {
+  const query = new URLSearchParams();
+  appendMapBoundsQuery(query, options.bbox);
+  if (options.includeSingletons !== undefined) {
+    query.set("includeSingletons", String(options.includeSingletons));
+  }
+  if (options.limit !== undefined) {
+    query.set("limit", String(options.limit));
+  }
+  if (options.radiusM !== undefined) {
+    query.set("radiusM", String(options.radiusM));
+  }
+  if (options.timeWindowSeconds !== undefined) {
+    query.set("timeWindowSeconds", String(options.timeWindowSeconds));
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return fetchJson<IncidentFusionSuggestionResponse>(`${apiBase}/api/v1/incidents/fusion/suggestions${suffix}`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function fetchIncidents(apiBase: string, token: string | undefined, options: IncidentListOptions = {}): Promise<IncidentListResponse> {
+  const query = new URLSearchParams();
+  appendMapBoundsQuery(query, options.bbox);
+  if (options.categories?.length) {
+    query.set("category", options.categories.join(","));
+  }
+  if (options.statuses?.length) {
+    query.set("status", options.statuses.join(","));
+  }
+  if (options.includeClosed !== undefined) {
+    query.set("includeClosed", String(options.includeClosed));
+  }
+  if (options.limit !== undefined) {
+    query.set("limit", String(options.limit));
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return fetchJson<IncidentListResponse>(`${apiBase}/api/v1/incidents${suffix}`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function createIncident(apiBase: string, token: string, payload: IncidentCreatePayload): Promise<IncidentRecord> {
+  return fetchJson<IncidentRecord>(`${apiBase}/api/v1/incidents`, {
+    body: JSON.stringify(payload),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function updateIncident(apiBase: string, token: string, incidentId: string, payload: IncidentUpdatePayload): Promise<IncidentRecord> {
+  return fetchJson<IncidentRecord>(`${apiBase}/api/v1/incidents/${encodeURIComponent(incidentId)}`, {
+    body: JSON.stringify(payload),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "PATCH"
+  });
+}
+
+export async function fetchIncidentTasks(
+  apiBase: string,
+  token: string | undefined,
+  incidentId: string,
+  options: IncidentTaskListOptions = {}
+): Promise<IncidentTaskListResponse> {
+  const query = new URLSearchParams();
+  if (options.statuses?.length) {
+    query.set("status", options.statuses.join(","));
+  }
+  if (options.limit !== undefined) {
+    query.set("limit", String(options.limit));
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return fetchJson<IncidentTaskListResponse>(`${apiBase}/api/v1/incidents/${encodeURIComponent(incidentId)}/tasks${suffix}`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function createIncidentTask(
+  apiBase: string,
+  token: string,
+  incidentId: string,
+  payload: IncidentTaskCreatePayload
+): Promise<IncidentTaskRecord> {
+  return fetchJson<IncidentTaskRecord>(`${apiBase}/api/v1/incidents/${encodeURIComponent(incidentId)}/tasks`, {
+    body: JSON.stringify(payload),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function updateIncidentTask(
+  apiBase: string,
+  token: string,
+  incidentId: string,
+  taskId: string,
+  payload: IncidentTaskUpdatePayload
+): Promise<IncidentTaskRecord> {
+  return fetchJson<IncidentTaskRecord>(`${apiBase}/api/v1/incidents/${encodeURIComponent(incidentId)}/tasks/${encodeURIComponent(taskId)}`, {
+    body: JSON.stringify(payload),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "PATCH"
+  });
+}
+
 export async function fetchMapCatalog(apiBase: string, token: string | undefined, options: MapCatalogOptions = {}): Promise<MapCatalogResponse> {
   const query = new URLSearchParams();
   if (options.includeDiagnostics) {
@@ -2281,6 +2584,13 @@ async function readCopStream(apiBase: string, token: string | undefined, signal:
 
 function authHeaders(token: string | undefined): Record<string, string> | undefined {
   return token ? { Authorization: `Bearer ${token}` } : undefined;
+}
+
+function appendMapBoundsQuery(query: URLSearchParams, bbox: MapBounds | undefined): void {
+  if (!bbox) {
+    return;
+  }
+  query.set("bbox", [bbox.west, bbox.south, bbox.east, bbox.north].join(","));
 }
 
 function readSseData(block: string): string | null {

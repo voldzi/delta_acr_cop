@@ -67,6 +67,29 @@ Tasks track follow-up such as verification, contact, documentation or field
 coordination. They are not orders to use force and must not contain targeting or
 weapon workflow semantics.
 
+## Web Operator Workflow
+
+The web client exposes the first operator workflow in the `Výstrahy` workspace.
+Authenticated operators can:
+
+- refresh deterministic fusion suggestions for the current map viewport,
+- inspect why a suggestion exists: report count, spatial spread, time window and
+  confidence,
+- promote a suggestion into an active incident,
+- inspect active/candidate/monitoring incidents in the same view,
+- switch an incident between `active`, `monitoring` and `resolved`,
+- create follow-up tasks and mark them as `in_progress` or `done`.
+
+The UI deliberately keeps this as an operator-confirmed process. Fusion
+suggestions are presented as explainable recommendations from submitted
+community reports, but COP never turns them into incidents automatically.
+Unauthenticated users can continue to browse the public map, but they cannot
+create or manage incidents and tasks.
+
+For PoC demonstrations this provides the civil workflow chain:
+
+`community report -> fusion suggestion -> confirmed incident -> follow-up task`.
+
 ## Persistence
 
 `COP_INCIDENT_STORE` controls persistence:
