@@ -109,6 +109,18 @@ export function linkedConversationForCommunityGroup(
   return conversations.find((conversation) => conversationCommunityGroupId(conversation) === group.groupId);
 }
 
+export function conversationSelectionId(conversation: MessagingPanelProps["conversations"][number]): string {
+  return conversation.matrix?.roomId ?? conversation.conversationId;
+}
+
+export function groupConversationSelectionId(
+  conversations: MessagingPanelProps["conversations"],
+  group: MessagingPanelProps["communityGroups"][number] | null | undefined
+): string | null {
+  const conversation = linkedConversationForCommunityGroup(conversations, group);
+  return conversation ? conversationSelectionId(conversation) : null;
+}
+
 export function MessagingPanel({
   apiBase,
   authenticated,
@@ -231,6 +243,13 @@ export function MessagingPanel({
   }, [matrixSession, rooms, selectedRoomId]);
 
   React.useEffect(() => {
+    const selectedConversationById = conversations.find((conversation) => conversation.conversationId === selectedRoomId);
+    if (selectedConversationById?.matrix?.roomId) {
+      setSelectedRoomId(selectedConversationById.matrix.roomId);
+    }
+  }, [conversations, selectedRoomId]);
+
+  React.useEffect(() => {
     setDeleteGroupConfirmId(null);
   }, [selectedGroupId]);
 
@@ -322,6 +341,25 @@ export function MessagingPanel({
     : null;
   const demoConversation = React.useMemo(() => demoConversationFromGroups(communityGroups), [communityGroups]);
 
+  function selectConversation(conversationId: string) {
+    const conversation = conversations.find((item) => item.conversationId === conversationId || item.matrix?.roomId === conversationId);
+    if (!conversation) {
+      setSelectedRoomId(conversationId);
+      return;
+    }
+    setSelectedRoomId(conversationSelectionId(conversation));
+    const groupId = conversationCommunityGroupId(conversation);
+    if (groupId) {
+      setSelectedGroupId(groupId);
+    }
+  }
+
+  function selectCommunityGroup(groupId: string) {
+    const group = communityGroups.find((item) => item.groupId === groupId) ?? null;
+    setSelectedGroupId(groupId);
+    setSelectedRoomId(groupConversationSelectionId(conversations, group));
+  }
+
   async function createGroup() {
     const name = newGroupName.trim();
     if (!name) {
@@ -333,6 +371,9 @@ export function MessagingPanel({
     try {
       const { conversation, group } = await onCreateGroup(name, newGroupVisibility);
       setSelectedGroupId(group.groupId);
+      if (conversation) {
+        setSelectedRoomId(conversationSelectionId(conversation));
+      }
       setNewGroupName("");
       setShowGroupCreate(false);
       if (matrixSession && conversation) {
@@ -778,10 +819,7 @@ export function MessagingPanel({
             timeline={timeline}
             onChatListWidthChange={handleChatListWidthChange}
             onComposerChange={setComposerText}
-            onConversationSelect={(conversationId) => {
-              const conversation = conversations.find((item) => item.conversationId === conversationId);
-              setSelectedRoomId(conversation?.matrix?.roomId ?? conversationId);
-            }}
+            onConversationSelect={selectConversation}
             onBackToList={() => setSelectedRoomId(null)}
             onAttachmentClear={() => setPendingAttachment(null)}
             onAttachmentPick={pickAttachment}
@@ -849,14 +887,13 @@ export function MessagingPanel({
             onNewGroupNameChange={setNewGroupName}
             onNewGroupVisibilityChange={setNewGroupVisibility}
             onOpenGroupChat={(conversationId) => {
-              const conversation = conversations.find((item) => item.conversationId === conversationId);
-              setSelectedRoomId(conversation?.matrix?.roomId ?? conversationId);
+              selectConversation(conversationId);
               setActiveDockTab("chat");
               if (matrixSession) {
                 void startRoomForConversation(conversationId);
               }
             }}
-            onSelectGroup={setSelectedGroupId}
+            onSelectGroup={selectCommunityGroup}
             onShowGroupCreateChange={setShowGroupCreate}
           />
         ) : null}
@@ -1628,6 +1665,14 @@ function MatrixChatShell({
   }
 
   const hasActiveConversation = Boolean(selectedRoom || selectedConversation);
+  const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!hasActiveConversation) {
+      return;
+    }
+    timelineEndRef.current?.scrollIntoView({ block: "end" });
+  }, [conversationOnlySelected, hasActiveConversation, selectedRoomId, timeline.length]);
 
   return (
     <div className={`matrix-chat-shell ${pinned ? "pinned" : ""} ${hasActiveConversation ? "has-active-room" : "room-list-active"}`} style={shellStyle}>
@@ -1742,6 +1787,7 @@ function MatrixChatShell({
               />
             </div>
           ))}
+          <div ref={timelineEndRef} aria-hidden="true" />
         </div>
         <div className="matrix-composer">
           <div className="matrix-composer-tools" aria-label="Přílohy">

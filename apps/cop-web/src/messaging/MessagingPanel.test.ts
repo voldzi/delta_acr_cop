@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { assertMatrixRoomBindingConfirmed, linkedConversationForCommunityGroup, matrixUserIdsFromResolution, visibleMatrixRooms } from "./MessagingPanel";
+import {
+  assertMatrixRoomBindingConfirmed,
+  conversationSelectionId,
+  groupConversationSelectionId,
+  linkedConversationForCommunityGroup,
+  matrixUserIdsFromResolution,
+  visibleMatrixRooms
+} from "./MessagingPanel";
 import type { CommunityGroup, MessagingConversationSummary } from "../cop-data";
 
 describe("MessagingPanel Matrix safety gates", () => {
@@ -93,6 +100,25 @@ describe("MessagingPanel Matrix safety gates", () => {
 
     expect(linkedConversationForCommunityGroup(conversations, groupOne)).toBeUndefined();
     expect(linkedConversationForCommunityGroup(conversations, groupTwo)?.conversationId).toBe("conv_group_2");
+  });
+
+  it("selects the Matrix room for a group when the group is linked to a conversation", () => {
+    const conversations: MessagingConversationSummary[] = [
+      {
+        conversationId: "conv_group_1",
+        metadata: {
+          externalId: "group_1",
+          source: "cop.community"
+        },
+        matrix: { roomId: "!group1:docker.home.cz" },
+        title: "Kyjev",
+        type: "group"
+      }
+    ];
+
+    expect(conversationSelectionId(conversations[0]!)).toBe("!group1:docker.home.cz");
+    expect(groupConversationSelectionId(conversations, minimalGroup("group_1", "Kyjev"))).toBe("!group1:docker.home.cz");
+    expect(groupConversationSelectionId(conversations, minimalGroup("group_2", "Kyjev"))).toBeNull();
   });
 });
 

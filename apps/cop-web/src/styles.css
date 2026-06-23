@@ -2445,6 +2445,10 @@ h1 {
   max-height: none;
 }
 
+.matrix-timeline > [aria-hidden="true"] {
+  min-height: 1px;
+}
+
 .matrix-message {
   display: grid;
   gap: 3px;
@@ -9634,7 +9638,7 @@ dd {
   }
 
   .shell.app-shell-v2 .messaging-panel .chat-groups-workspace {
-    grid-template-rows: minmax(140px, 0.36fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 10px;
   }
 
@@ -9642,6 +9646,66 @@ dd {
   .shell.app-shell-v2 .messaging-panel .chat-group-members,
   .shell.app-shell-v2 .messaging-panel .messaging-context-panel {
     min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-group-list {
+    display: flex;
+    align-content: initial;
+    gap: 8px;
+    min-height: 94px;
+    max-height: 112px;
+    padding: 0 2px 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-padding-inline: 2px;
+    scroll-snap-type: x proximity;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-group-list button {
+    flex: 0 0 min(78vw, 292px);
+    min-height: 82px;
+    scroll-snap-align: start;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-group-members {
+    display: grid;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    padding-bottom: calc(86px + env(safe-area-inset-bottom));
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-group-members-heading {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    align-items: flex-start;
+    min-height: auto;
+    margin: -1px -1px 0;
+    padding: 10px;
+    background: linear-gradient(180deg, rgba(10, 17, 24, 0.98), rgba(10, 17, 24, 0.9));
+    backdrop-filter: blur(10px);
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-group-heading-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-group-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-group-section {
+    min-height: 0;
+  }
+
+  .shell.app-shell-v2 .messaging-panel .chat-group-member-list {
+    min-height: 120px;
+    max-height: none;
     overflow: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
