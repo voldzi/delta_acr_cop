@@ -852,6 +852,157 @@ describe("CsmMessagingProvider", () => {
     await app.close();
   });
 
+  it("exposes browser Web Push config without leaking provider secrets", async () => {
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token",
+      webPushEnabled: true,
+      webPushVapidPublicKey: "browser-public-vapid-key"
+    });
+
+    const config = await provider.fetchWebPushConfig(new Date("2026-06-23T10:00:00Z"));
+
+    expect(config).toMatchObject({
+      contractVersion: "cop-web-push-config-v1",
+      enabled: true,
+      providerId: "csm.messaging",
+      status: "online",
+      vapidPublicKey: "browser-public-vapid-key"
+    });
+    expect(JSON.stringify(config)).not.toContain("provider-token");
+    expect(JSON.stringify(config)).not.toContain("private");
+  });
+
+  it("registers browser Web Push devices server-side with sanitized actor headers", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/devices");
+      expect(init?.method).toBe("POST");
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "Content-Type": "application/json",
+        "x-csm-device-id": "web_device-1",
+        "x-csm-user-id": "user-123",
+        "x-csm-user-name": "Jiri Volek",
+        "x-csm-user-role": "cop_operator"
+      });
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        capabilities: ["notifications", "deep_links"],
+        deviceId: "web_device-1",
+        locale: "cs-CZ",
+        platform: "web",
+        pushProvider: "webpush",
+        pushSubscription: {
+          endpoint: "https://push.example.test/subscription/1",
+          keys: {
+            auth: "auth-secret",
+            p256dh: "p256dh-public"
+          }
+        },
+        timezone: "Europe/Prague"
+      });
+      return new Response(JSON.stringify({
+        contractVersion: "csm-device-v1",
+        deviceId: "web_device-1",
+        providerId: "csm.messaging",
+        registered: true,
+        status: "registered",
+        warnings: []
+      }), { status: 202 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token",
+      webPushEnabled: true,
+      webPushVapidPublicKey: "browser-public-vapid-key"
+    });
+
+    const result = await provider.registerWebPushDevice(
+      {
+        authMode: "oidc",
+        displayName: "Jiří Volek",
+        roles: ["cop_operator"],
+        subjectId: "user-123",
+        username: "jiri.volek"
+      },
+      new Date("2026-06-23T10:00:00Z"),
+      {
+        capabilities: ["notifications", "deep_links"],
+        deviceId: "web_device-1",
+        endpoint: "https://push.example.test/subscription/1",
+        keys: {
+          auth: "auth-secret",
+          p256dh: "p256dh-public"
+        },
+        locale: "cs-CZ",
+        notificationPreferences: {
+          safetyAlerts: true
+        },
+        timezone: "Europe/Prague"
+      }
+    );
+
+    expect(result).toMatchObject({
+      contractVersion: "cop-web-push-device-v1",
+      deviceId: "web_device-1",
+      enabled: true,
+      providerId: "csm.messaging",
+      registered: true,
+      status: "online"
+    });
+    expect(JSON.stringify(result)).not.toContain("provider-token");
+  });
+
+  it("deletes browser Web Push devices through the server-side provider", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/devices/web_device-1");
+      expect(init?.method).toBe("DELETE");
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "x-csm-device-id": "web_device-1",
+        "x-csm-user-id": "user-123"
+      });
+      return new Response(JSON.stringify({ status: "deleted" }), { status: 202 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token",
+      webPushEnabled: true,
+      webPushVapidPublicKey: "browser-public-vapid-key"
+    });
+
+    const result = await provider.deleteWebPushDevice(
+      {
+        authMode: "oidc",
+        displayName: "Jiří Volek",
+        roles: ["cop_operator"],
+        subjectId: "user-123",
+        username: "jiri.volek"
+      },
+      new Date("2026-06-23T10:00:00Z"),
+      "web_device-1"
+    );
+
+    expect(result).toMatchObject({
+      contractVersion: "cop-web-push-device-v1",
+      deleted: true,
+      deviceId: "web_device-1",
+      enabled: true,
+      status: "online"
+    });
+    expect(JSON.stringify(result)).not.toContain("provider-token");
+  });
+
   it("sends notification intake server-side with mandatory idempotency and without device tokens", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe("http://messaging.local:4050/api/v1/notifications");

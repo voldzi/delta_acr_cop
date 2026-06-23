@@ -886,6 +886,18 @@ class HangingMessagingProvider implements MessagingProvider {
     return new Promise<never>(() => {});
   }
 
+  async fetchWebPushConfig(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
+  async registerWebPushDevice(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
+  async deleteWebPushDevice(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
   async fetchMatrixBootstrap(): Promise<never> {
     throw new Error("not implemented");
   }

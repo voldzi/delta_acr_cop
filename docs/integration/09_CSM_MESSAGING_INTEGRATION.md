@@ -150,6 +150,29 @@ contain APNs tokens, Matrix tokens, media URLs or plaintext chat messages.
 Safety notification evaluation is documented separately in
 [12 COP Notification Decision And Push](12_COP_NOTIFICATION_DECISION_AND_PUSH.md).
 
+## Browser Web Push
+
+The web client can register a browser Web Push subscription, but COP still does
+not send push notifications directly. COP exposes only a small browser-safe
+configuration endpoint and an authenticated device registration proxy:
+
+```http
+GET /api/v1/push/web/config
+POST /api/v1/push/web/devices
+DELETE /api/v1/push/web/devices/{deviceId}
+Authorization: Bearer <COP user access token>
+```
+
+`GET /api/v1/push/web/config` returns only public capability data, including the
+VAPID **public** key when configured. It never returns
+`COP_CSM_MESSAGING_TOKEN`, a VAPID private key, Matrix tokens or APNs data.
+
+The browser sends its `PushSubscription` to COP. COP validates the request,
+adds the authenticated user context and forwards it server-side to CSM
+Messaging `POST /api/v1/devices` with `platform=web` and
+`pushProvider=webpush`. Delivery, deduplication and device lifecycle remain
+owned by CSM Messaging.
+
 Authenticated clients also read and create conversation metadata through COP:
 
 ```http
@@ -260,6 +283,8 @@ COP_CSM_MESSAGING_MATRIX_PUBLIC_URL=https://msg.zeleznalady.cz
 COP_CSM_MESSAGING_TOKEN=<same-value-as-CSM_MESSAGING_API_TOKEN>
 COP_CSM_MESSAGING_TIMEOUT_MS=3000
 COP_CSM_MESSAGING_CACHE_TTL_MS=10000
+COP_WEB_PUSH_ENABLED=false
+COP_WEB_PUSH_VAPID_PUBLIC_KEY=<browser-web-push-vapid-public-key-from-csm-messaging>
 COP_WEB_MESSAGING_LAUNCHER_ENABLED=true
 ```
 
@@ -272,6 +297,8 @@ conversations.
 - The browser never calls the Messaging provider directly.
 - COP does not proxy plaintext messages through the Phoenix API.
 - Provider credentials and Matrix service/admin tokens stay server-side.
+- Browser Web Push receives only the VAPID public key. COP never exposes VAPID
+  private keys or provider service tokens.
 - If CSM Messaging runs with `CSM_MESSAGING_REQUIRE_AUTH=true`, COP must set
   `COP_CSM_MESSAGING_TOKEN` to the same value as `CSM_MESSAGING_API_TOKEN`.
 - User identity comes from the COP login session. Anonymous users may use the

@@ -87,7 +87,8 @@ import {
   type MessagingConversationMember,
   type MessagingMatrixRoomBindingRequest,
   type MessagingMapLink,
-  type MessagingProvider
+  type MessagingProvider,
+  type MessagingWebPushDeviceRegistrationRequest
 } from "./messaging-provider.js";
 import {
   buildCommunityReportNotificationDecision,
@@ -1928,6 +1929,50 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   app.get("/api/v1/messaging/status", async () => {
     return messagingProvider.fetchStatus(now());
+  });
+
+  app.get("/api/v1/push/web/config", async () => {
+    return messagingProvider.fetchWebPushConfig(now());
+  });
+
+  app.post("/api/v1/push/web/devices", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+
+    const registration = normalizeWebPushDeviceRegistrationRequest(request.body);
+    if (!registration) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Web push registration requires deviceId, endpoint and browser subscription keys.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const result = await messagingProvider.registerWebPushDevice(actor, now(), registration);
+    return reply.code(result.registered ? 202 : result.status === "disabled" ? 503 : 502).send(result);
+  });
+
+  app.delete("/api/v1/push/web/devices/:deviceId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { deviceId: string };
+    const deviceId = normalizeWebPushDeviceId(params.deviceId);
+    if (!deviceId) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Web push device id may contain only A-Z, a-z, 0-9, dot, underscore, equals and dash, with max length 96.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const result = await messagingProvider.deleteWebPushDevice(actor, now(), deviceId);
+    return reply.code(result.deleted ? 202 : result.status === "disabled" ? 503 : 502).send(result);
   });
 
   app.post("/api/v1/messaging/bootstrap", async (request, reply) => {
@@ -6781,6 +6826,74 @@ function normalizeMessagingConversationCreateRequest(value: unknown): MessagingC
 function normalizeMatrixDeviceId(value: unknown): string | undefined {
   const deviceId = optionalTrimmedString(value, 64);
   return deviceId && /^[A-Za-z0-9._=-]{1,64}$/u.test(deviceId) ? deviceId : undefined;
+}
+
+function normalizeWebPushDeviceId(value: unknown): string | undefined {
+  const deviceId = optionalTrimmedString(value, 96);
+  return deviceId && /^[A-Za-z0-9._=-]{1,96}$/u.test(deviceId) ? deviceId : undefined;
+}
+
+function normalizeWebPushDeviceRegistrationRequest(value: unknown): MessagingWebPushDeviceRegistrationRequest | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const subscription = isRecord(value.subscription) ? value.subscription : value;
+  const keys = isRecord(subscription.keys) ? subscription.keys : {};
+  const deviceId = normalizeWebPushDeviceId(value.deviceId ?? subscription.deviceId);
+  const endpoint = normalizeWebPushEndpoint(subscription.endpoint);
+  const auth = optionalTrimmedString(keys.auth, 512);
+  const p256dh = optionalTrimmedString(keys.p256dh, 512);
+  if (!deviceId || !endpoint || !auth || !p256dh) {
+    return null;
+  }
+  const capabilities = normalizeWebPushCapabilities(value.capabilities);
+  const notificationPreferences = normalizeWebPushPreferences(value.notificationPreferences);
+  return {
+    ...(capabilities ? { capabilities } : {}),
+    deviceId,
+    endpoint,
+    keys: { auth, p256dh },
+    ...(optionalTrimmedString(value.locale, 40) ? { locale: optionalTrimmedString(value.locale, 40) } : {}),
+    ...(notificationPreferences ? { notificationPreferences } : {}),
+    ...(optionalTrimmedString(value.timezone, 80) ? { timezone: optionalTrimmedString(value.timezone, 80) } : {})
+  };
+}
+
+function normalizeWebPushEndpoint(value: unknown): string | undefined {
+  const endpoint = optionalTrimmedString(value, 4096);
+  if (!endpoint) {
+    return undefined;
+  }
+  try {
+    const url = new URL(endpoint);
+    return url.protocol === "https:" ? endpoint : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeWebPushCapabilities(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const capabilities = Array.from(new Set(value
+    .map((item) => optionalTrimmedString(item, 64))
+    .filter((item): item is string => typeof item === "string" && /^[A-Za-z0-9_.:-]{1,64}$/u.test(item))))
+    .slice(0, 20);
+  return capabilities.length ? capabilities : undefined;
+}
+
+function normalizeWebPushPreferences(value: unknown): Record<string, boolean> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const preferences: Record<string, boolean> = {};
+  for (const [key, rawValue] of Object.entries(value)) {
+    if (/^[A-Za-z0-9_.:-]{1,80}$/u.test(key) && typeof rawValue === "boolean") {
+      preferences[key] = rawValue;
+    }
+  }
+  return Object.keys(preferences).length ? preferences : undefined;
 }
 
 function normalizeMessagingConversationId(value: unknown): string | undefined {

@@ -4,6 +4,7 @@ import clsx from "clsx";
 import {
   Activity,
   AlertTriangle,
+  BellRing,
   BookOpen,
   Bot,
   Building2,
@@ -259,6 +260,13 @@ import {
   formatTransportSpeed,
   resolveTransportPresentation
 } from "./transport-presentation";
+import {
+  disableWebPushNotifications,
+  enableWebPushNotifications,
+  fetchWebPushConfig,
+  readWebPushPermissionState,
+  type WebPushUiState
+} from "./web-push";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
@@ -575,6 +583,8 @@ export function App() {
   const [messagingError, setMessagingError] = React.useState<string | null>(null);
   const [messagingConversations, setMessagingConversations] = React.useState<MessagingConversationSummary[]>([]);
   const [messagingConversationsError, setMessagingConversationsError] = React.useState<string | null>(null);
+  const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
+  const [webPushBusy, setWebPushBusy] = React.useState(false);
   const [aiResult, setAiResult] = React.useState("AI asistent je připraven zkontrolovat kvalitu zobrazených dat.");
   const loadInFlightRef = React.useRef(false);
   const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
@@ -591,6 +601,75 @@ export function App() {
   const profileAccessReady = Boolean(authToken);
   const messagingAuthenticated = authenticatedSessionActive;
   const authSubjectId = subjectIdFromAuthSession(authSession);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void fetchWebPushConfig(apiBase)
+      .then((nextState) => {
+        if (!cancelled) {
+          setWebPushState(nextState);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setWebPushState((current) => ({
+            ...current,
+            status: "degraded",
+            warnings: [error instanceof Error ? error.message : "Nepodařilo se načíst nastavení webových notifikací."]
+          }));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleEnableWebPush = React.useCallback(async () => {
+    if (!authenticatedSessionActive || !authToken) {
+      setWebPushState((current) => ({
+        ...current,
+        warnings: ["Webové notifikace vyžadují přihlášení."]
+      }));
+      return;
+    }
+
+    setWebPushBusy(true);
+    try {
+      setWebPushState(await enableWebPushNotifications(apiBase, authToken));
+    } catch (error) {
+      setWebPushState((current) => ({
+        ...current,
+        status: "degraded",
+        warnings: [error instanceof Error ? error.message : "Registrace webových notifikací selhala."]
+      }));
+    } finally {
+      setWebPushBusy(false);
+    }
+  }, [authToken, authenticatedSessionActive]);
+
+  const handleDisableWebPush = React.useCallback(async () => {
+    if (!authenticatedSessionActive || !authToken) {
+      setWebPushState((current) => ({
+        ...current,
+        registered: false,
+        warnings: ["Webové notifikace nejsou pro veřejný režim aktivní."]
+      }));
+      return;
+    }
+
+    setWebPushBusy(true);
+    try {
+      setWebPushState(await disableWebPushNotifications(apiBase, authToken));
+    } catch (error) {
+      setWebPushState((current) => ({
+        ...current,
+        status: "degraded",
+        warnings: [error instanceof Error ? error.message : "Odhlášení webových notifikací selhalo."]
+      }));
+    } finally {
+      setWebPushBusy(false);
+    }
+  }, [authToken, authenticatedSessionActive]);
 
   React.useEffect(() => {
     setAuthDiagnostics(readAuthDiagnostics());
@@ -4572,6 +4651,8 @@ export function App() {
           trackHistoryDisplayMode={trackHistoryDisplayMode}
           trackHistoryLimit={trackHistoryLimit}
           trackHistoryWindowSeconds={trackHistoryWindowSeconds}
+          webPushBusy={webPushBusy}
+          webPushState={webPushState}
           workspaceLayout={workspaceLayout}
           workspaceSkin={workspaceSkin}
           onAlertRadiusKmChange={setAlertRadiusKm}
@@ -4609,6 +4690,8 @@ export function App() {
           onTrackHistoryDisplayModeChange={setTrackHistoryDisplayMode}
           onTrackHistoryLimitChange={setTrackHistoryLimit}
           onTrackHistoryWindowSecondsChange={setTrackHistoryWindowSeconds}
+          onDisableWebPush={() => void handleDisableWebPush()}
+          onEnableWebPush={() => void handleEnableWebPush()}
           onWorkspaceSkinChange={setWorkspaceSkin}
           onWorkspaceTemplateApply={applyWorkspaceTemplate}
           onWorkspaceLayoutChange={updateWorkspaceLayout}
@@ -6329,6 +6412,8 @@ function SettingsDrawer({
   trackHistoryDisplayMode,
   trackHistoryLimit,
   trackHistoryWindowSeconds,
+  webPushBusy,
+  webPushState,
   workspaceLayout,
   workspaceSkin,
   onAlertRadiusKmChange,
@@ -6356,6 +6441,8 @@ function SettingsDrawer({
   onTrackHistoryDisplayModeChange,
   onTrackHistoryLimitChange,
   onTrackHistoryWindowSecondsChange,
+  onDisableWebPush,
+  onEnableWebPush,
   onWorkspaceSkinChange,
   onWorkspaceTemplateApply,
   onWorkspaceLayoutChange,
@@ -6390,6 +6477,8 @@ function SettingsDrawer({
   trackHistoryDisplayMode: TrackHistoryDisplayMode;
   trackHistoryLimit: number;
   trackHistoryWindowSeconds: number;
+  webPushBusy: boolean;
+  webPushState: WebPushUiState;
   workspaceLayout: Required<WorkspaceLayoutPreferences>;
   workspaceSkin: WorkspaceSkin;
   onAlertRadiusKmChange: (value: number) => void;
@@ -6417,6 +6506,8 @@ function SettingsDrawer({
   onTrackHistoryDisplayModeChange: (value: TrackHistoryDisplayMode) => void;
   onTrackHistoryLimitChange: (value: number) => void;
   onTrackHistoryWindowSecondsChange: (value: number) => void;
+  onDisableWebPush: () => void;
+  onEnableWebPush: () => void;
   onWorkspaceSkinChange: (value: WorkspaceSkin) => void;
   onWorkspaceTemplateApply: (value: WorkspaceTemplateId) => void;
   onWorkspaceLayoutChange: (value: Partial<WorkspaceLayoutPreferences>) => void;
@@ -6682,11 +6773,62 @@ function SettingsDrawer({
               )}
               {profileSyncError ? <div className="error-banner">Profil: {profileSyncError}</div> : null}
               {authSession.error ? <div className="error-banner">Přihlášení: {authSession.error}</div> : null}
+              <WebPushSettingsPanel
+                authenticated={authSession.status === "authenticated"}
+                busy={webPushBusy}
+                state={webPushState}
+                onDisable={onDisableWebPush}
+                onEnable={onEnableWebPush}
+              />
               <AuthDiagnosticsPanel diagnostics={authDiagnostics} session={authSession} />
             </section>
           ) : null}
         </div>
       </aside>
+    </div>
+  );
+}
+
+function WebPushSettingsPanel({
+  authenticated,
+  busy,
+  onDisable,
+  onEnable,
+  state
+}: {
+  authenticated: boolean;
+  busy: boolean;
+  onDisable: () => void;
+  onEnable: () => void;
+  state: WebPushUiState;
+}) {
+  const canEnable = authenticated && state.enabled && state.status !== "unsupported" && state.status !== "permission-denied";
+  const buttonLabel = state.registered ? "Vypnout v tomto prohlížeči" : "Zapnout v tomto prohlížeči";
+
+  return (
+    <div className="settings-subsection">
+      <PanelTitle icon={<BellRing size={17} />} title="Webové notifikace" />
+      <p className="settings-help">
+        Prohlížeč může přijímat výstrahy a zprávy i mimo otevřené okno aplikace. COP registruje jen tento prohlížeč; doručení zajišťuje CSM Messaging.
+      </p>
+      <ReadinessRow label="Stav" value={webPushStatusLabel(state)} tone={webPushStatusTone(state)} />
+      <ReadinessRow label="Oprávnění prohlížeče" value={webPushPermissionLabel(state.permission)} tone={state.permission === "granted" ? "ok" : state.permission === "denied" ? "warn" : "neutral"} />
+      {state.deviceId ? <ReadinessRow label="Zařízení" value="registrovaný prohlížeč" tone={state.registered ? "ok" : "neutral"} /> : null}
+      {!authenticated ? <div className="empty-mini">Webové notifikace vyžadují přihlášení. Mapa zůstává dostupná i bez účtu.</div> : null}
+      {state.warnings.length > 0 ? (
+        <div className="empty-mini">{state.warnings.slice(0, 2).join(" ")}</div>
+      ) : null}
+      <div className="settings-button-row">
+        <button
+          className={state.registered ? "primary-button secondary" : "primary-button"}
+          disabled={busy || (!state.registered && !canEnable)}
+          onClick={state.registered ? onDisable : onEnable}
+          type="button"
+        >
+          <BellRing size={16} />
+          {busy ? "Pracuji..." : buttonLabel}
+        </button>
+      </div>
     </div>
   );
 }
@@ -9096,6 +9238,51 @@ function ReadinessRow({ label, value, tone }: { label: string; value: string; to
       <strong>{value}</strong>
     </div>
   );
+}
+
+function webPushStatusLabel(state: WebPushUiState): string {
+  if (state.registered) {
+    return "zapnuto";
+  }
+  switch (state.status) {
+    case "available":
+      return "připraveno";
+    case "degraded":
+      return "omezeno";
+    case "disabled":
+      return "vypnuto";
+    case "permission-denied":
+      return "zakázáno prohlížečem";
+    case "unsupported":
+      return "nepodporováno";
+    case "registered":
+      return "zapnuto";
+    default:
+      return "čekám";
+  }
+}
+
+function webPushStatusTone(state: WebPushUiState): "ok" | "warn" | "neutral" {
+  if (state.registered) {
+    return "ok";
+  }
+  if (state.status === "degraded" || state.status === "permission-denied") {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function webPushPermissionLabel(permission: NotificationPermission | "unsupported"): string {
+  switch (permission) {
+    case "granted":
+      return "povoleno";
+    case "denied":
+      return "zakázáno";
+    case "default":
+      return "čeká na povolení";
+    default:
+      return "nepodporováno";
+  }
 }
 
 function applyOperationalFilters(

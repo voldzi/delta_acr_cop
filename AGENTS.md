@@ -131,3 +131,9 @@ If a check cannot be run, state that explicitly with the observed error.
   mixing active runbooks with historical working notes.
 - Do not invent production deployment behavior unless the repository explicitly
   defines it.
+
+## Compact Instructions
+
+- Preserve the current task goal, touched files, commands already run,
+  verification status, retrieval availability, deployment status and open
+  blockers.

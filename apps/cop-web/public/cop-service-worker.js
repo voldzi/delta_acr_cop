@@ -72,6 +72,49 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+self.addEventListener("push", (event) => {
+  const payload = parsePushPayload(event.data);
+  const title = typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : "CSM";
+  const body = typeof payload.body === "string" ? payload.body : undefined;
+  const deepLink = normalizeNotificationUrl(payload.deepLink ?? payload.url);
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      badge: "/icons/favicon-32.png",
+      body,
+      data: {
+        url: deepLink
+      },
+      icon: "/icons/cop-icon-192.png",
+      renotify: false,
+      tag: typeof payload.tag === "string" && payload.tag.trim() ? payload.tag.trim() : undefined
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = normalizeNotificationUrl(event.notification.data?.url) ?? "/";
+
+  event.waitUntil(
+    self.clients.matchAll({ includeUncontrolled: true, type: "window" }).then(async (clients) => {
+      for (const client of clients) {
+        const clientUrl = new URL(client.url);
+        if (clientUrl.origin === self.location.origin && "focus" in client) {
+          await client.focus();
+          if ("navigate" in client) {
+            await client.navigate(targetUrl);
+          }
+          return;
+        }
+      }
+      if (self.clients.openWindow) {
+        await self.clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+
 async function networkFirstAppShell(request) {
   const cache = await caches.open(APP_SHELL_CACHE);
   try {
@@ -158,4 +201,47 @@ function isAppAssetRequest(request, url) {
     return true;
   }
   return ["script", "style", "worker", "manifest", "font"].includes(request.destination);
+}
+
+function parsePushPayload(data) {
+  if (!data) {
+    return {};
+  }
+  try {
+    return data.json();
+  } catch {
+    try {
+      return { body: data.text() };
+    } catch {
+      return {};
+    }
+  }
+}
+
+function normalizeNotificationUrl(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return "/";
+  }
+  const trimmed = value.trim();
+  if (trimmed.startsWith("csm://map/alert/")) {
+    return `/?alertId=${encodeURIComponent(trimmed.slice("csm://map/alert/".length))}`;
+  }
+  if (trimmed.startsWith("csm://map/report/")) {
+    return `/?reportId=${encodeURIComponent(trimmed.slice("csm://map/report/".length))}`;
+  }
+  if (trimmed.startsWith("csm://chat/room/")) {
+    return `/?roomId=${encodeURIComponent(trimmed.slice("csm://chat/room/".length))}`;
+  }
+  if (trimmed.startsWith("/")) {
+    return trimmed;
+  }
+  try {
+    const url = new URL(trimmed);
+    if (url.origin === self.location.origin) {
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+  } catch {
+    // Unknown deep links open the app shell instead of leaking arbitrary URLs.
+  }
+  return "/";
 }

@@ -10,6 +10,8 @@ export interface MessagingProviderConfig {
   publicUrl?: string;
   timeoutMs: number;
   token?: string;
+  webPushEnabled?: boolean;
+  webPushVapidPublicKey?: string;
 }
 
 export interface MessagingProviderStatus {
@@ -194,9 +196,52 @@ export interface MessagingConversationMemberSyncResponse {
   warnings: string[];
 }
 
+export interface MessagingWebPushConfigResponse {
+  contractVersion: "cop-web-push-config-v1";
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: MessagingIntegrationRuntimeStatus;
+  vapidPublicKey?: string;
+  warnings: string[];
+}
+
+export interface MessagingWebPushDeviceRegistrationRequest {
+  capabilities?: string[];
+  deviceId: string;
+  endpoint: string;
+  keys: {
+    auth: string;
+    p256dh: string;
+  };
+  locale?: string;
+  notificationPreferences?: Record<string, boolean>;
+  timezone?: string;
+}
+
+export interface MessagingWebPushDeviceRegistrationResponse {
+  contractVersion: "cop-web-push-device-v1";
+  deviceId?: string;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  registered: boolean;
+  status: MessagingIntegrationRuntimeStatus;
+  warnings: string[];
+}
+
+export interface MessagingWebPushDeviceDeletionResponse {
+  contractVersion: "cop-web-push-device-v1";
+  deleted: boolean;
+  deviceId?: string;
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: MessagingIntegrationRuntimeStatus;
+  warnings: string[];
+}
+
 export interface MessagingProvider {
   readonly config: MessagingProviderConfig;
   fetchStatus(requestNow: Date): Promise<MessagingProviderStatus>;
+  fetchWebPushConfig(requestNow: Date): Promise<MessagingWebPushConfigResponse>;
   fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date, deviceId?: string): Promise<MessagingMatrixBootstrap>;
   fetchConversations(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingConversationList>;
   fetchConversation(actor: AuthenticatedActor, requestNow: Date, conversationId: string): Promise<MessagingConversationDetailResponse>;
@@ -205,6 +250,8 @@ export interface MessagingProvider {
   addConversationMembers(actor: AuthenticatedActor, requestNow: Date, conversationId: string, members: MessagingConversationMember[]): Promise<MessagingConversationMemberSyncResponse>;
   bindMatrixRoom(actor: AuthenticatedActor, requestNow: Date, conversationId: string, input: MessagingMatrixRoomBindingRequest): Promise<MessagingMatrixRoomBindingResponse>;
   resolveMatrixIdentities(actor: AuthenticatedActor, requestNow: Date, userIds: string[]): Promise<MessagingMatrixIdentityResolution>;
+  registerWebPushDevice(actor: AuthenticatedActor, requestNow: Date, input: MessagingWebPushDeviceRegistrationRequest): Promise<MessagingWebPushDeviceRegistrationResponse>;
+  deleteWebPushDevice(actor: AuthenticatedActor, requestNow: Date, deviceId: string): Promise<MessagingWebPushDeviceDeletionResponse>;
   sendNotification(actor: AuthenticatedActor | undefined, requestNow: Date, idempotencyKey: string, input: MessagingNotificationIntakeRequest): Promise<MessagingNotificationIntakeResponse>;
 }
 
@@ -273,6 +320,15 @@ interface CsmMessagingNotificationProviderResponse {
   warnings?: string[];
 }
 
+interface CsmMessagingWebPushDeviceProviderResponse {
+  contractVersion?: string;
+  deviceId?: string;
+  providerId?: string;
+  registered?: boolean;
+  status?: string;
+  warnings?: string[];
+}
+
 const defaultConfig: MessagingProviderConfig = {
   baseUrl: "http://docker.home.cz:4050",
   cacheTtlMs: 10_000,
@@ -283,6 +339,7 @@ const defaultConfig: MessagingProviderConfig = {
 export function createMessagingProviderFromEnv(env: Record<string, string | undefined> = process.env): MessagingProvider {
   const matrixHomeserverPublicUrl = optionalTrimmedString(env.COP_CSM_MESSAGING_MATRIX_PUBLIC_URL)
     ?? optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL);
+  const webPushVapidPublicKey = optionalTrimmedString(env.COP_WEB_PUSH_VAPID_PUBLIC_KEY);
   return new CsmMessagingProvider({
     baseUrl: trimTrailingSlash(env.COP_CSM_MESSAGING_BASE_URL ?? defaultConfig.baseUrl),
     cacheTtlMs: readInteger(env.COP_CSM_MESSAGING_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 300000),
@@ -290,7 +347,9 @@ export function createMessagingProviderFromEnv(env: Record<string, string | unde
     ...(matrixHomeserverPublicUrl ? { matrixHomeserverPublicUrl } : {}),
     ...(optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL) ? { publicUrl: optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL) } : {}),
     timeoutMs: readInteger(env.COP_CSM_MESSAGING_TIMEOUT_MS, defaultConfig.timeoutMs, 1000, 60000),
-    ...(optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) ? { token: optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) } : {})
+    ...(optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) ? { token: optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) } : {}),
+    webPushEnabled: readBoolean(env.COP_WEB_PUSH_ENABLED, false),
+    ...(webPushVapidPublicKey ? { webPushVapidPublicKey } : {})
   });
 }
 
@@ -319,6 +378,26 @@ export class CsmMessagingProvider implements MessagingProvider {
       value: status
     };
     return status;
+  }
+
+  async fetchWebPushConfig(_requestNow: Date): Promise<MessagingWebPushConfigResponse> {
+    if (!this.config.enabled) {
+      return disabledWebPushConfig("Messaging provider integration is disabled.");
+    }
+    if (!this.config.webPushEnabled) {
+      return disabledWebPushConfig("Browser notifications are not enabled on this COP deployment.");
+    }
+    if (!this.config.webPushVapidPublicKey) {
+      return degradedWebPushConfig("Browser notification public key is not configured.");
+    }
+    return {
+      contractVersion: "cop-web-push-config-v1",
+      enabled: true,
+      providerId: "csm.messaging",
+      status: "online",
+      vapidPublicKey: this.config.webPushVapidPublicKey,
+      warnings: []
+    };
   }
 
   private async fetchFreshStatus(requestNow: Date): Promise<MessagingProviderStatus> {
@@ -777,6 +856,104 @@ export class CsmMessagingProvider implements MessagingProvider {
       return degradedNotificationIntake(errorMessage(error));
     }
   }
+
+  async registerWebPushDevice(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    input: MessagingWebPushDeviceRegistrationRequest
+  ): Promise<MessagingWebPushDeviceRegistrationResponse> {
+    if (!this.config.enabled || !this.config.webPushEnabled) {
+      return disabledWebPushDeviceRegistration();
+    }
+    if (!this.config.webPushVapidPublicKey) {
+      return degradedWebPushDeviceRegistration("Browser notification public key is not configured.");
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/devices`),
+        this.config,
+        requestNow,
+        {
+          body: JSON.stringify({
+            ...(input.capabilities ? { capabilities: input.capabilities } : {}),
+            deviceId: input.deviceId,
+            ...(input.locale ? { locale: input.locale } : {}),
+            ...(input.notificationPreferences ? { notificationPreferences: input.notificationPreferences } : {}),
+            platform: "web",
+            pushProvider: "webpush",
+            pushSubscription: {
+              endpoint: input.endpoint,
+              keys: input.keys
+            },
+            ...(input.timezone ? { timezone: input.timezone } : {})
+          }),
+          headers: {
+            ...actorHeaders(actor, input.deviceId),
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        }
+      );
+      if (!isRecord(result.body)) {
+        return degradedWebPushDeviceRegistration("Messaging device registration response is not valid JSON.");
+      }
+      const normalized = normalizeWebPushDeviceResponse(result.body);
+      const registered = result.ok && (normalized.registered === true || normalized.status === "registered" || normalized.status === "ok" || normalized.status === "accepted");
+      const warnings = [
+        ...(normalized.contractVersion === "csm-messaging-provider-v1" || normalized.contractVersion === "csm-device-v1" ? [] : [`Messaging device contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging" || !normalized.providerId ? [] : [`Messaging device provider id is ${normalized.providerId}.`]),
+        ...(normalized.warnings ?? []).map(sanitizeProviderWarning)
+      ];
+      if (!registered) {
+        warnings.push(`Messaging device registration returned HTTP ${result.status}.`);
+      }
+      const responseDeviceId = normalized.deviceId ?? input.deviceId;
+      return {
+        contractVersion: "cop-web-push-device-v1",
+        deviceId: responseDeviceId,
+        enabled: true,
+        providerId: "csm.messaging",
+        registered,
+        status: registered ? "online" : "degraded",
+        warnings
+      };
+    } catch (error) {
+      return degradedWebPushDeviceRegistration(errorMessage(error));
+    }
+  }
+
+  async deleteWebPushDevice(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    deviceId: string
+  ): Promise<MessagingWebPushDeviceDeletionResponse> {
+    if (!this.config.enabled || !this.config.webPushEnabled) {
+      return disabledWebPushDeviceDeletion();
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/devices/${encodeURIComponent(deviceId)}`),
+        this.config,
+        requestNow,
+        {
+          headers: actorHeaders(actor, deviceId),
+          method: "DELETE"
+        }
+      );
+      const warnings = result.ok ? [] : [`Messaging device delete returned HTTP ${result.status}.`];
+      return {
+        contractVersion: "cop-web-push-device-v1",
+        deleted: result.ok,
+        deviceId,
+        enabled: true,
+        providerId: "csm.messaging",
+        status: result.ok ? "online" : "degraded",
+        warnings
+      };
+    } catch (error) {
+      return degradedWebPushDeviceDeletion(errorMessage(error), deviceId);
+    }
+  }
 }
 
 export function disabledMessagingStatus(requestNow: Date, config: MessagingProviderConfig = defaultConfig): MessagingProviderStatus {
@@ -971,11 +1148,76 @@ function degradedNotificationIntake(detail: string): MessagingNotificationIntake
   };
 }
 
+function disabledWebPushConfig(detail: string): MessagingWebPushConfigResponse {
+  return {
+    contractVersion: "cop-web-push-config-v1",
+    enabled: false,
+    providerId: "csm.messaging",
+    status: "disabled",
+    warnings: [detail]
+  };
+}
+
+function degradedWebPushConfig(detail: string): MessagingWebPushConfigResponse {
+  return {
+    contractVersion: "cop-web-push-config-v1",
+    enabled: true,
+    providerId: "csm.messaging",
+    status: "degraded",
+    warnings: [detail]
+  };
+}
+
+function disabledWebPushDeviceRegistration(): MessagingWebPushDeviceRegistrationResponse {
+  return {
+    contractVersion: "cop-web-push-device-v1",
+    enabled: false,
+    providerId: "csm.messaging",
+    registered: false,
+    status: "disabled",
+    warnings: ["Browser notifications are disabled."]
+  };
+}
+
+function degradedWebPushDeviceRegistration(detail: string): MessagingWebPushDeviceRegistrationResponse {
+  return {
+    contractVersion: "cop-web-push-device-v1",
+    enabled: true,
+    providerId: "csm.messaging",
+    registered: false,
+    status: "degraded",
+    warnings: [detail]
+  };
+}
+
+function disabledWebPushDeviceDeletion(): MessagingWebPushDeviceDeletionResponse {
+  return {
+    contractVersion: "cop-web-push-device-v1",
+    deleted: false,
+    enabled: false,
+    providerId: "csm.messaging",
+    status: "disabled",
+    warnings: ["Browser notifications are disabled."]
+  };
+}
+
+function degradedWebPushDeviceDeletion(detail: string, deviceId?: string): MessagingWebPushDeviceDeletionResponse {
+  return {
+    contractVersion: "cop-web-push-device-v1",
+    deleted: false,
+    ...(deviceId ? { deviceId } : {}),
+    enabled: true,
+    providerId: "csm.messaging",
+    status: "degraded",
+    warnings: [detail]
+  };
+}
+
 async function fetchJsonWithStatus(
   url: URL,
   config: MessagingProviderConfig,
   requestNow: Date,
-  options: { body?: string; headers?: Record<string, string>; method?: "GET" | "POST" } = {}
+  options: { body?: string; headers?: Record<string, string>; method?: "DELETE" | "GET" | "POST" } = {}
 ): Promise<{ body: unknown; ok: boolean; status: number }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -1131,6 +1373,17 @@ function normalizeNotificationResponse(value: Record<string, unknown>): CsmMessa
     deduplicated: typeof value.deduplicated === "boolean" ? value.deduplicated : undefined,
     notificationId: optionalString(value.notificationId) ?? optionalString(value.id),
     providerId: optionalString(value.providerId),
+    status: optionalString(value.status),
+    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
+  };
+}
+
+function normalizeWebPushDeviceResponse(value: Record<string, unknown>): CsmMessagingWebPushDeviceProviderResponse {
+  return {
+    contractVersion: optionalString(value.contractVersion),
+    deviceId: optionalString(value.deviceId) ?? optionalString(value.id),
+    providerId: optionalString(value.providerId),
+    registered: typeof value.registered === "boolean" ? value.registered : undefined,
     status: optionalString(value.status),
     warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
   };

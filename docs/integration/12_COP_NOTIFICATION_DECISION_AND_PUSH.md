@@ -12,6 +12,7 @@ Runtime chain:
 
 ```text
 SIM -> COP backend -> CSM Messaging -> APNs -> CSM Messenger iOS
+SIM -> COP backend -> CSM Messaging -> Web Push service -> COP browser/PWA
 ```
 
 ## Ownership
@@ -43,6 +44,8 @@ COP:
 - submits notification metadata to CSM Messaging;
 - keeps community report/media ACL in COP groups;
 - never stores APNs tokens and never sends push directly to APNs.
+- exposes a browser Web Push registration proxy for COP web/PWA clients, but
+  does not own delivery state or provider credentials.
 
 SIM:
 
@@ -189,6 +192,28 @@ The COP mobile endpoint `/api/v1/mobile/devices` is not a push registry. It is
 only a COP session/capability audit endpoint for native COP clients and ignores
 raw APNs token storage. APNs keys and token delivery state belong only to CSM
 Messaging.
+
+## Browser Web Push Registration
+
+COP web/PWA clients register browser push subscriptions through COP, not
+directly against CSM Messaging:
+
+```http
+GET /api/v1/push/web/config
+POST /api/v1/push/web/devices
+DELETE /api/v1/push/web/devices/{deviceId}
+Authorization: Bearer <COP user access token>
+```
+
+The configuration endpoint is public and returns only public data: whether
+browser notifications are enabled and the VAPID public key. The authenticated
+registration endpoint accepts a browser `PushSubscription`, validates the
+device id and HTTPS endpoint, and forwards the subscription server-side to CSM
+Messaging device registry with `platform=web` and `pushProvider=webpush`.
+
+CSM Messaging remains the only owner of delivery state. COP does not keep Web
+Push endpoint credentials beyond the forwarded request and never sends a push
+payload directly to a browser push service.
 
 For chat/message notifications, CSM Messaging should include either COP
 `conversationId` or Matrix `roomId` in the push metadata/deep link. iOS then
