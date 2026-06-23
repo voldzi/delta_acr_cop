@@ -175,6 +175,26 @@ COP_DATABASE_SSL=false
 
 Store při inicializaci vytvoří/aktualizuje tabulky `cop_community_reports` a `cop_community_report_attachments`, doplní `geometry(Point,4326)` sloupce a GiST indexy. Binární média se neukládají do PostgreSQL; metadata příloh odkazují na SeaweedFS/S3 objekt přes `bucket` a `objectKey`.
 
+## Incident Store
+
+Incidenty a incidentní úkoly patří do COP. Vznikají ručně operátorem nebo
+potvrzením deterministického fusion návrhu nad komunitními hlášeními. Produkce
+má používat stejný HA PostgreSQL/Patroni endpoint jako ostatní COP stores.
+Vývojový režim `auto` přejde bez `COP_DATABASE_URL` do paměti.
+
+```env
+COP_INCIDENT_STORE=postgres
+COP_DATABASE_URL=postgresql://cop_app:<password>@haproxy.home.cz:5000/cop
+COP_DATABASE_SSL=false
+```
+
+Store při inicializaci vytvoří tabulky `cop_incidents` a
+`cop_incident_tasks`. Změny incidentů publikují audit a domain events
+`incident.created`, `incident.updated`, `task.created` a
+`task.status.changed`. Tyto eventy nesou guardrails `NO_TARGETING` a
+`NO_WEAPON_WORKFLOW`; incidentní úkoly slouží k civilní koordinaci, ne k
+taktickému navádění.
+
 ## Federation Runtime Store
 
 Federace, edge outbox a replay domain eventů jsou aplikační runtime data COP.

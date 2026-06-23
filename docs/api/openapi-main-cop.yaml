@@ -67,6 +67,8 @@ tags:
     description: Client-safe, audited COP tool registry and read-only tool invocation facade.
   - name: Edge Runtime
     description: Local pilot edge node runtime published under /edge when enabled.
+  - name: Incidents
+    description: Candidate fusion, incidents and incident task workflow.
 paths:
   /api/v1/me/preferences:
     get:
@@ -2996,6 +2998,276 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/incidents/fusion/suggestions:
+    get:
+      tags:
+        - Incidents
+      summary: Suggest candidate incidents from community reports.
+      description: Builds deterministic, operator-reviewable fusion candidates from readable community
+        reports. It does not create incidents until an operator posts a candidate to
+        /api/v1/incidents.
+      operationId: listIncidentFusionSuggestions
+      parameters:
+        - name: bbox
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: ^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$
+          description: Comma-separated west,south,east,north bounding box in WGS84.
+        - name: radiusM
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 50
+            maximum: 50000
+            default: 1000
+          description: Clustering radius in meters.
+        - name: timeWindowSeconds
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 60
+            maximum: 604800
+            default: 21600
+          description: Maximum time span for report clustering.
+        - name: includeSingletons
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Whether to include single-report candidate incidents.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+          description: Maximum item count.
+      responses:
+        "200":
+          description: Candidate incident suggestions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentFusionSuggestionsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/incidents:
+    get:
+      tags:
+        - Incidents
+      summary: List incidents for a map viewport.
+      operationId: listIncidents
+      parameters:
+        - name: bbox
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: ^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$
+          description: Comma-separated west,south,east,north bounding box in WGS84.
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated incident categories.
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated incident statuses.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+          description: Maximum item count.
+      responses:
+        "200":
+          description: Incidents and map FeatureCollection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags:
+        - Incidents
+      summary: Create an operator-reviewed incident.
+      operationId: createIncident
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentCreateRequest"
+      responses:
+        "201":
+          description: Created incident.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/incidents/{incidentId}:
+    get:
+      tags:
+        - Incidents
+      summary: Get incident detail.
+      operationId: getIncident
+      parameters:
+        - $ref: "#/components/parameters/IncidentIdPath"
+      responses:
+        "200":
+          description: Incident detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags:
+        - Incidents
+      summary: Update an incident.
+      operationId: updateIncident
+      parameters:
+        - $ref: "#/components/parameters/IncidentIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentUpdateRequest"
+      responses:
+        "200":
+          description: Updated incident.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/incidents/{incidentId}/tasks:
+    get:
+      tags:
+        - Incidents
+      summary: List tasks for an incident.
+      operationId: listIncidentTasks
+      parameters:
+        - $ref: "#/components/parameters/IncidentIdPath"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated task statuses.
+        - name: assignee
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by assignee identifier.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+          description: Maximum item count.
+      responses:
+        "200":
+          description: Incident tasks.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentTaskListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags:
+        - Incidents
+      summary: Create a task for an incident.
+      operationId: createIncidentTask
+      parameters:
+        - $ref: "#/components/parameters/IncidentIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentTaskCreateRequest"
+      responses:
+        "201":
+          description: Created incident task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentTask"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/incidents/{incidentId}/tasks/{taskId}:
+    patch:
+      tags:
+        - Incidents
+      summary: Update an incident task.
+      operationId: updateIncidentTask
+      parameters:
+        - $ref: "#/components/parameters/IncidentIdPath"
+        - $ref: "#/components/parameters/IncidentTaskIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentTaskUpdateRequest"
+      responses:
+        "200":
+          description: Updated incident task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentTask"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     bearerAuth:
@@ -3106,6 +3378,22 @@ components:
         enum:
           - flood-central-bohemia
       description: Resettable demo scenario identifier.
+    IncidentIdPath:
+      name: incidentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Incident identifier.
+    IncidentTaskIdPath:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Incident task identifier.
   responses:
     ErrorResponse:
       description: COP error envelope.
@@ -9596,3 +9884,519 @@ components:
             type: string
         detail:
           type: string
+    IncidentCategory:
+      type: string
+      enum:
+        - community
+        - fire
+        - flood
+        - infrastructure
+        - medical
+        - other
+        - security
+        - traffic
+        - weather
+    IncidentSeverity:
+      type: string
+      enum:
+        - advisory
+        - critical
+        - info
+        - warning
+    IncidentStatus:
+      type: string
+      enum:
+        - active
+        - candidate
+        - closed
+        - monitoring
+        - rejected
+        - resolved
+    IncidentLocationSource:
+      type: string
+      enum:
+        - community_report
+        - fusion
+        - manual
+        - provider
+    IncidentSourceRefKind:
+      type: string
+      enum:
+        - alert
+        - community_report
+        - manual
+        - provider_feature
+        - sketch
+    IncidentTaskPriority:
+      type: string
+      enum:
+        - high
+        - low
+        - normal
+        - urgent
+    IncidentTaskStatus:
+      type: string
+      enum:
+        - blocked
+        - cancelled
+        - done
+        - in_progress
+        - open
+    IncidentActor:
+      type: object
+      required:
+        - displayName
+        - subjectId
+        - username
+      properties:
+        subjectId:
+          type: string
+        username:
+          type: string
+        displayName:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+          default: []
+    IncidentLocation:
+      type: object
+      required:
+        - lat
+        - lon
+        - source
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+        accuracyM:
+          type: number
+          minimum: 0
+        label:
+          type: string
+          maxLength: 200
+        source:
+          $ref: "#/components/schemas/IncidentLocationSource"
+      additionalProperties: false
+    IncidentSourceRef:
+      type: object
+      required:
+        - kind
+        - refId
+      properties:
+        kind:
+          $ref: "#/components/schemas/IncidentSourceRefKind"
+        refId:
+          type: string
+          maxLength: 200
+        sourceId:
+          type: string
+          maxLength: 200
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        observedAt:
+          type: string
+          format: date-time
+        label:
+          type: string
+          maxLength: 200
+      additionalProperties: false
+    Incident:
+      type: object
+      required:
+        - incidentId
+        - title
+        - category
+        - severity
+        - status
+        - confidence
+        - location
+        - sourceRefs
+        - provenance
+        - properties
+        - createdAt
+        - updatedAt
+        - createdBy
+        - updatedBy
+      properties:
+        incidentId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          $ref: "#/components/schemas/IncidentCategory"
+        severity:
+          $ref: "#/components/schemas/IncidentSeverity"
+        status:
+          $ref: "#/components/schemas/IncidentStatus"
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        location:
+          $ref: "#/components/schemas/IncidentLocation"
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        sourceRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentSourceRef"
+        provenance:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        properties:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        createdBy:
+          $ref: "#/components/schemas/IncidentActor"
+        updatedBy:
+          $ref: "#/components/schemas/IncidentActor"
+      additionalProperties: false
+    IncidentCreateRequest:
+      type: object
+      required:
+        - title
+        - category
+        - severity
+        - location
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          maxLength: 4000
+        category:
+          $ref: "#/components/schemas/IncidentCategory"
+        severity:
+          $ref: "#/components/schemas/IncidentSeverity"
+        status:
+          $ref: "#/components/schemas/IncidentStatus"
+          default: active
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        location:
+          $ref: "#/components/schemas/IncidentLocation"
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        sourceRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentSourceRef"
+        provenance:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        properties:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    IncidentUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          maxLength: 4000
+        category:
+          $ref: "#/components/schemas/IncidentCategory"
+        severity:
+          $ref: "#/components/schemas/IncidentSeverity"
+        status:
+          $ref: "#/components/schemas/IncidentStatus"
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        location:
+          $ref: "#/components/schemas/IncidentLocation"
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        sourceRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentSourceRef"
+        provenance:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        properties:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    IncidentFeatureCollection:
+      type: object
+      required:
+        - contractVersion
+        - features
+        - generatedAt
+        - query
+        - type
+      properties:
+        type:
+          type: string
+          const: FeatureCollection
+        contractVersion:
+          type: string
+          const: cop-incidents-v1
+        generatedAt:
+          type: string
+          format: date-time
+        query:
+          type: object
+          additionalProperties: true
+        features:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      additionalProperties: true
+    IncidentListResponse:
+      type: object
+      required:
+        - contractVersion
+        - featureCollection
+        - items
+        - serverTimestamp
+      properties:
+        contractVersion:
+          type: string
+          const: cop-incidents-v1
+        serverTimestamp:
+          type: string
+          format: date-time
+        featureCollection:
+          $ref: "#/components/schemas/IncidentFeatureCollection"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Incident"
+    IncidentTask:
+      type: object
+      required:
+        - taskId
+        - incidentId
+        - title
+        - status
+        - priority
+        - assignee
+        - createdAt
+        - updatedAt
+        - createdBy
+        - updatedBy
+        - properties
+      properties:
+        taskId:
+          type: string
+          format: uuid
+        incidentId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/IncidentTaskStatus"
+        priority:
+          $ref: "#/components/schemas/IncidentTaskPriority"
+        assignee:
+          type:
+            - string
+            - "null"
+        dueAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        properties:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        createdBy:
+          $ref: "#/components/schemas/IncidentActor"
+        updatedBy:
+          $ref: "#/components/schemas/IncidentActor"
+      additionalProperties: false
+    IncidentTaskCreateRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          maxLength: 4000
+        priority:
+          $ref: "#/components/schemas/IncidentTaskPriority"
+          default: normal
+        assignee:
+          type:
+            - string
+            - "null"
+          maxLength: 200
+        dueAt:
+          type: string
+          format: date-time
+        properties:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    IncidentTaskUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          maxLength: 4000
+        status:
+          $ref: "#/components/schemas/IncidentTaskStatus"
+        priority:
+          $ref: "#/components/schemas/IncidentTaskPriority"
+        assignee:
+          type:
+            - string
+            - "null"
+          maxLength: 200
+        dueAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        properties:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    IncidentTaskListResponse:
+      type: object
+      required:
+        - contractVersion
+        - incidentId
+        - items
+        - serverTimestamp
+      properties:
+        contractVersion:
+          type: string
+          const: cop-incident-tasks-v1
+        incidentId:
+          type: string
+          format: uuid
+        serverTimestamp:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentTask"
+    IncidentFusionSuggestion:
+      type: object
+      required:
+        - category
+        - confidence
+        - description
+        - explanation
+        - location
+        - severity
+        - sourceRefs
+        - suggestionId
+        - title
+      properties:
+        suggestionId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          $ref: "#/components/schemas/IncidentCategory"
+        severity:
+          $ref: "#/components/schemas/IncidentSeverity"
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        location:
+          $ref: "#/components/schemas/IncidentLocation"
+        sourceRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentSourceRef"
+        explanation:
+          type: string
+        properties:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    IncidentFusionSuggestionsResponse:
+      type: object
+      required:
+        - contractVersion
+        - generatedAt
+        - items
+        - sourceReportCount
+      properties:
+        contractVersion:
+          type: string
+          const: cop-incident-fusion-suggestions-v1
+        generatedAt:
+          type: string
+          format: date-time
+        sourceReportCount:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentFusionSuggestion"

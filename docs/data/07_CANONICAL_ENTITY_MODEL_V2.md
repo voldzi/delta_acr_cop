@@ -102,11 +102,31 @@ Tento model zatím neruší existující endpointy. Je to sjednocující vrstva:
 - `CommunityReportAttachment` mapuje na `evidence`.
 - `SketchDrawing` mapuje na `sketchDrawing`.
 - `CopAlert` mapuje na `alert`.
+- `IncidentRecord` z `/api/v1/incidents` mapuje na `incident`.
+- `IncidentTaskRecord` z `/api/v1/incidents/{incidentId}/tasks` mapuje na
+  `task`.
 - provider `features` mapují na `mapFeature`, `sensorObservation` nebo
   `observedObject` podle katalogu.
 
 Budoucí rozšíření endpointů má doplňovat tato pole zpětně kompatibilně jako
 volitelné metadata, dokud nebude vyhlášena nová major verze kontraktu.
+
+## Incident A Task Runtime
+
+COP nyní vlastní první runtime implementaci `incident` a `task` domény:
+
+- `GET /api/v1/incidents/fusion/suggestions` vytváří deterministické návrhy
+  incidentů z více občanských hlášení. Návrh není automatické rozhodnutí.
+- `POST /api/v1/incidents` potvrzuje návrh nebo manuálně vytváří incident.
+- `GET /api/v1/incidents` vrací současně seznam i GeoJSON FeatureCollection
+  pro mapu.
+- `GET|POST /api/v1/incidents/{incidentId}/tasks` spravuje pracovní úkoly
+  incidentu bez weapon workflow.
+- `PATCH /api/v1/incidents/{incidentId}/tasks/{taskId}` mění stav úkolu a
+  publikuje auditovaný doménový event.
+
+Detail implementace, persistence a eventů je v
+[Incident, Task and Fusion Runtime](../application/12_INCIDENT_TASK_AND_FUSION.md).
 
 ## iOS/iPadOS Pravidla
 

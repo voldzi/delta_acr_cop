@@ -63,6 +63,31 @@ import {
   type DomainEventReplayResult,
   type FederationRuntimeStore
 } from "./federation-runtime-store.js";
+import { buildIncidentFusionSuggestions } from "./incident-fusion.js";
+import {
+  buildIncidentFeatureCollection,
+  createIncidentStoreFromEnv,
+  InMemoryIncidentStore,
+  type CreateIncidentInput,
+  type CreateIncidentTaskInput,
+  type IncidentActor,
+  type IncidentCategory,
+  type IncidentLocation,
+  type IncidentLocationSource,
+  type IncidentQuery,
+  type IncidentRecord,
+  type IncidentSeverity,
+  type IncidentSourceRef,
+  type IncidentSourceRefKind,
+  type IncidentStatus,
+  type IncidentStore,
+  type IncidentTaskPriority,
+  type IncidentTaskQuery,
+  type IncidentTaskRecord,
+  type IncidentTaskStatus,
+  type IncidentTaskUpdateInput,
+  type IncidentUpdateInput
+} from "./incident-store.js";
 import { buildMapCatalog, type BuildMapCatalogInput, type MapCatalogLayer } from "./map-catalog.js";
 import {
   buildMissionArenaHealth,
@@ -162,6 +187,7 @@ import {
 export interface BuildServerOptions {
   flightDataSource?: FlightDataSource;
   communityReportStore?: CommunityReportStore;
+  incidentStore?: IncidentStore;
   federationRuntimeStore?: FederationRuntimeStore;
   mediaStorage?: MediaStorage;
   messagingProvider?: MessagingProvider;
@@ -361,6 +387,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const userProfileFallbackStore = new InMemoryUserProfileStore("memory-fallback");
   const communityReportStore = options.communityReportStore ?? createCommunityReportStoreFromEnv();
   const communityReportFallbackStore = new InMemoryCommunityReportStore("memory-fallback");
+  const incidentStore = options.incidentStore ?? createIncidentStoreFromEnv();
+  const incidentFallbackStore = new InMemoryIncidentStore("memory-fallback");
   const sketchDrawingStore = options.sketchDrawingStore ?? createSketchDrawingStoreFromEnv();
   const sketchDrawingFallbackStore = new InMemorySketchDrawingStore("memory-fallback");
   const mediaStorage = options.mediaStorage ?? createMediaStorageFromEnv();
@@ -388,6 +416,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let userProfileStoreDetail = `${userProfileStore.name}: initializing`;
   let communityReportStoreStatus: DependencyStatus = communityReportStore ? "degraded" : "disabled";
   let communityReportStoreDetail = communityReportStore ? `${communityReportStore.name}: initializing` : "disabled";
+  let incidentStoreStatus: DependencyStatus = incidentStore ? "degraded" : "disabled";
+  let incidentStoreDetail = incidentStore ? `${incidentStore.name}: initializing` : "disabled";
   let sketchDrawingStoreStatus: DependencyStatus = sketchDrawingStore ? "degraded" : "disabled";
   let sketchDrawingStoreDetail = sketchDrawingStore ? `${sketchDrawingStore.name}: initializing` : "disabled";
   let mediaStorageStatus: DependencyStatus = mediaStorage ? "degraded" : "disabled";
@@ -434,6 +464,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await initializeFederationRuntimeStore();
     await initializeUserProfileStore();
     await initializeCommunityReportStore();
+    await initializeIncidentStore();
     await initializeSketchDrawingStore();
     await initializeMediaStorage();
     if (trackHistoryStore) {
@@ -467,6 +498,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await userProfileFallbackStore.close();
     await communityReportStore?.close();
     await communityReportFallbackStore.close();
+    await incidentStore?.close();
+    await incidentFallbackStore.close();
     await sketchDrawingStore?.close();
     await sketchDrawingFallbackStore.close();
     mediaConversionManager?.close();
@@ -515,6 +548,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
       { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
       { name: "community-report-store", status: communityReportStoreStatus, detail: communityReportStoreDependencyDetail() },
+      { name: "incident-store", status: incidentStoreStatus, detail: incidentStoreDependencyDetail() },
       { name: "sketch-drawing-store", status: sketchDrawingStoreStatus, detail: sketchDrawingStoreDependencyDetail() },
       { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
       { name: "place-geocoder", status: placeGeocoder ? "ok" : "disabled", detail: placeGeocoder?.diagnostics?.() ?? "disabled" },
@@ -630,6 +664,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       communityReportStoreDetail = `${communityReportStore.name}: ${errorMessage(error)}`;
       await communityReportFallbackStore.init();
       app.log.error({ error }, "Community report store initialization failed; using in-memory fallback.");
+    }
+  }
+
+  async function initializeIncidentStore(): Promise<void> {
+    await incidentFallbackStore.init();
+    if (!incidentStore) {
+      return;
+    }
+    try {
+      await incidentStore.init();
+      incidentStoreStatus = "ok";
+      incidentStoreDetail = `${incidentStore.name}: ready`;
+    } catch (error) {
+      incidentStoreStatus = "degraded";
+      incidentStoreDetail = `${incidentStore.name}: ${errorMessage(error)}`;
+      app.log.error({ error }, "Incident store initialization failed; using in-memory fallback.");
     }
   }
 
@@ -752,6 +802,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return diagnostics ? `${communityReportStoreDetail}; ${diagnostics}` : communityReportStoreDetail;
   }
 
+  function markIncidentStoreDegraded(error: unknown): void {
+    if (!incidentStore) {
+      return;
+    }
+    incidentStoreStatus = "degraded";
+    incidentStoreDetail = `${incidentStore.name}: ${errorMessage(error)}`;
+    app.log.error({ error }, "Incident store failed; using in-memory fallback.");
+  }
+
+  function incidentStoreDependencyDetail(): string {
+    const diagnostics = incidentStore?.diagnostics?.();
+    return diagnostics ? `${incidentStoreDetail}; ${diagnostics}` : incidentStoreDetail;
+  }
+
   function markSketchDrawingStoreDegraded(error: unknown): void {
     if (!sketchDrawingStore) {
       return;
@@ -828,6 +892,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   function activeCommunityReportStore(): CommunityReportStore {
     return communityReportStore && communityReportStoreStatus === "ok" ? communityReportStore : communityReportFallbackStore;
+  }
+
+  function activeIncidentStore(): IncidentStore {
+    return incidentStore && incidentStoreStatus === "ok" ? incidentStore : incidentFallbackStore;
   }
 
   function activeSketchDrawingStore(): SketchDrawingStore {
@@ -1213,6 +1281,159 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       markCommunityReportStoreDegraded(error);
       return communityReportFallbackStore.updateAttachmentMetadata(input);
     }
+  }
+
+  async function createIncident(input: CreateIncidentInput, requestNow: Date): Promise<IncidentRecord> {
+    try {
+      return await activeIncidentStore().createIncident(input, requestNow);
+    } catch (error) {
+      markIncidentStoreDegraded(error);
+      return incidentFallbackStore.createIncident(input, requestNow);
+    }
+  }
+
+  async function readIncident(incidentId: string): Promise<IncidentRecord | null> {
+    try {
+      return await activeIncidentStore().getIncident(incidentId);
+    } catch (error) {
+      markIncidentStoreDegraded(error);
+      return incidentFallbackStore.getIncident(incidentId);
+    }
+  }
+
+  async function listIncidents(query: Parameters<IncidentStore["listIncidents"]>[0]): Promise<IncidentRecord[]> {
+    try {
+      return await activeIncidentStore().listIncidents(query);
+    } catch (error) {
+      markIncidentStoreDegraded(error);
+      return incidentFallbackStore.listIncidents(query);
+    }
+  }
+
+  async function updateIncident(
+    incidentId: string,
+    actor: AuthenticatedActor,
+    input: IncidentUpdateInput,
+    requestNow: Date
+  ): Promise<IncidentRecord | null> {
+    const incidentActor = actorToIncidentActor(actor);
+    try {
+      return await activeIncidentStore().updateIncident(incidentId, incidentActor, input, requestNow);
+    } catch (error) {
+      markIncidentStoreDegraded(error);
+      return incidentFallbackStore.updateIncident(incidentId, incidentActor, input, requestNow);
+    }
+  }
+
+  async function createIncidentTask(input: CreateIncidentTaskInput, requestNow: Date): Promise<IncidentTaskRecord> {
+    try {
+      return await activeIncidentStore().createTask(input, requestNow);
+    } catch (error) {
+      markIncidentStoreDegraded(error);
+      return incidentFallbackStore.createTask(input, requestNow);
+    }
+  }
+
+  async function readIncidentTask(taskId: string): Promise<IncidentTaskRecord | null> {
+    try {
+      return await activeIncidentStore().getTask(taskId);
+    } catch (error) {
+      markIncidentStoreDegraded(error);
+      return incidentFallbackStore.getTask(taskId);
+    }
+  }
+
+  async function listIncidentTasks(query: Parameters<IncidentStore["listTasks"]>[0]): Promise<IncidentTaskRecord[]> {
+    try {
+      return await activeIncidentStore().listTasks(query);
+    } catch (error) {
+      markIncidentStoreDegraded(error);
+      return incidentFallbackStore.listTasks(query);
+    }
+  }
+
+  async function updateIncidentTask(
+    taskId: string,
+    actor: AuthenticatedActor,
+    input: IncidentTaskUpdateInput,
+    requestNow: Date
+  ): Promise<IncidentTaskRecord | null> {
+    const incidentActor = actorToIncidentActor(actor);
+    try {
+      return await activeIncidentStore().updateTask(taskId, incidentActor, input, requestNow);
+    } catch (error) {
+      markIncidentStoreDegraded(error);
+      return incidentFallbackStore.updateTask(taskId, incidentActor, input, requestNow);
+    }
+  }
+
+  async function publishIncidentDomainEvent(
+    type: "incident.created" | "incident.updated",
+    incident: IncidentRecord,
+    actor: AuthenticatedActor,
+    correlationId: string
+  ): Promise<void> {
+    await publishRuntimeDomainEvent({
+      channel: "cop.domain.events",
+      classification: {
+        handlingCaveats: ["NO_TARGETING", "NO_WEAPON_WORKFLOW"],
+        level: "INTERNAL",
+        releasability: ["CIVIL"]
+      },
+      correlationId,
+      entityId: incident.incidentId,
+      entityType: "incident",
+      payload: {
+        incident
+      },
+      producerNodeId: "node_central_cop",
+      provenance: incident.provenance,
+      quality: {
+        ...(incident.confidence !== undefined ? { confidence: incident.confidence } : {}),
+        dataQuality: incident.sourceRefs.length > 0 || incident.provenance.length > 0 ? "mixed" : "observed"
+      },
+      releasePolicy: {
+        allowedScopes: ["internal"],
+        visibility: "internal"
+      },
+      subject: actor.subjectId,
+      time: incident.updatedAt,
+      type
+    });
+  }
+
+  async function publishIncidentTaskDomainEvent(
+    type: "task.created" | "task.status.changed",
+    task: IncidentTaskRecord,
+    actor: AuthenticatedActor,
+    correlationId: string
+  ): Promise<void> {
+    await publishRuntimeDomainEvent({
+      channel: "cop.domain.events",
+      classification: {
+        handlingCaveats: ["NO_TARGETING", "NO_WEAPON_WORKFLOW"],
+        level: "INTERNAL",
+        releasability: ["CIVIL"]
+      },
+      correlationId,
+      entityId: task.taskId,
+      entityType: "task",
+      payload: {
+        task
+      },
+      producerNodeId: "node_central_cop",
+      provenance: task.sourceRef ? [{ sourceRef: task.sourceRef }] : [],
+      quality: {
+        dataQuality: "observed"
+      },
+      releasePolicy: {
+        allowedScopes: ["internal"],
+        visibility: "internal"
+      },
+      subject: actor.subjectId,
+      time: task.updatedAt,
+      type
+    });
   }
 
   async function enqueueSpatialVideoConversion(reportId: string, attachment: CommunityReportAttachmentRecord, requestNow: Date): Promise<CommunityReportAttachmentRecord> {
@@ -2521,6 +2742,217 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       drawingId: params.drawingId
     }, correlationIdFrom(request.headers["x-correlation-id"]));
     return reply.code(204).send();
+  });
+
+  app.get("/api/v1/incidents/fusion/suggestions", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const query = request.query as Record<string, unknown>;
+    const bbox = parseBboxQuery(query.bbox);
+    const requestNow = now();
+    const reports = await listCommunityReports({
+      ...(bbox ? { bbox } : {}),
+      limit: 500,
+      statuses: ["submitted", "published"]
+    });
+    const readableReports = reports.filter((report) => canReadCommunityReport(report, actor));
+    const suggestions = buildIncidentFusionSuggestions(readableReports, requestNow, {
+      includeSingletons: query.includeSingletons === "true" || query.includeSingletons === true,
+      limit: optionalFiniteNumber(query.limit, 1, 100) ?? 25,
+      radiusM: optionalFiniteNumber(query.radiusM, 250, 20000),
+      timeWindowSeconds: optionalFiniteNumber(query.timeWindowSeconds, 900, 86400)
+    });
+    return {
+      contractVersion: "cop-incident-fusion-suggestions-v1",
+      generatedAt: requestNow.toISOString(),
+      items: suggestions,
+      sourceReportCount: readableReports.length
+    };
+  });
+
+  app.get("/api/v1/incidents", async (request, reply) => {
+    if (!requireActor(request, reply)) {
+      return reply;
+    }
+    const requestNow = now();
+    const query = parseIncidentQuery(request.query as Record<string, unknown>);
+    const items = await listIncidents(query);
+    return {
+      contractVersion: "cop-incidents-v1",
+      featureCollection: buildIncidentFeatureCollection(items, query, requestNow),
+      items,
+      serverTimestamp: requestNow.toISOString()
+    };
+  });
+
+  app.post("/api/v1/incidents", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const input = normalizeCreateIncidentRequest(request.body, actor);
+    if (!input) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Incident requires title, category, severity and location.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const requestNow = now();
+    const incident = await createIncident(input, requestNow);
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    appendAudit(state, "INCIDENT_CREATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      category: incident.category,
+      incidentId: incident.incidentId,
+      severity: incident.severity,
+      status: incident.status
+    }, correlationId);
+    await publishIncidentDomainEvent("incident.created", incident, actor, correlationId);
+    return reply.code(201).send(incident);
+  });
+
+  app.get("/api/v1/incidents/:incidentId", async (request, reply) => {
+    if (!requireActor(request, reply)) {
+      return reply;
+    }
+    const params = request.params as { incidentId: string };
+    const incident = await readIncident(params.incidentId);
+    if (!incident) {
+      return sendError(reply, 404, "NOT_FOUND", "Incident was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    return incident;
+  });
+
+  app.patch("/api/v1/incidents/:incidentId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { incidentId: string };
+    const input = normalizeUpdateIncidentRequest(request.body);
+    if (!input) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Incident update did not contain any editable field.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const requestNow = now();
+    const incident = await updateIncident(params.incidentId, actor, input, requestNow);
+    if (!incident) {
+      return sendError(reply, 404, "NOT_FOUND", "Incident was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    appendAudit(state, "INCIDENT_UPDATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      incidentId: incident.incidentId,
+      status: incident.status
+    }, correlationId);
+    await publishIncidentDomainEvent("incident.updated", incident, actor, correlationId);
+    return incident;
+  });
+
+  app.get("/api/v1/incidents/:incidentId/tasks", async (request, reply) => {
+    if (!requireActor(request, reply)) {
+      return reply;
+    }
+    const params = request.params as { incidentId: string };
+    const incident = await readIncident(params.incidentId);
+    if (!incident) {
+      return sendError(reply, 404, "NOT_FOUND", "Incident was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const requestNow = now();
+    const query = parseIncidentTaskQuery(params.incidentId, request.query as Record<string, unknown>);
+    const items = await listIncidentTasks(query);
+    return {
+      contractVersion: "cop-incident-tasks-v1",
+      incidentId: params.incidentId,
+      items,
+      serverTimestamp: requestNow.toISOString()
+    };
+  });
+
+  app.post("/api/v1/incidents/:incidentId/tasks", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { incidentId: string };
+    const incident = await readIncident(params.incidentId);
+    if (!incident) {
+      return sendError(reply, 404, "NOT_FOUND", "Incident was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const input = normalizeCreateIncidentTaskRequest(params.incidentId, request.body, actor);
+    if (!input) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Incident task requires title.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const requestNow = now();
+    const task = await createIncidentTask(input, requestNow);
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    appendAudit(state, "INCIDENT_TASK_CREATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      incidentId: task.incidentId,
+      priority: task.priority,
+      status: task.status,
+      taskId: task.taskId
+    }, correlationId);
+    await publishIncidentTaskDomainEvent("task.created", task, actor, correlationId);
+    return reply.code(201).send(task);
+  });
+
+  app.patch("/api/v1/incidents/:incidentId/tasks/:taskId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { incidentId: string; taskId: string };
+    const current = await readIncidentTask(params.taskId);
+    if (!current || current.incidentId !== params.incidentId) {
+      return sendError(reply, 404, "NOT_FOUND", "Incident task was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const input = normalizeUpdateIncidentTaskRequest(request.body);
+    if (!input) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Incident task update did not contain any editable field.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const requestNow = now();
+    const task = await updateIncidentTask(params.taskId, actor, input, requestNow);
+    if (!task) {
+      return sendError(reply, 404, "NOT_FOUND", "Incident task was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    appendAudit(state, "INCIDENT_TASK_UPDATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      incidentId: task.incidentId,
+      status: task.status,
+      taskId: task.taskId
+    }, correlationId);
+    if (input.status && input.status !== current.status) {
+      await publishIncidentTaskDomainEvent("task.status.changed", task, actor, correlationId);
+    }
+    return task;
   });
 
   app.put("/api/v1/me/preferences", async (request, reply) => {
@@ -6177,6 +6609,14 @@ function actorToCommunityActor(actor: AuthenticatedActor) {
   };
 }
 
+function actorToIncidentActor(actor: AuthenticatedActor): IncidentActor {
+  return {
+    displayName: actor.displayName,
+    subjectId: actor.subjectId,
+    username: actor.username
+  };
+}
+
 function actorCommunitySubjectAliases(actor: AuthenticatedActor): string[] {
   return Array.from(new Set([
     actor.subjectId,
@@ -7528,6 +7968,229 @@ function parseCommunityStatuses(value: unknown): CommunityReportStatus[] {
   return normalizeCsv(value).filter(isCommunityReportStatus);
 }
 
+function parseIncidentQuery(query: Record<string, unknown>): IncidentQuery {
+  const bbox = parseBboxQuery(query.bbox);
+  const categories = parseIncidentCategories(query.category ?? query.categories);
+  const statuses = parseIncidentStatuses(query.status ?? query.statuses);
+  return {
+    ...(bbox ? { bbox } : {}),
+    ...(categories.length > 0 ? { categories } : {}),
+    includeClosed: query.includeClosed === "true" || query.includeClosed === true,
+    limit: optionalFiniteNumber(query.limit, 1, 500) ?? 100,
+    ...(statuses.length > 0 ? { statuses } : {})
+  };
+}
+
+function parseIncidentTaskQuery(incidentId: string, query: Record<string, unknown>): IncidentTaskQuery {
+  const statuses = parseIncidentTaskStatuses(query.status ?? query.statuses);
+  return {
+    incidentId,
+    limit: optionalFiniteNumber(query.limit, 1, 500) ?? 100,
+    ...(statuses.length > 0 ? { statuses } : {})
+  };
+}
+
+function parseIncidentCategories(value: unknown): IncidentCategory[] {
+  return normalizeCsv(value).filter(isIncidentCategory);
+}
+
+function parseIncidentStatuses(value: unknown): IncidentStatus[] {
+  return normalizeCsv(value).filter(isIncidentStatus);
+}
+
+function parseIncidentTaskStatuses(value: unknown): IncidentTaskStatus[] {
+  return normalizeCsv(value).filter(isIncidentTaskStatus);
+}
+
+function normalizeCreateIncidentRequest(value: unknown, actor: AuthenticatedActor): CreateIncidentInput | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const title = optionalTrimmedString(value.title, 160);
+  const category = isIncidentCategory(value.category) ? value.category : undefined;
+  const severity = isIncidentSeverity(value.severity) ? value.severity : undefined;
+  const location = normalizeIncidentLocation(value.location, "manual");
+  if (!title || !category || !severity || !location) {
+    return null;
+  }
+  const confidence = optionalFiniteNumber(value.confidence, 0, 1);
+  const description = optionalTrimmedString(value.description, 2000);
+  return {
+    category,
+    ...(confidence !== undefined ? { confidence } : {}),
+    createdBy: actorToIncidentActor(actor),
+    ...(description ? { description } : {}),
+    location,
+    properties: normalizedJsonRecord(value.properties, 12000),
+    provenance: normalizeIncidentProvenance(value.provenance),
+    severity,
+    sourceRefs: normalizeIncidentSourceRefs(value.sourceRefs),
+    status: isIncidentStatus(value.status) ? value.status : "candidate",
+    title
+  };
+}
+
+function normalizeUpdateIncidentRequest(value: unknown): IncidentUpdateInput | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const update: IncidentUpdateInput = {};
+  const title = optionalTrimmedString(value.title, 160);
+  if (title) {
+    update.title = title;
+  }
+  if (hasOwn(value, "description")) {
+    update.description = optionalTrimmedString(value.description, 2000) ?? null;
+  }
+  if (isIncidentCategory(value.category)) {
+    update.category = value.category;
+  }
+  if (isIncidentSeverity(value.severity)) {
+    update.severity = value.severity;
+  }
+  if (isIncidentStatus(value.status)) {
+    update.status = value.status;
+  }
+  const confidence = optionalFiniteNumber(value.confidence, 0, 1);
+  if (confidence !== undefined) {
+    update.confidence = confidence;
+  }
+  const location = normalizeIncidentLocation(value.location, "manual");
+  if (location) {
+    update.location = location;
+  }
+  if (hasOwn(value, "properties")) {
+    update.properties = normalizedJsonRecord(value.properties, 12000);
+  }
+  if (hasOwn(value, "provenance")) {
+    update.provenance = normalizeIncidentProvenance(value.provenance);
+  }
+  if (hasOwn(value, "sourceRefs")) {
+    update.sourceRefs = normalizeIncidentSourceRefs(value.sourceRefs);
+  }
+  return Object.keys(update).length > 0 ? update : null;
+}
+
+function normalizeCreateIncidentTaskRequest(incidentId: string, value: unknown, actor: AuthenticatedActor): CreateIncidentTaskInput | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const title = optionalTrimmedString(value.title, 160);
+  if (!title) {
+    return null;
+  }
+  const assigneeSubjectId = optionalTrimmedString(value.assigneeSubjectId, 160);
+  const description = optionalTrimmedString(value.description, 2000);
+  const dueAt = optionalIsoTimestamp(value.dueAt);
+  const sourceRef = normalizeIncidentSourceRef(value.sourceRef);
+  return {
+    ...(assigneeSubjectId ? { assigneeSubjectId } : {}),
+    createdBy: actorToIncidentActor(actor),
+    ...(description ? { description } : {}),
+    ...(dueAt ? { dueAt } : {}),
+    incidentId,
+    priority: isIncidentTaskPriority(value.priority) ? value.priority : "normal",
+    properties: normalizedJsonRecord(value.properties, 8000),
+    ...(sourceRef ? { sourceRef } : {}),
+    status: isIncidentTaskStatus(value.status) ? value.status : "open",
+    title
+  };
+}
+
+function normalizeUpdateIncidentTaskRequest(value: unknown): IncidentTaskUpdateInput | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const update: IncidentTaskUpdateInput = {};
+  const title = optionalTrimmedString(value.title, 160);
+  if (title) {
+    update.title = title;
+  }
+  if (hasOwn(value, "description")) {
+    update.description = optionalTrimmedString(value.description, 2000) ?? null;
+  }
+  if (hasOwn(value, "assigneeSubjectId")) {
+    update.assigneeSubjectId = optionalTrimmedString(value.assigneeSubjectId, 160) ?? null;
+  }
+  if (hasOwn(value, "dueAt")) {
+    update.dueAt = optionalIsoTimestamp(value.dueAt) ?? null;
+  }
+  if (isIncidentTaskPriority(value.priority)) {
+    update.priority = value.priority;
+  }
+  if (isIncidentTaskStatus(value.status)) {
+    update.status = value.status;
+  }
+  if (hasOwn(value, "properties")) {
+    update.properties = normalizedJsonRecord(value.properties, 8000);
+  }
+  if (hasOwn(value, "sourceRef")) {
+    update.sourceRef = normalizeIncidentSourceRef(value.sourceRef) ?? null;
+  }
+  return Object.keys(update).length > 0 ? update : null;
+}
+
+function normalizeIncidentLocation(value: unknown, fallbackSource: IncidentLocationSource): IncidentLocation | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const lat = optionalFiniteNumber(value.lat, -90, 90);
+  const lon = optionalFiniteNumber(value.lon, -180, 180);
+  if (lat === undefined || lon === undefined) {
+    return undefined;
+  }
+  const accuracyM = optionalFiniteNumber(value.accuracyM, 0, 100000);
+  const label = optionalTrimmedString(value.label, 160);
+  return {
+    ...(accuracyM !== undefined ? { accuracyM } : {}),
+    ...(label ? { label } : {}),
+    lat,
+    lon,
+    source: isIncidentLocationSource(value.source) ? value.source : fallbackSource
+  };
+}
+
+function normalizeIncidentProvenance(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => normalizedJsonRecord(item, 4000))
+    .filter((item) => Object.keys(item).length > 0)
+    .slice(0, 20);
+}
+
+function normalizeIncidentSourceRefs(value: unknown): IncidentSourceRef[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map(normalizeIncidentSourceRef)
+    .filter((item): item is IncidentSourceRef => Boolean(item))
+    .slice(0, 50);
+}
+
+function normalizeIncidentSourceRef(value: unknown): IncidentSourceRef | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const id = optionalTrimmedString(value.id, 220);
+  const kind = isIncidentSourceRefKind(value.kind) ? value.kind : undefined;
+  if (!id || !kind) {
+    return undefined;
+  }
+  const observedAt = optionalIsoTimestamp(value.observedAt);
+  const sourceId = optionalTrimmedString(value.sourceId, 140);
+  const title = optionalTrimmedString(value.title, 180);
+  return {
+    id,
+    kind,
+    ...(observedAt ? { observedAt } : {}),
+    ...(sourceId ? { sourceId } : {}),
+    ...(title ? { title } : {})
+  };
+}
+
 function normalizeCsv(value: unknown): string[] {
   const items = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
   return Array.from(new Set(items.flatMap((item) => typeof item === "string" ? [item.trim()] : []).filter(Boolean)));
@@ -7649,6 +8312,51 @@ function isCommunityReportCategory(value: unknown): value is CommunityReportCate
     || value === "utility_outage"
     || value === "hazard"
     || value === "other";
+}
+
+function isIncidentCategory(value: unknown): value is IncidentCategory {
+  return value === "community"
+    || value === "fire"
+    || value === "flood"
+    || value === "infrastructure"
+    || value === "medical"
+    || value === "other"
+    || value === "security"
+    || value === "traffic"
+    || value === "weather";
+}
+
+function isIncidentSeverity(value: unknown): value is IncidentSeverity {
+  return value === "advisory" || value === "critical" || value === "info" || value === "warning";
+}
+
+function isIncidentStatus(value: unknown): value is IncidentStatus {
+  return value === "active"
+    || value === "candidate"
+    || value === "closed"
+    || value === "monitoring"
+    || value === "rejected"
+    || value === "resolved";
+}
+
+function isIncidentLocationSource(value: unknown): value is IncidentLocationSource {
+  return value === "community_report" || value === "fusion" || value === "manual" || value === "provider";
+}
+
+function isIncidentSourceRefKind(value: unknown): value is IncidentSourceRefKind {
+  return value === "alert"
+    || value === "community_report"
+    || value === "manual"
+    || value === "provider_feature"
+    || value === "sketch";
+}
+
+function isIncidentTaskPriority(value: unknown): value is IncidentTaskPriority {
+  return value === "high" || value === "low" || value === "normal" || value === "urgent";
+}
+
+function isIncidentTaskStatus(value: unknown): value is IncidentTaskStatus {
+  return value === "blocked" || value === "cancelled" || value === "done" || value === "in_progress" || value === "open";
 }
 
 function isCommunityReportStatus(value: unknown): value is CommunityReportStatus {
@@ -7785,6 +8493,9 @@ function mobileCapabilities() {
     communityReports: true,
     communityReportUploads: true,
     deviceRegistration: true,
+    incidentFusionSuggestions: true,
+    incidentTasks: true,
+    incidents: true,
     offlineSnapshot: true,
     pushNotifications: false,
     safetyContext: true,
@@ -7811,6 +8522,10 @@ function mobileEndpoints() {
     communityReportUpdate: "/api/v1/community/reports/{reportId}",
     communityReports: "/api/v1/community/reports",
     deviceRegistration: "/api/v1/mobile/devices",
+    incidentDetail: "/api/v1/incidents/{incidentId}",
+    incidentFusionSuggestions: "/api/v1/incidents/fusion/suggestions",
+    incidentTasks: "/api/v1/incidents/{incidentId}/tasks",
+    incidents: "/api/v1/incidents",
     mapRasterOverlay: "/api/v1/map/raster-overlay?url={encodedUrl}",
     mapQuery: "/api/v1/map/query",
     offlineSnapshot: "/api/v1/mobile/offline-snapshot",

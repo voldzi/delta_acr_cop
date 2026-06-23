@@ -11,3 +11,4 @@
 - [09 Community Reporting and Media](09_COMMUNITY_REPORTING_AND_MEDIA.md)
 - [10 User Manual and Profile](10_USER_MANUAL_AND_PROFILE.md)
 - [11 User Sketches and Measurements](11_USER_SKETCHES_AND_MEASUREMENTS.md)
+- [12 Incident, Task and Fusion Runtime](12_INCIDENT_TASK_AND_FUSION.md)
