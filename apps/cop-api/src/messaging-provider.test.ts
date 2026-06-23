@@ -876,6 +876,38 @@ describe("CsmMessagingProvider", () => {
     expect(JSON.stringify(config)).not.toContain("private");
   });
 
+  it("exposes browser Web Push config through the COP API public read boundary", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token",
+        webPushEnabled: true,
+        webPushVapidPublicKey: "browser-public-vapid-key"
+      }),
+      now: () => new Date("2026-06-23T10:00:00Z")
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/push/web/config"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      contractVersion: "cop-web-push-config-v1",
+      enabled: true,
+      providerId: "csm.messaging",
+      status: "online",
+      vapidPublicKey: "browser-public-vapid-key"
+    });
+    expect(response.body).not.toContain("provider-token");
+    await app.close();
+  });
+
   it("registers browser Web Push devices server-side with sanitized actor headers", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe("http://messaging.local:4050/api/v1/devices");

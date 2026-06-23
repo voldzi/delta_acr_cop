@@ -233,6 +233,7 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
     || path === "/api/v1/stream/cop/health"
     || path.startsWith("/api/v1/stream/cop/")
     || path === "/api/v1/messaging/status"
+    || path === "/api/v1/push/web/config"
     || path === "/api/v1/community/reports"
     || path.startsWith("/api/v1/community/reports/")
     || path === "/api/v1/sketch/palettes"
