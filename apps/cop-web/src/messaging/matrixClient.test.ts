@@ -12,6 +12,7 @@ type MockMatrixClient = {
   sendEvent?: MatrixSendEvent;
   sendMessage?: MatrixSendMessage;
   sendStateEvent?: MatrixSendStateEvent;
+  scrollback?: MatrixScrollback;
   startClient: () => Promise<void>;
 };
 
@@ -34,6 +35,7 @@ type MatrixSendStateEvent = (roomId: string, eventType: string, content: Record<
 type MatrixSendEvent = (roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string) => Promise<unknown>;
 type MatrixSendMessage = (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
 type MatrixRedactEvent = (roomId: string, eventId: string, txnId?: string, opts?: Record<string, unknown>) => Promise<unknown>;
+type MatrixScrollback = (room: unknown, limit?: number) => Promise<unknown>;
 
 const matrixSdkMock = vi.hoisted(() => ({
   createClient: vi.fn()
@@ -133,6 +135,25 @@ describe("Matrix client diagnostics", () => {
 
     expect(session.getRooms()[0]?.messageRetentionSeconds).toBe(86_400);
     expect(session.getTimeline("!chat:cop.local").map((message) => message.body)).toEqual(["recent"]);
+  });
+
+  it("keeps an empty initial scrollback retryable while Matrix sync warms the timeline", async () => {
+    const timeline: unknown[] = [];
+    const scrollback = vi.fn<MatrixScrollback>().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      rooms: [createRoom({ roomId: "!chat:cop.local", timeline })],
+      scrollback
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    const first = await session.loadMoreTimeline("!chat:cop.local", 50);
+    timeline.push(createMessageEvent("synced after first attempt", Date.parse("2026-06-24T11:00:00.000Z")));
+    const second = await session.loadMoreTimeline("!chat:cop.local", 50);
+
+    expect(first).toEqual({ exhausted: false, messages: [] });
+    expect(scrollback).toHaveBeenCalledTimes(2);
+    expect(second.messages.map((message) => message.body)).toEqual(["synced after first attempt"]);
   });
 
   it("sends Matrix reactions as annotation relation events", async () => {
@@ -342,7 +363,8 @@ function createMockMatrixClient({
   rooms,
   sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined),
   sendMessage = vi.fn<MatrixSendMessage>().mockResolvedValue(undefined),
-  sendStateEvent = vi.fn<MatrixSendStateEvent>().mockResolvedValue(undefined)
+  sendStateEvent = vi.fn<MatrixSendStateEvent>().mockResolvedValue(undefined),
+  scrollback
 }: {
   crypto?: MockMatrixCrypto;
   redactEvent?: MockMatrixClient["redactEvent"];
@@ -350,6 +372,7 @@ function createMockMatrixClient({
   sendEvent?: MockMatrixClient["sendEvent"];
   sendMessage?: MockMatrixClient["sendMessage"];
   sendStateEvent?: MockMatrixClient["sendStateEvent"];
+  scrollback?: MockMatrixClient["scrollback"];
 }): MockMatrixClient {
   return {
     ...(crypto ? { getCrypto: () => crypto } : {}),
@@ -361,6 +384,7 @@ function createMockMatrixClient({
     sendEvent,
     sendMessage,
     sendStateEvent,
+    ...(scrollback ? { scrollback } : {}),
     startClient: () => Promise.resolve()
   };
 }

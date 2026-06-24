@@ -115,6 +115,7 @@ export async function createMatrixMessagingSession(
   callbacks: {
     onRoomsChanged?: (rooms: MatrixRoomSummary[]) => void;
     onSyncState?: (state: string) => void;
+    onTimelineChanged?: () => void;
   } = {}
 ): Promise<MatrixMessagingSession> {
   validateBootstrap(bootstrap);
@@ -166,11 +167,16 @@ export async function createMatrixMessagingSession(
 
   const syncListener = (state: unknown) => {
     callbacks.onSyncState?.(typeof state === "string" ? state : "sync");
-    void joinInvitedRooms().then(() => callbacks.onRoomsChanged?.(readRooms(client)));
+    void joinInvitedRooms().then(() => {
+      callbacks.onRoomsChanged?.(readRooms(client));
+      callbacks.onTimelineChanged?.();
+    });
     callbacks.onRoomsChanged?.(readRooms(client));
+    callbacks.onTimelineChanged?.();
   };
   const timelineListener = () => {
     callbacks.onRoomsChanged?.(readRooms(client));
+    callbacks.onTimelineChanged?.();
   };
   client.on?.("sync", syncListener);
   client.on?.("Room.timeline", timelineListener);
@@ -270,14 +276,13 @@ export async function createMatrixMessagingSession(
         await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
         const room = findMatrixRoom(client, roomId);
         if (!room) {
-          exhaustedTimelineRooms.add(roomId);
-          return { exhausted: true, messages: [] };
+          return { exhausted: false, messages: [] };
         }
         const beforeCount = room.timeline?.length ?? 0;
         await client.scrollback(room, Math.max(1, Math.min(250, Math.trunc(limit))));
         const nextRoom = findMatrixRoom(client, roomId) ?? room;
         const afterCount = nextRoom.timeline?.length ?? 0;
-        const exhausted = afterCount <= beforeCount;
+        const exhausted = beforeCount > 0 && afterCount <= beforeCount;
         if (exhausted) {
           exhaustedTimelineRooms.add(roomId);
         }

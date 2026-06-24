@@ -193,6 +193,7 @@ export function ChatApp() {
   const [groups, setGroups] = React.useState<CommunityGroup[]>([]);
   const [rooms, setRooms] = React.useState<MatrixRoomSummary[]>([]);
   const [timeline, setTimeline] = React.useState<MatrixTimelineMessage[]>([]);
+  const [timelineRevision, setTimelineRevision] = React.useState(0);
   const [historyExhaustedByRoom, setHistoryExhaustedByRoom] = React.useState<Record<string, boolean>>({});
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const [matrixSession, setMatrixSession] = React.useState<MatrixMessagingSession | null>(null);
@@ -251,10 +252,12 @@ export function ChatApp() {
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
   const routeAppliedRef = React.useRef(false);
   const matrixAttemptKeyRef = React.useRef<string | null>(null);
-  const initialHistoryLoadKeyRef = React.useRef<string | null>(null);
+  const initialHistoryLoadAttemptsRef = React.useRef<Map<string, number>>(new Map());
+  const historyLoadingRoomsRef = React.useRef<Set<string>>(new Set());
   const notifiedEventIdsRef = React.useRef<Set<string>>(new Set());
   const notificationsPrimedRef = React.useRef(false);
   const matrixSessionRef = React.useRef<MatrixMessagingSession | null>(null);
+  const selectedRoomIdRef = React.useRef<string | null>(null);
 
   const authenticated = isAuthSessionActive(authSession);
   const authToken = authenticated ? authSession.accessToken : undefined;
@@ -291,7 +294,7 @@ export function ChatApp() {
       selectedRoomId,
       timelineForRoom: (roomId) => matrixSession?.getTimeline(roomId) ?? (roomId === selectedRoomId ? timeline : [])
     }),
-    [chatFilter, conversationQuery, conversations, groups, matrixSession, rooms, selectedConversationId, selectedGroupId, selectedRoomId, timeline]
+    [chatFilter, conversationQuery, conversations, groups, matrixSession, rooms, selectedConversationId, selectedGroupId, selectedRoomId, timeline, timelineRevision]
   );
   const chatItems = React.useMemo(
     () => applyChatPreferences(rawChatItems, chatPreferences),
@@ -343,6 +346,10 @@ export function ChatApp() {
   React.useEffect(() => {
     matrixSessionRef.current = matrixSession;
   }, [matrixSession]);
+
+  React.useEffect(() => {
+    selectedRoomIdRef.current = selectedRoomId;
+  }, [selectedRoomId]);
 
   React.useEffect(() => {
     setChatPreferences(readChatPreferences(preferencesOwner));
@@ -528,19 +535,24 @@ export function ChatApp() {
       return;
     }
     setTimeline(matrixSession.getTimeline(selectedRoomId));
-  }, [matrixSession, rooms, selectedRoomId]);
+  }, [matrixSession, rooms, selectedRoomId, timelineRevision]);
 
   React.useEffect(() => {
     if (!matrixSession || !selectedRoomId) {
       return;
     }
     const loadKey = `${matrixSession.bootstrap.userId}:${matrixSession.bootstrap.deviceId}:${selectedRoomId}`;
-    if (initialHistoryLoadKeyRef.current === loadKey) {
+    const attempts = initialHistoryLoadAttemptsRef.current.get(loadKey) ?? 0;
+    if (attempts >= 4 || historyExhausted || historyLoadingRoomsRef.current.has(selectedRoomId)) {
       return;
     }
-    initialHistoryLoadKeyRef.current = loadKey;
+    const currentTimeline = matrixSession.getTimeline(selectedRoomId);
+    if (attempts > 0 && currentTimeline.length > 0) {
+      return;
+    }
+    initialHistoryLoadAttemptsRef.current.set(loadKey, attempts + 1);
     void loadOlderMessages(selectedRoomId, 120, true);
-  }, [matrixSession, selectedRoomId]);
+  }, [historyExhausted, matrixSession, selectedRoomId, syncState, timelineRevision]);
 
   React.useEffect(() => {
     if (!matrixSession) {
@@ -587,7 +599,7 @@ export function ChatApp() {
         writeChatRoute(candidate.room.roomId);
       });
     }
-  }, [chatItems, matrixSession, notificationPermission, rooms, selectedRoomId]);
+  }, [chatItems, matrixSession, notificationPermission, rooms, selectedRoomId, timelineRevision]);
 
   React.useEffect(() => {
     routeAppliedRef.current = applyRouteSelection(readRouteSelection());
@@ -1053,7 +1065,8 @@ export function ChatApp() {
           setRooms(nextRooms);
           setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversations, nextRooms));
         },
-        onSyncState: setSyncState
+        onSyncState: setSyncState,
+        onTimelineChanged: () => setTimelineRevision((value) => value + 1)
       });
       const nextRooms = nextSession.getRooms();
       const recoveryStatus = await nextSession.getEncryptionRecoveryStatus();
@@ -1061,6 +1074,7 @@ export function ChatApp() {
       matrixSessionRef.current = nextSession;
       setEncryptionRecoveryStatus(recoveryStatus);
       setRooms(nextRooms);
+      setTimelineRevision((value) => value + 1);
       setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversations, nextRooms));
       setSyncState("starting");
       return nextSession;
@@ -1565,16 +1579,19 @@ export function ChatApp() {
     if (!roomId || !matrixSession) {
       return;
     }
-    if (historyLoading || historyExhaustedByRoom[roomId]) {
+    if (historyLoadingRoomsRef.current.has(roomId) || historyExhaustedByRoom[roomId]) {
       return;
     }
+    historyLoadingRoomsRef.current.add(roomId);
     setHistoryLoading(true);
     if (!silent) {
       setError(null);
     }
     try {
       const result = await matrixSession.loadMoreTimeline(roomId, limit);
-      setTimeline(result.messages);
+      if (selectedRoomIdRef.current === roomId) {
+        setTimeline(result.messages);
+      }
       setHistoryExhaustedByRoom((current) => ({
         ...current,
         [roomId]: result.exhausted
@@ -1584,7 +1601,8 @@ export function ChatApp() {
         setError(caught instanceof Error ? caught.message : "Starší zprávy se nepodařilo načíst.");
       }
     } finally {
-      setHistoryLoading(false);
+      historyLoadingRoomsRef.current.delete(roomId);
+      setHistoryLoading(historyLoadingRoomsRef.current.size > 0);
     }
   }
 
