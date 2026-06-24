@@ -101,6 +101,28 @@ Stav po reálném UI testu:
 účastníci Matrix místnosti. `lab` zůstává seed owner a člen COP skupiny, ale v
 samotném testovacím Matrix chatu nebyl přihlášen jako konverzující uživatel.
 
+## Finální Handover Stav
+
+Po úspěšném UI testu byla testovací Matrix místnost a testovací CSM konverzace
+znovu odstraněna, aby klientský PoC nezačínal s pracovním textem z validace.
+Demo skupina, hlášení a zákresy zůstaly připravené.
+
+Finální stav produkce před předáním:
+
+| Kontrola | Výsledek |
+| --- | --- |
+| Synapse admin rooms | `total_rooms=0` |
+| CSM Messaging conversations | `conversationCount=0` |
+| CSM Messaging identities | `identityCount=3` |
+| COP demo status | `ready` |
+| COP demo groups | `groupCount=1` |
+| COP demo reports | `reportCount=3` |
+| COP demo drawings | `drawingCount=3` |
+
+Při prvním otevření PoC skupiny v `cop-chat` se vytvoří nová čistá E2EE
+konverzace pro členy skupiny. Tím je prostředí připravené jak pro řízené
+předvedení, tak pro opakovaný kontrolní test bez starých zpráv.
+
 ## Připravený Klientský Scénář
 
 1. Otevřít `https://cop.zeleznalady.cz/`.
@@ -167,5 +189,6 @@ PoC chat je připravený pro řízenou ukázku:
 - produkční `cop-chat` používá jednu PoC skupinu,
 - dva demo operátoři vidí stejnou E2EE historii,
 - první otevření historie funguje bez odchodu a návratu,
+- po ověřovacím testu je prostředí znovu vrácené do čistého handover stavu,
 - provozní snapshoty jsou uložené v záloze na `docker.home.cz`,
 - aplikace je nasazená z GitHubu na produkčním hostu.
