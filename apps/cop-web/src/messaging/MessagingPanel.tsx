@@ -849,6 +849,7 @@ export function MessagingPanel({
             onOpenMediaPreview={setMediaPreviewItem}
             onRoomSelect={setSelectedRoomId}
             onSend={() => void sendMessage()}
+            onShowGroups={() => setActiveDockTab("groups")}
             onShareLocation={() => void shareLocation()}
             onStartDirectConversation={(user) => void startDirectConversation(user)}
             onStartRoom={(conversationId) => void startRoomForConversation(conversationId)}
@@ -1617,6 +1618,7 @@ function MatrixChatShell({
   onOpenMediaPreview,
   onRoomSelect,
   onSend,
+  onShowGroups,
   onShareLocation,
   onStartDirectConversation,
   onStartRoom
@@ -1651,6 +1653,7 @@ function MatrixChatShell({
   onOpenMediaPreview: (item: MediaPreviewItem) => void;
   onRoomSelect: (roomId: string) => void;
   onSend: () => void;
+  onShowGroups: () => void;
   onShareLocation: () => void;
   onStartDirectConversation: (user: UserDirectoryEntry) => void;
   onStartRoom: (conversationId: string) => void;
@@ -1658,7 +1661,6 @@ function MatrixChatShell({
   const selectedRoom = rooms.find((room) => room.roomId === selectedRoomId) ?? null;
   const conversationOnlySelected = Boolean(selectedConversation && !selectedRoom);
   const groupOnlySelected = Boolean(selectedGroup && !selectedConversation && !selectedRoom);
-  const canSend = Boolean(selectedRoomId && selectedRoom);
   const hasDraft = Boolean(composerText.trim() || pendingAttachment);
   const standaloneRooms = visibleMatrixRooms(rooms, conversations);
   const conversationGroupIds = new Set(
@@ -1683,6 +1685,8 @@ function MatrixChatShell({
         : selectedGroup
           ? groupChatSubtitle(selectedGroup)
           : "čeká na výběr";
+  const listCountLabel = listCount === 1 ? "1 konverzace" : `${listCount} konverzací`;
+  const composerEnabled = Boolean(selectedRoom && selectedRoomId);
 
   function beginChatListResize(event: React.PointerEvent<HTMLDivElement>) {
     if (!pinned) {
@@ -1717,15 +1721,15 @@ function MatrixChatShell({
       <div className="matrix-room-list" aria-label="Konverzace">
         <div className="matrix-list-header">
           <div>
-            <strong>Chat</strong>
-            <span>{listCount} konverzací</span>
+            <strong>Zprávy</strong>
+            <span>{listCountLabel}</span>
           </div>
           <Search size={15} aria-hidden="true" />
         </div>
         <div className="direct-chat-starter">
           <input
             aria-label="Vyhledat uživatele pro přímý chat"
-            placeholder="Nový chat: jméno nebo e-mail"
+            placeholder="Hledat osobu nebo e-mail"
             value={directQuery}
             onChange={(event) => onDirectQueryChange(event.target.value)}
           />
@@ -1745,7 +1749,17 @@ function MatrixChatShell({
             </div>
           ) : null}
         </div>
-        {listCount === 0 ? <div className="empty-mini">Zatím nemáte žádný chat. Vyhledejte osobu nebo vytvořte skupinu.</div> : null}
+        {listCount === 0 ? (
+          <div className="chat-list-empty-card">
+            <MessageCircle size={20} aria-hidden="true" />
+            <strong>Zatím tu nejsou žádné konverzace.</strong>
+            <span>Začněte přímým chatem, nebo založte skupinu pro sdílení zpráv a médií.</span>
+            <button className="mini-button compact-text" onClick={onShowGroups} type="button">
+              <Users size={13} />
+              Založit skupinu
+            </button>
+          </div>
+        ) : null}
         {conversations.map((conversation) => {
           const conversationActive =
             selectedConversation?.conversationId === conversation.conversationId ||
@@ -1820,7 +1834,7 @@ function MatrixChatShell({
             </span> : null}
           </div>
         </div>
-        <div className="matrix-timeline" aria-live="polite">
+        <div className={`matrix-timeline ${hasActiveConversation ? "" : "empty"}`} aria-live="polite">
           {conversationOnlySelected || groupOnlySelected ? (
             <div className="conversation-start-card">
               <strong>{selectedConversation?.title ?? selectedGroup?.name}</strong>
@@ -1838,7 +1852,13 @@ function MatrixChatShell({
                 <span>Skupina je připravená pro sdílení hlášení a médií. Jakmile k ní vznikne chat, zobrazí se zde společná konverzace.</span>
               )}
             </div>
-          ) : timeline.length === 0 ? <div className="empty-mini">{selectedRoom ? "Zatím zde nejsou žádné zprávy." : "Vyberte nebo založte konverzaci."}</div> : null}
+          ) : timeline.length === 0 ? (
+            <div className="matrix-room-empty">
+              <MessageCircle size={26} aria-hidden="true" />
+              <strong>{selectedRoom ? "Zatím žádné zprávy" : "Vyberte konverzaci"}</strong>
+              <span>{selectedRoom ? "Napište první zprávu nebo sdílejte podklad přímo v konverzaci." : "Vlevo vyberte existující chat, vyhledejte osobu, nebo založte skupinu."}</span>
+            </div>
+          ) : null}
           {timeline.map((message) => (
             <div className={`matrix-message ${message.own ? "own" : ""}`} key={message.eventId}>
               <small className="matrix-message-meta">
@@ -1854,18 +1874,18 @@ function MatrixChatShell({
           ))}
           <div ref={timelineEndRef} aria-hidden="true" />
         </div>
-        <div className="matrix-composer">
+        {selectedRoom ? <div className="matrix-composer">
           <div className="matrix-composer-tools" aria-label="Přílohy">
-            <button aria-label="Přiložit fotku" className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("image")} title="Přiložit fotku" type="button">
+            <button aria-label="Přiložit fotku" className="icon-button compact" disabled={!composerEnabled || messageSending} onClick={() => onAttachmentPick("image")} title="Přiložit fotku" type="button">
               <Image size={15} />
             </button>
-            <button aria-label="Přiložit video" className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("video")} title="Přiložit video" type="button">
+            <button aria-label="Přiložit video" className="icon-button compact" disabled={!composerEnabled || messageSending} onClick={() => onAttachmentPick("video")} title="Přiložit video" type="button">
               <Video size={15} />
             </button>
-            <button aria-label="Přiložit soubor" className="icon-button compact" disabled={!canSend || messageSending} onClick={() => onAttachmentPick("file")} title="Přiložit soubor" type="button">
+            <button aria-label="Přiložit soubor" className="icon-button compact" disabled={!composerEnabled || messageSending} onClick={() => onAttachmentPick("file")} title="Přiložit soubor" type="button">
               <Paperclip size={15} />
             </button>
-            <button aria-label="Sdílet polohu" className="icon-button compact" disabled={!canSend || messageSending} onClick={onShareLocation} title="Sdílet polohu" type="button">
+            <button aria-label="Sdílet polohu" className="icon-button compact" disabled={!composerEnabled || messageSending} onClick={onShareLocation} title="Sdílet polohu" type="button">
               <MapPin size={15} />
             </button>
           </div>
@@ -1881,7 +1901,7 @@ function MatrixChatShell({
           ) : null}
           <textarea
             aria-label="Text zprávy"
-            disabled={!canSend || messageSending}
+            disabled={!composerEnabled || messageSending}
             onChange={(event) => onComposerChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
@@ -1889,14 +1909,14 @@ function MatrixChatShell({
                 onSend();
               }
             }}
-            placeholder={canSend ? "Napsat zprávu..." : "Nejdřív vyberte aktivní chat"}
+            placeholder={composerEnabled ? "Napsat zprávu..." : "Chat nejdřív založte"}
             rows={1}
             value={composerText}
           />
-          <button className="mini-button" disabled={!canSend || !hasDraft || messageSending} onClick={onSend} type="button">
+          <button className="mini-button" disabled={!composerEnabled || !hasDraft || messageSending} onClick={onSend} type="button">
             <Send size={14} />
           </button>
-        </div>
+        </div> : null}
       </div>
     </div>
   );
@@ -1929,10 +1949,15 @@ function MatrixMessageBody({
   if (message.attachment) {
     const showCaption = Boolean(message.body && message.body !== message.attachment.fileName);
     const previewItem = matrixMessagePreviewItem(message);
+    const attachmentMeta = message.attachment.size
+      ? formatBytes(message.attachment.size)
+      : message.attachment.encrypted
+        ? "Zabezpečený soubor"
+        : attachmentKindLabel(message.kind === "text" || message.kind === "location" ? "file" : message.kind);
     return (
       <>
         {showCaption ? <span>{message.body}</span> : null}
-        <div className="matrix-attachment-card">
+        <div className={`matrix-attachment-card ${message.kind}`}>
           {message.kind === "image" && message.attachment.mediaUrl?.startsWith("http") && !message.attachment.encrypted ? (
             <img alt="" src={message.attachment.mediaUrl} />
           ) : null}
@@ -1943,7 +1968,7 @@ function MatrixMessageBody({
             {attachmentIcon(message.kind === "text" || message.kind === "location" ? "file" : message.kind)}
             <span>
               <strong>{message.attachment.fileName}</strong>
-              <small>{message.attachment.encrypted ? "chráněná příloha" : message.attachment.contentType ?? "soubor"}{message.attachment.size ? ` · ${formatBytes(message.attachment.size)}` : ""}</small>
+              <small>{attachmentMeta}</small>
             </span>
             <span className="matrix-attachment-actions">
               <button className="mini-button compact-text" onClick={() => onOpenMediaPreview(previewItem)} type="button">
@@ -2318,7 +2343,7 @@ function userFacingMessagingError(message: string): string {
     return "Pro tuto akci je potřeba platné přihlášení.";
   }
   if (/ByteString|character at index|greater than 255|invalid character/i.test(normalized)) {
-    return "Služba zpráv odmítla neplatně zapsaný údaj profilu. Obnovte přihlášení a zkuste akci znovu.";
+    return "Některý údaj účtu nejde bezpečně předat službě zpráv. Odhlaste se a přihlaste znovu; pokud potíže trvají, kontaktujte správce.";
   }
   if (/\b(500|502|503|504)\b/u.test(normalized) || /api request failed|internal server error|bad gateway|service unavailable|gateway timeout/i.test(normalized)) {
     return "Služba zpráv je dočasně nedostupná. Zkuste to prosím za chvíli.";
