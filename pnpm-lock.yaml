@@ -140,6 +140,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/canonical-model
 
+  apps/cop-mcp-gateway: {}
+
   apps/cop-web:
     dependencies:
       '@cop/nato-symbol-renderer':

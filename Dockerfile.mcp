@@ -1,0 +1,21 @@
+FROM node:24-alpine AS base
+WORKDIR /app
+RUN corepack enable
+
+FROM base AS deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
+COPY apps/cop-mcp-gateway/package.json apps/cop-mcp-gateway/package.json
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY apps/cop-mcp-gateway apps/cop-mcp-gateway
+RUN pnpm --filter @cop/cop-mcp-gateway build
+
+FROM node:24-alpine AS runtime
+WORKDIR /app
+RUN corepack enable
+COPY --from=build /app ./
+ENV COP_MCP_HOST=0.0.0.0
+ENV COP_MCP_PORT=4313
+EXPOSE 4313
+CMD ["pnpm", "--filter", "@cop/cop-mcp-gateway", "start"]

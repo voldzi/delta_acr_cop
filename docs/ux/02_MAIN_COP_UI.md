@@ -9,25 +9,23 @@ Hlavní UI má šest oblastí:
 - bottom timeline/replay panel: časový posun a změny confidence,
 - AI assistant drawer: povolené datové dotazy a vysvětlení.
 
-Komunikace je sedmá průřezová plocha, ne oddělený modul. Plovoucí chat slouží
-pro rychlou kontrolu, ale připnutý režim se chová jako pravý inspektor ve stylu
-Xcode: mapa si uvolní prostor, na pravém okraji je rail pro přepínání Chat /
-Skupiny / Kontext a uživatel může měnit šířku celého docku i vnitřního splitu
-mezi seznamem konverzací a timeline.
+Komunikace je sedmá průřezová plocha. Krátkodobě ji zajišťuje samostatná
+aplikace `cop-chat` vložená do COP jako iframe panel. Plovoucí chat slouží pro
+rychlou kontrolu, ale připnutý režim se chová jako pravý inspektor: mapa si
+uvolní prostor, na pravém okraji je chatový panel a uživatel může měnit šířku
+celého docku.
 
 AppShell v2 směruje hlavní pracovní plochu ke vzhledu operační konzole:
 nahoře je stabilní operační kontext s aktuální událostí nebo vybraným objektem,
 vlevo je úzké aplikační menu, uprostřed mapa a vpravo připnutý komunikační
-panel. Chat v připnutém režimu má seznam konverzací, hlavičku aktivní místnosti,
-připnutý mapový kontext, timeline, rychlé vložení médií a composer. Zprávy i
-sdílená média zůstávají svázané s COP skupinou a mapovou událostí.
+panel. Funkce konverzací, skupin, reakcí, příloh a notifikací vlastní
+`cop-chat`; COP web pouze poskytuje prostor a navigační vstup.
 
-Chatový composer musí podporovat text, fotku, video, soubor a polohu jako
-primární akce. Pokud má informace z chatu přejít do mapového světa, uživatel
-použije akci `Nahlásit`; tím vzniká COP komunitní hlášení s vlastní platností,
-závažností, polohou, ACL a auditem. COP UI nesmí působit jako dvě oddělené
-aplikace: map-first a chat-first workflow musí vést ke stejnému reportu,
-skupině a související konverzaci.
+Chatový composer musí v `cop-chat` podporovat text, fotku, video, soubor a
+polohu jako primární akce. Pokud má informace z chatu přejít do mapového světa,
+uživatel použije v COP akci `Nahlásit`; tím vzniká COP komunitní hlášení s
+vlastní platností, závažností, polohou, ACL a auditem. COP UI nesmí udržovat
+druhou správu chatových skupin.
 
 Pravý horní roh top baru obsahuje operátorský vstup. Přihlášený uživatel zde vidí avatar a jméno z `preferences.operatorProfile`; nepřihlášený uživatel vidí pouze akci `Přihlásit`. Profilová karta může obsahovat avatar, zobrazované jméno, roli, organizaci, telefon, e-mail a kontaktní poznámku.
 

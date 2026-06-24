@@ -12,6 +12,7 @@
     { "path": "apps/cop-api" },
     { "path": "apps/cop-edge-node" },
     { "path": "apps/cop-chat" },
+    { "path": "apps/cop-mcp-gateway" },
     { "path": "apps/cop-web" }
   ]
 }

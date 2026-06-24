@@ -42,7 +42,7 @@ COP:
 - evaluates user relevance using explicit audience, user watched areas and
   optional current location;
 - submits notification metadata to CSM Messaging;
-- keeps community report/media ACL in COP groups;
+- keeps community report/media ACL on the report attachment metadata;
 - never stores APNs tokens and never sends push directly to APNs.
 - exposes a browser Web Push registration proxy for COP web/PWA clients, but
   does not own delivery state or provider credentials.
@@ -160,11 +160,12 @@ When an owned community report is submitted, COP creates a
 - report status is `submitted` or `published`;
 - report validity has not expired;
 - report severity is `advisory`, `warning` or `critical`;
-- a concrete audience exists, typically the COP group attached to the report.
+- a concrete audience exists through public visibility, explicit users or
+  watched-area relevance.
 
-The push text is intentionally minimal. It points users to the app and group
+The push text is intentionally minimal. It points users to the app and report
 context but does not include protected media URLs. Media access remains governed
-by COP group ACL and signed media tokens.
+by attachment ACL and signed media tokens.
 
 Community idempotency key:
 

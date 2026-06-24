@@ -6,4 +6,4 @@ Repozitář obsahuje produkční pilotní implementaci. Dokumentace definuje mod
 
 ## Hlavní tok
 
-Externí poskytovatel dat publikuje katalog a features přes provider kontrakt. COP server provider data čte server-side, aplikuje policy, normalizuje je do mapového katalogu a klientům poskytuje pouze source-neutral API. Uživatelé mohou vytvářet civilní hlášení s polohou a médii; přístup k médiím řídí COP skupiny a ACL.
+Externí poskytovatel dat publikuje katalog a features přes provider kontrakt. COP server provider data čte server-side, aplikuje policy, normalizuje je do mapového katalogu a klientům poskytuje pouze source-neutral API. Uživatelé mohou vytvářet civilní hlášení s polohou a médii; přístup k médiím řídí ACL na úrovni přílohy. Lidská komunikace a skupiny patří do samostatné aplikace `cop-chat`, která je do COP vložená jako chatový panel.

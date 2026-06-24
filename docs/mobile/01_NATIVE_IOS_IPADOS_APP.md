@@ -125,8 +125,7 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `POST /api/v1/community/reports` pro vytvoření hlášení,
 - `PATCH /api/v1/community/reports/{reportId}` pro úpravu vlastního hlášení,
 - `DELETE /api/v1/community/reports/{reportId}` pro smazání vlastního hlášení,
-- `GET/POST /api/v1/community/groups` pro skupiny, do kterých se hlášení a média ukládají,
-- `GET/DELETE /api/v1/community/groups/{groupId}` pro detail a smazání skupiny spravované aktuálním uživatelem,
+- legacy `/api/v1/community/groups...` pouze kvůli kompatibilitě existujících dat; nové hlášení se přes nativní klient nemá ukládat do COP skupiny,
 - `GET /api/v1/demo/scenarios` a `POST /api/v1/demo/scenarios/flood-central-bohemia/seed` pro kontrolovanou PoC ukázku,
 - `GET /api/v1/sketch/palettes` pro civilní a profesionální palety zákresů,
 - `GET /api/v1/sketch/drawings` pro zákresovou vrstvu podle aktuálního bbox mapy,
@@ -160,7 +159,7 @@ klient nemusí zobrazit všechna governance pole, ale musí respektovat
 stale stav. Eventové chování a budoucí AsyncAPI směr jsou popsány v
 [Event Contract and AsyncAPI Direction](../integration/13_EVENT_CONTRACT_AND_ASYNCAPI.md).
 
-Nativní iOS klient má před vytvořením hlášení načíst polohu z média, pokud je dostupná. Pro fotky použít metadata z Photos/EXIF, pro video a iPhone Spatial Video preferovat AVFoundation/Photos metadata. Pokud uživatel polohu z média potvrdí, poslat `location.source="media_metadata"`. Hlášení musí být vždy přiřazené do COP skupiny; nová skupina vytvořená z hlášení má dostat `anchorLocation` z první polohy reportu.
+Nativní iOS klient má před vytvořením hlášení načíst polohu z média, pokud je dostupná. Pro fotky použít metadata z Photos/EXIF, pro video a iPhone Spatial Video preferovat AVFoundation/Photos metadata. Pokud uživatel polohu z média potvrdí, poslat `location.source="media_metadata"`. Hlášení je samostatný mapový záznam; klient nemá kvůli hlášení vytvářet COP skupinu ani konverzaci. Komunikaci a skupiny řeší `cop-chat`.
 
 ## Mapový katalog pro nativní klienty
 

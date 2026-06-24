@@ -14,22 +14,22 @@ Bez přihlášení lze aplikaci použít pro základní orientaci:
 4. vyhledat místo,
 5. sledovat veřejné výstrahy a kontextové vrstvy.
 
-Bez účtu nelze ukládat profil, přidávat hlášení, zakládat skupiny, ukládat
-zákresy ani otevírat neveřejná média.
+Bez účtu nelze ukládat profil, přidávat hlášení, používat chat, ukládat zákresy
+ani otevírat neveřejná média.
 
 ### Přihlášení
 
-Přihlášení slouží k práci s osobními a skupinovými daty. Po přihlášení může
-uživatel:
+Přihlášení slouží k práci s osobními daty, chráněnými médii a chatem. Po
+přihlášení může uživatel:
 
 - uložit rozložení pracovní plochy,
 - vytvořit nebo upravit profil,
 - vložit komunitní hlášení,
 - nahrát média k hlášení,
-- pracovat ve skupinách a chatu,
+- pracovat v chatu a chatových skupinách,
 - vytvářet uživatelské zóny,
 - vytvářet a sdílet zákresy,
-- spravovat přístup k médiím podle skupiny nebo uživatelů.
+- spravovat přístup k médiím podle viditelnosti nebo vybraných uživatelů.
 
 ### Mapové Vrstvy
 
@@ -66,17 +66,18 @@ ACL a otevře je jen oprávněný uživatel.
 
 ### Chat A Skupiny
 
-Chat je určený pro lidskou komunikaci kolem události nebo skupiny. Doporučený
-postup:
+Chat je samostatná aplikace vložená do COP. Slouží pro lidskou komunikaci,
+přímé zprávy, veřejné i soukromé skupiny a sdílení souborů. Doporučený postup:
 
-1. vybrat existující skupinu nebo vytvořit novou,
-2. připnout kontext mapy, pokud se zprávy týkají místa,
+1. vybrat existující chat nebo založit konverzaci s osobou,
+2. vytvořit skupinu v `cop-chat`, pokud má komunikovat více lidí,
 3. psát zprávy běžným jazykem,
-4. sdílet média přes hlášení nebo přílohu,
+4. sdílet média jako chatovou přílohu,
 5. nepoužívat chat jako úložiště technických logů.
 
-Skupina může být veřejná nebo s povolením správce. Média vložená do skupiny
-respektují oprávnění skupiny.
+Pokud má zpráva z chatu vytvořit mapový záznam, uživatel použije v COP akci
+`Nahlásit` a vědomě zadá text, polohu, platnost a přílohy do reportovacího
+formuláře. COP web z chatu automaticky nevytváří hlášení ani skupiny.
 
 ### Zákresy
 
@@ -96,7 +97,7 @@ nepřekáželo běžnému posunu mapy.
 
 ### Média A Galerie
 
-Detail hlášení nebo skupiny může obsahovat multimediální galerii:
+Detail hlášení může obsahovat multimediální galerii:
 
 - fotografie,
 - PDF,
@@ -156,7 +157,7 @@ Profilová karta se ukládá do `preferences.operatorProfile`. Pole:
 - `contactNote`,
 - `publicContact`.
 
-Avatar a kontaktní údaje nejsou autentizační údaje. Přihlášení, hesla a ověření identity zůstávají v identity provideru. COP profil slouží pro krizovou komunikaci, komunitní hlášení a lepší orientaci ve skupinách.
+Avatar a kontaktní údaje nejsou autentizační údaje. Přihlášení, hesla a ověření identity zůstávají v identity provideru. COP profil slouží pro krizovou komunikaci, komunitní hlášení a lepší orientaci v chatu.
 
 ## Vestavěná nápověda
 

@@ -9,6 +9,7 @@
     "dev": "pnpm --parallel --filter @cop/cop-api --filter @cop/cop-web --filter @cop/cop-chat dev",
     "dev:api": "pnpm --filter @cop/cop-api dev",
     "dev:chat": "pnpm --filter @cop/cop-chat dev",
+    "dev:mcp": "pnpm --filter @cop/cop-mcp-gateway dev",
     "dev:web": "pnpm --filter @cop/cop-web dev",
     "test": "vitest run",
     "test:watch": "vitest",

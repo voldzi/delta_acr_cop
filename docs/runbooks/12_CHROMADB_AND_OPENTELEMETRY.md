@@ -6,6 +6,24 @@ COP can use the shared local ChromaDB tooling without limiting other
 applications such as APSYD. The safe rule is to keep each application indexed
 under its own repository root and repository name.
 
+COP has a repository-local Chroma configuration in `.chroma-dev.yaml`. It keeps
+the collection name stable as `delta_acr_cop` and expands the default include
+set to cover files that are important for fast engineering work:
+
+- API and web implementation under `apps/`,
+- root and app `package.json` / `tsconfig*.json`,
+- contract tests under `tests/`,
+- JSON schemas under `docs/api/schemas/`,
+- OpenAPI / AsyncAPI contracts,
+- deployment and validation scripts,
+- Keycloak theme files under `infra/`,
+- `mise.toml`.
+
+Generated output, temporary folders, local Chroma state, build artefacts and
+binary media are intentionally excluded. Indexing every file indiscriminately
+would make retrieval slower and less relevant; the target is complete coverage
+of useful text artefacts, not screenshots, PDFs, videos or build output.
+
 Recommended COP commands:
 
 ```bash
@@ -25,6 +43,42 @@ cd "/Users/voldzi/Documents/Development/18 2026/DELTA_ACR/01 COP"
 Do not change global Chroma chunking, retention or collection cleanup rules for
 COP unless the change is namespaced or confirmed safe for all application
 repositories.
+
+Before running a forced COP reindex, check that a global rebuild is not already
+running:
+
+```bash
+ps aux | grep -E '[c]hroma-rebuild-indexes.sh|[c]hroma_dev.cli reindex'
+```
+
+If another large repository is being rebuilt, wait. Running COP reindex in
+parallel with a global rebuild can leave searches temporarily empty or fail with
+Chroma metadata segment errors. Once idle, run:
+
+```bash
+"/Users/voldzi/Documents/Development/18 2026/chromadb/tools/chroma-dev.sh" \
+  reindex \
+  --root . \
+  --force
+```
+
+Expected verification after a clean reindex:
+
+- about `332` indexed text files,
+- about `3135` chunks,
+- `search-all "incident fusion suggestions" --root . --limit 5` returns
+  incident/fusion documentation,
+- `search-code "MessagingPanel conversation groups" --root . --limit 5`
+  returns `apps/cop-web/src/messaging/MessagingPanel.tsx`.
+
+Daily workflow:
+
+1. Use Chroma search first for code and documentation lookup.
+2. Use `get_file_context` or direct file reads only after selecting likely
+   relevant hits.
+3. Use `rg` for exact symbol/string checks and final confirmation.
+4. Run a forced reindex after broad file moves, new documentation areas, API
+   contract restructuring or generated skeleton changes.
 
 ## Current OpenTelemetry State
 

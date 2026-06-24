@@ -2,43 +2,55 @@
 
 ```mermaid
 flowchart TB
-    WEB["cop-web\nNext.js/React + MapLibre"]
-    API["cop-api\nREST/OpenAPI + Auth"]
-    INGEST["Ingest Service\nvalidation + idempotency"]
-    ADAPTERS["Source Adapter Framework"]
-    BUS["Event Bus\nNATS/Redpanda/Kafka candidate"]
-    MODEL["Canonical Model Service"]
-    FUSION["Correlation/Fusion Engine"]
-    STATE["COP State Store\nPostgreSQL/PostGIS + Redis candidate"]
-    DIST["Distribution Gateway\nsnapshot + delta + stream"]
-    SYMBOL["NATO Symbol Renderer"]
-    AI["AI Gateway\nOpenAI/Codex/Ollama/local/mock"]
-    POLICY["Policy Engine\nRBAC/ABAC"]
-    AUDIT["Audit/Provenance Store"]
-    REG["Source Registry"]
-    OBS["Observability\nOTel + Prometheus/Grafana/Loki"]
+    BROWSER["Browser/PWA\nReact + MapLibre"]
+    WEB["cop-web\nstatic web runtime"]
+    CHAT["cop-chat\nstandalone /chat messenger"]
+    API["cop-api\nREST/OpenAPI, auth, policy, audit"]
+    EDGE["cop-edge-node\nlocal outbox + replay cache"]
+    MCP["cop-mcp-gateway\nstandalone MCP facade"]
+    SIM["SIM providers\nserver-to-server data"]
+    MSG["CSM Messaging\nMatrix/bootstrap/notifications"]
+    DB["PostgreSQL/PostGIS\ntracks, reports, sketches, federation"]
+    S3["SeaweedFS/S3\nmedia attachments"]
+    AI["AI Gateway\nOllama/local/mock"]
+    OBS["Observability\nhealth, metrics, OTel-ready logs"]
 
+    BROWSER --> WEB
+    BROWSER --> CHAT
     WEB --> API
-    WEB --> DIST
-    WEB --> AI
-    API --> INGEST
-    API --> REG
-    API --> POLICY
-    INGEST --> ADAPTERS
-    ADAPTERS --> BUS
-    BUS --> MODEL
-    MODEL --> FUSION
-    FUSION --> STATE
-    STATE --> DIST
-    STATE --> SYMBOL
-    DIST --> POLICY
-    AI --> POLICY
-    API --> AUDIT
-    INGEST --> AUDIT
-    FUSION --> AUDIT
-    AI --> AUDIT
+    CHAT --> API
+    CHAT --> MSG
+    API --> SIM
+    API --> MSG
+    API --> DB
+    API --> S3
+    API --> AI
+    EDGE --> API
+    MCP --> API
     API --> OBS
-    DIST --> OBS
+    EDGE --> OBS
+    MCP --> OBS
 ```
 
-Kontejnery jsou logické. Fyzické balení bude rozhodnuto v navazujícím monorepo skeletonu.
+Aktuální pilotní fyzické služby v tomto repozitáři:
+
+- `cop-web`: webový klient a PWA shell.
+- `cop-chat`: samostatná chatovací aplikace publikovaná pod `/chat/`.
+  Používá existující COP auth, messaging metadata endpointy a browser Matrix
+  SDK; COP API pořád neproxyuje plaintext zprávy.
+- `cop-api`: centrální rozhodovací backend, katalog vrstev, provider adaptéry,
+  komunitní hlášení, média, sketch drawings, messaging bridge, policy a audit.
+- `cop-edge-node`: samostatná edge služba s lokálním outboxem, replay cache a
+  synchronizací do centrálního COP API.
+- `cop-mcp-gateway`: samostatná MCP gateway pro externí agenty. Gateway
+  neobsahuje vlastní business logiku; server-side volá auditované a
+  allowlistované nástroje v `cop-api`.
+
+Záměrně oddělené služby mimo tento repozitář:
+
+- SIM poskytuje data pouze server-to-server.
+- CSM Messaging řeší Matrix, zařízení a push doručení.
+- SeaweedFS/S3 drží binární média.
+
+Logické moduly jako fusion, policy, AI a observability zatím běží primárně v
+`cop-api`; při růstu zátěže se mohou dále vyčlenit bez změny veřejného kontraktu.

@@ -290,21 +290,36 @@ záznam. To je záměrné, aby operátor neopakoval chybu rekurzivně.
 
 ## MCP Tool Gateway
 
-Pilotní MCP gateway běží v COP API a nevyžaduje samostatný provider token.
-Používá stejnou bearer autentizaci jako ostatní chráněné COP endpointy.
+Pilotní MCP gateway běží jako samostatná služba `cop-mcp-gateway` na portu
+`4313`. Externí agenti mají používat endpointy služby:
 
-- `POST /api/v1/mcp` je stateless MCP JSON-RPC endpoint pro externí agenty.
-  Podporuje `initialize`, `notifications/initialized`, `ping`, `tools/list` a
-  `tools/call` nad stejným allowlistem.
-- `GET /api/v1/mcp` vrací client-safe popis MCP endpointu a podporovaných metod.
-- `GET /api/v1/mcp/tools` vrací allowlist read-only nástrojů.
-- `POST /api/v1/mcp/tools/{toolId}/invoke` volá konkrétní read-only nástroj a
-  publikuje auditní domain event `ai.tool.invoked`.
+- `POST /mcp` je stateless MCP JSON-RPC endpoint. Podporuje `initialize`,
+  `notifications/initialized`, `ping`, `tools/list` a `tools/call` nad stejným
+  allowlistem jako COP API.
+- `GET /mcp` vrací client-safe popis MCP endpointu a podporovaných metod.
+- `GET /mcp/tools` vrací allowlist read-only nástrojů.
+- `POST /mcp/tools/{toolId}/invoke` volá konkrétní read-only nástroj přes COP
+  API.
+
+Gateway má dvě oddělené autentizační hranice:
+
+- `COP_MCP_GATEWAY_TOKEN` chrání vstup pro externí agenty. V produkci musí být
+  nastavený a klient jej posílá jako `Authorization: Bearer ...`.
+- `COP_MCP_CENTRAL_TOKEN` je server-side token, kterým gateway volá centrální
+  COP API. Tento token se nikdy neposílá do browseru ani agentovi.
+
+Původní endpointy `GET/POST /api/v1/mcp*` zůstávají v COP API jako interní a
+kompatibilní facade. Zdroj pravdy pro allowlist, audit, policy-filtering a
+domain event `ai.tool.invoked` zůstává centrální COP API.
 
 Endpointy neslouží jako proxy do SIM, CSM Messaging ani Matrixu. Do klienta se
 přes ně nesmí dostat provider service tokeny, Matrix admin tokeny, plaintext
 chat zprávy ani binární média. Měnící workflow musí dál probíhat přes běžné COP
 command API s explicitním potvrzením uživatele.
+
+Pro publikaci pod COP doménou použijte samostatné DMZ proxy pravidlo na
+`http://docker.home.cz:4313`. Doporučené veřejné cesty jsou `/mcp` a `/mcp/`;
+`/api/v1/mcp*` ponechte jako interní/kompatibilní cestu pro COP API.
 
 ## Map Tiles
 

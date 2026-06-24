@@ -8,12 +8,10 @@ COP ukládá:
 
 - uživatelský report,
 - polohu události,
-- vazbu reportu na komunitní skupinu,
 - stav reportu,
 - vazbu na uživatele z Keycloak/OIDC,
 - metadata příloh,
 - přístupová pravidla k médiím,
-- uživatelské skupiny pro sdílení,
 - audit události.
 
 SeaweedFS/S3 ukládá:
@@ -49,13 +47,11 @@ Nové endpointy:
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete`
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload`
 - `GET /api/v1/community/reports/{reportId}/attachments/{attachmentId}/content`
-- `GET /api/v1/community/groups`
-- `POST /api/v1/community/groups`
-- `GET /api/v1/community/groups/{groupId}`
-- `PATCH /api/v1/community/groups/{groupId}/metadata`
-- `DELETE /api/v1/community/groups/{groupId}`
-- `POST /api/v1/community/groups/{groupId}/join-request`
-- `POST /api/v1/community/groups/{groupId}/members`
+
+Starší endpointy `/api/v1/community/groups...` zůstávají v API kvůli
+kompatibilitě existujících dat a klientů. Aktivní COP web je už nepoužívá pro
+zakládání hlášení ani pro občanskou komunikaci; skupiny a konverzace řeší
+samostatná aplikace `cop-chat`.
 
 Vytvoření reportu:
 
@@ -73,15 +69,15 @@ Vytvoření reportu:
   "observedAt": "2026-05-20T11:59:30Z",
   "hazardSeverity": "warning",
   "validUntil": "2026-05-20T15:00:00Z",
-  "visibility": "community",
-  "groupId": "b7d7e35b-9bb3-4d25-b4a7-8b56abbb9999",
-  "groupName": "Požár u Vrbna"
+  "visibility": "community"
 }
 ```
 
 `hazardSeverity` je uživatelský odhad závažnosti: `advisory`, `warning`, `critical`.
 `validUntil` je odhadovaná platnost rizika; po vypršení se mapový prvek označí jako stale, ale nezmizí bez moderace/retence.
-`groupId` propojuje hlášení se skupinou/konverzací. Webový klient při uložení hlášení skupinu vyžaduje: uživatel vybere existující skupinu, nebo se automaticky vytvoří nová skupina z názvu hlášení. Pokud skupina vznikla přes hlášení, její `anchorLocation` je nastavena na první polohu hlášení a skupina se může v budoucnu zobrazovat i jako samostatný bod události na mapě.
+Nové hlášení je samostatný mapový objekt. Webový klient při uložení hlášení
+nevytváří COP skupinu ani konverzaci. Pokud existující historická data obsahují
+`groupId` nebo `groupName`, klient je zobrazuje jen jako archivní kontext.
 
 Kategorie:
 
@@ -121,7 +117,11 @@ Konverze Apple Spatial MOV běží asynchronně v API kontejneru přes `ffmpeg`.
 Konverzní objekt se ukládá do stejného SeaweedFS/S3 bucketu pod klíč `community-reports/{reportId}/{attachmentId}/derivatives/xr-sbs.mp4`. Přístup k derivátu se řídí stejným `metadata.access` jako originální soubor; API vrací derivátové `contentUrl` pouze oprávněnému uživateli.
 
 Po úspěšném uploadu klient zavolá `complete`. Do budoucna je vhodné doplnit serverovou kontrolu objektu přes `HEAD`, AV/obsahovou kontrolu a generování náhledů.
-Po dokončení má příloha `contentUrl`; detail komunitního prvku může zobrazit obrázek, přehrát video přes HTML5 `video` a otevřít PDF. Webový klient zobrazuje média v galerii na celou obrazovku. Galerie sdružuje média reportů ve stejné skupině, aby se uživatel dostal k informacím přes mapu i přes konverzaci. Pokud médium není pro aktuálního uživatele dostupné, detail zůstane viditelný, ale galerie zobrazí chráněný stav bez URL objektu.
+Po dokončení má příloha `contentUrl`; detail komunitního prvku může zobrazit
+obrázek, přehrát video přes HTML5 `video` a otevřít PDF. Webový klient zobrazuje
+média daného reportu v galerii na celou obrazovku. Pokud médium není pro
+aktuálního uživatele dostupné, detail zůstane viditelný, ale galerie zobrazí
+chráněný stav bez URL objektu.
 
 ## Přístup k médiím
 
@@ -132,17 +132,19 @@ Podporované režimy:
 
 - `public`: výchozí režim, médium je dostupné všem, kteří smějí číst report;
 - `private`: médium vidí pouze autor reportu;
-- `users`: médium vidí autor a uvedení uživatelé podle Keycloak `subjectId`;
-- `groups`: médium vidí autor a aktivní členové vybraných COP komunitních skupin.
+- `users`: médium vidí autor a uvedení uživatelé podle Keycloak `subjectId`.
 
-Příklad omezení na skupinu:
+Historický režim `groups` může existovat u starších příloh kvůli kompatibilitě
+serverového vyhodnocení ACL, ale nové COP web UI jej nenabízí.
+
+Příklad omezení na konkrétní uživatele:
 
 ```json
 {
   "metadata": {
     "access": {
-      "audience": "groups",
-      "groupIds": ["b7d7e35b-9bb3-4d25-b4a7-8b56abbb9999"]
+      "audience": "users",
+      "userSubjectIds": ["f4b6a4e2-1234-4f2a-8f83-9c7a6d0d1111"]
     }
   }
 }
@@ -170,54 +172,30 @@ COP_MEDIA_ACCESS_TOKEN_TTL_SECONDS=600
 
 V produkci musí být `COP_MEDIA_ACCESS_TOKEN_SECRET` stabilní napříč restarty API, jinak dříve vydané odkazy přestanou platit okamžitě po restartu. To je bezpečné, ale může to přerušit právě otevřenou galerii.
 
-## Komunitní skupiny
+## Komunikace a skupiny
 
-Skupiny jsou aplikační sharing model COP, nikoli náhrada Matrix roomů. Do budoucna mají být navázané na konverzace v CSM Messaging, ale správa přístupu k médiím zůstává v COP, protože COP je systém záznamu pro uživatelská hlášení.
+COP web už neobsahuje vlastní správu chatových skupin pro hlášení. Občanská
+komunikace, přímé zprávy, skupiny, připnutí chatů, reakce a sdílení souborů
+patří do samostatné aplikace `cop-chat`, která je do COP vložená jako
+komunikační panel.
 
-Vlastnosti skupiny:
+Pravidlo pro mapu a chat:
 
-- `visibility: "public"`: uživatel může vstoupit bez schválení;
-- `visibility: "private"`: žádost o vstup je `pending` a správce ji musí potvrdit;
-- `anchorLocation`: volitelná hlavní poloha skupiny/události;
-- `metadata`: minimální aplikační metadata, například `createdFrom`, `initialCategory`, `initialSeverity` nebo vazba na konverzaci;
-- role členů: `owner`, `admin`, `member`;
-- stav členství: `active`, `pending`.
-
-Autor skupiny je automaticky `owner`. Pouze `owner` nebo `admin` mohou přidávat členy, potvrzovat žádosti a mazat skupinu. Mazání skupiny je COP metadata operace: zneaktivní sdílení médií a skupinu v seznamu, ale nemaže Matrix room, dokud CSM Messaging neposkytne samostatný bezpečný kontrakt pro archivaci konverzace.
-V pilotním webu lze skupinu založit přímo při nahrávání hlášení nebo v panelu Konverzace. Pro produkci je potřeba doplnit uživatelský adresář, aby běžný uživatel nepracoval se syrovým `subjectId`.
-
-Pravidlo pro provázání mapy a chatu:
-
-- každé nové hlášení v UI patří do COP skupiny;
-- pokud uživatel vybere existující skupinu, report a média se uloží do ní;
-- pokud skupina vznikne z hlášení, získá `anchorLocation` z polohy prvního reportu;
-- pokud skupina vznikne z chatu, poloha je prázdná, dokud ji uživatel nebo první mapové hlášení nenastaví;
-- CSM Messaging může mít pro stejnou věc Matrix room/konverzaci, ale media ACL se vyhodnocuje podle COP skupiny, ne podle samotné Matrix místnosti.
+- hlášení v COP je mapový záznam s polohou, platností, závažností, přílohami a
+  auditem;
+- konverzace v `cop-chat` je lidská komunikace a může si vytvářet vlastní
+  soukromé nebo veřejné skupiny;
+- COP web při uložení hlášení nezakládá chat ani chatovou skupinu;
+- pokud má informace z chatu přejít do mapy, uživatel vytvoří nové hlášení a
+  vědomě nahraje přílohy přes COP media flow.
 
 ## Chat-first hlášení
 
-Webový klient umožňuje založit komunitní hlášení přímo z chatovacího kontextu.
-Používá se ve chvíli, kdy informace sdílená v konverzaci přestává být jen
-koordinační zprávou a má se stát mapovým objektem s auditovatelným stavem,
-platností, závažností a pravidly přístupu k médiím.
-
-V připnutém chatovacím panelu je tato akce dostupná přímo v hlavičce aktivního
-chatu a také v panelu Kontext. Uživatel tedy nemusí opustit mapu: chat zůstává
-vpravo jako inspektor, mapový výřez zůstává uprostřed a formulář hlášení se
-otevře s předvyplněným bezpečným kontextem.
-
-Předvyplnění hlášení z chatu dodává pouze bezpečná metadata:
-
-- aktivní COP skupinu nebo skupinu navázanou na konverzaci,
-- název skupiny jako zdrojový kontext,
-- polohu z posledního sdílení polohy, polohu uživatele nebo aktuální střed mapy,
-- výchozí titulek `Hlášení z chatu`.
-
-COP záměrně nekopíruje plaintext zprávy z Matrix timeline do reportu. Uživatel
-musí text hlášení potvrdit nebo upravit v reportovacím formuláři. Chatové
-přílohy zůstávají Matrix/E2EE médii; pokud mají být součástí reportu, musí být
-nahrané přes COP media flow, kde se uplatní ACL, audit, podepsané media tokeny
-a budoucí obsahová kontrola.
+Aktuální integrace je krátkodobě iframe panel `cop-chat` uvnitř COP. Chat tedy
+zůstává dostupný vedle mapy, ale COP web z něj automaticky nevytváří reporty a
+nekopíruje plaintext zprávy ani E2EE přílohy. Uživatel musí text hlášení a
+přílohy potvrdit ve formuláři `Nahlásit`, kde se uplatní COP media flow, ACL,
+audit, podepsané media tokeny a budoucí obsahová kontrola.
 
 UI proto záměrně rozlišuje dva typy média:
 
@@ -238,10 +216,10 @@ Messaging proběhne jen tehdy, když report:
 - je `submitted` nebo `published`,
 - nemá prošlou `validUntil`,
 - má závažnost `advisory`, `warning` nebo `critical`,
-- má konkrétní cílovou skupinu, uživatele nebo oblast.
+- má konkrétní cílové publikum přes veřejnou viditelnost, vybrané uživatele
+  nebo oblast sledovanou uživatelem.
 
-Výchozí audience vzniká z `groupId`, protože report i média patří do COP
-skupiny. Push payload je záměrně minimální: obsahuje kategorii, bezpečný
+Push payload je záměrně minimální: obsahuje kategorii, bezpečný
 nadpis, deep link `csm://map/report/<reportId>` a zdrojová metadata. Neobsahuje
 fotky, videa, PDF, podepsané media URL ani plaintext chat zprávy.
 
@@ -296,14 +274,13 @@ Poznámka k veřejnému provozu: `COP_MEDIA_S3_PUBLIC_ENDPOINT` musí být dosa�
 2. Aplikace získá polohu zařízení a přesnost.
 3. Uživatel pořídí fotku/video nebo vybere PDF a určí kategorii, riziko a platnost.
 4. Aplikace přečte polohu z média, pokud je dostupná, a nabídne její použití.
-5. Aplikace vybere existující skupinu nebo vytvoří novou `POST /api/v1/community/groups`.
-6. Aplikace vytvoří `POST /api/v1/community/reports` s `groupId`.
-7. Aplikace zvolí přístup k médiím: všem, jen autorovi, konkrétním uživatelům nebo skupině.
-8. Aplikace požádá o upload slot přes `POST /attachments` a předá `metadata.access`.
-9. Aplikace nahraje přílohu na `upload.uploadUrl`; pokud to není možné, použije fallback `POST /upload`.
-10. Aplikace zavolá `POST /complete`.
-11. Aplikace zavolá `POST /submit`.
-12. Report se zobrazí v komunitní mapové vrstvě. Přílohy jsou přehratelné nebo otevřitelné jen podle ACL a v rámci skupiny se zobrazují v multimediální galerii.
+5. Aplikace vytvoří samostatný report přes `POST /api/v1/community/reports`.
+6. Aplikace zvolí přístup k médiím: všem, jen autorovi nebo konkrétním uživatelům.
+7. Aplikace požádá o upload slot přes `POST /attachments` a předá `metadata.access`.
+8. Aplikace nahraje přílohu na `upload.uploadUrl`; pokud to není možné, použije fallback `POST /upload`.
+9. Aplikace zavolá `POST /complete`.
+10. Aplikace zavolá `POST /submit`.
+11. Report se zobrazí v komunitní mapové vrstvě. Přílohy jsou přehratelné nebo otevřitelné jen podle ACL a zobrazují se v galerii reportu.
 
 Offline iOS režim má držet lokální outbox a odeslat kroky až po obnovení spojení.
 

@@ -231,5 +231,29 @@ services:
       timeout: 5s
       retries: 5
 
+  cop-mcp:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    image: delta-acr-cop-mcp:local
+    environment:
+      COP_MCP_HOST: "0.0.0.0"
+      COP_MCP_PORT: "4313"
+      COP_MCP_CENTRAL_API_URL: "${COP_MCP_CENTRAL_API_URL:-http://cop-api:4310}"
+      COP_MCP_CENTRAL_TOKEN: "${COP_MCP_CENTRAL_TOKEN:-dev-lab-token}"
+      COP_MCP_GATEWAY_TOKEN: "${COP_MCP_GATEWAY_TOKEN:-}"
+      COP_MCP_CENTRAL_TIMEOUT_MS: "${COP_MCP_CENTRAL_TIMEOUT_MS:-10000}"
+    ports:
+      - "${COP_MCP_PORT:-4313}:4313"
+    depends_on:
+      cop-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4313/health/ready"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
 volumes:
   cop-edge-data:

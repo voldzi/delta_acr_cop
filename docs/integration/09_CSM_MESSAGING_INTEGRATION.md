@@ -387,7 +387,7 @@ not grant administrative or service-level capabilities. `chatAvailable` is
 derived from provider metadata only; the actual `accessToken` is returned only
 from the authenticated bootstrap endpoint.
 
-When a COP group/conversation is opened as chat, the web client:
+When `cop-chat` opens a conversation, the chat application:
 
 1. obtains a Matrix bootstrap from COP;
 2. resolves conversation member identities through COP/Messaging;
@@ -401,24 +401,27 @@ does not select or show that room as active. If any step is unavailable, the UI
 remains in a safe disabled/degraded state and does not add a plaintext message
 proxy.
 
-## Relationship to COP Groups
+## Relationship to COP Web and Reports
 
-COP owns community reporting and media ACL. CSM Messaging owns conversations.
-The two concepts are deliberately separate, but the user workflow joins them
-through the COP community group:
+COP owns community reporting and media ACL. CSM Messaging and `cop-chat` own
+conversations. The two concepts are deliberately separate:
 
-- COP community group: controls who can see restricted media attached to map
-  reports and can optionally hold an `anchorLocation` for the event on the map.
-- Messaging conversation/Matrix room: carries chat messages and future map
-  links.
+- COP report: map object with location, validity, severity, attachments and
+  audit.
+- COP media ACL: attachment metadata with public/private/users audience;
+  historical `groups` ACL remains server-compatible for old data.
+- Messaging conversation/Matrix room: carries chat messages, files, reactions
+  and location shares inside `cop-chat`.
 
-The current COP UI requires a group context for every new report. If the user
-creates the group from the report dialog, the group is anchored by the first
-report location. If the user creates it from Chat/Konverzace, the location is
-unknown until the user sets it or submits a map report into that group.
+The current COP web UI does not require a group context for new reports and does
+not create chat groups from the report dialog. It embeds `cop-chat` as the
+communication surface. If a chat discussion needs to become map data, the user
+creates a new COP report explicitly and uploads any report attachments through
+the COP media flow.
 
-When COP creates a messaging conversation for a group, it sends safe metadata
-and the active COP group members:
+The legacy COP group/messaging bridge can still exist for compatibility. When a
+server-side workflow creates a messaging conversation for a legacy group, it
+sends only safe metadata and active COP group members:
 
 ```json
 {
@@ -438,7 +441,7 @@ and the active COP group members:
 }
 ```
 
-After creating or resolving the group conversation, COP also writes a durable
+After creating or resolving a legacy group conversation, COP may write a durable
 group-side pointer through
 `PATCH /api/v1/community/groups/{groupId}/metadata`:
 
@@ -455,28 +458,29 @@ group-side pointer through
 }
 ```
 
-This binding is metadata only. It lets browser clients reopen the same
+This binding is metadata only. It can let compatible clients reopen the same
 conversation after reload or deployment restart without matching by a mutable
 group title. It does not authorize media access and does not store plaintext
 messages.
 
-When COP adds or approves a group member, it also calls
+When a legacy COP group member is added or approved, a compatibility workflow can
+call
 `POST /api/v1/messaging/conversations/{conversationId}/members` with the active
-COP group members. This keeps chat membership metadata aligned with the media
-ACL group without using Matrix room membership as a media authorization source.
+COP group members. This keeps old chat membership metadata aligned without using
+Matrix room membership as a media authorization source.
 
 `externalId` is an integration reference, not an authorization source. COP must
 not infer media authorization from Matrix room membership and must not expose
 protected media through chat messages. Media access is evaluated from
-`attachment.metadata.access` and active COP group membership.
+`attachment.metadata.access`.
 
-## Canonical User Identity for Groups
+## Canonical User Identity
 
-COP group membership and CSM Messaging conversation membership must use the same
+CSM Messaging conversation membership must use the same
 canonical user identifier: the OIDC `sub` claim stored as `subjectId` in
 `cop_user_profiles`. Human-readable identifiers such as `preferred_username`,
-email or display name are lookup handles only and must not be persisted as group
-membership keys.
+email or display name are lookup handles only and must not be persisted as
+conversation membership keys.
 
 COP exposes authenticated user lookup through:
 
@@ -500,8 +504,9 @@ The response contains only directory fields needed by the operator UI:
 }
 ```
 
-The COP web UI must add group members from this directory result. The API keeps
-a server-side safety net: if `POST /api/v1/community/groups/{groupId}/members`
+The chat UI must add members from this directory result or from a
+CSM Messaging-safe identity lookup. Legacy COP group endpoints keep a
+server-side safety net: if `POST /api/v1/community/groups/{groupId}/members`
 receives a username/email-like value, it attempts to resolve it to exactly one
 known COP profile and stores the canonical `subjectId`. Unknown human login
 strings fail closed with a validation error. Existing clients may still send a
@@ -510,5 +515,4 @@ known canonical subject id directly.
 Operationally, every user must sign in to COP at least once so `/api/v1/me/preferences`
 can create the corresponding `cop_user_profiles` row. Historical rows where
 `cop_community_group_members.subject_id` contains `preferred_username` should be
-backfilled to OIDC `sub` before production rollout, then conversation membership
-should be resynced from the COP group.
+backfilled to OIDC `sub` before any legacy group membership resync is used.

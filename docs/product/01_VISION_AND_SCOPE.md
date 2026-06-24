@@ -8,7 +8,7 @@ Vizí je civilní situační platforma, která sjednotí rizika, výstrahy, veř
 - canonical model,
 - correlation/fusion,
 - COP state a history,
-- komunitní hlášení, skupiny a media ACL,
+- komunitní hlášení, media ACL a chatové skupiny v samostatné aplikaci `cop-chat`,
 - Source Registry a provider health,
 - civilní i profesionální symbolika,
 - webový klient,
