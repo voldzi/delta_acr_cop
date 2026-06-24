@@ -14,7 +14,7 @@ vi.mock("./CopMap", async () => {
       mapInteractionSuspended,
       objects
     }: {
-      emptyMessage: string;
+      emptyMessage: string | null;
       mapInteractionSuspended?: boolean;
       objects: Array<{ objectId: string }>;
     }) =>
@@ -24,7 +24,7 @@ vi.mock("./CopMap", async () => {
           "data-map-interaction-suspended": String(Boolean(mapInteractionSuspended)),
           "data-testid": "cop-map"
         },
-        objects.length === 0
+        objects.length === 0 && emptyMessage
           ? React.createElement("span", null, emptyMessage)
           : objects.map((object) => React.createElement("span", { key: object.objectId }, object.objectId))
       ),
@@ -241,7 +241,7 @@ describe("COP web dashboard", () => {
     expect(screen.getByRole("button", { name: "60s" }).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("explains an empty map when the SIM source is connected but no active tracks are present", async () => {
+  it("keeps an empty connected map clean when no active tracks are present", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/health/ready")) {
@@ -291,7 +291,8 @@ describe("COP web dashboard", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText(/Datový zdroj je připojený/u)).toBeTruthy());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/cop/tracks?includeSynthetic=true"), expect.any(Object)));
+    expect(screen.queryByText(/Datový zdroj je připojený/u)).toBeNull();
     expect(screen.queryByText("Čekám na georeferencované situační objekty.")).toBeNull();
   });
 

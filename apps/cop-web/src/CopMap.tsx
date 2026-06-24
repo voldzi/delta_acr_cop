@@ -457,7 +457,7 @@ interface CopMapProps {
   aoiRules: AoiRule[];
   clusterTracks: boolean;
   objects: CopObject[];
-  emptyMessage: string;
+  emptyMessage: string | null;
   hasSituationContextEnabled: boolean;
   mapLayerLabel: string;
   mapInteractionSuspended?: boolean;
@@ -3638,7 +3638,7 @@ export function CopMap({
       {clusterInfo ? <ClusterPanel cluster={clusterInfo} onClose={() => setClusterInfo(null)} /> : null}
       {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}
       {mapError ? <div className="map-notice error">Mapový podklad: {mapError}</div> : null}
-      {objects.length === 0 && !hasSituationContextEnabled && situationFeatureCollection.features.length === 0 ? <div className="map-empty">{emptyMessage}</div> : null}
+      {emptyMessage && objects.length === 0 && !hasSituationContextEnabled && situationFeatureCollection.features.length === 0 ? <div className="map-empty">{emptyMessage}</div> : null}
     </div>
   );
 }

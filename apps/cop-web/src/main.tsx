@@ -1859,15 +1859,13 @@ export function App() {
   const mapEmptyMessage = React.useMemo(
     () =>
       buildMapEmptyMessage({
-        contextLayersEnabled: visibleSituationContextEnabled,
         loadError,
         objects: objectsForDisplay,
         replayActive,
-        scopedObjects,
         sources,
         visibleObjects
       }),
-    [loadError, objectsForDisplay, replayActive, scopedObjects, sources, visibleObjects, visibleSituationContextEnabled]
+    [loadError, objectsForDisplay, replayActive, sources, visibleObjects]
   );
   const explicitlySelectedObject = selectedObjectId ? visibleObjects.find((object) => object.objectId === selectedObjectId) ?? null : null;
   const selectedObject = explicitlySelectedObject ?? visibleObjects[0] ?? null;
@@ -10099,22 +10097,18 @@ function latestTimestamp(values: Array<string | undefined>): string | undefined 
 }
 
 function buildMapEmptyMessage({
-  contextLayersEnabled,
   loadError,
   objects,
   replayActive,
-  scopedObjects,
   sources,
   visibleObjects
 }: {
-  contextLayersEnabled: boolean;
   loadError: string | null;
   objects: CopObject[];
   replayActive: boolean;
-  scopedObjects: CopObject[];
   sources: SourceSystem[];
   visibleObjects: CopObject[];
-}): string {
+}): string | null {
   if (loadError) {
     return `API situační mapy není dostupné: ${loadError}`;
   }
@@ -10122,20 +10116,15 @@ function buildMapEmptyMessage({
     return "Zvolený čas neobsahuje žádné objekty. Posuňte časovou osu nebo přepněte zpět na živé zobrazení.";
   }
   if (objects.length > 0 && visibleObjects.length === 0) {
-    if (contextLayersEnabled) {
-      return "Objekty jsou vypnuté nebo neodpovídají filtrům. Mapa může dál zobrazovat vybrané kontextové vrstvy.";
-    }
-    return scopedObjects.length > 0
-      ? "Zapnuté vrstvy neobsahují žádné objekty. Změňte výběr vrstev nebo zapněte kontextové vrstvy."
-      : "Aktivní filtry skrývají všechny přijaté objekty.";
+    return null;
   }
   if (hasActiveSimSource(sources)) {
-    return "Datový zdroj je připojený, ale v aktuálním pohledu nejsou žádné aktivní objekty.";
+    return null;
   }
   if (sources.length > 0) {
-    return "Datové zdroje jsou dostupné, ale zatím neposkytují viditelné objekty.";
+    return null;
   }
-  return "Čekám na georeferencované situační objekty.";
+  return null;
 }
 
 function hasActiveSimSource(sources: SourceSystem[]): boolean {
