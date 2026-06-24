@@ -111,8 +111,11 @@ interface PendingChatAttachment {
 }
 
 interface ChatPreferences {
+  hiddenByKey: Record<string, string>;
+  manualUnreadKeys: string[];
   mutedUntilByKey: Record<string, string>;
   pinnedKeys: string[];
+  readOverrideByKey: Record<string, string>;
 }
 
 interface MediaPreviewItem {
@@ -133,6 +136,7 @@ interface ChatListItem {
   muted: boolean;
   latest?: MatrixTimelineMessage;
   memberCount: number;
+  manuallyUnread?: boolean;
   pinned: boolean;
   preferenceKey: string;
   preview: string;
@@ -173,8 +177,11 @@ const quickReactionKeys = ["👍", "❤️", "😂", "😮", "😢", "🙏", "�
 const stickerReactionKeys = ["✅", "🚨", "🔥", "💯", "👀", "🎉", "💪", "🫡", "👏", "🤝", "📍", "⚠️"];
 const fallbackMatrixDeviceIds = new Map<string, string>();
 const emptyChatPreferences: ChatPreferences = {
+  hiddenByKey: {},
+  manualUnreadKeys: [],
   mutedUntilByKey: {},
-  pinnedKeys: []
+  pinnedKeys: [],
+  readOverrideByKey: {}
 };
 
 export function ChatApp() {
@@ -230,6 +237,7 @@ export function ChatApp() {
   const [generatedRecoveryKey, setGeneratedRecoveryKey] = React.useState<string | null>(null);
   const [recoveryWorking, setRecoveryWorking] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
+  const [deleteChatCandidate, setDeleteChatCandidate] = React.useState<ChatListItem | null>(null);
   const [retentionDialogOpen, setRetentionDialogOpen] = React.useState(false);
   const [retentionSaving, setRetentionSaving] = React.useState(false);
   const [retentionOverrideByRoom, setRetentionOverrideByRoom] = React.useState<Record<string, MessageRetentionSeconds>>({});
@@ -239,6 +247,7 @@ export function ChatApp() {
   const [showJumpToLatest, setShowJumpToLatest] = React.useState(false);
   const [refreshNonce, setRefreshNonce] = React.useState(0);
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
+  const messageMenuRef = React.useRef<HTMLDivElement | null>(null);
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
   const routeAppliedRef = React.useRef(false);
   const matrixAttemptKeyRef = React.useRef<string | null>(null);
@@ -447,6 +456,30 @@ export function ChatApp() {
   }, [pendingAttachment?.previewUrl]);
 
   React.useEffect(() => {
+    if (!messageMenuOpen) {
+      return undefined;
+    }
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && messageMenuRef.current?.contains(target)) {
+        return;
+      }
+      setMessageMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMessageMenuOpen(false);
+      }
+    };
+    window.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [messageMenuOpen]);
+
+  React.useEffect(() => {
     if (!authToken) {
       matrixSessionRef.current?.stop();
       setMatrixSession(null);
@@ -649,6 +682,83 @@ export function ChatApp() {
           : [item.preferenceKey, ...current.pinnedKeys]
       };
     });
+  }
+
+  function clearChatLocalState(item: ChatListItem) {
+    updateChatPreferences((current) => {
+      const nextHidden = { ...current.hiddenByKey };
+      const nextReadOverride = { ...current.readOverrideByKey };
+      delete nextHidden[item.preferenceKey];
+      delete nextReadOverride[item.preferenceKey];
+      return {
+        ...current,
+        hiddenByKey: nextHidden,
+        manualUnreadKeys: current.manualUnreadKeys.filter((key) => key !== item.preferenceKey),
+        readOverrideByKey: nextReadOverride
+      };
+    });
+  }
+
+  function toggleUnreadChat(item: ChatListItem) {
+    updateChatPreferences((current) => {
+      const nextReadOverride = { ...current.readOverrideByKey };
+      const shouldMarkRead = item.unreadCount > 0 || Boolean(item.manuallyUnread);
+      if (shouldMarkRead) {
+        nextReadOverride[item.preferenceKey] = chatPreferenceSnapshot(item);
+        return {
+          ...current,
+          manualUnreadKeys: current.manualUnreadKeys.filter((key) => key !== item.preferenceKey),
+          readOverrideByKey: nextReadOverride
+        };
+      }
+      delete nextReadOverride[item.preferenceKey];
+      return {
+        ...current,
+        manualUnreadKeys: [item.preferenceKey, ...current.manualUnreadKeys.filter((key) => key !== item.preferenceKey)].slice(0, 200),
+        readOverrideByKey: nextReadOverride
+      };
+    });
+  }
+
+  function toggleMutedChat(item: ChatListItem) {
+    updateChatPreferences((current) => {
+      const nextMuted = { ...current.mutedUntilByKey };
+      if (isChatMuted(nextMuted[item.preferenceKey])) {
+        delete nextMuted[item.preferenceKey];
+      } else {
+        nextMuted[item.preferenceKey] = "forever";
+      }
+      return {
+        ...current,
+        mutedUntilByKey: nextMuted
+      };
+    });
+  }
+
+  function hideChatFromList(item: ChatListItem) {
+    updateChatPreferences((current) => {
+      const nextHidden = {
+        ...current.hiddenByKey,
+        [item.preferenceKey]: chatPreferenceSnapshot(item)
+      };
+      const nextMuted = { ...current.mutedUntilByKey };
+      const nextReadOverride = { ...current.readOverrideByKey };
+      delete nextMuted[item.preferenceKey];
+      delete nextReadOverride[item.preferenceKey];
+      return {
+        ...current,
+        hiddenByKey: nextHidden,
+        manualUnreadKeys: current.manualUnreadKeys.filter((key) => key !== item.preferenceKey),
+        mutedUntilByKey: nextMuted,
+        pinnedKeys: current.pinnedKeys.filter((key) => key !== item.preferenceKey),
+        readOverrideByKey: nextReadOverride
+      };
+    });
+    if (item.active) {
+      clearMobileSelection();
+    }
+    setDeleteChatCandidate(null);
+    setNotice(`Chat ${item.title} byl skryt ze seznamu. Nová zpráva ho znovu zobrazí.`);
   }
 
   function openChatInfo() {
@@ -1113,6 +1223,7 @@ export function ChatApp() {
   async function openChat(item: ChatListItem) {
     setError(null);
     setNotice(null);
+    clearChatLocalState(item);
     setPreparingChatId(item.id);
     try {
       if (item.conversation) {
@@ -1682,7 +1793,10 @@ export function ChatApp() {
             <ChatRow
               item={item}
               key={item.id}
+              onDeleteRequest={setDeleteChatCandidate}
+              onToggleMute={toggleMutedChat}
               onTogglePinned={togglePinnedChat}
+              onToggleUnread={toggleUnreadChat}
               preparing={preparingChatId === item.id}
               onOpen={(nextItem) => void openChat(nextItem)}
             />
@@ -1710,7 +1824,7 @@ export function ChatApp() {
                 <button className="round-icon" disabled type="button" aria-label="Hovor">
                   <Phone size={21} />
                 </button>
-                <div className="chat-menu-anchor">
+                <div className="chat-menu-anchor" ref={messageMenuRef}>
                   <button className="round-icon" onClick={() => setMessageMenuOpen((open) => !open)} type="button" aria-expanded={messageMenuOpen} aria-label="Další">
                     <MoreVertical size={21} />
                   </button>
@@ -1726,6 +1840,10 @@ export function ChatApp() {
                       onSearch={startMessageSearch}
                       onSelect={startSelectionMode}
                       onToggleMute={clearActiveMute}
+                      onTogglePinned={() => {
+                        setMessageMenuOpen(false);
+                        togglePinnedChat(activeChat);
+                      }}
                     />
                   ) : null}
                 </div>
@@ -1950,6 +2068,13 @@ export function ChatApp() {
           onMute={applyMuteChoice}
         />
       ) : null}
+      {deleteChatCandidate ? (
+        <DeleteChatDialog
+          title={deleteChatCandidate.title}
+          onClose={() => setDeleteChatCandidate(null)}
+          onConfirm={() => hideChatFromList(deleteChatCandidate)}
+        />
+      ) : null}
       {retentionDialogOpen && activeChat ? (
         <MessageRetentionDialog
           currentSeconds={activeMessageRetentionSeconds}
@@ -2017,46 +2142,159 @@ function PinnedChats({
 
 function ChatRow({
   item,
+  onDeleteRequest,
+  onToggleMute,
   onTogglePinned,
+  onToggleUnread,
   preparing,
   onOpen
 }: {
   item: ChatListItem;
+  onDeleteRequest: (item: ChatListItem) => void;
+  onToggleMute: (item: ChatListItem) => void;
   onTogglePinned: (item: ChatListItem) => void;
+  onToggleUnread: (item: ChatListItem) => void;
   preparing: boolean;
   onOpen: (item: ChatListItem) => void;
 }) {
+  const [openActions, setOpenActions] = React.useState<"leading" | "trailing" | null>(null);
+  const [dragOffset, setDragOffset] = React.useState(0);
+  const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const swipedRef = React.useRef(false);
+  const swipeOffset = openActions === "leading" ? 136 : openActions === "trailing" ? -136 : 0;
+  const rowOffset = dragOffset || swipeOffset;
+  const unreadActionLabel = item.unreadCount > 0 || item.manuallyUnread ? "Přečtené" : "Nepřečtené";
+
+  function closeSwipeActions() {
+    setOpenActions(null);
+    setDragOffset(0);
+  }
+
+  function handleOpen(event: React.MouseEvent<HTMLButtonElement>) {
+    if (swipedRef.current) {
+      event.preventDefault();
+      swipedRef.current = false;
+      return;
+    }
+    closeSwipeActions();
+    onOpen(item);
+  }
+
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "mouse") {
+      return;
+    }
+    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+    swipedRef.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const start = pointerStartRef.current;
+    if (!start || event.pointerType === "mouse") {
+      return;
+    }
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy)) {
+      return;
+    }
+    swipedRef.current = true;
+    const baseOffset = openActions === "leading" ? 136 : openActions === "trailing" ? -136 : 0;
+    const nextOffset = Math.max(-148, Math.min(148, baseOffset + dx));
+    setDragOffset(nextOffset);
+    event.preventDefault();
+  }
+
+  function handlePointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "mouse") {
+      return;
+    }
+    const start = pointerStartRef.current;
+    pointerStartRef.current = null;
+    if (!start) {
+      setDragOffset(0);
+      return;
+    }
+    const totalOffset = dragOffset || event.clientX - start.x;
+    if (totalOffset > 56) {
+      setOpenActions("leading");
+    } else if (totalOffset < -56) {
+      setOpenActions("trailing");
+    } else {
+      setOpenActions(null);
+    }
+    setDragOffset(0);
+    window.setTimeout(() => {
+      swipedRef.current = false;
+    }, 250);
+  }
+
+  function runSwipeAction(action: () => void) {
+    action();
+    closeSwipeActions();
+  }
+
   return (
     <article
       aria-current={item.active ? "true" : undefined}
-      className={clsx("chat-row", item.active && "active", item.unreadCount > 0 && "unread")}
+      className={clsx("chat-row-shell", item.active && "active", item.unreadCount > 0 && "unread", openActions && "swipe-open")}
       role="listitem"
     >
-      <button className="chat-row-open" onClick={() => onOpen(item)} type="button">
-        <Avatar label={item.title} />
-        <span className="chat-row-main">
-          <span className="chat-row-top">
-            <strong>{item.title}</strong>
-            <span className="chat-row-flags">
-              {item.muted ? <BellOff size={14} aria-label="Ztlumeno" /> : null}
-              {item.timestamp ? <time>{item.timestamp}</time> : null}
+      <div className="chat-swipe-actions chat-swipe-leading" aria-hidden={openActions !== "leading"}>
+        <button onClick={() => runSwipeAction(() => onTogglePinned(item))} tabIndex={openActions === "leading" ? 0 : -1} type="button">
+          {item.pinned ? <PinOff size={19} /> : <Pin size={19} />}
+          <span>{item.pinned ? "Odepnout" : "Připnout"}</span>
+        </button>
+        <button onClick={() => runSwipeAction(() => onToggleUnread(item))} tabIndex={openActions === "leading" ? 0 : -1} type="button">
+          {item.unreadCount > 0 || item.manuallyUnread ? <CheckCheck size={19} /> : <MessageCircle size={19} />}
+          <span>{unreadActionLabel}</span>
+        </button>
+      </div>
+      <div className="chat-swipe-actions chat-swipe-trailing" aria-hidden={openActions !== "trailing"}>
+        <button onClick={() => runSwipeAction(() => onToggleMute(item))} tabIndex={openActions === "trailing" ? 0 : -1} type="button">
+          {item.muted ? <Bell size={19} /> : <BellOff size={19} />}
+          <span>{item.muted ? "Zapnout" : "Ztlumit"}</span>
+        </button>
+        <button className="danger" onClick={() => runSwipeAction(() => onDeleteRequest(item))} tabIndex={openActions === "trailing" ? 0 : -1} type="button">
+          <Trash2 size={19} />
+          <span>Smazat</span>
+        </button>
+      </div>
+      <div
+        className={clsx("chat-row", item.active && "active", item.unreadCount > 0 && "unread")}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={closeSwipeActions}
+        style={{ transform: rowOffset ? `translateX(${rowOffset}px)` : undefined }}
+      >
+        <button className="chat-row-open" onClick={handleOpen} type="button">
+          <Avatar label={item.title} />
+          <span className="chat-row-main">
+            <span className="chat-row-top">
+              <strong>{item.title}</strong>
+              <span className="chat-row-flags">
+                {item.muted ? <BellOff size={14} aria-label="Ztlumeno" /> : null}
+                {item.timestamp ? <time>{item.timestamp}</time> : null}
+              </span>
+            </span>
+            <span className="chat-row-preview">
+              {preparing ? <Loader2 className="spin" size={15} /> : item.latest ? attachmentIndicator(item.latest) : null}
+              {preparing ? "Připravuji..." : item.preview}
             </span>
           </span>
-          <span className="chat-row-preview">
-            {preparing ? <Loader2 className="spin" size={15} /> : item.latest ? attachmentIndicator(item.latest) : null}
-            {preparing ? "Připravuji..." : item.preview}
-          </span>
-        </span>
-      </button>
-      <button
-        className={clsx("row-pin", item.pinned && "active")}
-        onClick={() => onTogglePinned(item)}
-        type="button"
-        aria-label={item.pinned ? `Odepnout ${item.title}` : `Připnout ${item.title}`}
-      >
-        {item.pinned ? <PinOff size={15} /> : <Pin size={15} />}
-      </button>
-      {item.unreadCount > 0 && !item.muted ? <span className="unread-badge">{item.unreadCount}</span> : null}
+        </button>
+        <button
+          className={clsx("row-pin", item.pinned && "active")}
+          onClick={() => onTogglePinned(item)}
+          type="button"
+          aria-label={item.pinned ? `Odepnout ${item.title}` : `Připnout ${item.title}`}
+        >
+          {item.pinned ? <PinOff size={15} /> : <Pin size={15} />}
+        </button>
+        {item.unreadCount > 0 && !item.muted ? <span className="unread-badge">{item.unreadCount}</span> : null}
+      </div>
     </article>
   );
 }
@@ -2068,7 +2306,8 @@ function ChatActionMenu({
   onMute,
   onSearch,
   onSelect,
-  onToggleMute
+  onToggleMute,
+  onTogglePinned
 }: {
   activeChat: ChatListItem;
   muted: boolean;
@@ -2077,6 +2316,7 @@ function ChatActionMenu({
   onSearch: () => void;
   onSelect: () => void;
   onToggleMute: () => void;
+  onTogglePinned: () => void;
 }) {
   const infoLabel = activeChat.type === "direct" ? "O kontaktu" : "O skupině";
   return (
@@ -2084,6 +2324,10 @@ function ChatActionMenu({
       <button onClick={onInfo} role="menuitem" type="button">
         <Info size={17} />
         {infoLabel}
+      </button>
+      <button onClick={onTogglePinned} role="menuitem" type="button">
+        {activeChat.pinned ? <PinOff size={17} /> : <Pin size={17} />}
+        {activeChat.pinned ? "Odepnout" : "Připnout"}
       </button>
       <button onClick={onSearch} role="menuitem" type="button">
         <Search size={17} />
@@ -3234,6 +3478,19 @@ function MuteDialog({ title, onClose, onMute }: { title: string; onClose: () => 
   );
 }
 
+function DeleteChatDialog({ title, onClose, onConfirm }: { title: string; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <div className="mute-backdrop" role="presentation" onClick={onClose}>
+      <section className="mute-dialog delete-chat-dialog" role="dialog" aria-modal="true" aria-label={`Smazat ${title}`} onClick={(event) => event.stopPropagation()}>
+        <h2>Smazat chat ze seznamu?</h2>
+        <p>Chat {title} se skryje z tohoto seznamu. Historie zpráv na serveru zůstane zachovaná a nová zpráva chat znovu zobrazí.</p>
+        <button className="danger" onClick={onConfirm} type="button">Smazat ze seznamu</button>
+        <button onClick={onClose} type="button">Zrušit</button>
+      </section>
+    </div>
+  );
+}
+
 function MessageRetentionDialog({
   currentSeconds,
   saving,
@@ -3667,11 +3924,26 @@ function buildTimelineRows(messages: MatrixTimelineMessage[]): Array<
 function applyChatPreferences(items: ChatListItem[], preferences: ChatPreferences): ChatListItem[] {
   const pinnedOrder = new Map(preferences.pinnedKeys.map((key, index) => [key, index]));
   return items
-    .map((item) => ({
-      ...item,
-      muted: isChatMuted(preferences.mutedUntilByKey[item.preferenceKey]),
-      pinned: pinnedOrder.has(item.preferenceKey)
-    }))
+    .map((item) => {
+      const snapshot = chatPreferenceSnapshot(item);
+      const manuallyUnread = preferences.manualUnreadKeys.includes(item.preferenceKey);
+      const readOverride = preferences.readOverrideByKey[item.preferenceKey] === snapshot;
+      const unreadCount = readOverride ? 0 : Math.max(item.unreadCount, manuallyUnread ? 1 : 0);
+      return {
+        ...item,
+        manuallyUnread,
+        muted: isChatMuted(preferences.mutedUntilByKey[item.preferenceKey]),
+        pinned: pinnedOrder.has(item.preferenceKey),
+        unreadCount
+      };
+    })
+    .filter((item) => {
+      const hiddenSnapshot = preferences.hiddenByKey[item.preferenceKey];
+      if (!hiddenSnapshot || item.active || item.unreadCount > 0 || item.manuallyUnread) {
+        return true;
+      }
+      return hiddenSnapshot !== chatPreferenceSnapshot(item);
+    })
     .sort((left, right) => {
       const leftPinned = pinnedOrder.get(left.preferenceKey);
       const rightPinned = pinnedOrder.get(right.preferenceKey);
@@ -3686,6 +3958,10 @@ function applyChatPreferences(items: ChatListItem[], preferences: ChatPreference
       }
       return right.sortAt - left.sortAt || left.title.localeCompare(right.title, "cs-CZ");
     });
+}
+
+function chatPreferenceSnapshot(item: ChatListItem): string {
+  return item.latest?.eventId ?? "__no_latest__";
 }
 
 function chatPreferenceKeyForConversation(conversation: MessagingConversationSummary, group?: CommunityGroup): string {
@@ -4160,9 +4436,22 @@ function normalizeChatPreferences(preferences: Partial<ChatPreferences>): ChatPr
     Object.entries(preferences.mutedUntilByKey ?? {})
       .filter(([key, value]) => key && (value === "forever" || Date.parse(value) > now))
   );
+  const hiddenByKey = Object.fromEntries(
+    Object.entries(preferences.hiddenByKey ?? {})
+      .filter(([key, value]) => key && typeof value === "string" && value)
+      .slice(0, 200)
+  );
+  const readOverrideByKey = Object.fromEntries(
+    Object.entries(preferences.readOverrideByKey ?? {})
+      .filter(([key, value]) => key && typeof value === "string" && value)
+      .slice(0, 200)
+  );
   return {
+    hiddenByKey,
+    manualUnreadKeys: Array.from(new Set((preferences.manualUnreadKeys ?? []).filter(Boolean))).slice(0, 200),
     mutedUntilByKey,
-    pinnedKeys: Array.from(new Set((preferences.pinnedKeys ?? []).filter(Boolean))).slice(0, 24)
+    pinnedKeys: Array.from(new Set((preferences.pinnedKeys ?? []).filter(Boolean))).slice(0, 24),
+    readOverrideByKey
   };
 }
 

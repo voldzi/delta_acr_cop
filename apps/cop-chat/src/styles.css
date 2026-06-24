@@ -339,6 +339,13 @@ button {
   padding: 0 0 12px;
 }
 
+.chat-row-shell {
+  position: relative;
+  min-height: 74px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
 .chat-row,
 .chat-row-open,
 .contact-row,
@@ -361,6 +368,14 @@ button {
   align-items: center;
   min-height: 74px;
   padding: 0 44px 0 0;
+  background: var(--panel);
+  touch-action: pan-y;
+  transition: transform 0.18s ease;
+  will-change: transform;
+}
+
+.chat-row-shell.swipe-open .chat-row {
+  box-shadow: 0 8px 22px rgba(17, 27, 33, 0.12);
 }
 
 .chat-row-open {
@@ -480,6 +495,61 @@ button {
   outline: none;
 }
 
+.chat-swipe-actions {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: stretch;
+  pointer-events: auto;
+}
+
+.chat-swipe-leading {
+  justify-content: flex-start;
+}
+
+.chat-swipe-trailing {
+  justify-content: flex-end;
+}
+
+.chat-swipe-actions button {
+  display: grid;
+  width: 68px;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  border: 0;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 820;
+  line-height: 1.05;
+  padding: 0 5px;
+}
+
+.chat-swipe-actions span {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-swipe-leading button:first-child {
+  background: #0a84ff;
+}
+
+.chat-swipe-leading button:last-child {
+  background: #34c759;
+}
+
+.chat-swipe-trailing button:first-child {
+  background: #6457f2;
+}
+
+.chat-swipe-actions button.danger {
+  background: #ff3b30;
+}
+
 .pinned-chats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -571,11 +641,13 @@ button {
   box-shadow: 0 1px 5px rgba(17, 27, 33, 0.16);
   cursor: pointer;
   opacity: 0;
+  pointer-events: none;
 }
 
 .pinned-chat:hover .pinned-unpin,
 .pinned-chat:focus-within .pinned-unpin {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .list-prompt,
@@ -1874,6 +1946,16 @@ button {
   outline: none;
 }
 
+.mute-dialog button.danger {
+  background: #ff3b30;
+  color: #ffffff;
+}
+
+.mute-dialog button.danger:hover,
+.mute-dialog button.danger:focus-visible {
+  background: #d92f27;
+}
+
 .retention-dialog {
   display: grid;
   width: min(640px, 100%);
@@ -2457,6 +2539,22 @@ button {
     padding: 14px 10px 12px;
   }
 
+  .row-pin {
+    display: none;
+  }
+
+  .pinned-unpin {
+    display: none;
+  }
+
+  .chat-row {
+    padding-right: 0;
+  }
+
+  .chat-row-open {
+    padding-right: 44px;
+  }
+
   .message-bubble {
     max-width: 86%;
   }
@@ -2590,12 +2688,11 @@ button {
 
   .chat-row {
     min-height: 72px;
-    padding-right: 38px;
   }
 
   .chat-row-open {
     min-height: 72px;
-    padding: 10px 12px;
+    padding: 10px 44px 10px 12px;
   }
 
   .chat-row::after {
