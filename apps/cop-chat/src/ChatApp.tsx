@@ -841,7 +841,7 @@ export function ChatApp() {
     }
     setError(null);
     try {
-      await matrixSession.sendReaction(selectedRoomId, message.eventId, key);
+      await matrixSession.setReaction(selectedRoomId, message.eventId, key);
       const senderLabel = authDisplayName(authSession, authConfig);
       setTimeline((current) => applyLocalReaction(current, message.eventId, key, senderLabel));
       setMessageActionPopover(null);
@@ -2432,6 +2432,7 @@ function MessageActionPopover({
   onSelect: (message: MatrixTimelineMessage) => void;
   onStickerTrayChange: (open: boolean) => void;
 }) {
+  const ownReaction = message.reactions?.find((reaction) => reaction.own) ?? null;
   return (
     <>
       <button className="message-action-backdrop" onClick={onClose} type="button" aria-label="Zavřít akce zprávy" />
@@ -2442,7 +2443,13 @@ function MessageActionPopover({
       >
         <div className="reaction-strip" aria-label="Rychlé reakce">
           {quickReactionKeys.map((key) => (
-            <button key={key} onClick={() => onReact(message, key)} type="button" aria-label={`Reagovat ${key}`}>
+            <button
+              className={ownReaction?.key === key ? "selected" : ""}
+              key={key}
+              onClick={() => onReact(message, key)}
+              type="button"
+              aria-label={ownReaction?.key === key ? `Odebrat reakci ${key}` : `Reagovat ${key}`}
+            >
               {key}
             </button>
           ))}
@@ -2458,7 +2465,13 @@ function MessageActionPopover({
         {anchor.stickerTrayOpen ? (
           <div className="sticker-tray" aria-label="Nálepky">
             {stickerReactionKeys.map((key) => (
-              <button key={key} onClick={() => onReact(message, key)} type="button" aria-label={`Přidat nálepku ${key}`}>
+              <button
+                className={ownReaction?.key === key ? "selected" : ""}
+                key={key}
+                onClick={() => onReact(message, key)}
+                type="button"
+                aria-label={ownReaction?.key === key ? `Odebrat nálepku ${key}` : `Přidat nálepku ${key}`}
+              >
                 {key}
               </button>
             ))}
@@ -2477,6 +2490,12 @@ function MessageActionPopover({
             <Sticker size={22} />
             Přidat nálepku
           </button>
+          {ownReaction ? (
+            <button onClick={() => onReact(message, ownReaction.key)} role="menuitem" type="button">
+              <X size={22} />
+              Odebrat reakci
+            </button>
+          ) : null}
           <button onClick={() => void onCopy(message)} role="menuitem" type="button">
             <Copy size={22} />
             Zkopírovat
@@ -2860,6 +2879,7 @@ function MessageRow({
           <MessageReactions
             message={message}
             reactions={message.reactions}
+            onOpenActions={onOpenActions}
             onReact={onReact}
           />
         ) : null}
@@ -2880,10 +2900,12 @@ function ReplyPreview({ message }: { message: MatrixTimelineMessage }) {
 function MessageReactions({
   message,
   reactions,
+  onOpenActions,
   onReact
 }: {
   message: MatrixTimelineMessage;
   reactions: NonNullable<MatrixTimelineMessage["reactions"]>;
+  onOpenActions: (message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen?: boolean) => void;
   onReact: (message: MatrixTimelineMessage, key: string) => void;
 }) {
   return (
@@ -2894,6 +2916,10 @@ function MessageReactions({
           key={reaction.key}
           onClick={(event) => {
             event.stopPropagation();
+            if (reaction.own) {
+              onOpenActions(message, event.currentTarget.getBoundingClientRect(), true);
+              return;
+            }
             onReact(message, reaction.key);
           }}
           title={reaction.senders.join(", ")}
@@ -4515,7 +4541,36 @@ function applyLocalReaction(messages: MatrixTimelineMessage[], messageId: string
     if (message.eventId !== messageId) {
       return message;
     }
-    const reactions = [...(message.reactions ?? [])];
+    const ownReaction = message.reactions?.find((reaction) => reaction.own) ?? null;
+    const reactions = (message.reactions ?? [])
+      .map((reaction) => {
+        if (!reaction.own) {
+          return reaction;
+        }
+        const count = Math.max(0, reaction.count - 1);
+        const senders = reaction.senders
+          .filter((sender) => sender !== senderLabel)
+          .slice(0, count);
+        return {
+          ...reaction,
+          count,
+          own: false,
+          senders
+        };
+      })
+      .filter((reaction) => reaction.count > 0);
+    if (ownReaction?.key === key) {
+      const sortedReactions = reactions.sort((left, right) => right.count - left.count || left.key.localeCompare(right.key, "cs-CZ"));
+      if (sortedReactions.length === 0) {
+        const messageWithoutReactions = { ...message };
+        delete messageWithoutReactions.reactions;
+        return messageWithoutReactions;
+      }
+      return {
+        ...message,
+        reactions: sortedReactions
+      };
+    }
     const index = reactions.findIndex((reaction) => reaction.key === key);
     if (index === -1) {
       reactions.push({
@@ -4532,7 +4587,7 @@ function applyLocalReaction(messages: MatrixTimelineMessage[], messageId: string
       const senders = current.senders.includes(senderLabel) ? current.senders : [...current.senders, senderLabel];
       reactions[index] = {
         ...current,
-        count: Math.max(current.count, senders.length),
+        count: Math.max(current.count + (current.own ? 0 : 1), senders.length),
         own: true,
         senders
       };

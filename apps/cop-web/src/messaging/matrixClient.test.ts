@@ -155,6 +155,62 @@ describe("Matrix client diagnostics", () => {
     });
   });
 
+  it("removes the current Matrix reaction when setting the same reaction again", async () => {
+    const redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined);
+    const sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      redactEvent,
+      rooms: [createRoom({
+        roomId: "!chat:cop.local",
+        timeline: [
+          createMessageEvent("hello", Date.parse("2026-06-24T11:00:00.000Z"), "$hello", "@other:cop.local"),
+          createReactionEvent("$hello", "👍", "@operator:cop.local", "$reaction-own")
+        ]
+      })],
+      sendEvent
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await session.setReaction("!chat:cop.local", "$hello", "👍");
+
+    expect(redactEvent).toHaveBeenCalledWith("!chat:cop.local", "$reaction-own", undefined, {
+      reason: "Reakce odstraněna uživatelem"
+    });
+    expect(sendEvent).not.toHaveBeenCalled();
+  });
+
+  it("changes the current Matrix reaction by redacting the old one before sending the new one", async () => {
+    const redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined);
+    const sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      redactEvent,
+      rooms: [createRoom({
+        roomId: "!chat:cop.local",
+        timeline: [
+          createMessageEvent("hello", Date.parse("2026-06-24T11:00:00.000Z"), "$hello", "@other:cop.local"),
+          createReactionEvent("$hello", "👀", "@operator:cop.local", "$reaction-own")
+        ]
+      })],
+      sendEvent
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await session.setReaction("!chat:cop.local", "$hello", "👍");
+
+    expect(redactEvent).toHaveBeenCalledWith("!chat:cop.local", "$reaction-own", undefined, {
+      reason: "Reakce změněna uživatelem"
+    });
+    expect(sendEvent).toHaveBeenCalledWith("!chat:cop.local", "m.reaction", {
+      "m.relates_to": {
+        event_id: "$hello",
+        key: "👍",
+        rel_type: "m.annotation"
+      }
+    });
+  });
+
   it("redacts messages through Matrix when deleting a message", async () => {
     const redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined);
     matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
@@ -189,6 +245,7 @@ describe("Matrix client diagnostics", () => {
       count: 2,
       key: "👍",
       own: true,
+      ownEventId: "$reaction-own",
       senders: ["@operator:cop.local", "@other:cop.local"]
     }]);
   });

@@ -381,6 +381,40 @@ export async function createMatrixMessagingSession(
         throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat reakci");
       }
     },
+    setReaction: async (roomId, eventId, key) => {
+      const normalizedKey = key.trim();
+      if (!normalizedKey) {
+        return;
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        const existingReaction = findOwnReactionEvent(client, roomId, eventId);
+        if (existingReaction) {
+          if (typeof client.redactEvent !== "function") {
+            throw new Error("Reakci se nepodařilo změnit.");
+          }
+          await client.redactEvent(roomId, existingReaction.eventId, undefined, {
+            reason: existingReaction.key === normalizedKey ? "Reakce odstraněna uživatelem" : "Reakce změněna uživatelem"
+          });
+          if (existingReaction.key === normalizedKey) {
+            return;
+          }
+        }
+        if (typeof client.sendEvent !== "function") {
+          throw new Error("Reakci se nepodařilo odeslat.");
+        }
+        await client.sendEvent(roomId, "m.reaction", {
+          "m.relates_to": {
+            event_id: eventId,
+            key: normalizedKey,
+            rel_type: "m.annotation"
+          }
+        });
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "změnit reakci");
+      }
+    },
     stop: () => {
       client.off?.("sync", syncListener);
       client.off?.("Room.timeline", timelineListener);
@@ -936,7 +970,7 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
     .filter((event): event is MatrixEventLike => Boolean(event));
   const messageEvents = timelineEvents.filter((event) => event.getType?.() === "m.room.message");
   const redactedEventIds = readRedactedEventIds(timelineEvents);
-  const reactionsByEventId = readMessageReactions(room, messageEvents, timelineEvents, currentUserId);
+  const reactionsByEventId = readMessageReactions(room, messageEvents, timelineEvents, currentUserId, redactedEventIds);
   return messageEvents
     .flatMap((event) => {
       const eventId = event.getId?.() ?? `${event.getSender?.() ?? "sender"}-${event.getTs?.() ?? Date.now()}`;
@@ -990,12 +1024,17 @@ function readMessageReactions(
   room: MatrixRoomLike | undefined,
   messageEvents: MatrixEventLike[],
   timelineEvents: MatrixEventLike[],
-  currentUserId: string | undefined
+  currentUserId: string | undefined,
+  redactedEventIds: Set<string>
 ): Map<string, MatrixMessageReaction[]> {
   const reactionEvents = new Map<string, MatrixEventLike>();
   for (const event of timelineEvents) {
     if (event.getType?.() === "m.reaction") {
-      reactionEvents.set(event.getId?.() ?? `${event.getSender?.() ?? ""}:${event.getTs?.() ?? ""}`, event);
+      const reactionEventId = event.getId?.();
+      if (reactionEventId && redactedEventIds.has(reactionEventId)) {
+        continue;
+      }
+      reactionEvents.set(reactionEventId ?? `${event.getSender?.() ?? ""}:${event.getTs?.() ?? ""}`, event);
     }
   }
   for (const event of messageEvents) {
@@ -1007,13 +1046,18 @@ function readMessageReactions(
     for (const relation of relations) {
       const reactionEvent = asEvent(relation);
       if (reactionEvent) {
-        reactionEvents.set(reactionEvent.getId?.() ?? `${reactionEvent.getSender?.() ?? ""}:${reactionEvent.getTs?.() ?? ""}:${eventId}`, reactionEvent);
+        const reactionEventId = reactionEvent.getId?.();
+        if (reactionEventId && redactedEventIds.has(reactionEventId)) {
+          continue;
+        }
+        reactionEvents.set(reactionEventId ?? `${reactionEvent.getSender?.() ?? ""}:${reactionEvent.getTs?.() ?? ""}:${eventId}`, reactionEvent);
       }
     }
   }
 
-  const bucketsByEventId = new Map<string, Map<string, Map<string, string>>>();
+  const bucketsByEventId = new Map<string, Map<string, Map<string, { eventId?: string; label: string }>>>();
   for (const event of reactionEvents.values()) {
+    const reactionEventId = event.getId?.();
     const relation = readEventRelation(event);
     const targetEventId = stringValue(relation?.event_id);
     const relationType = stringValue(relation?.rel_type);
@@ -1023,9 +1067,12 @@ function readMessageReactions(
       continue;
     }
     const senderLabel = displayNameForMatrixSender(room, sender) ?? sender;
-    const buckets = bucketsByEventId.get(targetEventId) ?? new Map<string, Map<string, string>>();
-    const senders = buckets.get(key) ?? new Map<string, string>();
-    senders.set(sender, senderLabel);
+    const buckets = bucketsByEventId.get(targetEventId) ?? new Map<string, Map<string, { eventId?: string; label: string }>>();
+    const senders = buckets.get(key) ?? new Map<string, { eventId?: string; label: string }>();
+    senders.set(sender, {
+      ...(reactionEventId ? { eventId: reactionEventId } : {}),
+      label: senderLabel
+    });
     buckets.set(key, senders);
     bucketsByEventId.set(targetEventId, buckets);
   }
@@ -1033,15 +1080,68 @@ function readMessageReactions(
   const reactionsByEventId = new Map<string, MatrixMessageReaction[]>();
   for (const [eventId, buckets] of bucketsByEventId.entries()) {
     reactionsByEventId.set(eventId, [...buckets.entries()]
-      .map(([key, senders]) => ({
-        count: senders.size,
-        key,
-        own: Boolean(currentUserId && senders.has(currentUserId)),
-        senders: [...senders.values()]
-      }))
+      .map(([key, senders]) => {
+        const ownSender = currentUserId ? senders.get(currentUserId) : undefined;
+        return {
+          count: senders.size,
+          key,
+          own: Boolean(ownSender),
+          ...(ownSender?.eventId ? { ownEventId: ownSender.eventId } : {}),
+          senders: [...senders.values()].map((sender) => sender.label)
+        };
+      })
       .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key, "cs-CZ")));
   }
   return reactionsByEventId;
+}
+
+function findOwnReactionEvent(
+  client: MatrixClientLike,
+  roomId: string,
+  targetEventId: string
+): { eventId: string; key: string } | undefined {
+  const currentUserId = client.getUserId?.() ?? undefined;
+  if (!currentUserId) {
+    return undefined;
+  }
+  const room = findMatrixRoom(client, roomId);
+  const timelineEvents = (room?.timeline ?? [])
+    .map(asEvent)
+    .filter((event): event is MatrixEventLike => Boolean(event));
+  const redactedEventIds = readRedactedEventIds(timelineEvents);
+  const reactionEvents = new Map<string, MatrixEventLike>();
+  for (const event of timelineEvents) {
+    if (event.getType?.() !== "m.reaction") {
+      continue;
+    }
+    const reactionEventId = event.getId?.();
+    if (!reactionEventId || redactedEventIds.has(reactionEventId)) {
+      continue;
+    }
+    reactionEvents.set(reactionEventId, event);
+  }
+  const relatedEvents = room?.relations?.getChildEventsForEvent?.(targetEventId, "m.annotation", "m.reaction")?.getRelations?.() ?? [];
+  for (const relation of relatedEvents) {
+    const reactionEvent = asEvent(relation);
+    const reactionEventId = reactionEvent?.getId?.();
+    if (!reactionEvent || !reactionEventId || redactedEventIds.has(reactionEventId)) {
+      continue;
+    }
+    reactionEvents.set(reactionEventId, reactionEvent);
+  }
+
+  for (const event of reactionEvents.values()) {
+    const relation = readEventRelation(event);
+    const relationTargetEventId = stringValue(relation?.event_id);
+    const relationType = stringValue(relation?.rel_type);
+    const key = stringValue(relation?.key);
+    const sender = event.getSender?.() ?? "";
+    const reactionEventId = event.getId?.();
+    if (relationTargetEventId === targetEventId && relationType === "m.annotation" && key && sender === currentUserId && reactionEventId) {
+      return { eventId: reactionEventId, key };
+    }
+  }
+  return undefined;
 }
 
 function readEventRelation(event: MatrixEventLike): Record<string, unknown> | undefined {

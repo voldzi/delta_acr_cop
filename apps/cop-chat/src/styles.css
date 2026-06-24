@@ -22,6 +22,60 @@
   --shadow: 0 16px 44px rgba(17, 27, 33, 0.16);
 }
 
+@keyframes cop-menu-pop {
+  0% {
+    opacity: 0;
+    filter: blur(10px);
+    transform: translateY(8px) scale(0.94);
+  }
+
+  72% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(-1px) scale(1.015);
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cop-sheet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cop-panel-slide {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes cop-backdrop-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -803,7 +857,10 @@ button {
   border: 1px solid rgba(17, 27, 33, 0.1);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(18px) saturate(1.25);
   box-shadow: var(--shadow);
+  transform-origin: top right;
+  animation: cop-menu-pop 180ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
 }
 
 .chat-action-menu button {
@@ -1171,8 +1228,10 @@ button {
   inset: 0;
   z-index: 52;
   border: 0;
-  background: rgba(17, 27, 33, 0.08);
+  background: rgba(17, 27, 33, 0.16);
+  backdrop-filter: blur(8px) saturate(1.15);
   cursor: default;
+  animation: cop-backdrop-fade 150ms ease both;
 }
 
 .message-action-popover {
@@ -1182,13 +1241,16 @@ button {
   width: min(330px, calc(100vw - 24px));
   gap: 8px;
   filter: drop-shadow(0 18px 36px rgba(17, 27, 33, 0.22));
+  transform-origin: top center;
+  animation: cop-menu-pop 190ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
 }
 
 .reaction-strip,
 .sticker-tray,
 .message-action-list {
   border: 1px solid rgba(17, 27, 33, 0.08);
-  background: rgba(255, 255, 255, 0.98);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px) saturate(1.28);
   box-shadow: 0 1px 0 rgba(17, 27, 33, 0.04);
 }
 
@@ -1221,6 +1283,14 @@ button {
   background: #f0f2f5;
   outline: none;
   transform: translateY(-1px);
+}
+
+.reaction-strip button.selected,
+.sticker-tray button.selected {
+  background: #0a84ff;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(10, 132, 255, 0.26);
+  transform: scale(1.06);
 }
 
 .reaction-strip .reaction-more {
@@ -1630,6 +1700,7 @@ button {
   place-items: center;
   padding: 18px;
   background: rgba(17, 27, 33, 0.38);
+  animation: cop-backdrop-fade 150ms ease both;
 }
 
 .info-backdrop {
@@ -1645,6 +1716,7 @@ button {
   overflow: hidden;
   background: #ffffff;
   box-shadow: var(--shadow);
+  animation: cop-panel-slide 190ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
 }
 
 .info-nav {
@@ -1915,8 +1987,10 @@ button {
   gap: 10px;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(18px) saturate(1.18);
   box-shadow: var(--shadow);
   padding: 28px 24px 24px;
+  animation: cop-sheet-rise 180ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
 }
 
 .mute-dialog h2 {
@@ -1964,8 +2038,10 @@ button {
   gap: 16px;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(18px) saturate(1.18);
   box-shadow: var(--shadow);
   padding: 22px 24px 24px;
+  animation: cop-sheet-rise 180ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
 }
 
 .retention-dialog header {
@@ -2227,6 +2303,7 @@ button {
   border-radius: 8px;
   background: #ffffff;
   box-shadow: var(--shadow);
+  animation: cop-sheet-rise 180ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
 }
 
 .new-chat-dialog,
@@ -2720,5 +2797,16 @@ button {
 
   .message-input {
     padding: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
   }
 }

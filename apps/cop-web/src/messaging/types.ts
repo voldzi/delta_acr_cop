@@ -103,6 +103,7 @@ export interface MatrixMessageReaction {
   count: number;
   key: string;
   own: boolean;
+  ownEventId?: string;
   senders: string[];
 }
 
@@ -160,6 +161,7 @@ export interface MatrixMessagingSession {
   sendLocation(roomId: string, location: MatrixLocationShare): Promise<void>;
   sendMessage(roomId: string, body: string, options?: { replyTo?: MatrixMessageReplyTarget }): Promise<void>;
   sendReaction(roomId: string, eventId: string, key: string): Promise<void>;
+  setReaction(roomId: string, eventId: string, key: string): Promise<void>;
   stop(): void;
 }
 
