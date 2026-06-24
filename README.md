@@ -23,10 +23,11 @@ Výchozí porty:
 
 - API: `http://localhost:4310`
 - Web: `http://localhost:4311`
+- Chat: `http://localhost:4314/chat/`
 
 ## Pilot na docker.home.cz
 
-Pilotní compose soubor používá porty `4310` a `4311`. Před nasazením na serveru ověř obsazené porty podle runbooku v `docs/runbooks/04_RUNNING_MAIN_COP.md`.
+Pilotní compose soubor používá porty `4310`, `4311` a `4314`. Před nasazením na serveru ověř obsazené porty podle runbooku v `docs/runbooks/04_RUNNING_MAIN_COP.md`.
 
 ## Dokumentace
 

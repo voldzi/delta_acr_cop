@@ -12,6 +12,8 @@ yarn-error.log*
 *.tsbuildinfo
 apps/cop-web/.vite/
 apps/cop-web/dist/
+apps/cop-chat/.vite/
+apps/cop-chat/dist/
 apps/cop-api/dist/
 apps/cop-edge-node/dist/
 .chroma-state/

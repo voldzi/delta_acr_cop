@@ -1,0 +1,22 @@
+{
+  "name": "@cop/cop-chat",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build",
+    "dev": "vite --host 0.0.0.0 --port ${COP_CHAT_PORT:-4314}",
+    "preview": "vite preview --host 0.0.0.0 --port ${COP_CHAT_PORT:-4314}"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.1.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.562.0",
+    "matrix-js-sdk": "41.6.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "vite": "^7.2.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -5,6 +5,7 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 ## Kategorie proměnných
 
 - API porty a base URLs,
+- webové runtime porty a public base paths,
 - database/cache/event bus connection strings,
 - OIDC issuer/client configuration,
 - Source Registry bootstrap,
@@ -28,6 +29,26 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 - feature flags pro degraded/offline režim.
 
 Citlivé hodnoty nesmí být commitované do repozitáře.
+
+## Web Runtime Ports
+
+Lokální a pilotní compose používá oddělené runtime služby pro mapový shell a
+samostatný chat:
+
+```env
+COP_API_PORT=4310
+COP_WEB_PORT=4311
+COP_CHAT_PORT=4314
+COP_PUBLIC_API_BASE_URL=
+COP_DEPLOY_DOMAIN=cop.zeleznalady.cz
+COP_WEB_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
+COP_CHAT_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
+COP_CHAT_BASE_PATH=/chat/
+```
+
+`COP_PUBLIC_API_BASE_URL` má být při publikaci pod `cop.zeleznalady.cz`
+prázdné, aby oba browser klienti volali COP API relativně přes `/api/...`.
+`COP_CHAT_BASE_PATH` musí odpovídat DMZ nginx pravidlu pro `/chat/`.
 
 ## AI Provider / COP Ollama Provider
 

@@ -236,6 +236,13 @@ The panel uses workspace tabs:
 - **Kontext** for the active conversation, selected map feature, map center and
   conversion of chat context into a community report.
 
+COP also ships `apps/cop-chat`, a standalone React/Vite messenger mounted under
+`/chat/` for users who need chat as the primary workspace. It uses the same COP
+API metadata bridge and the same browser Matrix/E2EE client bootstrap as the
+map-integrated panel. It does not introduce plaintext message endpoints. The
+standalone app is deployed separately on `COP_CHAT_PORT` and should be exposed
+by DMZ nginx as `https://cop.zeleznalady.cz/chat/`.
+
 The browser may send:
 
 - text messages through Matrix SDK text APIs,
@@ -286,6 +293,8 @@ COP_CSM_MESSAGING_CACHE_TTL_MS=10000
 COP_WEB_PUSH_ENABLED=false
 COP_WEB_PUSH_VAPID_PUBLIC_KEY=<browser-web-push-vapid-public-key-from-csm-messaging>
 COP_WEB_MESSAGING_LAUNCHER_ENABLED=true
+COP_CHAT_PORT=4314
+COP_CHAT_BASE_PATH=/chat/
 ```
 
 If `COP_CSM_MESSAGING_ENABLED=false`, the chat launcher can still be visible,

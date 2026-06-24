@@ -1,0 +1,40 @@
+FROM node:24-alpine AS base
+WORKDIR /app
+RUN corepack enable
+
+FROM base AS deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
+COPY apps/cop-chat/package.json apps/cop-chat/package.json
+COPY apps/cop-web/package.json apps/cop-web/package.json
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY apps/cop-chat apps/cop-chat
+COPY apps/cop-web apps/cop-web
+ARG VITE_COP_API_BASE_URL=http://localhost:4310
+ARG VITE_COP_PUBLIC_LAB_VALUE=dev-lab-token
+ARG VITE_COP_AUTH_MODE=lab
+ARG VITE_COP_PUBLIC_READ_ENABLED=true
+ARG VITE_COP_OIDC_ISSUER=
+ARG VITE_COP_OIDC_CLIENT_ID=cop-web
+ARG VITE_COP_OIDC_SCOPE="openid profile email"
+ARG COP_CHAT_BASE_PATH=/chat/
+ENV VITE_COP_API_BASE_URL=${VITE_COP_API_BASE_URL}
+ENV VITE_COP_PUBLIC_LAB_VALUE=${VITE_COP_PUBLIC_LAB_VALUE}
+ENV VITE_COP_AUTH_MODE=${VITE_COP_AUTH_MODE}
+ENV VITE_COP_PUBLIC_READ_ENABLED=${VITE_COP_PUBLIC_READ_ENABLED}
+ENV VITE_COP_OIDC_ISSUER=${VITE_COP_OIDC_ISSUER}
+ENV VITE_COP_OIDC_CLIENT_ID=${VITE_COP_OIDC_CLIENT_ID}
+ENV VITE_COP_OIDC_SCOPE="${VITE_COP_OIDC_SCOPE}"
+ENV COP_CHAT_BASE_PATH=${COP_CHAT_BASE_PATH}
+ENV NODE_OPTIONS=--max-old-space-size=768
+RUN pnpm --filter @cop/cop-chat build
+
+FROM node:24-alpine AS runtime
+WORKDIR /app
+RUN corepack enable
+COPY --from=build /app ./
+ENV COP_CHAT_PORT=4314
+ENV COP_CHAT_BASE_PATH=/chat/
+EXPOSE 4314
+CMD ["pnpm", "--filter", "@cop/cop-chat", "preview"]

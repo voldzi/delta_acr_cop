@@ -2,6 +2,13 @@
 
 Webový klient je operační konzument COP state. Jeho účelem je rychlá orientace, filtrování vrstev, detail objektu, timeline/replay, stav zdrojů a vysvětlení confidence/provenance.
 
+Pilot má dvě React/Vite webové plochy:
+
+- `apps/cop-web` je hlavní mapový PWA shell.
+- `apps/cop-chat` je samostatná chatovací aplikace buildnutá s base path
+  `/chat/`. Sdílí existující COP auth helpery, metadata API klienta a
+  Matrix/E2EE klienta z `cop-web`, ale UI drží mimo mapový shell.
+
 ## Doporučený stack
 
 - Next.js + React,
@@ -41,6 +48,8 @@ které uživatel nepotřebuje při prvním zobrazení. Web klient proto drží t
 části jako lazy-loaded workspace moduly:
 
 - komunikace a Matrix chat panel,
+- samostatná `/chat/` aplikace pro plnoobrazovkový messenger bez mapového
+  shellu,
 - datová tabulka objektů nad TanStack Table,
 - XR/WebXR workspace,
 - renderer NATO/APP-6 symbolů používaný až při registraci mapových ikon,

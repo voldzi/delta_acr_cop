@@ -17,11 +17,15 @@ Doporucene hodnoty:
 - redirect URI:
   - `https://cop.zeleznalady.cz/*`
   - `http://docker.home.cz:4311/*`
+  - `http://docker.home.cz:4314/*`
   - `http://localhost:4311/*`
+  - `http://localhost:4314/*`
 - web origins:
   - `https://cop.zeleznalady.cz`
   - `http://docker.home.cz:4311`
+  - `http://docker.home.cz:4314`
   - `http://localhost:4311`
+  - `http://localhost:4314`
 
 V klientovi zapni standard flow a PKCE `S256`. Client secret pro `cop-web` nepouzivej; jde o public browser client.
 
@@ -54,8 +58,8 @@ Spust na hostu/kontejneru, kde je dostupny `kcadm.sh`. Dopln admin ucet Keycloak
   -s standardFlowEnabled=true \
   -s directAccessGrantsEnabled=false \
   -s serviceAccountsEnabled=false \
-  -s 'redirectUris=["https://cop.zeleznalady.cz/*","http://docker.home.cz:4311/*","http://localhost:4311/*"]' \
-  -s 'webOrigins=["https://cop.zeleznalady.cz","http://docker.home.cz:4311","http://localhost:4311"]' \
+  -s 'redirectUris=["https://cop.zeleznalady.cz/*","http://docker.home.cz:4311/*","http://docker.home.cz:4314/*","http://localhost:4311/*","http://localhost:4314/*"]' \
+  -s 'webOrigins=["https://cop.zeleznalady.cz","http://docker.home.cz:4311","http://docker.home.cz:4314","http://localhost:4311","http://localhost:4314"]' \
   -s 'attributes.pkce.code.challenge.method=S256' \
   -s 'attributes."post.logout.redirect.uris"=+'
 ```
@@ -124,6 +128,7 @@ Kontrolni login URL:
 
 ```text
 http://docker.home.cz:8081/realms/cop/protocol/openid-connect/auth?client_id=cop-web&response_type=code&scope=openid%20profile%20email&redirect_uri=http%3A%2F%2Fdocker.home.cz%3A4311%2F
+http://docker.home.cz:8081/realms/cop/protocol/openid-connect/auth?client_id=cop-web&response_type=code&scope=openid%20profile%20email&redirect_uri=http%3A%2F%2Fdocker.home.cz%3A4314%2Fchat%2F
 ```
 
 ## COP .env

@@ -3,6 +3,7 @@
 Tento runbook publikuje pilotni COP aplikaci bez otevreni API jako samostatne verejne sluzby. Verejna domena `cop.zeleznalady.cz` bezi na `dmz.home.cz`, nginx tam reverzne proxyuje:
 
 - web UI na `http://docker.home.cz:4311`,
+- samostatny chat na `http://docker.home.cz:4314` pod `/chat/`,
 - COP API na `http://docker.home.cz:4310` pod stejnou domenou pres `/api/`, `/health/` a volitelne `/metrics`.
 
 Frontend musi byt buildnuty se same-origin API base URL, tedy s prazdnou hodnotou `COP_PUBLIC_API_BASE_URL=`.
@@ -11,7 +12,7 @@ Frontend musi byt buildnuty se same-origin API base URL, tedy s prazdnou hodnoto
 
 - DNS `cop.zeleznalady.cz` smeruje na verejnou IP serveru `dmz.home.cz`.
 - Z internetu jsou na `dmz.home.cz` dostupne porty `80` a pozdeji `443`.
-- `dmz.home.cz` vidi interni host `docker.home.cz` a porty `4310`, `4311`.
+- `dmz.home.cz` vidi interni host `docker.home.cz` a porty `4310`, `4311`, `4314`.
 - Na `docker.home.cz` bezi aktualni repozitar v `/srv/cop`.
 
 Kontrola z `dmz.home.cz`:
@@ -19,6 +20,7 @@ Kontrola z `dmz.home.cz`:
 ```bash
 curl -fsS http://docker.home.cz:4310/health/ready
 curl -I http://docker.home.cz:4311
+curl -I http://docker.home.cz:4314/chat/
 ```
 
 ## 1. Priprav docker.home.cz pro verejnou domenu
@@ -37,13 +39,16 @@ Doporucene hodnoty:
 ```bash
 COP_API_PORT=4310
 COP_WEB_PORT=4311
+COP_CHAT_PORT=4314
 COP_PUBLIC_API_BASE_URL=
 COP_DEPLOY_DOMAIN=cop.zeleznalady.cz
 COP_WEB_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
+COP_CHAT_BASE_PATH=/chat/
+COP_CHAT_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
 COP_WEB_REFRESH_MS=5000
 ```
 
-`COP_PUBLIC_API_BASE_URL=` musi zustat prazdne, aby frontend volal `/api/...` pres verejnou domenu. `COP_DEPLOY_DOMAIN` a `COP_WEB_ALLOWED_HOSTS` se predavaji do Vite preview serveru a povoluji verejny host i lokalni pilot `docker.home.cz`.
+`COP_PUBLIC_API_BASE_URL=` musi zustat prazdne, aby frontend volal `/api/...` pres verejnou domenu. `COP_DEPLOY_DOMAIN`, `COP_WEB_ALLOWED_HOSTS` a `COP_CHAT_ALLOWED_HOSTS` se predavaji do Vite preview serveru a povoluji verejny host i lokalni pilot `docker.home.cz`. `COP_CHAT_BASE_PATH=/chat/` musi zustat sladene s nginx location.
 
 Pro internetovy pilot zmen vychozi lab token. Hodnota `COP_PUBLIC_LAB_VALUE` je soucasti frontendu, proto to neni produkcni autentizace, pouze pilotni ochrana API endpointu:
 
@@ -59,6 +64,7 @@ docker compose up -d --build
 docker compose ps
 curl -fsS http://localhost:4310/health/ready
 curl -I http://localhost:4311
+curl -I http://localhost:4314/chat/
 ```
 
 Pokud uzivatel neni ve skupine `docker`, pridej pred docker prikazy `sudo`.
@@ -125,6 +131,24 @@ server {
 
     location = /metrics {
         proxy_pass http://docker.home.cz:4310/metrics;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_buffering off;
+    }
+
+    location = /chat {
+        return 301 /chat/;
+    }
+
+    location /chat/ {
+        proxy_pass http://docker.home.cz:4314;
         proxy_http_version 1.1;
 
         proxy_set_header Host $host;
@@ -290,6 +314,24 @@ server {
         proxy_buffering off;
     }
 
+    location = /chat {
+        return 301 /chat/;
+    }
+
+    location /chat/ {
+        proxy_pass http://docker.home.cz:4314;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_buffering off;
+    }
+
     location / {
         proxy_pass http://docker.home.cz:4311;
         proxy_http_version 1.1;
@@ -318,6 +360,7 @@ Kontrola:
 ```bash
 curl -I http://cop.zeleznalady.cz
 curl -I https://cop.zeleznalady.cz
+curl -I https://cop.zeleznalady.cz/chat/
 curl -fsS https://cop.zeleznalady.cz/health/ready
 curl -fsS https://cop.zeleznalady.cz/metrics | grep cop_stream_clients_total
 dd if=/dev/zero bs=1M count=30 2>/dev/null | \

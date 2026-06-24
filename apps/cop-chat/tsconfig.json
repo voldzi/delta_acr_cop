@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": false,
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "vite.config.ts",
+    "../cop-web/src/auth.ts",
+    "../cop-web/src/cop-data.ts",
+    "../cop-web/src/messaging/matrixClient.ts",
+    "../cop-web/src/messaging/types.ts"
+  ]
+}

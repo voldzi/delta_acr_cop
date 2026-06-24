@@ -14,6 +14,7 @@ Výchozí lokální porty:
 
 - API: `http://localhost:4310`
 - Web: `http://localhost:4311`
+- Chat: `http://localhost:4314/chat/`
 
 ## Lokální spuštění přes Docker Compose
 
@@ -46,6 +47,7 @@ Výchozí návrh pro COP pilot:
 
 - `COP_API_PORT=4310`
 - `COP_WEB_PORT=4311`
+- `COP_CHAT_PORT=4314`
 - `COP_PUBLIC_API_BASE_URL=http://docker.home.cz:4310`
 
 Pokud jsou porty obsazené, zvol jiné a nastav je v `/srv/cop/.env`.
@@ -72,6 +74,7 @@ Uprav `.env` podle zvolených portů, například:
 ```bash
 COP_API_PORT=4310
 COP_WEB_PORT=4311
+COP_CHAT_PORT=4314
 COP_PUBLIC_API_BASE_URL=http://docker.home.cz:4310
 COP_ALLOW_LAB_TOKEN=true
 COP_LAB_TOKEN=dev-lab-token

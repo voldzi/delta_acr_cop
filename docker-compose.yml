@@ -172,6 +172,32 @@ services:
       cop-api:
         condition: service_healthy
 
+  cop-chat:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile.chat
+      args:
+        VITE_COP_API_BASE_URL: "${COP_PUBLIC_API_BASE_URL-http://localhost:${COP_API_PORT:-4310}}"
+        VITE_COP_PUBLIC_LAB_VALUE: "${COP_PUBLIC_LAB_VALUE-dev-lab-token}"
+        VITE_COP_AUTH_MODE: "${COP_WEB_AUTH_MODE:-lab}"
+        VITE_COP_PUBLIC_READ_ENABLED: "${COP_WEB_PUBLIC_READ_ENABLED:-true}"
+        VITE_COP_OIDC_ISSUER: "${COP_OIDC_ISSUER:-}"
+        VITE_COP_OIDC_CLIENT_ID: "${COP_OIDC_CLIENT_ID:-cop-web}"
+        VITE_COP_OIDC_SCOPE: "${COP_OIDC_SCOPE:-openid profile email}"
+        COP_CHAT_BASE_PATH: "${COP_CHAT_BASE_PATH:-/chat/}"
+    image: delta-acr-cop-chat:local
+    environment:
+      COP_CHAT_PORT: "4314"
+      COP_CHAT_BASE_PATH: "${COP_CHAT_BASE_PATH:-/chat/}"
+      COP_DEPLOY_DOMAIN: "${COP_DEPLOY_DOMAIN:-docker.home.cz}"
+      COP_CHAT_ALLOWED_HOSTS: "${COP_CHAT_ALLOWED_HOSTS:-}"
+    ports:
+      - "${COP_CHAT_PORT:-4314}:4314"
+    depends_on:
+      cop-api:
+        condition: service_healthy
+
   cop-edge:
     restart: unless-stopped
     build:

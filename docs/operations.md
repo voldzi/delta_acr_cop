@@ -18,6 +18,7 @@ Local defaults:
 
 - API: `http://localhost:4310`
 - Web: `http://localhost:4311`
+- Chat: `http://localhost:4314/chat/`
 
 Pilot deployment runs from `/srv/cop` on `docker.home.cz`. Health and
 readiness are exposed as `/health/live`, `/health/ready` and
