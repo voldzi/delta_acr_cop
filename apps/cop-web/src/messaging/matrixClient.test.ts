@@ -17,6 +17,10 @@ type MockMatrixClient = {
 };
 
 type MockMatrixCrypto = {
+  bootstrapCrossSigning?: (options: {
+    authUploadDeviceSigningKeys?: (makeRequest: (authData: Record<string, unknown> | null) => Promise<unknown>) => Promise<unknown>;
+    setupNewCrossSigning?: boolean;
+  }) => Promise<void>;
   bootstrapSecretStorage?: (options: {
     createSecretStorageKey?: () => Promise<unknown>;
     setupNewKeyBackup?: boolean;
@@ -28,6 +32,7 @@ type MockMatrixCrypto = {
   getKeyBackupInfo?: () => Promise<unknown | null>;
   isSecretStorageReady?: () => Promise<boolean>;
   loadSessionBackupPrivateKeyFromSecretStorage?: () => Promise<void>;
+  resetEncryption?: (authUploadDeviceSigningKeys: (makeRequest: (authData: Record<string, unknown> | null) => Promise<unknown>) => Promise<unknown>) => Promise<void>;
   restoreKeyBackup?: () => Promise<unknown>;
 };
 
@@ -318,6 +323,38 @@ describe("Matrix client diagnostics", () => {
     expect(recoveryKey).toBe("EsTK aBCd user held recovery key");
     expect(bootstrapSecretStorage).toHaveBeenCalledWith(expect.objectContaining({
       setupNewKeyBackup: true
+    }));
+  });
+
+  it("resets Matrix encryption metadata before rotating the recovery key", async () => {
+    const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
+      await options.createSecretStorageKey?.();
+    });
+    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(async (authUploadDeviceSigningKeys) => {
+      await authUploadDeviceSigningKeys((authData) => Promise.resolve(authData));
+    });
+    const crypto: MockMatrixCrypto = {
+      bootstrapSecretStorage,
+      checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+      createRecoveryKeyFromPassphrase: vi.fn().mockResolvedValue({
+        encodedPrivateKey: "EsTK replacement recovery key",
+        privateKey: new Uint8Array([4, 5, 6])
+      }),
+      getActiveSessionBackupVersion: vi.fn().mockResolvedValue(null),
+      getKeyBackupInfo: vi.fn().mockResolvedValue(null),
+      isSecretStorageReady: vi.fn().mockResolvedValue(false),
+      resetEncryption
+    };
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    const recoveryKey = await session.createEncryptionRecovery(true);
+
+    expect(recoveryKey).toBe("EsTK replacement recovery key");
+    expect(resetEncryption).toHaveBeenCalled();
+    expect(bootstrapSecretStorage).toHaveBeenCalledWith(expect.objectContaining({
+      setupNewKeyBackup: false,
+      setupNewSecretStorage: true
     }));
   });
 

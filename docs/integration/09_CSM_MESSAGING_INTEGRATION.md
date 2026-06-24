@@ -140,6 +140,14 @@ encrypted history may no longer be readable. This is deliberate: a design where
 ordinary COP authentication alone can recreate all E2EE keys would also give a
 server-side component enough material to decrypt user chat history.
 
+When the standalone web chat starts a new E2EE key cycle, it must rotate the
+Matrix recovery material as a complete set: secret storage, cross-signing
+secrets and key backup. This keeps native Matrix Rust SDK clients compatible
+with accounts that may have legacy or incomplete `m.cross_signing.*` secret
+storage records. Recovery keys shown in screenshots or otherwise exposed to a
+human support channel are treated as compromised and must be replaced through
+this reset flow before enrolling additional devices.
+
 ## Notification Intake
 
 CSM Messaging also owns device registry, APNs delivery and delivery audit. COP
@@ -271,7 +279,8 @@ Matrix account has no key backup, the user must create and save a recovery key
 first. If a key backup exists but the current browser has not unlocked it, the
 user must enter the recovery key or intentionally start a new key cycle without
 old history. This prevents new messages from being stranded in one local browser
-crypto store.
+crypto store. The reset action also rebuilds cross-signing metadata so iOS and
+other Matrix Rust SDK clients can import the new recovery material strictly.
 
 The browser may send:
 

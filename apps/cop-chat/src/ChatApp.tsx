@@ -1127,6 +1127,9 @@ export function ChatApp() {
   }
 
   async function createEncryptionRecovery(reset = false): Promise<void> {
+    if (reset && !window.confirm("Resetovat E2EE obnovu? Vytvoří se nový obnovovací klíč pro všechna zařízení a starší šifrovaná historie nemusí být dostupná.")) {
+      return;
+    }
     const session = matrixSessionRef.current ?? await startMatrixSession(selectedConversationId ?? selectedGroupId ?? selectedRoomId);
     if (!session) {
       return;
@@ -1139,7 +1142,7 @@ export function ChatApp() {
       setRecoveryKeyInput("");
       await refreshEncryptionRecoveryStatus(session);
       setNotice(reset
-        ? "Nový E2EE obnovovací klíč je aktivní. Starší šifrovaná historie nemusí být dostupná."
+        ? "Nový E2EE obnovovací klíč je aktivní. Použijte ho i na iOS; starší šifrovaná historie nemusí být dostupná."
         : "E2EE obnova je nastavena. Uložte obnovovací klíč mimo tento prohlížeč.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Obnovovací klíč se nepodařilo vytvořit.");
@@ -3654,11 +3657,14 @@ function EncryptionRecoveryDialog({
         ) : ready ? (
           <>
             <p>
-              Toto zařízení má přístup k E2EE key backupu. Nové zprávy se budou zálohovat šifrovaně
-              a půjdou obnovit na dalších zařízeních pomocí vašeho obnovovacího klíče.
+              Toto zařízení má přístup k E2EE key backupu. Pokud obnovovací klíč unikl nebo iOS hlásí
+              nekompatibilní E2EE metadata, resetujte obnovu a použijte nově vygenerovaný klíč.
             </p>
             <footer>
               <button className="primary-dialog-action" onClick={onClose} type="button">Hotovo</button>
+              <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
+                Resetovat E2EE obnovu
+              </button>
             </footer>
           </>
         ) : hasBackup ? (

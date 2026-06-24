@@ -37,6 +37,10 @@ interface MatrixClientLike {
 }
 
 interface MatrixCryptoApiLike {
+  bootstrapCrossSigning?: (options: {
+    authUploadDeviceSigningKeys?: MatrixInteractiveAuthCallback;
+    setupNewCrossSigning?: boolean;
+  }) => Promise<void>;
   bootstrapSecretStorage?: (options: {
     createSecretStorageKey?: () => Promise<unknown>;
     setupNewKeyBackup?: boolean;
@@ -49,8 +53,11 @@ interface MatrixCryptoApiLike {
   getKeyBackupInfo?: () => Promise<unknown | null>;
   isSecretStorageReady?: () => Promise<boolean>;
   loadSessionBackupPrivateKeyFromSecretStorage?: () => Promise<void>;
+  resetEncryption?: (authUploadDeviceSigningKeys: MatrixInteractiveAuthCallback) => Promise<void>;
   restoreKeyBackup?: (options?: Record<string, unknown>) => Promise<unknown>;
 }
+
+type MatrixInteractiveAuthCallback = (makeRequest: (authData: Record<string, unknown> | null) => Promise<unknown>) => Promise<unknown>;
 
 interface MatrixRecoveryController {
   readonly cryptoCallbacks: Record<string, unknown>;
@@ -535,8 +542,9 @@ async function createUserControlledEncryptionRecovery(client: MatrixClientLike, 
     throw new Error("Tento prohlížeč nepodporuje vytvoření obnovovacího klíče.");
   }
 
+  let resetEncryptionApplied = false;
   if (reset) {
-    await crypto.disableKeyStorage?.();
+    resetEncryptionApplied = await resetMatrixEncryptionForRecovery(crypto);
   }
 
   let encodedRecoveryKey = "";
@@ -549,7 +557,7 @@ async function createUserControlledEncryptionRecovery(client: MatrixClientLike, 
   try {
     await crypto.bootstrapSecretStorage({
       createSecretStorageKey,
-      setupNewKeyBackup: true,
+      setupNewKeyBackup: !resetEncryptionApplied,
       ...(reset ? { setupNewSecretStorage: true } : {})
     });
     await crypto.checkKeyBackupAndEnable?.();
@@ -560,6 +568,28 @@ async function createUserControlledEncryptionRecovery(client: MatrixClientLike, 
     throw new Error("Matrix nevydal obnovovací klíč. Zkuste nastavení zopakovat.");
   }
   return encodedRecoveryKey;
+}
+
+async function resetMatrixEncryptionForRecovery(crypto: MatrixCryptoApiLike): Promise<boolean> {
+  const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback();
+  try {
+    if (typeof crypto.resetEncryption === "function") {
+      await crypto.resetEncryption(authUploadDeviceSigningKeys);
+      return true;
+    }
+    await crypto.disableKeyStorage?.();
+    await crypto.bootstrapCrossSigning?.({
+      authUploadDeviceSigningKeys,
+      setupNewCrossSigning: true
+    });
+    return false;
+  } catch (caught) {
+    throw new Error(`Reset E2EE metadat se nepodařil: ${errorMessage(caught)}`);
+  }
+}
+
+function createDefaultMatrixInteractiveAuthCallback(): MatrixInteractiveAuthCallback {
+  return async (makeRequest) => makeRequest(null);
 }
 
 async function restoreUserControlledEncryptionRecovery(
