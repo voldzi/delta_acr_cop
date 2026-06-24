@@ -408,9 +408,7 @@ export function ChatApp() {
   }, [matrixSession, rooms, selectedRoomId]);
 
   React.useEffect(() => {
-    if (!routeAppliedRef.current && (conversations.length > 0 || groups.length > 0 || rooms.length > 0)) {
-      routeAppliedRef.current = applyRouteSelection(readRouteSelection());
-    }
+    routeAppliedRef.current = applyRouteSelection(readRouteSelection());
     const onPopState = () => {
       routeAppliedRef.current = applyRouteSelection(readRouteSelection());
     };
