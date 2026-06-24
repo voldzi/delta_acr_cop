@@ -662,7 +662,7 @@ export function ChatApp() {
       setMatrixSession(nextSession);
       matrixSessionRef.current = nextSession;
       setRooms(nextRooms);
-      setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversations, nextRooms) ?? nextRooms[0]?.roomId ?? null);
+      setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversations, nextRooms));
       setSyncState("starting");
       return nextSession;
     } catch (caught) {
