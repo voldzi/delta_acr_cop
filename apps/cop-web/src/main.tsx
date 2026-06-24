@@ -83,8 +83,6 @@ import {
   createCommunityReport,
   createSketchDrawing,
   createMessagingConversation,
-  bindMessagingConversationMatrixRoom,
-  deleteCommunityGroup,
   deleteCommunityReport,
   deleteSketchDrawing,
   fetchCopDashboardData,
@@ -95,14 +93,10 @@ import {
   fetchIncidents,
   fetchMapCatalog,
   fetchMapFeatures,
-  fetchMessagingConversations,
-  fetchMessagingStatus,
   fetchPlaceGeocode,
   fetchSketchDrawings,
   fetchUserProfile,
   fetchWeatherRadarFrames,
-  resolveMessagingMatrixIdentities,
-  syncMessagingConversationMembers,
   filterObjectsByLayers,
   filterVisibleObjects,
   copLayerIds,
@@ -112,14 +106,12 @@ import {
   getUavCount,
   isPublicFlightObject,
   saveUserProfile,
-  searchUserDirectory,
   submitCommunityReport,
   updateCommunityGroupMetadata,
   updateSketchDrawing,
   updateCommunityReport,
   updateIncident,
   updateIncidentTask,
-  upsertCommunityGroupMember,
   uploadCommunityAttachmentFile,
   type CopDashboardData,
   type AoiRule,
@@ -153,8 +145,6 @@ import {
   type MapCatalogResponse,
   type MapCatalogSource,
   type MapBounds,
-  type MessagingConversationSummary,
-  type MessagingStatusResponse,
   type MissionArenaFeatureCollectionResponse,
   type ObjectProvenance,
   type PlaceGeocodeResult,
@@ -179,11 +169,9 @@ import {
   type TakLayer,
   type TakLayerId,
   type TakSourceDescriptor,
-  type UserDirectoryEntry,
   type WeatherRadarFrame
 } from "./cop-data";
 import { CopMap, formatTrackLabel, type CreateSketchDrawingRequest, type SketchToolMode, type UpdateSketchDrawingRequest } from "./CopMap";
-import type { MessagingReportSeed } from "./messaging/types";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
 import {
@@ -288,10 +276,6 @@ import "./styles.css";
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? (import.meta.env.DEV ? "dev-lab-token" : "");
 const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_COP_REFRESH_MS ?? "5000");
-const MessagingPanel = React.lazy(async () => {
-  const module = await import("./messaging/MessagingPanel");
-  return { default: module.MessagingPanel };
-});
 const TrackTable = React.lazy(() => import("./TrackTable"));
 const XrWorkspace = React.lazy(() => import("./XrWorkspace"));
 
@@ -594,11 +578,6 @@ export function App() {
   const [messagingOpen, setMessagingOpen] = React.useState(false);
   const [messagingPinned, setMessagingPinned] = React.useState(false);
   const [messagingDockWidth, setMessagingDockWidth] = React.useState(() => readMessagingDockWidth());
-  const [messagingStatus, setMessagingStatus] = React.useState<MessagingStatusResponse | null>(null);
-  const [messagingLoading, setMessagingLoading] = React.useState(false);
-  const [messagingError, setMessagingError] = React.useState<string | null>(null);
-  const [messagingConversations, setMessagingConversations] = React.useState<MessagingConversationSummary[]>([]);
-  const [messagingConversationsError, setMessagingConversationsError] = React.useState<string | null>(null);
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [webPushBusy, setWebPushBusy] = React.useState(false);
   const [incidentSuggestions, setIncidentSuggestions] = React.useState<IncidentFusionSuggestion[]>([]);
@@ -972,68 +951,25 @@ export function App() {
     }
   }, [authToken]);
 
-  const loadMessagingStatus = React.useCallback(async () => {
-    setMessagingLoading(true);
-    try {
-      setMessagingStatus(await fetchMessagingStatus(apiBase, authToken));
-      setMessagingError(null);
-    } catch (error) {
-      if (authToken && isUnauthorizedApiError(error)) {
-        const refreshedToken = await refreshAuthSessionForRequest();
-        if (refreshedToken) {
-          try {
-            setMessagingStatus(await fetchMessagingStatus(apiBase, refreshedToken));
-            setMessagingError(null);
-            return;
-          } catch {
-            // Continue into public/degraded handling below.
-          }
-        }
-      }
-      if (authToken && authConfig.publicReadEnabled && isUnauthorizedApiError(error)) {
-        try {
-          setMessagingStatus(await fetchMessagingStatus(apiBase, undefined));
-          setMessagingError("Přihlášení pro zprávy se nepodařilo obnovit. Stav služby zobrazuji ve veřejném režimu.");
-          return;
-        } catch {
-          // Fall through to the regular degraded state below.
-        }
-      }
-      setMessagingStatus(null);
-      setMessagingError(error instanceof Error ? error.message : "Stav messaging služby není dostupný.");
-    } finally {
-      setMessagingLoading(false);
-    }
-  }, [apiBase, authConfig.publicReadEnabled, authToken, refreshAuthSessionForRequest]);
-
   const loadCommunityGroups = React.useCallback(async () => {
     if (!messagingAuthenticated || !authSession.accessToken) {
       setCommunityGroups([]);
       setCommunityGroupsError(null);
-      setMessagingConversations([]);
-      setMessagingConversationsError(null);
       return;
     }
-    const loadAuthorizedCommunityData = async (token: string) => Promise.all([
-      fetchCommunityGroups(apiBase, token),
-      fetchMessagingConversations(apiBase, token)
-    ]);
+    const loadAuthorizedCommunityData = async (token: string) => fetchCommunityGroups(apiBase, token);
     try {
-      const [groupsResponse, conversationsResponse] = await loadAuthorizedCommunityData(authSession.accessToken);
+      const groupsResponse = await loadAuthorizedCommunityData(authSession.accessToken);
       setCommunityGroups(groupsResponse.items);
-      setMessagingConversations(conversationsResponse.conversations);
       setCommunityGroupsError(null);
-      setMessagingConversationsError(conversationsResponse.status === "online" ? null : conversationsResponse.warnings[0] ?? "Konverzace nejsou plně dostupné.");
     } catch (error) {
       if (isUnauthorizedApiError(error)) {
         const refreshedToken = await refreshAuthSessionForRequest();
         if (refreshedToken) {
           try {
-            const [groupsResponse, conversationsResponse] = await loadAuthorizedCommunityData(refreshedToken);
+            const groupsResponse = await loadAuthorizedCommunityData(refreshedToken);
             setCommunityGroups(groupsResponse.items);
-            setMessagingConversations(conversationsResponse.conversations);
             setCommunityGroupsError(null);
-            setMessagingConversationsError(conversationsResponse.status === "online" ? null : conversationsResponse.warnings[0] ?? "Konverzace nejsou plně dostupné.");
             return;
           } catch {
             // Continue into the user-facing degraded state below.
@@ -1044,9 +980,7 @@ export function App() {
         ? "Přihlášení pro zprávy se nepodařilo obnovit. Zkuste stránku obnovit, případně se znovu přihlásit."
         : error instanceof Error ? error.message : "Konverzace nejsou dostupné.";
       setCommunityGroups([]);
-      setMessagingConversations([]);
       setCommunityGroupsError(message);
-      setMessagingConversationsError(message);
     }
   }, [apiBase, authSession.accessToken, messagingAuthenticated, refreshAuthSessionForRequest]);
 
@@ -1214,14 +1148,6 @@ export function App() {
     }, Math.max(refreshSeconds, 5) * 1000);
     return () => window.clearInterval(timer);
   }, [authToken, loadAlerts, refreshSeconds]);
-
-  React.useEffect(() => {
-    if (!messagingOpen) {
-      return;
-    }
-    void loadMessagingStatus();
-    void loadCommunityGroups();
-  }, [loadCommunityGroups, loadMessagingStatus, messagingOpen]);
 
   React.useEffect(() => {
     if (!communityReportOpen) {
@@ -3062,37 +2988,6 @@ export function App() {
     setLocationStatus("Sběr hlášení: doplňte popis, riziko, platnost a případné přílohy.");
   }
 
-  function startCommunityReportFromChat(seed: MessagingReportSeed) {
-    if (!profileAccessReady) {
-      setProfileSyncError("Hlášení vytvořené z chatu je dostupné po přihlášení.");
-      openLoginPrompt("report");
-      return;
-    }
-    const location: CommunityReportLocation = seed.location
-      ? {
-        ...(typeof seed.location.accuracyM === "number" ? { accuracyM: seed.location.accuracyM } : {}),
-        lat: seed.location.lat,
-        lon: seed.location.lon,
-        source: seed.location.source === "device" ? "device" : "manual"
-      }
-      : resolveCommunityReportLocation(null, mapView);
-    setCommunityReportDraft({
-      ...createCommunityReportDraft(location),
-      description: seed.groupName ? `Zdroj: chat ${seed.groupName}.` : "Zdroj: chat.",
-      mediaAccessGroupId: seed.groupId ?? "",
-      mediaAccessMode: "groups",
-      newGroupName: seed.groupId ? "" : seed.groupName ?? "",
-      title: seed.title ?? "Hlášení z chatu"
-    });
-    setCommunityReportError(null);
-    setCommunityReportSuccess(null);
-    setCommunityReportLocationPickMode(false);
-    setCommunityReportOpen(true);
-    setMessagingOpen(true);
-    setMessagingPinned(true);
-    setLocationStatus("Hlášení je předvyplněné z aktuálního chatu a mapového kontextu.");
-  }
-
   function setCommunityReportLocationFromUser() {
     if (!userLocation) {
       locateUser();
@@ -3200,14 +3095,14 @@ export function App() {
     visibility: "private" | "public",
     options: { anchorLocation?: CommunityReportLocation; metadata?: Record<string, unknown> } = {}
   ): Promise<CommunityGroup> {
-    return (await createCommunityGroupBundleForUi(name, visibility, options)).group;
+    return createCommunityGroupBundleForUi(name, visibility, options);
   }
 
   async function createCommunityGroupBundleForUi(
     name: string,
     visibility: "private" | "public",
     options: { anchorLocation?: CommunityReportLocation; metadata?: Record<string, unknown> } = {}
-  ): Promise<{ conversation?: MessagingConversationSummary; group: CommunityGroup }> {
+  ): Promise<CommunityGroup> {
     if (!messagingAuthenticated || !authSession.accessToken) {
       throw new Error("Pro správu skupin je potřeba přihlášení.");
     }
@@ -3218,7 +3113,6 @@ export function App() {
       visibility
     });
     setCommunityGroups((current) => [group, ...current.filter((item) => item.groupId !== group.groupId)]);
-    let conversation: MessagingConversationSummary | undefined;
     try {
       const conversationResponse = await createMessagingConversation(apiBase, authSession.accessToken, {
         members: communityGroupMembersToMessagingMembers(group),
@@ -3230,141 +3124,21 @@ export function App() {
         type: "group"
       });
       if (conversationResponse.conversation) {
-        conversation = {
-          ...conversationResponse.conversation,
-          metadata: {
-            ...(conversationResponse.conversation.metadata ?? {}),
-            externalId: group.groupId,
-            source: "cop.community"
-          }
-        };
-        setMessagingConversations((current) => [
-          conversation as MessagingConversationSummary,
-          ...current.filter((item) => item.conversationId !== conversation?.conversationId)
-        ]);
         group = await updateCommunityGroupMetadata(apiBase, authSession.accessToken, group.groupId, {
           chat: {
             ...communityGroupChatMetadata(group),
-            conversationId: conversation.conversationId,
+            conversationId: conversationResponse.conversation.conversationId,
             encrypted: true,
             linkedAt: new Date().toISOString(),
             source: "cop-chat"
           }
         });
         setCommunityGroups((current) => current.map((item) => item.groupId === group.groupId ? group : item));
-        setMessagingConversationsError(conversationResponse.status === "online" ? null : conversationResponse.warnings[0] ?? "Konverzace byla založena s omezením.");
-      } else {
-        setMessagingConversationsError(conversationResponse.warnings[0] ?? "Konverzaci se nepodařilo založit.");
       }
     } catch (error) {
-      setMessagingConversationsError(error instanceof Error ? error.message : "Konverzaci se nepodařilo založit.");
+      setCommunityGroupsError(error instanceof Error ? error.message : "Konverzaci se nepodařilo založit.");
     }
-    return {
-      ...(conversation ? { conversation } : {}),
-      group
-    };
-  }
-
-  async function createDirectConversationForUi(user: UserDirectoryEntry): Promise<MessagingConversationSummary> {
-    if (!messagingAuthenticated || !authSession.accessToken) {
-      throw new Error("Pro přímý chat je potřeba přihlášení.");
-    }
-    const title = user.displayName?.trim() || user.username || user.subjectId;
-    const conversationResponse = await createMessagingConversation(apiBase, authSession.accessToken, {
-      members: [{ displayName: title, role: "member", userId: user.subjectId }],
-      metadata: {
-        externalId: user.subjectId,
-        source: "cop.direct"
-      },
-      title,
-      type: "direct"
-    });
-    if (!conversationResponse.conversation) {
-      throw new Error(conversationResponse.warnings[0] ?? "Přímý chat se nepodařilo založit.");
-    }
-    const conversation = {
-      ...conversationResponse.conversation,
-      members: [
-        ...(conversationResponse.conversation.members ?? []),
-        { displayName: title, role: "member", userId: user.subjectId }
-      ],
-      metadata: {
-        ...(conversationResponse.conversation.metadata ?? {}),
-        externalId: user.subjectId,
-        source: "cop.direct"
-      }
-    };
-    setMessagingConversations((current) => [
-      conversation,
-      ...current.filter((item) => item.conversationId !== conversation.conversationId)
-    ]);
-    setMessagingConversationsError(conversationResponse.status === "online" ? null : conversationResponse.warnings[0] ?? "Přímý chat byl založen s omezením.");
-    return conversation;
-  }
-
-  async function addCommunityGroupMemberForUi(groupId: string, subjectId: string, displayName?: string): Promise<CommunityGroup> {
-    if (!messagingAuthenticated || !authSession.accessToken) {
-      throw new Error("Pro správu skupin je potřeba přihlášení.");
-    }
-    const group = await upsertCommunityGroupMember(apiBase, authSession.accessToken, groupId, {
-      displayName: displayName?.trim() || subjectId,
-      role: "member",
-      status: "active",
-      subjectId,
-      username: subjectId
-    });
-    setCommunityGroups((current) => current.map((item) => item.groupId === group.groupId ? group : item));
-    await syncCommunityGroupMemberToConversation(group);
     return group;
-  }
-
-  async function deleteCommunityGroupForUi(groupId: string): Promise<void> {
-    if (!messagingAuthenticated || !authSession.accessToken) {
-      throw new Error("Pro smazání skupiny je potřeba přihlášení.");
-    }
-    await deleteCommunityGroup(apiBase, authSession.accessToken, groupId);
-    setCommunityGroups((current) => current.filter((group) => group.groupId !== groupId));
-    setMessagingConversations((current) => current.filter((conversation) => {
-      const externalId = conversation.metadata?.externalId;
-      return !(conversation.metadata?.source === "cop.community" && externalId === groupId);
-    }));
-    setCommunityGroupsError(null);
-  }
-
-  async function syncCommunityGroupMemberToConversation(group: CommunityGroup): Promise<void> {
-    if (!authSession.accessToken) {
-      return;
-    }
-    const conversation = findMessagingConversationForCommunityGroup(group, messagingConversations);
-    if (!conversation) {
-      setMessagingConversationsError("Člen skupiny byl uložen, ale odpovídající konverzace pro synchronizaci nebyla nalezena.");
-      return;
-    }
-    try {
-      const result = await syncMessagingConversationMembers(
-        apiBase,
-        authSession.accessToken,
-        conversation.conversationId,
-        communityGroupMembersToMessagingMembers(group)
-      );
-      if (result.conversation) {
-        const enrichedConversation = {
-          ...result.conversation,
-          metadata: {
-            ...(result.conversation.metadata ?? conversation.metadata ?? {}),
-            externalId: group.groupId,
-            source: "cop.community"
-          }
-        };
-        setMessagingConversations((current) => [
-          enrichedConversation,
-          ...current.filter((item) => item.conversationId !== enrichedConversation.conversationId)
-        ]);
-      }
-      setMessagingConversationsError(result.status === "online" ? null : result.warnings[0] ?? "Člen skupiny byl uložen, synchronizace konverzace je omezená.");
-    } catch (error) {
-      setMessagingConversationsError(error instanceof Error ? error.message : "Člen skupiny byl uložen, ale synchronizace konverzace selhala.");
-    }
   }
 
   async function submitCommunityReportDraft() {
@@ -3827,28 +3601,6 @@ export function App() {
   );
   const catalogGroupViews = React.useMemo(() => buildCatalogGroupViews(mapCatalog), [mapCatalog]);
   const activeCatalogGroup = catalogGroupViews.find((view) => view.group.groupId === activeCatalogGroupId) ?? null;
-  const messagingMapContext = React.useMemo(() => ({
-    center: {
-      lat: mapView?.center[1] ?? defaultAoiCenter.lat,
-      lon: mapView?.center[0] ?? defaultAoiCenter.lon
-    },
-    ...(selectedSituationFeature ? {
-      selectedFeature: {
-        id: selectedSituationFeature.properties.featureId,
-        title: selectedSituationFeature.properties.headline
-          ?? selectedSituationFeature.properties.areaName
-          ?? selectedSituationFeature.properties.label
-          ?? selectedSituationFeature.properties.featureId
-      }
-    } : {}),
-    ...(userLocation ? {
-      userLocation: {
-        accuracyM: userLocation.accuracyM,
-        lat: userLocation.lat,
-        lon: userLocation.lon
-      }
-    } : {})
-  }), [mapView?.center, selectedSituationFeature, userLocation]);
   const operationTitle = selectedSituationFeature
     ? selectedSituationFeature.properties.headline
       ?? selectedSituationFeature.properties.areaName
@@ -4947,73 +4699,16 @@ export function App() {
       ) : null}
 
       {messagingOpen ? (
-        <React.Suspense
-          fallback={
-            <aside className="messaging-panel messaging-panel-loading" style={{ "--messaging-dock-width": `${messagingDockWidth}px` } as React.CSSProperties}>
-              <div className="empty-state compact">Načítám komunikaci...</div>
-            </aside>
-          }
-        >
-          <MessagingPanel
-            apiBase={apiBase}
-            authenticated={messagingAuthenticated}
-            authConfig={authConfig}
-            authToken={messagingAuthenticated ? authSession.accessToken : undefined}
-            conversations={messagingConversations}
-            conversationsError={messagingConversationsError}
-            communityGroups={communityGroups}
-            communityGroupsError={communityGroupsError}
-            dockWidth={messagingDockWidth}
-            error={messagingError}
-            loading={messagingLoading}
-            mapContext={messagingMapContext}
-            pinned={messagingPinned}
-            session={authSession}
-            status={messagingStatus}
-            onAddGroupMember={(groupId, subjectId, displayName) => addCommunityGroupMemberForUi(groupId, subjectId, displayName)}
-            onBindMatrixRoom={async (conversationId, roomId, encrypted) => {
-              const binding = await bindMessagingConversationMatrixRoom(apiBase, authSession.accessToken ?? "", conversationId, { encrypted, roomId });
-              const conversation = binding.conversation ?? messagingConversations.find((item) => item.conversationId === conversationId);
-              const group = conversation ? findMessagingGroupForConversation(conversation, communityGroups) : undefined;
-              if (group && authSession.accessToken) {
-                const updatedGroup = await updateCommunityGroupMetadata(apiBase, authSession.accessToken, group.groupId, {
-                  chat: {
-                    ...communityGroupChatMetadata(group),
-                    conversationId,
-                    encrypted,
-                    linkedAt: new Date().toISOString(),
-                    matrixRoomId: roomId,
-                    source: "cop-chat"
-                  }
-                });
-                setCommunityGroups((current) => current.map((item) => item.groupId === updatedGroup.groupId ? updatedGroup : item));
-              }
-              return binding;
-            }}
-            onClose={() => setMessagingOpen(false)}
-            onCreateDirectConversation={(user) => createDirectConversationForUi(user)}
-            onCreateGroup={(name, visibility) => createCommunityGroupBundleForUi(name, visibility)}
-            onCreateReportFromChat={startCommunityReportFromChat}
-            onDeleteGroup={(groupId) => deleteCommunityGroupForUi(groupId)}
-            onDockWidthChange={(width) => {
-              const nextWidth = clamp(width, 420, 760);
-              setMessagingDockWidth(nextWidth);
-              writeMessagingDockWidth(nextWidth);
-            }}
-            onLogin={() => openLoginPrompt("chat")}
-            onPinnedChange={setMessagingPinned}
-            onRefresh={() => {
-              void loadMessagingStatus();
-              void loadCommunityGroups();
-            }}
-            onResolveMatrixIdentities={(userIds) =>
-              resolveMessagingMatrixIdentities(apiBase, authSession.accessToken ?? "", userIds)
-            }
-            onSearchUsers={(query) =>
-              searchUserDirectory(apiBase, authSession.accessToken ?? "", query).then((response) => response.items)
-            }
-          />
-        </React.Suspense>
+        <EmbeddedCopChatPanel
+          dockWidth={messagingDockWidth}
+          pinned={messagingPinned}
+          onClose={() => setMessagingOpen(false)}
+          onDockWidthChange={(width) => {
+            const nextWidth = clamp(width, 420, 760);
+            setMessagingDockWidth(nextWidth);
+            writeMessagingDockWidth(nextWidth);
+          }}
+        />
       ) : null}
 
       {loginPromptReason ? (
@@ -6151,6 +5846,79 @@ function SafetyRiskSummary({ feature }: { feature: SituationFeature }) {
 
 function StatusBadge({ label, tone }: { label: string; tone: "neutral" | "ok" | "warn" | "critical" }) {
   return <span className={`status-badge ${tone}`}>{label}</span>;
+}
+
+function EmbeddedCopChatPanel({
+  dockWidth,
+  pinned,
+  onClose,
+  onDockWidthChange
+}: {
+  dockWidth: number;
+  pinned: boolean;
+  onClose: () => void;
+  onDockWidthChange: (width: number) => void;
+}) {
+  function beginDockResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (!pinned) {
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = dockWidth;
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      onDockWidthChange(startWidth + startX - moveEvent.clientX);
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  }
+
+  return (
+    <aside
+      aria-label="COP Chat"
+      className={clsx("messaging-panel embedded-chat-panel", pinned && "pinned")}
+      style={{ "--messaging-dock-width": `${dockWidth}px` } as React.CSSProperties}
+    >
+      {pinned ? (
+        <div
+          aria-label="Změnit šířku chatu"
+          className="messaging-resize-handle"
+          onPointerDown={beginDockResize}
+          role="separator"
+        />
+      ) : null}
+      <div className="embedded-chat-panel-main">
+        <header className="messaging-panel-header embedded-chat-panel-header">
+          <div className="chat-panel-title">
+            <MessageCircle size={18} />
+            <div>
+              <strong>Chat</strong>
+              <span>Integrovaný COP Chat</span>
+            </div>
+          </div>
+          <div className="messaging-header-actions">
+            <a className="icon-button" href="/chat/" rel="noreferrer" target="_blank" title="Otevřít chat samostatně">
+              <MonitorUp size={17} />
+            </a>
+            <button className="icon-button" onClick={onClose} title="Zavřít chat" type="button">
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+        <iframe
+          allow="clipboard-read; clipboard-write; geolocation; microphone; camera"
+          className="embedded-chat-frame"
+          referrerPolicy="same-origin"
+          src="/chat/?embedded=1"
+          title="COP Chat"
+        />
+      </div>
+    </aside>
+  );
 }
 
 function WorkspaceNavigator({
@@ -13340,27 +13108,6 @@ function communityGroupMembersToMessagingMembers(group: CommunityGroup): Array<{
       role: member.role,
       userId: member.subjectId
     }));
-}
-
-function findMessagingConversationForCommunityGroup(group: CommunityGroup, conversations: MessagingConversationSummary[]): MessagingConversationSummary | undefined {
-  const conversationId = communityGroupChatMetadata(group).conversationId;
-  if (conversationId) {
-    const conversation = conversations.find((item) => item.conversationId === conversationId);
-    if (conversation) {
-      return conversation;
-    }
-  }
-  return conversations.find((conversation) => conversation.metadata?.source === "cop.community" && conversation.metadata?.externalId === group.groupId);
-}
-
-function findMessagingGroupForConversation(conversation: MessagingConversationSummary, groups: CommunityGroup[]): CommunityGroup | undefined {
-  const externalId = conversation.metadata?.source === "cop.community" && typeof conversation.metadata.externalId === "string"
-    ? conversation.metadata.externalId
-    : undefined;
-  return groups.find((group) =>
-    group.groupId === externalId
-    || communityGroupChatMetadata(group).conversationId === conversation.conversationId
-  );
 }
 
 interface CommunityGroupChatMetadata {

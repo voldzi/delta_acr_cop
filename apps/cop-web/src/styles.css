@@ -494,6 +494,45 @@ h1 {
   background: rgba(7, 11, 15, 0.97);
 }
 
+.embedded-chat-panel {
+  overflow: hidden;
+  padding: 0;
+  border-radius: 16px;
+}
+
+.embedded-chat-panel:not(.pinned) {
+  width: min(430px, calc(100vw - 32px));
+  height: min(640px, calc(100svh - 110px));
+  max-height: none;
+}
+
+.embedded-chat-panel-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.embedded-chat-panel-header {
+  min-height: 58px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(122, 148, 172, 0.2);
+  background: rgba(8, 14, 21, 0.98);
+}
+
+.embedded-chat-panel .icon-button {
+  text-decoration: none;
+}
+
+.embedded-chat-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: #f0f2f5;
+}
+
 .messaging-panel-main {
   display: grid;
   align-content: start;
@@ -9548,6 +9587,18 @@ dd {
     padding: 0;
     overflow: hidden;
     pointer-events: auto;
+  }
+
+  .shell.app-shell-v2 .embedded-chat-panel-main {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .shell.app-shell-v2 .embedded-chat-frame {
+    height: 100%;
   }
 
   .shell.app-shell-v2 .messaging-panel .messaging-error-stack {
