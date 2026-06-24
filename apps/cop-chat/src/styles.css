@@ -665,7 +665,7 @@ button {
 
 .conversation-header {
   position: relative;
-  z-index: 1;
+  z-index: 20;
   display: flex;
   min-height: 64px;
   align-items: center;
@@ -710,7 +710,7 @@ button {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 12;
+  z-index: 40;
   display: grid;
   width: 224px;
   padding: 8px;
