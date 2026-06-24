@@ -15,11 +15,13 @@ rychlou kontrolu, ale připnutý režim se chová jako pravý inspektor: mapa si
 uvolní prostor, na pravém okraji je chatový panel a uživatel může měnit šířku
 celého docku.
 
-AppShell v2 směruje hlavní pracovní plochu ke vzhledu operační konzole:
+AppShell v2 směruje hlavní pracovní plochu ke vzhledu čisté operační konzole:
 nahoře je stabilní operační kontext s aktuální událostí nebo vybraným objektem,
-vlevo je úzké aplikační menu, uprostřed mapa a vpravo připnutý komunikační
-panel. Funkce konverzací, skupin, reakcí, příloh a notifikací vlastní
-`cop-chat`; COP web pouze poskytuje prostor a navigační vstup.
+vlevo je jediné úzké aplikační menu a uprostřed mapa s volitelnými panely
+vrstev/detailu. Připnutý chat se otevírá jako pravý dock a uvnitř používá
+embedded režim `cop-chat` bez vlastní aplikační lišty. Funkce konverzací,
+skupin, reakcí, příloh a notifikací vlastní `cop-chat`; COP web pouze poskytuje
+prostor a navigační vstup.
 
 Chatový composer musí v `cop-chat` podporovat text, fotku, video, soubor a
 polohu jako primární akce. Pokud má informace z chatu přejít do mapového světa,
@@ -29,7 +31,7 @@ druhou správu chatových skupin.
 
 Pravý horní roh top baru obsahuje operátorský vstup. Přihlášený uživatel zde vidí avatar a jméno z `preferences.operatorProfile`; nepřihlášený uživatel vidí pouze akci `Přihlásit`. Profilová karta může obsahovat avatar, zobrazované jméno, roli, organizaci, telefon, e-mail a kontaktní poznámku.
 
-Pracovní plocha je konfigurovatelná. Levý katalogový panel, pravý inspektor, pravý kontextový rail a dolní status bar lze skrýt nebo sbalit tak, aby v krizové situaci vynikla mapa. Desktop podporuje změnu šířky levého a pravého panelu tažením za hranu. Stav se ukládá do `preferences.workspaceLayout`; bez přihlášení zůstává dostupný lokálně v prohlížeči.
+Pracovní plocha je konfigurovatelná. Levý katalogový panel, pravý inspektor a dolní status bar lze skrýt nebo sbalit tak, aby v krizové situaci vynikla mapa. Desktop podporuje změnu šířky levého a pravého panelu tažením za hranu. Stav se ukládá do `preferences.workspaceLayout`; bez přihlášení zůstává dostupný lokálně v prohlížeči.
 
 Vzhled plochy má tři skiny uložené v `preferences.workspaceSkin`: civilní, operační a terénní. Skin mění pouze vizuální systém. Šablony pracovní plochy navíc nastavují rozložení panelů, mapový podklad, symboliku a výstražné vrstvy. Civilní šablona je určená pro občanskou orientaci, operační pro dispečink a terénní pro maximum mapy na menším zařízení.
 

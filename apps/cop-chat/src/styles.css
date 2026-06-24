@@ -122,6 +122,60 @@ button {
   background: var(--app-bg);
 }
 
+.wa-shell.embedded {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.wa-shell.embedded .chat-list-pane {
+  height: 100dvh;
+  border-right: 0;
+}
+
+.wa-shell.embedded .identity-strip {
+  display: none;
+}
+
+.wa-shell.embedded .conversation-pane {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: none;
+  height: 100dvh;
+  max-height: 100dvh;
+}
+
+.wa-shell.embedded.chat-selected .conversation-pane {
+  display: flex;
+}
+
+.wa-shell.embedded .mobile-back,
+.wa-shell.embedded .mobile-only {
+  display: inline-grid;
+}
+
+.wa-shell.embedded .conversation-actions {
+  gap: 0;
+}
+
+.wa-shell.embedded .conversation-actions .e2ee-chip,
+.wa-shell.embedded .conversation-actions .round-icon[aria-label="Videohovor"],
+.wa-shell.embedded .conversation-actions .round-icon[aria-label="Hovor"] {
+  display: none;
+}
+
+.wa-shell.embedded .message-canvas {
+  padding: 14px 10px 12px;
+}
+
+.wa-shell.embedded .message-bubble {
+  max-width: 86%;
+}
+
+.wa-shell.embedded .row-pin,
+.wa-shell.embedded .pinned-unpin {
+  display: none;
+}
+
 .app-rail {
   display: flex;
   min-height: 0;

@@ -230,30 +230,23 @@ plaintext message send/read endpoints.
 
 ## Web Chat Workspace
 
-COP web exposes messaging as a first-class operational workspace rather than a
-separate popover. The panel can be floating for quick checks or pinned as a
-right-side inspector next to the map. In pinned mode the map shell reserves
-space for the panel and the user can resize the chat width. The pinned panel
-uses an Xcode-style right rail: the rail switches the visible inspector between
-chat, groups and map/report context without closing the map. The active chat
-surface also has a resizable split between the conversation list and the
-timeline so operators can give more room either to routing/group selection or
-to message content. Width preferences are browser-local UI state and do not
-affect server authorization or message delivery.
+COP web exposes messaging through `apps/cop-chat`, a standalone React/Vite
+messenger mounted under `/chat/`. COP embeds the same app as an iframe panel
+using `/chat/?embedded=1`. Embedded mode removes the standalone chat app rail
+and uses a narrow-panel list/conversation flow, so the map shell keeps one main
+navigation rail instead of nested left/right chat menus.
 
-The panel uses workspace tabs:
+The panel can be opened for quick checks or pinned as a right-side dock next to
+the map. In pinned mode the map shell reserves space for the panel and the user
+can resize the chat width. Width preferences are browser-local UI state and do
+not affect server authorization or message delivery.
 
-- **Chat** for conversations and Matrix timeline,
-- **Skupiny** for COP group membership, pending requests and member search,
-- **Kontext** for the active conversation, selected map feature, map center and
-  conversion of chat context into a community report.
-
-COP also ships `apps/cop-chat`, a standalone React/Vite messenger mounted under
-`/chat/` for users who need chat as the primary workspace. It uses the same COP
-API metadata bridge and the same browser Matrix/E2EE client bootstrap as the
-map-integrated panel. It does not introduce plaintext message endpoints. The
-standalone app is deployed separately on `COP_CHAT_PORT` and should be exposed
-by DMZ nginx as `https://cop.zeleznalady.cz/chat/`.
+The standalone `/chat/` route remains the primary full-screen chat workspace for
+users who need messaging as the main task. It uses the same COP API metadata
+bridge and the same browser Matrix/E2EE client bootstrap as the embedded panel.
+It does not introduce plaintext message endpoints. The standalone app is
+deployed separately on `COP_CHAT_PORT` and should be exposed by DMZ nginx as
+`https://cop.zeleznalady.cz/chat/`.
 Its production runtime serves the built SPA and exposes a same-origin
 `/chat/oidc/token` proxy for OIDC code and refresh token exchange. This keeps
 the browser flow working when the public COP origin must exchange tokens with a

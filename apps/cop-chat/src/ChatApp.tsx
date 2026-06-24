@@ -1692,9 +1692,10 @@ export function ChatApp() {
   }
 
   const connectionLocked = authenticated && !chatReady;
+  const embedded = React.useMemo(() => new URLSearchParams(window.location.search).get("embedded") === "1", []);
 
   return (
-    <main className={clsx("wa-shell", routeChatSelected && "chat-selected")}>
+    <main className={clsx("wa-shell", embedded && "embedded", routeChatSelected && "chat-selected")}>
       <input
         ref={attachmentInputRef}
         aria-hidden="true"
@@ -1704,7 +1705,7 @@ export function ChatApp() {
         onChange={(event) => handleAttachmentSelected(event.target.files)}
       />
 
-      <nav className="app-rail" aria-label="COP Chat">
+      {!embedded ? <nav className="app-rail" aria-label="COP Chat">
         <a className="rail-logo" href="/" aria-label="Zpět na mapu">COP</a>
         <button className="rail-button active" type="button" aria-label="Chaty">
           <MessageCircle size={22} />
@@ -1725,7 +1726,7 @@ export function ChatApp() {
             <LogIn size={21} />
           </button>
         )}
-      </nav>
+      </nav> : null}
 
       <aside className="chat-list-pane" aria-label="Chaty">
         <header className="list-header">

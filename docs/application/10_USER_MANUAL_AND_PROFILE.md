@@ -128,7 +128,6 @@ Mapa je primární plocha aplikace. Uživatel může:
 
 - skrýt nebo sbalit levý katalog vrstev,
 - skrýt nebo sbalit pravý detail,
-- skrýt pravý kontextový rail,
 - skrýt dolní stavový řádek,
 - měnit šířku levého a pravého panelu na desktopu.
 

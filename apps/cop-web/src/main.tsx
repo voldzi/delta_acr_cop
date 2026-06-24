@@ -326,7 +326,7 @@ interface StableFeatureRequest {
 }
 
 const defaultWorkspaceLayout: Required<WorkspaceLayoutPreferences> = {
-  contextRailVisible: true,
+  contextRailVisible: false,
   leftPanelMode: "open",
   leftPanelWidth: 300,
   rightPanelMode: "open",
@@ -3472,7 +3472,6 @@ export function App() {
     () => mergeOperatorProfile(authSession, operatorProfile),
     [authSession, operatorProfile]
   );
-  const showContextRail = workspaceLayout.contextRailVisible && !(messagingOpen && messagingPinned);
   const shellClassName = clsx(
     "shell",
     "app-shell-v2",
@@ -3480,7 +3479,6 @@ export function App() {
     mobileSheet && `mobile-sheet-${mobileSheet}`,
     mobileSheet && "mobile-sheet-open",
     messagingOpen && messagingPinned && "shell-messaging-docked",
-    !showContextRail && "shell-context-hidden",
     !workspaceLayout.statusbarVisible && "shell-statusbar-hidden"
   );
   const workspaceClassName = clsx(
@@ -4303,17 +4301,6 @@ export function App() {
         ) : null}
       </section>
 
-        {showContextRail ? <ContextRail
-          activeWorkspace={activeWorkspace}
-          messagingOpen={messagingOpen}
-          onOpenMessaging={() => {
-            setMessagingOpen(true);
-            setMessagingPinned(true);
-          }}
-          onOpenSettings={() => openSettings("map")}
-          onStartReport={startCommunityReportCapture}
-          onWorkspaceChange={setActiveWorkspace}
-        /> : null}
       </section>
 
       {mobileSheet === "layers" ? (
@@ -5770,47 +5757,6 @@ function WorkspaceNavigator({
   );
 }
 
-function ContextRail({
-  activeWorkspace,
-  messagingOpen,
-  onOpenMessaging,
-  onOpenSettings,
-  onStartReport,
-  onWorkspaceChange
-}: {
-  activeWorkspace: WorkspaceModule;
-  messagingOpen: boolean;
-  onOpenMessaging: () => void;
-  onOpenSettings: () => void;
-  onStartReport: () => void;
-  onWorkspaceChange: (workspace: WorkspaceModule) => void;
-}) {
-  return (
-    <aside className="context-rail" aria-label="Rychlé akce a kontext">
-      <button className={messagingOpen ? "active" : ""} onClick={onOpenMessaging} type="button">
-        <MessageCircle size={18} />
-        <span>Chat</span>
-      </button>
-      <button className={activeWorkspace === "alerts" ? "active" : ""} onClick={() => onWorkspaceChange("alerts")} type="button">
-        <AlertTriangle size={18} />
-        <span>Událost</span>
-      </button>
-      <button className={activeWorkspace === "map" ? "active" : ""} onClick={() => onWorkspaceChange("map")} type="button">
-        <Layers size={18} />
-        <span>Vrstvy</span>
-      </button>
-      <button onClick={onStartReport} type="button">
-        <Plus size={18} />
-        <span>Nahlásit</span>
-      </button>
-      <button onClick={onOpenSettings} type="button">
-        <Settings size={18} />
-        <span>Nastavení</span>
-      </button>
-    </aside>
-  );
-}
-
 function MobileBottomNav({
   activeSheet,
   messagingOpen,
@@ -7140,15 +7086,6 @@ function WorkspaceLayoutControls({
         <PanelRightClose size={15} />
         Detail
       </button>
-      <button
-        className={layout.contextRailVisible ? "active" : ""}
-        onClick={() => onChange({ contextRailVisible: !layout.contextRailVisible })}
-        title="Zobrazit nebo skrýt pravou kontextovou lištu"
-        type="button"
-      >
-        <Layers size={15} />
-        Lišta
-      </button>
     </div>
   );
 }
@@ -7236,10 +7173,6 @@ function WorkspaceLayoutEditor({
           value={layout.rightPanelWidth}
         />
         <span>{layout.rightPanelWidth}px</span>
-      </label>
-      <label className="toggle-row">
-        <input type="checkbox" checked={layout.contextRailVisible} onChange={(event) => onChange({ contextRailVisible: event.target.checked })} />
-        Pravá kontextová lišta
       </label>
       <label className="toggle-row">
         <input type="checkbox" checked={layout.statusbarVisible} onChange={(event) => onChange({ statusbarVisible: event.target.checked })} />

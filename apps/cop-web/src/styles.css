@@ -1261,14 +1261,10 @@ h1 {
 
 .app-shell-body {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) 62px;
+  grid-template-columns: 72px minmax(0, 1fr);
   gap: 8px;
   min-height: 0;
   overflow: hidden;
-}
-
-.shell-context-hidden .app-shell-body {
-  grid-template-columns: 72px minmax(0, 1fr);
 }
 
 .shell-statusbar-hidden {
@@ -1365,46 +1361,6 @@ h1 {
 
 .workspace-left-hidden.workspace-right-hidden {
   grid-template-columns: minmax(0, 1fr);
-}
-
-.context-rail {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  min-height: 0;
-  padding: 6px;
-  border: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(9, 14, 19, 0.95), rgba(7, 11, 15, 0.95));
-  box-shadow: var(--shadow);
-}
-
-.context-rail button {
-  display: grid;
-  justify-items: center;
-  gap: 6px;
-  min-height: 62px;
-  padding: 6px 4px;
-  border: 1px solid rgba(142, 157, 170, 0.22);
-  background: rgba(12, 18, 24, 0.66);
-  color: #cbd7e2;
-  cursor: pointer;
-  font-size: 10px;
-  font-weight: 850;
-}
-
-.context-rail button:hover,
-.context-rail button.active {
-  border-color: rgba(59, 130, 246, 0.62);
-  background: rgba(37, 99, 235, 0.18);
-  color: #d9eafe;
-}
-
-.context-rail svg {
-  color: var(--cyan);
-}
-
-.context-rail button.active svg {
-  color: #60a5fa;
 }
 
 .app-statusbar {
@@ -1602,17 +1558,12 @@ h1 {
 }
 
 .shell.app-shell-v2 .app-shell-body {
-  grid-template-columns: 78px minmax(0, 1fr) 66px;
+  grid-template-columns: 78px minmax(0, 1fr);
   gap: 0;
   background: #061017;
 }
 
-.shell.app-shell-v2.shell-context-hidden .app-shell-body {
-  grid-template-columns: 78px minmax(0, 1fr);
-}
-
-.shell.app-shell-v2 .workspace-nav,
-.shell.app-shell-v2 .context-rail {
+.shell.app-shell-v2 .workspace-nav {
   gap: 4px;
   padding: 8px 5px;
   border: 0;
@@ -1625,13 +1576,8 @@ h1 {
   border-right: 1px solid rgba(122, 148, 172, 0.22);
 }
 
-.shell.app-shell-v2 .context-rail {
-  border-left: 1px solid rgba(122, 148, 172, 0.22);
-}
-
 .shell.app-shell-v2 .workspace-tab,
-.shell.app-shell-v2 .workspace-settings-button,
-.shell.app-shell-v2 .context-rail button {
+.shell.app-shell-v2 .workspace-settings-button {
   min-height: 64px;
   border-color: transparent;
   border-radius: 6px;
@@ -1643,23 +1589,19 @@ h1 {
 }
 
 .shell.app-shell-v2 .workspace-tab svg,
-.shell.app-shell-v2 .workspace-settings-button svg,
-.shell.app-shell-v2 .context-rail svg {
+.shell.app-shell-v2 .workspace-settings-button svg {
   color: #9eb8cc;
 }
 
 .shell.app-shell-v2 .workspace-tab:hover,
 .shell.app-shell-v2 .workspace-settings-button:hover,
-.shell.app-shell-v2 .context-rail button:hover,
-.shell.app-shell-v2 .workspace-tab.active,
-.shell.app-shell-v2 .context-rail button.active {
+.shell.app-shell-v2 .workspace-tab.active {
   border-color: rgba(63, 131, 207, 0.28);
   background: linear-gradient(180deg, rgba(28, 74, 126, 0.5), rgba(15, 39, 68, 0.62));
   color: #d9eafe;
 }
 
-.shell.app-shell-v2 .workspace-tab.active svg,
-.shell.app-shell-v2 .context-rail button.active svg {
+.shell.app-shell-v2 .workspace-tab.active svg {
   color: #74b9ff;
 }
 
@@ -6347,10 +6289,6 @@ dd {
     grid-template-columns: 72px minmax(0, 1fr);
   }
 
-  .context-rail {
-    display: none;
-  }
-
   .workspace {
     grid-template-columns: 260px minmax(0, 1fr);
   }
@@ -6969,8 +6907,7 @@ dd {
     min-width: 0;
   }
 
-  .shell.app-shell-v2 .app-shell-body,
-  .shell.app-shell-v2.shell-context-hidden .app-shell-body {
+  .shell.app-shell-v2 .app-shell-body {
     grid-template-columns: minmax(0, 1fr);
     overflow: visible;
   }
@@ -7231,14 +7168,12 @@ dd {
 
   .shell.app-shell-v2 .event-summary-strip,
   .shell.app-shell-v2 .workspace-nav,
-  .shell.app-shell-v2 .context-rail,
   .shell.app-shell-v2 .app-statusbar,
   .shell.app-shell-v2 .messaging-launcher {
     display: none;
   }
 
-  .shell.app-shell-v2 .app-shell-body,
-  .shell.app-shell-v2.shell-context-hidden .app-shell-body {
+  .shell.app-shell-v2 .app-shell-body {
     grid-template-columns: minmax(0, 1fr);
     height: calc(100dvh - 54px);
     min-height: 0;
