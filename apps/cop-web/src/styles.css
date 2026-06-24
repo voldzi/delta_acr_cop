@@ -644,9 +644,9 @@ h1 {
   gap: 8px;
   min-height: 18px;
   color: var(--muted);
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: none;
 }
 
 .chat-status-strip span {
@@ -658,8 +658,8 @@ h1 {
   background: transparent;
   color: #dce6ef;
   font-size: inherit;
-  font-weight: 900;
-  text-transform: uppercase;
+  font-weight: 800;
+  text-transform: none;
 }
 
 .chat-status-strip span + span::before {
@@ -2145,10 +2145,12 @@ h1 {
 
 .matrix-chat-shell {
   display: grid;
-  grid-template-rows: minmax(96px, 0.34fr) minmax(240px, 1fr);
-  gap: 10px;
-  min-height: 420px;
+  grid-template-columns: minmax(220px, 0.36fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  min-height: clamp(520px, 68vh, 760px);
   min-width: 0;
+  overflow: hidden;
 }
 
 .matrix-chat-shell.pinned {
@@ -2163,10 +2165,12 @@ h1 {
   display: grid;
   align-content: start;
   gap: 6px;
-  max-height: 180px;
+  max-height: none;
+  min-height: 0;
   overflow: auto;
   padding: 6px;
   border: 1px solid rgba(142, 157, 170, 0.22);
+  border-right: 0;
   background: rgba(10, 16, 21, 0.7);
 }
 
@@ -2243,7 +2247,7 @@ h1 {
   padding: 8px;
   border: 1px solid transparent;
   border-bottom-color: rgba(142, 157, 170, 0.13);
-  border-radius: 0;
+  border-radius: 12px;
   background: rgba(18, 25, 31, 0.32);
   color: var(--text);
   text-align: left;
@@ -2253,7 +2257,8 @@ h1 {
 .matrix-room-list button.active,
 .matrix-room-list button:hover {
   border-color: rgba(74, 163, 255, 0.5);
-  background: linear-gradient(90deg, rgba(74, 163, 255, 0.24), rgba(74, 163, 255, 0.08));
+  background: linear-gradient(90deg, rgba(74, 163, 255, 0.28), rgba(74, 163, 255, 0.08));
+  box-shadow: inset 3px 0 0 rgba(74, 163, 255, 0.82);
 }
 
 .matrix-room-list strong,
@@ -2431,14 +2436,16 @@ h1 {
 }
 
 .matrix-timeline {
-  display: grid;
-  align-content: end;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   min-height: 0;
-  max-height: 260px;
-  overflow: auto;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 14px;
   background: rgba(8, 13, 18, 0.3);
+  -webkit-overflow-scrolling: touch;
 }
 
 .matrix-chat-shell.pinned .matrix-timeline {
@@ -2452,19 +2459,20 @@ h1 {
 .matrix-message {
   display: grid;
   gap: 3px;
-  justify-self: start;
-  max-width: 82%;
-  padding: 9px 11px;
+  align-self: flex-start;
+  width: fit-content;
+  max-width: min(78%, 640px);
+  padding: 10px 12px;
   border: 1px solid rgba(142, 157, 170, 0.18);
-  border-radius: 14px 14px 14px 4px;
+  border-radius: 18px 18px 18px 6px;
   background: rgba(28, 38, 47, 0.92);
 }
 
 .matrix-message.own {
-  justify-self: end;
+  align-self: flex-end;
   border-color: rgba(74, 163, 255, 0.44);
-  border-radius: 14px 14px 4px;
-  background: rgba(24, 111, 214, 0.78);
+  border-radius: 18px 18px 6px;
+  background: linear-gradient(180deg, rgba(40, 117, 232, 0.94), rgba(25, 88, 203, 0.9));
 }
 
 .matrix-message small {
@@ -2497,19 +2505,22 @@ h1 {
 
 .matrix-message span {
   color: var(--text);
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .conversation-start-card {
   align-self: center;
   display: grid;
-  justify-items: start;
+  justify-items: center;
   gap: 8px;
-  max-width: 94%;
+  max-width: min(520px, 94%);
+  margin: auto 0;
   padding: 12px;
   border: 1px solid rgba(200, 240, 141, 0.32);
+  border-radius: 18px;
   background: rgba(151, 199, 104, 0.1);
+  text-align: center;
 }
 
 .conversation-start-card strong {
@@ -2614,15 +2625,21 @@ h1 {
 }
 
 .matrix-attachment-card {
-  min-width: min(240px, 100%);
+  min-width: min(260px, 100%);
+  overflow: hidden;
+  border: 1px solid rgba(142, 157, 170, 0.2);
+  border-radius: 16px;
+  background: rgba(7, 12, 18, 0.34);
 }
 
 .matrix-attachment-card img,
 .matrix-attachment-card video {
-  width: min(260px, 100%);
+  width: min(340px, 100%);
   max-height: 220px;
   object-fit: cover;
-  border: 1px solid rgba(142, 157, 170, 0.22);
+  border: 0;
+  border-bottom: 1px solid rgba(142, 157, 170, 0.18);
+  border-radius: 0;
   background: rgba(0, 0, 0, 0.24);
 }
 
@@ -2631,6 +2648,7 @@ h1 {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  padding: 9px;
 }
 
 .matrix-attachment-actions {
@@ -9505,7 +9523,7 @@ dd {
   .shell.app-shell-v2 .messaging-panel .messaging-panel-main,
   .shell.app-shell-v2 .messaging-panel.pinned .messaging-panel-main {
     display: grid;
-    grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
     align-content: stretch;
     gap: 0;
     height: 100dvh;
@@ -9516,7 +9534,7 @@ dd {
   }
 
   .shell.app-shell-v2 .messaging-panel .messaging-error-stack {
-    grid-row: 4;
+    grid-row: 3;
     gap: 4px;
     max-height: 92px;
     padding: 8px 10px;
@@ -9533,7 +9551,7 @@ dd {
   }
 
   .shell.app-shell-v2 .messaging-panel .messaging-panel-body {
-    grid-row: 5;
+    grid-row: 4;
     min-height: 0;
     overflow: hidden;
   }
@@ -9593,20 +9611,7 @@ dd {
   }
 
   .shell.app-shell-v2 .chat-status-strip {
-    display: flex;
-    gap: 8px;
-    min-height: auto;
-    padding: 6px 12px 8px;
-    overflow: visible;
-    flex-wrap: wrap;
-    border-bottom: 1px solid rgba(122, 148, 172, 0.18);
-    background: rgba(6, 11, 17, 0.96);
-  }
-
-  .shell.app-shell-v2 .chat-status-strip span {
-    flex: 0 0 auto;
-    min-height: auto;
-    font-size: 10px;
+    display: none;
   }
 
   .shell.app-shell-v2 .messaging-panel .matrix-chat-shell,
@@ -9853,6 +9858,16 @@ dd {
 
   .shell.app-shell-v2 .matrix-message span {
     font-size: 14px;
+  }
+
+  .shell.app-shell-v2 .matrix-attachment-card {
+    width: min(78vw, 360px);
+  }
+
+  .shell.app-shell-v2 .matrix-attachment-card img,
+  .shell.app-shell-v2 .matrix-attachment-card video {
+    width: 100%;
+    max-height: 220px;
   }
 
   .shell.app-shell-v2 .matrix-composer {

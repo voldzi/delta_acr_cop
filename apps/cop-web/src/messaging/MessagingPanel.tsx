@@ -121,6 +121,17 @@ export function groupConversationSelectionId(
   return conversation ? conversationSelectionId(conversation) : null;
 }
 
+export function activeConversationForMessaging(
+  conversations: MessagingPanelProps["conversations"],
+  selectedRoomId: string | null,
+  selectedGroup: MessagingPanelProps["communityGroups"][number] | null | undefined
+): MessagingPanelProps["conversations"][number] | null {
+  const selectedById = selectedRoomId
+    ? conversations.find((conversation) => conversation.conversationId === selectedRoomId || conversation.matrix?.roomId === selectedRoomId)
+    : undefined;
+  return selectedById ?? linkedConversationForCommunityGroup(conversations, selectedGroup) ?? null;
+}
+
 export function MessagingPanel({
   apiBase,
   authenticated,
@@ -334,11 +345,15 @@ export function MessagingPanel({
   const e2eeRequired = status?.features?.endToEndEncryptionRequired === true;
   const matrixBootstrapReady = status?.features?.matrixTokenBootstrap === true;
   const hasMessagingErrors = Boolean(error || conversationsError || bootstrapError || composerError);
-  const selectedGroup = communityGroups.find((group) => group.groupId === selectedGroupId) ?? communityGroups[0] ?? null;
-  const selectedConversation = conversations.find((conversation) => conversation.conversationId === selectedRoomId || conversation.matrix?.roomId === selectedRoomId) ?? null;
+  const selectedGroup = selectedGroupId
+    ? communityGroups.find((group) => group.groupId === selectedGroupId) ?? null
+    : null;
+  const selectedConversation = activeConversationForMessaging(conversations, selectedRoomId, selectedGroup);
   const selectedConversationGroup = selectedConversation
     ? communityGroups.find((group) => group.groupId === conversationCommunityGroupId(selectedConversation)) ?? null
     : null;
+  const activeConversationGroup = selectedConversationGroup ?? selectedGroup;
+  const chatConnectionHint = messagingConnectionHint(Boolean(matrixSession), matrixBootstrapReady, syncState);
   const demoConversation = React.useMemo(() => demoConversationFromGroups(communityGroups), [communityGroups]);
 
   function selectConversation(conversationId: string) {
@@ -625,7 +640,7 @@ export function MessagingPanel({
   }
 
   function createReportFromCurrentChat() {
-    const group = selectedConversationGroup ?? selectedGroup ?? undefined;
+    const group = activeConversationGroup ?? undefined;
     onCreateReportFromChat({
       conversationId: selectedConversation?.conversationId,
       groupId: group?.groupId,
@@ -779,8 +794,8 @@ export function MessagingPanel({
         <div className="chat-status-strip" aria-label="Stav komunikace">
           <span className={messagingStatusTone(providerStatus)}>{messagingStatusLabel(providerStatus, loading)}</span>
           {authenticated ? <span>{operatorDisplayName(session, authConfig)}</span> : null}
-          <span>{matrixSession ? matrixSyncLabel(syncState) : matrixBootstrapReady ? "připraveno" : "čeká"}</span>
-          {e2eeRequired ? <span>zabezpečeno</span> : null}
+          {chatConnectionHint ? <span>{chatConnectionHint}</span> : null}
+          {e2eeRequired && matrixSession ? <span>zabezpečeno</span> : null}
         </div>
 
         {hasMessagingErrors ? (
@@ -803,6 +818,7 @@ export function MessagingPanel({
           <MatrixChatShell
             chatListWidth={chatListWidth}
             conversations={conversations}
+            communityGroups={communityGroups}
             composerText={composerText}
             directQuery={directQuery}
             directSearchError={directSearchError}
@@ -814,13 +830,18 @@ export function MessagingPanel({
             pinned={pinned}
             rooms={rooms}
             selectedConversation={selectedConversation}
+            selectedGroup={activeConversationGroup}
             selectedRoomId={selectedRoomId}
             session={session}
             timeline={timeline}
             onChatListWidthChange={handleChatListWidthChange}
             onComposerChange={setComposerText}
             onConversationSelect={selectConversation}
-            onBackToList={() => setSelectedRoomId(null)}
+            onCommunityGroupSelect={selectCommunityGroup}
+            onBackToList={() => {
+              setSelectedRoomId(null);
+              setSelectedGroupId(null);
+            }}
             onAttachmentClear={() => setPendingAttachment(null)}
             onAttachmentPick={pickAttachment}
             onDirectQueryChange={setDirectQuery}
@@ -902,7 +923,7 @@ export function MessagingPanel({
           <MessagingContextPanel
             mapContext={mapContext}
             selectedConversation={selectedConversation}
-            selectedGroup={selectedConversationGroup ?? selectedGroup}
+            selectedGroup={activeConversationGroup}
             selectedRoomId={selectedRoomId}
             onCreateReport={createReportFromCurrentChat}
           />
@@ -1568,6 +1589,7 @@ function formatDemoMessageTime(value: string): string {
 function MatrixChatShell({
   chatListWidth,
   conversations,
+  communityGroups,
   composerText,
   directQuery,
   directSearchError,
@@ -1579,12 +1601,14 @@ function MatrixChatShell({
   pinned,
   rooms,
   selectedConversation,
+  selectedGroup,
   selectedRoomId,
   session,
   timeline,
   onChatListWidthChange,
   onComposerChange,
   onConversationSelect,
+  onCommunityGroupSelect,
   onBackToList,
   onAttachmentClear,
   onAttachmentPick,
@@ -1599,6 +1623,7 @@ function MatrixChatShell({
 }: {
   chatListWidth: number;
   conversations: MessagingPanelProps["conversations"];
+  communityGroups: MessagingPanelProps["communityGroups"];
   composerText: string;
   directQuery: string;
   directSearchError: string | null;
@@ -1610,12 +1635,14 @@ function MatrixChatShell({
   pinned: boolean;
   rooms: MatrixRoomSummary[];
   selectedConversation: MessagingPanelProps["conversations"][number] | null;
+  selectedGroup: MessagingPanelProps["communityGroups"][number] | null;
   selectedRoomId: string | null;
   session: MessagingPanelProps["session"];
   timeline: MatrixTimelineMessage[];
   onChatListWidthChange: (width: number) => void;
   onComposerChange: (value: string) => void;
   onConversationSelect: (conversationId: string) => void;
+  onCommunityGroupSelect: (groupId: string) => void;
   onBackToList: () => void;
   onAttachmentClear: () => void;
   onAttachmentPick: (kind: MatrixAttachmentKind) => void;
@@ -1630,21 +1657,32 @@ function MatrixChatShell({
 }) {
   const selectedRoom = rooms.find((room) => room.roomId === selectedRoomId) ?? null;
   const conversationOnlySelected = Boolean(selectedConversation && !selectedRoom);
+  const groupOnlySelected = Boolean(selectedGroup && !selectedConversation && !selectedRoom);
   const canSend = Boolean(selectedRoomId && selectedRoom);
   const hasDraft = Boolean(composerText.trim() || pendingAttachment);
   const standaloneRooms = visibleMatrixRooms(rooms, conversations);
+  const conversationGroupIds = new Set(
+    conversations.flatMap((conversation) => {
+      const groupId = conversationCommunityGroupId(conversation);
+      return groupId ? [groupId] : [];
+    })
+  );
+  const groupOnlyItems = communityGroups.filter((group) => !conversationGroupIds.has(group.groupId));
+  const listCount = conversations.length + groupOnlyItems.length + standaloneRooms.length;
   const shellStyle = pinned
     ? ({ "--chat-list-width": `${chatListWidth}px` } as React.CSSProperties)
     : undefined;
   const mapContextLabel = mapContext.selectedFeature?.title ?? formatCoordinates(mapContext.userLocation ?? mapContext.center);
-  const activeRoomTitle = selectedRoom?.name ?? selectedConversation?.title ?? "Vyberte konverzaci";
+  const activeRoomTitle = selectedRoom?.name ?? selectedConversation?.title ?? selectedGroup?.name ?? "Vyberte konverzaci";
   const activeRoomMeta = selectedRoom
-    ? `${selectedConversation?.memberCount ?? 1} členů · ${selectedRoom.encrypted ? "zabezpečeno" : "připravuji zabezpečení"}`
+    ? activeRoomSubtitle(selectedConversation, selectedGroup, selectedRoom)
     : selectedConversation?.matrix?.roomId
       ? "načítám zprávy"
       : selectedConversation
-        ? "připraveno k založení chatu"
-        : "čeká na výběr";
+        ? "chat je připravený k založení"
+        : selectedGroup
+          ? groupChatSubtitle(selectedGroup)
+          : "čeká na výběr";
 
   function beginChatListResize(event: React.PointerEvent<HTMLDivElement>) {
     if (!pinned) {
@@ -1664,7 +1702,7 @@ function MatrixChatShell({
     window.addEventListener("pointerup", handlePointerUp);
   }
 
-  const hasActiveConversation = Boolean(selectedRoom || selectedConversation);
+  const hasActiveConversation = Boolean(selectedRoom || selectedConversation || selectedGroup);
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
@@ -1672,7 +1710,7 @@ function MatrixChatShell({
       return;
     }
     timelineEndRef.current?.scrollIntoView({ block: "end" });
-  }, [conversationOnlySelected, hasActiveConversation, selectedRoomId, timeline.length]);
+  }, [conversationOnlySelected, groupOnlySelected, hasActiveConversation, selectedGroup?.groupId, selectedRoomId, timeline.length]);
 
   return (
     <div className={`matrix-chat-shell ${pinned ? "pinned" : ""} ${hasActiveConversation ? "has-active-room" : "room-list-active"}`} style={shellStyle}>
@@ -1680,7 +1718,7 @@ function MatrixChatShell({
         <div className="matrix-list-header">
           <div>
             <strong>Chat</strong>
-            <span>{conversations.length + standaloneRooms.length} konverzací</span>
+            <span>{listCount} konverzací</span>
           </div>
           <Search size={15} aria-hidden="true" />
         </div>
@@ -1707,22 +1745,47 @@ function MatrixChatShell({
             </div>
           ) : null}
         </div>
-        {rooms.length === 0 && conversations.length === 0 ? <div className="empty-mini">Zatím nemáte žádnou konverzaci. Založte skupinu níže.</div> : null}
-        {conversations.map((conversation) => (
-          <button
-            aria-pressed={conversation.conversationId === selectedRoomId || conversation.matrix?.roomId === selectedRoomId}
-            className={conversation.conversationId === selectedRoomId || conversation.matrix?.roomId === selectedRoomId ? "active" : ""}
-            key={conversation.conversationId}
-            onClick={() => onConversationSelect(conversation.conversationId)}
-            type="button"
-          >
-            <span className="matrix-room-avatar">{initialsFor(conversation.title)}</span>
-            <span>
-              <strong>{conversation.title}</strong>
-              <small>{conversation.type === "group" ? "skupina" : "přímý chat"} · {conversation.memberCount ?? 1} členů · {conversation.matrix?.roomId ? "zabezpečeno" : "připravit chat"}</small>
-            </span>
-          </button>
-        ))}
+        {listCount === 0 ? <div className="empty-mini">Zatím nemáte žádný chat. Vyhledejte osobu nebo vytvořte skupinu.</div> : null}
+        {conversations.map((conversation) => {
+          const conversationActive =
+            selectedConversation?.conversationId === conversation.conversationId ||
+            conversation.conversationId === selectedRoomId ||
+            conversation.matrix?.roomId === selectedRoomId;
+          return (
+            <button
+              aria-pressed={conversationActive}
+              className={conversationActive ? "active" : ""}
+              key={conversation.conversationId}
+              onClick={() => onConversationSelect(conversation.conversationId)}
+              type="button"
+            >
+              <span className="matrix-room-avatar">{initialsFor(conversation.title)}</span>
+              <span>
+                <strong>{conversation.title}</strong>
+                <small>{conversationChatSubtitle(conversation)}</small>
+              </span>
+            </button>
+          );
+        })}
+        {groupOnlyItems.map((group) => {
+          const activeMemberCount = communityGroupActiveMemberCount(group);
+          const groupActive = selectedGroup?.groupId === group.groupId && !selectedConversation;
+          return (
+            <button
+              aria-pressed={groupActive}
+              className={groupActive ? "active" : ""}
+              key={group.groupId}
+              onClick={() => onCommunityGroupSelect(group.groupId)}
+              type="button"
+            >
+              <span className="matrix-room-avatar">{initialsFor(group.name)}</span>
+              <span>
+                <strong>{group.name}</strong>
+                <small>{groupChatSubtitle(group, activeMemberCount)}</small>
+              </span>
+            </button>
+          );
+        })}
         {standaloneRooms.map((room) => (
           <button
             aria-pressed={room.roomId === selectedRoomId}
@@ -1758,19 +1821,21 @@ function MatrixChatShell({
           </div>
         </div>
         <div className="matrix-timeline" aria-live="polite">
-          {conversationOnlySelected ? (
+          {conversationOnlySelected || groupOnlySelected ? (
             <div className="conversation-start-card">
-              <strong>{selectedConversation?.title}</strong>
+              <strong>{selectedConversation?.title ?? selectedGroup?.name}</strong>
               {selectedConversation?.matrix?.roomId ? (
                 <span>Zabezpečená konverzace už existuje. Probíhá synchronizace; pokud se zprávy nenačtou, obnovte stav konverzací.</span>
-              ) : (
+              ) : selectedConversation ? (
                 <>
-                  <span>Skupina existuje pro sdílená média. Založte zabezpečenou konverzaci a můžete začít psát.</span>
+                  <span>Skupina už existuje. Založte k ní chat a můžete společně psát, sdílet fotky, video, soubory i polohu.</span>
                   <button className="mini-button" onClick={() => selectedConversation ? onStartRoom(selectedConversation.conversationId) : undefined} type="button">
                     <Plus size={14} />
                     Začít chat
                   </button>
                 </>
+              ) : (
+                <span>Skupina je připravená pro sdílení hlášení a médií. Jakmile k ní vznikne chat, zobrazí se zde společná konverzace.</span>
               )}
             </div>
           ) : timeline.length === 0 ? <div className="empty-mini">{selectedRoom ? "Zatím zde nejsou žádné zprávy." : "Vyberte nebo založte konverzaci."}</div> : null}
@@ -2160,6 +2225,30 @@ function communityGroupVisibilityLabel(visibility: "private" | "public"): string
   return visibility === "public" ? "veřejná" : "s povolením";
 }
 
+function communityGroupActiveMemberCount(group: MessagingPanelProps["communityGroups"][number]): number {
+  return group.members.filter((member) => member.status === "active").length || group.members.length || 1;
+}
+
+function groupChatSubtitle(group: MessagingPanelProps["communityGroups"][number], memberCount = communityGroupActiveMemberCount(group)): string {
+  return `${communityGroupVisibilityLabel(group.visibility)} · ${memberCount} členů · připraveno pro sdílení`;
+}
+
+function conversationChatSubtitle(conversation: MessagingPanelProps["conversations"][number]): string {
+  const type = conversation.type === "group" ? "skupina" : "přímý chat";
+  const members = conversation.memberCount ?? conversation.members?.length ?? 1;
+  const status = conversation.matrix?.roomId ? "zabezpečeno" : "připraveno";
+  return `${type} · ${members} členů · ${status}`;
+}
+
+function activeRoomSubtitle(
+  conversation: MessagingPanelProps["conversations"][number] | null,
+  group: MessagingPanelProps["communityGroups"][number] | null,
+  room: MatrixRoomSummary
+): string {
+  const members = conversation?.memberCount ?? group?.members.length ?? 1;
+  return `${members} členů · ${room.encrypted ? "zabezpečeno" : "připravuji zabezpečení"}`;
+}
+
 function communityMemberRoleLabel(role: string): string {
   if (role === "owner") {
     return "správce";
@@ -2212,12 +2301,12 @@ function messagingStatusLabel(status: "degraded" | "disabled" | "online", loadin
     return "ověřuji";
   }
   if (status === "online") {
-    return "online";
+    return "spojeno";
   }
   if (status === "degraded") {
-    return "omezené";
+    return "omezeně";
   }
-  return "vypnuto";
+  return "nedostupné";
 }
 
 function userFacingMessagingError(message: string): string {
@@ -2240,21 +2329,24 @@ function userFacingMessagingError(message: string): string {
   return normalized.length > 180 ? `${normalized.slice(0, 177)}...` : normalized;
 }
 
-function matrixSyncLabel(state: string): string {
+function messagingConnectionHint(hasMatrixSession: boolean, matrixBootstrapReady: boolean, state: string): string | null {
+  if (!matrixBootstrapReady) {
+    return "čeká na zabezpečené spojení";
+  }
+  if (!hasMatrixSession) {
+    return "připraveno k otevření";
+  }
   const normalized = state.toLowerCase();
   if (normalized === "starting" || normalized === "prepared") {
     return "připojuji";
   }
   if (normalized === "syncing" || normalized === "sync") {
-    return "synchronizace";
+    return "načítám zprávy";
   }
   if (normalized === "error" || normalized === "reconnecting" || normalized === "stopped" || normalized.includes("error")) {
-    return "omezené";
+    return "obnovuji spojení";
   }
-  if (normalized === "started") {
-    return "připojeno";
-  }
-  return "připojeno";
+  return null;
 }
 
 function operatorDisplayName(session: MessagingPanelProps["session"], authConfig: MessagingPanelProps["authConfig"]): string {

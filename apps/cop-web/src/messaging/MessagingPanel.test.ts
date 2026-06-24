@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeConversationForMessaging,
   assertMatrixRoomBindingConfirmed,
   conversationSelectionId,
   groupConversationSelectionId,
@@ -100,6 +101,53 @@ describe("MessagingPanel Matrix safety gates", () => {
 
     expect(linkedConversationForCommunityGroup(conversations, groupOne)).toBeUndefined();
     expect(linkedConversationForCommunityGroup(conversations, groupTwo)?.conversationId).toBe("conv_group_2");
+  });
+
+  it("keeps a group-only selection from opening a duplicate-name legacy conversation", () => {
+    const conversations: MessagingConversationSummary[] = [
+      {
+        conversationId: "conv_legacy_same_name",
+        title: "Kyjev",
+        type: "group"
+      },
+      {
+        conversationId: "conv_group_2",
+        metadata: {
+          externalId: "group_2",
+          source: "cop.community"
+        },
+        title: "Kyjev",
+        type: "group"
+      }
+    ];
+
+    expect(activeConversationForMessaging(conversations, null, minimalGroup("group_1", "Kyjev"))).toBeNull();
+    expect(activeConversationForMessaging(conversations, null, minimalGroup("group_2", "Kyjev"))?.conversationId).toBe("conv_group_2");
+  });
+
+  it("keeps an explicit conversation selection above the selected group context", () => {
+    const conversations: MessagingConversationSummary[] = [
+      {
+        conversationId: "conv_group_1",
+        metadata: {
+          externalId: "group_1",
+          source: "cop.community"
+        },
+        title: "Praha",
+        type: "group"
+      },
+      {
+        conversationId: "conv_group_2",
+        metadata: {
+          externalId: "group_2",
+          source: "cop.community"
+        },
+        title: "Kyjev",
+        type: "group"
+      }
+    ];
+
+    expect(activeConversationForMessaging(conversations, "conv_group_2", minimalGroup("group_1", "Praha"))?.conversationId).toBe("conv_group_2");
   });
 
   it("selects the Matrix room for a group when the group is linked to a conversation", () => {
