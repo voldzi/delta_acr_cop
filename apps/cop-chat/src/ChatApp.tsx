@@ -1859,6 +1859,11 @@ export function ChatApp() {
                         setMessageMenuOpen(false);
                         setMuteDialogOpen(true);
                       }}
+                      onRecovery={() => {
+                        setMessageMenuOpen(false);
+                        setGeneratedRecoveryKey(null);
+                        setRecoveryDialogOpen(true);
+                      }}
                       onSearch={startMessageSearch}
                       onSelect={startSelectionMode}
                       onToggleMute={clearActiveMute}
@@ -2326,6 +2331,7 @@ function ChatActionMenu({
   muted,
   onInfo,
   onMute,
+  onRecovery,
   onSearch,
   onSelect,
   onToggleMute,
@@ -2335,6 +2341,7 @@ function ChatActionMenu({
   muted: boolean;
   onInfo: () => void;
   onMute: () => void;
+  onRecovery: () => void;
   onSearch: () => void;
   onSelect: () => void;
   onToggleMute: () => void;
@@ -2354,6 +2361,10 @@ function ChatActionMenu({
       <button onClick={onSearch} role="menuitem" type="button">
         <Search size={17} />
         Hledat
+      </button>
+      <button onClick={onRecovery} role="menuitem" type="button">
+        <KeyRound size={17} />
+        Obnova E2EE
       </button>
       <button onClick={onSelect} role="menuitem" type="button">
         <CheckCheck size={17} />
