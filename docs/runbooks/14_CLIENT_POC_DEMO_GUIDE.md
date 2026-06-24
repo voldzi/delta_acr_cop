@@ -20,7 +20,8 @@ Klient má po 20-30 minutách pochopit:
 
 | Role | Účet | Co ukazuje |
 | --- | --- | --- |
-| Operátor | `cop.operator1` | mapový workspace, vrstvy, detail, chat, zákresy |
+| Operátor | demo operátor | mapový workspace, vrstvy, detail, chat, zákresy |
+| Druhý operátor | demo operátor 2 | ověření skupinového E2EE chatu a notifikací |
 | Občan | iOS/web klient | hlášení s polohou a médiem |
 | Technik | admin/provoz | health, dependencies, provider observability |
 | Pozorovatel | bez účtu | veřejná mapa a veřejné vrstvy bez ukládání profilu |
@@ -52,9 +53,12 @@ secret managementu nebo se před ukázkou vytvoří ručně v Keycloaku.
    - mobilní síť,
    - komunikace/doprava,
    - uživatelské zákresy.
-7. Ověřit, že chat ukazuje lidská jména a ne technické Matrix identifikátory.
+7. Ověřit, že `cop-chat` ukazuje pouze připravené PoC konverzace, lidská
+   jména a ne technické Matrix identifikátory.
 8. Ověřit, že galerie médií otevře fotku, PDF a video.
 9. Ověřit, že zákres po refreshi zůstane na mapě.
+10. Ověřit, že druhý demo operátor po prvním otevření chatu vidí stejnou
+    skupinu a stejnou historii bez nutnosti odejít ze stránky a vrátit se.
 
 ## Spuštění Dema Z Menu
 
@@ -161,16 +165,23 @@ Seed má obsahovat:
 
 ### Chat A Skupiny
 
-Seed má připravit:
+Aktuální řízený PoC seed připravuje jednu hlavní skupinu:
 
-- skupinu `Krizový štáb - Povodeň`,
-- skupinu `Dobrovolníci - logistika`,
+- `DEMO Povodeň - Středočeský kraj`,
+- prezentační název konverzace `Krizový štáb - Povodeň`,
+- členy `lab`, první demo operátor a druhý demo operátor,
 - připnutý kontext mapy na aktivní událost,
 - několik lidských zpráv:
   - potvrzení přijetí hlášení,
   - žádost o doplnění fotografie,
   - rozhodnutí o uzávěře,
   - odkaz na mapový detail.
+
+Staré testovací skupiny a staré Matrix místnosti před PoC do ukázky nepatří.
+Před klientským průchodem musí být CSM Messaging metadata bez historických
+konverzací. Po prvním reálném otevření skupiny v `cop-chat` má existovat jedna
+E2EE Matrix místnost pro PoC skupinu. COP web nemá vlastní paralelní chatové
+skupiny pro hlášení; lidská komunikace patří do `cop-chat`.
 
 ### Edge A MCP
 
@@ -235,6 +246,11 @@ Otevřít chat skupiny a ukázat:
 - připnutý mapový kontext,
 - zprávu s odkazem na hlášení,
 - přílohy a polohu.
+
+Pro kontrolu před ukázkou se přihlásí dva demo operátoři za sebou. První pošle
+zprávu do skupiny, druhý ji po přihlášení uvidí hned po otevření stejné
+konverzace a odpoví. První operátor potom musí po opětovném otevření vidět obě
+zprávy ve stejné skupině.
 
 Neukazovat technické Matrix identifikátory, bootstrap ani E2EE debug texty v
 běžném režimu.

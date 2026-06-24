@@ -8,7 +8,7 @@ hodnotu pro občana i operátora.
 
 ## Aktuální Stav
 
-Stav k 2026-06-21:
+Stav k 2026-06-24:
 
 - produkční pilot běží na `docker.home.cz` a veřejně přes `cop.zeleznalady.cz`,
 - web, API a edge kontejner jsou nasazené v Docker Compose,
@@ -16,7 +16,8 @@ Stav k 2026-06-21:
   federation runtime,
 - SeaweedFS/S3 kompatibilní úložiště je zapojené pro média,
 - SIM je server-to-server provider pro safety, situation, flight a další data,
-- Messaging provider je online a je napojený pro konverzace/skupiny,
+- Messaging provider je online a `cop-chat` je samostatná E2EE chatovací
+  aplikace publikovaná pod `/chat/` a vložená do COP jako komunikační panel,
 - mapový katalog, community reports, zákresy, profily, počasí, radarové vrstvy,
   mobilní síť, flight data a XR workspace jsou implementované v pilotní úrovni,
 - výkon webového klienta byl optimalizován odložením chat panelu, tabulek,
@@ -44,7 +45,7 @@ observability dashboard a formální akceptační protokol.
 | Počasí a rizika | radar/grid/výstrahy existují | sladit názvy vrstev, defaultní sady a legendy pro ne-technického uživatele |
 | Community reports | média a ACL existují | připravit ukázkové hlášení s fotkou, PDF, videem a mapovou vazbou |
 | Zákresy | modul existuje | připravit ukázkovou uzávěru, evakuační bod a měření |
-| Chat/skupiny | messaging bridge existuje | připravit 2-3 demo skupiny, lidské názvy, avatar a ne-technické texty |
+| Chat/skupiny | `cop-chat` je nasazený, staré skupiny byly pro PoC vyčištěné | držet jednu hlavní PoC skupinu, lidské názvy, avatar a ne-technické texty |
 | AI/MCP | roadmap a guardrails existují | pro PoC ukázat minimálně auditované situační shrnutí, ne autonomní rozhodnutí |
 | Edge/offline | edge kontejner běží | připravit offline outbox demo nebo jasně označit jako další fázi |
 | Demo launcher | zatím runbook/seed záměr | přidat operátorskou položku menu pro seed, reset, stav a průvodce |
@@ -59,7 +60,8 @@ observability dashboard a formální akceptační protokol.
    mobilní síť, prostředky.
 4. Jedno ukázkové komunitní hlášení s médiem a ACL.
 5. Jeden zákres evakuační trasy nebo uzávěry.
-6. Jeden chat se zprávou, připnutým kontextem a mediální přílohou.
+6. Jeden ověřený E2EE chat se zprávou, odpovědí druhého operátora, připnutým
+   kontextem a mediální přílohou.
 7. Krátké AI situační shrnutí s citací datových zdrojů a nejistotou.
 8. Health/observability obrazovka pro důvěryhodnost technického zázemí.
 9. Mobilní průchod na iPhone/iPad.
@@ -81,8 +83,8 @@ zrovna stane. Seed musí vytvořit ucelený příběh:
 - 3 komunitní hlášení s různou závažností,
 - 1 fotku, 1 PDF, 1 video,
 - 2 zákresy: uzávěra a evakuační bod,
-- 2 skupiny: krizový štáb a dobrovolníci,
-- 1 chat s připnutým kontextem mapy,
+- 1 hlavní skupinu: krizový štáb povodňové situace,
+- 1 ověřený E2EE chat s připnutým kontextem mapy,
 - 1 AI shrnutí pro operátora.
 
 Seed musí být resetovatelný a označený jako demonstrační data. Produkční systém
@@ -127,6 +129,8 @@ Před prezentací musí být splněno:
 - hlášení otevře galerii médií podle ACL,
 - chat má lidské názvy účastníků a nezobrazuje technické Matrix chyby běžnému
   uživateli,
+- první otevření chatové historie funguje bez nutnosti odejít ze stránky a
+  znovu se vracet,
 - zákres lze vytvořit, upravit a po reloadu zůstane uložený,
 - demo se dá spustit/resetovat z menu oprávněného operátora,
 - MCP registry a jedno auditované volání nástroje jsou ukázatelné bez
