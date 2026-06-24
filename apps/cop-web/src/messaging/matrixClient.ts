@@ -162,9 +162,10 @@ export async function createMatrixMessagingSession(
   }
 
   let inviteJoinInFlight: Promise<void> | null = null;
-  let joinedRoomIds: Set<string> | null = typeof client.getJoinedRooms === "function" ? new Set() : null;
+  const canReadServerJoinedRooms = typeof client.getJoinedRooms === "function" || typeof window !== "undefined";
+  let joinedRoomIds: Set<string> | null = canReadServerJoinedRooms ? new Set() : null;
   const refreshJoinedRoomIds = async () => {
-    joinedRoomIds = await readServerJoinedRoomIds(client, joinedRoomIds);
+    joinedRoomIds = await readServerJoinedRoomIds(client, homeserverBaseUrl, bootstrap.accessToken, joinedRoomIds);
   };
   const readVisibleRooms = () => readRooms(client, { allowedRoomIds: joinedRoomIds });
   const publishRooms = () => {
@@ -898,12 +899,19 @@ async function ensureJoinedRoom(client: MatrixClientLike, roomId: string, homese
   }
 }
 
-async function readServerJoinedRoomIds(client: MatrixClientLike, fallback: Set<string> | null): Promise<Set<string> | null> {
-  if (typeof client.getJoinedRooms !== "function") {
+async function readServerJoinedRoomIds(
+  client: MatrixClientLike,
+  homeserverBaseUrl: string,
+  accessToken: string | undefined,
+  fallback: Set<string> | null
+): Promise<Set<string> | null> {
+  if (typeof client.getJoinedRooms !== "function" && (typeof window === "undefined" || !accessToken || typeof fetch !== "function")) {
     return fallback;
   }
   try {
-    const response = await client.getJoinedRooms();
+    const response = typeof client.getJoinedRooms === "function"
+      ? await client.getJoinedRooms()
+      : await fetchJoinedRooms(homeserverBaseUrl, accessToken);
     const rawRoomIds = Array.isArray(response)
       ? response
       : Array.isArray(response.joined_rooms)
@@ -913,6 +921,22 @@ async function readServerJoinedRoomIds(client: MatrixClientLike, fallback: Set<s
   } catch {
     return fallback;
   }
+}
+
+async function fetchJoinedRooms(homeserverBaseUrl: string, accessToken: string | undefined): Promise<{ joined_rooms?: unknown }> {
+  if (!accessToken || typeof fetch !== "function") {
+    return {};
+  }
+  const response = await fetch(`${homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/joined_rooms`, {
+    cache: "no-store",
+    credentials: "omit",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    mode: "cors"
+  });
+  if (!response.ok) {
+    throw new Error(`Matrix joined_rooms failed: HTTP ${response.status}`);
+  }
+  return await response.json() as { joined_rooms?: unknown };
 }
 
 export async function clearMatrixMessagingCryptoStateForBootstrap(bootstrap: MessagingBootstrapResponse): Promise<void> {
