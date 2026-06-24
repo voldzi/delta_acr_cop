@@ -3945,7 +3945,7 @@ export function App() {
               trackHistory={replayTrackHistory}
               publicFlightSymbolMode={publicFlightSymbolMode}
               mapBasemapMode={mapBasemapMode}
-              mapInteractionSuspended={Boolean(mobileSheet) || messagingOpen || settingsOpen}
+              mapInteractionSuspended={Boolean(mobileSheet) || settingsOpen}
               mobileSketchControlsOpen={mobileSketchOpen}
               predictionMinutes={predictionMinutes}
               predictionMode={predictionMode}

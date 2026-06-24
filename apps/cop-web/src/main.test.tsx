@@ -9,10 +9,21 @@ import { writeCopOfflineSnapshot } from "./pwa-offline";
 vi.mock("./CopMap", async () => {
   const React = await import("react");
   return {
-    CopMap: ({ objects, emptyMessage }: { objects: Array<{ objectId: string }>; emptyMessage: string }) =>
+    CopMap: ({
+      emptyMessage,
+      mapInteractionSuspended,
+      objects
+    }: {
+      emptyMessage: string;
+      mapInteractionSuspended?: boolean;
+      objects: Array<{ objectId: string }>;
+    }) =>
       React.createElement(
         "div",
-        { "data-testid": "cop-map" },
+        {
+          "data-map-interaction-suspended": String(Boolean(mapInteractionSuspended)),
+          "data-testid": "cop-map"
+        },
         objects.length === 0
           ? React.createElement("span", null, emptyMessage)
           : objects.map((object) => React.createElement("span", { key: object.objectId }, object.objectId))
@@ -171,6 +182,9 @@ describe("COP web dashboard", () => {
 
     await waitFor(() => expect(screen.getAllByText("AIR_SIM_AIRCRAFT-0001").length).toBeGreaterThan(0));
     expect(screen.getByTestId("cop-map").textContent).toContain("AIR_SIM_UAV-0001");
+    expect(screen.getByTestId("cop-map").getAttribute("data-map-interaction-suspended")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Komunikace" }));
+    expect(screen.getByTestId("cop-map").getAttribute("data-map-interaction-suspended")).toBe("false");
     expect(screen.getByText("Standardní operační symbol")).toBeTruthy();
     expect(screen.queryByText("APP6-AIR-FRIEND-AIRCRAFT-ACTIVE")).toBeNull();
     expect(screen.queryByText("SFAP-----------")).toBeNull();
@@ -185,6 +199,7 @@ describe("COP web dashboard", () => {
     expect((within(catalogDrawer).getByRole("checkbox", { name: /Simulace/u }) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(within(screen.getByRole("navigation", { name: "Mobilní navigace" })).getByRole("button", { name: "Vrstvy" }));
     const mobileSheet = screen.getByTestId("mobile-sheet-surface");
+    expect(screen.getByTestId("cop-map").getAttribute("data-map-interaction-suspended")).toBe("true");
     const mobilePublicFlightToggle = within(mobileSheet).getByRole("checkbox", { name: /Veřejné lety/u }) as HTMLInputElement;
     expect(mobilePublicFlightToggle.checked).toBe(true);
     fireEvent.click(mobilePublicFlightToggle);
