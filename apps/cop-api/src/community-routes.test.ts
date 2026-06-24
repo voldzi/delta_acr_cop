@@ -467,6 +467,32 @@ describe("community report routes", () => {
       ])
     });
 
+    const metadataResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "PATCH",
+      payload: {
+        metadata: {
+          chat: {
+            conversationId: "conv_group_1",
+            encrypted: true,
+            matrixRoomId: "!group1:docker.home.cz",
+            source: "cop-chat"
+          }
+        }
+      },
+      url: `/api/v1/community/groups/${group.groupId}/metadata`
+    });
+    expect(metadataResponse.statusCode).toBe(200);
+    expect(metadataResponse.json()).toMatchObject({
+      metadata: {
+        chat: {
+          conversationId: "conv_group_1",
+          matrixRoomId: "!group1:docker.home.cz",
+          source: "cop-chat"
+        }
+      }
+    });
+
     const listResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
       method: "GET",
@@ -477,6 +503,12 @@ describe("community report routes", () => {
       items: [
         {
           groupId: group.groupId,
+          metadata: {
+            chat: {
+              conversationId: "conv_group_1",
+              matrixRoomId: "!group1:docker.home.cz"
+            }
+          },
           name: "Povodně Vrbno"
         }
       ]

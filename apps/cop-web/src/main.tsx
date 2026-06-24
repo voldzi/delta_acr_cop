@@ -114,6 +114,7 @@ import {
   saveUserProfile,
   searchUserDirectory,
   submitCommunityReport,
+  updateCommunityGroupMetadata,
   updateSketchDrawing,
   updateCommunityReport,
   updateIncident,
@@ -3210,7 +3211,7 @@ export function App() {
     if (!messagingAuthenticated || !authSession.accessToken) {
       throw new Error("Pro správu skupin je potřeba přihlášení.");
     }
-    const group = await createCommunityGroup(apiBase, authSession.accessToken, {
+    let group = await createCommunityGroup(apiBase, authSession.accessToken, {
       anchorLocation: options.anchorLocation,
       metadata: options.metadata,
       name,
@@ -3241,6 +3242,16 @@ export function App() {
           conversation as MessagingConversationSummary,
           ...current.filter((item) => item.conversationId !== conversation?.conversationId)
         ]);
+        group = await updateCommunityGroupMetadata(apiBase, authSession.accessToken, group.groupId, {
+          chat: {
+            ...communityGroupChatMetadata(group),
+            conversationId: conversation.conversationId,
+            encrypted: true,
+            linkedAt: new Date().toISOString(),
+            source: "cop-chat"
+          }
+        });
+        setCommunityGroups((current) => current.map((item) => item.groupId === group.groupId ? group : item));
         setMessagingConversationsError(conversationResponse.status === "online" ? null : conversationResponse.warnings[0] ?? "Konverzace byla založena s omezením.");
       } else {
         setMessagingConversationsError(conversationResponse.warnings[0] ?? "Konverzaci se nepodařilo založit.");
@@ -4960,9 +4971,25 @@ export function App() {
             session={authSession}
             status={messagingStatus}
             onAddGroupMember={(groupId, subjectId, displayName) => addCommunityGroupMemberForUi(groupId, subjectId, displayName)}
-            onBindMatrixRoom={(conversationId, roomId, encrypted) =>
-              bindMessagingConversationMatrixRoom(apiBase, authSession.accessToken ?? "", conversationId, { encrypted, roomId })
-            }
+            onBindMatrixRoom={async (conversationId, roomId, encrypted) => {
+              const binding = await bindMessagingConversationMatrixRoom(apiBase, authSession.accessToken ?? "", conversationId, { encrypted, roomId });
+              const conversation = binding.conversation ?? messagingConversations.find((item) => item.conversationId === conversationId);
+              const group = conversation ? findMessagingGroupForConversation(conversation, communityGroups) : undefined;
+              if (group && authSession.accessToken) {
+                const updatedGroup = await updateCommunityGroupMetadata(apiBase, authSession.accessToken, group.groupId, {
+                  chat: {
+                    ...communityGroupChatMetadata(group),
+                    conversationId,
+                    encrypted,
+                    linkedAt: new Date().toISOString(),
+                    matrixRoomId: roomId,
+                    source: "cop-chat"
+                  }
+                });
+                setCommunityGroups((current) => current.map((item) => item.groupId === updatedGroup.groupId ? updatedGroup : item));
+              }
+              return binding;
+            }}
             onClose={() => setMessagingOpen(false)}
             onCreateDirectConversation={(user) => createDirectConversationForUi(user)}
             onCreateGroup={(name, visibility) => createCommunityGroupBundleForUi(name, visibility)}
@@ -13316,7 +13343,48 @@ function communityGroupMembersToMessagingMembers(group: CommunityGroup): Array<{
 }
 
 function findMessagingConversationForCommunityGroup(group: CommunityGroup, conversations: MessagingConversationSummary[]): MessagingConversationSummary | undefined {
+  const conversationId = communityGroupChatMetadata(group).conversationId;
+  if (conversationId) {
+    const conversation = conversations.find((item) => item.conversationId === conversationId);
+    if (conversation) {
+      return conversation;
+    }
+  }
   return conversations.find((conversation) => conversation.metadata?.source === "cop.community" && conversation.metadata?.externalId === group.groupId);
+}
+
+function findMessagingGroupForConversation(conversation: MessagingConversationSummary, groups: CommunityGroup[]): CommunityGroup | undefined {
+  const externalId = conversation.metadata?.source === "cop.community" && typeof conversation.metadata.externalId === "string"
+    ? conversation.metadata.externalId
+    : undefined;
+  return groups.find((group) =>
+    group.groupId === externalId
+    || communityGroupChatMetadata(group).conversationId === conversation.conversationId
+  );
+}
+
+interface CommunityGroupChatMetadata {
+  conversationId?: string;
+  encrypted?: boolean;
+  linkedAt?: string;
+  matrixRoomId?: string;
+  source?: string;
+}
+
+function communityGroupChatMetadata(group: CommunityGroup): CommunityGroupChatMetadata {
+  const chat = typeof group.metadata?.chat === "object" && group.metadata.chat !== null
+    ? group.metadata.chat as Record<string, unknown>
+    : undefined;
+  if (!chat) {
+    return {};
+  }
+  return {
+    conversationId: typeof chat.conversationId === "string" ? chat.conversationId : undefined,
+    encrypted: typeof chat.encrypted === "boolean" ? chat.encrypted : undefined,
+    linkedAt: typeof chat.linkedAt === "string" ? chat.linkedAt : undefined,
+    matrixRoomId: typeof chat.matrixRoomId === "string" ? chat.matrixRoomId : undefined,
+    source: typeof chat.source === "string" ? chat.source : undefined
+  };
 }
 
 function readMessagingDockWidth(): number {

@@ -144,6 +144,12 @@ export interface UpsertCommunityGroupMemberInput {
   status: CommunityGroupMemberStatus;
 }
 
+export interface UpdateCommunityGroupMetadataInput {
+  actor: CommunityReportActor;
+  groupId: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface CreateCommunityAttachmentInput {
   attachmentId: string;
   bucket: string;
@@ -208,6 +214,7 @@ export interface CommunityReportStore {
   requestGroupMembership(groupId: string, actor: CommunityReportActor, now: Date): Promise<CommunityGroupRecord | null>;
   submitReport(reportId: string, subjectId: string, now: Date): Promise<CommunityReportRecord | null>;
   updateAttachmentMetadata(input: UpdateCommunityAttachmentMetadataInput): Promise<CommunityReportAttachmentRecord | null>;
+  updateGroupMetadata(input: UpdateCommunityGroupMetadataInput, now: Date): Promise<CommunityGroupRecord | null>;
   updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null>;
   upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null>;
 }
@@ -423,6 +430,21 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
           }
         ];
     const updated = { ...group, members: nextMembers, updatedAt: timestamp };
+    this.groups.set(input.groupId, updated);
+    return cloneCommunityGroup(updated);
+  }
+
+  async updateGroupMetadata(input: UpdateCommunityGroupMetadataInput, now: Date): Promise<CommunityGroupRecord | null> {
+    const group = this.groups.get(input.groupId);
+    if (!group || !canUseCommunityGroup(group, input.actor.subjectId)) {
+      return null;
+    }
+    const timestamp = now.toISOString();
+    const updated: CommunityGroupRecord = {
+      ...group,
+      metadata: mergeCommunityGroupMetadata(group.metadata, input.metadata),
+      updatedAt: timestamp
+    };
     this.groups.set(input.groupId, updated);
     return cloneCommunityGroup(updated);
   }
@@ -715,6 +737,29 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     );
     await this.touchGroup(groupId, timestamp);
     return this.getGroup(groupId);
+  }
+
+  async updateGroupMetadata(input: UpdateCommunityGroupMetadataInput, now: Date): Promise<CommunityGroupRecord | null> {
+    const group = await this.getGroup(input.groupId);
+    if (!group || !canUseCommunityGroup(group, input.actor.subjectId)) {
+      return null;
+    }
+    const timestamp = now.toISOString();
+    const metadata = mergeCommunityGroupMetadata(group.metadata, input.metadata);
+    const result = await this.pool.query<CommunityGroupRow>(
+      `UPDATE cop_community_groups
+      SET metadata = $2::jsonb,
+        updated_at = $3::timestamptz
+      WHERE group_id = $1
+      RETURNING *`,
+      [
+        input.groupId,
+        JSON.stringify(metadata),
+        timestamp
+      ]
+    );
+    const row = result.rows[0];
+    return row ? groupFromRow(row, await this.membersForGroups([input.groupId])) : null;
   }
 
   async upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null> {
@@ -1323,6 +1368,13 @@ function cloneCommunityGroup(group: CommunityGroupRecord): CommunityGroupRecord 
   };
 }
 
+function mergeCommunityGroupMetadata(current: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...current,
+    ...patch
+  };
+}
+
 function buildCommunityQueryClauses(query: CommunityReportQuery, params: unknown[]): string[] {
   const clauses: string[] = [];
   if (query.statuses && query.statuses.length > 0) {
@@ -1405,6 +1457,13 @@ function canManageCommunityGroup(group: CommunityGroupRecord, subjectId: string)
     member.subjectId === subjectId
     && member.status === "active"
     && (member.role === "owner" || member.role === "admin")
+  );
+}
+
+function canUseCommunityGroup(group: CommunityGroupRecord, subjectId: string): boolean {
+  return group.members.some((member) =>
+    member.subjectId === subjectId
+    && member.status === "active"
   );
 }
 

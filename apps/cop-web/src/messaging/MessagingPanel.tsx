@@ -105,6 +105,13 @@ export function linkedConversationForCommunityGroup(
   if (!group) {
     return undefined;
   }
+  const conversationId = communityGroupChatMetadata(group).conversationId;
+  if (conversationId) {
+    const conversation = conversations.find((item) => item.conversationId === conversationId);
+    if (conversation) {
+      return conversation;
+    }
+  }
   return conversations.find((conversation) => conversationCommunityGroupId(conversation) === group.groupId);
 }
 
@@ -117,7 +124,7 @@ export function groupConversationSelectionId(
   group: MessagingPanelProps["communityGroups"][number] | null | undefined
 ): string | null {
   const conversation = linkedConversationForCommunityGroup(conversations, group);
-  return conversation ? conversationSelectionId(conversation) : null;
+  return conversation ? conversationSelectionId(conversation) : group ? communityGroupChatMetadata(group).matrixRoomId ?? null : null;
 }
 
 export function activeConversationForMessaging(
@@ -2288,6 +2295,19 @@ function communityMemberRoleLabel(role: string): string {
 function conversationCommunityGroupId(conversation: MessagingPanelProps["conversations"][number]): string | undefined {
   const externalId = conversation.metadata?.externalId;
   return typeof externalId === "string" && conversation.metadata?.source === "cop.community" ? externalId : undefined;
+}
+
+function communityGroupChatMetadata(group: MessagingPanelProps["communityGroups"][number]): { conversationId?: string; matrixRoomId?: string } {
+  const chat = typeof group.metadata?.chat === "object" && group.metadata.chat !== null
+    ? group.metadata.chat as Record<string, unknown>
+    : undefined;
+  if (!chat) {
+    return {};
+  }
+  return {
+    conversationId: typeof chat.conversationId === "string" ? chat.conversationId : undefined,
+    matrixRoomId: typeof chat.matrixRoomId === "string" ? chat.matrixRoomId : undefined
+  };
 }
 
 function formatBytes(bytes: number): string {

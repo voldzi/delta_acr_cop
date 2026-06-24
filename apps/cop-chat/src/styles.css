@@ -857,6 +857,42 @@ button {
   padding: 18px clamp(18px, 6vw, 92px) 16px;
 }
 
+.history-loader {
+  display: flex;
+  justify-content: center;
+  margin: 2px 0 10px;
+}
+
+.history-loader button,
+.history-loader.done {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid rgba(17, 27, 33, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--muted);
+  box-shadow: 0 1px 0 rgba(17, 27, 33, 0.05);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.history-loader button {
+  cursor: pointer;
+}
+
+.history-loader button:hover:not(:disabled) {
+  color: var(--brand);
+  border-color: rgba(18, 140, 126, 0.24);
+}
+
+.history-loader button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .day-pill {
   align-self: center;
   margin: 8px 0 12px;

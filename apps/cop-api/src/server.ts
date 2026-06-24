@@ -1504,6 +1504,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function updateCommunityGroupMetadata(input: Parameters<CommunityReportStore["updateGroupMetadata"]>[0], requestNow: Date) {
+    try {
+      return await activeCommunityReportStore().updateGroupMetadata(input, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.updateGroupMetadata(input, requestNow);
+    }
+  }
+
   async function upsertCommunityGroupMember(input: Parameters<CommunityReportStore["upsertGroupMember"]>[0], requestNow: Date) {
     try {
       return await activeCommunityReportStore().upsertGroupMember(input, requestNow);
@@ -2526,6 +2535,39 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!group || !canReadCommunityGroup(group, actor)) {
       return sendError(reply, 404, "NOT_FOUND", "Community group was not found.", crypto.randomUUID());
     }
+    return group;
+  });
+
+  app.patch("/api/v1/community/groups/:groupId/metadata", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { groupId: string };
+    const metadata = normalizeCommunityGroupMetadataRequest(request.body);
+    if (!metadata) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Community group metadata update requires metadata.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const requestNow = now();
+    const group = await updateCommunityGroupMetadata({
+      actor: actorToCommunityActor(actor),
+      groupId: params.groupId,
+      metadata
+    }, requestNow);
+    if (!group) {
+      return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be updated by current user.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    appendAudit(state, "COMMUNITY_GROUP_METADATA_UPDATED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      groupId: group.groupId
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
     return group;
   });
 
@@ -6988,6 +7030,13 @@ function normalizeCommunityGroupRequest(value: unknown): {
     name,
     visibility: isCommunityGroupVisibility(value.visibility) ? value.visibility : "private"
   };
+}
+
+function normalizeCommunityGroupMetadataRequest(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value) || !isRecord(value.metadata)) {
+    return null;
+  }
+  return normalizedJsonRecord(value.metadata, 4000);
 }
 
 function normalizeCommunityGroupMemberRequest(value: unknown): {

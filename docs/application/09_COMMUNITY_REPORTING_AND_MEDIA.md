@@ -52,6 +52,7 @@ Nové endpointy:
 - `GET /api/v1/community/groups`
 - `POST /api/v1/community/groups`
 - `GET /api/v1/community/groups/{groupId}`
+- `PATCH /api/v1/community/groups/{groupId}/metadata`
 - `DELETE /api/v1/community/groups/{groupId}`
 - `POST /api/v1/community/groups/{groupId}/join-request`
 - `POST /api/v1/community/groups/{groupId}/members`

@@ -405,6 +405,28 @@ and the active COP group members:
 }
 ```
 
+After creating or resolving the group conversation, COP also writes a durable
+group-side pointer through
+`PATCH /api/v1/community/groups/{groupId}/metadata`:
+
+```json
+{
+  "metadata": {
+    "chat": {
+      "source": "cop-chat",
+      "conversationId": "<csm-messaging-conversation-id>",
+      "matrixRoomId": "<matrix-room-id>",
+      "encrypted": true
+    }
+  }
+}
+```
+
+This binding is metadata only. It lets browser clients reopen the same
+conversation after reload or deployment restart without matching by a mutable
+group title. It does not authorize media access and does not store plaintext
+messages.
+
 When COP adds or approves a group member, it also calls
 `POST /api/v1/messaging/conversations/{conversationId}/members` with the active
 COP group members. This keeps chat membership metadata aligned with the media

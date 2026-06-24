@@ -103,6 +103,35 @@ describe("MessagingPanel Matrix safety gates", () => {
     expect(linkedConversationForCommunityGroup(conversations, groupTwo)?.conversationId).toBe("conv_group_2");
   });
 
+  it("links group conversations by persisted group chat metadata", () => {
+    const conversations: MessagingConversationSummary[] = [
+      {
+        conversationId: "conv_legacy_same_name",
+        title: "Kyjev",
+        type: "group"
+      },
+      {
+        conversationId: "conv_group_1",
+        matrix: { roomId: "!group1:docker.home.cz" },
+        title: "Kyjev",
+        type: "group"
+      }
+    ];
+    const group = {
+      ...minimalGroup("group_1", "Kyjev"),
+      metadata: {
+        chat: {
+          conversationId: "conv_group_1",
+          matrixRoomId: "!group1:docker.home.cz",
+          source: "cop-chat"
+        }
+      }
+    };
+
+    expect(linkedConversationForCommunityGroup(conversations, group)?.conversationId).toBe("conv_group_1");
+    expect(groupConversationSelectionId(conversations, group)).toBe("!group1:docker.home.cz");
+  });
+
   it("keeps a group-only selection from opening a duplicate-name legacy conversation", () => {
     const conversations: MessagingConversationSummary[] = [
       {

@@ -2177,6 +2177,22 @@ export async function deleteCommunityGroup(apiBase: string, token: string, group
   }
 }
 
+export async function updateCommunityGroupMetadata(
+  apiBase: string,
+  token: string,
+  groupId: string,
+  metadata: Record<string, unknown>
+): Promise<CommunityGroup> {
+  return fetchJson<CommunityGroup>(`${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}/metadata`, {
+    body: JSON.stringify({ metadata }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "PATCH"
+  });
+}
+
 export async function updateCommunityReport(
   apiBase: string,
   token: string,

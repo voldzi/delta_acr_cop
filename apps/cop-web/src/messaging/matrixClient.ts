@@ -25,6 +25,7 @@ interface MatrixClientLike {
   sendTextMessage?: (roomId: string, body: string) => Promise<unknown>;
   startClient?: (options?: Record<string, unknown>) => Promise<void> | void;
   stopClient?: () => void;
+  scrollback?: (room: MatrixRoomLike, limit?: number) => Promise<unknown>;
   uploadContent?: (file: Blob | File, opts?: Record<string, unknown>) => Promise<{ content_uri?: string; contentUri?: string }>;
 }
 
@@ -129,6 +130,7 @@ export async function createMatrixMessagingSession(
   await client.startClient?.({ initialSyncLimit: 30 });
   await joinInvitedRooms();
   callbacks.onRoomsChanged?.(readRooms(client));
+  const exhaustedTimelineRooms = new Set<string>();
 
   return {
     bootstrap,
@@ -188,6 +190,44 @@ export async function createMatrixMessagingSession(
       }
     },
     joinInvitedRooms,
+    loadMoreTimeline: async (roomId, limit = 80) => {
+      if (exhaustedTimelineRooms.has(roomId)) {
+        return {
+          exhausted: true,
+          messages: readTimeline(client, roomId, homeserverBaseUrl)
+        };
+      }
+      if (typeof client.scrollback !== "function") {
+        exhaustedTimelineRooms.add(roomId);
+        return {
+          exhausted: true,
+          messages: readTimeline(client, roomId, homeserverBaseUrl)
+        };
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        const room = findMatrixRoom(client, roomId);
+        if (!room) {
+          exhaustedTimelineRooms.add(roomId);
+          return { exhausted: true, messages: [] };
+        }
+        const beforeCount = room.timeline?.length ?? 0;
+        await client.scrollback(room, Math.max(1, Math.min(250, Math.trunc(limit))));
+        const nextRoom = findMatrixRoom(client, roomId) ?? room;
+        const afterCount = nextRoom.timeline?.length ?? 0;
+        const exhausted = afterCount <= beforeCount;
+        if (exhausted) {
+          exhaustedTimelineRooms.add(roomId);
+        }
+        return {
+          exhausted,
+          messages: readTimeline(client, roomId, homeserverBaseUrl)
+        };
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "načíst starší zprávy");
+      }
+    },
     sendAttachment: async (roomId, attachment) => {
       if (typeof client.uploadContent !== "function" || typeof client.sendMessage !== "function") {
         throw new Error("Přílohu se nepodařilo bezpečně odeslat.");
@@ -550,8 +590,14 @@ function readRooms(client: MatrixClientLike): MatrixRoomSummary[] {
     .sort((left, right) => left.name.localeCompare(right.name, "cs"));
 }
 
+function findMatrixRoom(client: MatrixClientLike, roomId: string): MatrixRoomLike | undefined {
+  return (client.getRooms?.() ?? [])
+    .map(asRoom)
+    .find((candidate): candidate is MatrixRoomLike & { roomId: string } => candidate?.roomId === roomId);
+}
+
 function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUrl: string): MatrixTimelineMessage[] {
-  const room = (client.getRooms?.() ?? []).map(asRoom).find((candidate) => candidate?.roomId === roomId);
+  const room = findMatrixRoom(client, roomId);
   const currentUserId = client.getUserId?.() ?? undefined;
   return (room?.timeline ?? [])
     .map(asEvent)
@@ -580,8 +626,7 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
         ...(senderDisplayName ? { senderDisplayName } : {}),
         timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString()
       }];
-    })
-    .slice(-80);
+    });
 }
 
 export function normalizeMatrixMessageBody(body: string): string {

@@ -64,6 +64,7 @@ import {
   resolveMessagingMatrixIdentities,
   searchUserDirectory,
   syncMessagingConversationMembers,
+  updateCommunityGroupMetadata,
   upsertCommunityGroupMember
 } from "../../cop-web/src/cop-data";
 import type {
@@ -162,6 +163,8 @@ export function ChatApp() {
   const [groups, setGroups] = React.useState<CommunityGroup[]>([]);
   const [rooms, setRooms] = React.useState<MatrixRoomSummary[]>([]);
   const [timeline, setTimeline] = React.useState<MatrixTimelineMessage[]>([]);
+  const [historyExhaustedByRoom, setHistoryExhaustedByRoom] = React.useState<Record<string, boolean>>({});
+  const [historyLoading, setHistoryLoading] = React.useState(false);
   const [matrixSession, setMatrixSession] = React.useState<MatrixMessagingSession | null>(null);
   const [selectedConversationId, setSelectedConversationId] = React.useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
@@ -203,6 +206,7 @@ export function ChatApp() {
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
   const routeAppliedRef = React.useRef(false);
   const matrixAttemptKeyRef = React.useRef<string | null>(null);
+  const initialHistoryLoadKeyRef = React.useRef<string | null>(null);
   const notifiedEventIdsRef = React.useRef<Set<string>>(new Set());
   const notificationsPrimedRef = React.useRef(false);
   const matrixSessionRef = React.useRef<MatrixMessagingSession | null>(null);
@@ -259,6 +263,7 @@ export function ChatApp() {
   const routeChatSelected = Boolean(activeChat && readRouteSelection());
   const timelineRows = React.useMemo(() => buildTimelineRows(timeline), [timeline]);
   const timelineMessages = React.useMemo(() => timelineRows.filter((row) => row.kind === "message").map((row) => row.message), [timelineRows]);
+  const historyExhausted = selectedRoomId ? historyExhaustedByRoom[selectedRoomId] === true : true;
   const searchMatches = React.useMemo(
     () => messageSearchOpen && messageSearchQuery.trim()
       ? timelineMessages.filter((message) => messageMatchesQuery(message, messageSearchQuery))
@@ -430,6 +435,18 @@ export function ChatApp() {
     }
     setTimeline(matrixSession.getTimeline(selectedRoomId));
   }, [matrixSession, rooms, selectedRoomId]);
+
+  React.useEffect(() => {
+    if (!matrixSession || !selectedRoomId) {
+      return;
+    }
+    const loadKey = `${matrixSession.bootstrap.userId}:${matrixSession.bootstrap.deviceId}:${selectedRoomId}`;
+    if (initialHistoryLoadKeyRef.current === loadKey) {
+      return;
+    }
+    initialHistoryLoadKeyRef.current = loadKey;
+    void loadOlderMessages(selectedRoomId, 120, true);
+  }, [matrixSession, selectedRoomId]);
 
   React.useEffect(() => {
     if (!matrixSession) {
@@ -813,7 +830,7 @@ export function ChatApp() {
     const conversation = findConversationForGroup(group, conversations) ?? findConversationByTitle(group.name, conversations, "group");
     setSelectedGroupId(group.groupId);
     setSelectedConversationId(conversation?.conversationId ?? null);
-    setSelectedRoomId(conversation?.matrix?.roomId ?? null);
+    setSelectedRoomId(conversation?.matrix?.roomId ?? communityGroupMatrixRoomId(group) ?? null);
     if (updateRoute) {
       writeChatRoute(conversation?.conversationId ?? group.groupId);
     }
@@ -821,7 +838,7 @@ export function ChatApp() {
 
   function selectRoom(room: MatrixRoomSummary, updateRoute = true) {
     const conversation = conversations.find((item) => item.matrix?.roomId === room.roomId) ?? null;
-    const group = conversation ? groupForConversation(conversation, groups) : findGroupByTitle(room.name, groups);
+    const group = conversation ? groupForConversation(conversation, groups) : findGroupByMatrixRoomId(room.roomId, groups) ?? findGroupByTitle(room.name, groups);
     setSelectedRoomId(room.roomId);
     setSelectedConversationId(conversation?.conversationId ?? null);
     setSelectedGroupId(group?.groupId ?? null);
@@ -922,6 +939,7 @@ export function ChatApp() {
     }
     const existing = findConversationForGroup(group, conversations) ?? findConversationByTitle(group.name, conversations, "group");
     if (existing) {
+      await persistGroupChatBinding(group, existing);
       return existing;
     }
     const conversationResponse = await createMessagingConversation(apiBase, authToken, {
@@ -945,6 +963,7 @@ export function ChatApp() {
       }
     };
     setConversations((current) => upsertConversation(current, conversation));
+    await persistGroupChatBinding(group, conversation);
     return conversation;
   }
 
@@ -1042,6 +1061,12 @@ export function ChatApp() {
       }
     };
     setConversations((current) => upsertConversation(current, nextConversation));
+    const linkedGroup = selectedGroupId
+      ? groups.find((group) => group.groupId === selectedGroupId) ?? groupForConversation(nextConversation, groups)
+      : groupForConversation(nextConversation, groups);
+    if (linkedGroup) {
+      await persistGroupChatBinding(linkedGroup, nextConversation, roomId);
+    }
     setRooms((current) => ensureRoomSummary(current, {
       encrypted: true,
       name: conversation.title,
@@ -1053,6 +1078,29 @@ export function ChatApp() {
     setSelectedRoomId(roomId);
     writeChatRoute(nextConversation.conversationId);
     return roomId;
+  }
+
+  async function persistGroupChatBinding(
+    group: CommunityGroup,
+    conversation: MessagingConversationSummary,
+    roomId = conversation.matrix?.roomId
+  ): Promise<CommunityGroup> {
+    if (!authToken) {
+      throw new Error("Pro uložení vazby skupiny na chat je potřeba přihlášení.");
+    }
+    const currentChat = communityGroupChatMetadata(group);
+    const updated = await updateCommunityGroupMetadata(apiBase, authToken, group.groupId, {
+      chat: {
+        ...currentChat,
+        conversationId: conversation.conversationId,
+        encrypted: roomId ? true : currentChat.encrypted ?? true,
+        linkedAt: new Date().toISOString(),
+        ...(roomId ? { matrixRoomId: roomId } : {}),
+        source: "cop-chat"
+      }
+    });
+    setGroups((current) => current.map((item) => item.groupId === updated.groupId ? updated : item));
+    return updated;
   }
 
   async function resolveConversationMatrixUsers(conversation: MessagingConversationSummary): Promise<string[]> {
@@ -1067,6 +1115,33 @@ export function ChatApp() {
     }
     const result = await resolveMessagingMatrixIdentities(apiBase, authToken, userIds);
     return matrixUserIdsFromResolution(result, userIds);
+  }
+
+  async function loadOlderMessages(roomId = selectedRoomId, limit = 120, silent = false): Promise<void> {
+    if (!roomId || !matrixSession) {
+      return;
+    }
+    if (historyLoading || historyExhaustedByRoom[roomId]) {
+      return;
+    }
+    setHistoryLoading(true);
+    if (!silent) {
+      setError(null);
+    }
+    try {
+      const result = await matrixSession.loadMoreTimeline(roomId, limit);
+      setTimeline(result.messages);
+      setHistoryExhaustedByRoom((current) => ({
+        ...current,
+        [roomId]: result.exhausted
+      }));
+    } catch (caught) {
+      if (!silent) {
+        setError(caught instanceof Error ? caught.message : "Starší zprávy se nepodařilo načíst.");
+      }
+    } finally {
+      setHistoryLoading(false);
+    }
   }
 
   async function sendMessage() {
@@ -1369,6 +1444,11 @@ export function ChatApp() {
                     setShowJumpToLatest(node.scrollHeight - node.scrollTop - node.clientHeight > 180);
                   }}
                 >
+                  <HistoryLoader
+                    exhausted={historyExhausted}
+                    loading={historyLoading}
+                    onLoad={() => void loadOlderMessages()}
+                  />
                   {timelineRows.length === 0 ? <div className="day-pill">Dnes</div> : null}
                   {timelineRows.map((row) => row.kind === "date" ? (
                     <div className="day-pill" key={row.id}>{row.label}</div>
@@ -1689,6 +1769,28 @@ function NotificationToggleButton({
     >
       {blocked ? <BellOff size={21} /> : <Bell size={21} />}
     </button>
+  );
+}
+
+function HistoryLoader({
+  exhausted,
+  loading,
+  onLoad
+}: {
+  exhausted: boolean;
+  loading: boolean;
+  onLoad: () => void;
+}) {
+  if (exhausted) {
+    return <div className="history-loader done">Začátek historie</div>;
+  }
+  return (
+    <div className="history-loader">
+      <button disabled={loading} onClick={onLoad} type="button">
+        {loading ? <Loader2 className="spin" size={15} /> : <ChevronUp size={15} />}
+        {loading ? "Načítám historii" : "Načíst starší zprávy"}
+      </button>
+    </div>
   );
 }
 
@@ -2440,12 +2542,13 @@ function buildChatItems({
   };
 
   conversations.forEach((conversation) => {
-    const groupId = conversationCommunityGroupId(conversation);
-    const group = groupId ? groups.find((item) => item.groupId === groupId) : findGroupByTitle(conversation.title, groups);
-    const room = conversation.matrix?.roomId ? rooms.find((item) => item.roomId === conversation.matrix?.roomId) : undefined;
-    const latest = conversation.matrix?.roomId ? lastTimelineMessage(timelineForRoom(conversation.matrix.roomId)) : undefined;
-    const id = conversation.matrix?.roomId
-      ? `room:${conversation.matrix.roomId}`
+    const group = groupForConversation(conversation, groups);
+    const groupId = conversationCommunityGroupId(conversation) ?? group?.groupId;
+    const roomId = conversation.matrix?.roomId ?? (group ? communityGroupMatrixRoomId(group) : undefined);
+    const room = roomId ? rooms.find((item) => item.roomId === roomId) : undefined;
+    const latest = roomId ? lastTimelineMessage(timelineForRoom(roomId)) : undefined;
+    const id = roomId
+      ? `room:${roomId}`
       : groupId
         ? `group:${groupId}`
         : `conversation:${conversation.conversationId}`;
@@ -2458,10 +2561,10 @@ function buildChatItems({
       memberCount: conversation.memberCount ?? conversation.members?.length ?? group?.members.length ?? 2,
       muted: false,
       pinned: false,
-      preferenceKey: chatPreferenceKeyForConversation(conversation, group),
-      preview: latest ? latestMessagePreview(latest) : conversation.matrix?.roomId ? "Nový chat" : "Klepnutím otevřít chat",
+      preferenceKey: chatPreferenceKeyForConversation(conversation, group ?? undefined),
+      preview: latest ? latestMessagePreview(latest) : roomId ? "Nový chat" : "Klepnutím otevřít chat",
       ...(room ? { room } : {}),
-      roomId: conversation.matrix?.roomId ?? undefined,
+      roomId,
       searchable: `${conversation.title} ${group?.name ?? ""} ${conversation.members?.map((member) => member.displayName ?? member.userId).join(" ") ?? ""}`,
       sortAt: timestampMillis(latest?.timestamp ?? conversation.updatedAt ?? group?.updatedAt),
       timestamp: latest ? formatShortTimestamp(latest.timestamp) : formatShortTimestamp(conversation.updatedAt ?? group?.updatedAt),
@@ -2502,21 +2605,27 @@ function buildChatItems({
       }
       return;
     }
+    const metadataRoomId = communityGroupMatrixRoomId(group);
+    const metadataRoom = metadataRoomId ? rooms.find((room) => room.roomId === metadataRoomId) : undefined;
+    const metadataLatest = metadataRoomId ? lastTimelineMessage(timelineForRoom(metadataRoomId)) : undefined;
     remember({
-      active: selectedGroupId === group.groupId,
+      active: selectedGroupId === group.groupId || selectedRoomId === metadataRoomId,
       group,
-      id: `group:${group.groupId}`,
+      id: metadataRoomId ? `room:${metadataRoomId}` : `group:${group.groupId}`,
+      latest: metadataLatest,
       memberCount: group.members.length,
       muted: false,
       pinned: false,
       preferenceKey: chatPreferenceKeyForGroup(group),
-      preview: "Klepnutím otevřít chat",
+      preview: metadataLatest ? latestMessagePreview(metadataLatest) : metadataRoomId ? "Nový chat" : "Klepnutím otevřít chat",
+      ...(metadataRoom ? { room: metadataRoom } : {}),
+      roomId: metadataRoomId,
       searchable: `${group.name} ${group.members.map((member) => member.displayName || member.username).join(" ")}`,
-      sortAt: timestampMillis(group.updatedAt),
-      timestamp: formatShortTimestamp(group.updatedAt),
+      sortAt: timestampMillis(metadataLatest?.timestamp ?? group.updatedAt),
+      timestamp: metadataLatest ? formatShortTimestamp(metadataLatest.timestamp) : formatShortTimestamp(group.updatedAt),
       title: group.name,
       type: "group",
-      unreadCount: 0
+      unreadCount: metadataRoom?.unreadCount ?? 0
     });
   });
 
@@ -2684,11 +2793,26 @@ function groupForConversation(conversation: MessagingConversationSummary, groups
   if (groupId) {
     return groups.find((group) => group.groupId === groupId) ?? null;
   }
-  return conversation.type === "group" ? findGroupByTitle(conversation.title, groups) ?? null : null;
+  return conversation.type === "group"
+    ? groups.find((group) => communityGroupConversationId(group) === conversation.conversationId)
+      ?? findGroupByTitle(conversation.title, groups)
+      ?? null
+    : null;
 }
 
 function findConversationForGroup(group: CommunityGroup, conversations: MessagingConversationSummary[]): MessagingConversationSummary | undefined {
+  const conversationId = communityGroupConversationId(group);
+  if (conversationId) {
+    const conversation = conversations.find((item) => item.conversationId === conversationId);
+    if (conversation) {
+      return conversation;
+    }
+  }
   return conversations.find((conversation) => conversationCommunityGroupId(conversation) === group.groupId);
+}
+
+function findGroupByMatrixRoomId(roomId: string, groups: CommunityGroup[]): CommunityGroup | undefined {
+  return groups.find((group) => communityGroupMatrixRoomId(group) === roomId);
 }
 
 function findConversationByTitle(title: string, conversations: MessagingConversationSummary[], type?: "direct" | "group"): MessagingConversationSummary | undefined {
@@ -2704,6 +2828,40 @@ function findGroupByTitle(title: string, groups: CommunityGroup[]): CommunityGro
 function conversationCommunityGroupId(conversation: MessagingConversationSummary): string | undefined {
   const externalId = conversation.metadata?.externalId;
   return typeof externalId === "string" && conversation.metadata?.source === "cop.community" ? externalId : undefined;
+}
+
+interface CommunityGroupChatMetadata {
+  conversationId?: string;
+  encrypted?: boolean;
+  linkedAt?: string;
+  matrixRoomId?: string;
+  source?: string;
+}
+
+function communityGroupChatMetadata(group: CommunityGroup): CommunityGroupChatMetadata {
+  const chat = asRecord(group.metadata?.chat);
+  if (!chat) {
+    return {};
+  }
+  return {
+    conversationId: typeof chat.conversationId === "string" ? chat.conversationId : undefined,
+    encrypted: typeof chat.encrypted === "boolean" ? chat.encrypted : undefined,
+    linkedAt: typeof chat.linkedAt === "string" ? chat.linkedAt : undefined,
+    matrixRoomId: typeof chat.matrixRoomId === "string" ? chat.matrixRoomId : undefined,
+    source: typeof chat.source === "string" ? chat.source : undefined
+  };
+}
+
+function communityGroupConversationId(group: CommunityGroup): string | undefined {
+  return communityGroupChatMetadata(group).conversationId;
+}
+
+function communityGroupMatrixRoomId(group: CommunityGroup): string | undefined {
+  return communityGroupChatMetadata(group).matrixRoomId;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
 }
 
 function communityGroupMembersToMessagingMembers(group: CommunityGroup): Array<{ displayName?: string; role?: string; userId: string }> {

@@ -1420,6 +1420,54 @@
         }
       }
     },
+    "/api/v1/community/groups/{groupId}/metadata": {
+      "patch": {
+        "tags": [
+          "Community Reports"
+        ],
+        "summary": "Merge safe metadata into a community sharing group.",
+        "operationId": "updateCommunityGroupMetadata",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CommunityGroupIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityGroupMetadataUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Community group metadata updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityGroup"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/v1/community/groups/{groupId}/join-request": {
       "post": {
         "tags": [
@@ -6488,6 +6536,20 @@
           "metadata": {
             "type": "object",
             "additionalProperties": true
+          }
+        }
+      },
+      "CommunityGroupMetadataUpdateRequest": {
+        "type": "object",
+        "required": [
+          "metadata"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Safe application metadata merged into the existing community group metadata. Chat clients store only conversation and Matrix room identifiers here, never plaintext messages."
           }
         }
       },
