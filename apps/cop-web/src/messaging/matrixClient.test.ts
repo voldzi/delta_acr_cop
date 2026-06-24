@@ -164,6 +164,7 @@ describe("Matrix client diagnostics", () => {
         roomId: "!chat:cop.local",
         timeline: [
           createMessageEvent("hello", Date.parse("2026-06-24T11:00:00.000Z"), "$hello", "@other:cop.local"),
+          createReactionEvent("$hello", "👀", "@operator:cop.local", "$reaction-own-old"),
           createReactionEvent("$hello", "👍", "@operator:cop.local", "$reaction-own")
         ]
       })],
@@ -174,7 +175,10 @@ describe("Matrix client diagnostics", () => {
 
     await session.setReaction("!chat:cop.local", "$hello", "👍");
 
-    expect(redactEvent).toHaveBeenCalledWith("!chat:cop.local", "$reaction-own", undefined, {
+    expect(redactEvent).toHaveBeenNthCalledWith(1, "!chat:cop.local", "$reaction-own-old", undefined, {
+      reason: "Reakce odstraněna uživatelem"
+    });
+    expect(redactEvent).toHaveBeenNthCalledWith(2, "!chat:cop.local", "$reaction-own", undefined, {
       reason: "Reakce odstraněna uživatelem"
     });
     expect(sendEvent).not.toHaveBeenCalled();

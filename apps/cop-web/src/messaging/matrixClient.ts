@@ -389,15 +389,16 @@ export async function createMatrixMessagingSession(
       try {
         await joinInvitedRooms();
         await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
-        const existingReaction = findOwnReactionEvent(client, roomId, eventId);
-        if (existingReaction) {
+        const existingReactions = findOwnReactionEvents(client, roomId, eventId);
+        const removingExistingReaction = existingReactions.some((reaction) => reaction.key === normalizedKey);
+        if (existingReactions.length > 0) {
           if (typeof client.redactEvent !== "function") {
             throw new Error("Reakci se nepodařilo změnit.");
           }
-          await client.redactEvent(roomId, existingReaction.eventId, undefined, {
-            reason: existingReaction.key === normalizedKey ? "Reakce odstraněna uživatelem" : "Reakce změněna uživatelem"
-          });
-          if (existingReaction.key === normalizedKey) {
+          await Promise.all(existingReactions.map((reaction) => client.redactEvent?.(roomId, reaction.eventId, undefined, {
+            reason: removingExistingReaction ? "Reakce odstraněna uživatelem" : "Reakce změněna uživatelem"
+          })));
+          if (removingExistingReaction) {
             return;
           }
         }
@@ -1095,14 +1096,14 @@ function readMessageReactions(
   return reactionsByEventId;
 }
 
-function findOwnReactionEvent(
+function findOwnReactionEvents(
   client: MatrixClientLike,
   roomId: string,
   targetEventId: string
-): { eventId: string; key: string } | undefined {
+): Array<{ eventId: string; key: string }> {
   const currentUserId = client.getUserId?.() ?? undefined;
   if (!currentUserId) {
-    return undefined;
+    return [];
   }
   const room = findMatrixRoom(client, roomId);
   const timelineEvents = (room?.timeline ?? [])
@@ -1130,6 +1131,7 @@ function findOwnReactionEvent(
     reactionEvents.set(reactionEventId, reactionEvent);
   }
 
+  const ownReactions: Array<{ eventId: string; key: string }> = [];
   for (const event of reactionEvents.values()) {
     const relation = readEventRelation(event);
     const relationTargetEventId = stringValue(relation?.event_id);
@@ -1138,10 +1140,10 @@ function findOwnReactionEvent(
     const sender = event.getSender?.() ?? "";
     const reactionEventId = event.getId?.();
     if (relationTargetEventId === targetEventId && relationType === "m.annotation" && key && sender === currentUserId && reactionEventId) {
-      return { eventId: reactionEventId, key };
+      ownReactions.push({ eventId: reactionEventId, key });
     }
   }
-  return undefined;
+  return ownReactions;
 }
 
 function readEventRelation(event: MatrixEventLike): Record<string, unknown> | undefined {
