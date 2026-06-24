@@ -8,6 +8,9 @@ type MockMatrixClient = {
   getUserId: () => string;
   initRustCrypto: () => Promise<void>;
   isRoomEncrypted: () => boolean;
+  redactEvent?: MatrixRedactEvent;
+  sendEvent?: MatrixSendEvent;
+  sendMessage?: MatrixSendMessage;
   sendStateEvent?: MatrixSendStateEvent;
   startClient: () => Promise<void>;
 };
@@ -28,6 +31,9 @@ type MockMatrixCrypto = {
 };
 
 type MatrixSendStateEvent = (roomId: string, eventType: string, content: Record<string, unknown>, stateKey?: string) => Promise<unknown>;
+type MatrixSendEvent = (roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string) => Promise<unknown>;
+type MatrixSendMessage = (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
+type MatrixRedactEvent = (roomId: string, eventId: string, txnId?: string, opts?: Record<string, unknown>) => Promise<unknown>;
 
 const matrixSdkMock = vi.hoisted(() => ({
   createClient: vi.fn()
@@ -129,6 +135,64 @@ describe("Matrix client diagnostics", () => {
     expect(session.getTimeline("!chat:cop.local").map((message) => message.body)).toEqual(["recent"]);
   });
 
+  it("sends Matrix reactions as annotation relation events", async () => {
+    const sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      rooms: [createRoom({ roomId: "!chat:cop.local" })],
+      sendEvent
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await session.sendReaction("!chat:cop.local", "$message", "👍");
+
+    expect(sendEvent).toHaveBeenCalledWith("!chat:cop.local", "m.reaction", {
+      "m.relates_to": {
+        event_id: "$message",
+        key: "👍",
+        rel_type: "m.annotation"
+      }
+    });
+  });
+
+  it("redacts messages through Matrix when deleting a message", async () => {
+    const redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      redactEvent,
+      rooms: [createRoom({ roomId: "!chat:cop.local" })]
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await session.deleteMessage("!chat:cop.local", "$message");
+
+    expect(redactEvent).toHaveBeenCalledWith("!chat:cop.local", "$message", undefined, {
+      reason: "Odstraněno uživatelem"
+    });
+  });
+
+  it("reads grouped Matrix reactions from timeline relation events", async () => {
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      rooms: [createRoom({
+        roomId: "!chat:cop.local",
+        timeline: [
+          createMessageEvent("hello", Date.parse("2026-06-24T11:00:00.000Z"), "$hello", "@other:cop.local"),
+          createReactionEvent("$hello", "👍", "@operator:cop.local", "$reaction-own"),
+          createReactionEvent("$hello", "👍", "@other:cop.local", "$reaction-other")
+        ]
+      })]
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    expect(session.getTimeline("!chat:cop.local")[0]?.reactions).toEqual([{
+      count: 2,
+      key: "👍",
+      own: true,
+      senders: ["@operator:cop.local", "@other:cop.local"]
+    }]);
+  });
+
   it("reports that user-controlled E2EE recovery needs setup when no key backup exists", async () => {
     matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
       crypto: {
@@ -213,11 +277,17 @@ function createBootstrap(): MessagingBootstrapResponse {
 
 function createMockMatrixClient({
   crypto,
+  redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined),
   rooms,
+  sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined),
+  sendMessage = vi.fn<MatrixSendMessage>().mockResolvedValue(undefined),
   sendStateEvent = vi.fn<MatrixSendStateEvent>().mockResolvedValue(undefined)
 }: {
   crypto?: MockMatrixCrypto;
+  redactEvent?: MockMatrixClient["redactEvent"];
   rooms: unknown[];
+  sendEvent?: MockMatrixClient["sendEvent"];
+  sendMessage?: MockMatrixClient["sendMessage"];
   sendStateEvent?: MockMatrixClient["sendStateEvent"];
 }): MockMatrixClient {
   return {
@@ -226,6 +296,9 @@ function createMockMatrixClient({
     getUserId: () => "@operator:cop.local",
     initRustCrypto: () => Promise.resolve(),
     isRoomEncrypted: () => true,
+    redactEvent,
+    sendEvent,
+    sendMessage,
     sendStateEvent,
     startClient: () => Promise.resolve()
   };
@@ -257,12 +330,28 @@ function createRoom({
   };
 }
 
-function createMessageEvent(body: string, timestamp: number) {
+function createMessageEvent(body: string, timestamp: number, eventId = `$${body}`, sender = "@operator:cop.local") {
   return {
     getContent: () => ({ body, msgtype: "m.text" }),
-    getId: () => `$${body}`,
-    getSender: () => "@operator:cop.local",
+    getId: () => eventId,
+    getSender: () => sender,
     getTs: () => timestamp,
     getType: () => "m.room.message"
+  };
+}
+
+function createReactionEvent(targetEventId: string, key: string, sender: string, eventId: string) {
+  const relation = {
+    event_id: targetEventId,
+    key,
+    rel_type: "m.annotation"
+  };
+  return {
+    getContent: () => ({ "m.relates_to": relation }),
+    getId: () => eventId,
+    getRelation: () => relation,
+    getSender: () => sender,
+    getTs: () => Date.parse("2026-06-24T11:01:00.000Z"),
+    getType: () => "m.reaction"
   };
 }

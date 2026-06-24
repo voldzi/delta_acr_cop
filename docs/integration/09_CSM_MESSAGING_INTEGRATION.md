@@ -283,9 +283,15 @@ crypto store.
 The browser may send:
 
 - text messages through Matrix SDK text APIs,
+- reply metadata as Matrix `m.in_reply_to` relations inside the message event,
+- emoji/sticker reactions as Matrix `m.reaction` annotation relations,
 - encrypted image, video and file messages through Matrix media upload and
   Matrix `m.image`, `m.video` or `m.file` events,
 - location shares through Matrix `m.location` events with `geo:` URI metadata.
+
+When a user removes their own message, COP Chat sends a Matrix redaction for
+that event. COP does not implement a separate plaintext delete endpoint and does
+not inspect message bodies to perform this action.
 
 The web composer intentionally behaves like an operational messenger: it
 supports multiline text, explicit icon actions for photo, video, generic file

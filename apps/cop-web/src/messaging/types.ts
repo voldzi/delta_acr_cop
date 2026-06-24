@@ -82,6 +82,8 @@ export interface MatrixTimelineMessage {
   kind: MatrixMessageKind;
   location?: MatrixLocationShare;
   own: boolean;
+  reactions?: MatrixMessageReaction[];
+  replyToEventId?: string;
   sender: string;
   senderDisplayName?: string;
   timestamp: string;
@@ -95,6 +97,19 @@ export interface MatrixAttachmentUpload {
   caption?: string;
   file: File;
   kind: MatrixAttachmentKind;
+}
+
+export interface MatrixMessageReaction {
+  count: number;
+  key: string;
+  own: boolean;
+  senders: string[];
+}
+
+export interface MatrixMessageReplyTarget {
+  body: string;
+  eventId: string;
+  sender: string;
 }
 
 export interface MatrixLocationShare {
@@ -131,6 +146,7 @@ export interface MatrixMessagingSession {
   bootstrap: MessagingBootstrapResponse;
   createEncryptionRecovery(reset?: boolean): Promise<string>;
   createGroupRoom(name: string, inviteUserIds?: string[]): Promise<string>;
+  deleteMessage(roomId: string, eventId: string): Promise<void>;
   downloadAttachment(message: MatrixTimelineMessage): Promise<Blob>;
   getEncryptionRecoveryStatus(): Promise<MatrixEncryptionRecoveryStatus>;
   getRooms(): MatrixRoomSummary[];
@@ -142,7 +158,8 @@ export interface MatrixMessagingSession {
   setMessageRetentionPolicy(roomId: string, seconds: number | null): Promise<void>;
   sendAttachment(roomId: string, attachment: MatrixAttachmentUpload): Promise<void>;
   sendLocation(roomId: string, location: MatrixLocationShare): Promise<void>;
-  sendMessage(roomId: string, body: string): Promise<void>;
+  sendMessage(roomId: string, body: string, options?: { replyTo?: MatrixMessageReplyTarget }): Promise<void>;
+  sendReaction(roomId: string, eventId: string, key: string): Promise<void>;
   stop(): void;
 }
 

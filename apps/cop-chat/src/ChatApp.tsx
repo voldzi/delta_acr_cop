@@ -33,11 +33,14 @@ import {
   PinOff,
   Plus,
   RefreshCcw,
+  Reply,
   Search,
   Send,
   Share2,
   ShieldCheck,
   Smile,
+  Sticker,
+  Trash2,
   UserPlus,
   Users,
   Video,
@@ -143,6 +146,13 @@ interface ChatListItem {
   unreadCount: number;
 }
 
+interface MessageActionPopoverState {
+  left: number;
+  messageId: string;
+  stickerTrayOpen: boolean;
+  top: number;
+}
+
 interface IncomingChatNotification {
   chat: ChatListItem | null;
   message: MatrixTimelineMessage;
@@ -159,6 +169,8 @@ const messageRetentionOptions: Array<{ description: string; label: string; secon
   { description: "Dlouhodobější provozní historie.", label: "90 dní", seconds: 7_776_000 },
   { description: "Zprávy se nemažou automaticky.", label: "Vypnuto", seconds: null }
 ];
+const quickReactionKeys = ["👍", "❤️", "😂", "😮", "😢", "🙏", "⭐"];
+const stickerReactionKeys = ["✅", "🚨", "🔥", "💯", "👀", "🎉", "💪", "🫡", "👏", "🤝", "📍", "⚠️"];
 const fallbackMatrixDeviceIds = new Map<string, string>();
 const emptyChatPreferences: ChatPreferences = {
   mutedUntilByKey: {},
@@ -208,6 +220,11 @@ export function ChatApp() {
   const [mediaPanelTab, setMediaPanelTab] = React.useState<MediaPanelTab>("media");
   const [messageMenuOpen, setMessageMenuOpen] = React.useState(false);
   const [messageSearchOpen, setMessageSearchOpen] = React.useState(false);
+  const [messageActionPopover, setMessageActionPopover] = React.useState<MessageActionPopoverState | null>(null);
+  const [replyDraft, setReplyDraft] = React.useState<MatrixTimelineMessage | null>(null);
+  const [forwardDraftMessages, setForwardDraftMessages] = React.useState<MatrixTimelineMessage[]>([]);
+  const [forwardQuery, setForwardQuery] = React.useState("");
+  const [forwardWorkingId, setForwardWorkingId] = React.useState<string | null>(null);
   const [recoveryDialogOpen, setRecoveryDialogOpen] = React.useState(false);
   const [recoveryKeyInput, setRecoveryKeyInput] = React.useState("");
   const [generatedRecoveryKey, setGeneratedRecoveryKey] = React.useState<string | null>(null);
@@ -290,6 +307,10 @@ export function ChatApp() {
   );
   const timelineRows = React.useMemo(() => buildTimelineRows(visibleTimeline), [visibleTimeline]);
   const timelineMessages = React.useMemo(() => timelineRows.filter((row) => row.kind === "message").map((row) => row.message), [timelineRows]);
+  const messageById = React.useMemo(
+    () => new Map(timelineMessages.map((message) => [message.eventId, message])),
+    [timelineMessages]
+  );
   const historyExhausted = selectedRoomId ? historyExhaustedByRoom[selectedRoomId] === true : true;
   const searchMatches = React.useMemo(
     () => messageSearchOpen && messageSearchQuery.trim()
@@ -302,6 +323,7 @@ export function ChatApp() {
     () => timelineMessages.filter((message) => selectedMessageIds.has(message.eventId)),
     [selectedMessageIds, timelineMessages]
   );
+  const actionMessage = messageActionPopover ? messageById.get(messageActionPopover.messageId) ?? null : null;
   const statusLabel = statusLabelFor(status, matrixSession, syncState, matrixLoading);
   const recoveryBanner = matrixSession && encryptionRecoveryStatus && !encryptionRecoveryStatus.ready
     ? encryptionRecoveryStatus.needsSetup
@@ -337,6 +359,8 @@ export function ChatApp() {
     setMessageSearchOpen(false);
     setMessageSearchQuery("");
     setActiveSearchIndex(0);
+    setMessageActionPopover(null);
+    setReplyDraft(null);
   }, [selectedConversationId, selectedGroupId, selectedRoomId]);
 
   React.useEffect(() => {
@@ -688,6 +712,95 @@ export function ChatApp() {
     }
   }
 
+  function openMessageActions(message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen = false) {
+    const width = Math.min(330, window.innerWidth - 24);
+    const leftCandidate = message.own ? rect.right - width : rect.left;
+    const left = Math.max(12, Math.min(leftCandidate, window.innerWidth - width - 12));
+    const top = Math.max(72, Math.min(rect.top - 58, window.innerHeight - 330));
+    setMessageActionPopover({
+      left,
+      messageId: message.eventId,
+      stickerTrayOpen,
+      top
+    });
+  }
+
+  async function reactToMessage(message: MatrixTimelineMessage, key: string) {
+    if (!matrixSession || !selectedRoomId) {
+      return;
+    }
+    setError(null);
+    try {
+      await matrixSession.sendReaction(selectedRoomId, message.eventId, key);
+      const senderLabel = authDisplayName(authSession, authConfig);
+      setTimeline((current) => applyLocalReaction(current, message.eventId, key, senderLabel));
+      setMessageActionPopover(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Reakci se nepodařilo odeslat.");
+    }
+  }
+
+  function replyToMessage(message: MatrixTimelineMessage) {
+    setReplyDraft(message);
+    setMessageActionPopover(null);
+    window.setTimeout(() => document.querySelector<HTMLTextAreaElement>(".message-input textarea")?.focus(), 0);
+  }
+
+  async function copyMessage(message: MatrixTimelineMessage) {
+    await navigator.clipboard?.writeText(formatMessageForClipboard(message));
+    setMessageActionPopover(null);
+    setNotice("Zpráva zkopírována.");
+  }
+
+  function startForwardMessages(messages: MatrixTimelineMessage[]) {
+    if (messages.length === 0) {
+      return;
+    }
+    setMessageActionPopover(null);
+    setSelectionMode(false);
+    setSelectedMessageIds(new Set());
+    setForwardDraftMessages(messages);
+    setForwardQuery("");
+  }
+
+  async function forwardMessagesToChat(item: ChatListItem) {
+    if (forwardDraftMessages.length === 0) {
+      return;
+    }
+    setForwardWorkingId(item.id);
+    setError(null);
+    try {
+      const session = await ensureMatrixSession(item.id);
+      await ensureEncryptionRecoveryReady(session);
+      const roomId = await ensureRoomForChatItem(item, session);
+      const text = forwardDraftMessages.map(formatMessageForForward).join("\n\n");
+      await session.sendMessage(roomId, text);
+      setTimeline(session.getTimeline(roomId));
+      setForwardDraftMessages([]);
+      setForwardQuery("");
+      setNotice(`${forwardDraftMessages.length === 1 ? "Zpráva přeposlána" : "Zprávy přeposlány"} do chatu ${item.title}.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Zprávu se nepodařilo přeposlat.");
+    } finally {
+      setForwardWorkingId(null);
+    }
+  }
+
+  async function deleteOwnMessage(message: MatrixTimelineMessage) {
+    if (!matrixSession || !selectedRoomId || !message.own) {
+      return;
+    }
+    setError(null);
+    try {
+      await matrixSession.deleteMessage(selectedRoomId, message.eventId);
+      setTimeline((current) => current.filter((item) => item.eventId !== message.eventId));
+      setMessageActionPopover(null);
+      setNotice("Zpráva odstraněna.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Zprávu se nepodařilo odstranit.");
+    }
+  }
+
   async function enableBrowserNotifications() {
     const nextPermission = await requestBrowserNotificationPermission();
     setNotificationPermission(nextPermission);
@@ -708,9 +821,7 @@ export function ChatApp() {
     if (selectedMessages.length === 0) {
       return;
     }
-    void copySelectedMessages();
-    setComposeMode("direct");
-    setNotice("Vybrané zprávy jsou zkopírované. Vyberte kontakt a vložte je do nového chatu.");
+    startForwardMessages(selectedMessages);
   }
 
   function applyMuteChoice(choice: MuteChoice) {
@@ -1038,6 +1149,34 @@ export function ChatApp() {
     }
   }
 
+  async function ensureRoomForChatItem(item: ChatListItem, session: MatrixMessagingSession): Promise<string> {
+    if (item.conversation) {
+      selectConversation(item.conversation);
+      if (item.conversation.matrix?.roomId) {
+        return item.conversation.matrix.roomId;
+      }
+      if (item.room) {
+        await bindExistingRoomToConversation(item.conversation, item.room.roomId, item.group);
+        return item.room.roomId;
+      }
+      return createRoomForConversation(item.conversation, session);
+    }
+    if (item.group) {
+      selectGroup(item.group);
+      const conversation = await createConversationForGroup(item.group);
+      if (item.room) {
+        await bindExistingRoomToConversation(conversation, item.room.roomId, item.group);
+        return item.room.roomId;
+      }
+      return createRoomForConversation(conversation, session);
+    }
+    if (item.room) {
+      selectRoom(item.room);
+      return item.room.roomId;
+    }
+    throw new Error("Cílový chat zatím nemá připravenou místnost.");
+  }
+
   async function createDirectChat(user: UserDirectoryEntry) {
     if (!authToken) {
       return;
@@ -1355,9 +1494,10 @@ export function ChatApp() {
         };
         await matrixSession.sendAttachment(selectedRoomId, payload);
       } else {
-        await matrixSession.sendMessage(selectedRoomId, text);
+        await matrixSession.sendMessage(selectedRoomId, text, replyDraft ? { replyTo: matrixReplyTarget(replyDraft, authSession) } : undefined);
       }
       setComposerText("");
+      setReplyDraft(null);
       clearPendingAttachment();
       setTimeline(matrixSession.getTimeline(selectedRoomId));
     } catch (caught) {
@@ -1672,12 +1812,15 @@ export function ChatApp() {
                       key={row.message.eventId}
                       matrixSession={matrixSession}
                       message={row.message}
+                      replyToMessage={row.message.replyToEventId ? messageById.get(row.message.replyToEventId) ?? null : null}
                       searchQuery={messageSearchQuery}
                       selectable={selectionMode}
                       selected={selectedMessageIds.has(row.message.eventId)}
                       senderLabel={messageSenderLabel(row.message, selectedConversation, authSession)}
                       onDownloadAttachment={(message) => void downloadAttachment(message)}
+                      onOpenActions={openMessageActions}
                       onOpenPreview={setPreviewItem}
+                      onReact={(message, key) => void reactToMessage(message, key)}
                       onToggleSelected={toggleSelectedMessage}
                     />
                   ))}
@@ -1700,10 +1843,12 @@ export function ChatApp() {
                   <Composer
                     disabled={!composerEnabled || sending}
                     pendingAttachment={pendingAttachment}
+                    replyTo={replyDraft}
                     sending={sending}
                     text={composerText}
                     onAttachmentClear={clearPendingAttachment}
                     onAttachmentPick={pickAttachment}
+                    onReplyClear={() => setReplyDraft(null)}
                     onSend={() => void sendMessage()}
                     onShareLocation={() => void shareLocation()}
                     onTextChange={setComposerText}
@@ -1740,6 +1885,39 @@ export function ChatApp() {
           onGroupNameChange={setNewGroupName}
           onMemberQueryChange={setMemberQuery}
           onModeChange={setComposeMode}
+        />
+      ) : null}
+
+      {actionMessage && messageActionPopover ? (
+        <MessageActionPopover
+          anchor={messageActionPopover}
+          message={actionMessage}
+          onClose={() => setMessageActionPopover(null)}
+          onCopy={(message) => void copyMessage(message)}
+          onDelete={(message) => void deleteOwnMessage(message)}
+          onForward={(message) => startForwardMessages([message])}
+          onReact={(message, key) => void reactToMessage(message, key)}
+          onReply={replyToMessage}
+          onSelect={(message) => {
+            setMessageActionPopover(null);
+            setSelectionMode(true);
+            setSelectedMessageIds(new Set([message.eventId]));
+          }}
+          onStickerTrayChange={(open) => setMessageActionPopover((current) => current ? { ...current, stickerTrayOpen: open } : current)}
+        />
+      ) : null}
+
+      {forwardDraftMessages.length > 0 ? (
+        <ForwardDialog
+          items={chatItems}
+          query={forwardQuery}
+          workingId={forwardWorkingId}
+          onClose={() => {
+            setForwardDraftMessages([]);
+            setForwardQuery("");
+          }}
+          onForward={(item) => void forwardMessagesToChat(item)}
+          onQueryChange={setForwardQuery}
         />
       ) : null}
 
@@ -1987,6 +2165,146 @@ function SelectionToolbar({
   );
 }
 
+function MessageActionPopover({
+  anchor,
+  message,
+  onClose,
+  onCopy,
+  onDelete,
+  onForward,
+  onReact,
+  onReply,
+  onSelect,
+  onStickerTrayChange
+}: {
+  anchor: MessageActionPopoverState;
+  message: MatrixTimelineMessage;
+  onClose: () => void;
+  onCopy: (message: MatrixTimelineMessage) => void;
+  onDelete: (message: MatrixTimelineMessage) => void;
+  onForward: (message: MatrixTimelineMessage) => void;
+  onReact: (message: MatrixTimelineMessage, key: string) => void;
+  onReply: (message: MatrixTimelineMessage) => void;
+  onSelect: (message: MatrixTimelineMessage) => void;
+  onStickerTrayChange: (open: boolean) => void;
+}) {
+  return (
+    <>
+      <button className="message-action-backdrop" onClick={onClose} type="button" aria-label="Zavřít akce zprávy" />
+      <div
+        className="message-action-popover"
+        role="menu"
+        style={{ left: anchor.left, top: anchor.top }}
+      >
+        <div className="reaction-strip" aria-label="Rychlé reakce">
+          {quickReactionKeys.map((key) => (
+            <button key={key} onClick={() => onReact(message, key)} type="button" aria-label={`Reagovat ${key}`}>
+              {key}
+            </button>
+          ))}
+          <button
+            className="reaction-more"
+            onClick={() => onStickerTrayChange(!anchor.stickerTrayOpen)}
+            type="button"
+            aria-label="Další nálepky"
+          >
+            <Plus size={22} />
+          </button>
+        </div>
+        {anchor.stickerTrayOpen ? (
+          <div className="sticker-tray" aria-label="Nálepky">
+            {stickerReactionKeys.map((key) => (
+              <button key={key} onClick={() => onReact(message, key)} type="button" aria-label={`Přidat nálepku ${key}`}>
+                {key}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="message-action-list">
+          <button onClick={() => onReply(message)} role="menuitem" type="button">
+            <Reply size={22} />
+            Odpovědět
+          </button>
+          <button onClick={() => onForward(message)} role="menuitem" type="button">
+            <Forward size={22} />
+            Přeposlat
+          </button>
+          <button onClick={() => onStickerTrayChange(true)} role="menuitem" type="button">
+            <Sticker size={22} />
+            Přidat nálepku
+          </button>
+          <button onClick={() => void onCopy(message)} role="menuitem" type="button">
+            <Copy size={22} />
+            Zkopírovat
+          </button>
+          <button onClick={() => onSelect(message)} role="menuitem" type="button">
+            <CheckCheck size={22} />
+            Vybrat
+          </button>
+          {message.own ? (
+            <button className="danger" onClick={() => void onDelete(message)} role="menuitem" type="button">
+              <Trash2 size={22} />
+              Odstranit
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ForwardDialog({
+  items,
+  query,
+  workingId,
+  onClose,
+  onForward,
+  onQueryChange
+}: {
+  items: ChatListItem[];
+  query: string;
+  workingId: string | null;
+  onClose: () => void;
+  onForward: (item: ChatListItem) => void;
+  onQueryChange: (query: string) => void;
+}) {
+  const normalizedQuery = query.trim().toLocaleLowerCase("cs-CZ");
+  const filteredItems = items
+    .filter((item) => !normalizedQuery || item.searchable.toLocaleLowerCase("cs-CZ").includes(normalizedQuery) || item.title.toLocaleLowerCase("cs-CZ").includes(normalizedQuery))
+    .slice(0, 24);
+  return (
+    <div className="dialog-backdrop" role="presentation">
+      <section className="forward-dialog" role="dialog" aria-modal="true" aria-label="Přeposlat zprávu">
+        <header>
+          <button className="round-icon" onClick={onClose} type="button" aria-label="Zavřít">
+            <X size={19} />
+          </button>
+          <strong>Přeposlat</strong>
+          <span />
+        </header>
+        <label className="forward-search">
+          <Search size={18} />
+          <input autoFocus placeholder="Hledat chat" value={query} onChange={(event) => onQueryChange(event.target.value)} />
+        </label>
+        <div className="forward-list" role="list">
+          {filteredItems.length === 0 ? (
+            <p>Žádný chat neodpovídá hledání.</p>
+          ) : filteredItems.map((item) => (
+            <button disabled={Boolean(workingId)} key={item.id} onClick={() => onForward(item)} role="listitem" type="button">
+              <Avatar label={item.title} />
+              <span>
+                <strong>{item.title}</strong>
+                <small>{item.type === "direct" ? "přímý chat" : "skupina"}</small>
+              </span>
+              {workingId === item.id ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function NotificationToggleButton({
   permission,
   onEnable
@@ -2037,20 +2355,24 @@ function HistoryLoader({
 function Composer({
   disabled,
   pendingAttachment,
+  replyTo,
   sending,
   text,
   onAttachmentClear,
   onAttachmentPick,
+  onReplyClear,
   onSend,
   onShareLocation,
   onTextChange
 }: {
   disabled: boolean;
   pendingAttachment: PendingChatAttachment | null;
+  replyTo: MatrixTimelineMessage | null;
   sending: boolean;
   text: string;
   onAttachmentClear: () => void;
   onAttachmentPick: (kind: MatrixAttachmentKind) => void;
+  onReplyClear: () => void;
   onSend: () => void;
   onShareLocation: () => void;
   onTextChange: (value: string) => void;
@@ -2066,6 +2388,17 @@ function Composer({
         }
       }}
     >
+      {replyTo ? (
+        <div className="reply-composer">
+          <span>
+            <strong>Odpověď na {replyTo.own ? "vás" : replyTo.senderDisplayName ?? "člena"}</strong>
+            <small>{messagePreviewText(replyTo)}</small>
+          </span>
+          <button className="round-icon small" onClick={onReplyClear} type="button" aria-label="Zrušit odpověď">
+            <X size={15} />
+          </button>
+        </div>
+      ) : null}
       {pendingAttachment ? (
         <div className="pending-attachment">
           {pendingAttachment.previewUrl && pendingAttachment.kind === "image" ? <img alt="" src={pendingAttachment.previewUrl} /> : null}
@@ -2122,31 +2455,106 @@ function MessageRow({
   grouped,
   matrixSession,
   message,
+  replyToMessage,
   searchQuery,
   selectable,
   selected,
   senderLabel,
   onDownloadAttachment,
+  onOpenActions,
   onOpenPreview,
+  onReact,
   onToggleSelected
 }: {
   activeSearchMatch: boolean;
   grouped: boolean;
   matrixSession: MatrixMessagingSession | null;
   message: MatrixTimelineMessage;
+  replyToMessage: MatrixTimelineMessage | null;
   searchQuery: string;
   selectable: boolean;
   selected: boolean;
   senderLabel: string;
   onDownloadAttachment: (message: MatrixTimelineMessage) => void;
+  onOpenActions: (message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen?: boolean) => void;
   onOpenPreview: (item: MediaPreviewItem) => void;
+  onReact: (message: MatrixTimelineMessage, key: string) => void;
   onToggleSelected: (messageId: string) => void;
 }) {
+  const rowRef = React.useRef<HTMLElement | null>(null);
+  const longPressTimerRef = React.useRef<number | null>(null);
+  const longPressHandledRef = React.useRef(false);
+  const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const hasReactions = Boolean(message.reactions?.length);
+
+  const clearLongPressTimer = React.useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    pointerStartRef.current = null;
+  }, []);
+
+  React.useEffect(() => clearLongPressTimer, [clearLongPressTimer]);
+
+  function openActions(stickerTrayOpen = false) {
+    const rect = rowRef.current?.querySelector(".message-bubble")?.getBoundingClientRect() ?? rowRef.current?.getBoundingClientRect();
+    if (rect) {
+      onOpenActions(message, rect, stickerTrayOpen);
+    }
+  }
+
   return (
     <article
-      className={clsx("message-row", message.own && "own", grouped && "grouped", selectable && "selectable", selected && "selected", activeSearchMatch && "search-active")}
+      ref={rowRef}
+      className={clsx("message-row", message.own && "own", grouped && "grouped", selectable && "selectable", selected && "selected", activeSearchMatch && "search-active", hasReactions && "has-reactions")}
       data-message-id={message.eventId}
-      onClick={selectable ? () => onToggleSelected(message.eventId) : undefined}
+      onClick={(event) => {
+        if (longPressHandledRef.current) {
+          longPressHandledRef.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        if (selectable) {
+          onToggleSelected(message.eventId);
+          return;
+        }
+        if (isInteractiveMessageTarget(event.target)) {
+          return;
+        }
+        openActions(false);
+      }}
+      onContextMenu={(event) => {
+        if (selectable || isInteractiveMessageTarget(event.target)) {
+          return;
+        }
+        event.preventDefault();
+        openActions(false);
+      }}
+      onPointerDown={(event) => {
+        if (selectable || isInteractiveMessageTarget(event.target)) {
+          return;
+        }
+        clearLongPressTimer();
+        longPressHandledRef.current = false;
+        pointerStartRef.current = { x: event.clientX, y: event.clientY };
+        longPressTimerRef.current = window.setTimeout(() => {
+          longPressHandledRef.current = true;
+          openActions(false);
+        }, 460);
+      }}
+      onPointerLeave={clearLongPressTimer}
+      onPointerMove={(event) => {
+        if (event.pointerType === "mouse") {
+          return;
+        }
+        const start = pointerStartRef.current;
+        if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) {
+          clearLongPressTimer();
+        }
+      }}
+      onPointerUp={clearLongPressTimer}
     >
       {selectable ? (
         <button
@@ -2163,6 +2571,7 @@ function MessageRow({
       ) : null}
       <div className="message-bubble">
         {!message.own && !grouped ? <span className="sender-name">{senderLabel}</span> : null}
+        {replyToMessage ? <ReplyPreview message={replyToMessage} /> : null}
         {message.kind === "location" && message.location ? (
           <LocationMessage message={message} onOpenPreview={onOpenPreview} />
         ) : message.attachment ? (
@@ -2179,8 +2588,54 @@ function MessageRow({
           {formatTime(message.timestamp)}
           {message.own ? <CheckCheck size={15} /> : null}
         </span>
+        {message.reactions?.length ? (
+          <MessageReactions
+            message={message}
+            reactions={message.reactions}
+            onReact={onReact}
+          />
+        ) : null}
       </div>
     </article>
+  );
+}
+
+function ReplyPreview({ message }: { message: MatrixTimelineMessage }) {
+  return (
+    <span className="message-reply-preview">
+      <strong>{message.own ? "Vy" : message.senderDisplayName ?? "Člen"}</strong>
+      <small>{messagePreviewText(message)}</small>
+    </span>
+  );
+}
+
+function MessageReactions({
+  message,
+  reactions,
+  onReact
+}: {
+  message: MatrixTimelineMessage;
+  reactions: NonNullable<MatrixTimelineMessage["reactions"]>;
+  onReact: (message: MatrixTimelineMessage, key: string) => void;
+}) {
+  return (
+    <span className="message-reactions" aria-label="Reakce">
+      {reactions.map((reaction) => (
+        <button
+          className={reaction.own ? "own" : ""}
+          key={reaction.key}
+          onClick={(event) => {
+            event.stopPropagation();
+            onReact(message, reaction.key);
+          }}
+          title={reaction.senders.join(", ")}
+          type="button"
+        >
+          <span>{reaction.key}</span>
+          <small>{reaction.count}</small>
+        </button>
+      ))}
+    </span>
   );
 }
 
@@ -3719,9 +4174,65 @@ function messageSearchText(message: MatrixTimelineMessage): string {
   ].filter(Boolean).join(" ");
 }
 
+function messagePreviewText(message: MatrixTimelineMessage): string {
+  const text = messageSearchText(message) || latestMessagePreview(message);
+  return text.length > 120 ? `${text.slice(0, 117).trimEnd()}...` : text;
+}
+
+function matrixReplyTarget(message: MatrixTimelineMessage, session: AuthSession) {
+  return {
+    body: messagePreviewText(message),
+    eventId: message.eventId,
+    sender: message.own ? "Vy" : message.senderDisplayName ?? message.sender ?? session.profile?.username ?? "Člen"
+  };
+}
+
 function formatMessageForClipboard(message: MatrixTimelineMessage): string {
   const time = new Date(message.timestamp).toLocaleString("cs-CZ");
   return `[${time}] ${message.own ? "Vy" : message.senderDisplayName ?? "Člen"}: ${messageSearchText(message) || message.body}`;
+}
+
+function formatMessageForForward(message: MatrixTimelineMessage): string {
+  const prefix = message.own ? "Přeposláno od vás" : `Přeposláno od ${message.senderDisplayName ?? "člena"}`;
+  return `${prefix}:\n${messageSearchText(message) || message.body}`;
+}
+
+function applyLocalReaction(messages: MatrixTimelineMessage[], messageId: string, key: string, senderLabel: string): MatrixTimelineMessage[] {
+  return messages.map((message) => {
+    if (message.eventId !== messageId) {
+      return message;
+    }
+    const reactions = [...(message.reactions ?? [])];
+    const index = reactions.findIndex((reaction) => reaction.key === key);
+    if (index === -1) {
+      reactions.push({
+        count: 1,
+        key,
+        own: true,
+        senders: [senderLabel]
+      });
+    } else {
+      const current = reactions[index];
+      if (!current) {
+        return message;
+      }
+      const senders = current.senders.includes(senderLabel) ? current.senders : [...current.senders, senderLabel];
+      reactions[index] = {
+        ...current,
+        count: Math.max(current.count, senders.length),
+        own: true,
+        senders
+      };
+    }
+    return {
+      ...message,
+      reactions: reactions.sort((left, right) => right.count - left.count || left.key.localeCompare(right.key, "cs-CZ"))
+    };
+  });
+}
+
+function isInteractiveMessageTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, [role='button']"));
 }
 
 function splitTextByQuery(text: string, query: string): Array<{ match: boolean; text: string }> {

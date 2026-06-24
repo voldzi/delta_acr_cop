@@ -5,6 +5,8 @@ import type {
   MatrixEncryptedFileRef,
   MatrixEncryptionRecoveryStatus,
   MatrixLocationShare,
+  MatrixMessageReaction,
+  MatrixMessageReplyTarget,
   MatrixMessagingSession,
   MatrixRoomSummary,
   MatrixTimelineAttachment,
@@ -23,6 +25,8 @@ interface MatrixClientLike {
   mxcUrlToHttp?: (mxcUrl: string, width?: number, height?: number, resizeMethod?: string, allowDirectLinks?: boolean, allowRedirects?: boolean, useAuthentication?: boolean) => string | null;
   off?: (event: string, listener: (...args: unknown[]) => void) => void;
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
+  redactEvent?: (roomId: string, eventId: string, txnId?: string, opts?: Record<string, unknown>) => Promise<unknown>;
+  sendEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string) => Promise<unknown>;
   sendMessage?: (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
   sendStateEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, stateKey?: string) => Promise<unknown>;
   sendTextMessage?: (roomId: string, body: string) => Promise<unknown>;
@@ -69,8 +73,17 @@ interface MatrixRoomLike {
   getUnreadNotificationCount?: () => number;
   currentState?: MatrixRoomStateLike;
   name?: string;
+  relations?: MatrixRelationsContainerLike;
   roomId?: string;
   timeline?: unknown[];
+}
+
+interface MatrixRelationsContainerLike {
+  getChildEventsForEvent?: (eventId: string, relationType: string, eventType: string) => MatrixRelationsLike | undefined;
+}
+
+interface MatrixRelationsLike {
+  getRelations?: () => unknown[];
 }
 
 interface MatrixRoomStateLike {
@@ -87,8 +100,10 @@ interface MatrixRoomMemberLike {
 }
 
 interface MatrixEventLike {
+  getAssociatedId?: () => string | undefined;
   getContent?: () => Record<string, unknown>;
   getId?: () => string | undefined;
+  getRelation?: () => Record<string, unknown> | null;
   getRoomId?: () => string | undefined;
   getSender?: () => string | undefined;
   getTs?: () => number | undefined;
@@ -195,6 +210,18 @@ export async function createMatrixMessagingSession(
         throw new Error("Služba zpráv nevrátila identifikátor konverzace.");
       }
       return roomId;
+    },
+    deleteMessage: async (roomId, eventId) => {
+      if (typeof client.redactEvent !== "function") {
+        throw new Error("Smazání zprávy služba zpráv nepodporuje.");
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        await client.redactEvent(roomId, eventId, undefined, { reason: "Odstraněno uživatelem" });
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "smazat zprávu");
+      }
     },
     downloadAttachment: async (message) => {
       if (!message.attachment) {
@@ -309,20 +336,49 @@ export async function createMatrixMessagingSession(
         throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat polohu");
       }
     },
-    sendMessage: async (roomId, body) => {
+    sendMessage: async (roomId, body, options) => {
       const message = body.trim();
       if (!message) {
         return;
       }
-      if (typeof client.sendTextMessage !== "function") {
+      if (options?.replyTo && typeof client.sendMessage !== "function") {
+        throw new Error("Odpověď se nepodařilo odeslat.");
+      }
+      if (!options?.replyTo && typeof client.sendTextMessage !== "function") {
         throw new Error("Zprávu se nepodařilo odeslat.");
       }
       try {
         await joinInvitedRooms();
         await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
-        await client.sendTextMessage(roomId, message);
+        if (options?.replyTo) {
+          await client.sendMessage?.(roomId, createTextMessageContent(message, options.replyTo));
+        } else {
+          await client.sendTextMessage?.(roomId, message);
+        }
       } catch (caught) {
         throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat zprávu");
+      }
+    },
+    sendReaction: async (roomId, eventId, key) => {
+      const normalizedKey = key.trim();
+      if (!normalizedKey) {
+        return;
+      }
+      if (typeof client.sendEvent !== "function") {
+        throw new Error("Reakci se nepodařilo odeslat.");
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        await client.sendEvent(roomId, "m.reaction", {
+          "m.relates_to": {
+            event_id: eventId,
+            key: normalizedKey,
+            rel_type: "m.annotation"
+          }
+        });
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat reakci");
       }
     },
     stop: () => {
@@ -666,6 +722,24 @@ async function decryptAttachmentPayload(payload: ArrayBuffer, encrypted: MatrixE
   );
 }
 
+function createTextMessageContent(body: string, replyTo: MatrixMessageReplyTarget): Record<string, unknown> {
+  const quoted = replyTo.body
+    .split(/\r?\n/u)
+    .filter((line) => line.trim())
+    .slice(0, 4)
+    .map((line) => `> <${replyTo.sender}> ${line}`)
+    .join("\n") || `> <${replyTo.sender}> Zpráva`;
+  return {
+    "m.relates_to": {
+      "m.in_reply_to": {
+        event_id: replyTo.eventId
+      }
+    },
+    body: `${quoted}\n\n${body}`,
+    msgtype: "m.text"
+  };
+}
+
 function createLocationMessage(location: MatrixLocationShare): Record<string, unknown> {
   const roundedLat = Number(location.lat.toFixed(6));
   const roundedLon = Number(location.lon.toFixed(6));
@@ -857,12 +931,20 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
   const room = findMatrixRoom(client, roomId);
   const currentUserId = client.getUserId?.() ?? undefined;
   const retentionSeconds = room ? readRoomRetentionSeconds(room) : undefined;
-  return (room?.timeline ?? [])
+  const timelineEvents = (room?.timeline ?? [])
     .map(asEvent)
-    .filter((event): event is MatrixEventLike => Boolean(event && event.getType?.() === "m.room.message"))
+    .filter((event): event is MatrixEventLike => Boolean(event));
+  const messageEvents = timelineEvents.filter((event) => event.getType?.() === "m.room.message");
+  const redactedEventIds = readRedactedEventIds(timelineEvents);
+  const reactionsByEventId = readMessageReactions(room, messageEvents, timelineEvents, currentUserId);
+  return messageEvents
     .flatMap((event) => {
+      const eventId = event.getId?.() ?? `${event.getSender?.() ?? "sender"}-${event.getTs?.() ?? Date.now()}`;
+      if (redactedEventIds.has(eventId)) {
+        return [];
+      }
       const content = event.getContent?.() ?? {};
-      const body = normalizeMatrixMessageBody(typeof content.body === "string" ? content.body.trim() : "");
+      const body = normalizeMatrixMessageBody(stripMatrixReplyFallback(typeof content.body === "string" ? content.body.trim() : ""));
       const kind = matrixMessageKind(content);
       const attachment = matrixAttachmentFromContent(client, homeserverBaseUrl, content);
       const geoUri = readLocationUri(content);
@@ -875,17 +957,116 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
       return [{
         ...(attachment ? { attachment } : {}),
         body,
-        eventId: event.getId?.() ?? `${sender}-${event.getTs?.() ?? Date.now()}`,
+        eventId,
         ...(geoUri ? { geoUri } : {}),
         kind,
         ...(location ? { location } : {}),
         own: Boolean(currentUserId && sender === currentUserId),
+        ...(reactionsByEventId.get(eventId)?.length ? { reactions: reactionsByEventId.get(eventId) } : {}),
+        ...(readReplyToEventId(content) ? { replyToEventId: readReplyToEventId(content) } : {}),
         sender,
         ...(senderDisplayName ? { senderDisplayName } : {}),
         timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString()
       }];
     })
     .filter((message) => messageWithinRetention(message, retentionSeconds));
+}
+
+function readRedactedEventIds(events: MatrixEventLike[]): Set<string> {
+  const redacted = new Set<string>();
+  for (const event of events) {
+    if (event.getType?.() !== "m.room.redaction") {
+      continue;
+    }
+    const targetId = event.getAssociatedId?.() ?? stringValue(asRecord(event.getContent?.())?.redacts);
+    if (targetId) {
+      redacted.add(targetId);
+    }
+  }
+  return redacted;
+}
+
+function readMessageReactions(
+  room: MatrixRoomLike | undefined,
+  messageEvents: MatrixEventLike[],
+  timelineEvents: MatrixEventLike[],
+  currentUserId: string | undefined
+): Map<string, MatrixMessageReaction[]> {
+  const reactionEvents = new Map<string, MatrixEventLike>();
+  for (const event of timelineEvents) {
+    if (event.getType?.() === "m.reaction") {
+      reactionEvents.set(event.getId?.() ?? `${event.getSender?.() ?? ""}:${event.getTs?.() ?? ""}`, event);
+    }
+  }
+  for (const event of messageEvents) {
+    const eventId = event.getId?.();
+    if (!eventId) {
+      continue;
+    }
+    const relations = room?.relations?.getChildEventsForEvent?.(eventId, "m.annotation", "m.reaction")?.getRelations?.() ?? [];
+    for (const relation of relations) {
+      const reactionEvent = asEvent(relation);
+      if (reactionEvent) {
+        reactionEvents.set(reactionEvent.getId?.() ?? `${reactionEvent.getSender?.() ?? ""}:${reactionEvent.getTs?.() ?? ""}:${eventId}`, reactionEvent);
+      }
+    }
+  }
+
+  const bucketsByEventId = new Map<string, Map<string, Map<string, string>>>();
+  for (const event of reactionEvents.values()) {
+    const relation = readEventRelation(event);
+    const targetEventId = stringValue(relation?.event_id);
+    const relationType = stringValue(relation?.rel_type);
+    const key = stringValue(relation?.key);
+    const sender = event.getSender?.() ?? "";
+    if (!targetEventId || relationType !== "m.annotation" || !key || !sender) {
+      continue;
+    }
+    const senderLabel = displayNameForMatrixSender(room, sender) ?? sender;
+    const buckets = bucketsByEventId.get(targetEventId) ?? new Map<string, Map<string, string>>();
+    const senders = buckets.get(key) ?? new Map<string, string>();
+    senders.set(sender, senderLabel);
+    buckets.set(key, senders);
+    bucketsByEventId.set(targetEventId, buckets);
+  }
+
+  const reactionsByEventId = new Map<string, MatrixMessageReaction[]>();
+  for (const [eventId, buckets] of bucketsByEventId.entries()) {
+    reactionsByEventId.set(eventId, [...buckets.entries()]
+      .map(([key, senders]) => ({
+        count: senders.size,
+        key,
+        own: Boolean(currentUserId && senders.has(currentUserId)),
+        senders: [...senders.values()]
+      }))
+      .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key, "cs-CZ")));
+  }
+  return reactionsByEventId;
+}
+
+function readEventRelation(event: MatrixEventLike): Record<string, unknown> | undefined {
+  const sdkRelation = event.getRelation?.();
+  if (sdkRelation) {
+    return sdkRelation;
+  }
+  return asRecord(event.getContent?.()?.["m.relates_to"]);
+}
+
+function readReplyToEventId(content: Record<string, unknown>): string | undefined {
+  const relation = asRecord(content["m.relates_to"]);
+  const reply = asRecord(relation?.["m.in_reply_to"]);
+  return stringValue(reply?.event_id);
+}
+
+function stripMatrixReplyFallback(body: string): string {
+  if (!body.startsWith("> ")) {
+    return body;
+  }
+  const dividerIndex = body.indexOf("\n\n");
+  if (dividerIndex === -1) {
+    return body;
+  }
+  return body.slice(dividerIndex + 2).trimStart();
 }
 
 function readRoomRetentionSeconds(room: MatrixRoomLike): number | undefined {
@@ -1050,6 +1231,10 @@ function asEncryptedFile(value: unknown): MatrixEncryptedFileRef | undefined {
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function matrixMsgTypeForAttachment(kind: MatrixAttachmentKind): "m.file" | "m.image" | "m.video" {
