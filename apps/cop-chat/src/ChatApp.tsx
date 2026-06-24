@@ -245,6 +245,7 @@ export function ChatApp() {
     [chatItems]
   );
   const activeChat = chatItems.find((item) => item.active) ?? null;
+  const routeChatSelected = Boolean(activeChat && readRouteSelection());
   const timelineRows = React.useMemo(() => buildTimelineRows(timeline), [timeline]);
   const timelineMessages = React.useMemo(() => timelineRows.filter((row) => row.kind === "message").map((row) => row.message), [timelineRows]);
   const searchMatches = React.useMemo(
@@ -1087,7 +1088,7 @@ export function ChatApp() {
   const connectionLocked = authenticated && !chatReady;
 
   return (
-    <main className={clsx("wa-shell", activeChat && "chat-selected")}>
+    <main className={clsx("wa-shell", routeChatSelected && "chat-selected")}>
       <input
         ref={attachmentInputRef}
         aria-hidden="true"
