@@ -257,6 +257,18 @@ export function ChatApp() {
     matrixSessionRef.current?.stop();
   }, []);
 
+  React.useEffect(() => {
+    const stopMatrixSession = () => {
+      matrixSessionRef.current?.stop();
+    };
+    window.addEventListener("pagehide", stopMatrixSession);
+    window.addEventListener("beforeunload", stopMatrixSession);
+    return () => {
+      window.removeEventListener("pagehide", stopMatrixSession);
+      window.removeEventListener("beforeunload", stopMatrixSession);
+    };
+  }, []);
+
   React.useEffect(() => () => {
     if (pendingAttachment?.previewUrl) {
       window.URL.revokeObjectURL(pendingAttachment.previewUrl);
