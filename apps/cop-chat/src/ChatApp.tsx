@@ -692,6 +692,9 @@ export function ChatApp() {
 
   function applyRouteSelection(selection: string | null): boolean {
     if (!selection) {
+      setSelectedConversationId(null);
+      setSelectedGroupId(null);
+      setSelectedRoomId(null);
       return true;
     }
     const conversation = conversations.find((item) => item.conversationId === selection || item.matrix?.roomId === selection);
