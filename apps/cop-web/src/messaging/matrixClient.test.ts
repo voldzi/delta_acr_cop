@@ -4,6 +4,7 @@ import type { MessagingBootstrapResponse } from "../cop-data";
 
 type MockMatrixClient = {
   getCrypto?: () => MockMatrixCrypto;
+  getJoinedRooms?: () => Promise<{ joined_rooms: string[] }>;
   getRooms: () => unknown[];
   getUserId: () => string;
   initRustCrypto: () => Promise<void>;
@@ -162,6 +163,20 @@ describe("Matrix client diagnostics", () => {
     expect(first).toEqual({ exhausted: false, messages: [] });
     expect(scrollback).toHaveBeenCalledTimes(2);
     expect(second.messages.map((message) => message.body)).toEqual(["synced after first attempt"]);
+  });
+
+  it("hides local cached rooms that are no longer joined on the homeserver", async () => {
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!active:cop.local"] }),
+      rooms: [
+        createRoom({ roomId: "!active:cop.local" }),
+        createRoom({ roomId: "!purged-local-cache:cop.local" })
+      ]
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    expect(session.getRooms().map((room) => room.roomId)).toEqual(["!active:cop.local"]);
   });
 
   it("refreshes timeline callbacks when encrypted events finish decrypting", async () => {
@@ -426,6 +441,7 @@ function createBootstrap(): MessagingBootstrapResponse {
 
 function createMockMatrixClient({
   crypto,
+  getJoinedRooms,
   redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined),
   off,
   on,
@@ -436,6 +452,7 @@ function createMockMatrixClient({
   scrollback
 }: {
   crypto?: MockMatrixCrypto;
+  getJoinedRooms?: MockMatrixClient["getJoinedRooms"];
   off?: MockMatrixClient["off"];
   on?: MockMatrixClient["on"];
   redactEvent?: MockMatrixClient["redactEvent"];
@@ -447,6 +464,7 @@ function createMockMatrixClient({
 }): MockMatrixClient {
   return {
     ...(crypto ? { getCrypto: () => crypto } : {}),
+    ...(getJoinedRooms ? { getJoinedRooms } : {}),
     getRooms: () => rooms,
     getUserId: () => "@operator:cop.local",
     initRustCrypto: () => Promise.resolve(),

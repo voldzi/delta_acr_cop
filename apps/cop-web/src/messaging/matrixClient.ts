@@ -16,6 +16,7 @@ import type {
 interface MatrixClientLike {
   createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;
   getCrypto?: () => MatrixCryptoApiLike | undefined;
+  getJoinedRooms?: () => Promise<{ joined_rooms?: unknown } | unknown[]>;
   getRooms?: () => unknown[];
   getUserId?: () => string | null;
   initRustCrypto?: (args?: { cryptoDatabasePrefix?: string }) => Promise<void>;
@@ -161,11 +162,20 @@ export async function createMatrixMessagingSession(
   }
 
   let inviteJoinInFlight: Promise<void> | null = null;
+  let joinedRoomIds: Set<string> | null = typeof client.getJoinedRooms === "function" ? new Set() : null;
+  const refreshJoinedRoomIds = async () => {
+    joinedRoomIds = await readServerJoinedRoomIds(client, joinedRoomIds);
+  };
+  const readVisibleRooms = () => readRooms(client, { allowedRoomIds: joinedRoomIds });
+  const publishRooms = () => {
+    callbacks.onRoomsChanged?.(readVisibleRooms());
+  };
   const joinInvitedRooms = async () => {
     if (inviteJoinInFlight) {
       return inviteJoinInFlight;
     }
     inviteJoinInFlight = joinInvitedRoomsOnce(client, homeserverBaseUrl)
+      .then(refreshJoinedRoomIds)
       .finally(() => {
         inviteJoinInFlight = null;
       });
@@ -175,22 +185,24 @@ export async function createMatrixMessagingSession(
   const syncListener = (state: unknown) => {
     callbacks.onSyncState?.(typeof state === "string" ? state : "sync");
     void joinInvitedRooms().then(() => {
-      callbacks.onRoomsChanged?.(readRooms(client));
+      publishRooms();
       callbacks.onTimelineChanged?.();
     });
-    callbacks.onRoomsChanged?.(readRooms(client));
+    publishRooms();
     callbacks.onTimelineChanged?.();
   };
   const timelineListener = () => {
-    callbacks.onRoomsChanged?.(readRooms(client));
+    publishRooms();
     callbacks.onTimelineChanged?.();
   };
   client.on?.("sync", syncListener);
   client.on?.("Room.timeline", timelineListener);
   client.on?.("Event.decrypted", timelineListener);
+  await refreshJoinedRoomIds();
   await client.startClient?.({ initialSyncLimit: 30 });
   await joinInvitedRooms();
-  callbacks.onRoomsChanged?.(readRooms(client));
+  await refreshJoinedRoomIds();
+  publishRooms();
   const exhaustedTimelineRooms = new Set<string>();
 
   return {
@@ -218,11 +230,12 @@ export async function createMatrixMessagingSession(
       } catch (caught) {
         throw formatMatrixClientError(caught, homeserverBaseUrl, "založit chatovou místnost");
       }
-      callbacks.onRoomsChanged?.(readRooms(client));
       const roomId = response.room_id ?? response.roomId;
       if (!roomId) {
         throw new Error("Služba zpráv nevrátila identifikátor konverzace.");
       }
+      joinedRoomIds?.add(roomId);
+      publishRooms();
       return roomId;
     },
     deleteMessage: async (roomId, eventId) => {
@@ -244,7 +257,7 @@ export async function createMatrixMessagingSession(
       return downloadMatrixAttachment(client, bootstrap, homeserverBaseUrl, message.attachment);
     },
     getEncryptionRecoveryStatus: async () => readMatrixEncryptionRecoveryStatus(client),
-    getRooms: () => readRooms(client),
+    getRooms: readVisibleRooms,
     getTimeline: (roomId) => readTimeline(client, roomId, homeserverBaseUrl),
     inviteUsersToRoom: async (roomId, userIds) => {
       if (userIds.length === 0) {
@@ -259,7 +272,7 @@ export async function createMatrixMessagingSession(
         for (const userId of [...new Set(userIds)]) {
           await client.invite(roomId, userId);
         }
-        callbacks.onRoomsChanged?.(readRooms(client));
+        publishRooms();
       } catch (caught) {
         throw formatMatrixClientError(caught, homeserverBaseUrl, "pozvat člena do chatové místnosti");
       }
@@ -316,7 +329,7 @@ export async function createMatrixMessagingSession(
           seconds && seconds > 0 ? { max_lifetime: seconds * 1000 } : {},
           ""
         );
-        callbacks.onRoomsChanged?.(readRooms(client));
+        publishRooms();
       } catch (caught) {
         if (isLikelyMatrixForbiddenError(caught)) {
           throw new Error("Automatické mazání zpráv může v této místnosti změnit jen správce chatu.");
@@ -885,6 +898,23 @@ async function ensureJoinedRoom(client: MatrixClientLike, roomId: string, homese
   }
 }
 
+async function readServerJoinedRoomIds(client: MatrixClientLike, fallback: Set<string> | null): Promise<Set<string> | null> {
+  if (typeof client.getJoinedRooms !== "function") {
+    return fallback;
+  }
+  try {
+    const response = await client.getJoinedRooms();
+    const rawRoomIds = Array.isArray(response)
+      ? response
+      : Array.isArray(response.joined_rooms)
+        ? response.joined_rooms
+        : [];
+    return new Set(rawRoomIds.filter((roomId): roomId is string => typeof roomId === "string" && roomId.startsWith("!")));
+  } catch {
+    return fallback;
+  }
+}
+
 export async function clearMatrixMessagingCryptoStateForBootstrap(bootstrap: MessagingBootstrapResponse): Promise<void> {
   if (typeof window === "undefined") {
     return;
@@ -976,10 +1006,15 @@ function isLikelyMatrixForbiddenError(caught: unknown): boolean {
   return caught instanceof Error && /m_forbidden|forbidden|permission|power level/iu.test(caught.message);
 }
 
-function readRooms(client: MatrixClientLike): MatrixRoomSummary[] {
+function readRooms(client: MatrixClientLike, options: { allowedRoomIds?: Set<string> | null } = {}): MatrixRoomSummary[] {
   return (client.getRooms?.() ?? [])
     .map(asRoom)
     .filter((room): room is MatrixRoomLike & { roomId: string } => Boolean(room?.roomId))
+    .filter((room) => !options.allowedRoomIds || options.allowedRoomIds.has(room.roomId))
+    .filter((room) => {
+      const membership = room.getMyMembership?.();
+      return !membership || membership === "join" || membership === "invite";
+    })
     .map((room) => {
       const messageRetentionSeconds = readRoomRetentionSeconds(room);
       return {
