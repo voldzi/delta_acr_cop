@@ -743,7 +743,7 @@ export function ChatApp() {
       }));
       setRooms(matrixSession.getRooms());
       setTimeline(matrixSession.getTimeline(selectedRoomId));
-      if (selectedGroup && authToken) {
+      if (selectedGroup && authToken && canUpdateCommunityGroupMetadata(selectedGroup, authSubjectId)) {
         const updatedGroup = await updateCommunityGroupMetadata(apiBase, authToken, selectedGroup.groupId, {
           chat: {
             ...communityGroupChatMetadata(selectedGroup),
@@ -1002,7 +1002,7 @@ export function ChatApp() {
     }
     const existing = findConversationForGroup(group, conversations) ?? findConversationByTitle(group.name, conversations, "group");
     if (existing) {
-      await persistGroupChatBinding(group, existing);
+      await persistGroupChatBindingIfAllowed(group, existing);
       return existing;
     }
     const conversationResponse = await createMessagingConversation(apiBase, authToken, {
@@ -1026,7 +1026,7 @@ export function ChatApp() {
       }
     };
     setConversations((current) => upsertConversation(current, conversation));
-    await persistGroupChatBinding(group, conversation);
+    await persistGroupChatBindingIfAllowed(group, conversation);
     return conversation;
   }
 
@@ -1128,7 +1128,7 @@ export function ChatApp() {
       ? groups.find((group) => group.groupId === selectedGroupId) ?? groupForConversation(nextConversation, groups)
       : groupForConversation(nextConversation, groups);
     if (linkedGroup) {
-      await persistGroupChatBinding(linkedGroup, nextConversation, roomId);
+      await persistGroupChatBindingIfAllowed(linkedGroup, nextConversation, roomId);
     }
     setRooms((current) => ensureRoomSummary(current, {
       encrypted: true,
@@ -1165,13 +1165,24 @@ export function ChatApp() {
     };
     setConversations((current) => upsertConversation(current, nextConversation));
     if (group) {
-      await persistGroupChatBinding(group, nextConversation, roomId);
+      await persistGroupChatBindingIfAllowed(group, nextConversation, roomId);
     }
     setSelectedConversationId(nextConversation.conversationId);
     setSelectedGroupId(group?.groupId ?? conversationCommunityGroupId(nextConversation) ?? selectedGroupId);
     setSelectedRoomId(roomId);
     writeChatRoute(nextConversation.conversationId);
     return nextConversation;
+  }
+
+  async function persistGroupChatBindingIfAllowed(
+    group: CommunityGroup,
+    conversation: MessagingConversationSummary,
+    roomId = conversation.matrix?.roomId
+  ): Promise<CommunityGroup | null> {
+    if (!canUpdateCommunityGroupMetadata(group, authSubjectId)) {
+      return null;
+    }
+    return persistGroupChatBinding(group, conversation, roomId);
   }
 
   async function persistGroupChatBinding(
@@ -2992,6 +3003,10 @@ function findGroupByMatrixRoomId(roomId: string, groups: CommunityGroup[]): Comm
 function findConversationByTitle(title: string, conversations: MessagingConversationSummary[], type?: "direct" | "group"): MessagingConversationSummary | undefined {
   const normalized = normalizeTitle(title);
   return conversations.find((conversation) => normalizeTitle(conversation.title) === normalized && (!type || conversation.type === type));
+}
+
+function canUpdateCommunityGroupMetadata(group: CommunityGroup, subjectId: string | null | undefined): boolean {
+  return Boolean(subjectId && group.members.some((member) => member.subjectId === subjectId && member.status === "active"));
 }
 
 function findGroupByTitle(title: string, groups: CommunityGroup[]): CommunityGroup | undefined {
