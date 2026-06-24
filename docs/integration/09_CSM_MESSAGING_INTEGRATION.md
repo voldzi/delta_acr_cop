@@ -242,6 +242,10 @@ API metadata bridge and the same browser Matrix/E2EE client bootstrap as the
 map-integrated panel. It does not introduce plaintext message endpoints. The
 standalone app is deployed separately on `COP_CHAT_PORT` and should be exposed
 by DMZ nginx as `https://cop.zeleznalady.cz/chat/`.
+Its production runtime serves the built SPA and exposes a same-origin
+`/chat/oidc/token` proxy for OIDC code and refresh token exchange. This keeps
+the browser flow working when the public COP origin must exchange tokens with a
+Keycloak host that resolves to a private pilot address.
 
 The browser may send:
 
@@ -295,6 +299,7 @@ COP_WEB_PUSH_VAPID_PUBLIC_KEY=<browser-web-push-vapid-public-key-from-csm-messag
 COP_WEB_MESSAGING_LAUNCHER_ENABLED=true
 COP_CHAT_PORT=4314
 COP_CHAT_BASE_PATH=/chat/
+COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 ```
 
 If `COP_CSM_MESSAGING_ENABLED=false`, the chat launcher can still be visible,

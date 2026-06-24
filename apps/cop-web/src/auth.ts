@@ -7,6 +7,7 @@ export interface AuthConfig {
   mode: AuthMode;
   publicReadEnabled: boolean;
   scope: string;
+  tokenEndpoint?: string;
 }
 
 export interface AuthProfile {
@@ -109,7 +110,8 @@ export function readAuthConfig(): AuthConfig {
     issuer: normalizeIssuer(import.meta.env.VITE_COP_OIDC_ISSUER ?? ""),
     mode: readAuthMode(import.meta.env.VITE_COP_AUTH_MODE),
     publicReadEnabled: readBoolean(import.meta.env.VITE_COP_PUBLIC_READ_ENABLED ?? "true"),
-    scope: import.meta.env.VITE_COP_OIDC_SCOPE ?? "openid profile email"
+    scope: import.meta.env.VITE_COP_OIDC_SCOPE ?? "openid profile email",
+    tokenEndpoint: optionalString(import.meta.env.VITE_COP_OIDC_TOKEN_ENDPOINT)
   };
 }
 
@@ -348,7 +350,7 @@ async function exchangeAuthorizationCode(config: AuthConfig, code: string, state
     return { status: "error", error: "OIDC callback state does not match." };
   }
 
-  const response = await fetch(`${config.issuer}/protocol/openid-connect/token`, {
+  const response = await fetch(oidcTokenEndpoint(config), {
     body: new URLSearchParams({
       client_id: config.clientId,
       code,
@@ -376,7 +378,7 @@ async function exchangeAuthorizationCode(config: AuthConfig, code: string, state
 
 async function refreshSession(config: AuthConfig, refreshToken: string): Promise<AuthSession | null> {
   recordAuthDiagnosticEvent("refresh_started", { hasRefreshToken: true });
-  const response = await fetch(`${config.issuer}/protocol/openid-connect/token`, {
+  const response = await fetch(oidcTokenEndpoint(config), {
     body: new URLSearchParams({
       client_id: config.clientId,
       grant_type: "refresh_token",
@@ -737,6 +739,10 @@ function decodeBase64Url(value: string): string {
 
 function normalizeIssuer(value: string): string {
   return value.replace(/\/+$/u, "");
+}
+
+function oidcTokenEndpoint(config: AuthConfig): string {
+  return config.tokenEndpoint?.trim() || `${config.issuer}/protocol/openid-connect/token`;
 }
 
 function optionalString(value: unknown): string | undefined {

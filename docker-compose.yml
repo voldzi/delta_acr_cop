@@ -185,6 +185,7 @@ services:
         VITE_COP_OIDC_ISSUER: "${COP_OIDC_ISSUER:-}"
         VITE_COP_OIDC_CLIENT_ID: "${COP_OIDC_CLIENT_ID:-cop-web}"
         VITE_COP_OIDC_SCOPE: "${COP_OIDC_SCOPE:-openid profile email}"
+        VITE_COP_OIDC_TOKEN_ENDPOINT: "${COP_CHAT_OIDC_TOKEN_ENDPOINT:-/chat/oidc/token}"
         COP_CHAT_BASE_PATH: "${COP_CHAT_BASE_PATH:-/chat/}"
     image: delta-acr-cop-chat:local
     environment:
@@ -192,6 +193,7 @@ services:
       COP_CHAT_BASE_PATH: "${COP_CHAT_BASE_PATH:-/chat/}"
       COP_DEPLOY_DOMAIN: "${COP_DEPLOY_DOMAIN:-docker.home.cz}"
       COP_CHAT_ALLOWED_HOSTS: "${COP_CHAT_ALLOWED_HOSTS:-}"
+      COP_OIDC_ISSUER: "${COP_OIDC_ISSUER:-}"
     ports:
       - "${COP_CHAT_PORT:-4314}:4314"
     depends_on:

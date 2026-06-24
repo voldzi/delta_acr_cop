@@ -44,11 +44,16 @@ COP_DEPLOY_DOMAIN=cop.zeleznalady.cz
 COP_WEB_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
 COP_CHAT_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
 COP_CHAT_BASE_PATH=/chat/
+COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 ```
 
 `COP_PUBLIC_API_BASE_URL` má být při publikaci pod `cop.zeleznalady.cz`
 prázdné, aby oba browser klienti volali COP API relativně přes `/api/...`.
 `COP_CHAT_BASE_PATH` musí odpovídat DMZ nginx pravidlu pro `/chat/`.
+`COP_CHAT_OIDC_TOKEN_ENDPOINT` je same-origin proxy používaná jen samostatným
+chatem pro OIDC token exchange; chrání `/chat/` před browser blokací
+public-to-private token requestů, když `login.zeleznalady.cz` v pilotní síti
+rezolvuje na privátní adresu.
 
 ## AI Provider / COP Ollama Provider
 

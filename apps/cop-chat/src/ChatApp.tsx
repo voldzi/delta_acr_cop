@@ -645,7 +645,7 @@ export function ChatApp() {
           createdFrom: "standalone-chat"
         },
         name,
-        visibility: "private"
+        visibility: "public"
       });
       setGroups((current) => [group, ...current.filter((item) => item.groupId !== group.groupId)]);
       const conversation = await createConversationForGroup(group);
