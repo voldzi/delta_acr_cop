@@ -861,7 +861,9 @@ export function ChatApp() {
     try {
       if (item.conversation) {
         selectConversation(item.conversation);
-        if (!item.conversation.matrix?.roomId && chatReady) {
+        if (!item.conversation.matrix?.roomId && item.room && chatReady) {
+          await bindExistingRoomToConversation(item.conversation, item.room.roomId, item.group);
+        } else if (!item.conversation.matrix?.roomId && chatReady) {
           const session = await ensureMatrixSession(item.conversation.conversationId);
           await createRoomForConversation(item.conversation, session);
         }
@@ -871,9 +873,13 @@ export function ChatApp() {
         selectGroup(item.group);
         if (chatReady) {
           const conversation = await createConversationForGroup(item.group);
-          const session = await ensureMatrixSession(conversation.conversationId);
-          await createRoomForConversation(conversation, session);
-          selectConversation(conversation);
+          if (item.room) {
+            await bindExistingRoomToConversation(conversation, item.room.roomId, item.group);
+          } else {
+            const session = await ensureMatrixSession(conversation.conversationId);
+            await createRoomForConversation(conversation, session);
+            selectConversation(conversation);
+          }
         }
         return;
       }
@@ -1078,6 +1084,37 @@ export function ChatApp() {
     setSelectedRoomId(roomId);
     writeChatRoute(nextConversation.conversationId);
     return roomId;
+  }
+
+  async function bindExistingRoomToConversation(
+    conversation: MessagingConversationSummary,
+    roomId: string,
+    group = groupForConversation(conversation, groups) ?? undefined
+  ): Promise<MessagingConversationSummary> {
+    if (!authToken) {
+      throw new Error("Pro uložení místnosti je potřeba přihlášení.");
+    }
+    const binding = await bindMessagingConversationMatrixRoom(apiBase, authToken, conversation.conversationId, {
+      encrypted: true,
+      roomId
+    });
+    assertMatrixRoomBindingConfirmed(binding, roomId);
+    const nextConversation = binding.conversation ?? {
+      ...conversation,
+      matrix: {
+        ...(conversation.matrix ?? {}),
+        roomId
+      }
+    };
+    setConversations((current) => upsertConversation(current, nextConversation));
+    if (group) {
+      await persistGroupChatBinding(group, nextConversation, roomId);
+    }
+    setSelectedConversationId(nextConversation.conversationId);
+    setSelectedGroupId(group?.groupId ?? conversationCommunityGroupId(nextConversation) ?? selectedGroupId);
+    setSelectedRoomId(roomId);
+    writeChatRoute(nextConversation.conversationId);
+    return nextConversation;
   }
 
   async function persistGroupChatBinding(
