@@ -6,8 +6,10 @@ import {
   ArrowLeft,
   Bell,
   BellOff,
+  Check,
   CheckCheck,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Clock3,
   Copy,
@@ -94,6 +96,7 @@ type ComposeMode = "direct" | "group" | null;
 type InfoPanelTab = "info" | "media" | "members";
 type MediaPanelTab = "media" | "documents" | "locations";
 type MuteChoice = "8h" | "1w" | "forever";
+type MessageRetentionSeconds = 86_400 | 604_800 | 7_776_000 | null;
 type BrowserNotificationPermission = NotificationPermission | "unsupported";
 
 interface PendingChatAttachment {
@@ -148,6 +151,12 @@ const apiBase = trimTrailingSlash(import.meta.env.VITE_COP_API_BASE_URL ?? "");
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
+const messageRetentionOptions: Array<{ description: string; label: string; seconds: MessageRetentionSeconds }> = [
+  { description: "Nové zprávy zmizí po jednom dni.", label: "24 hodin", seconds: 86_400 },
+  { description: "Běžná pracovní doba uchování.", label: "7 dní", seconds: 604_800 },
+  { description: "Dlouhodobější provozní historie.", label: "90 dní", seconds: 7_776_000 },
+  { description: "Zprávy se nemažou automaticky.", label: "Vypnuto", seconds: null }
+];
 const fallbackMatrixDeviceIds = new Map<string, string>();
 const emptyChatPreferences: ChatPreferences = {
   mutedUntilByKey: {},
@@ -197,6 +206,9 @@ export function ChatApp() {
   const [messageMenuOpen, setMessageMenuOpen] = React.useState(false);
   const [messageSearchOpen, setMessageSearchOpen] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
+  const [retentionDialogOpen, setRetentionDialogOpen] = React.useState(false);
+  const [retentionSaving, setRetentionSaving] = React.useState(false);
+  const [retentionOverrideByRoom, setRetentionOverrideByRoom] = React.useState<Record<string, MessageRetentionSeconds>>({});
   const [selectionMode, setSelectionMode] = React.useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = React.useState<Set<string>>(() => new Set());
   const [activeSearchIndex, setActiveSearchIndex] = React.useState(0);
@@ -261,7 +273,14 @@ export function ChatApp() {
   );
   const activeChat = chatItems.find((item) => item.active) ?? null;
   const routeChatSelected = Boolean(activeChat && readRouteSelection());
-  const timelineRows = React.useMemo(() => buildTimelineRows(timeline), [timeline]);
+  const activeMessageRetentionSeconds = selectedRoomId && Object.prototype.hasOwnProperty.call(retentionOverrideByRoom, selectedRoomId)
+    ? retentionOverrideByRoom[selectedRoomId] ?? null
+    : messageRetentionSecondsForActiveChat(selectedRoom, selectedGroup);
+  const visibleTimeline = React.useMemo(
+    () => filterTimelineByRetention(timeline, activeMessageRetentionSeconds),
+    [activeMessageRetentionSeconds, timeline]
+  );
+  const timelineRows = React.useMemo(() => buildTimelineRows(visibleTimeline), [visibleTimeline]);
   const timelineMessages = React.useMemo(() => timelineRows.filter((row) => row.kind === "message").map((row) => row.message), [timelineRows]);
   const historyExhausted = selectedRoomId ? historyExhaustedByRoom[selectedRoomId] === true : true;
   const searchMatches = React.useMemo(
@@ -298,6 +317,7 @@ export function ChatApp() {
   React.useEffect(() => {
     setMessageMenuOpen(false);
     setMuteDialogOpen(false);
+    setRetentionDialogOpen(false);
     setInfoPanelOpen(false);
     setSelectionMode(false);
     setSelectedMessageIds(new Set());
@@ -706,6 +726,43 @@ export function ChatApp() {
     });
     setMessageMenuOpen(false);
     setMuteDialogOpen(false);
+  }
+
+  async function applyMessageRetention(seconds: MessageRetentionSeconds) {
+    if (!activeChat || !selectedRoomId || !matrixSession) {
+      setError("Automatické mazání lze nastavit až po otevření chatové místnosti.");
+      return;
+    }
+    setRetentionSaving(true);
+    setError(null);
+    try {
+      await matrixSession.setMessageRetentionPolicy(selectedRoomId, seconds);
+      setRetentionOverrideByRoom((current) => ({
+        ...current,
+        [selectedRoomId]: seconds
+      }));
+      setRooms(matrixSession.getRooms());
+      setTimeline(matrixSession.getTimeline(selectedRoomId));
+      if (selectedGroup && authToken) {
+        const updatedGroup = await updateCommunityGroupMetadata(apiBase, authToken, selectedGroup.groupId, {
+          chat: {
+            ...communityGroupChatMetadata(selectedGroup),
+            disappearingMessages: {
+              enabled: seconds !== null,
+              seconds,
+              updatedAt: new Date().toISOString()
+            }
+          }
+        });
+        setGroups((current) => current.map((group) => group.groupId === updatedGroup.groupId ? updatedGroup : group));
+      }
+      setNotice(seconds === null ? "Automatické mazání zpráv je vypnuté." : `Nové zprávy se budou automaticky odstraňovat po ${messageRetentionLabel(seconds)}.`);
+      setRetentionDialogOpen(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Automatické mazání zpráv se nepodařilo nastavit.");
+    } finally {
+      setRetentionSaving(false);
+    }
   }
 
   function moveSearch(delta: number) {
@@ -1576,6 +1633,7 @@ export function ChatApp() {
           group={selectedGroup}
           mediaTab={mediaPanelTab}
           messages={timelineMessages}
+          messageRetentionSeconds={activeMessageRetentionSeconds}
           muted={activeChat.muted}
           pinned={activeChat.pinned}
           tab={infoPanelTab}
@@ -1584,6 +1642,7 @@ export function ChatApp() {
           onTabChange={setInfoPanelTab}
           onTogglePinned={() => togglePinnedChat(activeChat)}
           onToggleMute={activeChat.muted ? clearActiveMute : () => setMuteDialogOpen(true)}
+          onOpenRetentionSettings={() => setRetentionDialogOpen(true)}
           onOpenPreview={setPreviewItem}
         />
       ) : null}
@@ -1592,6 +1651,15 @@ export function ChatApp() {
           title={activeChat.title}
           onClose={() => setMuteDialogOpen(false)}
           onMute={applyMuteChoice}
+        />
+      ) : null}
+      {retentionDialogOpen && activeChat ? (
+        <MessageRetentionDialog
+          currentSeconds={activeMessageRetentionSeconds}
+          saving={retentionSaving}
+          title={activeChat.title}
+          onClose={() => setRetentionDialogOpen(false)}
+          onSelect={(seconds) => void applyMessageRetention(seconds)}
         />
       ) : null}
     </main>
@@ -2374,11 +2442,13 @@ function ChatInfoPanel({
   group,
   mediaTab,
   messages,
+  messageRetentionSeconds,
   muted,
   pinned,
   tab,
   onClose,
   onMediaTabChange,
+  onOpenRetentionSettings,
   onOpenPreview,
   onTabChange,
   onToggleMute,
@@ -2390,11 +2460,13 @@ function ChatInfoPanel({
   group: CommunityGroup | null;
   mediaTab: MediaPanelTab;
   messages: MatrixTimelineMessage[];
+  messageRetentionSeconds: MessageRetentionSeconds;
   muted: boolean;
   pinned: boolean;
   tab: InfoPanelTab;
   onClose: () => void;
   onMediaTabChange: (tab: MediaPanelTab) => void;
+  onOpenRetentionSettings: () => void;
   onOpenPreview: (item: MediaPreviewItem) => void;
   onTabChange: (tab: InfoPanelTab) => void;
   onToggleMute: () => void;
@@ -2445,6 +2517,16 @@ function ChatInfoPanel({
               <InfoMetric label="Šifrování" value={activeChat.room?.encrypted ? "Zapnuto pro tuto místnost" : "Připraveno při otevření místnosti"} />
               <InfoMetric label="Upozornění" value={muted ? "Ztlumeno" : "Zapnuto"} />
               <InfoMetric label="Připnutí" value={pinned ? "Chat je připnutý" : "Chat není připnutý"} />
+              <button className="info-setting-row" onClick={onOpenRetentionSettings} type="button">
+                <span>
+                  <Clock3 size={20} />
+                  Automatické odstraňování zpráv
+                </span>
+                <strong>
+                  {messageRetentionShortLabel(messageRetentionSeconds)}
+                  <ChevronRight size={18} />
+                </strong>
+              </button>
               <div className="info-actions-row">
                 <button onClick={onTogglePinned} type="button">
                   {pinned ? <PinOff size={18} /> : <Pin size={18} />}
@@ -2518,6 +2600,61 @@ function MuteDialog({ title, onClose, onMute }: { title: string; onClose: () => 
         <button onClick={() => onMute("1w")} type="button">1 týden</button>
         <button onClick={() => onMute("forever")} type="button">Vždy</button>
         <button onClick={onClose} type="button">Zrušit</button>
+      </section>
+    </div>
+  );
+}
+
+function MessageRetentionDialog({
+  currentSeconds,
+  saving,
+  title,
+  onClose,
+  onSelect
+}: {
+  currentSeconds: MessageRetentionSeconds;
+  saving: boolean;
+  title: string;
+  onClose: () => void;
+  onSelect: (seconds: MessageRetentionSeconds) => void;
+}) {
+  return (
+    <div className="mute-backdrop" role="presentation" onClick={onClose}>
+      <section className="retention-dialog" role="dialog" aria-modal="true" aria-label={`Automatické odstraňování zpráv ${title}`} onClick={(event) => event.stopPropagation()}>
+        <header>
+          <button className="round-icon small" onClick={onClose} type="button" aria-label="Zpět">
+            <ArrowLeft size={20} />
+          </button>
+          <span>
+            <h2>Automatické odstraňování zpráv</h2>
+            <small>{title}</small>
+          </span>
+        </header>
+        <div className="retention-illustration" aria-hidden="true">
+          <Clock3 size={58} />
+        </div>
+        <p>
+          Zprávy v tomto chatu se po zvolené době nebudou zobrazovat v COP Chat.
+          Nastavení se ukládá do chatové místnosti a platí pro členy používající COP Chat.
+        </p>
+        <strong className="retention-section-title">Časový interval</strong>
+        <div className="retention-options">
+          {messageRetentionOptions.map((option) => {
+            const active = normalizeMessageRetentionSeconds(currentSeconds) === option.seconds;
+            return (
+              <button disabled={saving} key={option.label} onClick={() => onSelect(option.seconds)} type="button">
+                <span>
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </span>
+                {active ? <Check size={22} /> : null}
+              </button>
+            );
+          })}
+        </div>
+        <footer>
+          <button disabled={saving} onClick={onClose} type="button">Hotovo</button>
+        </footer>
       </section>
     </div>
   );
@@ -2869,6 +3006,11 @@ function conversationCommunityGroupId(conversation: MessagingConversationSummary
 
 interface CommunityGroupChatMetadata {
   conversationId?: string;
+  disappearingMessages?: {
+    enabled: boolean;
+    seconds: MessageRetentionSeconds;
+    updatedAt?: string;
+  };
   encrypted?: boolean;
   linkedAt?: string;
   matrixRoomId?: string;
@@ -2880,8 +3022,18 @@ function communityGroupChatMetadata(group: CommunityGroup): CommunityGroupChatMe
   if (!chat) {
     return {};
   }
+  const disappearingMessages = asRecord(chat.disappearingMessages);
+  const retentionSeconds = normalizeMessageRetentionSeconds(disappearingMessages?.seconds);
+  const retentionEnabled = disappearingMessages?.enabled === true && retentionSeconds !== null;
   return {
     conversationId: typeof chat.conversationId === "string" ? chat.conversationId : undefined,
+    ...(disappearingMessages ? {
+      disappearingMessages: {
+        enabled: retentionEnabled,
+        seconds: retentionEnabled ? retentionSeconds : null,
+        updatedAt: typeof disappearingMessages.updatedAt === "string" ? disappearingMessages.updatedAt : undefined
+      }
+    } : {}),
     encrypted: typeof chat.encrypted === "boolean" ? chat.encrypted : undefined,
     linkedAt: typeof chat.linkedAt === "string" ? chat.linkedAt : undefined,
     matrixRoomId: typeof chat.matrixRoomId === "string" ? chat.matrixRoomId : undefined,
@@ -2895,6 +3047,36 @@ function communityGroupConversationId(group: CommunityGroup): string | undefined
 
 function communityGroupMatrixRoomId(group: CommunityGroup): string | undefined {
   return communityGroupChatMetadata(group).matrixRoomId;
+}
+
+function messageRetentionSecondsForActiveChat(room: MatrixRoomSummary | null, group: CommunityGroup | null): MessageRetentionSeconds {
+  return normalizeMessageRetentionSeconds(room?.messageRetentionSeconds ?? (group ? communityGroupChatMetadata(group).disappearingMessages?.seconds : null));
+}
+
+function normalizeMessageRetentionSeconds(value: unknown): MessageRetentionSeconds {
+  if (value === 86_400 || value === 604_800 || value === 7_776_000) {
+    return value;
+  }
+  return null;
+}
+
+function messageRetentionLabel(seconds: MessageRetentionSeconds): string {
+  return messageRetentionOptions.find((option) => option.seconds === seconds)?.label ?? "Vypnuto";
+}
+
+function messageRetentionShortLabel(seconds: MessageRetentionSeconds): string {
+  return seconds === null ? "Vyp." : messageRetentionLabel(seconds);
+}
+
+function filterTimelineByRetention(messages: MatrixTimelineMessage[], seconds: MessageRetentionSeconds): MatrixTimelineMessage[] {
+  if (seconds === null) {
+    return messages;
+  }
+  const minTimestamp = Date.now() - seconds * 1000;
+  return messages.filter((message) => {
+    const timestamp = Date.parse(message.timestamp);
+    return !Number.isFinite(timestamp) || timestamp >= minTimestamp;
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

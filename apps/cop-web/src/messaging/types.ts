@@ -68,6 +68,7 @@ export interface MessagingReportSeed {
 
 export interface MatrixRoomSummary {
   encrypted: boolean;
+  messageRetentionSeconds?: number;
   name: string;
   roomId: string;
   unreadCount: number;
@@ -135,6 +136,7 @@ export interface MatrixMessagingSession {
   inviteUsersToRoom(roomId: string, userIds: string[]): Promise<void>;
   joinInvitedRooms(): Promise<void>;
   loadMoreTimeline(roomId: string, limit?: number): Promise<{ exhausted: boolean; messages: MatrixTimelineMessage[] }>;
+  setMessageRetentionPolicy(roomId: string, seconds: number | null): Promise<void>;
   sendAttachment(roomId: string, attachment: MatrixAttachmentUpload): Promise<void>;
   sendLocation(roomId: string, location: MatrixLocationShare): Promise<void>;
   sendMessage(roomId: string, body: string): Promise<void>;

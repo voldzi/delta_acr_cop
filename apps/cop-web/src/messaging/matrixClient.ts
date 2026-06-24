@@ -22,6 +22,7 @@ interface MatrixClientLike {
   off?: (event: string, listener: (...args: unknown[]) => void) => void;
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
   sendMessage?: (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
+  sendStateEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, stateKey?: string) => Promise<unknown>;
   sendTextMessage?: (roomId: string, body: string) => Promise<unknown>;
   startClient?: (options?: Record<string, unknown>) => Promise<void> | void;
   stopClient?: () => void;
@@ -43,9 +44,14 @@ interface MatrixRoomLike {
   getMember?: (userId: string) => MatrixRoomMemberLike | null;
   getMyMembership?: () => string;
   getUnreadNotificationCount?: () => number;
+  currentState?: MatrixRoomStateLike;
   name?: string;
   roomId?: string;
   timeline?: unknown[];
+}
+
+interface MatrixRoomStateLike {
+  getStateEvents?: (eventType: string, stateKey?: string) => unknown | unknown[];
 }
 
 interface MatrixRoomMemberLike {
@@ -226,6 +232,27 @@ export async function createMatrixMessagingSession(
         };
       } catch (caught) {
         throw formatMatrixClientError(caught, homeserverBaseUrl, "načíst starší zprávy");
+      }
+    },
+    setMessageRetentionPolicy: async (roomId, seconds) => {
+      if (typeof client.sendStateEvent !== "function") {
+        throw new Error("Nastavení automatického mazání služba zpráv nepodporuje.");
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        await client.sendStateEvent(
+          roomId,
+          "m.room.retention",
+          seconds && seconds > 0 ? { max_lifetime: seconds * 1000 } : {},
+          ""
+        );
+        callbacks.onRoomsChanged?.(readRooms(client));
+      } catch (caught) {
+        if (isLikelyMatrixForbiddenError(caught)) {
+          throw new Error("Automatické mazání zpráv může v této místnosti změnit jen správce chatu.");
+        }
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "nastavit automatické mazání zpráv");
       }
     },
     sendAttachment: async (roomId, attachment) => {
@@ -577,16 +604,27 @@ function isLikelyBrowserNetworkError(caught: unknown): boolean {
   );
 }
 
+function isLikelyMatrixForbiddenError(caught: unknown): boolean {
+  if (asRecord(caught)?.errcode === "M_FORBIDDEN") {
+    return true;
+  }
+  return caught instanceof Error && /m_forbidden|forbidden|permission|power level/iu.test(caught.message);
+}
+
 function readRooms(client: MatrixClientLike): MatrixRoomSummary[] {
   return (client.getRooms?.() ?? [])
     .map(asRoom)
     .filter((room): room is MatrixRoomLike & { roomId: string } => Boolean(room?.roomId))
-    .map((room) => ({
-      encrypted: Boolean(client.isRoomEncrypted?.(room.roomId)),
-      name: room.name?.trim() || room.roomId,
-      roomId: room.roomId,
-      unreadCount: Math.max(0, room.getUnreadNotificationCount?.() ?? 0)
-    }))
+    .map((room) => {
+      const messageRetentionSeconds = readRoomRetentionSeconds(room);
+      return {
+        encrypted: Boolean(client.isRoomEncrypted?.(room.roomId)),
+        ...(messageRetentionSeconds ? { messageRetentionSeconds } : {}),
+        name: room.name?.trim() || room.roomId,
+        roomId: room.roomId,
+        unreadCount: Math.max(0, room.getUnreadNotificationCount?.() ?? 0)
+      };
+    })
     .sort((left, right) => left.name.localeCompare(right.name, "cs"));
 }
 
@@ -599,6 +637,7 @@ function findMatrixRoom(client: MatrixClientLike, roomId: string): MatrixRoomLik
 function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUrl: string): MatrixTimelineMessage[] {
   const room = findMatrixRoom(client, roomId);
   const currentUserId = client.getUserId?.() ?? undefined;
+  const retentionSeconds = room ? readRoomRetentionSeconds(room) : undefined;
   return (room?.timeline ?? [])
     .map(asEvent)
     .filter((event): event is MatrixEventLike => Boolean(event && event.getType?.() === "m.room.message"))
@@ -626,7 +665,31 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
         ...(senderDisplayName ? { senderDisplayName } : {}),
         timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString()
       }];
-    });
+    })
+    .filter((message) => messageWithinRetention(message, retentionSeconds));
+}
+
+function readRoomRetentionSeconds(room: MatrixRoomLike): number | undefined {
+  const event = room.currentState?.getStateEvents?.("m.room.retention", "");
+  const content = Array.isArray(event)
+    ? asEvent(event.find((item) => asEvent(item)?.getType?.() === "m.room.retention"))?.getContent?.()
+    : asEvent(event)?.getContent?.();
+  const maxLifetimeMs = typeof content?.max_lifetime === "number" ? content.max_lifetime : undefined;
+  if (!Number.isFinite(maxLifetimeMs) || !maxLifetimeMs || maxLifetimeMs <= 0) {
+    return undefined;
+  }
+  return Math.max(1, Math.floor(maxLifetimeMs / 1000));
+}
+
+function messageWithinRetention(message: MatrixTimelineMessage, retentionSeconds: number | undefined): boolean {
+  if (!retentionSeconds) {
+    return true;
+  }
+  const timestamp = Date.parse(message.timestamp);
+  if (!Number.isFinite(timestamp)) {
+    return true;
+  }
+  return timestamp >= Date.now() - retentionSeconds * 1000;
 }
 
 export function normalizeMatrixMessageBody(body: string): string {

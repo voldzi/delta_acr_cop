@@ -1451,6 +1451,49 @@ button {
   padding: 0 13px;
 }
 
+.info-setting-row {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: #111b21;
+  cursor: pointer;
+  padding: 12px 0;
+  text-align: left;
+}
+
+.info-setting-row > span,
+.info-setting-row > strong {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.info-setting-row > span {
+  overflow: hidden;
+  font-size: 0.98rem;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.info-setting-row > strong {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.94rem;
+}
+
+.info-setting-row:hover,
+.info-setting-row:focus-visible {
+  color: var(--accent-dark);
+  outline: none;
+}
+
 .media-tabs {
   display: inline-grid;
   grid-template-columns: repeat(3, minmax(96px, 1fr));
@@ -1583,6 +1626,133 @@ button {
 .mute-dialog button:focus-visible {
   background: #dfe5e8;
   outline: none;
+}
+
+.retention-dialog {
+  display: grid;
+  width: min(640px, 100%);
+  max-height: min(780px, 92dvh);
+  overflow-y: auto;
+  gap: 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--shadow);
+  padding: 22px 24px 24px;
+}
+
+.retention-dialog header {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.retention-dialog header span {
+  min-width: 0;
+  text-align: center;
+}
+
+.retention-dialog h2 {
+  margin: 0;
+  color: #111b21;
+  font-size: 1.12rem;
+  line-height: 1.2;
+}
+
+.retention-dialog small,
+.retention-dialog p {
+  color: var(--muted);
+}
+
+.retention-dialog p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.retention-illustration {
+  display: grid;
+  width: 110px;
+  height: 110px;
+  place-items: center;
+  justify-self: center;
+  border-radius: 999px;
+  background: #d9fdd3;
+  color: var(--accent-dark);
+}
+
+.retention-section-title {
+  color: #3b4a54;
+  font-size: 0.96rem;
+}
+
+.retention-options {
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.retention-options button {
+  display: flex;
+  width: 100%;
+  min-height: 62px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: #ffffff;
+  color: #111b21;
+  cursor: pointer;
+  padding: 9px 16px;
+  text-align: left;
+}
+
+.retention-options button:last-child {
+  border-bottom: 0;
+}
+
+.retention-options button:hover:not(:disabled),
+.retention-options button:focus-visible {
+  background: #f0f2f5;
+  outline: none;
+}
+
+.retention-options button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.retention-options span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.retention-options strong {
+  font-size: 0.98rem;
+}
+
+.retention-options svg {
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.retention-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.retention-dialog footer button {
+  min-height: 40px;
+  min-width: 96px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 760;
+  padding: 0 16px;
 }
 
 .new-chat-dialog,

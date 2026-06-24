@@ -253,6 +253,14 @@ messages, muted chats and the currently focused open room. This is an
 in-page browser notification flow, not a background push delivery path for a
 closed browser.
 
+COP Chat also exposes per-chat automatic message removal in the conversation
+information panel. The client stores the selected interval in Matrix room state
+as `m.room.retention` with `max_lifetime`, mirrors the choice into COP group
+metadata when the room is linked to a COP group, and filters the local Matrix
+timeline according to that room setting. Physical server-side purging remains a
+homeserver/CSM Messaging retention policy concern; COP still does not proxy,
+read or persist plaintext Matrix timelines.
+
 The browser may send:
 
 - text messages through Matrix SDK text APIs,
