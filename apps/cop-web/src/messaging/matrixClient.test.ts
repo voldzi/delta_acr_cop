@@ -8,6 +8,8 @@ type MockMatrixClient = {
   getUserId: () => string;
   initRustCrypto: () => Promise<void>;
   isRoomEncrypted: () => boolean;
+  off?: MatrixEventSubscription;
+  on?: MatrixEventSubscription;
   redactEvent?: MatrixRedactEvent;
   sendEvent?: MatrixSendEvent;
   sendMessage?: MatrixSendMessage;
@@ -41,6 +43,7 @@ type MatrixSendEvent = (roomId: string, eventType: string, content: Record<strin
 type MatrixSendMessage = (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
 type MatrixRedactEvent = (roomId: string, eventId: string, txnId?: string, opts?: Record<string, unknown>) => Promise<unknown>;
 type MatrixScrollback = (room: unknown, limit?: number) => Promise<unknown>;
+type MatrixEventSubscription = (event: string, listener: (...args: unknown[]) => void) => void;
 
 const matrixSdkMock = vi.hoisted(() => ({
   createClient: vi.fn()
@@ -159,6 +162,33 @@ describe("Matrix client diagnostics", () => {
     expect(first).toEqual({ exhausted: false, messages: [] });
     expect(scrollback).toHaveBeenCalledTimes(2);
     expect(second.messages.map((message) => message.body)).toEqual(["synced after first attempt"]);
+  });
+
+  it("refreshes timeline callbacks when encrypted events finish decrypting", async () => {
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+    const on = vi.fn<MatrixEventSubscription>((event, listener) => {
+      listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+    });
+    const off = vi.fn<MatrixEventSubscription>();
+    const onTimelineChanged = vi.fn();
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      off,
+      on,
+      rooms: [createRoom({ roomId: "!chat:cop.local" })]
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onTimelineChanged });
+    onTimelineChanged.mockClear();
+
+    for (const listener of listeners.get("Event.decrypted") ?? []) {
+      listener();
+    }
+
+    expect(on).toHaveBeenCalledWith("Event.decrypted", expect.any(Function));
+    expect(onTimelineChanged).toHaveBeenCalledTimes(1);
+
+    session.stop();
+    expect(off).toHaveBeenCalledWith("Event.decrypted", expect.any(Function));
   });
 
   it("sends Matrix reactions as annotation relation events", async () => {
@@ -397,6 +427,8 @@ function createBootstrap(): MessagingBootstrapResponse {
 function createMockMatrixClient({
   crypto,
   redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined),
+  off,
+  on,
   rooms,
   sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined),
   sendMessage = vi.fn<MatrixSendMessage>().mockResolvedValue(undefined),
@@ -404,6 +436,8 @@ function createMockMatrixClient({
   scrollback
 }: {
   crypto?: MockMatrixCrypto;
+  off?: MockMatrixClient["off"];
+  on?: MockMatrixClient["on"];
   redactEvent?: MockMatrixClient["redactEvent"];
   rooms: unknown[];
   sendEvent?: MockMatrixClient["sendEvent"];
@@ -417,6 +451,8 @@ function createMockMatrixClient({
     getUserId: () => "@operator:cop.local",
     initRustCrypto: () => Promise.resolve(),
     isRoomEncrypted: () => true,
+    ...(off ? { off } : {}),
+    ...(on ? { on } : {}),
     redactEvent,
     sendEvent,
     sendMessage,

@@ -167,6 +167,7 @@ const apiBase = trimTrailingSlash(import.meta.env.VITE_COP_API_BASE_URL ?? "");
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
+const initialHistoryLoadRetryLimit = 8;
 const messageRetentionOptions: Array<{ description: string; label: string; seconds: MessageRetentionSeconds }> = [
   { description: "Nové zprávy zmizí po jednom dni.", label: "24 hodin", seconds: 86_400 },
   { description: "Běžná pracovní doba uchování.", label: "7 dní", seconds: 604_800 },
@@ -543,7 +544,7 @@ export function ChatApp() {
     }
     const loadKey = `${matrixSession.bootstrap.userId}:${matrixSession.bootstrap.deviceId}:${selectedRoomId}`;
     const attempts = initialHistoryLoadAttemptsRef.current.get(loadKey) ?? 0;
-    if (attempts >= 4 || historyExhausted || historyLoadingRoomsRef.current.has(selectedRoomId)) {
+    if (attempts >= initialHistoryLoadRetryLimit || historyExhausted || historyLoadingRoomsRef.current.has(selectedRoomId)) {
       return;
     }
     const currentTimeline = matrixSession.getTimeline(selectedRoomId);
@@ -551,8 +552,15 @@ export function ChatApp() {
       return;
     }
     initialHistoryLoadAttemptsRef.current.set(loadKey, attempts + 1);
-    void loadOlderMessages(selectedRoomId, 120, true);
-  }, [historyExhausted, matrixSession, selectedRoomId, syncState, timelineRevision]);
+    const delayMs = attempts === 0 ? 0 : Math.min(2_000, attempts * 350);
+    const timer = window.setTimeout(() => {
+      if (selectedRoomIdRef.current !== selectedRoomId || historyLoadingRoomsRef.current.has(selectedRoomId)) {
+        return;
+      }
+      void loadOlderMessages(selectedRoomId, 120, true);
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [historyExhausted, historyLoading, matrixSession, selectedRoomId, syncState, timelineRevision]);
 
   React.useEffect(() => {
     if (!matrixSession) {
@@ -1579,7 +1587,8 @@ export function ChatApp() {
   }
 
   async function loadOlderMessages(roomId = selectedRoomId, limit = 120, silent = false): Promise<void> {
-    if (!roomId || !matrixSession) {
+    const session = matrixSessionRef.current;
+    if (!roomId || !session) {
       return;
     }
     if (historyLoadingRoomsRef.current.has(roomId) || historyExhaustedByRoom[roomId]) {
@@ -1591,7 +1600,7 @@ export function ChatApp() {
       setError(null);
     }
     try {
-      const result = await matrixSession.loadMoreTimeline(roomId, limit);
+      const result = await session.loadMoreTimeline(roomId, limit);
       if (selectedRoomIdRef.current === roomId) {
         setTimeline(result.messages);
       }

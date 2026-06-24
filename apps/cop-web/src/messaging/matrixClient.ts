@@ -187,6 +187,7 @@ export async function createMatrixMessagingSession(
   };
   client.on?.("sync", syncListener);
   client.on?.("Room.timeline", timelineListener);
+  client.on?.("Event.decrypted", timelineListener);
   await client.startClient?.({ initialSyncLimit: 30 });
   await joinInvitedRooms();
   callbacks.onRoomsChanged?.(readRooms(client));
@@ -431,6 +432,7 @@ export async function createMatrixMessagingSession(
     stop: () => {
       client.off?.("sync", syncListener);
       client.off?.("Room.timeline", timelineListener);
+      client.off?.("Event.decrypted", timelineListener);
       client.stopClient?.();
     }
   };
