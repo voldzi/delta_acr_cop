@@ -10,7 +10,6 @@ import {
 } from "./matrixClient";
 import type { MatrixAttachmentKind, MatrixLocationShare, MatrixMessagingSession, MatrixRoomSummary, MatrixTimelineMessage, MessagingPanelProps } from "./types";
 
-type Tone = "ok" | "warn" | "neutral";
 type MessagingDockTab = "chat" | "context" | "groups";
 
 interface PendingChatAttachment {
@@ -354,6 +353,17 @@ export function MessagingPanel({
     : null;
   const activeConversationGroup = selectedConversationGroup ?? selectedGroup;
   const chatConnectionHint = messagingConnectionHint(Boolean(matrixSession), matrixBootstrapReady, syncState);
+  const chatHeaderStatusParts = authenticated
+    ? [
+        operatorDisplayName(session, authConfig),
+        messagingStatusLabel(providerStatus, loading),
+        chatConnectionHint,
+        e2eeRequired && matrixSession ? "zabezpečeno" : null
+      ].filter((part): part is string => Boolean(part))
+    : [];
+  const chatHeaderStatus = authenticated
+    ? chatHeaderStatusParts.join(" · ")
+    : "Mapa je dostupná bez účtu. Komunikace vyžaduje přihlášení.";
   const demoConversation = React.useMemo(() => demoConversationFromGroups(communityGroups), [communityGroups]);
 
   function selectConversation(conversationId: string) {
@@ -774,7 +784,7 @@ export function MessagingPanel({
             <MessageCircle size={17} />
             <div>
               <strong>Konverzace</strong>
-              <span>Skupiny, zprávy a sdílená média</span>
+              <span>{chatHeaderStatus}</span>
             </div>
           </div>
           <div className="messaging-header-actions">
@@ -791,19 +801,12 @@ export function MessagingPanel({
           <MessagingDockTabs activeTab={activeDockTab} onChange={setActiveDockTab} />
         </div>
 
-        <div className="chat-status-strip" aria-label="Stav komunikace">
-          <span className={messagingStatusTone(providerStatus)}>{messagingStatusLabel(providerStatus, loading)}</span>
-          {authenticated ? <span>{operatorDisplayName(session, authConfig)}</span> : null}
-          {chatConnectionHint ? <span>{chatConnectionHint}</span> : null}
-          {e2eeRequired && matrixSession ? <span>zabezpečeno</span> : null}
-        </div>
-
         {hasMessagingErrors ? (
           <div className="messaging-error-stack">
-            {error ? <div className="error-banner">Zprávy: {userFacingMessagingError(error)}</div> : null}
-            {conversationsError ? <div className="error-banner">Konverzace: {userFacingMessagingError(conversationsError)}</div> : null}
-            {bootstrapError ? <div className="error-banner">Chat: {userFacingMessagingError(bootstrapError)}</div> : null}
-            {composerError ? <div className="error-banner">Odeslání: {userFacingMessagingError(composerError)}</div> : null}
+            {error ? <div className="error-banner">{userFacingMessagingError(error)}</div> : null}
+            {conversationsError ? <div className="error-banner">{userFacingMessagingError(conversationsError)}</div> : null}
+            {bootstrapError ? <div className="error-banner">{userFacingMessagingError(bootstrapError)}</div> : null}
+            {composerError ? <div className="error-banner">{userFacingMessagingError(composerError)}</div> : null}
           </div>
         ) : null}
 
@@ -932,14 +935,6 @@ export function MessagingPanel({
 
         </div>
 
-        {status?.warnings.length ? (
-          <div className="messaging-warning-list">
-            {status.warnings.slice(0, 4).map((warning) => (
-              <span key={warning}>{warning}</span>
-            ))}
-          </div>
-        ) : null}
-
         {mediaPreviewItem ? (
           <MediaPreviewDialog item={mediaPreviewItem} onClose={() => setMediaPreviewItem(null)} />
         ) : null}
@@ -951,9 +946,9 @@ export function MessagingPanel({
 
 function MessagingDockTabs({ activeTab, onChange }: { activeTab: MessagingDockTab; onChange: (tab: MessagingDockTab) => void }) {
   const tabs: Array<{ icon: React.ReactNode; label: string; value: MessagingDockTab }> = [
-    { icon: <MessageCircle size={15} />, label: "Chat", value: "chat" },
+    { icon: <MessageCircle size={15} />, label: "Zprávy", value: "chat" },
     { icon: <Users size={15} />, label: "Skupiny", value: "groups" },
-    { icon: <Info size={15} />, label: "Kontext", value: "context" }
+    { icon: <Info size={15} />, label: "Info", value: "context" }
   ];
   return (
     <div className="messaging-dock-tabs" role="tablist" aria-label="Zobrazení komunikace">
@@ -1679,12 +1674,12 @@ function MatrixChatShell({
   const activeRoomMeta = selectedRoom
     ? activeRoomSubtitle(selectedConversation, selectedGroup, selectedRoom)
     : selectedConversation?.matrix?.roomId
-      ? "načítám zprávy"
+      ? "načítám konverzaci"
       : selectedConversation
-        ? "chat je připravený k založení"
+        ? "připraveno k založení chatu"
         : selectedGroup
           ? groupChatSubtitle(selectedGroup)
-          : "čeká na výběr";
+          : "vyberte chat";
   const listCountLabel = listCount === 1 ? "1 konverzace" : `${listCount} konverzací`;
   const composerEnabled = Boolean(selectedRoom && selectedRoomId);
 
@@ -1707,6 +1702,12 @@ function MatrixChatShell({
   }
 
   const hasActiveConversation = Boolean(selectedRoom || selectedConversation || selectedGroup);
+  const shellClassName = [
+    "matrix-chat-shell",
+    pinned ? "pinned" : "",
+    hasActiveConversation ? "has-active-room" : "room-list-active",
+    selectedRoom ? "has-live-room" : "pending-room"
+  ].filter(Boolean).join(" ");
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
@@ -1717,11 +1718,11 @@ function MatrixChatShell({
   }, [conversationOnlySelected, groupOnlySelected, hasActiveConversation, selectedGroup?.groupId, selectedRoomId, timeline.length]);
 
   return (
-    <div className={`matrix-chat-shell ${pinned ? "pinned" : ""} ${hasActiveConversation ? "has-active-room" : "room-list-active"}`} style={shellStyle}>
+    <div className={shellClassName} style={shellStyle}>
       <div className="matrix-room-list" aria-label="Konverzace">
         <div className="matrix-list-header">
           <div>
-            <strong>Zprávy</strong>
+            <strong>Konverzace</strong>
             <span>{listCountLabel}</span>
           </div>
           <Search size={15} aria-hidden="true" />
@@ -2311,16 +2312,6 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function messagingStatusTone(status: "degraded" | "disabled" | "online"): Tone {
-  if (status === "online") {
-    return "ok";
-  }
-  if (status === "degraded") {
-    return "warn";
-  }
-  return "neutral";
-}
-
 function messagingStatusLabel(status: "degraded" | "disabled" | "online", loading: boolean): string {
   if (loading) {
     return "ověřuji";
@@ -2343,15 +2334,15 @@ function userFacingMessagingError(message: string): string {
     return "Pro tuto akci je potřeba platné přihlášení.";
   }
   if (/ByteString|character at index|greater than 255|invalid character/i.test(normalized)) {
-    return "Některý údaj účtu nejde bezpečně předat službě zpráv. Odhlaste se a přihlaste znovu; pokud potíže trvají, kontaktujte správce.";
+    return "Konverzace se nepodařilo synchronizovat. Obnovte stav nebo se znovu přihlaste.";
   }
   if (/\b(500|502|503|504)\b/u.test(normalized) || /api request failed|internal server error|bad gateway|service unavailable|gateway timeout/i.test(normalized)) {
     return "Služba zpráv je dočasně nedostupná. Zkuste to prosím za chvíli.";
   }
   if (/fetch failed|load failed|failed to fetch|network/i.test(normalized)) {
-    return "Služba zpráv není z tohoto zařízení dostupná. Zkontrolujte připojení nebo VPN.";
+    return "Služba zpráv není dostupná. Zkontrolujte připojení a zkuste obnovit stav.";
   }
-  return normalized.length > 180 ? `${normalized.slice(0, 177)}...` : normalized;
+  return "Chat narazil na chybu. Zkuste obnovit stav konverzací.";
 }
 
 function messagingConnectionHint(hasMatrixSession: boolean, matrixBootstrapReady: boolean, state: string): string | null {
