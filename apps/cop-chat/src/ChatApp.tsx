@@ -1299,17 +1299,6 @@ export function ChatApp() {
                     <ArrowDown size={17} />
                   </button>
                 ) : null}
-                <Composer
-                  disabled={!composerEnabled || sending || selectionMode}
-                  pendingAttachment={pendingAttachment}
-                  sending={sending}
-                  text={composerText}
-                  onAttachmentClear={clearPendingAttachment}
-                  onAttachmentPick={pickAttachment}
-                  onSend={() => void sendMessage()}
-                  onShareLocation={() => void shareLocation()}
-                  onTextChange={setComposerText}
-                />
                 {selectionMode ? (
                   <SelectionToolbar
                     count={selectedMessageIds.size}
@@ -1318,7 +1307,19 @@ export function ChatApp() {
                     onForward={forwardSelectedMessages}
                     onShare={() => void shareSelectedMessages()}
                   />
-                ) : null}
+                ) : (
+                  <Composer
+                    disabled={!composerEnabled || sending}
+                    pendingAttachment={pendingAttachment}
+                    sending={sending}
+                    text={composerText}
+                    onAttachmentClear={clearPendingAttachment}
+                    onAttachmentPick={pickAttachment}
+                    onSend={() => void sendMessage()}
+                    onShareLocation={() => void shareLocation()}
+                    onTextChange={setComposerText}
+                  />
+                )}
               </>
             )}
           </>
