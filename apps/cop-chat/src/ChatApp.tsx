@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowDown,
   ArrowLeft,
+  Bell,
   BellOff,
   CheckCheck,
   ChevronDown,
@@ -92,6 +93,7 @@ type ComposeMode = "direct" | "group" | null;
 type InfoPanelTab = "info" | "media" | "members";
 type MediaPanelTab = "media" | "documents" | "locations";
 type MuteChoice = "8h" | "1w" | "forever";
+type BrowserNotificationPermission = NotificationPermission | "unsupported";
 
 interface PendingChatAttachment {
   file: File;
@@ -135,6 +137,12 @@ interface ChatListItem {
   unreadCount: number;
 }
 
+interface IncomingChatNotification {
+  chat: ChatListItem | null;
+  message: MatrixTimelineMessage;
+  room: MatrixRoomSummary;
+}
+
 const apiBase = trimTrailingSlash(import.meta.env.VITE_COP_API_BASE_URL ?? "");
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
@@ -163,6 +171,7 @@ export function ChatApp() {
   const [conversationQuery, setConversationQuery] = React.useState("");
   const [messageSearchQuery, setMessageSearchQuery] = React.useState("");
   const [chatFilter, setChatFilter] = React.useState<ChatFilter>("all");
+  const [notificationPermission, setNotificationPermission] = React.useState<BrowserNotificationPermission>(() => readBrowserNotificationPermission());
   const [composeMode, setComposeMode] = React.useState<ComposeMode>(null);
   const [directQuery, setDirectQuery] = React.useState("");
   const [directSuggestions, setDirectSuggestions] = React.useState<UserDirectoryEntry[]>([]);
@@ -194,6 +203,8 @@ export function ChatApp() {
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
   const routeAppliedRef = React.useRef(false);
   const matrixAttemptKeyRef = React.useRef<string | null>(null);
+  const notifiedEventIdsRef = React.useRef<Set<string>>(new Set());
+  const notificationsPrimedRef = React.useRef(false);
   const matrixSessionRef = React.useRef<MatrixMessagingSession | null>(null);
 
   const authenticated = isAuthSessionActive(authSession);
@@ -268,6 +279,16 @@ export function ChatApp() {
   React.useEffect(() => {
     setChatPreferences(readChatPreferences(preferencesOwner));
   }, [preferencesOwner]);
+
+  React.useEffect(() => {
+    const refreshPermission = () => setNotificationPermission(readBrowserNotificationPermission());
+    window.addEventListener("focus", refreshPermission);
+    document.addEventListener("visibilitychange", refreshPermission);
+    return () => {
+      window.removeEventListener("focus", refreshPermission);
+      document.removeEventListener("visibilitychange", refreshPermission);
+    };
+  }, []);
 
   React.useEffect(() => {
     setMessageMenuOpen(false);
@@ -369,6 +390,8 @@ export function ChatApp() {
       setMatrixSession(null);
       setRooms([]);
       setTimeline([]);
+      notifiedEventIdsRef.current.clear();
+      notificationsPrimedRef.current = false;
       return;
     }
     void loadMetadata();
@@ -407,6 +430,53 @@ export function ChatApp() {
     }
     setTimeline(matrixSession.getTimeline(selectedRoomId));
   }, [matrixSession, rooms, selectedRoomId]);
+
+  React.useEffect(() => {
+    if (!matrixSession) {
+      notifiedEventIdsRef.current.clear();
+      notificationsPrimedRef.current = false;
+      return;
+    }
+
+    const pendingNotifications: IncomingChatNotification[] = [];
+    for (const room of rooms) {
+      const chat = chatItemForRoom(chatItems, room.roomId);
+      const messages = matrixSession.getTimeline(room.roomId);
+      for (const message of messages) {
+        if (notifiedEventIdsRef.current.has(message.eventId)) {
+          continue;
+        }
+        notifiedEventIdsRef.current.add(message.eventId);
+        if (!notificationsPrimedRef.current) {
+          continue;
+        }
+        if (message.own || chat?.muted) {
+          continue;
+        }
+        if (isActiveFocusedRoom(room.roomId, selectedRoomId)) {
+          continue;
+        }
+        pendingNotifications.push({ chat, message, room });
+      }
+    }
+
+    notificationsPrimedRef.current = true;
+    if (notificationPermission !== "granted") {
+      return;
+    }
+
+    for (const candidate of pendingNotifications) {
+      showIncomingChatNotification(candidate, () => {
+        window.focus();
+        if (candidate.chat) {
+          void openChat(candidate.chat);
+          return;
+        }
+        setSelectedRoomId(candidate.room.roomId);
+        writeChatRoute(candidate.room.roomId);
+      });
+    }
+  }, [chatItems, matrixSession, notificationPermission, rooms, selectedRoomId]);
 
   React.useEffect(() => {
     routeAppliedRef.current = applyRouteSelection(readRouteSelection());
@@ -561,6 +631,22 @@ export function ChatApp() {
     } else {
       await navigator.clipboard?.writeText(text);
       setNotice("Sdílení není v tomto prohlížeči dostupné, zprávy jsou zkopírované.");
+    }
+  }
+
+  async function enableBrowserNotifications() {
+    const nextPermission = await requestBrowserNotificationPermission();
+    setNotificationPermission(nextPermission);
+    if (nextPermission === "granted") {
+      setNotice("Upozornění na nové zprávy jsou zapnutá.");
+      return;
+    }
+    if (nextPermission === "denied") {
+      setNotice("Safari blokuje upozornění pro tento web. Povolte je v nastavení webu a zkuste to znovu.");
+      return;
+    }
+    if (nextPermission === "unsupported") {
+      setNotice("Tento prohlížeč nepodporuje webová upozornění.");
     }
   }
 
@@ -1127,9 +1213,17 @@ export function ChatApp() {
             <h1>Chaty</h1>
             <span>{statusLabel}</span>
           </div>
-          <button className="round-icon" onClick={() => setComposeMode("direct")} type="button" aria-label="Nový chat">
-            <MessageSquarePlus size={22} />
-          </button>
+          <div className="list-actions">
+            {authenticated ? (
+              <NotificationToggleButton
+                permission={notificationPermission}
+                onEnable={() => void enableBrowserNotifications()}
+              />
+            ) : null}
+            <button className="round-icon" onClick={() => setComposeMode("direct")} type="button" aria-label="Nový chat">
+              <MessageSquarePlus size={22} />
+            </button>
+          </div>
         </header>
 
         <div className="identity-strip">
@@ -1570,6 +1664,31 @@ function SelectionToolbar({
       </button>
       <button className="selection-cancel" onClick={onCancel} type="button">Zrušit</button>
     </div>
+  );
+}
+
+function NotificationToggleButton({
+  permission,
+  onEnable
+}: {
+  permission: BrowserNotificationPermission;
+  onEnable: () => void;
+}) {
+  if (permission === "unsupported") {
+    return null;
+  }
+  const enabled = permission === "granted";
+  const blocked = permission === "denied";
+  return (
+    <button
+      className={clsx("round-icon", enabled && "active")}
+      onClick={onEnable}
+      title={notificationButtonLabel(permission)}
+      type="button"
+      aria-label={notificationButtonLabel(permission)}
+    >
+      {blocked ? <BellOff size={21} /> : <Bell size={21} />}
+    </button>
   );
 }
 
@@ -3019,6 +3138,80 @@ function mediaGridLabel(message: MatrixTimelineMessage): string {
     return message.location.label ?? formatCoordinates(message.location);
   }
   return message.attachment?.fileName ?? (message.body || "Zpráva");
+}
+
+function readBrowserNotificationPermission(): BrowserNotificationPermission {
+  if (typeof window === "undefined" || !window.isSecureContext || !("Notification" in window)) {
+    return "unsupported";
+  }
+  return window.Notification.permission;
+}
+
+async function requestBrowserNotificationPermission(): Promise<BrowserNotificationPermission> {
+  if (typeof window === "undefined" || !window.isSecureContext || !("Notification" in window)) {
+    return "unsupported";
+  }
+  const NotificationCtor = window.Notification;
+  if (NotificationCtor.permission === "granted" || NotificationCtor.permission === "denied") {
+    return NotificationCtor.permission;
+  }
+  return new Promise<BrowserNotificationPermission>((resolve) => {
+    let settled = false;
+    const settle = (permission: NotificationPermission) => {
+      if (!settled) {
+        settled = true;
+        resolve(permission);
+      }
+    };
+    const result = NotificationCtor.requestPermission(settle);
+    if (result && typeof result.then === "function") {
+      result.then(settle).catch(() => resolve(readBrowserNotificationPermission()));
+    }
+  });
+}
+
+function notificationButtonLabel(permission: BrowserNotificationPermission): string {
+  if (permission === "granted") {
+    return "Upozornění zapnutá";
+  }
+  if (permission === "denied") {
+    return "Upozornění blokovaná";
+  }
+  return "Zapnout upozornění";
+}
+
+function isActiveFocusedRoom(roomId: string, selectedRoomId: string | null): boolean {
+  if (roomId !== selectedRoomId) {
+    return false;
+  }
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
+function chatItemForRoom(chatItems: ChatListItem[], roomId: string): ChatListItem | null {
+  return chatItems.find((item) => item.roomId === roomId || item.room?.roomId === roomId || item.conversation?.matrix?.roomId === roomId) ?? null;
+}
+
+function showIncomingChatNotification(candidate: IncomingChatNotification, onOpen: () => void): void {
+  if (readBrowserNotificationPermission() !== "granted") {
+    return;
+  }
+  const title = candidate.chat?.title || candidate.room.name || "Nová zpráva";
+  const body = incomingNotificationBody(candidate.message);
+  const notification = new window.Notification(title, {
+    body,
+    icon: "/icons/cop-icon.svg",
+    tag: `cop-chat-${candidate.room.roomId}`
+  });
+  notification.onclick = () => {
+    notification.close();
+    onOpen();
+  };
+}
+
+function incomingNotificationBody(message: MatrixTimelineMessage): string {
+  const preview = latestMessagePreview(message);
+  const sender = message.senderDisplayName?.trim();
+  return sender ? `${sender}: ${preview}` : preview;
 }
 
 function readRouteSelection(): string | null {

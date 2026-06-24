@@ -246,6 +246,12 @@ Its production runtime serves the built SPA and exposes a same-origin
 `/chat/oidc/token` proxy for OIDC code and refresh token exchange. This keeps
 the browser flow working when the public COP origin must exchange tokens with a
 Keycloak host that resolves to a private pilot address.
+When the standalone chat page is open and the user explicitly grants browser
+notification permission, incoming Matrix messages can raise browser-native
+notifications. The client suppresses notifications for the operator's own
+messages, muted chats and the currently focused open room. This is an
+in-page browser notification flow, not a background push delivery path for a
+closed browser.
 
 The browser may send:
 

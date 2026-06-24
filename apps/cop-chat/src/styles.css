@@ -136,6 +136,11 @@ button {
   opacity: 0.38;
 }
 
+.round-icon.active {
+  background: #e1f4ee;
+  color: var(--accent-dark);
+}
+
 .chat-list-pane {
   display: flex;
   min-width: 0;
@@ -180,6 +185,13 @@ button {
   display: block;
   margin-top: 2px;
   font-size: 0.84rem;
+}
+
+.list-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
 }
 
 .identity-strip {
