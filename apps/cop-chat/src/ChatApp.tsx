@@ -561,8 +561,8 @@ export function ChatApp() {
     setError(null);
     setPreparingChatId(`direct:${user.subjectId}`);
     try {
-      const existing = findExistingDirectConversation(user, conversations);
       const title = user.displayName?.trim() || user.username || user.subjectId;
+      const existing = findExistingDirectConversation(user, conversations, title);
       const conversation = existing ?? await createDirectConversation(user, title);
       const conversationWithMember = ensureConversationHasMember(conversation, user);
       setConversations((current) => upsertConversation(current, conversationWithMember));
@@ -1848,16 +1848,25 @@ function communityGroupMembersToMessagingMembers(group: CommunityGroup): Array<{
     }));
 }
 
-function findExistingDirectConversation(user: UserDirectoryEntry, conversations: MessagingConversationSummary[]): MessagingConversationSummary | undefined {
-  return conversations.find((conversation) => {
+function findExistingDirectConversation(
+  user: UserDirectoryEntry,
+  conversations: MessagingConversationSummary[],
+  title: string
+): MessagingConversationSummary | undefined {
+  const normalizedTitle = normalizeTitle(title);
+  const candidates = conversations.filter((conversation) => {
     if (conversation.type !== "direct") {
       return false;
     }
     if (conversation.metadata?.source === "cop.direct" && conversation.metadata.externalId === user.subjectId) {
       return true;
     }
-    return conversation.members?.some((member) => member.userId === user.subjectId) ?? false;
+    if (conversation.members?.some((member) => member.userId === user.subjectId)) {
+      return true;
+    }
+    return Boolean(normalizedTitle && normalizeTitle(conversation.title) === normalizedTitle);
   });
+  return candidates.find((conversation) => Boolean(conversation.matrix?.roomId)) ?? candidates[0];
 }
 
 function ensureConversationHasMember(conversation: MessagingConversationSummary, user: UserDirectoryEntry): MessagingConversationSummary {
