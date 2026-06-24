@@ -4,11 +4,17 @@ import {
   AlertCircle,
   ArrowDown,
   ArrowLeft,
+  BellOff,
   CheckCheck,
+  ChevronDown,
+  ChevronUp,
   Clock3,
+  Copy,
   Download,
   FileText,
+  Forward,
   Image as ImageIcon,
+  Info,
   Loader2,
   Lock,
   LogIn,
@@ -18,12 +24,14 @@ import {
   MessageSquarePlus,
   Mic,
   MoreVertical,
-  Paperclip,
   Phone,
+  Pin,
+  PinOff,
   Plus,
   RefreshCcw,
   Search,
   Send,
+  Share2,
   ShieldCheck,
   Smile,
   UserPlus,
@@ -81,11 +89,19 @@ import type {
 
 type ChatFilter = "all" | "direct" | "group";
 type ComposeMode = "direct" | "group" | null;
+type InfoPanelTab = "info" | "media" | "members";
+type MediaPanelTab = "media" | "documents" | "locations";
+type MuteChoice = "8h" | "1w" | "forever";
 
 interface PendingChatAttachment {
   file: File;
   kind: MatrixAttachmentKind;
   previewUrl?: string;
+}
+
+interface ChatPreferences {
+  mutedUntilByKey: Record<string, string>;
+  pinnedKeys: string[];
 }
 
 interface MediaPreviewItem {
@@ -103,8 +119,11 @@ interface ChatListItem {
   conversation?: MessagingConversationSummary;
   group?: CommunityGroup;
   id: string;
+  muted: boolean;
   latest?: MatrixTimelineMessage;
   memberCount: number;
+  pinned: boolean;
+  preferenceKey: string;
   preview: string;
   room?: MatrixRoomSummary;
   roomId?: string;
@@ -118,8 +137,13 @@ interface ChatListItem {
 
 const apiBase = trimTrailingSlash(import.meta.env.VITE_COP_API_BASE_URL ?? "");
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
+const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
 const fallbackMatrixDeviceIds = new Map<string, string>();
+const emptyChatPreferences: ChatPreferences = {
+  mutedUntilByKey: {},
+  pinnedKeys: []
+};
 
 export function ChatApp() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
@@ -137,6 +161,7 @@ export function ChatApp() {
   const [composerText, setComposerText] = React.useState("");
   const [pendingAttachment, setPendingAttachment] = React.useState<PendingChatAttachment | null>(null);
   const [conversationQuery, setConversationQuery] = React.useState("");
+  const [messageSearchQuery, setMessageSearchQuery] = React.useState("");
   const [chatFilter, setChatFilter] = React.useState<ChatFilter>("all");
   const [composeMode, setComposeMode] = React.useState<ComposeMode>(null);
   const [directQuery, setDirectQuery] = React.useState("");
@@ -153,6 +178,16 @@ export function ChatApp() {
   const [notice, setNotice] = React.useState<string | null>(null);
   const [syncState, setSyncState] = React.useState("idle");
   const [previewItem, setPreviewItem] = React.useState<MediaPreviewItem | null>(null);
+  const [chatPreferences, setChatPreferences] = React.useState<ChatPreferences>(() => readChatPreferences("anonymous"));
+  const [infoPanelOpen, setInfoPanelOpen] = React.useState(false);
+  const [infoPanelTab, setInfoPanelTab] = React.useState<InfoPanelTab>("info");
+  const [mediaPanelTab, setMediaPanelTab] = React.useState<MediaPanelTab>("media");
+  const [messageMenuOpen, setMessageMenuOpen] = React.useState(false);
+  const [messageSearchOpen, setMessageSearchOpen] = React.useState(false);
+  const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
+  const [selectionMode, setSelectionMode] = React.useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = React.useState<Set<string>>(() => new Set());
+  const [activeSearchIndex, setActiveSearchIndex] = React.useState(0);
   const [showJumpToLatest, setShowJumpToLatest] = React.useState(false);
   const [refreshNonce, setRefreshNonce] = React.useState(0);
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -164,6 +199,7 @@ export function ChatApp() {
   const authenticated = isAuthSessionActive(authSession);
   const authToken = authenticated ? authSession.accessToken : undefined;
   const authSubjectId = authSession.profile?.subjectId ?? authSession.profile?.username ?? authSession.profile?.email;
+  const preferencesOwner = authSubjectId ?? authSession.profile?.username ?? "anonymous";
   const chatReady = Boolean(authToken && status?.chatAvailable);
   const composerEnabled = Boolean(selectedRoomId && matrixSession && chatReady && !preparingChatId);
   const hasDraft = Boolean(composerText.trim() || pendingAttachment);
@@ -182,7 +218,7 @@ export function ChatApp() {
     : selectedConversation?.matrix?.roomId
       ? rooms.find((room) => room.roomId === selectedConversation.matrix?.roomId) ?? null
       : null;
-  const chatItems = React.useMemo(
+  const rawChatItems = React.useMemo(
     () => buildChatItems({
       conversations,
       filter: chatFilter,
@@ -196,13 +232,64 @@ export function ChatApp() {
     }),
     [chatFilter, conversationQuery, conversations, groups, matrixSession, rooms, selectedConversationId, selectedGroupId, selectedRoomId, timeline]
   );
+  const chatItems = React.useMemo(
+    () => applyChatPreferences(rawChatItems, chatPreferences),
+    [chatPreferences, rawChatItems]
+  );
+  const pinnedChatItems = React.useMemo(
+    () => chatItems.filter((item) => item.pinned),
+    [chatItems]
+  );
+  const regularChatItems = React.useMemo(
+    () => chatItems.filter((item) => !item.pinned),
+    [chatItems]
+  );
   const activeChat = chatItems.find((item) => item.active) ?? null;
   const timelineRows = React.useMemo(() => buildTimelineRows(timeline), [timeline]);
+  const timelineMessages = React.useMemo(() => timelineRows.filter((row) => row.kind === "message").map((row) => row.message), [timelineRows]);
+  const searchMatches = React.useMemo(
+    () => messageSearchOpen && messageSearchQuery.trim()
+      ? timelineMessages.filter((message) => messageMatchesQuery(message, messageSearchQuery))
+      : [],
+    [messageSearchOpen, messageSearchQuery, timelineMessages]
+  );
+  const activeSearchMessageId = searchMatches[activeSearchIndex]?.eventId ?? null;
+  const selectedMessages = React.useMemo(
+    () => timelineMessages.filter((message) => selectedMessageIds.has(message.eventId)),
+    [selectedMessageIds, timelineMessages]
+  );
   const statusLabel = statusLabelFor(status, matrixSession, syncState, matrixLoading);
 
   React.useEffect(() => {
     matrixSessionRef.current = matrixSession;
   }, [matrixSession]);
+
+  React.useEffect(() => {
+    setChatPreferences(readChatPreferences(preferencesOwner));
+  }, [preferencesOwner]);
+
+  React.useEffect(() => {
+    setMessageMenuOpen(false);
+    setMuteDialogOpen(false);
+    setInfoPanelOpen(false);
+    setSelectionMode(false);
+    setSelectedMessageIds(new Set());
+    setMessageSearchOpen(false);
+    setMessageSearchQuery("");
+    setActiveSearchIndex(0);
+  }, [selectedConversationId, selectedGroupId, selectedRoomId]);
+
+  React.useEffect(() => {
+    setActiveSearchIndex(0);
+  }, [messageSearchQuery, selectedRoomId]);
+
+  React.useEffect(() => {
+    if (!activeSearchMessageId) {
+      return;
+    }
+    const selector = `[data-message-id="${cssEscape(activeSearchMessageId)}"]`;
+    document.querySelector<HTMLElement>(selector)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [activeSearchMessageId]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -396,6 +483,135 @@ export function ChatApp() {
       window.clearTimeout(timer);
     };
   }, [authSubjectId, authToken, memberQuery]);
+
+  function updateChatPreferences(updater: (current: ChatPreferences) => ChatPreferences) {
+    setChatPreferences((current) => {
+      const next = normalizeChatPreferences(updater(current));
+      writeChatPreferences(preferencesOwner, next);
+      return next;
+    });
+  }
+
+  function togglePinnedChat(item: ChatListItem) {
+    updateChatPreferences((current) => {
+      const pinned = current.pinnedKeys.includes(item.preferenceKey);
+      return {
+        ...current,
+        pinnedKeys: pinned
+          ? current.pinnedKeys.filter((key) => key !== item.preferenceKey)
+          : [item.preferenceKey, ...current.pinnedKeys]
+      };
+    });
+  }
+
+  function openChatInfo() {
+    setMessageMenuOpen(false);
+    setInfoPanelTab("info");
+    setMediaPanelTab("media");
+    setInfoPanelOpen(true);
+  }
+
+  function startMessageSearch() {
+    setMessageMenuOpen(false);
+    setMessageSearchOpen(true);
+    setSelectionMode(false);
+    setSelectedMessageIds(new Set());
+  }
+
+  function startSelectionMode() {
+    setMessageMenuOpen(false);
+    setMessageSearchOpen(false);
+    setMessageSearchQuery("");
+    setSelectionMode(true);
+    setSelectedMessageIds(new Set());
+  }
+
+  function toggleSelectedMessage(messageId: string) {
+    setSelectedMessageIds((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }
+
+  function cancelSelectionMode() {
+    setSelectionMode(false);
+    setSelectedMessageIds(new Set());
+  }
+
+  async function copySelectedMessages() {
+    if (selectedMessages.length === 0) {
+      return;
+    }
+    const text = selectedMessages.map(formatMessageForClipboard).join("\n\n");
+    await navigator.clipboard?.writeText(text);
+    setNotice(`${selectedMessages.length} ${selectedMessages.length === 1 ? "zpráva zkopírována" : "zprávy zkopírovány"}.`);
+  }
+
+  async function shareSelectedMessages() {
+    if (selectedMessages.length === 0) {
+      return;
+    }
+    const text = selectedMessages.map(formatMessageForClipboard).join("\n\n");
+    if (navigator.share) {
+      await navigator.share({ text, title: activeChat?.title ?? "COP Chat" });
+    } else {
+      await navigator.clipboard?.writeText(text);
+      setNotice("Sdílení není v tomto prohlížeči dostupné, zprávy jsou zkopírované.");
+    }
+  }
+
+  function forwardSelectedMessages() {
+    if (selectedMessages.length === 0) {
+      return;
+    }
+    void copySelectedMessages();
+    setComposeMode("direct");
+    setNotice("Vybrané zprávy jsou zkopírované. Vyberte kontakt a vložte je do nového chatu.");
+  }
+
+  function applyMuteChoice(choice: MuteChoice) {
+    if (!activeChat) {
+      return;
+    }
+    const mutedUntil = muteChoiceToStorageValue(choice);
+    updateChatPreferences((current) => ({
+      ...current,
+      mutedUntilByKey: {
+        ...current.mutedUntilByKey,
+        [activeChat.preferenceKey]: mutedUntil
+      }
+    }));
+    setMuteDialogOpen(false);
+    setMessageMenuOpen(false);
+  }
+
+  function clearActiveMute() {
+    if (!activeChat) {
+      return;
+    }
+    updateChatPreferences((current) => {
+      const nextMuted = { ...current.mutedUntilByKey };
+      delete nextMuted[activeChat.preferenceKey];
+      return {
+        ...current,
+        mutedUntilByKey: nextMuted
+      };
+    });
+    setMessageMenuOpen(false);
+    setMuteDialogOpen(false);
+  }
+
+  function moveSearch(delta: number) {
+    if (searchMatches.length === 0) {
+      return;
+    }
+    setActiveSearchIndex((current) => (current + delta + searchMatches.length) % searchMatches.length);
+  }
 
   async function loadMetadata() {
     if (!authToken) {
@@ -938,6 +1154,14 @@ export function ChatApp() {
           <button className={chatFilter === "group" ? "active" : ""} onClick={() => setChatFilter("group")} role="tab" type="button">Skupiny</button>
         </div>
 
+        {pinnedChatItems.length > 0 ? (
+          <PinnedChats
+            items={pinnedChatItems}
+            onOpen={(nextItem) => void openChat(nextItem)}
+            onTogglePinned={togglePinnedChat}
+          />
+        ) : null}
+
         <div className="chat-list" role="list">
           {!authenticated ? (
             <ListPrompt
@@ -945,14 +1169,15 @@ export function ChatApp() {
               title={authConfig.mode === "lab" ? "Lab režim nemá chatovou identitu." : "Přihlaste se."}
               onAction={isOidcEnabled(authConfig) ? () => void beginLogin(authConfig) : undefined}
             />
-          ) : loading && chatItems.length === 0 ? (
+          ) : loading && regularChatItems.length === 0 && pinnedChatItems.length === 0 ? (
             <ChatSkeleton />
-          ) : chatItems.length === 0 ? (
+          ) : regularChatItems.length === 0 && pinnedChatItems.length === 0 ? (
             <ListPrompt actionLabel="Nový chat" title="Žádné chaty" onAction={() => setComposeMode("direct")} />
-          ) : chatItems.map((item) => (
+          ) : regularChatItems.map((item) => (
             <ChatRow
               item={item}
               key={item.id}
+              onTogglePinned={togglePinnedChat}
               preparing={preparingChatId === item.id}
               onOpen={(nextItem) => void openChat(nextItem)}
             />
@@ -980,11 +1205,41 @@ export function ChatApp() {
                 <button className="round-icon" disabled type="button" aria-label="Hovor">
                   <Phone size={21} />
                 </button>
-                <button className="round-icon" type="button" aria-label="Další">
-                  <MoreVertical size={21} />
-                </button>
+                <div className="chat-menu-anchor">
+                  <button className="round-icon" onClick={() => setMessageMenuOpen((open) => !open)} type="button" aria-expanded={messageMenuOpen} aria-label="Další">
+                    <MoreVertical size={21} />
+                  </button>
+                  {messageMenuOpen ? (
+                    <ChatActionMenu
+                      activeChat={activeChat}
+                      muted={activeChat.muted}
+                      onInfo={openChatInfo}
+                      onMute={() => {
+                        setMessageMenuOpen(false);
+                        setMuteDialogOpen(true);
+                      }}
+                      onSearch={startMessageSearch}
+                      onSelect={startSelectionMode}
+                      onToggleMute={clearActiveMute}
+                    />
+                  ) : null}
+                </div>
               </div>
             </header>
+
+            {messageSearchOpen ? (
+              <MessageSearchBar
+                activeIndex={activeSearchIndex}
+                matchCount={searchMatches.length}
+                query={messageSearchQuery}
+                onClose={() => {
+                  setMessageSearchOpen(false);
+                  setMessageSearchQuery("");
+                }}
+                onMove={moveSearch}
+                onQueryChange={setMessageSearchQuery}
+              />
+            ) : null}
 
             {error ? (
               <StatusBanner kind="error" text={userFacingError(error)} onClose={() => setError(null)} />
@@ -1024,12 +1279,17 @@ export function ChatApp() {
                   ) : (
                     <MessageRow
                       grouped={row.grouped}
+                      activeSearchMatch={activeSearchMessageId === row.message.eventId}
                       key={row.message.eventId}
                       matrixSession={matrixSession}
                       message={row.message}
+                      searchQuery={messageSearchQuery}
+                      selectable={selectionMode}
+                      selected={selectedMessageIds.has(row.message.eventId)}
                       senderLabel={messageSenderLabel(row.message, selectedConversation, authSession)}
                       onDownloadAttachment={(message) => void downloadAttachment(message)}
                       onOpenPreview={setPreviewItem}
+                      onToggleSelected={toggleSelectedMessage}
                     />
                   ))}
                   <div ref={timelineEndRef} aria-hidden="true" />
@@ -1040,7 +1300,7 @@ export function ChatApp() {
                   </button>
                 ) : null}
                 <Composer
-                  disabled={!composerEnabled || sending}
+                  disabled={!composerEnabled || sending || selectionMode}
                   pendingAttachment={pendingAttachment}
                   sending={sending}
                   text={composerText}
@@ -1050,6 +1310,15 @@ export function ChatApp() {
                   onShareLocation={() => void shareLocation()}
                   onTextChange={setComposerText}
                 />
+                {selectionMode ? (
+                  <SelectionToolbar
+                    count={selectedMessageIds.size}
+                    onCancel={cancelSelectionMode}
+                    onCopy={() => void copySelectedMessages()}
+                    onForward={forwardSelectedMessages}
+                    onShare={() => void shareSelectedMessages()}
+                  />
+                ) : null}
               </>
             )}
           </>
@@ -1085,40 +1354,219 @@ export function ChatApp() {
       ) : null}
 
       {previewItem ? <MediaPreviewDialog item={previewItem} onClose={() => setPreviewItem(null)} /> : null}
+      {infoPanelOpen && activeChat ? (
+        <ChatInfoPanel
+          activeChat={activeChat}
+          authSession={authSession}
+          conversation={selectedConversation}
+          group={selectedGroup}
+          mediaTab={mediaPanelTab}
+          messages={timelineMessages}
+          muted={activeChat.muted}
+          pinned={activeChat.pinned}
+          tab={infoPanelTab}
+          onClose={() => setInfoPanelOpen(false)}
+          onMediaTabChange={setMediaPanelTab}
+          onTabChange={setInfoPanelTab}
+          onTogglePinned={() => togglePinnedChat(activeChat)}
+          onToggleMute={activeChat.muted ? clearActiveMute : () => setMuteDialogOpen(true)}
+          onOpenPreview={setPreviewItem}
+        />
+      ) : null}
+      {muteDialogOpen && activeChat ? (
+        <MuteDialog
+          title={activeChat.title}
+          onClose={() => setMuteDialogOpen(false)}
+          onMute={applyMuteChoice}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function PinnedChats({
+  items,
+  onOpen,
+  onTogglePinned
+}: {
+  items: ChatListItem[];
+  onOpen: (item: ChatListItem) => void;
+  onTogglePinned: (item: ChatListItem) => void;
+}) {
+  return (
+    <section className="pinned-chats" aria-label="Připnuté chaty">
+      {items.map((item) => (
+        <div className={clsx("pinned-chat", item.active && "active")} key={item.id}>
+          <button className="pinned-chat-open" onClick={() => onOpen(item)} type="button">
+            <span className="pinned-avatar-wrap">
+              <Avatar label={item.title} />
+              {item.unreadCount > 0 && !item.muted ? <span className="pinned-unread">{item.unreadCount}</span> : null}
+              {item.muted ? <span className="pinned-muted"><BellOff size={13} /></span> : null}
+            </span>
+            <span className="pinned-title">{item.title}</span>
+            <span className="visually-hidden">Otevřít připnutý chat</span>
+          </button>
+          <button
+            className="pinned-unpin"
+            onClick={() => onTogglePinned(item)}
+            type="button"
+            aria-label={`Odepnout ${item.title}`}
+          >
+            <X size={13} />
+          </button>
+        </div>
+      ))}
+    </section>
   );
 }
 
 function ChatRow({
   item,
+  onTogglePinned,
   preparing,
   onOpen
 }: {
   item: ChatListItem;
+  onTogglePinned: (item: ChatListItem) => void;
   preparing: boolean;
   onOpen: (item: ChatListItem) => void;
 }) {
   return (
-    <button
+    <article
       aria-current={item.active ? "true" : undefined}
       className={clsx("chat-row", item.active && "active", item.unreadCount > 0 && "unread")}
-      onClick={() => onOpen(item)}
       role="listitem"
-      type="button"
     >
-      <Avatar label={item.title} />
-      <span className="chat-row-main">
-        <span className="chat-row-top">
-          <strong>{item.title}</strong>
-          {item.timestamp ? <time>{item.timestamp}</time> : null}
+      <button className="chat-row-open" onClick={() => onOpen(item)} type="button">
+        <Avatar label={item.title} />
+        <span className="chat-row-main">
+          <span className="chat-row-top">
+            <strong>{item.title}</strong>
+            <span className="chat-row-flags">
+              {item.muted ? <BellOff size={14} aria-label="Ztlumeno" /> : null}
+              {item.timestamp ? <time>{item.timestamp}</time> : null}
+            </span>
+          </span>
+          <span className="chat-row-preview">
+            {preparing ? <Loader2 className="spin" size={15} /> : item.latest ? attachmentIndicator(item.latest) : null}
+            {preparing ? "Připravuji..." : item.preview}
+          </span>
         </span>
-        <span className="chat-row-preview">
-          {preparing ? <Loader2 className="spin" size={15} /> : item.latest ? attachmentIndicator(item.latest) : null}
-          {preparing ? "Připravuji..." : item.preview}
-        </span>
-      </span>
-      {item.unreadCount > 0 ? <span className="unread-badge">{item.unreadCount}</span> : null}
-    </button>
+      </button>
+      <button
+        className={clsx("row-pin", item.pinned && "active")}
+        onClick={() => onTogglePinned(item)}
+        type="button"
+        aria-label={item.pinned ? `Odepnout ${item.title}` : `Připnout ${item.title}`}
+      >
+        {item.pinned ? <PinOff size={15} /> : <Pin size={15} />}
+      </button>
+      {item.unreadCount > 0 && !item.muted ? <span className="unread-badge">{item.unreadCount}</span> : null}
+    </article>
+  );
+}
+
+function ChatActionMenu({
+  activeChat,
+  muted,
+  onInfo,
+  onMute,
+  onSearch,
+  onSelect,
+  onToggleMute
+}: {
+  activeChat: ChatListItem;
+  muted: boolean;
+  onInfo: () => void;
+  onMute: () => void;
+  onSearch: () => void;
+  onSelect: () => void;
+  onToggleMute: () => void;
+}) {
+  const infoLabel = activeChat.type === "direct" ? "O kontaktu" : "O skupině";
+  return (
+    <div className="chat-action-menu" role="menu" aria-label="Akce chatu">
+      <button onClick={onInfo} role="menuitem" type="button">
+        <Info size={17} />
+        {infoLabel}
+      </button>
+      <button onClick={onSearch} role="menuitem" type="button">
+        <Search size={17} />
+        Hledat
+      </button>
+      <button onClick={onSelect} role="menuitem" type="button">
+        <CheckCheck size={17} />
+        Vybrat zprávy
+      </button>
+      <button onClick={muted ? onToggleMute : onMute} role="menuitem" type="button">
+        <BellOff size={17} />
+        {muted ? "Zrušit ztlumení" : "Ztlumit"}
+      </button>
+    </div>
+  );
+}
+
+function MessageSearchBar({
+  activeIndex,
+  matchCount,
+  query,
+  onClose,
+  onMove,
+  onQueryChange
+}: {
+  activeIndex: number;
+  matchCount: number;
+  query: string;
+  onClose: () => void;
+  onMove: (delta: number) => void;
+  onQueryChange: (value: string) => void;
+}) {
+  return (
+    <div className="message-search-bar" role="search">
+      <Search size={19} />
+      <input autoFocus aria-label="Hledat ve zprávách" placeholder="Hledat ve zprávách" value={query} onChange={(event) => onQueryChange(event.target.value)} />
+      <span>{query.trim() ? `${matchCount ? activeIndex + 1 : 0}/${matchCount}` : ""}</span>
+      <button className="round-icon small" disabled={matchCount === 0} onClick={() => onMove(-1)} type="button" aria-label="Předchozí výsledek">
+        <ChevronUp size={18} />
+      </button>
+      <button className="round-icon small" disabled={matchCount === 0} onClick={() => onMove(1)} type="button" aria-label="Další výsledek">
+        <ChevronDown size={18} />
+      </button>
+      <button className="search-done" onClick={onClose} type="button">Hotovo</button>
+    </div>
+  );
+}
+
+function SelectionToolbar({
+  count,
+  onCancel,
+  onCopy,
+  onForward,
+  onShare
+}: {
+  count: number;
+  onCancel: () => void;
+  onCopy: () => void;
+  onForward: () => void;
+  onShare: () => void;
+}) {
+  return (
+    <div className="selection-toolbar" role="toolbar" aria-label="Vybrané zprávy">
+      <strong>Vybráno {count}</strong>
+      <button disabled={count === 0} onClick={onForward} type="button">
+        <Forward size={20} />
+        Přeposlat
+      </button>
+      <button disabled={count === 0} onClick={onCopy} type="button">
+        <Copy size={20} />
+        Zkopírovat
+      </button>
+      <button disabled={count === 0} onClick={onShare} type="button">
+        <Share2 size={20} />
+        Sdílet
+      </button>
+      <button className="selection-cancel" onClick={onCancel} type="button">Zrušit</button>
+    </div>
   );
 }
 
@@ -1206,22 +1654,49 @@ function Composer({
 }
 
 function MessageRow({
+  activeSearchMatch,
   grouped,
   matrixSession,
   message,
+  searchQuery,
+  selectable,
+  selected,
   senderLabel,
   onDownloadAttachment,
-  onOpenPreview
+  onOpenPreview,
+  onToggleSelected
 }: {
+  activeSearchMatch: boolean;
   grouped: boolean;
   matrixSession: MatrixMessagingSession | null;
   message: MatrixTimelineMessage;
+  searchQuery: string;
+  selectable: boolean;
+  selected: boolean;
   senderLabel: string;
   onDownloadAttachment: (message: MatrixTimelineMessage) => void;
   onOpenPreview: (item: MediaPreviewItem) => void;
+  onToggleSelected: (messageId: string) => void;
 }) {
   return (
-    <article className={clsx("message-row", message.own && "own", grouped && "grouped")}>
+    <article
+      className={clsx("message-row", message.own && "own", grouped && "grouped", selectable && "selectable", selected && "selected", activeSearchMatch && "search-active")}
+      data-message-id={message.eventId}
+      onClick={selectable ? () => onToggleSelected(message.eventId) : undefined}
+    >
+      {selectable ? (
+        <button
+          className="message-select"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleSelected(message.eventId);
+          }}
+          type="button"
+          aria-label={selected ? "Zrušit výběr zprávy" : "Vybrat zprávu"}
+        >
+          {selected ? <CheckCheck size={17} /> : null}
+        </button>
+      ) : null}
       <div className="message-bubble">
         {!message.own && !grouped ? <span className="sender-name">{senderLabel}</span> : null}
         {message.kind === "location" && message.location ? (
@@ -1234,7 +1709,7 @@ function MessageRow({
             onOpenPreview={onOpenPreview}
           />
         ) : (
-          <span className="message-text">{message.body}</span>
+          <HighlightedMessageText query={searchQuery} text={message.body} />
         )}
         <span className="message-time">
           {formatTime(message.timestamp)}
@@ -1242,6 +1717,19 @@ function MessageRow({
         </span>
       </div>
     </article>
+  );
+}
+
+function HighlightedMessageText({ query, text }: { query: string; text: string }) {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) {
+    return <span className="message-text">{text}</span>;
+  }
+  const parts = splitTextByQuery(text, normalizedQuery);
+  return (
+    <span className="message-text">
+      {parts.map((part, index) => part.match ? <mark key={index}>{part.text}</mark> : <React.Fragment key={index}>{part.text}</React.Fragment>)}
+    </span>
   );
 }
 
@@ -1618,6 +2106,162 @@ function MediaPreviewDialog({ item, onClose }: { item: MediaPreviewItem; onClose
   );
 }
 
+function ChatInfoPanel({
+  activeChat,
+  authSession,
+  conversation,
+  group,
+  mediaTab,
+  messages,
+  muted,
+  pinned,
+  tab,
+  onClose,
+  onMediaTabChange,
+  onOpenPreview,
+  onTabChange,
+  onToggleMute,
+  onTogglePinned
+}: {
+  activeChat: ChatListItem;
+  authSession: AuthSession;
+  conversation: MessagingConversationSummary | null;
+  group: CommunityGroup | null;
+  mediaTab: MediaPanelTab;
+  messages: MatrixTimelineMessage[];
+  muted: boolean;
+  pinned: boolean;
+  tab: InfoPanelTab;
+  onClose: () => void;
+  onMediaTabChange: (tab: MediaPanelTab) => void;
+  onOpenPreview: (item: MediaPreviewItem) => void;
+  onTabChange: (tab: InfoPanelTab) => void;
+  onToggleMute: () => void;
+  onTogglePinned: () => void;
+}) {
+  const isDirect = activeChat.type === "direct";
+  const members = infoMembersForChat(activeChat, conversation, group, authSession);
+  const mediaMessages = messages.filter((message) => message.attachment && (message.kind === "image" || message.kind === "video"));
+  const documentMessages = messages.filter((message) => message.attachment && message.kind === "file");
+  const locationMessages = messages.filter((message) => message.kind === "location" && message.location);
+  const activeMediaMessages = mediaTab === "media" ? mediaMessages : mediaTab === "documents" ? documentMessages : locationMessages;
+  const title = isDirect ? "O kontaktu" : "O skupině";
+  return (
+    <div className="info-backdrop" role="presentation" onClick={onClose}>
+      <section className="info-panel" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+        <aside className="info-nav" aria-label="Kategorie detailu">
+          <header>
+            <strong>{title}</strong>
+            <button className="round-icon small" onClick={onClose} type="button" aria-label="Zavřít">
+              <X size={18} />
+            </button>
+          </header>
+          <button className={tab === "info" ? "active" : ""} onClick={() => onTabChange("info")} type="button">
+            <Info size={20} />
+            Informace
+          </button>
+          <button className={tab === "media" ? "active" : ""} onClick={() => onTabChange("media")} type="button">
+            <ImageIcon size={20} />
+            Média a dokumenty
+          </button>
+          <button className={tab === "members" ? "active" : ""} onClick={() => onTabChange("members")} type="button">
+            <Users size={20} />
+            {isDirect ? "Kontakt" : "Členové"}
+          </button>
+        </aside>
+        <div className="info-content">
+          <header className="info-hero">
+            <Avatar label={activeChat.title} />
+            <div>
+              <h2>{activeChat.title}</h2>
+              <p>{isDirect ? "Přímý chat" : `${activeChat.memberCount} ${activeChat.memberCount === 1 ? "člen" : activeChat.memberCount < 5 ? "členové" : "členů"}`}</p>
+            </div>
+          </header>
+
+          {tab === "info" ? (
+            <div className="info-section">
+              <InfoMetric label="Typ" value={isDirect ? "Soukromý chat" : "Veřejná skupina"} />
+              <InfoMetric label="Šifrování" value={activeChat.room?.encrypted ? "Zapnuto pro tuto místnost" : "Připraveno při otevření místnosti"} />
+              <InfoMetric label="Upozornění" value={muted ? "Ztlumeno" : "Zapnuto"} />
+              <InfoMetric label="Připnutí" value={pinned ? "Chat je připnutý" : "Chat není připnutý"} />
+              <div className="info-actions-row">
+                <button onClick={onTogglePinned} type="button">
+                  {pinned ? <PinOff size={18} /> : <Pin size={18} />}
+                  {pinned ? "Odepnout" : "Připnout"}
+                </button>
+                <button onClick={onToggleMute} type="button">
+                  <BellOff size={18} />
+                  {muted ? "Zrušit ztlumení" : "Ztlumit"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {tab === "media" ? (
+            <div className="info-section media-section">
+              <div className="media-tabs" role="tablist" aria-label="Typ příloh">
+                <button className={mediaTab === "media" ? "active" : ""} onClick={() => onMediaTabChange("media")} type="button">Média</button>
+                <button className={mediaTab === "documents" ? "active" : ""} onClick={() => onMediaTabChange("documents")} type="button">Dokumenty</button>
+                <button className={mediaTab === "locations" ? "active" : ""} onClick={() => onMediaTabChange("locations")} type="button">Polohy</button>
+              </div>
+              {activeMediaMessages.length === 0 ? (
+                <div className="media-empty">Zatím žádné položky.</div>
+              ) : (
+                <div className="media-grid">
+                  {activeMediaMessages.map((message) => (
+                    <button key={message.eventId} onClick={() => onOpenPreview(matrixMessagePreviewItem(message, directBrowserMediaUrl(message) ?? undefined))} type="button">
+                      {message.kind === "location" ? <MapPin size={24} /> : message.kind === "file" ? <FileText size={24} /> : <ImageIcon size={24} />}
+                      <span>{mediaGridLabel(message)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {tab === "members" ? (
+            <div className="info-section members-section">
+              {members.map((member) => (
+                <div className="member-row" key={member.id}>
+                  <Avatar label={member.name} small />
+                  <span>
+                    <strong>{member.name}</strong>
+                    <small>{member.subtitle}</small>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function InfoMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="info-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function MuteDialog({ title, onClose, onMute }: { title: string; onClose: () => void; onMute: (choice: MuteChoice) => void }) {
+  return (
+    <div className="mute-backdrop" role="presentation" onClick={onClose}>
+      <section className="mute-dialog" role="dialog" aria-modal="true" aria-label={`Ztlumit ${title}`} onClick={(event) => event.stopPropagation()}>
+        <h2>Ztlumit upozornění</h2>
+        <p>Ostatní členové neuvidí, že jste chat ztlumil/a. Upozornění stále dostanete, pokud vás někdo zmíní.</p>
+        <button onClick={() => onMute("8h")} type="button">8 hodin</button>
+        <button onClick={() => onMute("1w")} type="button">1 týden</button>
+        <button onClick={() => onMute("forever")} type="button">Vždy</button>
+        <button onClick={onClose} type="button">Zrušit</button>
+      </section>
+    </div>
+  );
+}
+
 function DocumentThumb({ fileName, large = false }: { fileName: string; large?: boolean }) {
   const extension = fileName.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE";
   return (
@@ -1690,6 +2334,9 @@ function buildChatItems({
       id,
       latest,
       memberCount: conversation.memberCount ?? conversation.members?.length ?? group?.members.length ?? 2,
+      muted: false,
+      pinned: false,
+      preferenceKey: chatPreferenceKeyForConversation(conversation, group),
       preview: latest ? latestMessagePreview(latest) : conversation.matrix?.roomId ? "Nový chat" : "Klepnutím otevřít chat",
       ...(room ? { room } : {}),
       roomId: conversation.matrix?.roomId ?? undefined,
@@ -1738,6 +2385,9 @@ function buildChatItems({
       group,
       id: `group:${group.groupId}`,
       memberCount: group.members.length,
+      muted: false,
+      pinned: false,
+      preferenceKey: chatPreferenceKeyForGroup(group),
       preview: "Klepnutím otevřít chat",
       searchable: `${group.name} ${group.members.map((member) => member.displayName || member.username).join(" ")}`,
       sortAt: timestampMillis(group.updatedAt),
@@ -1780,6 +2430,9 @@ function buildChatItems({
       id: `room:${room.roomId}`,
       latest,
       memberCount: 2,
+      muted: false,
+      pinned: false,
+      preferenceKey: chatPreferenceKeyForRoom(room.roomId),
       preview: latest ? latestMessagePreview(latest) : "Nový chat",
       room,
       roomId: room.roomId,
@@ -1821,6 +2474,50 @@ function buildTimelineRows(messages: MatrixTimelineMessage[]): Array<
     previousSender = message.sender;
   });
   return rows;
+}
+
+function applyChatPreferences(items: ChatListItem[], preferences: ChatPreferences): ChatListItem[] {
+  const pinnedOrder = new Map(preferences.pinnedKeys.map((key, index) => [key, index]));
+  return items
+    .map((item) => ({
+      ...item,
+      muted: isChatMuted(preferences.mutedUntilByKey[item.preferenceKey]),
+      pinned: pinnedOrder.has(item.preferenceKey)
+    }))
+    .sort((left, right) => {
+      const leftPinned = pinnedOrder.get(left.preferenceKey);
+      const rightPinned = pinnedOrder.get(right.preferenceKey);
+      if (leftPinned !== undefined || rightPinned !== undefined) {
+        if (leftPinned === undefined) {
+          return 1;
+        }
+        if (rightPinned === undefined) {
+          return -1;
+        }
+        return leftPinned - rightPinned;
+      }
+      return right.sortAt - left.sortAt || left.title.localeCompare(right.title, "cs-CZ");
+    });
+}
+
+function chatPreferenceKeyForConversation(conversation: MessagingConversationSummary, group?: CommunityGroup): string {
+  const groupId = conversationCommunityGroupId(conversation) ?? group?.groupId;
+  if (groupId) {
+    return chatPreferenceKeyForGroupId(groupId);
+  }
+  return `conversation:${conversation.conversationId}`;
+}
+
+function chatPreferenceKeyForGroup(group: CommunityGroup): string {
+  return chatPreferenceKeyForGroupId(group.groupId);
+}
+
+function chatPreferenceKeyForGroupId(groupId: string): string {
+  return `group:${groupId}`;
+}
+
+function chatPreferenceKeyForRoom(roomId: string): string {
+  return `room:${roomId}`;
 }
 
 function groupForConversation(conversation: MessagingConversationSummary, groups: CommunityGroup[]): CommunityGroup | null {
@@ -2147,6 +2844,141 @@ function userFacingError(message: string): string {
     return "Služba zpráv není z tohoto zařízení dostupná.";
   }
   return normalized || "Akci se nepodařilo dokončit.";
+}
+
+function readChatPreferences(ownerId: string): ChatPreferences {
+  const storageKey = `${chatPreferencesStoragePrefix}.${stableStorageKey(ownerId)}`;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      return emptyChatPreferences;
+    }
+    return normalizeChatPreferences(JSON.parse(raw) as Partial<ChatPreferences>);
+  } catch {
+    return emptyChatPreferences;
+  }
+}
+
+function writeChatPreferences(ownerId: string, preferences: ChatPreferences): void {
+  const storageKey = `${chatPreferencesStoragePrefix}.${stableStorageKey(ownerId)}`;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(normalizeChatPreferences(preferences)));
+  } catch {
+    // localStorage can be unavailable in privacy modes; preferences then stay in memory.
+  }
+}
+
+function normalizeChatPreferences(preferences: Partial<ChatPreferences>): ChatPreferences {
+  const now = Date.now();
+  const mutedUntilByKey = Object.fromEntries(
+    Object.entries(preferences.mutedUntilByKey ?? {})
+      .filter(([key, value]) => key && (value === "forever" || Date.parse(value) > now))
+  );
+  return {
+    mutedUntilByKey,
+    pinnedKeys: Array.from(new Set((preferences.pinnedKeys ?? []).filter(Boolean))).slice(0, 24)
+  };
+}
+
+function isChatMuted(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  return value === "forever" || Date.parse(value) > Date.now();
+}
+
+function muteChoiceToStorageValue(choice: MuteChoice): string {
+  if (choice === "forever") {
+    return "forever";
+  }
+  const durationMs = choice === "8h" ? 8 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+  return new Date(Date.now() + durationMs).toISOString();
+}
+
+function messageMatchesQuery(message: MatrixTimelineMessage, query: string): boolean {
+  const normalized = query.trim().toLocaleLowerCase("cs-CZ");
+  if (!normalized) {
+    return false;
+  }
+  return messageSearchText(message).toLocaleLowerCase("cs-CZ").includes(normalized);
+}
+
+function messageSearchText(message: MatrixTimelineMessage): string {
+  return [
+    message.body,
+    message.attachment?.fileName,
+    message.location ? formatCoordinates(message.location) : "",
+    message.location?.label ?? ""
+  ].filter(Boolean).join(" ");
+}
+
+function formatMessageForClipboard(message: MatrixTimelineMessage): string {
+  const time = new Date(message.timestamp).toLocaleString("cs-CZ");
+  return `[${time}] ${message.own ? "Vy" : message.senderDisplayName ?? "Člen"}: ${messageSearchText(message) || message.body}`;
+}
+
+function splitTextByQuery(text: string, query: string): Array<{ match: boolean; text: string }> {
+  const normalizedText = text.toLocaleLowerCase("cs-CZ");
+  const normalizedQuery = query.toLocaleLowerCase("cs-CZ");
+  const parts: Array<{ match: boolean; text: string }> = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    const index = normalizedText.indexOf(normalizedQuery, cursor);
+    if (index === -1) {
+      parts.push({ match: false, text: text.slice(cursor) });
+      break;
+    }
+    if (index > cursor) {
+      parts.push({ match: false, text: text.slice(cursor, index) });
+    }
+    parts.push({ match: true, text: text.slice(index, index + query.length) });
+    cursor = index + query.length;
+  }
+  return parts.length > 0 ? parts : [{ match: false, text }];
+}
+
+function cssEscape(value: string): string {
+  if (window.CSS?.escape) {
+    return window.CSS.escape(value);
+  }
+  return value.replace(/["\\]/gu, "\\$&");
+}
+
+function infoMembersForChat(
+  activeChat: ChatListItem,
+  conversation: MessagingConversationSummary | null,
+  group: CommunityGroup | null,
+  session: AuthSession
+): Array<{ id: string; name: string; subtitle: string }> {
+  if (group) {
+    return group.members.map((member) => ({
+      id: member.subjectId,
+      name: member.displayName || member.username || member.subjectId,
+      subtitle: member.role === "owner" ? "správce" : member.status === "active" ? "člen" : member.status
+    }));
+  }
+  const ownId = session.profile?.subjectId ?? session.profile?.username ?? "";
+  const members = conversation?.members ?? [];
+  const contact = members.find((member) => member.userId !== ownId) ?? members[0];
+  if (contact) {
+    return [{
+      id: contact.userId,
+      name: contact.displayName || activeChat.title,
+      subtitle: contact.userId
+    }];
+  }
+  return [{
+    id: activeChat.preferenceKey,
+    name: activeChat.title,
+    subtitle: activeChat.type === "direct" ? "kontakt" : "chat"
+  }];
+}
+
+function mediaGridLabel(message: MatrixTimelineMessage): string {
+  if (message.location) {
+    return message.location.label ?? formatCoordinates(message.location);
+  }
+  return message.attachment?.fileName ?? (message.body || "Zpráva");
 }
 
 function readRouteSelection(): string | null {
