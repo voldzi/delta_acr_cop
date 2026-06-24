@@ -3,12 +3,28 @@ import { createMatrixMessagingSession, formatMatrixClientError, normalizeMatrixM
 import type { MessagingBootstrapResponse } from "../cop-data";
 
 type MockMatrixClient = {
+  getCrypto?: () => MockMatrixCrypto;
   getRooms: () => unknown[];
   getUserId: () => string;
   initRustCrypto: () => Promise<void>;
   isRoomEncrypted: () => boolean;
   sendStateEvent?: MatrixSendStateEvent;
   startClient: () => Promise<void>;
+};
+
+type MockMatrixCrypto = {
+  bootstrapSecretStorage?: (options: {
+    createSecretStorageKey?: () => Promise<unknown>;
+    setupNewKeyBackup?: boolean;
+    setupNewSecretStorage?: boolean;
+  }) => Promise<void>;
+  checkKeyBackupAndEnable?: () => Promise<unknown>;
+  createRecoveryKeyFromPassphrase?: () => Promise<unknown>;
+  getActiveSessionBackupVersion?: () => Promise<string | null>;
+  getKeyBackupInfo?: () => Promise<unknown | null>;
+  isSecretStorageReady?: () => Promise<boolean>;
+  loadSessionBackupPrivateKeyFromSecretStorage?: () => Promise<void>;
+  restoreKeyBackup?: () => Promise<unknown>;
 };
 
 type MatrixSendStateEvent = (roomId: string, eventType: string, content: Record<string, unknown>, stateKey?: string) => Promise<unknown>;
@@ -112,6 +128,70 @@ describe("Matrix client diagnostics", () => {
     expect(session.getRooms()[0]?.messageRetentionSeconds).toBe(86_400);
     expect(session.getTimeline("!chat:cop.local").map((message) => message.body)).toEqual(["recent"]);
   });
+
+  it("reports that user-controlled E2EE recovery needs setup when no key backup exists", async () => {
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      crypto: {
+        getActiveSessionBackupVersion: vi.fn().mockResolvedValue(null),
+        getKeyBackupInfo: vi.fn().mockResolvedValue(null),
+        isSecretStorageReady: vi.fn().mockResolvedValue(false)
+      },
+      rooms: []
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await expect(session.getEncryptionRecoveryStatus()).resolves.toMatchObject({
+      keyBackupEnabled: false,
+      keyBackupExists: false,
+      needsSetup: true,
+      ready: false
+    });
+  });
+
+  it("creates a user-held Matrix recovery key without server-managed recovery material", async () => {
+    const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
+      await options.createSecretStorageKey?.();
+    });
+    const crypto: MockMatrixCrypto = {
+      bootstrapSecretStorage,
+      checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+      createRecoveryKeyFromPassphrase: vi.fn().mockResolvedValue({
+        encodedPrivateKey: "EsTK aBCd user held recovery key",
+        privateKey: new Uint8Array([1, 2, 3])
+      }),
+      getActiveSessionBackupVersion: vi.fn().mockResolvedValue(null),
+      getKeyBackupInfo: vi.fn().mockResolvedValue(null),
+      isSecretStorageReady: vi.fn().mockResolvedValue(false)
+    };
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    const recoveryKey = await session.createEncryptionRecovery();
+
+    expect(recoveryKey).toBe("EsTK aBCd user held recovery key");
+    expect(bootstrapSecretStorage).toHaveBeenCalledWith(expect.objectContaining({
+      setupNewKeyBackup: true
+    }));
+  });
+
+  it("restores an existing key backup after the user enters a recovery key", async () => {
+    const crypto: MockMatrixCrypto = {
+      checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+      getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
+      getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "1" }),
+      isSecretStorageReady: vi.fn().mockResolvedValue(true),
+      loadSessionBackupPrivateKeyFromSecretStorage: vi.fn().mockResolvedValue(undefined),
+      restoreKeyBackup: vi.fn().mockResolvedValue(undefined)
+    };
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await expect(session.restoreEncryptionRecovery("EsTK aBCd user held recovery key")).resolves.toBeUndefined();
+    expect(crypto.loadSessionBackupPrivateKeyFromSecretStorage).toHaveBeenCalled();
+    expect(crypto.checkKeyBackupAndEnable).toHaveBeenCalled();
+  });
 });
 
 function createBootstrap(): MessagingBootstrapResponse {
@@ -132,13 +212,16 @@ function createBootstrap(): MessagingBootstrapResponse {
 }
 
 function createMockMatrixClient({
+  crypto,
   rooms,
   sendStateEvent = vi.fn<MatrixSendStateEvent>().mockResolvedValue(undefined)
 }: {
+  crypto?: MockMatrixCrypto;
   rooms: unknown[];
   sendStateEvent?: MockMatrixClient["sendStateEvent"];
 }): MockMatrixClient {
   return {
+    ...(crypto ? { getCrypto: () => crypto } : {}),
     getRooms: () => rooms,
     getUserId: () => "@operator:cop.local",
     initRustCrypto: () => Promise.resolve(),

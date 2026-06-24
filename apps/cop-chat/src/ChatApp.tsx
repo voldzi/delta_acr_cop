@@ -18,6 +18,7 @@ import {
   Forward,
   Image as ImageIcon,
   Info,
+  KeyRound,
   Loader2,
   Lock,
   LogIn,
@@ -85,6 +86,7 @@ import {
 import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
+  MatrixEncryptionRecoveryStatus,
   MatrixLocationShare,
   MatrixMessagingSession,
   MatrixRoomSummary,
@@ -175,6 +177,7 @@ export function ChatApp() {
   const [historyExhaustedByRoom, setHistoryExhaustedByRoom] = React.useState<Record<string, boolean>>({});
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const [matrixSession, setMatrixSession] = React.useState<MatrixMessagingSession | null>(null);
+  const [encryptionRecoveryStatus, setEncryptionRecoveryStatus] = React.useState<MatrixEncryptionRecoveryStatus | null>(null);
   const [selectedConversationId, setSelectedConversationId] = React.useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = React.useState<string | null>(null);
@@ -205,6 +208,10 @@ export function ChatApp() {
   const [mediaPanelTab, setMediaPanelTab] = React.useState<MediaPanelTab>("media");
   const [messageMenuOpen, setMessageMenuOpen] = React.useState(false);
   const [messageSearchOpen, setMessageSearchOpen] = React.useState(false);
+  const [recoveryDialogOpen, setRecoveryDialogOpen] = React.useState(false);
+  const [recoveryKeyInput, setRecoveryKeyInput] = React.useState("");
+  const [generatedRecoveryKey, setGeneratedRecoveryKey] = React.useState<string | null>(null);
+  const [recoveryWorking, setRecoveryWorking] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
   const [retentionDialogOpen, setRetentionDialogOpen] = React.useState(false);
   const [retentionSaving, setRetentionSaving] = React.useState(false);
@@ -228,7 +235,8 @@ export function ChatApp() {
   const authSubjectId = authSession.profile?.subjectId ?? authSession.profile?.username ?? authSession.profile?.email;
   const preferencesOwner = authSubjectId ?? authSession.profile?.username ?? "anonymous";
   const chatReady = Boolean(authToken && status?.chatAvailable);
-  const composerEnabled = Boolean(selectedRoomId && matrixSession && chatReady && !preparingChatId);
+  const encryptionRecoveryReady = Boolean(!matrixSession || encryptionRecoveryStatus?.ready);
+  const composerEnabled = Boolean(selectedRoomId && matrixSession && chatReady && !preparingChatId && encryptionRecoveryReady);
   const hasDraft = Boolean(composerText.trim() || pendingAttachment);
   const selectedConversation = selectedConversationId
     ? conversations.find((conversation) => conversation.conversationId === selectedConversationId) ?? null
@@ -295,6 +303,11 @@ export function ChatApp() {
     [selectedMessageIds, timelineMessages]
   );
   const statusLabel = statusLabelFor(status, matrixSession, syncState, matrixLoading);
+  const recoveryBanner = matrixSession && encryptionRecoveryStatus && !encryptionRecoveryStatus.ready
+    ? encryptionRecoveryStatus.needsSetup
+      ? "E2EE je aktivní. Pro bezpečné použití na více zařízeních nastavte obnovovací klíč."
+      : "Toto zařízení zatím nemá odemčenou E2EE zálohu. Zadejte obnovovací klíč."
+    : null;
 
   React.useEffect(() => {
     matrixSessionRef.current = matrixSession;
@@ -413,6 +426,10 @@ export function ChatApp() {
     if (!authToken) {
       matrixSessionRef.current?.stop();
       setMatrixSession(null);
+      setEncryptionRecoveryStatus(null);
+      setRecoveryDialogOpen(false);
+      setGeneratedRecoveryKey(null);
+      setRecoveryKeyInput("");
       setRooms([]);
       setTimeline([]);
       notifiedEventIdsRef.current.clear();
@@ -818,8 +835,10 @@ export function ChatApp() {
         onSyncState: setSyncState
       });
       const nextRooms = nextSession.getRooms();
+      const recoveryStatus = await nextSession.getEncryptionRecoveryStatus();
       setMatrixSession(nextSession);
       matrixSessionRef.current = nextSession;
+      setEncryptionRecoveryStatus(recoveryStatus);
       setRooms(nextRooms);
       setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversations, nextRooms));
       setSyncState("starting");
@@ -847,6 +866,75 @@ export function ChatApp() {
       throw new Error("Chatové spojení se nepodařilo připravit.");
     }
     return nextSession;
+  }
+
+  async function refreshEncryptionRecoveryStatus(session = matrixSessionRef.current): Promise<MatrixEncryptionRecoveryStatus | null> {
+    if (!session) {
+      setEncryptionRecoveryStatus(null);
+      return null;
+    }
+    const nextStatus = await session.getEncryptionRecoveryStatus();
+    setEncryptionRecoveryStatus(nextStatus);
+    return nextStatus;
+  }
+
+  async function ensureEncryptionRecoveryReady(session = matrixSessionRef.current): Promise<void> {
+    if (!session) {
+      return;
+    }
+    const nextStatus = await refreshEncryptionRecoveryStatus(session);
+    if (nextStatus && !nextStatus.ready) {
+      setRecoveryDialogOpen(true);
+      throw new Error(nextStatus.needsSetup
+        ? "Nejdřív nastavte obnovovací klíč E2EE. Potom půjde chat bezpečně používat na více zařízeních."
+        : "Nejdřív obnovte toto zařízení pomocí obnovovacího klíče E2EE.");
+    }
+  }
+
+  async function createEncryptionRecovery(reset = false): Promise<void> {
+    const session = matrixSessionRef.current ?? await startMatrixSession(selectedConversationId ?? selectedGroupId ?? selectedRoomId);
+    if (!session) {
+      return;
+    }
+    setRecoveryWorking(true);
+    setError(null);
+    try {
+      const recoveryKey = await session.createEncryptionRecovery(reset);
+      setGeneratedRecoveryKey(recoveryKey);
+      setRecoveryKeyInput("");
+      await refreshEncryptionRecoveryStatus(session);
+      setNotice(reset
+        ? "Nový E2EE obnovovací klíč je aktivní. Starší šifrovaná historie nemusí být dostupná."
+        : "E2EE obnova je nastavena. Uložte obnovovací klíč mimo tento prohlížeč.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Obnovovací klíč se nepodařilo vytvořit.");
+    } finally {
+      setRecoveryWorking(false);
+    }
+  }
+
+  async function restoreEncryptionRecovery(): Promise<void> {
+    const session = matrixSessionRef.current ?? await startMatrixSession(selectedConversationId ?? selectedGroupId ?? selectedRoomId);
+    if (!session) {
+      return;
+    }
+    setRecoveryWorking(true);
+    setError(null);
+    try {
+      await session.restoreEncryptionRecovery(recoveryKeyInput);
+      setGeneratedRecoveryKey(null);
+      setRecoveryKeyInput("");
+      await refreshEncryptionRecoveryStatus(session);
+      if (selectedRoomId) {
+        setTimeline(session.getTimeline(selectedRoomId));
+      }
+      setRecoveryDialogOpen(false);
+      setNotice("Zařízení bylo obnoveno a E2EE key backup je aktivní.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Zařízení se nepodařilo obnovit.");
+    } finally {
+      setRecoveryWorking(false);
+    }
   }
 
   function applyRouteSelection(selection: string | null): boolean {
@@ -1109,6 +1197,7 @@ export function ChatApp() {
     if (!session) {
       throw new Error("Chatové spojení ještě není připravené.");
     }
+    await ensureEncryptionRecoveryReady(session);
     const inviteUserIds = await resolveConversationMatrixUsers(conversation);
     const roomId = await session.createGroupRoom(conversation.title, inviteUserIds);
     const binding = await bindMessagingConversationMatrixRoom(apiBase, authToken, conversation.conversationId, {
@@ -1519,6 +1608,15 @@ export function ChatApp() {
 
             {error ? (
               <StatusBanner kind="error" text={userFacingError(error)} onClose={() => setError(null)} />
+            ) : recoveryBanner ? (
+              <StatusBanner
+                actionLabel={encryptionRecoveryStatus?.needsSetup ? "Nastavit" : "Obnovit"}
+                text={recoveryBanner}
+                onAction={() => {
+                  setGeneratedRecoveryKey(null);
+                  setRecoveryDialogOpen(true);
+                }}
+              />
             ) : notice ? (
               <StatusBanner text={notice} onClose={() => setNotice(null)} />
             ) : null}
@@ -1539,6 +1637,16 @@ export function ChatApp() {
                 icon={<MessageCircle size={28} />}
                 title={activeChat.title}
                 onAction={() => void openChat(activeChat)}
+              />
+            ) : !encryptionRecoveryReady ? (
+              <ChatLockedState
+                actionLabel={encryptionRecoveryStatus?.needsSetup ? "Nastavit obnovu" : "Obnovit zařízení"}
+                icon={<KeyRound size={30} />}
+                title="Dokončete zabezpečení E2EE"
+                text={encryptionRecoveryStatus?.needsSetup
+                  ? "Před psaním zpráv nastavte obnovovací klíč. Nové zprávy pak půjde bezpečně číst i na dalších zařízeních."
+                  : "Zadejte obnovovací klíč, aby toto zařízení získalo přístup k vaší E2EE záloze."}
+                onAction={() => setRecoveryDialogOpen(true)}
               />
             ) : (
               <>
@@ -1671,6 +1779,22 @@ export function ChatApp() {
           title={activeChat.title}
           onClose={() => setRetentionDialogOpen(false)}
           onSelect={(seconds) => void applyMessageRetention(seconds)}
+        />
+      ) : null}
+      {recoveryDialogOpen ? (
+        <EncryptionRecoveryDialog
+          generatedRecoveryKey={generatedRecoveryKey}
+          recoveryKeyInput={recoveryKeyInput}
+          saving={recoveryWorking}
+          status={encryptionRecoveryStatus}
+          onClose={() => {
+            setRecoveryDialogOpen(false);
+            setGeneratedRecoveryKey(null);
+          }}
+          onCreate={() => void createEncryptionRecovery(false)}
+          onRecoveryKeyInputChange={setRecoveryKeyInput}
+          onReset={() => void createEncryptionRecovery(true)}
+          onRestore={() => void restoreEncryptionRecovery()}
         />
       ) : null}
     </main>
@@ -2366,14 +2490,29 @@ function ChatLockedState({
   );
 }
 
-function StatusBanner({ kind, text, onClose }: { kind?: "error"; text: string; onClose: () => void }) {
+function StatusBanner({
+  actionLabel,
+  kind,
+  text,
+  onAction,
+  onClose
+}: {
+  actionLabel?: string;
+  kind?: "error";
+  text: string;
+  onAction?: () => void;
+  onClose?: () => void;
+}) {
   return (
     <div className={clsx("status-banner", kind === "error" && "error")} role={kind === "error" ? "alert" : "status"}>
       {kind === "error" ? <AlertCircle size={17} /> : <ShieldCheck size={17} />}
       <span>{text}</span>
-      <button className="round-icon small" onClick={onClose} type="button" aria-label="Zavřít">
-        <X size={15} />
-      </button>
+      {actionLabel && onAction ? <button className="status-banner-action" onClick={onAction} type="button">{actionLabel}</button> : null}
+      {onClose ? (
+        <button className="round-icon small" onClick={onClose} type="button" aria-label="Zavřít">
+          <X size={15} />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -2666,6 +2805,123 @@ function MessageRetentionDialog({
         <footer>
           <button disabled={saving} onClick={onClose} type="button">Hotovo</button>
         </footer>
+      </section>
+    </div>
+  );
+}
+
+function EncryptionRecoveryDialog({
+  generatedRecoveryKey,
+  recoveryKeyInput,
+  saving,
+  status,
+  onClose,
+  onCreate,
+  onRecoveryKeyInputChange,
+  onReset,
+  onRestore
+}: {
+  generatedRecoveryKey: string | null;
+  recoveryKeyInput: string;
+  saving: boolean;
+  status: MatrixEncryptionRecoveryStatus | null;
+  onClose: () => void;
+  onCreate: () => void;
+  onRecoveryKeyInputChange: (value: string) => void;
+  onReset: () => void;
+  onRestore: () => void;
+}) {
+  const hasBackup = status?.keyBackupExists === true;
+  const ready = status?.ready === true;
+  return (
+    <div className="mute-backdrop" role="presentation" onClick={onClose}>
+      <section className="recovery-dialog" role="dialog" aria-modal="true" aria-label="Obnova E2EE" onClick={(event) => event.stopPropagation()}>
+        <header>
+          <button className="round-icon small" onClick={onClose} type="button" aria-label="Zavřít">
+            <ArrowLeft size={20} />
+          </button>
+          <span>
+            <h2>Obnova E2EE</h2>
+            <small>{ready ? "Key backup je aktivní" : hasBackup ? "Obnovte toto zařízení" : "Nastavte více zařízení"}</small>
+          </span>
+        </header>
+        <div className="recovery-illustration" aria-hidden="true">
+          <KeyRound size={54} />
+        </div>
+
+        {generatedRecoveryKey ? (
+          <>
+            <p>
+              Uložte tento obnovovací klíč do správce hesel nebo na bezpečné místo.
+              Bez něj nepůjde obnovit E2EE na novém zařízení, pokud nebude dostupné jiné ověřené zařízení.
+            </p>
+            <div className="recovery-key-box">
+              <code>{generatedRecoveryKey}</code>
+              <button
+                onClick={() => void navigator.clipboard?.writeText(generatedRecoveryKey)}
+                type="button"
+                aria-label="Zkopírovat obnovovací klíč"
+              >
+                <Copy size={18} />
+                Zkopírovat
+              </button>
+            </div>
+            <footer>
+              <button className="primary-dialog-action" onClick={onClose} type="button">Mám uloženo</button>
+            </footer>
+          </>
+        ) : ready ? (
+          <>
+            <p>
+              Toto zařízení má přístup k E2EE key backupu. Nové zprávy se budou zálohovat šifrovaně
+              a půjdou obnovit na dalších zařízeních pomocí vašeho obnovovacího klíče.
+            </p>
+            <footer>
+              <button className="primary-dialog-action" onClick={onClose} type="button">Hotovo</button>
+            </footer>
+          </>
+        ) : hasBackup ? (
+          <>
+            <p>
+              Zadejte obnovovací klíč uložený při prvním nastavení. Klíč zůstane pouze v tomto prohlížeči
+              a použije se k odemčení šifrované zálohy.
+            </p>
+            <label className="recovery-input">
+              <span>Obnovovací klíč</span>
+              <textarea
+                autoFocus
+                spellCheck={false}
+                value={recoveryKeyInput}
+                onChange={(event) => onRecoveryKeyInputChange(event.target.value)}
+              />
+            </label>
+            <footer>
+              <button disabled={saving || !recoveryKeyInput.trim()} className="primary-dialog-action" onClick={onRestore} type="button">
+                {saving ? <Loader2 className="spin" size={18} /> : <KeyRound size={18} />}
+                Obnovit zařízení
+              </button>
+              <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
+                Začít znovu bez staré historie
+              </button>
+            </footer>
+          </>
+        ) : (
+          <>
+            <p>
+              Vytvořte obnovovací klíč před psaním zpráv. COP ani Matrix server tento klíč neznají;
+              bez uloženého klíče ztratíte možnost obnovit historii na novém zařízení.
+            </p>
+            <footer>
+              <button disabled={saving} className="primary-dialog-action" onClick={onCreate} type="button">
+                {saving ? <Loader2 className="spin" size={18} /> : <KeyRound size={18} />}
+                Vytvořit obnovovací klíč
+              </button>
+              <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
+                Resetovat staré nastavení
+              </button>
+            </footer>
+          </>
+        )}
       </section>
     </div>
   );

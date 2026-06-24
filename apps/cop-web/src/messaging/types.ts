@@ -129,16 +129,30 @@ export interface MatrixEncryptedFileRef {
 
 export interface MatrixMessagingSession {
   bootstrap: MessagingBootstrapResponse;
+  createEncryptionRecovery(reset?: boolean): Promise<string>;
   createGroupRoom(name: string, inviteUserIds?: string[]): Promise<string>;
   downloadAttachment(message: MatrixTimelineMessage): Promise<Blob>;
+  getEncryptionRecoveryStatus(): Promise<MatrixEncryptionRecoveryStatus>;
   getRooms(): MatrixRoomSummary[];
   getTimeline(roomId: string): MatrixTimelineMessage[];
   inviteUsersToRoom(roomId: string, userIds: string[]): Promise<void>;
   joinInvitedRooms(): Promise<void>;
   loadMoreTimeline(roomId: string, limit?: number): Promise<{ exhausted: boolean; messages: MatrixTimelineMessage[] }>;
+  restoreEncryptionRecovery(recoveryKey: string): Promise<void>;
   setMessageRetentionPolicy(roomId: string, seconds: number | null): Promise<void>;
   sendAttachment(roomId: string, attachment: MatrixAttachmentUpload): Promise<void>;
   sendLocation(roomId: string, location: MatrixLocationShare): Promise<void>;
   sendMessage(roomId: string, body: string): Promise<void>;
   stop(): void;
+}
+
+export interface MatrixEncryptionRecoveryStatus {
+  activeBackupVersion?: string;
+  keyBackupEnabled: boolean;
+  keyBackupExists: boolean;
+  needsRecovery: boolean;
+  needsSetup: boolean;
+  ready: boolean;
+  secretStorageReady: boolean;
+  supported: boolean;
 }

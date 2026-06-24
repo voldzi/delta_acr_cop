@@ -125,8 +125,20 @@ COP deletes local Matrix crypto state only during explicit account-store mismatc
 recovery for the current `userId` + `deviceId` bootstrap. It must not broadly
 delete Matrix/crypto/Olm IndexedDB databases during normal logout or temporary
 anonymous/authenticating transitions. Messages sent before this browser device
-received room keys remain unrecoverable unless CSM Messaging/Synapse provides
-Matrix key backup, cross-signing or secret sharing.
+received room keys are recoverable only through Matrix E2EE recovery that the
+user controls. COP Chat therefore requires Matrix secret storage + key backup
+before sending new messages from the standalone chat app. The browser creates
+the recovery key locally, shows it to the user once, and uses it to unlock the
+Matrix key backup on additional devices. COP API, CSM Messaging and Synapse
+must not receive a server-managed recovery passphrase or any plaintext room
+key.
+
+If the user loses every trusted device and the recovery key, strong E2EE means
+old room keys cannot be reconstructed from authentication alone. The supported
+operational recovery is to start a new E2EE key cycle, accepting that older
+encrypted history may no longer be readable. This is deliberate: a design where
+ordinary COP authentication alone can recreate all E2EE keys would also give a
+server-side component enough material to decrypt user chat history.
 
 ## Notification Intake
 
@@ -260,6 +272,13 @@ metadata when the room is linked to a COP group, and filters the local Matrix
 timeline according to that room setting. Physical server-side purging remains a
 homeserver/CSM Messaging retention policy concern; COP still does not proxy,
 read or persist plaintext Matrix timelines.
+
+For standalone `cop-chat`, composing is gated on active E2EE recovery. If the
+Matrix account has no key backup, the user must create and save a recovery key
+first. If a key backup exists but the current browser has not unlocked it, the
+user must enter the recovery key or intentionally start a new key cycle without
+old history. This prevents new messages from being stranded in one local browser
+crypto store.
 
 The browser may send:
 

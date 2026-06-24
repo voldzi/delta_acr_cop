@@ -3,6 +3,7 @@ import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
   MatrixEncryptedFileRef,
+  MatrixEncryptionRecoveryStatus,
   MatrixLocationShare,
   MatrixMessagingSession,
   MatrixRoomSummary,
@@ -12,6 +13,7 @@ import type {
 
 interface MatrixClientLike {
   createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;
+  getCrypto?: () => MatrixCryptoApiLike | undefined;
   getRooms?: () => unknown[];
   getUserId?: () => string | null;
   initRustCrypto?: (args?: { cryptoDatabasePrefix?: string }) => Promise<void>;
@@ -28,6 +30,27 @@ interface MatrixClientLike {
   stopClient?: () => void;
   scrollback?: (room: MatrixRoomLike, limit?: number) => Promise<unknown>;
   uploadContent?: (file: Blob | File, opts?: Record<string, unknown>) => Promise<{ content_uri?: string; contentUri?: string }>;
+}
+
+interface MatrixCryptoApiLike {
+  bootstrapSecretStorage?: (options: {
+    createSecretStorageKey?: () => Promise<unknown>;
+    setupNewKeyBackup?: boolean;
+    setupNewSecretStorage?: boolean;
+  }) => Promise<void>;
+  checkKeyBackupAndEnable?: () => Promise<unknown>;
+  createRecoveryKeyFromPassphrase?: (password?: string) => Promise<unknown>;
+  disableKeyStorage?: () => Promise<void>;
+  getActiveSessionBackupVersion?: () => Promise<string | null>;
+  getKeyBackupInfo?: () => Promise<unknown | null>;
+  isSecretStorageReady?: () => Promise<boolean>;
+  loadSessionBackupPrivateKeyFromSecretStorage?: () => Promise<void>;
+  restoreKeyBackup?: (options?: Record<string, unknown>) => Promise<unknown>;
+}
+
+interface MatrixRecoveryController {
+  readonly cryptoCallbacks: Record<string, unknown>;
+  setRecoveryKey(recoveryKey: string): void;
 }
 
 interface MatrixSdkLike {
@@ -88,10 +111,12 @@ export async function createMatrixMessagingSession(
   const matrixSdk = await import("matrix-js-sdk/lib/browser-index.js") as unknown as MatrixSdkLike;
   disableMatrixPollAggregation(matrixSdk);
   const createClient = matrixSdk.createClient;
+  const recoveryController = createUserControlledRecoveryController();
   const client = createClient({
     accessToken: bootstrap.accessToken,
     baseUrl: homeserverBaseUrl,
     deviceId: bootstrap.deviceId,
+    cryptoCallbacks: recoveryController.cryptoCallbacks,
     userId: bootstrap.userId
   });
 
@@ -109,6 +134,7 @@ export async function createMatrixMessagingSession(
       }
       throw caught;
     }
+    await enableKnownMatrixKeyBackup(client);
   }
 
   let inviteJoinInFlight: Promise<void> | null = null;
@@ -140,6 +166,7 @@ export async function createMatrixMessagingSession(
 
   return {
     bootstrap,
+    createEncryptionRecovery: async (reset = false) => createUserControlledEncryptionRecovery(client, reset),
     createGroupRoom: async (name, inviteUserIds = []) => {
       if (typeof client.createRoom !== "function") {
         throw new Error("Chat se nepodařilo založit.");
@@ -175,6 +202,7 @@ export async function createMatrixMessagingSession(
       }
       return downloadMatrixAttachment(client, bootstrap, homeserverBaseUrl, message.attachment);
     },
+    getEncryptionRecoveryStatus: async () => readMatrixEncryptionRecoveryStatus(client),
     getRooms: () => readRooms(client),
     getTimeline: (roomId) => readTimeline(client, roomId, homeserverBaseUrl),
     inviteUsersToRoom: async (roomId, userIds) => {
@@ -234,6 +262,7 @@ export async function createMatrixMessagingSession(
         throw formatMatrixClientError(caught, homeserverBaseUrl, "načíst starší zprávy");
       }
     },
+    restoreEncryptionRecovery: async (recoveryKey) => restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey),
     setMessageRetentionPolicy: async (roomId, seconds) => {
       if (typeof client.sendStateEvent !== "function") {
         throw new Error("Nastavení automatického mazání služba zpráv nepodporuje.");
@@ -318,6 +347,192 @@ function disableMatrixPollAggregation(matrixSdk: MatrixSdkLike): void {
   // usable type, which pollutes the UI runtime without affecting chat messages.
   roomPrototype.processPollEvents = () => Promise.resolve();
   roomPrototype.__copChatPollAggregationDisabled = true;
+}
+
+function createUserControlledRecoveryController(): MatrixRecoveryController {
+  const keyCache = new Map<string, Uint8Array>();
+  let recoveryKey: string | null = null;
+  return {
+    cryptoCallbacks: {
+      cacheSecretStorageKey: (keyId: string, _keyInfo: unknown, key: Uint8Array) => {
+        keyCache.set(keyId, key);
+      },
+      getSecretStorageKey: async (options: { keys: Record<string, unknown> }) => {
+        for (const keyId of Object.keys(options.keys)) {
+          const cachedKey = keyCache.get(keyId);
+          if (cachedKey) {
+            return [keyId, cachedKey];
+          }
+        }
+        if (!recoveryKey) {
+          return null;
+        }
+        const decodedKey = await decodeUserRecoveryKey(recoveryKey);
+        const keyId = Object.keys(options.keys)[0];
+        return keyId ? [keyId, decodedKey] : null;
+      }
+    },
+    setRecoveryKey(nextRecoveryKey: string) {
+      recoveryKey = nextRecoveryKey.trim();
+    }
+  };
+}
+
+async function decodeUserRecoveryKey(recoveryKey: string): Promise<Uint8Array> {
+  const { decodeRecoveryKey } = await import("matrix-js-sdk/lib/crypto-api/recovery-key.js") as {
+    decodeRecoveryKey: (recoveryKey: string) => Uint8Array;
+  };
+  try {
+    return decodeRecoveryKey(recoveryKey.trim());
+  } catch {
+    throw new Error("Obnovovací klíč nemá platný formát.");
+  }
+}
+
+async function enableKnownMatrixKeyBackup(client: MatrixClientLike): Promise<void> {
+  const crypto = client.getCrypto?.();
+  if (!crypto) {
+    return;
+  }
+  await loadUserSessionBackupKey(crypto);
+  await crypto.checkKeyBackupAndEnable?.();
+  if (await hasActiveUserBackup(crypto)) {
+    restoreUserKeyBackupInBackground(crypto);
+  }
+}
+
+async function readMatrixEncryptionRecoveryStatus(client: MatrixClientLike): Promise<MatrixEncryptionRecoveryStatus> {
+  const crypto = client.getCrypto?.();
+  if (!crypto) {
+    return {
+      keyBackupEnabled: false,
+      keyBackupExists: false,
+      needsRecovery: false,
+      needsSetup: true,
+      ready: false,
+      secretStorageReady: false,
+      supported: false
+    };
+  }
+  const [backupInfo, activeBackupVersion, secretStorageReady] = await Promise.all([
+    crypto.getKeyBackupInfo ? crypto.getKeyBackupInfo().catch(() => null) : Promise.resolve(null),
+    crypto.getActiveSessionBackupVersion ? crypto.getActiveSessionBackupVersion().catch(() => null) : Promise.resolve(null),
+    crypto.isSecretStorageReady ? crypto.isSecretStorageReady().catch(() => false) : Promise.resolve(false)
+  ]);
+  const keyBackupExists = Boolean(backupInfo);
+  const keyBackupEnabled = Boolean(activeBackupVersion);
+  return {
+    ...(activeBackupVersion ? { activeBackupVersion } : {}),
+    keyBackupEnabled,
+    keyBackupExists,
+    needsRecovery: keyBackupExists && !keyBackupEnabled,
+    needsSetup: !keyBackupExists,
+    ready: keyBackupEnabled,
+    secretStorageReady,
+    supported: typeof crypto.bootstrapSecretStorage === "function" && typeof crypto.createRecoveryKeyFromPassphrase === "function"
+  };
+}
+
+async function createUserControlledEncryptionRecovery(client: MatrixClientLike, reset: boolean): Promise<string> {
+  const crypto = requireMatrixCrypto(client);
+  if (typeof crypto.bootstrapSecretStorage !== "function" || typeof crypto.createRecoveryKeyFromPassphrase !== "function") {
+    throw new Error("Tento prohlížeč nepodporuje vytvoření obnovovacího klíče.");
+  }
+
+  if (reset) {
+    await crypto.disableKeyStorage?.();
+  }
+
+  let encodedRecoveryKey = "";
+  const createSecretStorageKey = async () => {
+    const recoveryKey = await crypto.createRecoveryKeyFromPassphrase?.();
+    encodedRecoveryKey = readEncodedRecoveryKey(recoveryKey);
+    return recoveryKey;
+  };
+
+  try {
+    await crypto.bootstrapSecretStorage({
+      createSecretStorageKey,
+      setupNewKeyBackup: true,
+      ...(reset ? { setupNewSecretStorage: true } : {})
+    });
+    await crypto.checkKeyBackupAndEnable?.();
+  } catch (caught) {
+    throw new Error(`Obnovovací klíč se nepodařilo vytvořit: ${errorMessage(caught)}`);
+  }
+  if (!encodedRecoveryKey) {
+    throw new Error("Matrix nevydal obnovovací klíč. Zkuste nastavení zopakovat.");
+  }
+  return encodedRecoveryKey;
+}
+
+async function restoreUserControlledEncryptionRecovery(
+  client: MatrixClientLike,
+  recoveryController: MatrixRecoveryController,
+  recoveryKey: string
+): Promise<void> {
+  const crypto = requireMatrixCrypto(client);
+  if (!recoveryKey.trim()) {
+    throw new Error("Zadejte obnovovací klíč.");
+  }
+  recoveryController.setRecoveryKey(recoveryKey);
+  try {
+    const loaded = await loadUserSessionBackupKey(crypto);
+    if (!loaded) {
+      throw new Error("Obnovovací klíč neodpovídá záloze tohoto účtu.");
+    }
+    await crypto.checkKeyBackupAndEnable?.();
+    if (!(await hasActiveUserBackup(crypto))) {
+      throw new Error("Key backup se nepodařilo aktivovat.");
+    }
+    restoreUserKeyBackupInBackground(crypto);
+  } catch (caught) {
+    throw new Error(`Zařízení se nepodařilo obnovit: ${errorMessage(caught)}`);
+  }
+}
+
+function requireMatrixCrypto(client: MatrixClientLike): MatrixCryptoApiLike {
+  const crypto = client.getCrypto?.();
+  if (!crypto) {
+    throw new Error("Tento prohlížeč nepodporuje potřebné E2EE funkce.");
+  }
+  return crypto;
+}
+
+function readEncodedRecoveryKey(value: unknown): string {
+  const encoded = asRecord(value)?.encodedPrivateKey;
+  return typeof encoded === "string" ? encoded : "";
+}
+
+async function loadUserSessionBackupKey(crypto: MatrixCryptoApiLike): Promise<boolean> {
+  if (typeof crypto.loadSessionBackupPrivateKeyFromSecretStorage !== "function") {
+    return false;
+  }
+  try {
+    await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function hasActiveUserBackup(crypto: MatrixCryptoApiLike): Promise<boolean> {
+  if (typeof crypto.getActiveSessionBackupVersion !== "function") {
+    return true;
+  }
+  try {
+    return Boolean(await crypto.getActiveSessionBackupVersion());
+  } catch {
+    return false;
+  }
+}
+
+function restoreUserKeyBackupInBackground(crypto: MatrixCryptoApiLike): void {
+  if (typeof crypto.restoreKeyBackup !== "function") {
+    return;
+  }
+  void crypto.restoreKeyBackup({ progressCallback: () => undefined })
+    .catch(() => undefined);
 }
 
 async function createEncryptedAttachmentMessage(client: MatrixClientLike, attachment: MatrixAttachmentUpload): Promise<Record<string, unknown>> {
@@ -602,6 +817,10 @@ function isLikelyBrowserNetworkError(caught: unknown): boolean {
     message.includes("networkerror") ||
     message.includes("network error")
   );
+}
+
+function errorMessage(caught: unknown): string {
+  return caught instanceof Error ? caught.message : String(caught);
 }
 
 function isLikelyMatrixForbiddenError(caught: unknown): boolean {
