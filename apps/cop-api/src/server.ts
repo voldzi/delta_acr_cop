@@ -348,6 +348,7 @@ const copMcpTools: CopMcpToolDefinition[] = [
 
 const floodDemoScenarioId = "flood-central-bohemia";
 const floodDemoEventId = "demo-flood-central-bohemia";
+const floodDemoOperatorUsernames = ["cop.operator", "op.operator1"];
 const floodDemoBbox = {
   east: 15.6,
   north: 50.65,
@@ -1701,6 +1702,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }, requestNow);
       operation.createdGroups += 1;
     }
+    group = await refreshFloodDemoGroupMetadata(group, actor, requestNow);
+    group = await ensureFloodDemoGroupMembers(group, actor, requestNow);
 
     const reportTitles = new Set(before.reports.map((report) => report.title));
     for (const seed of floodDemoReportSeeds(group.groupId, requestNow)) {
@@ -1749,6 +1752,60 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ...operation
     });
     return floodDemoStatusPayload(await listFloodDemoObjects(actor), requestNow, operation);
+  }
+
+  async function refreshFloodDemoGroupMetadata(
+    group: CommunityGroupRecord,
+    actor: AuthenticatedActor,
+    requestNow: Date
+  ): Promise<CommunityGroupRecord> {
+    const updated = await updateCommunityGroupMetadata({
+      actor: actorToCommunityActor(actor),
+      groupId: group.groupId,
+      metadata: floodDemoGroupMetadata(actor)
+    }, requestNow);
+    return updated ?? group;
+  }
+
+  async function ensureFloodDemoGroupMembers(
+    group: CommunityGroupRecord,
+    actor: AuthenticatedActor,
+    requestNow: Date
+  ): Promise<CommunityGroupRecord> {
+    let updated = group;
+    const profiles = await resolveFloodDemoOperatorProfiles();
+    for (const profile of profiles) {
+      if (updated.members.some((member) => member.subjectId === profile.subjectId)) {
+        continue;
+      }
+      const next = await upsertCommunityGroupMember({
+        actor: actorToCommunityActor(actor),
+        groupId: updated.groupId,
+        member: {
+          displayName: profile.displayName,
+          subjectId: profile.subjectId,
+          username: profile.username
+        },
+        role: "member",
+        status: "active"
+      }, requestNow);
+      if (next) {
+        updated = next;
+      }
+    }
+    return updated;
+  }
+
+  async function resolveFloodDemoOperatorProfiles(): Promise<UserProfileRecord[]> {
+    const profilesBySubject = new Map<string, UserProfileRecord>();
+    for (const username of floodDemoOperatorUsernames) {
+      const matches = await searchUserProfiles(username, 10);
+      const exact = matches.find((profile) => profile.username === username || profile.email === username);
+      if (exact) {
+        profilesBySubject.set(exact.subjectId, exact);
+      }
+    }
+    return Array.from(profilesBySubject.values());
   }
 
   async function resetFloodDemoScenario(actor: AuthenticatedActor, requestNow: Date) {
@@ -6760,7 +6817,7 @@ function floodDemoGroupMetadata(actor: AuthenticatedActor): Record<string, unkno
       ],
       pinnedContext: "Dulezite kontakty, odkazy a media k povodnove udalosti.",
       summary: "Koordinace povodnove situace, hlaseni z terenu a sdilena media.",
-      title: "test_cop1"
+      title: "Krizový štáb - Povodeň"
     },
     event: {
       id: "E2025-0516-0001",

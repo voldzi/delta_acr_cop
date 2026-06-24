@@ -656,7 +656,7 @@ describe("community report routes", () => {
       (group) => group.metadata?.demoScenarioId === "flood-central-bohemia"
     );
     expect(demoGroup?.metadata?.demoConversation).toMatchObject({
-      title: "test_cop1",
+      title: "Krizový štáb - Povodeň",
       messages: expect.arrayContaining([
         expect.objectContaining({
           body: expect.stringContaining("Aktualizace stavu hladiny")
@@ -717,6 +717,58 @@ describe("community report routes", () => {
         }
       }
     });
+
+    await app.close();
+  });
+
+  it("adds known PoC operator profiles to the seeded flood demo group", async () => {
+    const userProfileStore = new InMemoryUserProfileStore();
+    await userProfileStore.upsertProfile({
+      alertPreferences: {},
+      displayName: "COP Operator",
+      email: "cop.operator@example.test",
+      preferences: {},
+      subjectId: "subject-cop-operator",
+      username: "cop.operator"
+    });
+    await userProfileStore.upsertProfile({
+      alertPreferences: {},
+      displayName: "PoC Operator 1",
+      email: "op.operator1@example.test",
+      preferences: {},
+      subjectId: "subject-op-operator1",
+      username: "op.operator1"
+    });
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      userProfileStore
+    });
+    const headers = { authorization: "Bearer dev-lab-token" };
+
+    const seedResponse = await app.inject({
+      headers,
+      method: "POST",
+      url: "/api/v1/demo/scenarios/flood-central-bohemia/seed"
+    });
+    expect(seedResponse.statusCode).toBe(200);
+
+    const groupResponse = await app.inject({
+      headers,
+      method: "GET",
+      url: "/api/v1/community/groups"
+    });
+    expect(groupResponse.statusCode).toBe(200);
+    const demoGroup = (groupResponse.json() as {
+      items: Array<{
+        members?: Array<{ status?: string; subjectId?: string }>;
+        metadata?: Record<string, unknown>;
+      }>;
+    }).items.find((group) => group.metadata?.demoScenarioId === "flood-central-bohemia");
+    expect(demoGroup?.members).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: "active", subjectId: "subject-cop-operator" }),
+      expect.objectContaining({ status: "active", subjectId: "subject-op-operator1" })
+    ]));
 
     await app.close();
   });

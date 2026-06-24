@@ -67,6 +67,7 @@ import {
   fetchMessagingBootstrap,
   fetchMessagingConversations,
   fetchMessagingStatus,
+  fetchUserProfile,
   resolveMessagingMatrixIdentities,
   searchUserDirectory,
   syncMessagingConversationMembers,
@@ -414,6 +415,16 @@ export function ChatApp() {
       cancelled = true;
     };
   }, [authConfig]);
+
+  React.useEffect(() => {
+    if (!authToken) {
+      return;
+    }
+    void fetchUserProfile(apiBase, authToken).catch(() => {
+      // The profile is a convenience for directory search and demo seeding;
+      // chat login itself must not fail when profile storage is temporarily degraded.
+    });
+  }, [apiBase, authToken]);
 
   React.useEffect(() => {
     if (!isAuthSessionActive(authSession) || !authSession.expiresAt || !authSession.refreshToken) {
