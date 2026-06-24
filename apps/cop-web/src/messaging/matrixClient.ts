@@ -28,6 +28,16 @@ interface MatrixClientLike {
   uploadContent?: (file: Blob | File, opts?: Record<string, unknown>) => Promise<{ content_uri?: string; contentUri?: string }>;
 }
 
+interface MatrixSdkLike {
+  createClient: (options: Record<string, unknown>) => MatrixClientLike;
+  Room?: {
+    prototype?: {
+      __copChatPollAggregationDisabled?: boolean;
+      processPollEvents?: (events: unknown[]) => Promise<void> | void;
+    };
+  };
+}
+
 interface MatrixRoomLike {
   getMember?: (userId: string) => MatrixRoomMemberLike | null;
   getMyMembership?: () => string;
@@ -68,8 +78,9 @@ export async function createMatrixMessagingSession(
     throw new Error("Zabezpečený chat nemá připravenou adresu služby.");
   }
   await assertBrowserCanReachHomeserver(homeserverBaseUrl);
-  const matrixSdk = await import("matrix-js-sdk/lib/browser-index.js");
-  const createClient = (matrixSdk as unknown as { createClient: (options: Record<string, unknown>) => MatrixClientLike }).createClient;
+  const matrixSdk = await import("matrix-js-sdk/lib/browser-index.js") as unknown as MatrixSdkLike;
+  disableMatrixPollAggregation(matrixSdk);
+  const createClient = matrixSdk.createClient;
   const client = createClient({
     accessToken: bootstrap.accessToken,
     baseUrl: homeserverBaseUrl,
@@ -224,6 +235,22 @@ export async function createMatrixMessagingSession(
       client.stopClient?.();
     }
   };
+}
+
+function disableMatrixPollAggregation(matrixSdk: MatrixSdkLike): void {
+  const roomPrototype = matrixSdk.Room?.prototype;
+  if (!roomPrototype || roomPrototype.__copChatPollAggregationDisabled) {
+    return;
+  }
+  if (typeof roomPrototype.processPollEvents !== "function") {
+    return;
+  }
+
+  // COP Chat does not expose Matrix polls. matrix-js-sdk 41.6.0 can emit
+  // unhandled poll-processing rejections for older encrypted events with no
+  // usable type, which pollutes the UI runtime without affecting chat messages.
+  roomPrototype.processPollEvents = () => Promise.resolve();
+  roomPrototype.__copChatPollAggregationDisabled = true;
 }
 
 async function createEncryptedAttachmentMessage(client: MatrixClientLike, attachment: MatrixAttachmentUpload): Promise<Record<string, unknown>> {
