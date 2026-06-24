@@ -2377,7 +2377,26 @@ function Composer({
   onShareLocation: () => void;
   onTextChange: (value: string) => void;
 }) {
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const canSend = Boolean(text.trim() || pendingAttachment) && !disabled;
+  const syncTextareaHeight = React.useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "auto";
+    const lineHeight = Number.parseFloat(window.getComputedStyle(textarea).lineHeight) || 22;
+    const maxHeight = Math.ceil(lineHeight * 6);
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, []);
+
+  React.useLayoutEffect(() => {
+    syncTextareaHeight();
+  }, [syncTextareaHeight, text, pendingAttachment, replyTo]);
+
   return (
     <form
       className="composer"
@@ -2426,9 +2445,14 @@ function Composer({
         <div className="message-input">
           <Smile size={21} />
           <textarea
+            ref={textareaRef}
             aria-label="Zpráva"
             disabled={disabled}
-            onChange={(event) => onTextChange(event.target.value)}
+            onChange={(event) => {
+              onTextChange(event.target.value);
+              syncTextareaHeight();
+            }}
+            onFocus={syncTextareaHeight}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
