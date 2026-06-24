@@ -689,6 +689,10 @@ export function ChatApp() {
           setConversations((current) => upsertConversation(current, sync.conversation as MessagingConversationSummary));
         }
       }
+      if (selectedRoomId && matrixSession) {
+        const resolution = await resolveMessagingMatrixIdentities(apiBase, authToken, [user.subjectId]);
+        await matrixSession.inviteUsersToRoom(selectedRoomId, matrixUserIdsFromResolution(resolution, [user.subjectId]));
+      }
       setMemberQuery("");
       setMemberSuggestions([]);
     } catch (caught) {

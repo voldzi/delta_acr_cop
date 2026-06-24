@@ -15,6 +15,7 @@ interface MatrixClientLike {
   getRooms?: () => unknown[];
   getUserId?: () => string | null;
   initRustCrypto?: (args?: { cryptoDatabasePrefix?: string }) => Promise<void>;
+  invite?: (roomId: string, userId: string) => Promise<unknown>;
   isRoomEncrypted?: (roomId: string) => boolean;
   joinRoom?: (roomIdOrAlias: string) => Promise<{ room_id?: string; roomId?: string }>;
   mxcUrlToHttp?: (mxcUrl: string, width?: number, height?: number, resizeMethod?: string, allowDirectLinks?: boolean, allowRedirects?: boolean, useAuthentication?: boolean) => string | null;
@@ -157,6 +158,24 @@ export async function createMatrixMessagingSession(
     },
     getRooms: () => readRooms(client),
     getTimeline: (roomId) => readTimeline(client, roomId, homeserverBaseUrl),
+    inviteUsersToRoom: async (roomId, userIds) => {
+      if (userIds.length === 0) {
+        return;
+      }
+      if (typeof client.invite !== "function") {
+        throw new Error("Člena se nepodařilo pozvat do chatové místnosti.");
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        for (const userId of [...new Set(userIds)]) {
+          await client.invite(roomId, userId);
+        }
+        callbacks.onRoomsChanged?.(readRooms(client));
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "pozvat člena do chatové místnosti");
+      }
+    },
     joinInvitedRooms,
     sendAttachment: async (roomId, attachment) => {
       if (typeof client.uploadContent !== "function" || typeof client.sendMessage !== "function") {
