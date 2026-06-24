@@ -10,6 +10,8 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 *.tsbuildinfo
+.codex-backups/
+.cop_*
 apps/cop-web/.vite/
 apps/cop-web/dist/
 apps/cop-chat/.vite/
