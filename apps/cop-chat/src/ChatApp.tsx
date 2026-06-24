@@ -2446,10 +2446,47 @@ function buildChatItems({
   });
 
   const normalizedQuery = query.trim().toLocaleLowerCase("cs-CZ");
-  return Array.from(items.values())
+  return dedupeChatItems(Array.from(items.values()))
     .filter((item) => filter === "all" || (filter === "direct" ? item.type === "direct" : item.type !== "direct"))
     .filter((item) => normalizedQuery ? `${item.title} ${item.preview} ${item.searchable}`.toLocaleLowerCase("cs-CZ").includes(normalizedQuery) : true)
     .sort((left, right) => right.sortAt - left.sortAt || left.title.localeCompare(right.title, "cs-CZ"));
+}
+
+function dedupeChatItems(items: ChatListItem[]): ChatListItem[] {
+  const deduped = new Map<string, ChatListItem>();
+  items.forEach((item) => {
+    const key = chatDedupeKey(item);
+    const current = deduped.get(key);
+    if (!current) {
+      deduped.set(key, item);
+      return;
+    }
+    const preferred = preferChatListItem(current, item);
+    deduped.set(key, {
+      ...preferred,
+      active: current.active || item.active,
+      unreadCount: Math.max(current.unreadCount, item.unreadCount)
+    });
+  });
+  return Array.from(deduped.values());
+}
+
+function chatDedupeKey(item: ChatListItem): string {
+  const memberIds = item.conversation?.members?.map((member) => member.userId).filter(Boolean).sort().join("|");
+  if (item.type === "direct" && memberIds) {
+    return `direct:${memberIds}`;
+  }
+  return `${item.type === "direct" ? "direct" : "group"}:${normalizeTitle(item.title)}`;
+}
+
+function preferChatListItem(left: ChatListItem, right: ChatListItem): ChatListItem {
+  if (Boolean(left.roomId) !== Boolean(right.roomId)) {
+    return left.roomId ? left : right;
+  }
+  if (Boolean(left.latest) !== Boolean(right.latest)) {
+    return left.latest ? left : right;
+  }
+  return left.sortAt >= right.sortAt ? left : right;
 }
 
 function buildTimelineRows(messages: MatrixTimelineMessage[]): Array<
