@@ -6953,7 +6953,7 @@ function floodDemoGroupMetadata(actor: AuthenticatedActor): Record<string, unkno
       ],
       messages: [
         {
-          authorName: "Jan Novak",
+          authorName: "Jan Novák",
           body: "Aktualizace stavu hladiny na tocích v postižené oblasti. Žádáme potvrzení průjezdnosti mostu.",
           direction: "incoming",
           id: "demo-msg-1",
