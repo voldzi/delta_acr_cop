@@ -62,6 +62,16 @@ button {
   transition: padding-right 160ms ease;
 }
 
+.layout-resizing,
+.layout-resizing * {
+  cursor: ew-resize !important;
+  user-select: none !important;
+}
+
+.layout-resizing .embedded-chat-frame {
+  pointer-events: none;
+}
+
 .shell.app-skin-civil {
   --bg: #081018;
   --panel: rgba(12, 20, 28, 0.9);
@@ -538,8 +548,10 @@ h1 {
   top: 10px;
   bottom: 10px;
   left: -7px;
+  z-index: 3;
   width: 13px;
   cursor: ew-resize;
+  touch-action: none;
 }
 
 .messaging-resize-handle::after {
@@ -1265,6 +1277,8 @@ h1 {
   gap: 8px;
   min-height: 0;
   overflow: hidden;
+  transition: margin-right 120ms ease;
+  will-change: margin-right;
 }
 
 .shell-statusbar-hidden {
@@ -1396,6 +1410,12 @@ h1 {
   border: 1px solid rgba(142, 157, 170, 0.2);
   background: rgba(7, 11, 15, 0.9);
   box-shadow: var(--shadow);
+  transition: margin-right 120ms ease;
+}
+
+.layout-resizing .app-shell-body,
+.layout-resizing .app-statusbar {
+  transition: none;
 }
 
 .app-statusbar span {
@@ -1783,7 +1803,12 @@ h1 {
 
 @media (min-width: 1181px) {
   .shell.app-shell-v2.shell-messaging-docked {
-    padding-right: min(max(var(--messaging-dock-width, 640px), 560px), calc(100vw - 96px));
+    padding-right: 0;
+  }
+
+  .shell.app-shell-v2.shell-messaging-docked .app-shell-body,
+  .shell.app-shell-v2.shell-messaging-docked .app-statusbar {
+    margin-right: min(max(var(--messaging-dock-width, 640px), 560px), calc(100vw - 96px));
   }
 }
 
@@ -1855,6 +1880,7 @@ h1 {
   border: 0;
   background: transparent;
   cursor: col-resize;
+  touch-action: none;
 }
 
 .panel-resize-handle::after {

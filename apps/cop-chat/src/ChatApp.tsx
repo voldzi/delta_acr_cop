@@ -121,6 +121,13 @@ interface ChatPreferences {
   readOverrideByKey: Record<string, string>;
 }
 
+interface LocalUserPreferences {
+  operatorProfile?: {
+    avatarDataUrl?: string;
+    displayName?: string;
+  };
+}
+
 interface MediaPreviewItem {
   byteSizeLabel?: string;
   caption?: string;
@@ -178,6 +185,7 @@ interface ChatIdentityProfile {
 
 const apiBase = trimTrailingSlash(import.meta.env.VITE_COP_API_BASE_URL ?? "");
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
+const copUserPreferencesStorageKey = "cop.user.preferences.v1";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
 const initialHistoryLoadRetryLimit = 8;
@@ -262,6 +270,7 @@ export function ChatApp() {
   const [activeSearchIndex, setActiveSearchIndex] = React.useState(0);
   const [showJumpToLatest, setShowJumpToLatest] = React.useState(false);
   const [refreshNonce, setRefreshNonce] = React.useState(0);
+  const [localPreferencesRevision, setLocalPreferencesRevision] = React.useState(0);
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
   const messageMenuRef = React.useRef<HTMLDivElement | null>(null);
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
@@ -278,9 +287,13 @@ export function ChatApp() {
   const authToken = authenticated ? authSession.accessToken : undefined;
   const authSubjectId = authSession.profile?.subjectId ?? authSession.profile?.username ?? authSession.profile?.email;
   const preferencesOwner = authSubjectId ?? authSession.profile?.username ?? "anonymous";
+  const localUserPreferences = React.useMemo(
+    () => readLocalUserPreferences(preferencesOwner),
+    [localPreferencesRevision, preferencesOwner]
+  );
   const chatIdentity = React.useMemo(
-    () => chatIdentityFor(authSession, authConfig, serverUserProfile),
-    [authConfig, authSession, serverUserProfile]
+    () => chatIdentityFor(authSession, authConfig, serverUserProfile, localUserPreferences),
+    [authConfig, authSession, localUserPreferences, serverUserProfile]
   );
   const chatReady = Boolean(authToken && status?.chatAvailable);
   const encryptionRecoveryReady = Boolean(!matrixSession || encryptionRecoveryStatus?.ready);
@@ -369,6 +382,16 @@ export function ChatApp() {
   React.useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
   }, [selectedRoomId]);
+
+  React.useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (!event.key || event.key.startsWith("cop.user.preferences.v1")) {
+        setLocalPreferencesRevision((current) => current + 1);
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   React.useEffect(() => {
     setChatPreferences(readChatPreferences(preferencesOwner));
@@ -4550,10 +4573,17 @@ function authDisplayName(session: AuthSession, config: AuthConfig): string {
   return config.mode === "lab" ? "Lab operator" : "Nepřihlášen";
 }
 
-function chatIdentityFor(session: AuthSession, config: AuthConfig, serverProfile: ServerUserProfile | null): ChatIdentityProfile {
-  const operatorProfile = operatorProfileFromServer(serverProfile);
-  const displayName = operatorProfile.displayName ?? authDisplayName(session, config);
-  const avatarUrl = operatorProfile.avatarDataUrl
+function chatIdentityFor(
+  session: AuthSession,
+  config: AuthConfig,
+  serverProfile: ServerUserProfile | null,
+  localPreferences: LocalUserPreferences
+): ChatIdentityProfile {
+  const serverOperatorProfile = operatorProfileFromServer(serverProfile);
+  const localOperatorProfile = operatorProfileFromPreferences(localPreferences);
+  const displayName = serverOperatorProfile.displayName ?? localOperatorProfile.displayName ?? authDisplayName(session, config);
+  const avatarUrl = serverOperatorProfile.avatarDataUrl
+    ?? localOperatorProfile.avatarDataUrl
     ?? (session.status === "authenticated" ? trimmedString(session.profile?.picture) : undefined);
   const matrixProfile = session.status === "authenticated" && (displayName || avatarUrl)
     ? {
@@ -4575,6 +4605,14 @@ function operatorProfileFromServer(serverProfile: ServerUserProfile | null): { a
   return {
     avatarDataUrl: trimmedString(operatorProfile?.avatarDataUrl),
     displayName: trimmedString(operatorProfile?.displayName) ?? trimmedString(serverProfile?.actor.displayName)
+  };
+}
+
+function operatorProfileFromPreferences(preferences: LocalUserPreferences): { avatarDataUrl?: string; displayName?: string } {
+  const operatorProfile = asRecord(preferences.operatorProfile);
+  return {
+    avatarDataUrl: trimmedString(operatorProfile?.avatarDataUrl),
+    displayName: trimmedString(operatorProfile?.displayName)
   };
 }
 
@@ -4688,6 +4726,33 @@ function userFacingError(message: string): string {
     return "Služba zpráv není z tohoto zařízení dostupná.";
   }
   return normalized || "Akci se nepodařilo dokončit.";
+}
+
+function readLocalUserPreferences(ownerId: string): LocalUserPreferences {
+  try {
+    const storageKey = scopedCopUserPreferencesKey(ownerId);
+    const raw = window.localStorage.getItem(storageKey)
+      ?? (storageKey === copUserPreferencesStorageKey ? null : window.localStorage.getItem(copUserPreferencesStorageKey));
+    if (!raw) {
+      return {};
+    }
+    const parsed = asRecord(JSON.parse(raw));
+    const operatorProfile = asRecord(parsed?.operatorProfile);
+    const avatarDataUrl = trimmedString(operatorProfile?.avatarDataUrl);
+    const displayName = trimmedString(operatorProfile?.displayName);
+    return {
+      ...(avatarDataUrl || displayName
+        ? {
+            operatorProfile: {
+              ...(avatarDataUrl ? { avatarDataUrl } : {}),
+              ...(displayName ? { displayName } : {})
+            }
+          }
+        : {})
+    };
+  } catch {
+    return {};
+  }
 }
 
 function readChatPreferences(ownerId: string): ChatPreferences {
@@ -5056,6 +5121,16 @@ function stableStorageKey(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9._=-]+/gu, "_")
     .slice(0, 96) || "anonymous";
+}
+
+function scopedCopUserPreferencesKey(ownerId: string): string {
+  const normalizedOwner = ownerId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 64);
+  return normalizedOwner ? `${copUserPreferencesStorageKey}.${normalizedOwner}` : copUserPreferencesStorageKey;
 }
 
 async function getDeviceLocation(): Promise<MatrixLocationShare> {

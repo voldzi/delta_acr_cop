@@ -344,6 +344,7 @@ const defaultWorkspaceLayout: Required<WorkspaceLayoutPreferences> = {
 };
 const workspaceLeftWidthRange = { max: 460, min: 220 };
 const workspaceRightWidthRange = { max: 560, min: 280 };
+const messagingDockWidthRange = { max: 760, min: 560 };
 const workspaceSkinOptions: Array<[WorkspaceSkin, string]> = [
   ["civil", "Civilní"],
   ["operations", "Operační"],
@@ -2305,24 +2306,21 @@ export function App() {
           writeLocalAlertPreferences(nextAlertPreferences, userStorageScope, mirrorUpdatedAt);
           setLocalAlertPreferencesUpdatedAt(mirrorUpdatedAt);
         }
+        const localPreferences = readUserPreferences(userStorageScope);
+        const hydratedPreferences = mergeHydratedUserPreferences(serverPreferences, localPreferences, currentPreferences);
+        const hasHydratedPreferences = Object.keys(hydratedPreferences).length > 0;
+        const shouldMirrorPreferences = hasHydratedPreferences && !sameUserPreferences(hydratedPreferences, serverPreferences);
         setServerProfileUpdatedAt(profile.updatedAt);
         let savedProfile: Awaited<ReturnType<typeof saveUserProfile>> | null = null;
-        if (Object.keys(serverPreferences).length > 0) {
-          writeUserPreferences(serverPreferences, userStorageScope);
+        if (hasHydratedPreferences) {
+          writeUserPreferences(hydratedPreferences, userStorageScope);
           skipNextPreferenceWriteRef.current = true;
-          applyPreferenceSettings(serverPreferences, { focusMap: true });
-          if (localAlertPreferencesWin) {
-            savedProfile = await saveUserProfile(apiBase, authToken, {
-              alertPreferences: nextAlertPreferences,
-              preferences: serverPreferences
-            });
-          }
-        } else {
-          const localPreferences = readUserPreferences(userStorageScope);
-          const seedPreferences = Object.keys(localPreferences).length > 0 ? localPreferences : currentPreferences;
+          applyPreferenceSettings(hydratedPreferences, { focusMap: true });
+        }
+        if (localAlertPreferencesWin || shouldMirrorPreferences || Object.keys(serverPreferences).length === 0) {
           savedProfile = await saveUserProfile(apiBase, authToken, {
             alertPreferences: nextAlertPreferences,
-            preferences: seedPreferences
+            preferences: hasHydratedPreferences ? hydratedPreferences : currentPreferences
           });
         }
         if (savedProfile && !cancelled) {
@@ -3616,21 +3614,38 @@ export function App() {
 
   const beginWorkspacePanelResize = React.useCallback((side: "left" | "right", event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     const startX = event.clientX;
     const startWidth = side === "left" ? workspaceLayout.leftPanelWidth : workspaceLayout.rightPanelWidth;
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const delta = moveEvent.clientX - startX;
-      const width = side === "left" ? startWidth + delta : startWidth - delta;
-      const range = side === "left" ? workspaceLeftWidthRange : workspaceRightWidthRange;
-      const nextWidth = clamp(width, range.min, range.max);
+    const range = side === "left" ? workspaceLeftWidthRange : workspaceRightWidthRange;
+    let pendingWidth = startWidth;
+    let frameId: number | null = null;
+    const applyWidth = () => {
+      frameId = null;
+      const nextWidth = clamp(pendingWidth, range.min, range.max);
       updateWorkspaceLayout(side === "left" ? { leftPanelWidth: nextWidth } : { rightPanelWidth: nextWidth });
     };
-    const handlePointerUp = () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const delta = moveEvent.clientX - startX;
+      pendingWidth = side === "left" ? startWidth + delta : startWidth - delta;
+      if (frameId === null) {
+        frameId = window.requestAnimationFrame(applyWidth);
+      }
     };
+    const finishResize = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+        applyWidth();
+      }
+      document.documentElement.classList.remove("layout-resizing");
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishResize);
+      window.removeEventListener("pointercancel", finishResize);
+    };
+    document.documentElement.classList.add("layout-resizing");
     window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointerup", finishResize, { once: true });
+    window.addEventListener("pointercancel", finishResize, { once: true });
   }, [updateWorkspaceLayout, workspaceLayout.leftPanelWidth, workspaceLayout.rightPanelWidth]);
 
   React.useEffect(() => {
@@ -4647,7 +4662,7 @@ export function App() {
           pinned={messagingPinned}
           onClose={() => setMessagingOpen(false)}
           onDockWidthChange={(width) => {
-            const nextWidth = clamp(width, 420, 760);
+            const nextWidth = clamp(width, messagingDockWidthRange.min, messagingDockWidthRange.max);
             setMessagingDockWidth(nextWidth);
             writeMessagingDockWidth(nextWidth);
           }}
@@ -6098,17 +6113,35 @@ function EmbeddedCopChatPanel({
       return;
     }
     event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     const startX = event.clientX;
     const startWidth = dockWidth;
+    let pendingWidth = startWidth;
+    let frameId: number | null = null;
+    const applyWidth = () => {
+      frameId = null;
+      onDockWidthChange(pendingWidth);
+    };
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      onDockWidthChange(startWidth + startX - moveEvent.clientX);
+      pendingWidth = startWidth + startX - moveEvent.clientX;
+      if (frameId === null) {
+        frameId = window.requestAnimationFrame(applyWidth);
+      }
     };
-    const handlePointerUp = () => {
+    const finishResize = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+        applyWidth();
+      }
+      document.documentElement.classList.remove("layout-resizing");
       window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointerup", finishResize);
+      window.removeEventListener("pointercancel", finishResize);
     };
+    document.documentElement.classList.add("layout-resizing");
     window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointerup", finishResize);
+    window.addEventListener("pointercancel", finishResize);
   }
 
   return (
@@ -7544,6 +7577,54 @@ function workspaceTemplatePreferences(templateId: WorkspaceTemplateId): {
 
 function initialOperatorProfile(_session: AuthSession, savedProfile: OperatorProfilePreferences | undefined): OperatorProfilePreferences {
   return savedProfile ?? {};
+}
+
+function mergeHydratedUserPreferences(
+  serverPreferences: UserPreferences,
+  localPreferences: UserPreferences,
+  fallbackPreferences: UserPreferences
+): UserPreferences {
+  const hasServerPreferences = Object.keys(serverPreferences).length > 0;
+  const hasLocalPreferences = Object.keys(localPreferences).length > 0;
+  const basePreferences = hasServerPreferences
+    ? serverPreferences
+    : hasLocalPreferences
+      ? localPreferences
+      : fallbackPreferences;
+  const operatorProfile = mergeOperatorProfilePreferences(
+    serverPreferences.operatorProfile,
+    localPreferences.operatorProfile ?? fallbackPreferences.operatorProfile
+  );
+
+  return {
+    ...basePreferences,
+    ...(operatorProfile ? { operatorProfile } : {})
+  };
+}
+
+function mergeOperatorProfilePreferences(
+  serverProfile: OperatorProfilePreferences | undefined,
+  localProfile: OperatorProfilePreferences | undefined
+): OperatorProfilePreferences | undefined {
+  if (!serverProfile && !localProfile) {
+    return undefined;
+  }
+  return {
+    ...(localProfile ?? {}),
+    ...(serverProfile ?? {}),
+    avatarDataUrl: serverProfile?.avatarDataUrl ?? localProfile?.avatarDataUrl,
+    contactNote: serverProfile?.contactNote ?? localProfile?.contactNote,
+    displayName: serverProfile?.displayName ?? localProfile?.displayName,
+    email: serverProfile?.email ?? localProfile?.email,
+    organization: serverProfile?.organization ?? localProfile?.organization,
+    phone: serverProfile?.phone ?? localProfile?.phone,
+    publicContact: serverProfile?.publicContact ?? localProfile?.publicContact,
+    role: serverProfile?.role ?? localProfile?.role
+  };
+}
+
+function sameUserPreferences(left: UserPreferences, right: UserPreferences): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function mergeOperatorProfile(session: AuthSession, profile: OperatorProfilePreferences): OperatorProfilePreferences {
@@ -14002,7 +14083,7 @@ function readMessagingDockWidth(): number {
   }
   try {
     const stored = Number(window.localStorage.getItem(messagingDockWidthStorageKey));
-    return Number.isFinite(stored) ? clamp(stored, 420, 760) : 640;
+    return Number.isFinite(stored) ? clamp(stored, messagingDockWidthRange.min, messagingDockWidthRange.max) : 640;
   } catch {
     return 640;
   }
@@ -14013,7 +14094,7 @@ function writeMessagingDockWidth(width: number): void {
     return;
   }
   try {
-    window.localStorage.setItem(messagingDockWidthStorageKey, String(clamp(width, 420, 760)));
+    window.localStorage.setItem(messagingDockWidthStorageKey, String(clamp(width, messagingDockWidthRange.min, messagingDockWidthRange.max)));
   } catch {
     // Local storage can be disabled in private/degraded browser contexts.
   }
