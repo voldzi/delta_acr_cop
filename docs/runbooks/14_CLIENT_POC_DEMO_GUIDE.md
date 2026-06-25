@@ -3,6 +3,11 @@
 Tento runbook je praktický scénář pro řízenou klientskou ukázku. Cíl není
 ukázat všechny funkce, ale ukázat jasný krizový příběh, ve kterém CSM/COP
 pomáhá občanům, operátorům a krizovému štábu sdílet stejný situační obraz.
+PoC není ukázka chatu. Chat je jen podpůrný komunikační kanál uvnitř širší
+schopnosti COP. Hlavní hodnota PoC je prokázat funkční řetězec požadavku:
+vícezdrojová data, standardizace, fúze, kvalita, mapová vizualizace,
+role-based přístup, audit, edge/offline princip a kontrolovaná AI/MCP
+analytika.
 
 ## Cíl Ukázky
 
@@ -12,9 +17,29 @@ Klient má po 20-30 minutách pochopit:
 - jaké riziko se týká občanů,
 - odkud pochází data,
 - jak uživatel přidá hlášení,
-- jak se hlášení dostane do mapy a chatu,
-- jak operátor pracuje se skupinou, zákresem a médii,
+- jak se hlášení stane mapovým záznamem se zdrojem, časem, polohou,
+  důvěryhodností a oprávněními,
+- jak operátor pracuje s vrstvami, zákresem, médii a podpůrnou komunikací,
 - jak systém zachovává audit, oprávnění a oddělení providerů.
+
+## Vazba Na Požadavek
+
+PoC se hodnotí podle schopností popsaných v požadavkovém podkladu
+`RYŠAVÝ_Jan_ZP_44_KGS.md`, zejména:
+
+- COP jako schopnost, nikoli jedna aplikace,
+- datová, analytická a rozhodovací vrstva,
+- hybridní/federovaný model NIPS,
+- standardizovaná výměna dat přes API/eventy/MCP adaptéry,
+- ETL, normalizace, deduplikace a metadata zdrojů,
+- fúze dat a řízení kvality obrazu,
+- role-based vizualizace a vrstvový mapový klient,
+- human-in-the-loop u AI výstupů,
+- bezpečnost, audit, need-to-know a oddělení klasifikačních domén,
+- validace v režimu PoC/pilot a lessons learned.
+
+Detailní průchod podle těchto požadavků je v
+[16 PoC Functional Walkthrough Requirements](16_POC_FUNCTIONAL_WALKTHROUGH_REQUIREMENTS.md).
 
 ## Role
 
@@ -238,9 +263,9 @@ Ukázat hlášení občana:
 Vysvětlit, že mapa může ukázat veřejný text, ale média se otevřou jen
 oprávněným uživatelům.
 
-### 4. Chat
+### 4. Komunikace
 
-Otevřít chat skupiny a ukázat:
+Otevřít chat skupiny pouze jako podpůrnou část koordinace a ukázat:
 
 - lidský seznam konverzací,
 - připnutý mapový kontext,
@@ -253,7 +278,8 @@ konverzace a odpoví. První operátor potom musí po opětovném otevření vid
 zprávy ve stejné skupině.
 
 Neukazovat technické Matrix identifikátory, bootstrap ani E2EE debug texty v
-běžném režimu.
+běžném režimu. Chat nesmí převzít roli hlavního PoC příběhu; hlavní příběh je
+funkčnost COP podle požadavku.
 
 ### 5. Zákres
 
@@ -323,7 +349,7 @@ je finální air-gapped produkt.
 | Server-to-server provider data | SIM vrstvy počasí, safety, flight, mobile a provider health |
 | Civilní mapový obraz | vrstvy rizik, radar, hlášení, zákresy a zjednodušené mapové režimy |
 | Uživatelská hlášení | report s polohou, rizikem, platností, fotkou/PDF/videem a ACL |
-| Skupiny a komunikace | chat skupiny s připnutým mapovým kontextem |
+| Skupiny a komunikace | podpůrný chat skupiny s připnutým mapovým kontextem |
 | Média a oprávnění | galerie médií dostupná jen oprávněným uživatelům |
 | Zákresy | polygon/linie/bod/text/measure jako samostatná vrstva |
 | Audit | audit akcí operátora, MCP tool invoke, report a změny zákresu |
