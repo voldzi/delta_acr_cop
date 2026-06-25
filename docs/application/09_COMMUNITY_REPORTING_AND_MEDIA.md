@@ -48,10 +48,12 @@ Nové endpointy:
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload`
 - `GET /api/v1/community/reports/{reportId}/attachments/{attachmentId}/content`
 
-Starší endpointy `/api/v1/community/groups...` zůstávají v API kvůli
-kompatibilitě existujících dat a klientů. Aktivní COP web je už nepoužívá pro
-zakládání hlášení ani pro občanskou komunikaci; skupiny a konverzace řeší
-samostatná aplikace `cop-chat`.
+Endpointy `/api/v1/community/groups...` jsou součástí aktuální vazby mezi
+mapovým hlášením a chatem. Aktivní COP web při vytvoření nového komunitního
+hlášení založí veřejnou komunitní skupinu ukotvenou v poloze hlášení a uloží
+její `groupId/groupName` do metadat reportu. Samotná E2EE konverzace a Matrix
+místnost se vytváří až při otevření této skupiny v samostatné aplikaci
+`cop-chat`.
 
 Vytvoření reportu:
 
@@ -75,9 +77,10 @@ Vytvoření reportu:
 
 `hazardSeverity` je uživatelský odhad závažnosti: `advisory`, `warning`, `critical`.
 `validUntil` je odhadovaná platnost rizika; po vypršení se mapový prvek označí jako stale, ale nezmizí bez moderace/retence.
-Nové hlášení je samostatný mapový objekt. Webový klient při uložení hlášení
-nevytváří COP skupinu ani konverzaci. Pokud existující historická data obsahují
-`groupId` nebo `groupName`, klient je zobrazuje jen jako archivní kontext.
+Nové hlášení je mapový objekt navázaný na komunitní skupinu. Detail hlášení v
+mapě nabízí akci `Chat`, která otevře vložený `cop-chat` a předá mu `groupId`.
+Pokud daná skupina ještě nemá Matrix místnost, `cop-chat` ji připraví bezpečnou
+E2EE cestou při prvním otevření.
 
 Kategorie:
 

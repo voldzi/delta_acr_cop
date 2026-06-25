@@ -405,21 +405,26 @@ proxy.
 
 ## Relationship to COP Web and Reports
 
-COP owns community reporting and media ACL. CSM Messaging and `cop-chat` own
-conversations. The two concepts are deliberately separate:
+COP owns community reporting, map context and media ACL. CSM Messaging and
+`cop-chat` own conversations. The two concepts are linked by metadata but
+remain deliberately separate:
 
 - COP report: map object with location, validity, severity, attachments and
   audit.
+- COP community group: event/chat context anchored to a report location and
+  referenced from report metadata through `groupId/groupName`.
 - COP media ACL: attachment metadata with public/private/users audience;
   historical `groups` ACL remains server-compatible for old data.
 - Messaging conversation/Matrix room: carries chat messages, files, reactions
   and location shares inside `cop-chat`.
 
-The current COP web UI does not require a group context for new reports and does
-not create chat groups from the report dialog. It embeds `cop-chat` as the
-communication surface. If a chat discussion needs to become map data, the user
-creates a new COP report explicitly and uploads any report attachments through
-the COP media flow.
+The current COP web UI creates a public COP community group when a new map
+report is submitted. The report stores the group binding in metadata; the map
+detail exposes `Chat`, which opens embedded `cop-chat` with a deep-link
+selection for that group. `cop-chat` then creates or reuses the Messaging
+conversation and encrypted Matrix room on first open. If a chat discussion needs
+additional map data, the user still creates a new COP report explicitly and
+uploads report attachments through the COP media flow.
 
 The legacy COP group/messaging bridge can still exist for compatibility. When a
 server-side workflow creates a messaging conversation for a legacy group, it

@@ -275,6 +275,7 @@ export function ChatApp() {
   const messageMenuRef = React.useRef<HTMLDivElement | null>(null);
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
   const routeAppliedRef = React.useRef(false);
+  const routeOpenAttemptRef = React.useRef<string | null>(null);
   const matrixAttemptKeyRef = React.useRef<string | null>(null);
   const initialHistoryLoadAttemptsRef = React.useRef<Map<string, number>>(new Map());
   const historyLoadingRoomsRef = React.useRef<Set<string>>(new Set());
@@ -686,6 +687,41 @@ export function ChatApp() {
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, [conversations, groups, rooms]);
+
+  React.useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+      const selection = embeddedChatSelectionFromMessage(event.data);
+      if (!selection) {
+        return;
+      }
+      routeOpenAttemptRef.current = null;
+      void applyAndOpenRouteSelection(selection);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [authenticated, chatItems, chatReady, preparingChatId, selectedRoomId]);
+
+  React.useEffect(() => {
+    const routeSelection = readRouteSelection();
+    if (!routeSelection || !activeChat || !authenticated || preparingChatId) {
+      return;
+    }
+    if (activeChat.roomId && selectedRoomId === activeChat.roomId) {
+      return;
+    }
+    if (!chatReady && !activeChat.roomId) {
+      return;
+    }
+    const attemptKey = `${routeSelection}:${activeChat.id}:${activeChat.roomId ?? "metadata"}:${chatReady ? "ready" : "offline"}`;
+    if (routeOpenAttemptRef.current === attemptKey) {
+      return;
+    }
+    routeOpenAttemptRef.current = attemptKey;
+    void openChat(activeChat);
+  }, [activeChat, authenticated, chatReady, preparingChatId, selectedRoomId]);
 
   React.useEffect(() => {
     if (!selectedRoomId && !selectedConversationId && !selectedGroupId) {
@@ -1276,6 +1312,19 @@ export function ChatApp() {
       return true;
     }
     return false;
+  }
+
+  async function applyAndOpenRouteSelection(selection: string): Promise<boolean> {
+    const applied = applyRouteSelection(selection);
+    const item = findChatItemForSelection(selection, chatItems);
+    if (!item || !authenticated || preparingChatId) {
+      return applied;
+    }
+    if (item.roomId && selectedRoomId === item.roomId) {
+      return true;
+    }
+    await openChat(item);
+    return true;
   }
 
   function selectConversation(conversation: MessagingConversationSummary, updateRoute = true) {
@@ -5062,7 +5111,35 @@ function incomingNotificationBody(message: MatrixTimelineMessage): string {
   return sender ? `${sender}: ${preview}` : preview;
 }
 
+function embeddedChatSelectionFromMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+  const message = data as { selection?: unknown; type?: unknown };
+  if (message.type !== "cop-chat:select" || typeof message.selection !== "string") {
+    return null;
+  }
+  const selection = message.selection.trim();
+  return selection || null;
+}
+
+function findChatItemForSelection(selection: string, chatItems: ChatListItem[]): ChatListItem | null {
+  return chatItems.find((item) => item.id === selection
+    || item.conversation?.conversationId === selection
+    || item.conversation?.matrix?.roomId === selection
+    || item.group?.groupId === selection
+    || item.room?.roomId === selection) ?? null;
+}
+
 function readRouteSelection(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const querySelection = params.get("selection")
+    ?? params.get("groupId")
+    ?? params.get("conversationId")
+    ?? params.get("roomId");
+  if (querySelection?.trim()) {
+    return querySelection.trim();
+  }
   const path = window.location.pathname.replace(/\/+$/u, "");
   const prefix = "/chat";
   if (path === prefix || !path.startsWith(`${prefix}/`)) {
@@ -5081,7 +5158,13 @@ function readRouteSelection(): string | null {
 
 function writeChatRoute(selection: string | null) {
   const nextPath = selection ? `/chat/${encodeURIComponent(selection)}` : "/chat";
-  const nextUrl = `${nextPath}${window.location.search}${window.location.hash}`;
+  const params = new URLSearchParams(window.location.search);
+  params.delete("selection");
+  params.delete("groupId");
+  params.delete("conversationId");
+  params.delete("roomId");
+  const query = params.toString();
+  const nextUrl = `${nextPath}${query ? `?${query}` : ""}${window.location.hash}`;
   window.history.pushState({}, "", nextUrl);
 }
 

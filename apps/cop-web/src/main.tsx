@@ -80,8 +80,10 @@ import {
   createIncident,
   createIncidentTask,
   createCommunityAttachmentUpload,
+  createCommunityGroup,
   createCommunityReport,
   createSketchDrawing,
+  deleteCommunityGroup,
   deleteCommunityReport,
   deleteSketchDrawing,
   fetchCopDashboardData,
@@ -109,6 +111,7 @@ import {
   seedDemoScenario,
   submitCommunityReport,
   resetDemoScenario,
+  updateCommunityGroupMetadata,
   updateSketchDrawing,
   updateCommunityReport,
   updateIncident,
@@ -126,6 +129,8 @@ import {
   type CommunityAttachmentKind,
   type CommunityAttachmentUploadProgress,
   type CommunityFeatureCollectionResponse,
+  type CommunityGroup,
+  type CommunityReport,
   type DemoScenarioResponse,
   type CommunityReportCategory,
   type CommunityReportHazardSeverity,
@@ -612,6 +617,8 @@ export function App() {
   const [messagingOpen, setMessagingOpen] = React.useState(false);
   const [messagingPinned, setMessagingPinned] = React.useState(false);
   const [messagingDockWidth, setMessagingDockWidth] = React.useState(() => readMessagingDockWidth());
+  const [messagingSelection, setMessagingSelection] = React.useState<MessagingSelectionCommand | null>(null);
+  const messagingSelectionNonceRef = React.useRef(0);
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [webPushBusy, setWebPushBusy] = React.useState(false);
   const [incidentSuggestions, setIncidentSuggestions] = React.useState<IncidentFusionSuggestion[]>([]);
@@ -3141,6 +3148,9 @@ export function App() {
     setCommunityReportSuccess(null);
     setCommunityUploadProgress(null);
     const filesToUpload = communityReportDraft.files;
+    let linkedGroup: CommunityGroup | null = null;
+    let reportCreated = false;
+    let chatLinkMetadataWarning = false;
     try {
       if (filesToUpload.length > 0) {
         setCommunityUploadProgress({
@@ -3155,6 +3165,8 @@ export function App() {
       const reportPayload = {
         category: communityReportDraft.category,
         description: communityReportDraft.description.trim() || undefined,
+        ...(communityReportDraft.groupId ? { groupId: communityReportDraft.groupId } : {}),
+        ...(communityReportDraft.groupName ? { groupName: communityReportDraft.groupName } : {}),
         hazardSeverity: communityReportDraft.hazardSeverity,
         location: communityReportDraft.location,
         observedAt: new Date().toISOString(),
@@ -3162,9 +3174,16 @@ export function App() {
         validUntil: communityReportDraft.validUntil ? new Date(communityReportDraft.validUntil).toISOString() : undefined,
         visibility: "community"
       } as const;
+      linkedGroup = communityReportDraft.reportId
+        ? null
+        : await createCommunityReportChatGroup(authToken, communityReportDraft);
       const report = communityReportDraft.reportId
         ? await updateCommunityReport(apiBase, authToken, communityReportDraft.reportId, reportPayload)
-        : await createCommunityReport(apiBase, authToken, reportPayload);
+        : await createCommunityReport(apiBase, authToken, {
+          ...reportPayload,
+          ...(linkedGroup ? { groupId: linkedGroup.groupId, groupName: linkedGroup.name } : {})
+        });
+      reportCreated = true;
       for (const [fileIndex, file] of filesToUpload.entries()) {
         const contentType = normalizeCommunityFileContentType(file);
         const kind = communityAttachmentKindFromContentType(contentType);
@@ -3211,6 +3230,13 @@ export function App() {
         });
       }
       const submitted = await submitCommunityReport(apiBase, authToken, report.reportId);
+      if (linkedGroup) {
+        try {
+          await persistCommunityReportChatGroupLink(authToken, linkedGroup, submitted);
+        } catch {
+          chatLinkMetadataWarning = true;
+        }
+      }
       setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(null, mapView)));
       setCommunityReportSuccess(communityReportDraft.reportId ? "Hlášení bylo upraveno." : "Hlášení bylo uloženo.");
       setCommunityReportOpen(false);
@@ -3218,14 +3244,78 @@ export function App() {
       setCommunityRefreshNonce((current) => current + 1);
       setSelectedSituationFeatureId(`community:${submitted.reportId}`);
       setSelectedObjectId(null);
+      if (linkedGroup) {
+        requestEmbeddedChatSelection(linkedGroup.groupId);
+      }
       enableCommunityReportCatalogLayers();
-      setLocationStatus("Hlášení bylo uloženo.");
+      setLocationStatus(chatLinkMetadataWarning
+        ? "Hlášení bylo uloženo. Chatová skupina vznikla, ale metadata vazby se nepodařilo doplnit."
+        : "Hlášení bylo uloženo.");
     } catch (error) {
+      if (linkedGroup && !reportCreated) {
+        try {
+          await deleteCommunityGroup(apiBase, authToken, linkedGroup.groupId);
+        } catch {
+          // Best effort cleanup only; keep the original report error visible to the user.
+        }
+      }
       setCommunityReportError(error instanceof Error ? error.message : "Hlášení se nepodařilo uložit.");
     } finally {
       setCommunityReportSubmitting(false);
       setCommunityUploadProgress(null);
     }
+  }
+
+  function requestEmbeddedChatSelection(selectionId: string) {
+    messagingSelectionNonceRef.current += 1;
+    setMessagingSelection({
+      id: selectionId,
+      nonce: messagingSelectionNonceRef.current
+    });
+  }
+
+  async function createCommunityReportChatGroup(token: string, draft: CommunityReportDraft): Promise<CommunityGroup> {
+    const groupName = communityReportChatGroupName(draft.title);
+    return createCommunityGroup(apiBase, token, {
+      anchorLocation: draft.location,
+      description: communityReportChatGroupDescription(draft),
+      metadata: {
+        createdFrom: "cop-community-report",
+        hazardSeverity: draft.hazardSeverity,
+        reportCategory: draft.category,
+        source: "cop.map",
+        status: "pending-report"
+      },
+      name: groupName,
+      visibility: "public"
+    });
+  }
+
+  async function persistCommunityReportChatGroupLink(token: string, group: CommunityGroup, report: CommunityReport): Promise<void> {
+    await updateCommunityGroupMetadata(apiBase, token, group.groupId, {
+      createdFrom: "cop-community-report",
+      featureId: `community:${report.reportId}`,
+      hazardSeverity: typeof report.properties.hazardSeverity === "string" ? report.properties.hazardSeverity : null,
+      reportCategory: report.category,
+      reportId: report.reportId,
+      reportTitle: report.title,
+      source: "cop.map",
+      status: "linked-report"
+    });
+  }
+
+  function openCommunityReportChat(feature: SituationFeature) {
+    const properties = feature.properties;
+    const groupId = typeof properties.groupId === "string" ? properties.groupId : undefined;
+    if (!groupId) {
+      setLocationStatus("Toto hlášení nemá navázanou chatovou skupinu.");
+      return;
+    }
+    requestEmbeddedChatSelection(groupId);
+    setMessagingOpen(true);
+    setMessagingPinned(true);
+    setMobileSheet(null);
+    setLocationStatus("Otevírám chat k vybrané události.");
   }
 
   function editCommunityReportFeature(feature: SituationFeature) {
@@ -3247,6 +3337,8 @@ export function App() {
       }),
       category: isCommunityReportCategoryValue(properties.category) ? properties.category : "hazard",
       description: properties.description ?? "",
+      groupId: typeof properties.groupId === "string" ? properties.groupId : undefined,
+      groupName: typeof properties.groupName === "string" ? properties.groupName : undefined,
       hazardSeverity: severity,
       mediaAccessMode: "public",
       reportId: properties.reportId,
@@ -4319,6 +4411,7 @@ export function App() {
               feature={selectedSituationFeature}
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
+              onOpenChat={(feature) => openCommunityReportChat(feature)}
               onOpenGallery={(attachments, index, title, subtitle) => {
                 const galleryAttachments = buildCommunityGalleryAttachments(communityFeatures, selectedSituationFeature, attachments);
                 const selectedAttachmentId = attachments[index]?.attachmentId;
@@ -4462,6 +4555,7 @@ export function App() {
               feature={selectedSituationFeature}
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
+              onOpenChat={(feature) => openCommunityReportChat(feature)}
               onOpenGallery={(attachments, index, title, subtitle) => {
                 const galleryAttachments = buildCommunityGalleryAttachments(communityFeatures, selectedSituationFeature, attachments);
                 const selectedAttachmentId = attachments[index]?.attachmentId;
@@ -4660,6 +4754,7 @@ export function App() {
         <EmbeddedCopChatPanel
           dockWidth={messagingDockWidth}
           pinned={messagingPinned}
+          selection={messagingSelection}
           onClose={() => setMessagingOpen(false)}
           onDockWidthChange={(width) => {
             const nextWidth = clamp(width, messagingDockWidthRange.min, messagingDockWidthRange.max);
@@ -4736,6 +4831,8 @@ interface CommunityReportDraft {
   category: CommunityReportCategory;
   description: string;
   files: File[];
+  groupId?: string;
+  groupName?: string;
   hazardSeverity: CommunityReportHazardSeverity;
   location: CommunityReportLocation;
   mediaLocationHint: string;
@@ -4745,6 +4842,11 @@ interface CommunityReportDraft {
   title: string;
   validUntil: string;
   videoSpatialMode: CommunityVideoSpatialMode;
+}
+
+interface MessagingSelectionCommand {
+  id: string;
+  nonce: number;
 }
 
 interface CommunityGalleryState {
@@ -6100,14 +6202,29 @@ function StatusBadge({ label, tone }: { label: string; tone: "neutral" | "ok" | 
 function EmbeddedCopChatPanel({
   dockWidth,
   pinned,
+  selection,
   onClose,
   onDockWidthChange
 }: {
   dockWidth: number;
   pinned: boolean;
+  selection: MessagingSelectionCommand | null;
   onClose: () => void;
   onDockWidthChange: (width: number) => void;
 }) {
+  const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
+  const initialSelectedChatIdRef = React.useRef(selection?.id ?? null);
+
+  React.useEffect(() => {
+    if (!selection?.id || !iframeRef.current?.contentWindow) {
+      return;
+    }
+    iframeRef.current.contentWindow.postMessage(
+      { selection: selection.id, type: "cop-chat:select" },
+      window.location.origin
+    );
+  }, [selection?.id, selection?.nonce]);
+
   function beginDockResize(event: React.PointerEvent<HTMLDivElement>) {
     if (!pinned) {
       return;
@@ -6144,6 +6261,12 @@ function EmbeddedCopChatPanel({
     window.addEventListener("pointercancel", finishResize);
   }
 
+  const selectedChatId = selection?.id ?? null;
+  const initialSelectedChatId = initialSelectedChatIdRef.current;
+  const chatSelectionQuery = initialSelectedChatId ? `&selection=${encodeURIComponent(initialSelectedChatId)}` : "";
+  const chatPath = selectedChatId ? `/chat/?selection=${encodeURIComponent(selectedChatId)}` : "/chat/";
+  const chatFrameSrc = `/chat/?embedded=1${chatSelectionQuery}`;
+
   return (
     <aside
       aria-label="COP Chat"
@@ -6168,7 +6291,7 @@ function EmbeddedCopChatPanel({
             </div>
           </div>
           <div className="messaging-header-actions">
-            <a className="icon-button" href="/chat/" rel="noreferrer" target="_blank" title="Otevřít chat samostatně">
+            <a className="icon-button" href={chatPath} rel="noreferrer" target="_blank" title="Otevřít chat samostatně">
               <MonitorUp size={17} />
             </a>
             <button className="icon-button" onClick={onClose} title="Zavřít chat" type="button">
@@ -6179,8 +6302,9 @@ function EmbeddedCopChatPanel({
         <iframe
           allow="clipboard-read; clipboard-write; geolocation; microphone; camera"
           className="embedded-chat-frame"
+          ref={iframeRef}
           referrerPolicy="same-origin"
-          src="/chat/?embedded=1"
+          src={chatFrameSrc}
           title="COP Chat"
         />
       </div>
@@ -9316,12 +9440,14 @@ function SituationFeatureDetail({
   feature,
   onDeleteReport,
   onEditReport,
+  onOpenChat,
   onOpenGallery
 }: {
   authToken: string | undefined;
   feature: SituationFeature;
   onDeleteReport?: (reportId: string) => void;
   onEditReport?: (feature: SituationFeature) => void;
+  onOpenChat?: (feature: SituationFeature) => void;
   onOpenGallery?: (
     attachments: NonNullable<SituationFeature["properties"]["attachments"]>,
     index: number,
@@ -9347,12 +9473,13 @@ function SituationFeatureDetail({
   const legacyCommunityGroup = isCommunityReport && typeof properties.groupName === "string" && properties.groupName.trim()
     ? properties.groupName.trim()
     : undefined;
+  const linkedCommunityGroupId = isCommunityReport && typeof properties.groupId === "string" ? properties.groupId : undefined;
   const subtitle = weatherContext
     ? weatherFeatureSubtitle(feature)
     : weatherCamera
-      ? weatherWebcamSubtitle(feature)
+    ? weatherWebcamSubtitle(feature)
     : isCommunityReport
-      ? [legacyCommunityGroup ? `archivní skupina: ${legacyCommunityGroup}` : undefined, properties.reportId].filter(Boolean).join(" · ")
+      ? [legacyCommunityGroup ? `skupina: ${legacyCommunityGroup}` : undefined, properties.reportId].filter(Boolean).join(" · ")
       : properties.featureId;
   return (
     <div className="object-detail situation-feature-detail">
@@ -9369,6 +9496,7 @@ function SituationFeatureDetail({
 
       {isCommunityReport ? (
         <div className="community-report-actions">
+          {linkedCommunityGroupId ? <button className="mini-button" onClick={() => onOpenChat?.(feature)} type="button">Chat</button> : null}
           <button className="mini-button" onClick={() => onEditReport?.(feature)} type="button">Upravit</button>
           <button className="mini-button danger" onClick={() => onDeleteReport?.(properties.reportId as string)} type="button">Smazat</button>
         </div>
@@ -9378,7 +9506,7 @@ function SituationFeatureDetail({
         <DetailGrid
           rows={[
             [isCommunityReport ? "Typ" : "Vrstva", isCommunityReport ? communityReportCategoryDisplay(properties.category) : situationLayerLabel(properties.layer)],
-            ...(isCommunityReport && legacyCommunityGroup ? [["Archivní skupina", legacyCommunityGroup] as [string, React.ReactNode]] : []),
+            ...(isCommunityReport && legacyCommunityGroup ? [["Skupina", legacyCommunityGroup] as [string, React.ReactNode]] : []),
             ...(!isCommunityReport ? [[weatherContext || weatherCamera ? "Typ" : "Kategorie", weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : properties.category] as [string, React.ReactNode]] : []),
             ["Zdroj", properties.sourceName ?? sourceDisplayName(properties.sourceId)],
             [isCommunityReport ? "Vloženo" : "Pozorováno", formatShortDateTime(properties.observedAt)],
@@ -10026,6 +10154,32 @@ function createCommunityReportDraft(location = resolveCommunityReportLocation(nu
     validUntil: toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000)),
     videoSpatialMode: "none"
   };
+}
+
+function communityReportChatGroupName(title: string): string {
+  const normalized = title.trim().replace(/\s+/gu, " ");
+  const base = normalized || "Událost v mapě";
+  const prefixed = base.toLocaleLowerCase("cs-CZ").startsWith("událost:")
+    ? base
+    : `Událost: ${base}`;
+  return truncateText(prefixed, 120);
+}
+
+function communityReportChatGroupDescription(draft: CommunityReportDraft): string {
+  const category = communityReportCategoryLabelForValue(draft.category);
+  const severity = communitySeverityDisplay(draft.hazardSeverity);
+  const description = draft.description.trim();
+  return truncateText(
+    [category, severity, description].filter(Boolean).join(" · "),
+    280
+  );
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
 function resolveCommunityReportLocation(userLocation: UserLocation | null, mapView: MapViewState | undefined): CommunityReportLocation {
