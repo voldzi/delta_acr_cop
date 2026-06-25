@@ -173,6 +173,16 @@ describe("map catalog route", () => {
           providerSourceIds: ["chmi_weather_stations"]
         }),
         selectable: false
+      }),
+      expect.objectContaining({
+        groupId: "risks.weather",
+        label: "Webkamery ČHMÚ",
+        layerId: "public.weather.webcams",
+        query: expect.objectContaining({
+          providerLayerIds: ["weather"],
+          providerSourceIds: ["chmi_weather_webcams"]
+        }),
+        selectable: true
       })
     ]));
     expect(body.layers.map((layer) => layer.layerId)).not.toContain("diagnostic.mobile.coverage");
@@ -182,6 +192,12 @@ describe("map catalog route", () => {
         selectableInMap: false,
         sourceId: "osm_postgis",
         sourceRole: "reference"
+      }),
+      expect.objectContaining({
+        feedsCatalogLayerIds: ["public.weather.webcams"],
+        selectableInMap: true,
+        sourceId: "chmi_weather_webcams",
+        sourceRole: "final"
       })
     ]));
     expect(body.sources.map((source) => source.sourceId)).not.toContain("mobile_coverage_model");

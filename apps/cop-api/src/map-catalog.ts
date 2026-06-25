@@ -142,17 +142,27 @@ export function buildMapCatalog(input: BuildMapCatalogInput): MapCatalogResponse
   const includeDiagnostics = input.includeDiagnostics === true;
   const includePartner = input.includePartner === true;
   const providers = buildProviders(input);
+  const situationCompatibilitySources = input.situation?.catalog
+    ? buildSituationCatalogCompatibilitySources(input.situation.catalog, input.situation.sources ?? [])
+    : [];
+  const situationCompatibilityLayers = input.situation?.catalog
+    ? buildSituationCatalogCompatibilityLayers(input.situation.catalog, input.situation.sources ?? [])
+    : [];
   const rawSources = [
     ...buildCopSources(),
     ...(input.safety?.catalog ? buildProviderCatalogSources(input.safety.catalog, includeDiagnostics, includePartner) : buildSafetySources(input.safety?.sources ?? [])),
-    ...(input.situation?.catalog ? buildProviderCatalogSources(input.situation.catalog, includeDiagnostics, includePartner) : buildSituationSources(input.situation?.sources ?? [])),
+    ...(input.situation?.catalog
+      ? [...buildProviderCatalogSources(input.situation.catalog, includeDiagnostics, includePartner), ...situationCompatibilitySources]
+      : buildSituationSources(input.situation?.sources ?? [])),
     ...(input.flight?.catalog ? buildProviderCatalogSources(input.flight.catalog, includeDiagnostics, includePartner) : []),
     ...buildMissionArenaSources(input.missionArena?.sources ?? []),
     ...(includePartner ? (input.tak?.catalog ? buildProviderCatalogSources(input.tak.catalog, includeDiagnostics, includePartner) : buildTakSources(input.tak?.sources ?? [])) : [])
   ];
   const rawLayers = [
     ...(input.safety?.catalog ? buildProviderCatalogLayers(input.safety.catalog, includeDiagnostics, includePartner) : buildSafetyLayers(input.safety?.layers ?? [], input.safety?.sources ?? [])),
-    ...(input.situation?.catalog ? buildProviderCatalogLayers(input.situation.catalog, includeDiagnostics, includePartner) : buildSituationLayers(input.situation?.layers ?? [], input.situation?.sources ?? [])),
+    ...(input.situation?.catalog
+      ? [...buildProviderCatalogLayers(input.situation.catalog, includeDiagnostics, includePartner), ...situationCompatibilityLayers]
+      : buildSituationLayers(input.situation?.layers ?? [], input.situation?.sources ?? [])),
     ...buildCopOwnedLayers(),
     ...(input.flight?.catalog ? buildProviderCatalogLayers(input.flight.catalog, includeDiagnostics, includePartner) : []),
     ...buildMissionArenaLayers(input.missionArena?.layers ?? [], input.missionArena?.sources ?? []),
@@ -757,35 +767,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       selectable: true,
       styleProfile: "weather-observations-v1"
     },
-    {
-      audience: "public",
-      cacheTtlSeconds: 600,
-      defaultVisible: false,
-      description: "Webkamery ČHMÚ jako vizuální kontext počasí. Nejde o výstrahu ani automatický incident.",
-      geometryTypes: ["Point"],
-      groupId: "risks.weather",
-      kind: "vector_features",
-      label: "Webkamery ČHMÚ",
-      layerId: "public.weather.webcams",
-      legal: legalFromSource(findSource(sources, "chmi_weather_webcams"), ["Český hydrometeorologický ústav"]),
-      maxZoom: 18,
-      minZoom: 6,
-      provenance: {
-        sourceIds: ["sim.situation-data:chmi_weather_webcams"]
-      },
-      query: {
-        maxFeatures: 200,
-        mode: "bbox",
-        providerId: "sim.situation-data",
-        providerLayerIds: ["weather"],
-        providerSourceIds: ["chmi_weather_webcams"],
-        streamId: "features"
-      },
-      refreshSeconds: findSource(sources, "chmi_weather_webcams")?.updateCadenceSeconds ?? 600,
-      role: "overlay",
-      selectable: true,
-      styleProfile: "weather-webcams-v1"
-    },
+    buildWeatherWebcamCatalogLayer(sources),
     {
       audience: "public",
       cacheTtlSeconds: 900,
@@ -885,6 +867,67 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
     },
     ...buildInfrastructureLayers(groundLayer, sources)
   ];
+}
+
+function buildSituationCatalogCompatibilityLayers(catalog: ProviderMapCatalog, sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
+  return [
+    catalog.layers.some((layer) => layer.recommendedCatalogLayerId === "public.weather.webcams")
+      ? undefined
+      : buildWeatherWebcamCatalogLayer(sources)
+  ].filter((layer): layer is MapCatalogLayer => Boolean(layer));
+}
+
+function buildSituationCatalogCompatibilitySources(catalog: ProviderMapCatalog, sources: SituationSourceDescriptor[]): MapCatalogSource[] {
+  if (catalog.sources.some((source) => source.sourceId === "chmi_weather_webcams")) {
+    return [];
+  }
+  const source = findSource(sources, "chmi_weather_webcams");
+  const enabled = source?.enabled !== false;
+  return [{
+    audience: "public",
+    cacheTtlSeconds: source?.updateCadenceSeconds ?? 600,
+    enabled,
+    feedsCatalogLayerIds: ["public.weather.webcams"],
+    label: source?.label ?? "ČHMÚ webkamery",
+    providerId: "sim.situation-data",
+    selectableInMap: enabled,
+    sourceId: "chmi_weather_webcams",
+    sourceRole: "final",
+    updateCadenceSeconds: source?.updateCadenceSeconds ?? 600,
+    visibleInDiagnostics: true
+  }];
+}
+
+function buildWeatherWebcamCatalogLayer(sources: SituationSourceDescriptor[]): MapCatalogLayer {
+  return {
+    audience: "public",
+    cacheTtlSeconds: 600,
+    defaultVisible: false,
+    description: "Webkamery ČHMÚ jako vizuální kontext počasí. Nejde o výstrahu ani automatický incident.",
+    geometryTypes: ["Point"],
+    groupId: "risks.weather",
+    kind: "vector_features",
+    label: "Webkamery ČHMÚ",
+    layerId: "public.weather.webcams",
+    legal: legalFromSource(findSource(sources, "chmi_weather_webcams"), ["Český hydrometeorologický ústav"]),
+    maxZoom: 18,
+    minZoom: 6,
+    provenance: {
+      sourceIds: ["sim.situation-data:chmi_weather_webcams"]
+    },
+    query: {
+      maxFeatures: 200,
+      mode: "bbox",
+      providerId: "sim.situation-data",
+      providerLayerIds: ["weather"],
+      providerSourceIds: ["chmi_weather_webcams"],
+      streamId: "features"
+    },
+    refreshSeconds: findSource(sources, "chmi_weather_webcams")?.updateCadenceSeconds ?? 600,
+    role: "overlay",
+    selectable: true,
+    styleProfile: "weather-webcams-v1"
+  };
 }
 
 function buildInfrastructureLayers(groundLayer: SituationLayerDescriptor | undefined, sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
