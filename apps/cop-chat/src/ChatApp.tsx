@@ -1856,7 +1856,10 @@ export function ChatApp() {
               <button className="round-icon mobile-back" onClick={clearMobileSelection} type="button" aria-label="Zpět">
                 <ArrowLeft size={21} />
               </button>
-              <Avatar label={activeChat.title} />
+              <span className="chat-avatar-wrap header-avatar">
+                <Avatar label={activeChat.title} />
+                <ConnectionDot state={chatConnectionStateFor(activeChat, chatReady, matrixSession, syncState, preparingChatId === activeChat.id)} />
+              </span>
               <div className="conversation-title">
                 <strong>{activeChat.title}</strong>
                 <span>{conversationSubtitle(activeChat, selectedRoom)}</span>
