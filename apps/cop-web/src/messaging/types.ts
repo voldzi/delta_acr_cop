@@ -1,5 +1,10 @@
 import type { MessagingBootstrapResponse } from "../cop-data";
 
+export interface MatrixUserProfileSyncInput {
+  avatarUrl?: string;
+  displayName?: string;
+}
+
 export interface MatrixRoomSummary {
   avatarUrl?: string;
   encrypted: boolean;
@@ -111,6 +116,7 @@ export interface MatrixMessagingSession {
   sendMessage(roomId: string, body: string, options?: { replyTo?: MatrixMessageReplyTarget }): Promise<void>;
   sendReaction(roomId: string, eventId: string, key: string): Promise<void>;
   setReaction(roomId: string, eventId: string, key: string): Promise<void>;
+  syncUserProfile(profile: MatrixUserProfileSyncInput | undefined): Promise<void>;
   stop(): void;
 }
 

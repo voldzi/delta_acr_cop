@@ -113,6 +113,7 @@ const situationWeatherHeatLayerId = "cop-situation-weather-heat";
 const situationWeatherPointLayerId = "cop-situation-weather-point";
 const situationWeatherWindLayerId = "cop-situation-weather-wind";
 const situationWeatherLabelLayerId = "cop-situation-weather-label";
+const situationWeatherCameraLayerId = "cop-situation-weather-camera";
 const situationAirQualityHeatLayerId = "cop-situation-air-quality-heat";
 const situationAirQualityPointLayerId = "cop-situation-air-quality-point";
 const situationAirQualityLabelLayerId = "cop-situation-air-quality-label";
@@ -157,6 +158,7 @@ const mapFeatureClickPriorityLayerIds = [
   situationRiskLabelLayerId,
   situationTrafficSymbolLayerId,
   situationMobileSymbolLayerId,
+  situationWeatherCameraLayerId,
   situationWeatherLabelLayerId,
   situationWeatherWindLayerId,
   situationWeatherPointLayerId,
@@ -199,6 +201,7 @@ const mapPointRaiseLayerIds = [
   situationRiskLabelLayerId,
   situationOsmSymbolLayerId,
   situationMobileSymbolLayerId,
+  situationWeatherCameraLayerId,
   situationWeatherPointLayerId,
   situationWeatherWindLayerId,
   situationWeatherLabelLayerId,
@@ -238,6 +241,7 @@ const riskIconPrefix = "cop-risk";
 const riskIconIds = ["fire", "flood", "warning", "weather", "unknown"] as const;
 type RiskIconId = (typeof riskIconIds)[number];
 const weatherWindIconKey = "cop-weather-wind-arrow";
+const weatherCameraIconKey = "cop-weather-camera";
 
 export interface TrackFeatureProperties {
   objectId: string;
@@ -398,6 +402,8 @@ export interface SituationContextFeatureCollection {
       airQualityLabel?: string;
       airQualityLevel?: string;
       weatherCloudCoverPercent?: number;
+      weatherCamera?: boolean;
+      weatherCameraLabel?: string;
       weatherFillColor?: string;
       weatherFillOpacity?: number;
       weatherFlightCategoryColor?: string;
@@ -2073,6 +2079,34 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationWeatherCameraLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherCamera"], true]],
+          layout: {
+            "icon-image": weatherCameraIconKey,
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.32, 11, 0.42, 15, 0.55],
+            "icon-anchor": "bottom",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+            "text-field": ["coalesce", ["get", "weatherCameraLabel"], ["get", "mapLabel"], ["get", "label"]],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 6, 0, 10, 10, 14, 12, 17, 13],
+            "text-offset": [0, -3.0],
+            "text-anchor": "bottom",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.62, 0.96],
+            "text-color": ["case", ["get", "stale"], "#facc15", "#dff8ff"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.7,
+            "text-halo-blur": 0.35
+          }
+        });
+
+        map.addLayer({
           id: situationAirQualityPointLayerId,
           type: "circle",
           source: situationSourceId,
@@ -2656,6 +2690,9 @@ export function CopMap({
         map.on("mouseenter", situationWeatherLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationWeatherCameraLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationAirQualityPointLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -2713,6 +2750,9 @@ export function CopMap({
         map.on("mouseleave", situationWeatherLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
+        map.on("mouseleave", situationWeatherCameraLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
         map.on("mouseleave", situationAirQualityPointLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
@@ -2734,7 +2774,7 @@ export function CopMap({
     });
     map.on("error", (event) => {
       const message = event.error?.message ?? "Mapový podklad není dostupný.";
-      if (isRecoverableRasterStyleError(message)) {
+      if (isRecoverableMapError(message)) {
         return;
       }
       setMapError(message);
@@ -4376,8 +4416,12 @@ export function situationFeaturesToFeatureCollection(
   mapSymbolMode: PublicFlightSymbolMode = "civil"
 ): SituationContextFeatureCollection {
   const features: SituationContextFeatureCollection["features"] = [];
+  const requestedMobileTechnology = normalizeMobileNetworkTechnology(collection?.query.technology);
   for (const feature of collection?.features ?? []) {
     if (isSituationRasterOverlayFeature(feature)) {
+      continue;
+    }
+    if (isUnsafeMobileNetworkFeature(feature, requestedMobileTechnology)) {
       continue;
     }
     const renderedFeature = renderSituationFeature(feature, selectedFeatureId, mapSymbolMode);
@@ -4391,6 +4435,53 @@ export function situationFeaturesToFeatureCollection(
     type: "FeatureCollection",
     features
   };
+}
+
+const czechiaMobileNetworkEnvelope = {
+  west: 11.8,
+  south: 48.5,
+  east: 19.2,
+  north: 51.2
+};
+const maxMobileNetworkCellSpanDegrees = 0.75;
+const maxMobileNetworkCellAreaDegrees = 0.25;
+
+function isUnsafeMobileNetworkFeature(feature: SituationFeature, requestedTechnology: string | undefined): boolean {
+  if (feature.properties.layer !== "mobile_network") {
+    return false;
+  }
+  if (feature.properties.readModel === false || (feature.properties.sourceId === "mobile_network_model" && feature.properties.readModel !== true)) {
+    return true;
+  }
+  if (/^mobile_network:aggregate:mixed:/iu.test(feature.properties.featureId)) {
+    return true;
+  }
+  const technology = normalizeMobileNetworkTechnology(feature.properties.technology);
+  if (requestedTechnology && technology && technology !== requestedTechnology) {
+    return true;
+  }
+  if (requestedTechnology && technology === "mixed") {
+    return true;
+  }
+  const bounds = geometryBoundsWgs84(feature.geometry);
+  if (!bounds) {
+    return true;
+  }
+  const [west, south, east, north] = bounds;
+  if (east < czechiaMobileNetworkEnvelope.west || west > czechiaMobileNetworkEnvelope.east || north < czechiaMobileNetworkEnvelope.south || south > czechiaMobileNetworkEnvelope.north) {
+    return true;
+  }
+  const width = Math.abs(east - west);
+  const height = Math.abs(north - south);
+  return width > maxMobileNetworkCellSpanDegrees || height > maxMobileNetworkCellSpanDegrees || width * height > maxMobileNetworkCellAreaDegrees;
+}
+
+function normalizeMobileNetworkTechnology(value: unknown): string | undefined {
+  const normalized = typeof value === "string" ? value.trim().toUpperCase() : undefined;
+  if (normalized === "2G" || normalized === "4G" || normalized === "5G" || normalized === "MIXED") {
+    return normalized.toLowerCase();
+  }
+  return undefined;
 }
 
 function situationRasterOverlaySpecs(features: SituationFeature[]): SituationRasterOverlaySpec[] {
@@ -4738,6 +4829,18 @@ function buildSituationRenderProperties(
       situationStatusTone: status.tone
     };
   }
+  if (isWeatherWebcamFeature(feature)) {
+    const label = formatWeatherWebcamLabel(feature);
+    return {
+      mapLabel: label,
+      situationStatusColor: "#38bdf8",
+      situationStatusLabel: "KAMERA",
+      situationStatusTone: "info",
+      weatherCamera: true,
+      weatherCameraLabel: label,
+      weatherObservation: false
+    };
+  }
   if (isRiskFeature(feature)) {
     const kind = riskIconKind(feature);
     return {
@@ -4916,6 +5019,35 @@ function isWeatherContextFeature(feature: SituationFeature): boolean {
     || feature.properties.layer === "weather_precipitation_grid"
     || feature.properties.layer === "weather_humidity_grid"
     || feature.properties.layer === "weather_pressure_grid";
+}
+
+function isWeatherWebcamFeature(feature: SituationFeature): boolean {
+  const camera = weatherWebcamProviderMetadata(feature);
+  const category = normalizeSituationCategory(feature.properties.category);
+  const providerLayerId = stringProperty(feature.properties.providerLayerId);
+  return feature.properties.layerId === "public.weather.webcams"
+    || feature.properties.sourceId === "chmi_weather_webcams"
+    || providerLayerId === "weather.webcams"
+    || providerLayerId === "weather_webcams"
+    || providerLayerId === "chmi_weather_webcams"
+    || category === "weather_webcam"
+    || category === "webcam"
+    || Boolean(stringProperty(camera.detailUrl) || stringProperty(camera.snapshotUrl));
+}
+
+function weatherWebcamProviderMetadata(feature: SituationFeature): Record<string, unknown> {
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  return isRecord(providerProperties.camera) ? providerProperties.camera : {};
+}
+
+function formatWeatherWebcamLabel(feature: SituationFeature): string {
+  const camera = weatherWebcamProviderMetadata(feature);
+  return stringProperty(camera.label)
+    ?? stringProperty(camera.name)
+    ?? stringProperty(camera.title)
+    ?? feature.properties.headline
+    ?? feature.properties.label
+    ?? "Webkamera ČHMÚ";
 }
 
 function isCurrentWeatherSummaryFeature(feature: SituationFeature): boolean {
@@ -5617,6 +5749,8 @@ function sourceDisplayName(sourceId: string | undefined): string | undefined {
   switch (sourceId) {
     case "chmi_weather_stations":
       return "ČHMÚ";
+    case "chmi_weather_webcams":
+      return "ČHMÚ webkamery";
     case "open_meteo":
       return "Open-Meteo";
     case "aviation_weather":
@@ -6597,8 +6731,23 @@ function clampRasterBrightnessMax(value: number): number {
   return Math.max(0, Math.min(0.99, Number.isFinite(value) ? value : 0.99));
 }
 
+export function isRecoverableMapError(message: string): boolean {
+  return isRecoverableRasterStyleError(message) || isRecoverableRasterOverlayRequestError(message);
+}
+
 function isRecoverableRasterStyleError(message: string): boolean {
   return message.includes("raster-brightness-max") && message.includes("maximum value 1");
+}
+
+function isRecoverableRasterOverlayRequestError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes("ajaxerror")
+    && normalized.includes("/api/v1/map/raster-overlay")
+    && (
+      normalized.includes("(404)")
+      || normalized.includes("(502)")
+      || normalized.includes("upstream")
+    );
 }
 
 export function fitMapToObjects(map: maplibregl.Map | null, objects: CopObject[]): boolean {
@@ -6722,6 +6871,11 @@ async function registerSituationSymbolImages(map: maplibregl.Map) {
   });
   if (!map.hasImage(weatherWindIconKey)) {
     map.addImage(weatherWindIconKey, createWeatherWindArrowImage(), {
+      pixelRatio: window.devicePixelRatio || 1
+    });
+  }
+  if (!map.hasImage(weatherCameraIconKey)) {
+    map.addImage(weatherCameraIconKey, createWeatherCameraSymbolImage(), {
       pixelRatio: window.devicePixelRatio || 1
     });
   }
@@ -7102,6 +7256,60 @@ function createWeatherWindArrowImage(): ImageData {
   context.lineTo(17, -9);
   context.stroke();
   context.restore();
+
+  return context.getImageData(0, 0, size, size);
+}
+
+function createWeatherCameraSymbolImage(): ImageData {
+  const canvas = document.createElement("canvas");
+  const size = 112;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+
+  context.clearRect(0, 0, size, size);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  const drawCamera = (fillStyle: string, strokeStyle: string, lineWidth: number, alpha = 1) => {
+    context.save();
+    context.globalAlpha = alpha;
+    context.fillStyle = fillStyle;
+    context.strokeStyle = strokeStyle;
+    context.lineWidth = lineWidth;
+    drawRoundedRect(context, 20, 34, 72, 48, 13);
+    context.fill();
+    context.stroke();
+    context.beginPath();
+    context.moveTo(38, 34);
+    context.lineTo(45, 23);
+    context.lineTo(67, 23);
+    context.lineTo(74, 34);
+    context.closePath();
+    context.fill();
+    context.stroke();
+    context.beginPath();
+    context.arc(56, 58, 15, 0, Math.PI * 2);
+    context.stroke();
+    context.beginPath();
+    context.arc(56, 58, 6, 0, Math.PI * 2);
+    context.fill();
+    context.beginPath();
+    context.arc(78, 44, 3.6, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+  };
+
+  context.save();
+  context.shadowBlur = 12;
+  context.shadowColor = "rgba(6, 16, 25, 0.5)";
+  drawCamera("rgba(6, 16, 25, 0.94)", "rgba(6, 16, 25, 0.94)", 7);
+  context.restore();
+  drawCamera("rgba(226, 246, 255, 0.96)", "#061019", 4.2);
+  drawCamera("#38bdf8", "#dff8ff", 2.2, 0.96);
 
   return context.getImageData(0, 0, size, size);
 }

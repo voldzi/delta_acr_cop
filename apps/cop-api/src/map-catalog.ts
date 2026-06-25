@@ -374,6 +374,7 @@ const curatedWeatherLayerLabels: Record<string, string> = {
   "public.safety.air_quality": "Kvalita ovzduší",
   "public.weather.current": "Počasí v oblasti",
   "public.weather.observations": "Měřené stanice ČHMÚ",
+  "public.weather.webcams": "Webkamery ČHMÚ",
   "public.weather.radar_precipitation": "Radar srážek"
 };
 
@@ -755,6 +756,35 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       role: "overlay",
       selectable: true,
       styleProfile: "weather-observations-v1"
+    },
+    {
+      audience: "public",
+      cacheTtlSeconds: 600,
+      defaultVisible: false,
+      description: "Webkamery ČHMÚ jako vizuální kontext počasí. Nejde o výstrahu ani automatický incident.",
+      geometryTypes: ["Point"],
+      groupId: "risks.weather",
+      kind: "vector_features",
+      label: "Webkamery ČHMÚ",
+      layerId: "public.weather.webcams",
+      legal: legalFromSource(findSource(sources, "chmi_weather_webcams"), ["Český hydrometeorologický ústav"]),
+      maxZoom: 18,
+      minZoom: 6,
+      provenance: {
+        sourceIds: ["sim.situation-data:chmi_weather_webcams"]
+      },
+      query: {
+        maxFeatures: 200,
+        mode: "bbox",
+        providerId: "sim.situation-data",
+        providerLayerIds: ["weather"],
+        providerSourceIds: ["chmi_weather_webcams"],
+        streamId: "features"
+      },
+      refreshSeconds: findSource(sources, "chmi_weather_webcams")?.updateCadenceSeconds ?? 600,
+      role: "overlay",
+      selectable: true,
+      styleProfile: "weather-webcams-v1"
     },
     {
       audience: "public",
@@ -1363,6 +1393,8 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
       return { audience: "public", feedsCatalogLayerIds: ["public.weather.aviation"], selectableInMap: true, sourceRole: "final" };
     case "chmi_weather_stations":
       return { audience: "public", feedsCatalogLayerIds: ["public.weather.observations"], selectableInMap: true, sourceRole: "final" };
+    case "chmi_weather_webcams":
+      return { audience: "public", feedsCatalogLayerIds: ["public.weather.webcams"], selectableInMap: true, sourceRole: "final" };
     case "chmi_air_quality":
       return { audience: "public", feedsCatalogLayerIds: ["public.safety.air_quality"], selectableInMap: true, sourceRole: "final" };
     case "mobile_network_model":

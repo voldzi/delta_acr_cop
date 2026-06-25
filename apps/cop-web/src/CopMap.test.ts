@@ -5,6 +5,7 @@ import {
   aoiRulesToFeatureCollection,
   fitMapToObjects,
   formatTrackLabel,
+  isRecoverableMapError,
   objectsToHistoryFeatureCollection,
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
@@ -16,6 +17,13 @@ import {
 import type { CopObject, SituationFeatureCollectionResponse } from "./cop-data";
 
 describe("COP map data helpers", () => {
+  it("treats transient raster overlay tile failures as recoverable", () => {
+    expect(isRecoverableMapError(
+      "AJAXError: (502): /api/v1/map/raster-overlay?url=%2Fapi%2Fv1%2Fweather-radar%2Fclean%2Fmerge1h%2Fframe.png"
+    )).toBe(true);
+    expect(isRecoverableMapError("AJAXError: (500): /api/v1/objects")).toBe(false);
+  });
+
   it("builds GeoJSON track features from positioned COP objects", () => {
     const collection = objectsToTrackFeatureCollection(
       [
@@ -194,6 +202,67 @@ describe("COP map data helpers", () => {
         }
       ]
     });
+  });
+
+  it("renders CHMI weather webcams as camera points, not alerts or weather observations", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.42, 50.08], type: "Point" },
+          properties: {
+            category: "weather_webcam",
+            confidence: 0.9,
+            featureId: "weather:webcam:praha",
+            label: "Praha-Libuš",
+            layer: "weather",
+            layerId: "public.weather.webcams",
+            observedAt: "2026-06-25T08:00:00Z",
+            providerLayerId: "weather.webcams",
+            providerProperties: {
+              camera: {
+                detailUrl: "/situation-data/api/v1/weather/webcams/praha-libus",
+                label: "Praha-Libuš",
+                snapshotUrl: "/situation-data/api/v1/weather/webcams/praha-libus/snapshot.jpg"
+              }
+            },
+            sourceId: "chmi_weather_webcams",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-06-25T08:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["weather"],
+        limit: 250,
+        sources: ["chmi_weather_webcams"]
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      mapLabel: "Praha-Libuš",
+      situationStatusLabel: "KAMERA",
+      situationStatusTone: "info",
+      weatherCamera: true,
+      weatherCameraLabel: "Praha-Libuš",
+      weatherObservation: false
+    });
+    expect(collection.features[0]?.properties.riskFeature).toBeUndefined();
   });
 
   it("builds editable handles for polygon user zones", () => {
@@ -734,6 +803,7 @@ describe("COP map data helpers", () => {
             layer: "mobile_network",
             observedAt: "2026-05-21T16:08:56.211Z",
             quality: "fair",
+            readModel: true,
             sourceId: "mobile_network_model",
             status: "degraded_possible",
             stale: false,
@@ -776,6 +846,95 @@ describe("COP map data helpers", () => {
       situationStatusLabel: "SLUŠNÉ",
       situationStatusTone: "warning"
     });
+  });
+
+  it("drops unsafe synthetic mobile network bbox polygons from map rendering", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [10.0, 47.0],
+              [20.0, 47.0],
+              [20.0, 53.0],
+              [10.0, 53.0],
+              [10.0, 47.0]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            basis: ["CTU_NETTEST_MEASUREMENT"],
+            category: "mobile_network",
+            confidence: 0.3,
+            featureId: "mobile_network:aggregate:mixed:10_47_20_53",
+            label: "Synthetic mixed mobile network fallback",
+            layer: "mobile_network",
+            observedAt: "2026-05-21T16:08:56.211Z",
+            quality: "unknown",
+            readModel: false,
+            sourceId: "mobile_network_model",
+            status: "unknown",
+            stale: false,
+            summary: "Synthetic fallback.",
+            technology: "mixed"
+          },
+          type: "Feature"
+        },
+        {
+          geometry: {
+            coordinates: [[
+              [14.2, 49.95],
+              [14.22, 49.95],
+              [14.22, 49.97],
+              [14.2, 49.97],
+              [14.2, 49.95]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            basis: ["PRECOMPUTED_COVERAGE_READ_MODEL"],
+            category: "mobile_network",
+            confidence: 0.72,
+            featureId: "mobile_network:aggregate:5g:6-4",
+            label: "5G mobile network assessment",
+            layer: "mobile_network",
+            observedAt: "2026-05-21T16:08:56.211Z",
+            quality: "good",
+            readModel: true,
+            sourceId: "mobile_network_model",
+            status: "ok",
+            stale: false,
+            summary: "Mobilní síť je bez zjevného problému.",
+            technology: "5G"
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-21T16:08:56.211Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["mobile_network"],
+        limit: 250,
+        sources: ["mobile_network_model"],
+        technology: "5G"
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 2,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features.map((feature) => feature.properties.featureId)).toEqual(["mobile_network:aggregate:5g:6-4"]);
   });
 
   it("suppresses synthetic warning points from map marker rendering", () => {

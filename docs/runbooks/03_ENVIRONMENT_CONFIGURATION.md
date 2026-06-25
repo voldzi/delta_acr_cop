@@ -129,9 +129,14 @@ COP_SITUATION_DATA_TIMEOUT_MS=15000
 COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS=21600000
 COP_SITUATION_DATA_MOBILE_NETWORK_CACHE_TTL_MS=600000
 COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS=600000
+COP_SITUATION_DATA_CHMI_WEATHER_WEBCAMS_CACHE_TTL_MS=600000
 COP_SITUATION_DATA_CHMI_AIR_QUALITY_CACHE_TTL_MS=900000
 COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS=600000
 COP_WEATHER_RADAR_FRAMES_CACHE_SECONDS=120
+COP_WEATHER_CAMERA_ALLOWED_HOSTS=docker.home.cz,sim.zeleznalady.cz
+COP_WEATHER_CAMERA_DETAIL_CACHE_SECONDS=60
+COP_WEATHER_CAMERA_IMAGE_CACHE_SECONDS=180
+COP_WEATHER_CAMERA_TIMEOUT_MS=8000
 ```
 
 Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora. Při výpadku SIM endpointu vrací prázdný degraded `FeatureCollection`, aby mapa zůstala použitelná. Timeout je vyšší než běžná obnovovací kadence mapy, protože kombinované veřejné vrstvy mohou po studeném startu trvat několik sekund.
@@ -140,6 +145,11 @@ Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/m
 URL z `providerProperties.raster.url`; frame katalog pro animaci jde přes COP
 endpoint `/api/v1/weather-radar/frames` a jeho krátkou serverovou cache řídí
 `COP_WEATHER_RADAR_FRAMES_CACHE_SECONDS` v rozsahu 60-300 sekund.
+
+ČHMÚ webkamery COP z klienta nenačítá přímo z upstream ČHMÚ. Klient používá
+pouze URL předané v `providerProperties.camera.detailUrl` nebo `snapshotUrl`
+a přeposílá je přes `/api/v1/weather/webcam-proxy`. Proxy povoluje jen hosty
+v `COP_WEATHER_CAMERA_ALLOWED_HOSTS` a přímé hosty `chmi.cz` blokuje.
 
 ## Safety Data Source
 

@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, buildStableSituationQueryBounds, mapBoundsContainedBy } from "./main";
+import { App, buildPriorityAlertSummary, buildStableSituationQueryBounds, mapBoundsContainedBy } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
 
 vi.mock("./CopMap", async () => {
@@ -57,6 +57,53 @@ describe("COP web dashboard", () => {
     });
     expect(mapBoundsContainedBy(queryBounds, { east: 15.85, north: 50.15, south: 49.55, west: 14.9 })).toBe(true);
     expect(mapBoundsContainedBy(queryBounds, { east: 17.1, north: 50.15, south: 49.55, west: 14.9 })).toBe(false);
+  });
+
+  it("builds a local priority alert from safety features by relevance", () => {
+    const now = Date.now();
+    const summary = buildPriorityAlertSummary({
+      alerts: [],
+      features: [
+        {
+          geometry: { coordinates: [14.438, 50.076], type: "Point" },
+          properties: {
+            category: "hydro_station",
+            featureId: "hydro-near",
+            floodStage: 2,
+            label: "Vltava Praha",
+            layer: "flood",
+            observedAt: new Date(now - 5 * 60_000).toISOString(),
+            sourceId: "chmi_hydro",
+            validUntil: new Date(now + 60 * 60_000).toISOString()
+          },
+          type: "Feature"
+        },
+        {
+          geometry: { coordinates: [17.65, 49.22], type: "Point" },
+          properties: {
+            category: "fire",
+            featureId: "fire-far",
+            fireStatus: "active",
+            label: "Vzdálený požár",
+            layer: "fire",
+            observedAt: new Date(now - 2 * 60_000).toISOString(),
+            severity: "critical",
+            sourceId: "nasa_firms",
+            validUntil: new Date(now + 60 * 60_000).toISOString()
+          },
+          type: "Feature"
+        }
+      ],
+      mapView: { center: [14.4378, 50.0755], zoom: 11 },
+      objects: [],
+      proximityAlerts: [],
+      userLocation: null
+    });
+
+    expect(summary.primary?.id).toBe("feature:hydro-near");
+    expect(summary.primary?.badge).toBe("Hydrologie");
+    expect(summary.additionalCount).toBe(1);
+    expect(summary.reference.source).toBe("map");
   });
 
   it("renders SIM tracks returned from COP API", async () => {

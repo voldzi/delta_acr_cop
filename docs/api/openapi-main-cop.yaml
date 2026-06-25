@@ -364,6 +364,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/weather/webcam-proxy:
+    get:
+      tags:
+        - Map Catalog
+      summary: Proxy an allowlisted SIM weather webcam detail or snapshot resource.
+      operationId: getWeatherWebcamProxy
+      description: >
+        Returns client-safe ČHMÚ webcam detail JSON or snapshot image using only URLs supplied in
+        providerProperties.camera.detailUrl or snapshotUrl. COP allows configured SIM hosts and
+        blocks direct chmi.cz upstream hosts.
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 2048
+          description: Percent-encoded weather camera detailUrl or snapshotUrl from providerProperties.camera.
+      responses:
+        "200":
+          description: Weather camera detail JSON or snapshot image.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          description: SIM weather camera resource is unavailable or returned invalid content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/geocode/search:
     get:
       tags:

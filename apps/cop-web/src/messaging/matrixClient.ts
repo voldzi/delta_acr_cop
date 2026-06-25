@@ -8,6 +8,7 @@ import type {
   MatrixMessageReaction,
   MatrixMessageReplyTarget,
   MatrixMessagingSession,
+  MatrixUserProfileSyncInput,
   MatrixPresenceState,
   MatrixRoomSummary,
   MatrixTimelineAttachment,
@@ -122,11 +123,6 @@ interface MatrixUserPresenceLike {
   lastPresenceTs?: number;
   presence?: string;
   userId?: string;
-}
-
-export interface MatrixUserProfileSyncInput {
-  avatarUrl?: string;
-  displayName?: string;
 }
 
 interface MatrixEventLike {
@@ -524,6 +520,7 @@ export async function createMatrixMessagingSession(
         throw formatMatrixClientError(caught, homeserverBaseUrl, "změnit reakci");
       }
     },
+    syncUserProfile: async (profile) => syncMatrixUserProfile(client, bootstrap, profile),
     stop: () => {
       if (presenceRefreshTimer !== undefined) {
         clearTimeout(presenceRefreshTimer);

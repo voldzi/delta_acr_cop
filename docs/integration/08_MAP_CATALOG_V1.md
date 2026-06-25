@@ -35,6 +35,7 @@ Current weather curation:
 | --- | --- |
 | Current weather summary | selectable as `public.weather.current` |
 | ČHMÚ station observations | selectable as `public.weather.observations` |
+| ČHMÚ weather webcams | selectable as `public.weather.webcams` with camera point icons and preview through COP proxy |
 | ČHMÚ radar precipitation overlay | selectable as `public.weather.radar_precipitation` |
 | Air quality station observations | selectable as `public.safety.air_quality` |
 | Radar reflectivity / nowcast variants | kept in catalog, hidden from basic public selection until timeline/animation UI is ready |
@@ -526,6 +527,7 @@ Provider-native fields may be preserved under:
 | `public.place.settlements` | Sídla | `sim.situation-data` layer `place_settlements`, source `osm_postgis` |
 | `public.weather.current` | Počasí | `sim.situation-data` layer `weather`, source `open_meteo` |
 | `public.weather.observations` | Měřené počasí ČHMÚ | `sim.situation-data` layer `weather`, source `chmi_weather_stations` |
+| `public.weather.webcams` | Webkamery ČHMÚ | `sim.situation-data` layer `weather`, source `chmi_weather_webcams`; používá `properties.providerProperties.camera.detailUrl` nebo `snapshotUrl` přes COP proxy |
 | `public.weather.aviation` | Letištní počasí | `sim.situation-data` layer `weather`, source `aviation_weather` |
 | `public.safety.air_quality` | Kvalita ovzduší | `sim.situation-data` layer `air_quality`, source `chmi_air_quality` |
 | `public.weather.temperature_grid` | Teplota | `sim.situation-data` layer `weather_temperature_grid`, source `chmi_weather_stations` |
@@ -538,6 +540,13 @@ Provider-native fields may be preserved under:
 | `public.weather.radar_nowcast` | Radarový nowcast | `sim.situation-data` layer `weather_radar_nowcast`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
 | `public.safety.thunderstorm_risk` | Bouřkové riziko | `sim.situation-data` layer `weather_thunderstorm_risk`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
 | `public.safety.air_quality_grid` | Kvalita ovzduší - plocha | `sim.situation-data` layer `air_quality_grid`, source `chmi_air_quality` |
+
+ČHMÚ webkamery jsou jen vizuální kontext počasí. COP je nezapočítává jako
+výstrahy, neotevírá incident automaticky a v UI je vede jako `severity=info`
+/ stav `KAMERA`. Klienti nesmí volat upstream ČHMÚ přímo; detail a snapshot
+musí jít přes URL předané v `providerProperties.camera` a v COP webu přes
+`/api/v1/weather/webcam-proxy`. Náhled musí vždy zobrazit atribuci
+`Český hydrometeorologický ústav`.
 | `public.mobile.network` | Mobilní síť | `sim.situation-data` layer `mobile_network`, source `mobile_network_model` |
 | `public.traffic.transit` | Doprava | `sim.situation-data` layer `traffic`, source `pid_gtfs_rt` |
 | `reference.infrastructure.healthcare` | Zdravotnictví | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `hospital`, `clinic`, `doctors`, `pharmacy` |
@@ -646,6 +655,11 @@ SIM provider layer `mobile_network` and source `mobile_network_model`.
 
 When SIM returns mobile network features with `readModel: true`, COP treats them
 as a prepared coverage read model and labels the detail as precomputed coverage.
+COP drops `mobile_network` features from `mobile_network_model` when they are
+not backed by `readModel: true`, when their feature id matches the removed
+synthetic fallback shape `mobile_network:aggregate:mixed:*`, when a filtered
+technology query would receive a different technology, or when geometry is
+outside Czechia / implausibly large for a read-model cell.
 The following provider metadata is preserved by COP:
 
 - `readModel` - prepared read-model flag,

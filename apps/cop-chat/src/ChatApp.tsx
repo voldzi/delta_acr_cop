@@ -80,6 +80,7 @@ import type {
   MessagingMatrixIdentityResolutionResponse,
   MessagingMatrixRoomBindingResponse,
   MessagingStatusResponse,
+  ServerUserProfile,
   UserDirectoryEntry
 } from "../../cop-web/src/cop-data";
 import {
@@ -165,6 +166,16 @@ interface IncomingChatNotification {
   room: MatrixRoomSummary;
 }
 
+interface ChatIdentityProfile {
+  avatarUrl?: string;
+  displayName: string;
+  matrixProfile?: {
+    avatarUrl?: string;
+    displayName?: string;
+  };
+  subtitle: string;
+}
+
 const apiBase = trimTrailingSlash(import.meta.env.VITE_COP_API_BASE_URL ?? "");
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
@@ -192,6 +203,7 @@ export function ChatApp() {
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
   const [authRefreshRetry, setAuthRefreshRetry] = React.useState(0);
   const [status, setStatus] = React.useState<MessagingStatusResponse | null>(null);
+  const [serverUserProfile, setServerUserProfile] = React.useState<ServerUserProfile | null>(null);
   const [conversations, setConversations] = React.useState<MessagingConversationSummary[]>([]);
   const [groups, setGroups] = React.useState<CommunityGroup[]>([]);
   const [rooms, setRooms] = React.useState<MatrixRoomSummary[]>([]);
@@ -266,6 +278,10 @@ export function ChatApp() {
   const authToken = authenticated ? authSession.accessToken : undefined;
   const authSubjectId = authSession.profile?.subjectId ?? authSession.profile?.username ?? authSession.profile?.email;
   const preferencesOwner = authSubjectId ?? authSession.profile?.username ?? "anonymous";
+  const chatIdentity = React.useMemo(
+    () => chatIdentityFor(authSession, authConfig, serverUserProfile),
+    [authConfig, authSession, serverUserProfile]
+  );
   const chatReady = Boolean(authToken && status?.chatAvailable);
   const encryptionRecoveryReady = Boolean(!matrixSession || encryptionRecoveryStatus?.ready);
   const composerEnabled = Boolean(selectedRoomId && matrixSession && chatReady && !preparingChatId && encryptionRecoveryReady);
@@ -419,13 +435,31 @@ export function ChatApp() {
 
   React.useEffect(() => {
     if (!authToken) {
+      setServerUserProfile(null);
+      return undefined;
+    }
+    let cancelled = false;
+    fetchUserProfile(apiBase, authToken)
+      .then((profile) => {
+        if (!cancelled) {
+          setServerUserProfile(profile);
+        }
+      })
+      .catch(() => {
+        // The profile is a convenience for directory search and demo seeding;
+        // chat login itself must not fail when profile storage is temporarily degraded.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, authToken]);
+
+  React.useEffect(() => {
+    if (!matrixSession) {
       return;
     }
-    void fetchUserProfile(apiBase, authToken).catch(() => {
-      // The profile is a convenience for directory search and demo seeding;
-      // chat login itself must not fail when profile storage is temporarily degraded.
-    });
-  }, [apiBase, authToken]);
+    void matrixSession.syncUserProfile(chatIdentity.matrixProfile).catch(() => undefined);
+  }, [chatIdentity.matrixProfile, matrixSession]);
 
   React.useEffect(() => {
     if (!isAuthSessionActive(authSession) || !authSession.expiresAt || !authSession.refreshToken) {
@@ -874,7 +908,7 @@ export function ChatApp() {
     setError(null);
     try {
       await matrixSession.setReaction(selectedRoomId, message.eventId, key);
-      const senderLabel = authDisplayName(authSession, authConfig);
+      const senderLabel = chatIdentity.displayName;
       setTimeline((current) => applyLocalReaction(current, message.eventId, key, senderLabel));
       setMessageActionPopover(null);
     } catch (caught) {
@@ -1085,7 +1119,7 @@ export function ChatApp() {
           setRooms(nextRooms);
           setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversations, nextRooms));
         },
-        profile: matrixProfileForAuth(authSession),
+        profile: chatIdentity.matrixProfile,
         onSyncState: setSyncState,
         onTimelineChanged: () => setTimelineRevision((value) => value + 1)
       });
@@ -1791,10 +1825,10 @@ export function ChatApp() {
         </header>
 
         <div className="identity-strip">
-          <Avatar label={authDisplayName(authSession, authConfig)} src={authSession.profile?.picture} />
+          <Avatar label={chatIdentity.displayName} src={chatIdentity.avatarUrl} />
           <span>
-            <strong>{authDisplayName(authSession, authConfig)}</strong>
-            <small>{authSubtitle(authSession, authConfig)}</small>
+            <strong>{chatIdentity.displayName}</strong>
+            <small>{chatIdentity.subtitle}</small>
           </span>
         </div>
 
@@ -4516,19 +4550,40 @@ function authDisplayName(session: AuthSession, config: AuthConfig): string {
   return config.mode === "lab" ? "Lab operator" : "Nepřihlášen";
 }
 
-function matrixProfileForAuth(session: AuthSession): { avatarUrl?: string; displayName?: string } | undefined {
-  if (session.status !== "authenticated") {
-    return undefined;
-  }
-  const displayName = session.profile?.name?.trim() || session.profile?.username?.trim();
-  const avatarUrl = session.profile?.picture?.trim();
-  if (!displayName && !avatarUrl) {
-    return undefined;
-  }
+function chatIdentityFor(session: AuthSession, config: AuthConfig, serverProfile: ServerUserProfile | null): ChatIdentityProfile {
+  const operatorProfile = operatorProfileFromServer(serverProfile);
+  const displayName = operatorProfile.displayName ?? authDisplayName(session, config);
+  const avatarUrl = operatorProfile.avatarDataUrl
+    ?? (session.status === "authenticated" ? trimmedString(session.profile?.picture) : undefined);
+  const matrixProfile = session.status === "authenticated" && (displayName || avatarUrl)
+    ? {
+        ...(avatarUrl ? { avatarUrl } : {}),
+        ...(displayName ? { displayName } : {})
+      }
+    : undefined;
+
   return {
     ...(avatarUrl ? { avatarUrl } : {}),
-    ...(displayName ? { displayName } : {})
+    displayName,
+    matrixProfile,
+    subtitle: authSubtitle(session, config)
   };
+}
+
+function operatorProfileFromServer(serverProfile: ServerUserProfile | null): { avatarDataUrl?: string; displayName?: string } {
+  const operatorProfile = asRecord(serverProfile?.preferences.operatorProfile);
+  return {
+    avatarDataUrl: trimmedString(operatorProfile?.avatarDataUrl),
+    displayName: trimmedString(operatorProfile?.displayName) ?? trimmedString(serverProfile?.actor.displayName)
+  };
+}
+
+function trimmedString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function authSubtitle(session: AuthSession, config: AuthConfig): string {

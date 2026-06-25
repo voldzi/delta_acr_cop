@@ -9,6 +9,7 @@ import {
   Bot,
   Building2,
   Bus,
+  Camera,
   CheckCircle2,
   Clock3,
   CloudSun,
@@ -392,6 +393,34 @@ interface AlertSummary {
   server: number;
   total: number;
   warning: number;
+}
+
+type PriorityAlertTone = "critical" | "neutral" | "ok" | "warn";
+
+interface PriorityAlertCandidate {
+  badge: string;
+  confidence: number;
+  detail: string;
+  distanceKm?: number;
+  id: string;
+  observedAt?: string;
+  score: number;
+  severityRank: number;
+  sourceKind: "alert" | "feature" | "object" | "proximity";
+  title: string;
+  tone: PriorityAlertTone;
+  validUntil?: string;
+}
+
+interface PriorityAlertSummary {
+  additionalCount: number;
+  primary: PriorityAlertCandidate | null;
+  reference: {
+    lat: number;
+    lon: number;
+    source: "default" | "map" | "user";
+  };
+  total: number;
 }
 
 type MobileSheet = "layers" | "detail" | null;
@@ -2009,6 +2038,18 @@ export function App() {
     [alertRadiusKm, baseFilteredObjects, predictionMinutes, predictionMode, proximityAlertEnabled, replayActive, replayTrackHistory, userLocation]
   );
   const alertSummary = React.useMemo(() => summarizeAlerts(serverAlerts, proximityAlerts), [proximityAlerts, serverAlerts]);
+  const priorityAlertSummary = React.useMemo(
+    () =>
+      buildPriorityAlertSummary({
+        alerts: serverAlerts,
+        features: combinedSituationFeatures?.features ?? [],
+        mapView,
+        objects: visibleObjects,
+        proximityAlerts,
+        userLocation
+      }),
+    [combinedSituationFeatures, mapView, proximityAlerts, serverAlerts, userLocation, visibleObjects]
+  );
   const mapAlerts = React.useMemo(() => serverAlerts.filter((alert) => alert.status === "ACTIVE"), [serverAlerts]);
   const aoiRules = React.useMemo(() => alertPreferences.aoiRules ?? [], [alertPreferences.aoiRules]);
   const primaryAoiRule = aoiRules[0] ?? null;
@@ -3521,26 +3562,10 @@ export function App() {
   );
   const catalogGroupViews = React.useMemo(() => buildCatalogGroupViews(mapCatalog), [mapCatalog]);
   const activeCatalogGroup = catalogGroupViews.find((view) => view.group.groupId === activeCatalogGroupId) ?? null;
-  const operationTitle = selectedSituationFeature
-    ? selectedSituationFeature.properties.headline
-      ?? selectedSituationFeature.properties.areaName
-      ?? selectedSituationFeature.properties.label
-      ?? selectedSituationFeature.properties.featureId
-    : selectedObject
-      ? formatObjectListLabel(selectedObject)
-      : alertSummary.total > 0
-        ? "Aktivní výstrahy v okolí"
-        : "Civilní situační mapa";
-  const operationBadge = selectedSituationFeature || alertSummary.total > 0 ? "Aktivní událost" : "Operační obraz";
-  const operationStatus = selectedSituationFeature
-    ? formatOperationStatusLabel(selectedSituationFeature.properties.status
-      ?? selectedSituationFeature.properties.severity
-      ?? selectedSituationFeature.properties.hazardSeverity
-      ?? missionModeLabel(operatingMode, offlineSnapshotState))
-    : missionModeLabel(operatingMode, offlineSnapshotState);
-  const operationStartedAt = selectedSituationFeature
-    ? formatShortDateTime(selectedSituationFeature.properties.validFrom ?? selectedSituationFeature.properties.effectiveAt ?? selectedSituationFeature.properties.observedAt)
-    : lastLoadedAt ?? "čekám";
+  const priorityAlert = priorityAlertSummary.primary;
+  const operationTitle = priorityAlert?.title ?? "Bez prioritní výstrahy v okolí";
+  const operationBadge = priorityAlert?.badge ?? "Klid v okolí";
+  const priorityAlertAdditionalLabel = priorityAlertSummary.additionalCount > 0 ? `+${priorityAlertSummary.additionalCount} dalších` : "";
   const effectiveOperatorProfile = React.useMemo(
     () => mergeOperatorProfile(authSession, operatorProfile),
     [authSession, operatorProfile]
@@ -3639,18 +3664,10 @@ export function App() {
             <p>Rizika v okolí, výstrahy a sdílené informace</p>
           </div>
         </div>
-        <div className="mission-strip" aria-label="Civil situation map operating context">
+        <div className={clsx("mission-strip", "priority-alert-strip", priorityAlert?.tone ?? "ok")} aria-label="Prioritní výstraha v okolí">
           <span>{operationBadge}</span>
           <strong>{operationTitle}</strong>
-          <small>
-            <span className="mission-detail-full">Stav: {operationStatus}</span>
-            <span className="mission-detail-compact">Zdroje {sources.length} · Obj. {visibleObjects.length}</span>
-          </small>
-        </div>
-        <div className="event-summary-strip" aria-label="Aktuální provozní souhrn">
-          <span>Zahájení: <strong>{operationStartedAt}</strong></span>
-          <span>Výstrahy: <strong>{alertSummary.total}</strong></span>
-          <span>Zdroje: <strong>{sources.length}</strong></span>
+          {priorityAlertAdditionalLabel ? <small>{priorityAlertAdditionalLabel}</small> : null}
         </div>
         <div className="topbar-actions">
           <button className="top-command-button record" onClick={startCommunityReportCapture} type="button">
@@ -4283,6 +4300,7 @@ export function App() {
           <PanelTitle icon={<Database size={17} />} title={selectedSituationFeature ? "Detail prvku" : "Detail objektu"} />
           {selectedSituationFeature ? (
             <SituationFeatureDetail
+              authToken={authToken}
               feature={selectedSituationFeature}
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
@@ -4425,6 +4443,7 @@ export function App() {
         >
           {selectedSituationFeature ? (
             <SituationFeatureDetail
+              authToken={authToken}
               feature={selectedSituationFeature}
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
@@ -4519,10 +4538,6 @@ export function App() {
             onChange={updateWorkspaceLayout}
           />
         ) : null}
-        <span className={alertSummary.total > 0 ? "warn" : "ok"}>
-          <AlertTriangle size={15} />
-          Výstrahy {alertSummary.total > 0 ? `${alertSummary.total} aktivní` : "bez aktivních"}
-        </span>
         <span className={streamStatusTone(streamStatus)}>
           <Activity size={15} />
           Spojení {streamStatusLabel(streamStatus)}
@@ -5543,12 +5558,13 @@ function SelectedObjectDataCard({ object }: { object: CopObject }) {
 
 function SelectedSituationDataCard({ authToken, feature }: { authToken: string | undefined; feature: SituationFeature }) {
   const status = situationFeatureStatusModel(feature);
-  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature);
+  const weatherCamera = isWeatherWebcamFeature(feature);
+  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera;
   const rows: Array<[string, React.ReactNode]> = [
-    ["Název", weatherContext ? weatherFeatureHeadline(feature) : feature.properties.headline ?? feature.properties.label],
+    ["Název", weatherCamera ? weatherWebcamTitle(feature) : weatherContext ? weatherFeatureHeadline(feature) : feature.properties.headline ?? feature.properties.label],
     ["Vrstva", situationDisplayLayerLabel(feature)],
     ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
-    [weatherContext ? "Typ" : "Kategorie", weatherContext ? weatherFeatureTypeLabel(feature) : feature.properties.category],
+    [weatherContext || weatherCamera ? "Typ" : "Kategorie", weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : feature.properties.category],
     ["Zdroj", feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)],
     ["Aktualizace", formatShortDateTime(feature.properties.observedAt)]
   ];
@@ -5568,6 +5584,7 @@ function SelectedSituationDataCard({ authToken, feature }: { authToken: string |
       {feature.properties.layer === "traffic" ? <TrafficSummary feature={feature} /> : null}
       {isSafetyLayerId(feature.properties.layer) ? <SafetyRiskSummary authToken={authToken} feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
+      {weatherCamera ? <WeatherWebcamSummary feature={feature} /> : null}
       {weatherContext ? <WeatherContextSummary feature={feature} /> : null}
     </ObjectDetailSection>
   );
@@ -5638,6 +5655,123 @@ function TrafficDetailSection({ feature }: { feature: SituationFeature }) {
           ["Dopravce", presentation.operator ?? "n/a"]
         ]}
       />
+    </ObjectDetailSection>
+  );
+}
+
+function WeatherWebcamSummary({ feature }: { feature: SituationFeature }) {
+  const camera = weatherWebcamMetadata(feature);
+  return (
+    <div className="mobile-status-summary weather-camera-summary">
+      <DataMetric label="Typ" value="Webkamera" tone="neutral" />
+      <DataMetric label="Náhled" value={camera.snapshotUrl ? "dostupný" : "čeká na detail"} tone={camera.snapshotUrl ? "ok" : "neutral"} />
+      <DataMetric label="Detail" value={camera.detailUrl ? "dostupný" : "n/a"} tone={camera.detailUrl ? "ok" : "neutral"} />
+      <DataMetric label="Atribuce" value="ČHMÚ" tone="neutral" />
+    </div>
+  );
+}
+
+function WeatherWebcamPreview({ authToken, feature }: { authToken: string | undefined; feature: SituationFeature }) {
+  const fallbackCamera = React.useMemo(() => weatherWebcamMetadata(feature), [feature]);
+  const detailUrl = fallbackCamera.detailUrl;
+  const [detail, setDetail] = React.useState<WeatherWebcamDetail | null>(null);
+  const [detailError, setDetailError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [selectedIndex, setSelectedIndex] = React.useState(0);
+  const [imageFailed, setImageFailed] = React.useState(false);
+
+  const loadDetail = React.useCallback(async () => {
+    if (!detailUrl) {
+      return;
+    }
+    const proxyUrl = weatherCameraProxyUrl(detailUrl);
+    if (!proxyUrl) {
+      setDetail(null);
+      setDetailError("Detail kamery není dostupný přes povolenou COP/SIM proxy.");
+      return;
+    }
+    setLoading(true);
+    setDetailError(null);
+    try {
+      const response = await fetch(proxyUrl, {
+        headers: {
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          Accept: "application/json"
+        }
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      setDetail(normalizeWeatherWebcamDetail(await response.json()));
+      setSelectedIndex(0);
+    } catch (error) {
+      setDetail(null);
+      setDetailError(error instanceof Error ? humanizeApiError(error.message) : "Detail kamery se nepodařilo načíst.");
+    } finally {
+      setLoading(false);
+    }
+  }, [authToken, detailUrl]);
+
+  React.useEffect(() => {
+    if (!detailUrl) {
+      setDetail(null);
+      setDetailError(null);
+      setLoading(false);
+      return;
+    }
+    void loadDetail();
+  }, [detailUrl, loadDetail]);
+
+  const cameras = React.useMemo(() => weatherWebcamCandidates(fallbackCamera, detail), [detail, fallbackCamera]);
+  const activeIndex = Math.min(selectedIndex, Math.max(0, cameras.length - 1));
+  const activeCamera = cameras[activeIndex] ?? fallbackCamera;
+  const snapshotUrl = weatherCameraProxyUrl(activeCamera.snapshotUrl);
+
+  React.useEffect(() => {
+    setImageFailed(false);
+  }, [snapshotUrl]);
+
+  return (
+    <ObjectDetailSection title="Náhled kamery">
+      <div className="weather-camera-window">
+        <div className="weather-camera-window-header">
+          <span><Camera size={15} /> {activeCamera.label || weatherWebcamTitle(feature)}</span>
+          {detailUrl ? (
+            <button className="mini-button" disabled={loading} onClick={() => void loadDetail()} type="button">
+              {loading ? "Načítám" : "Obnovit"}
+            </button>
+          ) : null}
+        </div>
+        {cameras.length > 1 ? (
+          <div aria-label="Kamery" className="weather-camera-tabs" role="tablist">
+            {cameras.map((camera, index) => (
+              <button
+                aria-selected={index === activeIndex}
+                className={index === activeIndex ? "active" : ""}
+                key={`${camera.label}-${index}`}
+                onClick={() => setSelectedIndex(index)}
+                role="tab"
+                type="button"
+              >
+                {camera.label || `Kamera ${index + 1}`}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {detailError ? <div className="weather-camera-error">{detailError}</div> : null}
+        {loading && !detail ? <div className="weather-camera-empty">Načítám náhled kamery...</div> : null}
+        {snapshotUrl && !imageFailed ? (
+          <figure className="weather-camera-frame">
+            <img alt={activeCamera.label || weatherWebcamTitle(feature)} onError={() => setImageFailed(true)} src={snapshotUrl} />
+            <figcaption>
+              {[activeCamera.observedAt ? formatShortDateTime(activeCamera.observedAt) : undefined, activeCamera.direction].filter(Boolean).join(" · ") || "Aktuální dostupný snapshot"}
+            </figcaption>
+          </figure>
+        ) : !loading ? (
+          <div className="weather-camera-empty">Snapshot zatím není v datech dostupný.</div>
+        ) : null}
+        <div className="weather-camera-attribution">Zdroj: Český hydrometeorologický ústav</div>
+      </div>
     </ObjectDetailSection>
   );
 }
@@ -9097,11 +9231,13 @@ function ObjectDetail({
 }
 
 function SituationFeatureDetail({
+  authToken,
   feature,
   onDeleteReport,
   onEditReport,
   onOpenGallery
 }: {
+  authToken: string | undefined;
   feature: SituationFeature;
   onDeleteReport?: (reportId: string) => void;
   onEditReport?: (feature: SituationFeature) => void;
@@ -9116,9 +9252,12 @@ function SituationFeatureDetail({
   const status = situationFeatureStatusModel(feature);
   const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
   const trafficPresentation = properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
-  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature);
+  const weatherCamera = isWeatherWebcamFeature(feature);
+  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera;
   const title = isMissionArenaFeature(feature)
     ? missionArenaDetailTitle(feature)
+    : weatherCamera
+      ? weatherWebcamTitle(feature)
     : weatherContext
       ? weatherFeatureHeadline(feature)
       : trafficPresentation
@@ -9129,6 +9268,8 @@ function SituationFeatureDetail({
     : undefined;
   const subtitle = weatherContext
     ? weatherFeatureSubtitle(feature)
+    : weatherCamera
+      ? weatherWebcamSubtitle(feature)
     : isCommunityReport
       ? [legacyCommunityGroup ? `archivní skupina: ${legacyCommunityGroup}` : undefined, properties.reportId].filter(Boolean).join(" · ")
       : properties.featureId;
@@ -9157,14 +9298,14 @@ function SituationFeatureDetail({
           rows={[
             [isCommunityReport ? "Typ" : "Vrstva", isCommunityReport ? communityReportCategoryDisplay(properties.category) : situationLayerLabel(properties.layer)],
             ...(isCommunityReport && legacyCommunityGroup ? [["Archivní skupina", legacyCommunityGroup] as [string, React.ReactNode]] : []),
-            ...(!isCommunityReport ? [[weatherContext ? "Typ" : "Kategorie", weatherContext ? weatherFeatureTypeLabel(feature) : properties.category] as [string, React.ReactNode]] : []),
+            ...(!isCommunityReport ? [[weatherContext || weatherCamera ? "Typ" : "Kategorie", weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : properties.category] as [string, React.ReactNode]] : []),
             ["Zdroj", properties.sourceName ?? sourceDisplayName(properties.sourceId)],
             [isCommunityReport ? "Vloženo" : "Pozorováno", formatShortDateTime(properties.observedAt)],
             [isCommunityReport ? "Platnost" : "Platí do", formatShortDateTime(properties.validUntil)],
             ["Stáří", formatAge(properties.observedAt)],
             [isCommunityReport ? "Riziko" : "Naléhavost", communitySeverityDisplay(properties.hazardSeverity ?? properties.severity ?? properties.urgency)],
             ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
-            ...(isCommunityReport || weatherContext ? [] : [
+            ...(isCommunityReport || weatherContext || weatherCamera ? [] : [
               ["Účinné od", formatShortDateTime(properties.effectiveAt)],
               ["Konec platnosti", formatShortDateTime(properties.expiresAt)],
               ["Jistota", formatOptionalPercent(properties.confidence)],
@@ -9220,6 +9361,7 @@ function SituationFeatureDetail({
       {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {properties.layer === "traffic" ? <TrafficDetailSection feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
+      {weatherCamera ? <WeatherWebcamPreview authToken={authToken} feature={feature} /> : null}
       {weatherContext ? (
         <ObjectDetailSection title="Počasí">
           <WeatherContextSummary feature={feature} />
@@ -10325,6 +10467,450 @@ function summarizeAlerts(serverAlerts: CopAlert[], proximityAlerts: ProximityAle
   };
 }
 
+interface PriorityAlertInput {
+  alerts: CopAlert[];
+  features: SituationFeature[];
+  mapView: MapViewState | undefined;
+  objects: CopObject[];
+  proximityAlerts: ProximityAlert[];
+  userLocation: UserLocation | null;
+}
+
+export function buildPriorityAlertSummary({
+  alerts,
+  features,
+  mapView,
+  objects,
+  proximityAlerts,
+  userLocation
+}: PriorityAlertInput): PriorityAlertSummary {
+  const reference = priorityAlertReference(userLocation, mapView);
+  const now = Date.now();
+  const candidates = [
+    ...alerts.flatMap((alert) => priorityCandidateFromServerAlert(alert, reference, now)),
+    ...proximityAlerts.flatMap((alert) => priorityCandidateFromProximityAlert(alert, now)),
+    ...features.flatMap((feature) => priorityCandidateFromSituationFeature(feature, reference, now)),
+    ...objects.flatMap((object) => priorityCandidateFromObject(object, reference, now))
+  ].sort(priorityAlertCandidateComparator);
+
+  return {
+    additionalCount: Math.max(0, candidates.length - 1),
+    primary: candidates[0] ?? null,
+    reference,
+    total: candidates.length
+  };
+}
+
+function priorityAlertReference(
+  userLocation: UserLocation | null,
+  mapView: MapViewState | undefined
+): PriorityAlertSummary["reference"] {
+  if (userLocation) {
+    return { lat: userLocation.lat, lon: userLocation.lon, source: "user" };
+  }
+  if (mapView) {
+    const [lon, lat] = mapView.center;
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return { lat, lon, source: "map" };
+    }
+  }
+  return { ...defaultAoiCenter, source: "default" };
+}
+
+function priorityCandidateFromServerAlert(
+  alert: CopAlert,
+  reference: { lat: number; lon: number },
+  now: number
+): PriorityAlertCandidate[] {
+  if (alert.status !== "ACTIVE") {
+    return [];
+  }
+  const severityRank = copAlertSeverityRank(alert.severity);
+  if (severityRank <= 0) {
+    return [];
+  }
+  const distanceKm = alert.map ? distanceBetweenKm(reference, alert.map) : undefined;
+  const candidate = createPriorityAlertCandidate({
+    badge: alert.severity === "critical" ? "Kritická výstraha" : "Výstraha",
+    confidence: 0.9,
+    detail: [
+      formatOperationStatusLabel(alert.severity),
+      alert.detail,
+      formatPriorityAlertDistance(distanceKm)
+    ].filter(Boolean).join(" · "),
+    distanceKm,
+    id: `alert:${alert.alertId}`,
+    observedAt: alert.observedAt ?? alert.updatedAt,
+    severityRank,
+    sourceKind: "alert",
+    title: alert.title,
+    tone: priorityToneFromSeverityRank(severityRank),
+    validUntil: undefined
+  }, now);
+  return candidate ? [candidate] : [];
+}
+
+function priorityCandidateFromProximityAlert(alert: ProximityAlert, now: number): PriorityAlertCandidate[] {
+  const severityRank = alert.type === "inside-radius" ? 3 : 2;
+  const candidate = createPriorityAlertCandidate({
+    badge: "Proximity",
+    confidence: alert.object.confidence ?? 0.85,
+    detail: formatProximityAlert(alert),
+    distanceKm: alert.predictedDistanceKm ?? alert.currentDistanceKm,
+    id: `proximity:${alert.type}:${alert.object.objectId}`,
+    observedAt: alert.object.lastUpdatedAt,
+    severityRank,
+    sourceKind: "proximity",
+    title: `${formatObjectListLabel(alert.object)} v okolí`,
+    tone: priorityToneFromSeverityRank(severityRank)
+  }, now);
+  return candidate ? [candidate] : [];
+}
+
+function priorityCandidateFromSituationFeature(
+  feature: SituationFeature,
+  reference: { lat: number; lon: number },
+  now: number
+): PriorityAlertCandidate[] {
+  if (!isPrioritySituationFeature(feature)) {
+    return [];
+  }
+  const severityRank = priorityFeatureSeverityRank(feature);
+  if (severityRank <= 0) {
+    return [];
+  }
+  const validUntil = feature.properties.validUntil ?? feature.properties.expiresAt;
+  const location = situationFeatureReferencePoint(feature);
+  const distanceKm = location ? distanceBetweenKm(reference, location) : undefined;
+  const status = situationFeatureStatusModel(feature);
+  const detail = [
+    status.label,
+    formatPriorityAlertDistance(distanceKm),
+    feature.properties.areaName,
+    sourceDisplayName(feature.properties.sourceId)
+  ].filter((value) => value && value !== "neznámá vzdálenost").join(" · ");
+  const candidate = createPriorityAlertCandidate({
+    badge: priorityFeatureBadge(feature),
+    confidence: priorityFeatureConfidence(feature),
+    detail,
+    distanceKm,
+    id: `feature:${feature.properties.featureId}`,
+    observedAt: latestTimestamp([
+      feature.properties.observedAt,
+      feature.properties.effectiveAt,
+      feature.properties.validFrom,
+      feature.properties.updatedAt,
+      feature.properties.generatedAt
+    ]),
+    severityRank,
+    sourceKind: "feature",
+    title: priorityFeatureTitle(feature),
+    tone: priorityToneFromSeverityRank(severityRank),
+    validUntil
+  }, now);
+  return candidate ? [candidate] : [];
+}
+
+function priorityCandidateFromObject(
+  object: CopObject,
+  reference: { lat: number; lon: number },
+  now: number
+): PriorityAlertCandidate[] {
+  const statusTone = objectStatusTone(object.status);
+  const lowConfidence = (object.confidence ?? 1) < 0.5;
+  const severityRank = Math.max(priorityToneRank(statusTone), lowConfidence ? 1 : 0);
+  if (severityRank <= 0) {
+    return [];
+  }
+  const distanceKm = object.position ? distanceBetweenKm(reference, object.position) : undefined;
+  const candidate = createPriorityAlertCandidate({
+    badge: "Objekt",
+    confidence: object.confidence ?? 0.75,
+    detail: [
+      objectStatusLabel(object.status),
+      formatPriorityAlertDistance(distanceKm),
+      object.objectType
+    ].filter((value) => value && value !== "neznámá vzdálenost").join(" · "),
+    distanceKm,
+    id: `object:${object.objectId}`,
+    observedAt: object.lastUpdatedAt,
+    severityRank,
+    sourceKind: "object",
+    title: formatObjectListLabel(object),
+    tone: priorityToneFromSeverityRank(severityRank)
+  }, now);
+  return candidate ? [candidate] : [];
+}
+
+function createPriorityAlertCandidate(
+  candidate: Omit<PriorityAlertCandidate, "score">,
+  now: number
+): PriorityAlertCandidate | null {
+  if (isPriorityAlertExpired(candidate.validUntil, now)) {
+    return null;
+  }
+  const confidence = clamp(candidate.confidence, 0, 1);
+  const score = priorityAlertScore({
+    confidence,
+    distanceKm: candidate.distanceKm,
+    observedAt: candidate.observedAt,
+    severityRank: candidate.severityRank
+  }, now);
+  return { ...candidate, confidence, score };
+}
+
+function priorityAlertScore(
+  candidate: Pick<PriorityAlertCandidate, "confidence" | "distanceKm" | "observedAt" | "severityRank">,
+  now: number
+): number {
+  const boundedDistance = candidate.distanceKm === undefined ? 260 : Math.min(Math.max(candidate.distanceKm, 0), 260);
+  const distanceScore = (260 - boundedDistance) * 1_000;
+  const severityScore = candidate.severityRank * 120;
+  const confidenceScore = candidate.confidence * 60;
+  const observedTime = candidate.observedAt ? Date.parse(candidate.observedAt) : Number.NaN;
+  const ageHours = Number.isFinite(observedTime) ? Math.max(0, (now - observedTime) / 3_600_000) : 48;
+  const recencyScore = Math.max(0, 48 - Math.min(ageHours, 48));
+  return distanceScore + severityScore + confidenceScore + recencyScore;
+}
+
+function priorityAlertCandidateComparator(a: PriorityAlertCandidate, b: PriorityAlertCandidate): number {
+  if (b.score !== a.score) {
+    return b.score - a.score;
+  }
+  if (b.severityRank !== a.severityRank) {
+    return b.severityRank - a.severityRank;
+  }
+  return (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY);
+}
+
+function isPriorityAlertExpired(validUntil: string | undefined, now: number): boolean {
+  if (!validUntil) {
+    return false;
+  }
+  const timestamp = Date.parse(validUntil);
+  return Number.isFinite(timestamp) && timestamp < now;
+}
+
+function isPrioritySituationFeature(feature: SituationFeature): boolean {
+  const layer = feature.properties.layer;
+  if (
+    layer === "boundary_admin"
+    || layer === "boundary_country"
+    || layer === "boundary_district"
+    || layer === "boundary_municipality"
+    || layer === "boundary_orp"
+    || layer === "boundary_region"
+    || layer === "flight_airports"
+    || layer === "flight_airspaces"
+    || layer === "mobile"
+    || layer === "mobile_coverage"
+    || layer === "mobile_network"
+    || layer === "place_settlements"
+    || isCommunicationTowerFeature(feature)
+    || isWeatherWebcamFeature(feature)
+    || isCurrentWeatherSummaryFeature(feature)
+  ) {
+    return false;
+  }
+  if (layer === "warnings" || layer === "weather_alerts" || layer === "fire" || layer === "community") {
+    return priorityFeatureSeverityRank(feature) > 0;
+  }
+  if (layer === "flood") {
+    const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+    const floodStage = safetyMetricNumber(feature.properties, metrics, "floodStage", "floodActivityLevel");
+    return (floodStage ?? 0) > 0 || feature.properties.trend === "rising" || priorityFeatureSeverityRank(feature) >= 2;
+  }
+  if (isWeatherContextFeature(feature)) {
+    return priorityFeatureSeverityRank(feature) >= 2;
+  }
+  return priorityFeatureSeverityRank(feature) >= 2;
+}
+
+function priorityFeatureSeverityRank(feature: SituationFeature): number {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const status = situationFeatureStatusModel(feature);
+  const rawRank = Math.max(
+    prioritySeverityValueRank(feature.properties.hazardSeverity),
+    prioritySeverityValueRank(feature.properties.severity),
+    prioritySeverityValueRank(feature.properties.urgency),
+    prioritySeverityValueRank(feature.properties.status),
+    prioritySeverityValueRank(stringProperty(tags.status)),
+    prioritySeverityValueRank(stringProperty(metrics.status))
+  );
+  if (feature.properties.layer === "flood") {
+    const floodStage = safetyMetricNumber(feature.properties, metrics, "floodStage", "floodActivityLevel") ?? 0;
+    if (floodStage >= 3) {
+      return 3;
+    }
+    if (floodStage >= 1) {
+      return 2;
+    }
+    if (feature.properties.trend === "rising") {
+      return Math.max(rawRank, 1);
+    }
+  }
+  if (feature.properties.layer === "fire") {
+    const fireRank = prioritySeverityValueRank(feature.properties.fireStatus ?? feature.properties.hazardType ?? feature.properties.sourceIncident);
+    return Math.max(rawRank, fireRank, 2);
+  }
+  if (feature.properties.layer === "community") {
+    return Math.max(rawRank, prioritySeverityValueRank(feature.properties.hazardSeverity), 1);
+  }
+  if (isWeatherContextFeature(feature)) {
+    return Math.max(rawRank, priorityToneRank(weatherFeatureTone(feature)), feature.properties.layer === "weather_thunderstorm_risk" ? 2 : 0);
+  }
+  if (feature.properties.layer === "warnings" || feature.properties.layer === "weather_alerts") {
+    return Math.max(rawRank, priorityToneRank(status.tone), 2);
+  }
+  return Math.max(rawRank, priorityToneRank(status.tone));
+}
+
+function prioritySeverityValueRank(value: unknown): number {
+  const normalized = String(value ?? "").trim().toLowerCase().replace(/[_-]+/g, " ");
+  if (!normalized) {
+    return 0;
+  }
+  if (["critical", "crit", "severe", "extreme", "danger", "emergency", "high", "very high", "3", "4"].includes(normalized)) {
+    return 3;
+  }
+  if (["warning", "warn", "advisory", "watch", "moderate", "medium", "risk", "rising", "2"].includes(normalized)) {
+    return 2;
+  }
+  if (["info", "information", "notice", "low", "limited", "minor", "1"].includes(normalized)) {
+    return 1;
+  }
+  if (normalized.includes("critical") || normalized.includes("extreme") || normalized.includes("severe") || normalized.includes("hotspot") || normalized.includes("active")) {
+    return 3;
+  }
+  if (normalized.includes("warning") || normalized.includes("advisory") || normalized.includes("risk") || normalized.includes("fire") || normalized.includes("storm") || normalized.includes("flood")) {
+    return 2;
+  }
+  return 0;
+}
+
+function priorityFeatureConfidence(feature: SituationFeature): number {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  return numberProperty(feature.properties.confidence) ?? recordNumber(metrics, "confidence") ?? 0.8;
+}
+
+function priorityFeatureBadge(feature: SituationFeature): string {
+  switch (feature.properties.layer) {
+    case "community":
+      return "Hlášení";
+    case "fire":
+      return "Požár";
+    case "flood":
+      return "Hydrologie";
+    case "weather":
+    case "weather_alerts":
+    case "weather_precipitation_grid":
+    case "weather_radar_nowcast":
+    case "weather_radar_precipitation":
+    case "weather_radar_reflectivity":
+    case "weather_thunderstorm_risk":
+    case "weather_wind_field":
+      return "Počasí";
+    case "warnings":
+      return "Výstraha";
+    default:
+      return "Riziko";
+  }
+}
+
+function priorityFeatureTitle(feature: SituationFeature): string {
+  if (isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature)) {
+    return weatherFeatureHeadline(feature);
+  }
+  return feature.properties.headline
+    ?? feature.properties.areaName
+    ?? feature.properties.label
+    ?? safetyHazardLabel(feature.properties.hazardType)
+    ?? feature.properties.featureId;
+}
+
+function situationFeatureReferencePoint(feature: SituationFeature): { lat: number; lon: number } | undefined {
+  const coordinates = collectSituationGeometryPoints(feature.geometry);
+  if (coordinates.length === 0) {
+    return undefined;
+  }
+  const lats = coordinates.map((coordinate) => coordinate.lat);
+  const lons = coordinates.map((coordinate) => coordinate.lon);
+  return {
+    lat: (Math.min(...lats) + Math.max(...lats)) / 2,
+    lon: (Math.min(...lons) + Math.max(...lons)) / 2
+  };
+}
+
+function collectSituationGeometryPoints(geometry: SituationFeature["geometry"]): Array<{ lat: number; lon: number }> {
+  if (geometry.type === "Point") {
+    const [lon, lat] = geometry.coordinates;
+    return Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : [];
+  }
+  if (geometry.type === "LineString") {
+    return geometry.coordinates.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : []);
+  }
+  if (geometry.type === "Polygon") {
+    return geometry.coordinates.flatMap((ring) =>
+      ring.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : [])
+    );
+  }
+  return geometry.coordinates.flatMap((polygon) =>
+    polygon.flatMap((ring) =>
+      ring.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : [])
+    )
+  );
+}
+
+function copAlertSeverityRank(severity: CopAlert["severity"]): number {
+  if (severity === "critical") {
+    return 3;
+  }
+  if (severity === "warning") {
+    return 2;
+  }
+  return 1;
+}
+
+function priorityToneRank(tone: PriorityAlertTone): number {
+  if (tone === "critical") {
+    return 3;
+  }
+  if (tone === "warn") {
+    return 2;
+  }
+  if (tone === "ok") {
+    return 1;
+  }
+  return 0;
+}
+
+function priorityToneFromSeverityRank(rank: number): PriorityAlertTone {
+  if (rank >= 3) {
+    return "critical";
+  }
+  if (rank >= 2) {
+    return "warn";
+  }
+  if (rank >= 1) {
+    return "neutral";
+  }
+  return "ok";
+}
+
+function formatPriorityAlertDistance(distanceKm: number | undefined): string {
+  if (distanceKm === undefined || !Number.isFinite(distanceKm)) {
+    return "neznámá vzdálenost";
+  }
+  if (distanceKm < 1) {
+    return `${Math.round(distanceKm * 1_000)} m`;
+  }
+  if (distanceKm < 10) {
+    return `${distanceKm.toFixed(1)} km`;
+  }
+  return `${Math.round(distanceKm)} km`;
+}
+
 function mergeSituationSafetyFlightCommunityMissionAndTakFeatures(
   situation: SituationFeatureCollectionResponse | null,
   safety: SafetyFeatureCollectionResponse | null,
@@ -10913,6 +11499,9 @@ function situationDisplayLayerLabel(feature: SituationFeature): string {
   if (isTakGatewayFeature(feature)) {
     return `TAK Gateway > ${takLayerLabel(feature.properties.layer as TakLayerId)}`;
   }
+  if (isWeatherWebcamFeature(feature)) {
+    return "Webkamery ČHMÚ";
+  }
   return situationLayerLabel(feature.properties.layer);
 }
 
@@ -11174,6 +11763,9 @@ function situationFeatureStatusModel(feature: SituationFeature): { label: string
   if (isCommunicationTowerFeature(feature)) {
     return { label: "REFERENČNÍ", tone: "neutral" };
   }
+  if (isWeatherWebcamFeature(feature)) {
+    return { label: "KAMERA", tone: "neutral" };
+  }
   if (feature.properties.stale) {
     return { label: "starší data", tone: "warn" };
   }
@@ -11272,6 +11864,153 @@ function isWeatherContextFeature(feature: SituationFeature): boolean {
     || feature.properties.layer === "weather_radar_precipitation"
     || feature.properties.layer === "weather_radar_nowcast"
     || feature.properties.layer === "weather_thunderstorm_risk";
+}
+
+interface WeatherCameraInfo {
+  detailUrl?: string;
+  direction?: string;
+  label?: string;
+  observedAt?: string;
+  snapshotUrl?: string;
+}
+
+interface WeatherWebcamDetail {
+  cameras: WeatherCameraInfo[];
+  generatedAt?: string;
+}
+
+function isWeatherWebcamFeature(feature: SituationFeature): boolean {
+  const camera = weatherWebcamProviderMetadata(feature);
+  const category = normalizeSituationCategory(feature.properties.category);
+  const providerLayerId = stringProperty(feature.properties.providerLayerId);
+  return feature.properties.layerId === "public.weather.webcams"
+    || feature.properties.sourceId === "chmi_weather_webcams"
+    || providerLayerId === "weather.webcams"
+    || providerLayerId === "weather_webcams"
+    || providerLayerId === "chmi_weather_webcams"
+    || category === "weather_webcam"
+    || category === "webcam"
+    || Boolean(stringProperty(camera.detailUrl) || stringProperty(camera.snapshotUrl));
+}
+
+function weatherWebcamProviderMetadata(feature: SituationFeature): Record<string, unknown> {
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  return isRecord(providerProperties.camera) ? providerProperties.camera : {};
+}
+
+function weatherWebcamMetadata(feature: SituationFeature): WeatherCameraInfo {
+  const camera = weatherWebcamProviderMetadata(feature);
+  return {
+    detailUrl: stringProperty(camera.detailUrl) ?? feature.properties.detailUrl,
+    direction: stringProperty(camera.direction) ?? stringProperty(camera.orientation),
+    label: stringProperty(camera.label)
+      ?? stringProperty(camera.name)
+      ?? stringProperty(camera.title)
+      ?? feature.properties.headline
+      ?? feature.properties.label
+      ?? "Webkamera ČHMÚ",
+    observedAt: stringProperty(camera.observedAt) ?? feature.properties.observedAt,
+    snapshotUrl: stringProperty(camera.snapshotUrl)
+      ?? stringProperty(camera.imageUrl)
+      ?? stringProperty(camera.previewUrl)
+      ?? stringProperty(camera.url)
+  };
+}
+
+function normalizeWeatherWebcamDetail(value: unknown): WeatherWebcamDetail {
+  const root = isRecord(value) ? value : {};
+  const camerasValue = Array.isArray(root.cameras)
+    ? root.cameras
+    : Array.isArray(root.items)
+      ? root.items
+      : Array.isArray(root.data)
+        ? root.data
+        : [];
+  return {
+    cameras: camerasValue.flatMap((entry, index) => {
+      const camera = normalizeWeatherCameraInfo(entry, `Kamera ${index + 1}`);
+      return camera ? [camera] : [];
+    }),
+    generatedAt: stringProperty(root.generatedAt) ?? stringProperty(root.updatedAt)
+  };
+}
+
+function normalizeWeatherCameraInfo(value: unknown, fallbackLabel: string): WeatherCameraInfo | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const snapshotUrl = stringProperty(value.snapshotUrl)
+    ?? stringProperty(value.imageUrl)
+    ?? stringProperty(value.previewUrl)
+    ?? stringProperty(value.url);
+  const detailUrl = stringProperty(value.detailUrl);
+  const label = stringProperty(value.label)
+    ?? stringProperty(value.name)
+    ?? stringProperty(value.title)
+    ?? stringProperty(value.cameraId)
+    ?? fallbackLabel;
+  if (!snapshotUrl && !detailUrl) {
+    return null;
+  }
+  return {
+    detailUrl,
+    direction: stringProperty(value.direction) ?? stringProperty(value.orientation),
+    label,
+    observedAt: stringProperty(value.observedAt) ?? stringProperty(value.updatedAt) ?? stringProperty(value.timestamp),
+    snapshotUrl
+  };
+}
+
+function weatherWebcamCandidates(fallback: WeatherCameraInfo, detail: WeatherWebcamDetail | null): WeatherCameraInfo[] {
+  const candidates = [...(detail?.cameras ?? []), fallback].filter((camera) => camera.snapshotUrl || camera.detailUrl);
+  const seen = new Set<string>();
+  return candidates.filter((camera) => {
+    const key = `${camera.label ?? ""}|${camera.snapshotUrl ?? ""}|${camera.detailUrl ?? ""}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function weatherWebcamTitle(feature: SituationFeature): string {
+  return weatherWebcamMetadata(feature).label ?? "Webkamera ČHMÚ";
+}
+
+function weatherWebcamSubtitle(feature: SituationFeature): string {
+  return [
+    "vizuální kontext počasí",
+    feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId),
+    feature.properties.stale ? "starší data" : undefined
+  ].filter(Boolean).join(" · ");
+}
+
+function weatherCameraProxyUrl(value: string | undefined): string | undefined {
+  const url = stringProperty(value);
+  if (!url || isBlockedWeatherCameraHost(url)) {
+    return undefined;
+  }
+  if (url.startsWith("/api/v1/weather/webcam-proxy")) {
+    return `${apiBase}${url}`;
+  }
+  return `${apiBase}/api/v1/weather/webcam-proxy?url=${encodeURIComponent(url)}`;
+}
+
+function isBlockedWeatherCameraHost(value: string): boolean {
+  if (value.startsWith("/")) {
+    return false;
+  }
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === "chmi.cz" || hostname.endsWith(".chmi.cz");
+  } catch {
+    return true;
+  }
+}
+
+function normalizeSituationCategory(category: string | undefined): string {
+  return (category ?? "").toLowerCase().replace(/[\s.-]+/g, "_");
 }
 
 function isCurrentWeatherSummaryFeature(feature: SituationFeature): boolean {
@@ -12058,6 +12797,7 @@ function sourceDisplayName(sourceSystemId: string | undefined): string {
     aviation_weather: "METAR/TAF",
     chmi_air_quality: "ČHMÚ",
     chmi_weather_stations: "ČHMÚ",
+    chmi_weather_webcams: "ČHMÚ webkamery",
     "flight-data-api": "Veřejná letecká data",
     "mission-arena": "Mission Arena",
     open_meteo: "Open-Meteo",
@@ -12382,6 +13122,9 @@ function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
   if (layer.layerId === "public.weather.observations") {
     return "Měřené hodnoty ze stanic";
   }
+  if (layer.layerId === "public.weather.webcams") {
+    return "Bodové náhledy kamer ČHMÚ";
+  }
   if (layer.layerId === "public.weather.radar_precipitation") {
     return "Radarová mapa s automatickou obnovou";
   }
@@ -12407,6 +13150,9 @@ function catalogLayerProviderLabel(layer: MapCatalogLayer): string {
       }
       if ((layer.query.providerSourceIds ?? []).includes("chmi_weather_stations")) {
         return "ČHMÚ stanice";
+      }
+      if ((layer.query.providerSourceIds ?? []).includes("chmi_weather_webcams")) {
+        return "ČHMÚ webkamery";
       }
       if ((layer.query.providerSourceIds ?? []).includes("chmi_air_quality")) {
         return "ČHMÚ ovzduší";
@@ -13193,6 +13939,10 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "weather.pressure_grid":
     case "public.weather.pressure_grid":
       return "weather_pressure_grid";
+    case "weather.webcams":
+    case "weather_webcams":
+    case "public.weather.webcams":
+      return "weather";
     case "weather.radar_nowcast":
     case "weather_radar_nowcast":
     case "public.weather.radar_nowcast":

@@ -213,6 +213,8 @@ type CommunityReportHazardSeverity = "advisory" | "warning" | "critical";
 type MobilePlatform = "ios" | "ipados";
 const defaultRasterOverlayAllowedHosts = "docker.home.cz,sim.zeleznalady.cz";
 const rasterOverlayMaxBytes = 8 * 1024 * 1024;
+const defaultWeatherCameraAllowedHosts = defaultRasterOverlayAllowedHosts;
+const weatherCameraMaxBytes = 12 * 1024 * 1024;
 
 interface WeatherRadarFramesCacheEntry {
   body: unknown;
@@ -3701,6 +3703,53 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  app.get("/api/v1/weather/webcam-proxy", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const query = request.query as Record<string, unknown>;
+    const requestedUrl = optionalTrimmedString(query.url, 2048);
+    const upstreamUrl = parseWeatherCameraResourceUrl(requestedUrl, situationDataBaseUrl);
+    if (!upstreamUrl) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Weather camera proxy requires a valid SIM camera detail or snapshot URL.", correlationId);
+    }
+    if (!isAllowedWeatherCameraUrl(upstreamUrl)) {
+      return sendError(reply, 403, "FORBIDDEN", "Weather camera host is not allowed.", correlationId);
+    }
+
+    try {
+      const cameraResponse = await fetchWeatherCameraResource(upstreamUrl);
+      if (!cameraResponse.ok) {
+        return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", `Weather camera provider returned HTTP ${cameraResponse.status}.`, correlationId);
+      }
+      const contentType = cameraResponse.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+      const isJson = contentType === "application/json" || contentType.endsWith("+json");
+      const isImage = contentType.startsWith("image/");
+      if (!isJson && !isImage) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Weather camera provider did not return JSON or image content.", correlationId);
+      }
+
+      const contentLength = Number(cameraResponse.headers.get("content-length"));
+      if (Number.isFinite(contentLength) && contentLength > weatherCameraMaxBytes) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Weather camera response is too large.", correlationId);
+      }
+      const body = Buffer.from(await cameraResponse.arrayBuffer());
+      if (body.byteLength > weatherCameraMaxBytes) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Weather camera response is too large.", correlationId);
+      }
+
+      const cacheSeconds = isImage
+        ? readPositiveInteger(process.env.COP_WEATHER_CAMERA_IMAGE_CACHE_SECONDS, 180)
+        : readPositiveInteger(process.env.COP_WEATHER_CAMERA_DETAIL_CACHE_SECONDS, 60);
+      return reply
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Cache-Control", `public, max-age=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`)
+        .header("Content-Type", contentType)
+        .send(body);
+    } catch (error) {
+      app.log.warn({ error, upstreamUrl: upstreamUrl.toString() }, "Weather camera proxy request failed.");
+      return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
   app.get("/api/v1/geocode/search", async (request, reply) => {
     if (!placeGeocoder) {
       return sendError(reply, 503, "GEOCODER_UNAVAILABLE", "Place geocoder is disabled.", correlationIdFrom(request.headers["x-correlation-id"]));
@@ -6435,6 +6484,10 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "weather.pressure_grid":
     case "public.weather.pressure_grid":
       return "weather_pressure_grid";
+    case "weather.webcams":
+    case "weather_webcams":
+    case "public.weather.webcams":
+      return "weather";
     case "weather.radar_nowcast":
     case "weather_radar_nowcast":
     case "public.weather.radar_nowcast":
@@ -9059,6 +9112,66 @@ function resolveSituationDataRelativeUrl(value: string, situationDataBaseUrl: st
   }
 }
 
+function parseWeatherCameraResourceUrl(value: string | undefined, situationDataBaseUrl: string): URL | null {
+  if (!value) {
+    return null;
+  }
+  if (value.startsWith("/")) {
+    return resolveSituationDataCameraRelativeUrl(value, situationDataBaseUrl);
+  }
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return null;
+    }
+    return isWeatherCameraPath(url.pathname) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveSituationDataCameraRelativeUrl(value: string, situationDataBaseUrl: string): URL | null {
+  try {
+    const baseUrl = new URL(`${trimTrailingSlash(situationDataBaseUrl)}/`);
+    const inputUrl = new URL(value, "https://cop.local");
+    let normalizedPath = inputUrl.pathname;
+    const basePath = baseUrl.pathname.replace(/\/+$/u, "");
+    if (normalizedPath === basePath || normalizedPath.startsWith(`${basePath}/`)) {
+      normalizedPath = normalizedPath.slice(basePath.length);
+    } else if (normalizedPath.startsWith("/api/v1/")) {
+      normalizedPath = normalizedPath.slice("/api/v1/".length);
+    }
+    normalizedPath = normalizedPath.replace(/^\/+/u, "");
+    if (!isWeatherCameraPath(normalizedPath)) {
+      return null;
+    }
+    const resolved = new URL(normalizedPath, baseUrl);
+    resolved.search = inputUrl.search;
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+
+function isWeatherCameraPath(pathname: string): boolean {
+  const normalized = pathname.toLowerCase();
+  return normalized.includes("webcam")
+    || normalized.includes("camera")
+    || normalized.startsWith("weather/");
+}
+
+function isAllowedWeatherCameraUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === "chmi.cz" || hostname.endsWith(".chmi.cz")) {
+    return false;
+  }
+  const allowedHosts = new Set((env.COP_WEATHER_CAMERA_ALLOWED_HOSTS ?? defaultWeatherCameraAllowedHosts)
+    .split(",")
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean));
+  return allowedHosts.has(hostname);
+}
+
 function isAllowedRasterOverlayUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
   const allowedHosts = new Set((env.COP_RASTER_OVERLAY_ALLOWED_HOSTS ?? defaultRasterOverlayAllowedHosts)
     .split(",")
@@ -9071,6 +9184,23 @@ function isAllowedRasterOverlayUrl(url: URL, env: Record<string, string | undefi
     return false;
   }
   return true;
+}
+
+async function fetchWeatherCameraResource(url: URL): Promise<Response> {
+  const timeoutMs = readPositiveInteger(process.env.COP_WEATHER_CAMERA_TIMEOUT_MS, 8000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url.toString(), {
+      headers: {
+        accept: "application/json,image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
+        "user-agent": "CSM-COP weather camera proxy"
+      },
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function fetchRasterOverlay(url: URL): Promise<Response> {

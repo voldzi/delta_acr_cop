@@ -75,6 +75,7 @@ describe("map catalog route", () => {
       "public.mobile.network",
       "public.weather.current",
       "public.weather.observations",
+      "public.weather.webcams",
       "public.safety.air_quality",
       "public.boundary.admin",
       "public.safety.fire",
@@ -95,6 +96,14 @@ describe("map catalog route", () => {
     });
     expect(body.layers.find((layer) => layer.layerId === "public.traffic.transit")).toMatchObject({
       groupId: "transport"
+    });
+    expect(body.layers.find((layer) => layer.layerId === "public.weather.webcams")).toMatchObject({
+      groupId: "risks.weather",
+      query: {
+        providerLayerIds: ["weather"],
+        providerSourceIds: ["chmi_weather_webcams"]
+      },
+      selectable: true
     });
 
     expect(body.sources).toEqual(expect.arrayContaining([
@@ -540,6 +549,60 @@ describe("map catalog route", () => {
     }));
   });
 
+  it("proxies CHMI webcam detail through an allowlisted SIM URL", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const fetchMock = vi.fn(async () => Response.json({
+      cameras: [
+        {
+          label: "Praha-Libuš",
+          snapshotUrl: "/situation-data/api/v1/weather/webcams/praha/snapshot.jpg"
+        }
+      ]
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      situationDataSource: new FakeSituationDataSource(),
+      now: () => new Date("2026-06-25T08:00:00Z")
+    });
+    const detailUrl = "/situation-data/api/v1/weather/webcams/praha";
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/weather/webcam-proxy?url=${encodeURIComponent(detailUrl)}`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      cameras: [
+        {
+          label: "Praha-Libuš"
+        }
+      ]
+    });
+    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather/webcams/praha", expect.objectContaining({
+      headers: expect.objectContaining({
+        accept: expect.stringContaining("application/json")
+      })
+    }));
+  });
+
+  it("rejects webcam proxy requests for direct CHMI upstream hosts", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      now: () => new Date("2026-06-25T08:00:00Z")
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/weather/webcam-proxy?url=${encodeURIComponent("https://www.chmi.cz/files/webcam/praha.jpg")}`
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rejects raster overlay proxy requests for untrusted hosts", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const fetchMock = vi.fn();
@@ -611,6 +674,7 @@ class FakeSituationDataSource implements SituationDataSource {
     return [
       { enabled: true, label: "Open-Meteo", layers: ["weather"], sourceId: "open_meteo", updateCadenceSeconds: 600 },
       { enabled: true, label: "ČHMÚ měřené počasí", layers: ["weather"], sourceId: "chmi_weather_stations", updateCadenceSeconds: 600 },
+      { enabled: true, label: "ČHMÚ webkamery", layers: ["weather"], sourceId: "chmi_weather_webcams", updateCadenceSeconds: 600 },
       { enabled: true, label: "ČHMÚ kvalita ovzduší", layers: ["air_quality"], sourceId: "chmi_air_quality", updateCadenceSeconds: 900 },
       { enabled: true, label: "Unified mobile network assessment", layers: ["mobile_network"], sourceId: "mobile_network_model", updateCadenceSeconds: 3600 },
       { enabled: true, label: "Mobile coverage estimate model", layers: ["mobile_coverage"], sourceId: "mobile_coverage_model", updateCadenceSeconds: 21600 },

@@ -235,6 +235,7 @@ const defaultConfig: SituationDataSourceConfig = {
     chmi_air_quality: 15 * 60 * 1000,
     chmi_weather_radar: 5 * 60 * 1000,
     chmi_weather_stations: 10 * 60 * 1000,
+    chmi_weather_webcams: 10 * 60 * 1000,
     mobile_coverage_model: 10 * 60 * 1000,
     mobile_network_model: 10 * 60 * 1000,
     osm_postgis: 6 * 60 * 60 * 1000
@@ -317,6 +318,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       chmi_air_quality: readInteger(env.COP_SITUATION_DATA_CHMI_AIR_QUALITY_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       chmi_weather_radar: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_RADAR_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       chmi_weather_stations: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      chmi_weather_webcams: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_WEBCAMS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_coverage_model: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_network_model: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       osm_postgis: readInteger(env.COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
