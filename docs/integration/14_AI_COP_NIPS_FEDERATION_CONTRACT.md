@@ -204,6 +204,7 @@ client-safe metadata. Aktuální implementované nástroje jsou read-only:
 - `cop.federation.nodes.list`,
 - `cop.area.summary`,
 - `cop.fusion.explain`,
+- `cop.sources.health`,
 - `cop.events.replay`,
 - `cop.events.dead_letters.list`,
 - `cop.audit.events.list`.
@@ -221,6 +222,10 @@ vysvětlitelné priority podle závažnosti, providerů, kategorie, polohy,
 aktuálnosti a nejistot. Výstup obsahuje evidenci a doporučený další krok pro
 operátora nebo klientskou aplikaci, ale nikdy sám nezakládá ani neupravuje
 incident.
+`cop.sources.health` zpřístupňuje stejný strukturovaný stav zdrojů jako
+provozní REST endpoint `/api/v1/sources/health`, včetně počtů podle health
+stavu, varování, aktuálnosti a počtu stop. Slouží pro data-quality asistenci,
+ne pro změnu konfigurace providerů.
 Měnící AI/MCP nástroje zůstávají mimo tento endpoint; musí vrátit návrh a
 skutečnou změnu provede až explicitní COP command API s potvrzením uživatele.
 

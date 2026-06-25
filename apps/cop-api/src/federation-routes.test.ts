@@ -517,11 +517,15 @@ describe("federation runtime routes", () => {
           }),
           expect.objectContaining({
             mode: "read_only",
+            toolId: "cop.sources.health"
+          }),
+          expect.objectContaining({
+            mode: "read_only",
             toolId: "cop.events.replay"
           })
         ]),
         summary: {
-          count: 6
+          count: 7
         }
       });
 
@@ -716,6 +720,72 @@ describe("federation runtime routes", () => {
               payload: expect.objectContaining({
                 status: "ok",
                 toolId: "cop.fusion.explain"
+              })
+            }),
+            type: "ai.tool.invoked"
+          })
+        ],
+        summary: {
+          count: 1,
+          totalAvailable: 1
+        }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("builds an audited read-only MCP source health summary", async () => {
+    const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
+    try {
+      const invocation = await app.inject({
+        headers: {
+          ...authHeaders,
+          "x-correlation-id": "corr-mcp-sources-health"
+        },
+        method: "POST",
+        payload: {
+          input: {
+            includeDisabled: true
+          }
+        },
+        url: "/api/v1/mcp/tools/cop.sources.health/invoke"
+      });
+      expect(invocation.statusCode).toBe(200);
+      expect(invocation.json()).toMatchObject({
+        contractVersion: "cop-mcp-tool-invocation-v1",
+        result: {
+          contractVersion: "cop-source-health-v1",
+          items: expect.any(Array),
+          query: {
+            includeDisabled: true
+          },
+          summary: expect.objectContaining({
+            count: expect.any(Number),
+            healthCounts: expect.any(Object)
+          })
+        },
+        status: "ok",
+        tool: {
+          mode: "read_only",
+          toolId: "cop.sources.health"
+        }
+      });
+
+      const auditReplay = await app.inject({
+        headers: authHeaders,
+        method: "GET",
+        url: "/api/v1/events/domain?fromOffset=0&limit=10&type=ai.tool.invoked"
+      });
+      expect(auditReplay.statusCode).toBe(200);
+      expect(auditReplay.json()).toMatchObject({
+        items: [
+          expect.objectContaining({
+            data: expect.objectContaining({
+              correlationId: "corr-mcp-sources-health",
+              payload: expect.objectContaining({
+                status: "ok",
+                toolId: "cop.sources.health"
               })
             }),
             type: "ai.tool.invoked"

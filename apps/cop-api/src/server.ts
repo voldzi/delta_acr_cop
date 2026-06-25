@@ -263,7 +263,8 @@ type CopMcpToolId =
   | "cop.events.dead_letters.list"
   | "cop.events.replay"
   | "cop.federation.nodes.list"
-  | "cop.fusion.explain";
+  | "cop.fusion.explain"
+  | "cop.sources.health";
 
 interface CopMcpToolDefinition {
   description: string;
@@ -396,6 +397,24 @@ const copMcpTools: CopMcpToolDefinition[] = [
     output: "cop-federation-node-list-v1",
     title: "List federation nodes",
     toolId: "cop.federation.nodes.list"
+  },
+  {
+    description: "List current COP source health for AI and operator diagnostics. The tool returns structured source status, warnings and freshness metrics; it never changes source configuration.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        health: {
+          enum: ["DEGRADED", "DISABLED", "ONLINE", "QUIET", "STALE", "UNAVAILABLE", "WAITING"],
+          type: "string"
+        },
+        includeDisabled: { type: "boolean" }
+      },
+      type: "object"
+    },
+    mode: "read_only",
+    output: "cop-source-health-v1",
+    title: "List source health",
+    toolId: "cop.sources.health"
   },
   {
     description: "Replay COP domain events with the same filters as the operator replay endpoint.",
@@ -5206,6 +5225,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         };
         break;
       }
+      case "cop.sources.health": {
+        result = buildCopSourcesHealthToolResult(input);
+        break;
+      }
       case "cop.events.replay": {
         const query = parseDomainEventReplayQuery(input);
         const replay = await queryRuntimeDomainEvents(query);
@@ -5372,6 +5395,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       invocationId,
       priorityLimit: optionalFiniteNumber(input.priorityLimit, 1, 20) ?? 8
     });
+  }
+
+  function buildCopSourcesHealthToolResult(input: Record<string, unknown>): Record<string, unknown> {
+    const requestNow = now();
+    const includeDisabled = parseBooleanQuery(input.includeDisabled);
+    const healthFilter = optionalString(input.health, ["DEGRADED", "DISABLED", "ONLINE", "QUIET", "STALE", "UNAVAILABLE", "WAITING"]);
+    const items = buildSourceHealthItems(state, requestNow, trackLifecycle)
+      .filter((item) => includeDisabled || item.health !== "DISABLED")
+      .filter((item) => !healthFilter || item.health === healthFilter)
+      .sort(compareSourceHealthItems);
+    return {
+      contractVersion: "cop-source-health-v1",
+      generatedAt: requestNow.toISOString(),
+      items,
+      query: {
+        ...(healthFilter ? { health: healthFilter } : {}),
+        includeDisabled
+      },
+      summary: buildSourceHealthSummary(items)
+    };
   }
 
   app.get("/api/v1/mcp", async () => ({
@@ -7041,6 +7084,42 @@ function areaFusionHaversineMeters(lat1: number, lon1: number, lat2: number, lon
 
 function areaFusionToRadians(degrees: number): number {
   return degrees * Math.PI / 180;
+}
+
+function compareSourceHealthItems(a: SourceHealthItem, b: SourceHealthItem): number {
+  const healthDelta = sourceHealthRank(b.health) - sourceHealthRank(a.health);
+  if (healthDelta !== 0) {
+    return healthDelta;
+  }
+  return a.displayName.localeCompare(b.displayName, "cs");
+}
+
+function sourceHealthRank(health: SourceHealthItem["health"]): number {
+  const ranks: Record<SourceHealthItem["health"], number> = {
+    DEGRADED: 6,
+    UNAVAILABLE: 5,
+    STALE: 4,
+    WAITING: 3,
+    QUIET: 2,
+    DISABLED: 1,
+    ONLINE: 0
+  };
+  return ranks[health] ?? 0;
+}
+
+function buildSourceHealthSummary(items: SourceHealthItem[]): Record<string, unknown> {
+  const healthCounts = items.reduce<Record<string, number>>((counts, item) => ({
+    ...counts,
+    [item.health]: (counts[item.health] ?? 0) + 1
+  }), {});
+  return {
+    count: items.length,
+    currentTrackCount: items.reduce((sum, item) => sum + item.currentTracks, 0),
+    degradedCount: (healthCounts.DEGRADED ?? 0) + (healthCounts.UNAVAILABLE ?? 0) + (healthCounts.STALE ?? 0),
+    healthCounts,
+    totalTrackCount: items.reduce((sum, item) => sum + item.totalTracks, 0),
+    warningCount: items.reduce((sum, item) => sum + (item.warnings?.length ?? 0), 0)
+  };
 }
 
 function parseMapQueryRequest(body: unknown): MapFeatureQueryRequest | null {
