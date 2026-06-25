@@ -332,6 +332,7 @@ const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["maneuver", "Manévr"]
 ];
 const defaultAoiCenter = { lat: 50.0755, lon: 14.4378 };
+const defaultMapBounds: MapBounds = { east: 19.1, north: 51.2, south: 48.5, west: 12 };
 const messagingDockWidthStorageKey = "cop.messaging.dockWidth.v1";
 
 interface StableFeatureRequest {
@@ -537,7 +538,7 @@ export function App() {
   const [editingZoneId, setEditingZoneId] = React.useState<string | null>(null);
   const [autoFit, setAutoFit] = React.useState(initialPreferences.autoFit ?? true);
   const [mapView, setMapView] = React.useState<MapViewState | undefined>(() => normalizeMapView(initialPreferences.mapView));
-  const [mapBounds, setMapBounds] = React.useState<MapBounds | undefined>();
+  const [mapBounds, setMapBounds] = React.useState<MapBounds>(defaultMapBounds);
   const [focusViewRequest, setFocusViewRequest] = React.useState(0);
   const [mapCatalog, setMapCatalog] = React.useState<MapCatalogResponse | null>(null);
   const [situationLayers, setSituationLayers] = React.useState<SituationLayer[]>([]);
@@ -1436,13 +1437,6 @@ export function App() {
     if (!dataAccessReady) {
       return;
     }
-    if (visibleSituationLayerIds.length === 0) {
-      situationFeatureRequestRef.current = null;
-      setSituationFeatures(null);
-      setSituationStatus("disabled");
-      setSituationWarnings([]);
-      return;
-    }
     if (!mapBounds) {
       return;
     }
@@ -1634,12 +1628,6 @@ export function App() {
   React.useEffect(() => {
     if (!authToken) {
       setTakFeatures(null);
-      return;
-    }
-    if (visibleTakLayerIds.length === 0) {
-      setTakFeatures(null);
-      setTakStatus("disabled");
-      setTakWarnings([]);
       return;
     }
     if (!mapBounds) {
