@@ -99,6 +99,7 @@ import type {
 
 type ChatFilter = "all" | "direct" | "group";
 type ComposeMode = "direct" | "group" | null;
+type ChatConnectionState = "offline" | "online" | "syncing";
 type InfoPanelTab = "info" | "media" | "members";
 type MediaPanelTab = "media" | "documents" | "locations";
 type MuteChoice = "8h" | "1w" | "forever";
@@ -1815,6 +1816,7 @@ export function ChatApp() {
         {pinnedChatItems.length > 0 ? (
           <PinnedChats
             items={pinnedChatItems}
+            connectionStateForItem={(item) => chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id)}
             onOpen={(nextItem) => void openChat(nextItem)}
             onTogglePinned={togglePinnedChat}
           />
@@ -1835,6 +1837,7 @@ export function ChatApp() {
             <ChatRow
               item={item}
               key={item.id}
+              connectionState={chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id)}
               onDeleteRequest={setDeleteChatCandidate}
               onToggleMute={toggleMutedChat}
               onTogglePinned={togglePinnedChat}
@@ -2153,10 +2156,12 @@ export function ChatApp() {
 
 function PinnedChats({
   items,
+  connectionStateForItem,
   onOpen,
   onTogglePinned
 }: {
   items: ChatListItem[];
+  connectionStateForItem: (item: ChatListItem) => ChatConnectionState;
   onOpen: (item: ChatListItem) => void;
   onTogglePinned: (item: ChatListItem) => void;
 }) {
@@ -2167,6 +2172,7 @@ function PinnedChats({
           <button className="pinned-chat-open" onClick={() => onOpen(item)} type="button">
             <span className="pinned-avatar-wrap">
               <Avatar label={item.title} />
+              <ConnectionDot state={connectionStateForItem(item)} />
               {item.unreadCount > 0 && !item.muted ? <span className="pinned-unread">{item.unreadCount}</span> : null}
               {item.muted ? <span className="pinned-muted"><BellOff size={13} /></span> : null}
             </span>
@@ -2188,6 +2194,7 @@ function PinnedChats({
 }
 
 function ChatRow({
+  connectionState,
   item,
   onDeleteRequest,
   onToggleMute,
@@ -2196,6 +2203,7 @@ function ChatRow({
   preparing,
   onOpen
 }: {
+  connectionState: ChatConnectionState;
   item: ChatListItem;
   onDeleteRequest: (item: ChatListItem) => void;
   onToggleMute: (item: ChatListItem) => void;
@@ -2317,7 +2325,10 @@ function ChatRow({
         style={{ transform: rowOffset ? `translateX(${rowOffset}px)` : undefined }}
       >
         <button className="chat-row-open" onClick={handleOpen} type="button">
-          <Avatar label={item.title} />
+          <span className="chat-avatar-wrap">
+            <Avatar label={item.title} />
+            <ConnectionDot state={connectionState} />
+          </span>
           <span className="chat-row-main">
             <span className="chat-row-top">
               <strong>{item.title}</strong>
@@ -3648,6 +3659,28 @@ function EncryptionRecoveryDialog({
 }) {
   const hasBackup = status?.keyBackupExists === true;
   const ready = status?.ready === true;
+  const [copyState, setCopyState] = React.useState<"copied" | "error" | "idle">("idle");
+
+  React.useEffect(() => {
+    if (copyState === "idle") {
+      return undefined;
+    }
+    const timeout = window.setTimeout(() => setCopyState("idle"), 1800);
+    return () => window.clearTimeout(timeout);
+  }, [copyState]);
+
+  async function copyRecoveryKey() {
+    if (!generatedRecoveryKey) {
+      return;
+    }
+    try {
+      await navigator.clipboard?.writeText(generatedRecoveryKey);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+  }
+
   return (
     <div className="mute-backdrop" role="presentation" onClick={onClose}>
       <section className="recovery-dialog" role="dialog" aria-modal="true" aria-label="Obnova E2EE" onClick={(event) => event.stopPropagation()}>
@@ -3673,13 +3706,21 @@ function EncryptionRecoveryDialog({
             <div className="recovery-key-box">
               <code>{generatedRecoveryKey}</code>
               <button
-                onClick={() => void navigator.clipboard?.writeText(generatedRecoveryKey)}
+                className={clsx("recovery-copy-button", copyState !== "idle" && copyState)}
+                onClick={() => void copyRecoveryKey()}
                 type="button"
                 aria-label="Zkopírovat obnovovací klíč"
               >
-                <Copy size={18} />
-                Zkopírovat
+                {copyState === "copied" ? <Check size={18} /> : <Copy size={18} />}
+                {copyState === "copied" ? "Zkopírováno" : "Zkopírovat"}
               </button>
+              <span className={clsx("recovery-copy-feedback", copyState)} role="status" aria-live="polite">
+                {copyState === "copied"
+                  ? "Klíč je zkopírovaný do schránky."
+                  : copyState === "error"
+                    ? "Kopírování se nepodařilo. Označte klíč ručně."
+                    : ""}
+              </span>
             </div>
             <footer>
               <button className="primary-dialog-action" onClick={onClose} type="button">Mám uloženo</button>
@@ -3757,6 +3798,15 @@ function DocumentThumb({ fileName, large = false }: { fileName: string; large?: 
 
 function Avatar({ label, small = false }: { label: string; small?: boolean }) {
   return <span className={clsx("avatar", small && "small")} aria-hidden="true">{initialsFor(label)}</span>;
+}
+
+function ConnectionDot({ state }: { state: ChatConnectionState }) {
+  const label = state === "online"
+    ? "Chat je připojený"
+    : state === "syncing"
+      ? "Chat se synchronizuje"
+      : "Chat není připojený";
+  return <span className={clsx("connection-dot", state)} aria-label={label} role="img" title={label} />;
 }
 
 function buildChatItems({
@@ -4474,6 +4524,39 @@ function statusLabelFor(status: MessagingStatusResponse | null, matrixSession: M
     return "vypnuto";
   }
   return "čeká";
+}
+
+function chatConnectionStateFor(
+  item: ChatListItem,
+  chatReady: boolean,
+  matrixSession: MatrixMessagingSession | null,
+  syncState: string,
+  preparing: boolean
+): ChatConnectionState {
+  if (!chatReady || isMatrixSyncOffline(syncState)) {
+    return "offline";
+  }
+  if (preparing || !matrixSession || isMatrixSyncWarming(syncState)) {
+    return "syncing";
+  }
+  return item.roomId || item.room ? "online" : "offline";
+}
+
+function isMatrixSyncWarming(syncState: string): boolean {
+  const normalized = syncState.toLowerCase();
+  return normalized.includes("sync")
+    || normalized.includes("catch")
+    || normalized.includes("prep")
+    || normalized.includes("reconnect")
+    || normalized.includes("start");
+}
+
+function isMatrixSyncOffline(syncState: string): boolean {
+  const normalized = syncState.toLowerCase();
+  return normalized.includes("error")
+    || normalized.includes("stop")
+    || normalized.includes("offline")
+    || normalized.includes("fail");
 }
 
 function userFacingError(message: string): string {

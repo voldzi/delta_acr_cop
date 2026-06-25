@@ -492,6 +492,35 @@ button {
   padding: 10px 14px;
 }
 
+.chat-avatar-wrap {
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 auto;
+}
+
+.connection-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 1px 4px rgba(17, 27, 33, 0.18);
+}
+
+.connection-dot.online {
+  background: #21c063;
+}
+
+.connection-dot.syncing {
+  background: #f5c542;
+}
+
+.connection-dot.offline {
+  background: #f05b57;
+}
+
 .chat-row::after {
   position: absolute;
   right: 14px;
@@ -705,6 +734,13 @@ button {
 .pinned-avatar-wrap {
   position: relative;
   display: inline-grid;
+}
+
+.pinned-avatar-wrap .connection-dot {
+  right: 3px;
+  bottom: 3px;
+  width: 14px;
+  height: 14px;
 }
 
 .pinned-avatar-wrap .avatar {
@@ -2301,6 +2337,42 @@ button {
   justify-self: start;
   background: #e1f4ee;
   color: var(--accent-dark);
+}
+
+.recovery-copy-button {
+  transition: background-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.recovery-copy-button:hover,
+.recovery-copy-button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(0, 168, 132, 0.18);
+  outline: none;
+}
+
+.recovery-copy-button.copied {
+  background: var(--accent-dark);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.recovery-copy-button.error {
+  background: #ffe3e1;
+  color: #b42318;
+}
+
+.recovery-copy-feedback {
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 680;
+}
+
+.recovery-copy-feedback.copied {
+  color: var(--accent-dark);
+}
+
+.recovery-copy-feedback.error {
+  color: #b42318;
 }
 
 .recovery-input {
