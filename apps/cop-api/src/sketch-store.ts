@@ -125,6 +125,7 @@ export interface SketchDrawingStore {
   close(): Promise<void>;
   create(input: CreateSketchDrawingInput, now: Date): Promise<SketchDrawingFeature>;
   delete(drawingId: string, actor: SketchDrawingActor, now: Date): Promise<boolean>;
+  deleteForDemoScenario(drawingId: string, demoScenarioId: string, actor: SketchDrawingActor, now: Date): Promise<boolean>;
   diagnostics?(): string | undefined;
   get(drawingId: string): Promise<SketchDrawingFeature | null>;
   init(): Promise<void>;
@@ -210,6 +211,16 @@ export class InMemorySketchDrawingStore implements SketchDrawingStore {
   async delete(drawingId: string, actor: SketchDrawingActor, now: Date): Promise<boolean> {
     const current = this.drawings.get(drawingId);
     if (!current || current.properties.ownerSubjectId !== actor.subjectId) {
+      return false;
+    }
+    this.drawings.delete(drawingId);
+    this.audit.push({ action: "deleted", actorSubjectId: actor.subjectId, at: now.toISOString(), drawingId, revision: current.properties.revision + 1 });
+    return true;
+  }
+
+  async deleteForDemoScenario(drawingId: string, demoScenarioId: string, actor: SketchDrawingActor, now: Date): Promise<boolean> {
+    const current = this.drawings.get(drawingId);
+    if (!current || current.properties.properties.demoScenarioId !== demoScenarioId) {
       return false;
     }
     this.drawings.delete(drawingId);
@@ -374,6 +385,24 @@ export class PostgresSketchDrawingStore implements SketchDrawingStore {
       WHERE drawing_id = $1 AND owner_subject_id = $2 AND deleted_at IS NULL
       RETURNING revision`,
       [drawingId, actor.subjectId, now.toISOString()]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return false;
+    }
+    await this.audit(drawingId, actor.subjectId, "deleted", row.revision, now);
+    return true;
+  }
+
+  async deleteForDemoScenario(drawingId: string, demoScenarioId: string, actor: SketchDrawingActor, now: Date): Promise<boolean> {
+    const result = await this.pool.query<{ revision: number }>(
+      `UPDATE cop_user_drawings
+      SET deleted_at = $3::timestamptz, updated_at = $3::timestamptz, revision = revision + 1
+      WHERE drawing_id = $1
+        AND properties->>'demoScenarioId' = $2
+        AND deleted_at IS NULL
+      RETURNING revision`,
+      [drawingId, demoScenarioId, now.toISOString()]
     );
     const row = result.rows[0];
     if (!row) {

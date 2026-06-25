@@ -204,7 +204,9 @@ export interface CommunityReportStore {
   createGroup(input: CreateCommunityGroupInput, now: Date): Promise<CommunityGroupRecord>;
   createReport(input: CreateCommunityReportInput, now: Date): Promise<CommunityReportRecord>;
   deleteGroup(groupId: string, subjectId: string, now: Date): Promise<boolean>;
+  deleteGroupForDemoScenario(groupId: string, demoScenarioId: string, now: Date): Promise<boolean>;
   deleteReport(reportId: string, subjectId: string, now: Date): Promise<boolean>;
+  deleteReportForDemoScenario(reportId: string, demoScenarioId: string, now: Date): Promise<boolean>;
   diagnostics?(): string | undefined;
   getGroup(groupId: string): Promise<CommunityGroupRecord | null>;
   getReport(reportId: string): Promise<CommunityReportRecord | null>;
@@ -321,6 +323,15 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
     return true;
   }
 
+  async deleteGroupForDemoScenario(groupId: string, demoScenarioId: string, _now: Date): Promise<boolean> {
+    const group = this.groups.get(groupId);
+    if (!group || group.metadata.demoScenarioId !== demoScenarioId) {
+      return false;
+    }
+    this.groups.delete(groupId);
+    return true;
+  }
+
   async updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null> {
     const report = this.reports.get(reportId);
     if (!report || report.createdBy.subjectId !== subjectId || report.status === "hidden" || report.status === "rejected") {
@@ -356,6 +367,20 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
   async deleteReport(reportId: string, subjectId: string, _now: Date): Promise<boolean> {
     const report = this.reports.get(reportId);
     if (!report || report.createdBy.subjectId !== subjectId) {
+      return false;
+    }
+    this.reports.delete(reportId);
+    for (const [attachmentId, attachment] of this.attachments.entries()) {
+      if (attachment.reportId === reportId) {
+        this.attachments.delete(attachmentId);
+      }
+    }
+    return true;
+  }
+
+  async deleteReportForDemoScenario(reportId: string, demoScenarioId: string, _now: Date): Promise<boolean> {
+    const report = this.reports.get(reportId);
+    if (!report || report.properties.demoScenarioId !== demoScenarioId) {
       return false;
     }
     this.reports.delete(reportId);
@@ -693,6 +718,16 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     return (result.rowCount ?? 0) > 0;
   }
 
+  async deleteGroupForDemoScenario(groupId: string, demoScenarioId: string, _now: Date): Promise<boolean> {
+    const result = await this.pool.query(
+      `DELETE FROM cop_community_groups
+      WHERE group_id = $1
+        AND metadata->>'demoScenarioId' = $2`,
+      [groupId, demoScenarioId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async listGroups(query: CommunityGroupQuery): Promise<CommunityGroupRecord[]> {
     const params: unknown[] = [];
     const clauses = buildCommunityGroupQueryClauses(query, params);
@@ -855,6 +890,16 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       `DELETE FROM cop_community_reports
       WHERE report_id = $1 AND subject_id = $2`,
       [reportId, subjectId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async deleteReportForDemoScenario(reportId: string, demoScenarioId: string, _now: Date): Promise<boolean> {
+    const result = await this.pool.query(
+      `DELETE FROM cop_community_reports
+      WHERE report_id = $1
+        AND properties->>'demoScenarioId' = $2`,
+      [reportId, demoScenarioId]
     );
     return (result.rowCount ?? 0) > 0;
   }

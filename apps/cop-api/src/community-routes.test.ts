@@ -721,6 +721,81 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("lets another authenticated PoC operator reset seeded flood demo objects", async () => {
+    const issuer = "https://login.zeleznalady.cz/realms/cop-community-demo-reset-test";
+    const keyId = "cop-community-demo-reset-test-key";
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const publicJwk = {
+      ...publicKey.export({ format: "jwk" }),
+      alg: "RS256",
+      kid: keyId,
+      use: "sig"
+    };
+    process.env.COP_AUTH_MODE = "hybrid";
+    process.env.COP_OIDC_ISSUER = issuer;
+    process.env.COP_OIDC_ALLOWED_CLIENTS = "cop-web";
+    process.env.COP_OIDC_REQUIRED_ROLE = "cop_operator";
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ keys: [publicJwk] })));
+    const now = Math.floor(Date.now() / 1000);
+    const operatorToken = signJwt(privateKey, keyId, {
+      azp: "cop-web",
+      email: "op.operator1@example.test",
+      exp: now + 300,
+      iat: now,
+      iss: issuer,
+      name: "PoC Operator 1",
+      preferred_username: "op.operator1",
+      realm_access: {
+        roles: ["cop_operator"]
+      },
+      sub: "subject-op-operator1"
+    });
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const seedResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: "/api/v1/demo/scenarios/flood-central-bohemia/seed"
+    });
+    expect(seedResponse.statusCode).toBe(200);
+    expect(seedResponse.json()).toMatchObject({
+      scenario: {
+        summary: {
+          drawingCount: 3,
+          groupCount: 1,
+          reportCount: 3
+        }
+      }
+    });
+
+    const resetResponse = await app.inject({
+      headers: { authorization: `Bearer ${operatorToken}` },
+      method: "POST",
+      url: "/api/v1/demo/scenarios/flood-central-bohemia/reset"
+    });
+    expect(resetResponse.statusCode).toBe(200);
+    expect(resetResponse.json()).toMatchObject({
+      operation: {
+        deletedDrawings: 3,
+        deletedGroups: 1,
+        deletedReports: 3
+      },
+      scenario: {
+        status: "empty",
+        summary: {
+          drawingCount: 0,
+          groupCount: 0,
+          reportCount: 0
+        }
+      }
+    });
+
+    await app.close();
+  });
+
   it("adds known PoC operator profiles to the seeded flood demo group", async () => {
     const userProfileStore = new InMemoryUserProfileStore();
     await userProfileStore.upsertProfile({

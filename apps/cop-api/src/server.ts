@@ -1263,6 +1263,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function deleteCommunityReportForDemoScenario(reportId: string, demoScenarioId: string, requestNow: Date): Promise<boolean> {
+    try {
+      return await activeCommunityReportStore().deleteReportForDemoScenario(reportId, demoScenarioId, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.deleteReportForDemoScenario(reportId, demoScenarioId, requestNow);
+    }
+  }
+
   async function createCommunityAttachment(input: Parameters<CommunityReportStore["createAttachment"]>[0]) {
     try {
       return await activeCommunityReportStore().createAttachment(input);
@@ -1502,6 +1511,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return false;
   }
 
+  async function deleteCommunityGroupForDemoScenario(groupId: string, demoScenarioId: string, requestNow: Date): Promise<boolean> {
+    try {
+      return await activeCommunityReportStore().deleteGroupForDemoScenario(groupId, demoScenarioId, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.deleteGroupForDemoScenario(groupId, demoScenarioId, requestNow);
+    }
+  }
+
   async function requestCommunityGroupMembership(groupId: string, actor: AuthenticatedActor, requestNow: Date) {
     try {
       return await activeCommunityReportStore().requestGroupMembership(groupId, actorToCommunityActor(actor), requestNow);
@@ -1624,6 +1642,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     } catch (error) {
       markSketchDrawingStoreDegraded(error);
       return sketchDrawingFallbackStore.delete(drawingId, actorToSketchActor(actor), requestNow);
+    }
+  }
+
+  async function deleteSketchDrawingForDemoScenario(drawingId: string, demoScenarioId: string, actor: AuthenticatedActor, requestNow: Date): Promise<boolean> {
+    try {
+      return await activeSketchDrawingStore().deleteForDemoScenario(drawingId, demoScenarioId, actorToSketchActor(actor), requestNow);
+    } catch (error) {
+      markSketchDrawingStoreDegraded(error);
+      return sketchDrawingFallbackStore.deleteForDemoScenario(drawingId, demoScenarioId, actorToSketchActor(actor), requestNow);
     }
   }
 
@@ -1823,17 +1850,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       deletedReports: 0
     };
     for (const report of objects.reports) {
-      if (await deleteCommunityReport(report.reportId, actor, requestNow)) {
+      if (await deleteCommunityReportForDemoScenario(report.reportId, floodDemoScenarioId, requestNow)) {
         operation.deletedReports += 1;
       }
     }
     for (const drawing of objects.drawings) {
-      if (await deleteSketchDrawing(drawing.id, actor, requestNow)) {
+      if (await deleteSketchDrawingForDemoScenario(drawing.id, floodDemoScenarioId, actor, requestNow)) {
         operation.deletedDrawings += 1;
       }
     }
     for (const group of objects.groups) {
-      if (await deleteCommunityGroup(group.groupId, actor, requestNow)) {
+      if (await deleteCommunityGroupForDemoScenario(group.groupId, floodDemoScenarioId, requestNow)) {
         operation.deletedGroups += 1;
       }
     }
