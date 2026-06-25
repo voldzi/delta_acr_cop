@@ -610,6 +610,7 @@ describe("community report routes", () => {
     expect(seedResponse.statusCode).toBe(200);
     expect(seedResponse.json()).toMatchObject({
       operation: {
+        createdAttachments: 6,
         createdDrawings: 3,
         createdGroups: 1,
         createdReports: 3
@@ -633,6 +634,7 @@ describe("community report routes", () => {
     expect(secondSeedResponse.statusCode).toBe(200);
     expect(secondSeedResponse.json()).toMatchObject({
       operation: {
+        createdAttachments: 0,
         createdDrawings: 0,
         createdGroups: 0,
         createdReports: 0
@@ -676,11 +678,22 @@ describe("community report routes", () => {
       url: "/api/v1/community/reports?bbox=13.75,49.75,15.6,50.65"
     });
     expect(reportResponse.statusCode).toBe(200);
-    expect(reportResponse.json()).toMatchObject({
+    const reportBody = reportResponse.json();
+    expect(reportBody).toMatchObject({
       featureCollection: {
         features: expect.arrayContaining([
           expect.objectContaining({
             properties: expect.objectContaining({
+              attachmentCount: 2,
+              attachments: expect.arrayContaining([
+                expect.objectContaining({
+                  contentUrl: expect.stringMatching(/^data:image\/svg\+xml/),
+                  kind: "photo",
+                  metadata: expect.objectContaining({
+                    demoPreviewUrl: expect.stringMatching(/^data:image\/svg\+xml/)
+                  })
+                })
+              ]),
               groupName: "DEMO Povodeň - Středočeský kraj"
             })
           })
@@ -690,6 +703,11 @@ describe("community report routes", () => {
         }
       }
     });
+    const attachmentCount = reportBody.featureCollection.features.reduce(
+      (sum: number, feature: { properties: { attachments?: unknown[] } }) => sum + (feature.properties.attachments?.length ?? 0),
+      0
+    );
+    expect(attachmentCount).toBe(6);
 
     const drawingResponse = await app.inject({
       headers,

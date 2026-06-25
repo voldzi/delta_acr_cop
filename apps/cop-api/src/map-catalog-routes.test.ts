@@ -61,7 +61,7 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
       catalogVersion: string;
-      layers: Array<{ groupId?: string; layerId: string; query?: { providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
+      layers: Array<{ groupId?: string; layerId: string; minZoom?: number; query?: { providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
       providers: Array<{ providerId: string; status: string }>;
       sources: Array<{ feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
     };
@@ -88,6 +88,7 @@ describe("map catalog route", () => {
 
     const mobileNetworkLayer = body.layers.find((layer) => layer.layerId === "public.mobile.network");
     expect(mobileNetworkLayer).toMatchObject({
+      minZoom: 4,
       query: {
         providerLayerIds: ["mobile_network"],
         providerSourceIds: ["mobile_network_model"]
@@ -103,6 +104,11 @@ describe("map catalog route", () => {
         providerLayerIds: ["weather_webcams"],
         providerSourceIds: ["chmi_weather_webcams"]
       },
+      minZoom: 4,
+      selectable: true
+    });
+    expect(body.layers.find((layer) => layer.layerId === "public.safety.flood")).toMatchObject({
+      minZoom: 4,
       selectable: true
     });
 
@@ -148,7 +154,7 @@ describe("map catalog route", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      layers: Array<{ groupId: string; kind?: string; label: string; layerId: string; query?: { categoryIds?: string[]; mode?: string; providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
+      layers: Array<{ groupId: string; kind?: string; label: string; layerId: string; minZoom?: number; query?: { categoryIds?: string[]; mode?: string; providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
       sources: Array<{ feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
     };
     expect(body.layers).toEqual(expect.arrayContaining([
@@ -156,10 +162,22 @@ describe("map catalog route", () => {
         groupId: "communications",
         label: "BTS / komunikační stožáry",
         layerId: "reference.infrastructure.communications",
+        minZoom: 4,
         query: expect.objectContaining({
           categoryIds: ["communications_tower"],
           providerLayerIds: ["mobile"],
           providerSourceIds: ["osm_postgis"]
+        }),
+        selectable: true
+      }),
+      expect.objectContaining({
+        groupId: "communications",
+        label: "Mobilní síť",
+        layerId: "public.mobile.network",
+        minZoom: 4,
+        query: expect.objectContaining({
+          providerLayerIds: ["mobile_network"],
+          providerSourceIds: ["mobile_network_model"]
         }),
         selectable: true
       }),
@@ -178,6 +196,7 @@ describe("map catalog route", () => {
         groupId: "risks.weather",
         label: "Webkamery ČHMÚ",
         layerId: "public.weather.webcams",
+        minZoom: 4,
         query: expect.objectContaining({
           providerLayerIds: ["weather_webcams"],
           providerSourceIds: ["chmi_weather_webcams"]
@@ -361,8 +380,8 @@ describe("map catalog route", () => {
     expect(body.query.layerIds).toEqual(expect.arrayContaining(["public.mobile.network", "public.safety.warnings", "public.safety.flood"]));
     expect(body.query.layerIds).toHaveLength(3);
     expect(body.situation?.query).toMatchObject({
-      layers: ["mobile_network"],
-      sources: ["mobile_network_model"],
+      layers: ["mobile_network", "mobile"],
+      sources: ["mobile_network_model", "osm_postgis"],
       technology: "4G"
     });
     expect(body.safety?.query.layers).toEqual(["warnings", "flood"]);
@@ -404,6 +423,7 @@ describe("map catalog route", () => {
         layerIds: ["public.mobile.network"],
         limit: 20
       },
+      headers: { authorization: "Bearer dev-lab-token" },
       method: "POST",
       url: "/api/v1/map/query"
     });
@@ -411,8 +431,8 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as { situation?: SituationFeatureCollection };
     expect(body.situation?.query).toMatchObject({
-      layers: ["mobile_network"],
-      sources: ["mobile_network_model"],
+      layers: ["mobile_network", "mobile"],
+      sources: ["mobile_network_model", "osm_postgis"],
       technology: "4G"
     });
   });
@@ -494,6 +514,36 @@ describe("map catalog route", () => {
     const body = response.json() as { situation?: SituationFeatureCollection };
     expect(body.situation?.features.map((feature) => feature.properties.category)).toEqual(["communications_tower"]);
     expect(body.situation?.summary.featureCount).toBe(1);
+  });
+
+  it("shows BTS reference context when the mobile network read-model is empty", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const situationDataSource = new FakeProviderCatalogSituationDataSource();
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [13.85, 49.65, 15.35, 50.45],
+        layerIds: ["public.mobile.network"],
+        limit: 20
+      },
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { situation?: SituationFeatureCollection };
+    expect(situationDataSource.lastFeatureQuery).toMatchObject({
+      layers: ["mobile_network", "mobile"],
+      sources: ["mobile_network_model", "osm_postgis"]
+    });
+    expect(body.situation?.features.map((feature) => feature.properties.category)).toEqual(["communications_tower"]);
+    expect(body.situation?.summary.featureCount).toBe(1);
+    expect(body.situation?.warnings.join(" ")).toContain("BTS / komunikační stožáry");
   });
 
   it("queries flight reference layers from the provider catalog", async () => {
@@ -769,6 +819,7 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           geometryTypes: ["Polygon"],
           kind: "vector_features",
           label: "Mobilní síť",
+          minZoom: 9,
           providerLayerId: "mobile_network",
           query: {
             maxFeatures: 250,
@@ -841,6 +892,7 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           geometryTypes: ["Point"],
           kind: "vector_features",
           label: "Komunikační infrastruktura",
+          minZoom: 10,
           providerLayerId: "mobile.osm_postgis.communications",
           query: {
             categoryFilter: ["communications_tower"],
@@ -952,6 +1004,7 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
   }
 
   override async fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
+    this.lastFeatureQuery = query;
     if (!query.layers.includes("mobile")) {
       return {
         ...(await super.fetchFeatures(query, requestNow)),

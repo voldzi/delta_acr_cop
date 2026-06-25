@@ -80,6 +80,7 @@ export interface MatrixTimelineAttachment {
   encrypted?: MatrixEncryptedFileRef;
   fileName: string;
   mediaUrl?: string;
+  thumbnailUrl?: string;
   size?: number;
 }
 

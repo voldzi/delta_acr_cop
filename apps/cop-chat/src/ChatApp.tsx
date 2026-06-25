@@ -135,6 +135,7 @@ interface MediaPreviewItem {
   contentType?: string;
   kind: "document" | "file" | "image" | "location" | "video";
   location?: MatrixLocationShare;
+  posterUrl?: string;
   title: string;
   url?: string;
 }
@@ -185,6 +186,7 @@ interface DemoConversationMedia {
   byteSizeLabel?: string;
   caption?: string;
   kind: "document" | "location" | "photo" | "video";
+  previewUrl?: string;
   title: string;
 }
 
@@ -3173,10 +3175,11 @@ function AttachmentMessage({
   const [failed, setFailed] = React.useState(false);
   const attachment = message.attachment;
   const canRenderMedia = message.kind === "image" || message.kind === "video";
+  const thumbnailUrl = directBrowserThumbnailUrl(message);
   const showCaption = Boolean(attachment && message.body && message.body !== attachment.fileName);
 
   React.useEffect(() => {
-    if (!attachment || !matrixSession || !canRenderMedia || objectUrl) {
+    if (!attachment || !matrixSession || !canRenderMedia || objectUrl || thumbnailUrl) {
       return undefined;
     }
     let cancelled = false;
@@ -3200,7 +3203,7 @@ function AttachmentMessage({
     return () => {
       cancelled = true;
     };
-  }, [attachment, canRenderMedia, matrixSession, message, objectUrl]);
+  }, [attachment, canRenderMedia, matrixSession, message, objectUrl, thumbnailUrl]);
 
   React.useEffect(() => () => {
     if (objectUrl?.startsWith("blob:")) {
@@ -3212,7 +3215,7 @@ function AttachmentMessage({
     return null;
   }
 
-  const preview = matrixMessagePreviewItem(message, objectUrl ?? undefined);
+  const preview = matrixMessagePreviewItem(message, objectUrl ?? undefined, thumbnailUrl ?? undefined);
   return (
     <>
       {showCaption ? <span className="message-text">{message.body}</span> : null}
@@ -3223,10 +3226,16 @@ function AttachmentMessage({
           type="button"
           aria-label={`Otevřít ${attachment.fileName}`}
         >
-          {message.kind === "image" && objectUrl ? <img alt="" src={objectUrl} /> : null}
+          {message.kind === "image" && (objectUrl || thumbnailUrl) ? <img alt="" src={objectUrl ?? thumbnailUrl ?? ""} /> : null}
           {message.kind === "video" && objectUrl ? <video muted playsInline src={objectUrl} /> : null}
-          {message.kind === "image" && !objectUrl ? <PreviewPlaceholder loading={loading} failed={failed} icon={<ImageIcon size={22} />} /> : null}
-          {message.kind === "video" && !objectUrl ? <PreviewPlaceholder loading={loading} failed={failed} icon={<Video size={22} />} /> : null}
+          {message.kind === "video" && !objectUrl && thumbnailUrl ? (
+            <span className="attachment-video-poster">
+              <img alt="" src={thumbnailUrl} />
+              <span><Video size={18} /> Video</span>
+            </span>
+          ) : null}
+          {message.kind === "image" && !objectUrl && !thumbnailUrl ? <PreviewPlaceholder loading={loading} failed={failed} icon={<ImageIcon size={22} />} /> : null}
+          {message.kind === "video" && !objectUrl && !thumbnailUrl ? <PreviewPlaceholder loading={loading} failed={failed} icon={<Video size={22} />} /> : null}
           {message.kind === "file" ? <DocumentThumb fileName={attachment.fileName} /> : null}
         </button>
         <span className="attachment-copy">
@@ -3525,13 +3534,19 @@ function MediaPreviewDialog({ item, onClose }: { item: MediaPreviewItem; onClose
         <div className={clsx("preview-stage", item.kind)}>
           {item.kind === "image" && item.url ? <img alt={item.title} src={item.url} /> : null}
           {item.kind === "video" && item.url ? <video controls src={item.url} /> : null}
+          {item.kind === "video" && !item.url && item.posterUrl ? (
+            <div className="preview-video-poster">
+              <img alt={item.title} src={item.posterUrl} />
+              <span><Video size={22} /> Demo náhled videa</span>
+            </div>
+          ) : null}
           {item.kind === "location" && item.location ? (
             <div className="large-map">
               <MapPin size={32} />
               <strong>{formatCoordinates(item.location)}</strong>
             </div>
           ) : null}
-          {((item.kind !== "image" && item.kind !== "video" && item.kind !== "location") || !item.url) && item.kind !== "location" ? (
+          {((item.kind !== "image" && item.kind !== "video" && item.kind !== "location") || (!item.url && !item.posterUrl)) && item.kind !== "location" ? (
             <div className="document-preview">
               <DocumentThumb fileName={item.title} large />
               <span>{item.contentType ?? "Soubor"}</span>
@@ -3661,12 +3676,20 @@ function ChatInfoPanel({
                 <div className="media-empty">Zatím žádné položky.</div>
               ) : (
                 <div className="media-grid">
-                  {activeMediaMessages.map((message) => (
-                    <button key={message.eventId} onClick={() => onOpenPreview(matrixMessagePreviewItem(message, directBrowserMediaUrl(message) ?? undefined))} type="button">
-                      {message.kind === "location" ? <MapPin size={24} /> : message.kind === "file" ? <FileText size={24} /> : <ImageIcon size={24} />}
-                      <span>{mediaGridLabel(message)}</span>
-                    </button>
-                  ))}
+                  {activeMediaMessages.map((message) => {
+                    const mediaUrl = directBrowserMediaUrl(message);
+                    const thumbnailUrl = directBrowserThumbnailUrl(message);
+                    const gridImageUrl = mediaUrl ?? thumbnailUrl;
+                    return (
+                      <button key={message.eventId} onClick={() => onOpenPreview(matrixMessagePreviewItem(message, mediaUrl ?? undefined, thumbnailUrl ?? undefined))} type="button">
+                        {gridImageUrl && (message.kind === "image" || message.kind === "video") ? (
+                          <img alt="" src={gridImageUrl} />
+                        ) : message.kind === "location" ? <MapPin size={24} /> : message.kind === "file" ? <FileText size={24} /> : <ImageIcon size={24} />}
+                        {message.kind === "video" && gridImageUrl ? <strong className="media-grid-video-badge"><Video size={14} /> Video</strong> : null}
+                        <span>{mediaGridLabel(message)}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -4455,7 +4478,8 @@ function parseDemoConversationMedia(value: unknown): DemoConversationMedia | nul
     kind,
     title,
     ...(typeof raw.byteSizeLabel === "string" && raw.byteSizeLabel.trim() ? { byteSizeLabel: raw.byteSizeLabel.trim() } : {}),
-    ...(typeof raw.caption === "string" && raw.caption.trim() ? { caption: raw.caption.trim() } : {})
+    ...(typeof raw.caption === "string" && raw.caption.trim() ? { caption: raw.caption.trim() } : {}),
+    ...(typeof raw.previewUrl === "string" && raw.previewUrl.trim() ? { previewUrl: raw.previewUrl.trim() } : {})
   };
 }
 
@@ -4479,10 +4503,13 @@ function demoMediaTimelineMessage(group: CommunityGroup, item: DemoConversationM
     };
   }
   const kind = item.kind === "photo" ? "image" : item.kind === "video" ? "video" : "file";
+  const previewUrl = item.previewUrl ?? demoMediaPreviewUrl(item);
   return {
     attachment: {
       contentType: demoMediaContentType(item),
       fileName: item.title,
+      ...(item.kind === "photo" && previewUrl ? { mediaUrl: previewUrl } : {}),
+      ...(previewUrl ? { thumbnailUrl: previewUrl } : {}),
       ...(parseDemoByteSize(item.byteSizeLabel) ? { size: parseDemoByteSize(item.byteSizeLabel) } : {})
     },
     body: item.caption ?? item.title,
@@ -4493,6 +4520,22 @@ function demoMediaTimelineMessage(group: CommunityGroup, item: DemoConversationM
     senderDisplayName: "Sdílená média",
     timestamp
   };
+}
+
+function demoMediaPreviewUrl(item: DemoConversationMedia): string | undefined {
+  if (item.kind === "location") {
+    return undefined;
+  }
+  const kindLabel = item.kind === "photo" ? "FOTO" : item.kind === "video" ? "VIDEO" : "PDF";
+  const accent = item.kind === "photo" ? "#7dd3fc" : item.kind === "video" ? "#fbbf24" : "#f87171";
+  const title = escapeSvgText(item.title);
+  const caption = escapeSvgText(item.caption ?? "Demo náhled");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="540" viewBox="0 0 900 540"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0f172a"/><stop offset="1" stop-color="#111827"/></linearGradient><pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0v48" fill="none" stroke="#ffffff" stroke-opacity=".07"/></pattern></defs><rect width="900" height="540" fill="url(#bg)"/><rect width="900" height="540" fill="url(#grid)"/><rect x="56" y="56" width="788" height="428" rx="28" fill="#020617" fill-opacity=".58" stroke="${accent}" stroke-opacity=".8" stroke-width="2"/><text x="92" y="132" fill="${accent}" font-family="Inter,Arial,sans-serif" font-size="34" font-weight="800">${kindLabel}</text><text x="92" y="242" fill="#f8fafc" font-family="Inter,Arial,sans-serif" font-size="46" font-weight="800">${title}</text><text x="92" y="320" fill="#cbd5e1" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="600">${caption}</text><text x="92" y="410" fill="#94a3b8" font-family="Inter,Arial,sans-serif" font-size="20" font-weight="700">COP / CSM demo kontext</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function escapeSvgText(value: string): string {
+  return value.replace(/&/gu, "&amp;").replace(/</gu, "&lt;").replace(/>/gu, "&gt;").replace(/"/gu, "&quot;");
 }
 
 function parseDemoLocation(item: DemoConversationMedia): MatrixLocationShare {
@@ -4728,7 +4771,7 @@ function attachmentIndicator(message: MatrixTimelineMessage): React.ReactNode {
   return null;
 }
 
-function matrixMessagePreviewItem(message: MatrixTimelineMessage, url?: string): MediaPreviewItem {
+function matrixMessagePreviewItem(message: MatrixTimelineMessage, url?: string, posterUrl?: string): MediaPreviewItem {
   if (message.kind === "location" && message.location) {
     return {
       caption: message.location.source === "device" ? "Poloha ze zařízení" : "Poloha z mapy",
@@ -4752,19 +4795,30 @@ function matrixMessagePreviewItem(message: MatrixTimelineMessage, url?: string):
       : attachment.contentType?.includes("pdf") || /\.pdf$/iu.test(attachment.fileName)
         ? "document"
         : "file";
+  const previewUrl = url ?? (kind === "image" ? posterUrl : undefined);
   return {
     contentType: attachment.encrypted ? "chráněná příloha" : attachment.contentType ?? "soubor",
     kind,
     title: attachment.fileName,
     ...(attachment.size ? { byteSizeLabel: formatBytes(attachment.size) } : {}),
     ...(message.body && message.body !== attachment.fileName ? { caption: message.body } : {}),
-    ...(url ? { url } : {})
+    ...(posterUrl ? { posterUrl } : {}),
+    ...(previewUrl ? { url: previewUrl } : {})
   };
 }
 
 function directBrowserMediaUrl(message: MatrixTimelineMessage): string | null {
   const url = message.attachment?.mediaUrl;
-  return url && url.startsWith("http") && !message.attachment?.encrypted ? url : null;
+  return url && directBrowserSafeUrl(url) && !message.attachment?.encrypted ? url : null;
+}
+
+function directBrowserThumbnailUrl(message: MatrixTimelineMessage): string | null {
+  const url = message.attachment?.thumbnailUrl;
+  return url && directBrowserSafeUrl(url) && !message.attachment?.encrypted ? url : null;
+}
+
+function directBrowserSafeUrl(url: string): boolean {
+  return url.startsWith("https://") || url.startsWith("http://") || url.startsWith("data:image/");
 }
 
 function attachmentMeta(message: MatrixTimelineMessage): string {

@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ClipboardList,
   Database,
+  FileText,
   Gauge,
   HelpCircle,
   History,
@@ -332,6 +333,7 @@ const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["maneuver", "Manévr"]
 ];
 const defaultAoiCenter = { lat: 50.0755, lon: 14.4378 };
+const mapFeatureFetchDelayMs = 450;
 const defaultMapBounds: MapBounds = { east: 19.1, north: 51.2, south: 48.5, west: 12 };
 const messagingDockWidthStorageKey = "cop.messaging.dockWidth.v1";
 
@@ -1473,7 +1475,7 @@ export function App() {
         bbox: queryBounds,
         filters,
         layerIds: catalogLayerIds,
-        limit: 250,
+        limit: 500,
       })
         .then((response) => {
           if (cancelled) {
@@ -1497,7 +1499,7 @@ export function App() {
             setSituationWarnings([error instanceof Error ? error.message : "Situační kontext není dostupný."]);
           }
         });
-    }, 2200);
+    }, mapFeatureFetchDelayMs);
 
     return () => {
       cancelled = true;
@@ -1535,7 +1537,7 @@ export function App() {
       fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
         layerIds: catalogLayerIds,
-        limit: 250
+        limit: 500
       })
         .then((response) => {
           if (cancelled) {
@@ -1557,7 +1559,7 @@ export function App() {
             setSafetyWarnings([error instanceof Error ? error.message : "Bezpečnostní vrstvy nejsou dostupné."]);
           }
         });
-    }, 2200);
+    }, mapFeatureFetchDelayMs);
 
     return () => {
       cancelled = true;
@@ -1617,7 +1619,7 @@ export function App() {
             setFlightWarnings([error instanceof Error ? error.message : "Letecké reference nejsou dostupné."]);
           }
         });
-    }, 2200);
+    }, mapFeatureFetchDelayMs);
 
     return () => {
       cancelled = true;
@@ -1955,6 +1957,28 @@ export function App() {
   const mapLayerLabel = React.useMemo(
     () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds, visibleFlightLayerCount, visibleCommunityLayerCount, visibleMissionArenaLayerCount, outlineBoundaryLayerEnabled, visibleSketchLayerEnabled ? sketchDrawings.length : 0),
     [outlineBoundaryLayerEnabled, sketchDrawings.length, visibleCommunityLayerCount, visibleFlightLayerCount, visibleMissionArenaLayerCount, visibleSafetyLayerIds, visibleSituationLayerIds, visibleSketchLayerEnabled, visibleTakLayerIds, visibleTrackLayerIds]
+  );
+  const mapLayerDetailLabel = React.useMemo(
+    () => buildCatalogLayerSummary(mapCatalog, effectiveVisibleCatalogLayerIds, catalogLayerFeatureCount, catalogLayerStatus),
+    [
+      communityFeatures,
+      communityStatus,
+      effectiveVisibleCatalogLayerIds,
+      flightFeatures,
+      flightStatus,
+      mapCatalog,
+      missionArenaFeatures,
+      missionArenaStatus,
+      safetyFeatures,
+      safetyStatus,
+      situationFeatures,
+      situationStatus,
+      sketchDrawings.length,
+      sketchStatus,
+      takFeatures,
+      takStatus,
+      visibleObjects
+    ]
   );
   const mapEmptyMessage = React.useMemo(
     () =>
@@ -4142,6 +4166,7 @@ export function App() {
               hasProximityAlerts={proximityAlerts.length > 0}
               hasSituationContextEnabled={visibleSituationContextEnabled}
               initialView={mapView}
+              mapLayerDetailLabel={mapLayerDetailLabel}
               mapLayerLabel={mapLayerLabel}
               situationFeatures={combinedSituationFeatures}
               onBoundsChange={setMapBounds}
@@ -5075,6 +5100,10 @@ function CommunityMediaGallery({
   const spatialMode = attachment?.kind === "video" ? communityAttachmentSpatialMode(attachment) : "none";
   const xrVideoUrl = attachment ? buildXrVideoUrl(attachment) : null;
   const xrDerivativeStatus = attachment ? communityAttachmentXrDerivativeStatus(attachment) : null;
+  const previewUrl = attachment ? communityAttachmentPreviewUrl(attachment) : undefined;
+  const photoUrl = attachment?.kind === "photo" ? attachment.contentUrl ?? previewUrl : undefined;
+  const videoPosterUrl = attachment?.kind === "video" ? previewUrl : undefined;
+  const documentPreviewUrl = attachment?.kind === "document" ? previewUrl : undefined;
   if (!attachment) {
     return null;
   }
@@ -5095,16 +5124,31 @@ function CommunityMediaGallery({
           {gallery.attachments.length > 1 ? (
             <button aria-label="Předchozí médium" className="community-gallery-nav prev" onClick={() => onMove(-1)} type="button">‹</button>
           ) : null}
-          {attachment.contentUrl && attachment.kind === "photo" ? (
-            <img alt={attachment.fileName ?? "Fotografie hlášení"} src={attachment.contentUrl} />
+          {photoUrl ? (
+            <img alt={attachment.fileName ?? "Fotografie hlášení"} src={photoUrl} />
           ) : null}
           {attachment.contentUrl && attachment.kind === "video" ? (
             <video controls playsInline preload="metadata" src={attachment.contentUrl} />
           ) : null}
+          {!attachment.contentUrl && videoPosterUrl ? (
+            <div className="community-gallery-video-poster">
+              <img alt={attachment.fileName ?? "Video hlášení"} src={videoPosterUrl} />
+              <span>
+                <Play size={28} />
+                Demo náhled videa
+              </span>
+            </div>
+          ) : null}
           {attachment.contentUrl && attachment.kind === "document" ? (
             <iframe src={attachment.contentUrl} title={attachment.fileName ?? "PDF příloha"} />
           ) : null}
-          {!attachment.contentUrl ? (
+          {!attachment.contentUrl && documentPreviewUrl ? (
+            <div className="community-gallery-document-preview">
+              <img alt={attachment.fileName ?? "PDF příloha"} src={documentPreviewUrl} />
+              <strong>{attachment.fileName ?? "PDF příloha"}</strong>
+            </div>
+          ) : null}
+          {!attachment.contentUrl && !previewUrl ? (
             <div className="community-gallery-denied">
               {attachment.accessDenied ? "K tomuto médiu nemáte oprávnění." : "Médium zatím není dostupné."}
             </div>
@@ -8493,7 +8537,7 @@ function CatalogLayerDrawer({
                 <em>{getFeatureCount(layer)}</em>
               </div>
               <div className="catalog-layer-meta">
-                <span className={`catalog-status ${status}`}>{situationStatusLabel(status)}</span>
+                <span className={`catalog-status ${enabled ? status : "disabled"}`}>{enabled ? catalogLayerStatusLabel(status) : "vypnuto"}</span>
                 <span>{catalogLayerProviderLabel(layer)}</span>
               </div>
               {enabled && layer.filters?.some((filter) => filter.filterId === "technology") ? (
@@ -9713,23 +9757,31 @@ function CommunityAttachmentPreview({
     <div className="community-media-list">
       {attachments.map((attachment, index) => {
         const spatialMode = attachment.kind === "video" ? communityAttachmentSpatialMode(attachment) : "none";
+        const previewUrl = communityAttachmentPreviewUrl(attachment);
         const xrVideoUrl = buildXrVideoUrl(attachment);
         const xrDerivativeStatus = communityAttachmentXrDerivativeStatus(attachment);
+        const photoUrl = attachment.kind === "photo" ? attachment.contentUrl ?? previewUrl : undefined;
+        const videoPosterUrl = attachment.kind === "video" ? previewUrl : undefined;
+        const documentPreviewUrl = attachment.kind === "document" ? previewUrl : undefined;
         return (
           <div className="community-media-item" key={attachment.attachmentId}>
             <div className="community-media-meta">
               <strong>{attachment.fileName ?? communityAttachmentKindLabel(attachment.kind)}</strong>
               <span>{communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}</span>
             </div>
-            {attachment.contentUrl && attachment.kind === "photo" ? (
+            {photoUrl ? (
               <button className="community-media-open" onClick={() => onOpenGallery?.(attachments, index)} type="button">
-                <img alt={attachment.fileName ?? "Fotografie hlášení"} src={attachment.contentUrl} />
+                <img alt={attachment.fileName ?? "Fotografie hlášení"} src={photoUrl} />
               </button>
             ) : null}
-            {attachment.contentUrl && attachment.kind === "video" ? (
+            {attachment.kind === "video" && (attachment.contentUrl || videoPosterUrl) ? (
               <>
                 <button className="community-media-open community-video-preview-button" onClick={() => onOpenGallery?.(attachments, index)} type="button">
-                  <video muted playsInline preload="metadata" src={communityVideoPreviewUrl(attachment.contentUrl)} />
+                  {attachment.contentUrl ? (
+                    <video muted playsInline preload="metadata" src={communityVideoPreviewUrl(attachment.contentUrl)} />
+                  ) : videoPosterUrl ? (
+                    <img alt={attachment.fileName ?? "Video hlášení"} src={videoPosterUrl} />
+                  ) : null}
                   <span className="community-video-preview-overlay" aria-hidden="true">
                     <Play size={22} />
                     <strong>Přehrát video</strong>
@@ -9753,12 +9805,16 @@ function CommunityAttachmentPreview({
                 ) : null}
               </>
             ) : null}
-            {attachment.contentUrl && attachment.kind === "document" ? (
-              <button className="mini-button community-document-link" onClick={() => onOpenGallery?.(attachments, index)} type="button">
-                Otevřít PDF
+            {attachment.kind === "document" ? (
+              <button className="community-document-preview-card" onClick={() => onOpenGallery?.(attachments, index)} type="button">
+                {documentPreviewUrl ? <img alt={attachment.fileName ?? "PDF příloha"} src={documentPreviewUrl} /> : <FileText size={30} />}
+                <span>
+                  <strong>{attachment.fileName ?? "PDF příloha"}</strong>
+                  <small>{attachment.contentUrl ? "Otevřít PDF" : "Demo náhled dokumentu"}</small>
+                </span>
               </button>
             ) : null}
-            {!attachment.contentUrl ? (
+            {!attachment.contentUrl && !previewUrl ? (
               <span className="empty-mini">
                 {attachment.accessDenied ? "Médium je dostupné jen oprávněným uživatelům nebo členům skupiny." : "Příloha zatím nemá dostupný náhled."}
               </span>
@@ -10375,6 +10431,15 @@ function communityVideoPreviewUrl(contentUrl: string): string {
     return contentUrl;
   }
   return `${contentUrl}#t=0.1`;
+}
+
+function communityAttachmentPreviewUrl(attachment: { metadata?: Record<string, unknown> }): string | undefined {
+  const metadata = attachment.metadata ?? {};
+  const value = stringProperty(metadata.demoPreviewUrl)
+    ?? stringProperty(metadata.previewUrl)
+    ?? stringProperty(metadata.thumbnailUrl)
+    ?? stringProperty(metadata.demoContentUrl);
+  return value && /^(data:image\/|\/api\/v1\/community\/|https:\/\/)/u.test(value) ? value : undefined;
 }
 
 function communityAttachmentXrDerivativeStatus(attachment: { derivatives?: NonNullable<SituationFeature["properties"]["attachments"]>[number]["derivatives"] }): string | null {
@@ -11902,6 +11967,13 @@ function situationStatusLabel(status: SituationLayerStatus): string {
     zoom: "přiblížit"
   };
   return labels[status];
+}
+
+function catalogLayerStatusLabel(status: SituationLayerStatus): string {
+  if (status === "disabled") {
+    return "zdroj nedostupný";
+  }
+  return situationStatusLabel(status);
 }
 
 function situationStatusTone(status: SituationLayerStatus): "neutral" | "ok" | "warn" {
@@ -13481,6 +13553,42 @@ function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: Situat
     parts.push(`${takLayerIds.length} TAK`);
   }
   return parts.length > 0 ? parts.join(" + ") : "žádná vrstva";
+}
+
+function buildCatalogLayerSummary(
+  catalog: MapCatalogResponse | null,
+  selectedLayerIds: string[],
+  getFeatureCount: (layer: MapCatalogLayer) => number,
+  getStatus: (layer: MapCatalogLayer) => SituationLayerStatus
+): string {
+  if (!catalog || selectedLayerIds.length === 0) {
+    return "Zapněte vrstvu v katalogu vlevo";
+  }
+  const selected = new Set(selectedLayerIds);
+  const layers = selectableCatalogLayers(catalog)
+    .filter((layer) => selected.has(layer.layerId) && isImplementedCatalogLayer(layer));
+  if (layers.length === 0) {
+    return "Žádná zobrazitelná vrstva není zapnutá";
+  }
+  const totalFeatures = layers.reduce((sum, layer) => sum + getFeatureCount(layer), 0);
+  const loading = layers.some((layer) => getStatus(layer) === "loading");
+  const degraded = layers.some((layer) => getStatus(layer) === "degraded");
+  const disabled = layers.some((layer) => getStatus(layer) === "disabled");
+  const highlightedLayers = layers
+    .map((layer) => ({ count: getFeatureCount(layer), label: layer.label }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "cs"))
+    .slice(0, 3)
+    .map((layer) => `${layer.label}: ${layer.count}`);
+  const status = loading
+    ? "načítám"
+    : degraded
+      ? "omezeno"
+      : disabled
+        ? "některé zdroje nedostupné"
+        : totalFeatures === 0
+          ? "bez prvků v záběru"
+          : "živě";
+  return `${layers.length} vrstev · ${totalFeatures} prvků · ${status}${highlightedLayers.length > 0 ? ` · ${highlightedLayers.join(" · ")}` : ""}`;
 }
 
 function readInitialAffiliationScope(value: string | undefined): AffiliationScope {

@@ -1832,6 +1832,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const before = await listFloodDemoObjects(actor);
     let group = before.groups[0] ?? null;
     const operation = {
+      createdAttachments: 0,
       createdDrawings: 0,
       createdGroups: 0,
       createdReports: 0,
@@ -1859,6 +1860,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     for (const seed of floodDemoReportSeeds(group.groupId, requestNow)) {
       const existingReport = reportsByTitle.get(seed.title);
       if (existingReport && isFloodDemoReportSeedCurrent(existingReport, seed)) {
+        operation.createdAttachments += await ensureFloodDemoReportAttachments(existingReport, seed, actor, requestNow);
         continue;
       }
       if (existingReport) {
@@ -1879,6 +1881,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         title: seed.title,
         visibility: seed.visibility
       }, requestNow);
+      operation.createdAttachments += await ensureFloodDemoReportAttachments(report, seed, actor, requestNow);
       await submitCommunityReport(report.reportId, actor, requestNow);
       operation.createdReports += 1;
     }
@@ -1911,6 +1914,56 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ...operation
     });
     return floodDemoStatusPayload(await listFloodDemoObjects(actor), requestNow, operation);
+  }
+
+  async function ensureFloodDemoReportAttachments(
+    report: CommunityReportRecord,
+    seed: ReturnType<typeof floodDemoReportSeeds>[number],
+    actor: AuthenticatedActor,
+    requestNow: Date
+  ): Promise<number> {
+    const existingFileNames = new Set(report.attachments
+      .filter((attachment) => attachment.status === "uploaded")
+      .map((attachment) => attachment.fileName)
+      .filter((value): value is string => Boolean(value)));
+    let created = 0;
+    for (const attachmentSeed of seed.attachments ?? []) {
+      if (existingFileNames.has(attachmentSeed.fileName)) {
+        continue;
+      }
+      const attachmentId = crypto.randomUUID();
+      const objectKey = `demo-scenarios/${floodDemoScenarioId}/${report.reportId}/${attachmentId}/${attachmentSeed.fileName}`;
+      await createCommunityAttachment({
+        attachmentId,
+        bucket: "demo-inline",
+        byteSize: attachmentSeed.byteSize,
+        contentType: attachmentSeed.contentType,
+        fileName: attachmentSeed.fileName,
+        kind: attachmentSeed.kind,
+        metadata: {
+          access: { audience: "public" },
+          demo: true,
+          demoContentUrl: attachmentSeed.contentUrl,
+          demoPreviewUrl: attachmentSeed.previewUrl,
+          demoScenarioId: floodDemoScenarioId,
+          previewCaption: attachmentSeed.caption
+        },
+        objectKey,
+        reportId: report.reportId,
+        subjectId: actor.subjectId,
+        uploadExpiresAt: isoAfter(requestNow, 1)
+      });
+      await completeCommunityAttachment({
+        attachmentId,
+        byteSize: attachmentSeed.byteSize,
+        checksumSha256: createHash("sha256").update(`${report.reportId}:${attachmentSeed.fileName}`).digest("hex"),
+        completedAt: requestNow.toISOString(),
+        reportId: report.reportId,
+        subjectId: actor.subjectId
+      });
+      created += 1;
+    }
+    return created;
   }
 
   async function refreshFloodDemoGroupMetadata(
@@ -7310,6 +7363,10 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
       for (const sourceId of layer.query.providerSourceIds ?? []) {
         situationSources.add(sourceId);
       }
+      if (layer.layerId === "public.mobile.network") {
+        situationLayers.add("mobile");
+        situationSources.add("osm_postgis");
+      }
       situationTechnology = situationTechnology ?? readMapQueryTechnology(request.filters[layer.layerId]) ?? readDefaultTechnologyFilter(layer);
     } else if (layer.query.providerId === "sim.safety-data") {
       for (const layerId of layer.query.providerLayerIds ?? []) {
@@ -7626,6 +7683,15 @@ function filterSituationCollectionForCatalogLayers(
   const features = collection.features.filter((feature) => situationLayers.some((layer) => situationFeatureMatchesCatalogLayer(feature, layer)));
   const sourceIds = new Set(features.map((feature) => feature.properties.sourceId));
   const sources = sourceIds.size > 0 ? collection.sources.filter((source) => sourceIds.has(source.sourceId)) : collection.sources;
+  const selectedMobileNetwork = situationLayers.some((layer) => layer.layerId === "public.mobile.network");
+  const hasMobileNetworkModel = features.some((feature) => feature.properties.layer === "mobile_network");
+  const hasSupportingBts = features.some(isMobileNetworkSupportingBtsFeature);
+  const warnings = selectedMobileNetwork && !hasMobileNetworkModel && hasSupportingBts
+    ? Array.from(new Set([
+        ...collection.warnings,
+        "Mobilní síť zatím nemá dostupné reálné modelové buňky; mapa zobrazuje BTS / komunikační stožáry jako referenční kontext."
+      ]))
+    : collection.warnings;
   return {
     ...collection,
     features,
@@ -7634,12 +7700,17 @@ function filterSituationCollectionForCatalogLayers(
       ...collection.summary,
       featureCount: features.length,
       sourceCount: sources.length,
-      staleFeatureCount: features.filter((feature) => feature.properties.stale).length
-    }
+      staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
+      warningCount: warnings.length
+    },
+    warnings
   };
 }
 
 function situationFeatureMatchesCatalogLayer(feature: SituationFeature, layer: MapCatalogLayer): boolean {
+  if (layer.layerId === "public.mobile.network" && isMobileNetworkSupportingBtsFeature(feature)) {
+    return true;
+  }
   const providerLayerIds = layer.query.providerLayerIds ?? [];
   if (providerLayerIds.length > 0) {
     const normalizedProviderLayerIds = providerLayerIds
@@ -7662,6 +7733,12 @@ function situationFeatureMatchesCatalogLayer(feature: SituationFeature, layer: M
     return false;
   }
   return true;
+}
+
+function isMobileNetworkSupportingBtsFeature(feature: SituationFeature): boolean {
+  return feature.properties.layer === "mobile"
+    && feature.properties.sourceId === "osm_postgis"
+    && normalizeSituationCategoryId(feature.properties.category ?? "") === "communications_tower";
 }
 
 function normalizeSituationCategoryId(value: string): string {
@@ -7963,6 +8040,10 @@ function floodDemoReportSeeds(groupId: string, requestNow: Date) {
   const groupName = "DEMO Povodeň - Středočeský kraj";
   return [
     {
+      attachments: [
+        floodDemoAttachmentSeed("photo", "IMG_4821.jpg", "Rozliv u silnice", "Voda zasahuje okraj komunikace u Roztok."),
+        floodDemoAttachmentSeed("document", "Situacni_zprava_Roztoky.pdf", "Koordinační PDF", "Souhrn opatření, kontakty a doporučená trasa.")
+      ],
       category: "flood" as const,
       description: "Voda postupně zaplavuje podjezd. Příjezd je vhodný jen pro složky s vyšší průjezdností.",
       location: { accuracyM: 20, lat: 50.1585, lon: 14.3974, source: "manual" as const },
@@ -7978,6 +8059,10 @@ function floodDemoReportSeeds(groupId: string, requestNow: Date) {
       visibility: "public" as const
     },
     {
+      attachments: [
+        floodDemoAttachmentSeed("photo", "Most_Zbraslav.jpg", "Poškozený most", "Viditelné narušení krajnice a omezený průjezd."),
+        floodDemoAttachmentSeed("video", "Most_Zbraslav_prutok.mp4", "Průtok u mostu", "Krátké video dokumentuje rychlost proudění.")
+      ],
       category: "bridge_damage" as const,
       description: "Most má poškozený kraj vozovky a je nutné jej označit jako rizikové místo.",
       location: { accuracyM: 18, lat: 49.9781, lon: 14.392, source: "manual" as const },
@@ -7993,6 +8078,10 @@ function floodDemoReportSeeds(groupId: string, requestNow: Date) {
       visibility: "public" as const
     },
     {
+      attachments: [
+        floodDemoAttachmentSeed("photo", "Nabrezi_uzavirka.jpg", "Uzavřené nábřeží", "Stojící voda a naplaveniny na vozovce."),
+        floodDemoAttachmentSeed("document", "Objizdna_trasa.pdf", "Objízdná trasa", "Stručný přehled navržené objízdné trasy.")
+      ],
       category: "road_blockage" as const,
       description: "Nábřeží je neprůjezdné kvůli stojící vodě a naplaveninám.",
       location: { accuracyM: 15, lat: 50.0912, lon: 14.414, source: "manual" as const },
@@ -8008,6 +8097,48 @@ function floodDemoReportSeeds(groupId: string, requestNow: Date) {
       visibility: "public" as const
     }
   ];
+}
+
+function floodDemoAttachmentSeed(kind: CommunityAttachmentKind, fileName: string, caption: string, summary: string) {
+  const isDocument = kind === "document";
+  const contentType = kind === "photo" ? "image/png" : kind === "video" ? "video/mp4" : "application/pdf";
+  const previewUrl = floodDemoPreviewDataUrl(kind, caption, summary);
+  return {
+    byteSize: kind === "video" ? 18_000_000 : isDocument ? 1_200_000 : 2_400_000,
+    caption,
+    contentType,
+    ...(kind === "photo" ? { contentUrl: previewUrl } : {}),
+    fileName,
+    kind,
+    previewUrl
+  };
+}
+
+function floodDemoPreviewDataUrl(kind: CommunityAttachmentKind, title: string, subtitle: string): string {
+  const palette = kind === "photo"
+    ? { accent: "#0891b2", bg: "#dff7f2", fg: "#083344", icon: "IMG" }
+    : kind === "video"
+      ? { accent: "#dc2626", bg: "#fee2e2", fg: "#450a0a", icon: "▶" }
+      : { accent: "#2563eb", bg: "#dbeafe", fg: "#172554", icon: "PDF" };
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">
+<defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="${palette.bg}" offset="0"/><stop stop-color="#ffffff" offset="1"/></linearGradient></defs>
+<rect width="960" height="640" fill="url(#g)"/>
+<path d="M0 450 C160 390 270 520 430 460 C600 395 735 425 960 350 L960 640 L0 640 Z" fill="${palette.accent}" opacity=".18"/>
+<circle cx="145" cy="130" r="72" fill="${palette.accent}" opacity=".9"/>
+<text x="145" y="145" text-anchor="middle" font-family="Arial, sans-serif" font-size="${kind === "video" ? 70 : 42}" font-weight="700" fill="#fff">${escapeXml(palette.icon)}</text>
+<text x="88" y="300" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="${palette.fg}">${escapeXml(title)}</text>
+<text x="88" y="360" font-family="Arial, sans-serif" font-size="30" fill="${palette.fg}" opacity=".82">${escapeXml(subtitle)}</text>
+<text x="88" y="552" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="${palette.accent}">DEMO Povodeň - Středočeský kraj</text>
+</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function isFloodDemoReportSeedCurrent(report: CommunityReportRecord, seed: { properties: Record<string, unknown> }): boolean {
@@ -8899,11 +9030,12 @@ function communityAttachmentResponseItem(
   actor: AuthenticatedActor | null = null,
   requestNow = new Date()
 ): CommunityAttachmentResponse {
+  const demoContentUrl = communityAttachmentDemoContentUrl(attachment);
   return {
     ...attachment,
     ...communityAttachmentDerivativeResponse(attachment, reportId, canReadMedia, actor, requestNow),
     ...(attachment.status === "uploaded" && canReadMedia
-      ? { contentUrl: communityAttachmentContentUrl(reportId, attachment.attachmentId, actor, requestNow) }
+      ? { contentUrl: demoContentUrl ?? communityAttachmentContentUrl(reportId, attachment.attachmentId, actor, requestNow) }
       : {})
   };
 }
@@ -9140,6 +9272,12 @@ function communityReportsFeatureCollection(
   };
 }
 
+function communityAttachmentDemoContentUrl(attachment: { metadata?: Record<string, unknown> }): string | undefined {
+  const metadata = attachment.metadata ?? {};
+  const value = metadata.demoContentUrl ?? metadata.contentUrl;
+  return typeof value === "string" && /^(data:|\/api\/v1\/community\/|https:\/\/)/u.test(value) ? value : undefined;
+}
+
 function communityFeatureAttachments(
   report: CommunityReportRecord,
   actor: AuthenticatedActor | null,
@@ -9163,6 +9301,7 @@ function communityFeatureAttachments(
     .map((attachment) => {
       const canReadMedia = canReadCommunityAttachment(report, attachment, actor, actorGroupIds);
       const existingContentUrl = (attachment as CommunityAttachmentResponse).contentUrl;
+      const demoContentUrl = communityAttachmentDemoContentUrl(attachment);
       return {
         access: communityAttachmentAccessSummary(attachment),
         ...(canReadMedia ? {} : { accessDenied: true }),
@@ -9173,7 +9312,9 @@ function communityFeatureAttachments(
           ? {
               contentUrl: typeof existingContentUrl === "string" && existingContentUrl
                 ? existingContentUrl
-                : communityAttachmentContentUrl(report.reportId, attachment.attachmentId, actor, requestNow)
+                : demoContentUrl
+                  ? demoContentUrl
+                  : communityAttachmentContentUrl(report.reportId, attachment.attachmentId, actor, requestNow)
             }
           : {}),
         ...communityAttachmentDerivativeResponse(attachment, report.reportId, canReadMedia, actor, requestNow),

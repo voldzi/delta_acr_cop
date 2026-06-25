@@ -465,6 +465,7 @@ interface CopMapProps {
   objects: CopObject[];
   emptyMessage: string | null;
   hasSituationContextEnabled: boolean;
+  mapLayerDetailLabel: string;
   mapLayerLabel: string;
   mapInteractionSuspended?: boolean;
   mobileSketchControlsOpen?: boolean;
@@ -654,6 +655,7 @@ export function CopMap({
   objects,
   emptyMessage,
   hasSituationContextEnabled,
+  mapLayerDetailLabel,
   mapLayerLabel,
   mapInteractionSuspended = false,
   mobileSketchControlsOpen = false,
@@ -3577,6 +3579,7 @@ export function CopMap({
           <div>
             <span>Vrstvy</span>
             <strong>{mapLayerLabel}</strong>
+            <small>{mapLayerDetailLabel}</small>
           </div>
           <button
             className={`map-action ${autoFit ? "active" : ""}`}
@@ -6209,7 +6212,7 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
   }
   if (isCommunicationTowerFeature(feature)) {
     return [
-      "Komunikační infrastruktura",
+      "BTS / komunikační stožár",
       formatCommunicationTowerLabel(feature),
       "stav operátora neznámý",
       typeof feature.properties.confidence === "number" ? `${Math.round(feature.properties.confidence * 100)} %` : undefined,

@@ -287,7 +287,7 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
       layerId: layer.recommendedCatalogLayerId,
       legal: layer.legal,
       maxZoom: layer.maxZoom,
-      minZoom: layer.minZoom,
+      minZoom: minZoomForCatalogLayer(layer),
       preferredProviderId: layer.preferredProviderId,
       provenance: {
         sourceIds: uniqueStrings((layer.sourceIds ?? providerSourceIds).map((sourceId) => `${providerId}:${sourceId}`)),
@@ -321,6 +321,19 @@ function geometryTypesForCatalogLayer(layer: ProviderCatalogLayer): string[] | u
     return uniqueStrings([...geometryTypes, "Polygon", "MultiPolygon"]);
   }
   return geometryTypes.length > 0 ? geometryTypes : undefined;
+}
+
+function minZoomForCatalogLayer(layer: ProviderCatalogLayer): number | undefined {
+  const layerId = layer.recommendedCatalogLayerId;
+  if (
+    layerId === "public.mobile.network"
+    || layerId === "reference.infrastructure.communications"
+    || layerId === "public.weather.webcams"
+    || layerId === "public.safety.flood"
+  ) {
+    return Math.min(layer.minZoom ?? 4, 4);
+  }
+  return layer.minZoom;
 }
 
 function buildProviderCatalogSources(catalog: ProviderMapCatalog, includeDiagnostics: boolean, includePartner: boolean): MapCatalogSource[] {
@@ -566,7 +579,7 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       layerId: "public.safety.flood",
       legal: legalFromSource(findSource(sources, "chmi_hydro")),
       maxZoom: 18,
-      minZoom: 7,
+      minZoom: 4,
       provenance: {
         sourceIds: ["sim.safety-data:chmi_hydro"]
       },
@@ -818,7 +831,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       layerId: "public.mobile.network",
       legal: legalFromSource(findSource(sources, "mobile_network_model"), ["Modelový odhad, ne garantované pokrytí ani potvrzený výpadek operátora."]),
       maxZoom: 18,
-      minZoom: 6,
+      minZoom: 4,
       provenance: {
         sourceIds: ["sim.situation-data:mobile_network_model"],
         technicalInputs: ["sim.situation-data:mobile_coverage_model", "sim.situation-data:ctu_nettest", "sim.situation-data:osm_postgis"]
@@ -911,7 +924,7 @@ function buildWeatherWebcamCatalogLayer(sources: SituationSourceDescriptor[]): M
     layerId: "public.weather.webcams",
     legal: legalFromSource(findSource(sources, "chmi_weather_webcams"), ["Český hydrometeorologický ústav"]),
     maxZoom: 18,
-    minZoom: 6,
+    minZoom: 4,
     provenance: {
       sourceIds: ["sim.situation-data:chmi_weather_webcams"]
     },
@@ -968,16 +981,16 @@ function buildInfrastructureLayers(groundLayer: SituationLayerDescriptor | undef
     {
       ...base,
       defaultVisible: false,
-      description: "Komunikační infrastruktura jako referenční kontext, ne stav mobilní sítě.",
-      label: "Komunikační infrastruktura",
+      description: "BTS a komunikační stožáry jako referenční kontext, ne stav mobilní sítě.",
+      label: "BTS / komunikační stožáry",
       layerId: "reference.infrastructure.communications",
-      minZoom: 10,
+      minZoom: 4,
       provenance: { sourceIds: ["sim.situation-data:osm_postgis"] },
       query: {
         ...infrastructureQuery(["communications_tower"]),
         providerLayerIds: ["mobile"]
       },
-      selectable: false,
+      selectable: true,
       styleProfile: "infrastructure-communications-v1"
     }
   ];
