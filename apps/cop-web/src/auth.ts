@@ -13,6 +13,7 @@ export interface AuthConfig {
 export interface AuthProfile {
   email?: string;
   name: string;
+  picture?: string;
   subjectId?: string;
   username: string;
 }
@@ -418,6 +419,7 @@ function profileFromPayload(payload: Record<string, unknown>): AuthProfile {
   return {
     email: optionalString(payload.email),
     name,
+    picture: optionalUrlString(payload.picture) ?? optionalUrlString(payload.avatar_url),
     subjectId: optionalString(payload.sub),
     username: preferredUsername ?? name
   };
@@ -746,5 +748,13 @@ function oidcTokenEndpoint(config: AuthConfig): string {
 }
 
 function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function optionalUrlString(value: unknown): string | undefined {
+  const candidate = optionalString(value);
+  if (!candidate) {
+    return undefined;
+  }
+  return /^(data:image\/|https?:\/\/|mxc:\/\/)/iu.test(candidate) ? candidate : undefined;
 }

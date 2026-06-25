@@ -18,6 +18,7 @@ interface MatrixClientLike {
   createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;
   getCrypto?: () => MatrixCryptoApiLike | undefined;
   getJoinedRooms?: () => Promise<{ joined_rooms?: unknown } | unknown[]>;
+  getProfileInfo?: (userId: string) => Promise<Record<string, unknown>>;
   getRooms?: () => unknown[];
   getUserId?: () => string | null;
   getUser?: (userId: string) => MatrixUserPresenceLike | undefined;
@@ -37,6 +38,8 @@ interface MatrixClientLike {
   startClient?: (options?: Record<string, unknown>) => Promise<void> | void;
   stopClient?: () => void;
   scrollback?: (room: MatrixRoomLike, limit?: number) => Promise<unknown>;
+  setAvatarUrl?: (mxcUrl: string) => Promise<unknown>;
+  setDisplayName?: (displayName: string) => Promise<unknown>;
   uploadContent?: (file: Blob | File, opts?: Record<string, unknown>) => Promise<{ content_uri?: string; contentUri?: string }>;
 }
 
@@ -103,6 +106,7 @@ interface MatrixRoomStateLike {
 }
 
 interface MatrixRoomMemberLike {
+  getMxcAvatarUrl?: () => string | null;
   membership?: string;
   name?: string;
   rawDisplayName?: string;
@@ -111,12 +115,18 @@ interface MatrixRoomMemberLike {
 }
 
 interface MatrixUserPresenceLike {
+  avatarUrl?: string;
   currentlyActive?: boolean;
   displayName?: string;
   lastActiveAgo?: number;
   lastPresenceTs?: number;
   presence?: string;
   userId?: string;
+}
+
+export interface MatrixUserProfileSyncInput {
+  avatarUrl?: string;
+  displayName?: string;
 }
 
 interface MatrixEventLike {
@@ -135,6 +145,7 @@ export async function createMatrixMessagingSession(
   bootstrap: MessagingBootstrapResponse,
   callbacks: {
     onRoomsChanged?: (rooms: MatrixRoomSummary[]) => void;
+    profile?: MatrixUserProfileSyncInput;
     onSyncState?: (state: string) => void;
     onTimelineChanged?: () => void;
   } = {}
@@ -184,6 +195,7 @@ export async function createMatrixMessagingSession(
   };
   const readVisibleRooms = () => readRooms(client, {
     allowedRoomIds: joinedRoomIds,
+    homeserverBaseUrl,
     ownUserId: bootstrap.userId,
     presenceByUserId: roomPresenceByUserId
   });
@@ -267,6 +279,7 @@ export async function createMatrixMessagingSession(
   client.on?.("RoomMember.membership", presenceListener);
   await refreshJoinedRoomIds();
   await client.startClient?.({ initialSyncLimit: 30 });
+  void syncMatrixUserProfile(client, bootstrap, callbacks.profile).catch(() => undefined);
   void client.setPresence?.({ presence: "online" }).catch(() => undefined);
   await joinInvitedRooms();
   await refreshJoinedRoomIds();
@@ -591,6 +604,105 @@ async function enableKnownMatrixKeyBackup(client: MatrixClientLike): Promise<voi
   await crypto.checkKeyBackupAndEnable?.();
   if (await hasActiveUserBackup(crypto)) {
     restoreUserKeyBackupInBackground(crypto);
+  }
+}
+
+async function syncMatrixUserProfile(
+  client: MatrixClientLike,
+  bootstrap: MessagingBootstrapResponse,
+  profile: MatrixUserProfileSyncInput | undefined
+): Promise<void> {
+  const displayName = profile?.displayName?.trim();
+  const avatarSourceUrl = profile?.avatarUrl?.trim();
+  const currentProfile = bootstrap.userId && (displayName || avatarSourceUrl) && client.getProfileInfo
+    ? await client.getProfileInfo(bootstrap.userId).catch(() => undefined)
+    : undefined;
+
+  if (displayName && typeof client.setDisplayName === "function" && currentProfile?.displayname !== displayName) {
+    await client.setDisplayName(displayName).catch(() => undefined);
+  }
+
+  if (!avatarSourceUrl || typeof client.setAvatarUrl !== "function") {
+    return;
+  }
+  const avatarMxcUrl = await resolveProfileAvatarMxcUrl(client, bootstrap, avatarSourceUrl).catch(() => undefined);
+  if (avatarMxcUrl && currentProfile?.avatar_url !== avatarMxcUrl) {
+    await client.setAvatarUrl(avatarMxcUrl).catch(() => undefined);
+  }
+}
+
+async function resolveProfileAvatarMxcUrl(
+  client: MatrixClientLike,
+  bootstrap: MessagingBootstrapResponse,
+  avatarSourceUrl: string
+): Promise<string | undefined> {
+  if (avatarSourceUrl.startsWith("mxc://")) {
+    return avatarSourceUrl;
+  }
+  const cacheKey = matrixProfileAvatarCacheKey(bootstrap.userId ?? "unknown", avatarSourceUrl);
+  const cached = readLocalStorageValue(cacheKey);
+  if (cached?.startsWith("mxc://")) {
+    return cached;
+  }
+  if (typeof client.uploadContent !== "function") {
+    return undefined;
+  }
+
+  const avatarBlob = await fetchProfileAvatarBlob(avatarSourceUrl);
+  const uploaded = await client.uploadContent(avatarBlob, {
+    includeFilename: false,
+    name: "avatar",
+    type: avatarBlob.type || "image/jpeg"
+  });
+  const mxcUrl = uploaded.content_uri ?? uploaded.contentUri;
+  if (mxcUrl?.startsWith("mxc://")) {
+    writeLocalStorageValue(cacheKey, mxcUrl);
+    return mxcUrl;
+  }
+  return undefined;
+}
+
+async function fetchProfileAvatarBlob(avatarSourceUrl: string): Promise<Blob> {
+  const response = avatarSourceUrl.startsWith("data:")
+    ? await fetch(avatarSourceUrl)
+    : await fetch(avatarSourceUrl, { credentials: "include", mode: "cors" });
+  if (!response.ok) {
+    throw new Error(`Avatar profile fetch returned HTTP ${response.status}.`);
+  }
+  const blob = await response.blob();
+  if (!blob.type.startsWith("image/")) {
+    throw new Error("Avatar profile source is not an image.");
+  }
+  return blob;
+}
+
+function matrixProfileAvatarCacheKey(userId: string, avatarSourceUrl: string): string {
+  return `cop.matrix.profile.avatar.v1:${encodeURIComponent(userId)}:${stableStringHash(avatarSourceUrl)}`;
+}
+
+function stableStringHash(value: string): string {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function readLocalStorageValue(key: string): string | undefined {
+  try {
+    return typeof window !== "undefined" ? window.localStorage.getItem(key) ?? undefined : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeLocalStorageValue(key: string, value: string): void {
+  try {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(key, value);
+    }
+  } catch {
+    // Profile avatar cache is only an optimization.
   }
 }
 
@@ -1138,6 +1250,7 @@ function isLikelyMatrixForbiddenError(caught: unknown): boolean {
 
 function readRooms(client: MatrixClientLike, options: {
   allowedRoomIds?: Set<string> | null;
+  homeserverBaseUrl?: string;
   ownUserId?: string;
   presenceByUserId?: Map<string, MatrixUserPresenceLike & { fetchedAt: number }>;
 } = {}): MatrixRoomSummary[] {
@@ -1152,7 +1265,9 @@ function readRooms(client: MatrixClientLike, options: {
     .map((room) => {
       const messageRetentionSeconds = readRoomRetentionSeconds(room);
       const presence = readRoomPresence(room, client, options.ownUserId, options.presenceByUserId);
+      const avatarUrl = options.homeserverBaseUrl ? readRoomAvatarUrl(room, client, options.homeserverBaseUrl, options.ownUserId) : undefined;
       return {
+        ...(avatarUrl ? { avatarUrl } : {}),
         encrypted: Boolean(client.isRoomEncrypted?.(room.roomId)),
         ...(messageRetentionSeconds ? { messageRetentionSeconds } : {}),
         name: room.name?.trim() || room.roomId,
@@ -1253,6 +1368,44 @@ function readRoomJoinedMembers(room: MatrixRoomLike): MatrixRoomMemberLike[] {
       const userId = event.getStateKey?.() ?? event.getSender?.();
       return userId ? [{ userId }] : [];
     });
+}
+
+function readRoomAvatarUrl(
+  room: MatrixRoomLike,
+  client: MatrixClientLike,
+  homeserverBaseUrl: string,
+  ownUserId: string | undefined
+): string | undefined {
+  const roomAvatarEvent = room.currentState?.getStateEvents?.("m.room.avatar", "");
+  const roomAvatarContent = Array.isArray(roomAvatarEvent)
+    ? asEvent(roomAvatarEvent.find((item) => asEvent(item)?.getType?.() === "m.room.avatar"))?.getContent?.()
+    : asEvent(roomAvatarEvent)?.getContent?.();
+  const roomAvatarUrl = stringValue(roomAvatarContent?.url);
+  if (roomAvatarUrl) {
+    return matrixMediaHttpUrl(client, homeserverBaseUrl, roomAvatarUrl, true) ?? roomAvatarUrl;
+  }
+
+  const otherMembers = readRoomJoinedMembers(room)
+    .filter((member) => member.userId && member.userId !== ownUserId);
+  if (otherMembers.length !== 1) {
+    return undefined;
+  }
+  return readMemberAvatarUrl(otherMembers[0], client, homeserverBaseUrl);
+}
+
+function readMemberAvatarUrl(
+  member: MatrixRoomMemberLike | undefined,
+  client: MatrixClientLike,
+  homeserverBaseUrl: string
+): string | undefined {
+  const candidates = [
+    member?.getMxcAvatarUrl?.() ?? undefined,
+    member?.user?.avatarUrl
+  ];
+  const avatarUrl = candidates
+    .map((value) => typeof value === "string" && value.trim() ? value.trim() : undefined)
+    .find((value): value is string => Boolean(value));
+  return avatarUrl ? matrixMediaHttpUrl(client, homeserverBaseUrl, avatarUrl, true) ?? avatarUrl : undefined;
 }
 
 function normalizeMatrixPresence(user: MatrixUserPresenceLike | undefined): MatrixPresenceState {

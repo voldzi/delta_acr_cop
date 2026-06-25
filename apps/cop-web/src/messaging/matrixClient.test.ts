@@ -5,6 +5,7 @@ import type { MessagingBootstrapResponse } from "../cop-data";
 type MockMatrixClient = {
   getCrypto?: () => MockMatrixCrypto;
   getJoinedRooms?: () => Promise<{ joined_rooms: string[] }>;
+  getProfileInfo?: (userId: string) => Promise<Record<string, unknown>>;
   getRooms: () => unknown[];
   getUserId: () => string;
   initRustCrypto: () => Promise<void>;
@@ -15,8 +16,11 @@ type MockMatrixClient = {
   sendEvent?: MatrixSendEvent;
   sendMessage?: MatrixSendMessage;
   sendStateEvent?: MatrixSendStateEvent;
+  setAvatarUrl?: (mxcUrl: string) => Promise<unknown>;
+  setDisplayName?: (displayName: string) => Promise<unknown>;
   scrollback?: MatrixScrollback;
   startClient: () => Promise<void>;
+  uploadContent?: (file: Blob | File, opts?: Record<string, unknown>) => Promise<{ content_uri?: string; contentUri?: string }>;
 };
 
 type MockMatrixCrypto = {
@@ -59,6 +63,7 @@ vi.mock("matrix-js-sdk/lib/browser-index.js", () => ({
 
 afterEach(() => {
   matrixSdkMock.createClient.mockReset();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -84,6 +89,44 @@ describe("Matrix client diagnostics", () => {
     expect(normalizeMatrixMessageBody(
       "** Unable to decrypt: DecryptionError: This message was sent before this device logged in, and there is no key backup on the server. **"
     )).toBe("Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy.");
+  });
+
+  it("syncs authenticated COP display name to the Matrix user profile", async () => {
+    const setDisplayName = vi.fn<NonNullable<MockMatrixClient["setDisplayName"]>>().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      getProfileInfo: vi.fn().mockResolvedValue({}),
+      rooms: [createRoom({ roomId: "!chat:cop.local" })],
+      setDisplayName
+    }));
+
+    await createMatrixMessagingSession(createBootstrap(), {
+      profile: { displayName: "Jiří Volek" }
+    });
+
+    await vi.waitFor(() => expect(setDisplayName).toHaveBeenCalledWith("Jiří Volek"));
+  });
+
+  it("uploads authenticated COP avatar and syncs it to the Matrix user profile", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["avatar"], { type: "image/png" }), { status: 200 })));
+    const setAvatarUrl = vi.fn<NonNullable<MockMatrixClient["setAvatarUrl"]>>().mockResolvedValue(undefined);
+    const uploadContent = vi.fn<NonNullable<MockMatrixClient["uploadContent"]>>().mockResolvedValue({ content_uri: "mxc://cop.local/avatar" });
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      getProfileInfo: vi.fn().mockResolvedValue({}),
+      rooms: [createRoom({ roomId: "!chat:cop.local" })],
+      setAvatarUrl,
+      uploadContent
+    }));
+
+    await createMatrixMessagingSession(createBootstrap(), {
+      profile: { avatarUrl: "data:image/png;base64,YXZhdGFy" }
+    });
+
+    await vi.waitFor(() => expect(uploadContent).toHaveBeenCalledWith(expect.any(Blob), expect.objectContaining({
+      includeFilename: false,
+      name: "avatar",
+      type: "image/png"
+    })));
+    expect(setAvatarUrl).toHaveBeenCalledWith("mxc://cop.local/avatar");
   });
 
   it("stores disappearing-message settings as Matrix room retention state", async () => {
@@ -442,6 +485,7 @@ function createBootstrap(): MessagingBootstrapResponse {
 function createMockMatrixClient({
   crypto,
   getJoinedRooms,
+  getProfileInfo,
   redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined),
   off,
   on,
@@ -449,10 +493,14 @@ function createMockMatrixClient({
   sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined),
   sendMessage = vi.fn<MatrixSendMessage>().mockResolvedValue(undefined),
   sendStateEvent = vi.fn<MatrixSendStateEvent>().mockResolvedValue(undefined),
-  scrollback
+  setAvatarUrl,
+  setDisplayName,
+  scrollback,
+  uploadContent
 }: {
   crypto?: MockMatrixCrypto;
   getJoinedRooms?: MockMatrixClient["getJoinedRooms"];
+  getProfileInfo?: MockMatrixClient["getProfileInfo"];
   off?: MockMatrixClient["off"];
   on?: MockMatrixClient["on"];
   redactEvent?: MockMatrixClient["redactEvent"];
@@ -460,11 +508,15 @@ function createMockMatrixClient({
   sendEvent?: MockMatrixClient["sendEvent"];
   sendMessage?: MockMatrixClient["sendMessage"];
   sendStateEvent?: MockMatrixClient["sendStateEvent"];
+  setAvatarUrl?: MockMatrixClient["setAvatarUrl"];
+  setDisplayName?: MockMatrixClient["setDisplayName"];
   scrollback?: MockMatrixClient["scrollback"];
+  uploadContent?: MockMatrixClient["uploadContent"];
 }): MockMatrixClient {
   return {
     ...(crypto ? { getCrypto: () => crypto } : {}),
     ...(getJoinedRooms ? { getJoinedRooms } : {}),
+    ...(getProfileInfo ? { getProfileInfo } : {}),
     getRooms: () => rooms,
     getUserId: () => "@operator:cop.local",
     initRustCrypto: () => Promise.resolve(),
@@ -475,7 +527,10 @@ function createMockMatrixClient({
     sendEvent,
     sendMessage,
     sendStateEvent,
+    ...(setAvatarUrl ? { setAvatarUrl } : {}),
+    ...(setDisplayName ? { setDisplayName } : {}),
     ...(scrollback ? { scrollback } : {}),
+    ...(uploadContent ? { uploadContent } : {}),
     startClient: () => Promise.resolve()
   };
 }

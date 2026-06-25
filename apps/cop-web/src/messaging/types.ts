@@ -1,6 +1,7 @@
 import type { MessagingBootstrapResponse } from "../cop-data";
 
 export interface MatrixRoomSummary {
+  avatarUrl?: string;
   encrypted: boolean;
   messageRetentionSeconds?: number;
   name: string;

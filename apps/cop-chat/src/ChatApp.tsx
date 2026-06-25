@@ -1085,6 +1085,7 @@ export function ChatApp() {
           setRooms(nextRooms);
           setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversations, nextRooms));
         },
+        profile: matrixProfileForAuth(authSession),
         onSyncState: setSyncState,
         onTimelineChanged: () => setTimelineRevision((value) => value + 1)
       });
@@ -1790,7 +1791,7 @@ export function ChatApp() {
         </header>
 
         <div className="identity-strip">
-          <Avatar label={authDisplayName(authSession, authConfig)} />
+          <Avatar label={authDisplayName(authSession, authConfig)} src={authSession.profile?.picture} />
           <span>
             <strong>{authDisplayName(authSession, authConfig)}</strong>
             <small>{authSubtitle(authSession, authConfig)}</small>
@@ -1857,7 +1858,7 @@ export function ChatApp() {
                 <ArrowLeft size={21} />
               </button>
               <span className="chat-avatar-wrap header-avatar">
-                <Avatar label={activeChat.title} />
+                <Avatar label={activeChat.title} src={activeChat.room?.avatarUrl} />
                 <ConnectionDot state={chatConnectionStateFor(activeChat, chatReady, matrixSession, syncState, preparingChatId === activeChat.id)} />
               </span>
               <div className="conversation-title">
@@ -2174,7 +2175,7 @@ function PinnedChats({
         <div className={clsx("pinned-chat", item.active && "active")} key={item.id}>
           <button className="pinned-chat-open" onClick={() => onOpen(item)} type="button">
             <span className="pinned-avatar-wrap">
-              <Avatar label={item.title} />
+              <Avatar label={item.title} src={item.room?.avatarUrl} />
               <ConnectionDot state={connectionStateForItem(item)} />
               {item.unreadCount > 0 && !item.muted ? <span className="pinned-unread">{item.unreadCount}</span> : null}
               {item.muted ? <span className="pinned-muted"><BellOff size={13} /></span> : null}
@@ -2329,7 +2330,7 @@ function ChatRow({
       >
         <button className="chat-row-open" onClick={handleOpen} type="button">
           <span className="chat-avatar-wrap">
-            <Avatar label={item.title} />
+            <Avatar label={item.title} src={item.room?.avatarUrl} />
             <ConnectionDot state={connectionState} />
           </span>
           <span className="chat-row-main">
@@ -2621,7 +2622,7 @@ function ForwardDialog({
             <p>Žádný chat neodpovídá hledání.</p>
           ) : filteredItems.map((item) => (
             <button disabled={Boolean(workingId)} key={item.id} onClick={() => onForward(item)} role="listitem" type="button">
-              <Avatar label={item.title} />
+              <Avatar label={item.title} src={item.room?.avatarUrl} />
               <span>
                 <strong>{item.title}</strong>
                 <small>{item.type === "direct" ? "přímý chat" : "skupina"}</small>
@@ -3470,7 +3471,7 @@ function ChatInfoPanel({
         </aside>
         <div className="info-content">
           <header className="info-hero">
-            <Avatar label={activeChat.title} />
+            <Avatar label={activeChat.title} src={activeChat.room?.avatarUrl} />
             <div>
               <h2>{activeChat.title}</h2>
               <p>{isDirect ? "Přímý chat" : `${activeChat.memberCount} ${activeChat.memberCount === 1 ? "člen" : activeChat.memberCount < 5 ? "členové" : "členů"}`}</p>
@@ -3799,8 +3800,17 @@ function DocumentThumb({ fileName, large = false }: { fileName: string; large?: 
   );
 }
 
-function Avatar({ label, small = false }: { label: string; small?: boolean }) {
-  return <span className={clsx("avatar", small && "small")} aria-hidden="true">{initialsFor(label)}</span>;
+function Avatar({ label, small = false, src }: { label: string; small?: boolean; src?: string }) {
+  const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    setFailedSrc(null);
+  }, [src]);
+  const imageSrc = src && failedSrc !== src ? src : undefined;
+  return (
+    <span className={clsx("avatar", small && "small", imageSrc && "image")} aria-hidden="true">
+      {imageSrc ? <img alt="" src={imageSrc} onError={() => setFailedSrc(imageSrc)} /> : initialsFor(label)}
+    </span>
+  );
 }
 
 function ConnectionDot({ state }: { state: ChatConnectionState }) {
@@ -4504,6 +4514,21 @@ function authDisplayName(session: AuthSession, config: AuthConfig): string {
     return "Ověřuji";
   }
   return config.mode === "lab" ? "Lab operator" : "Nepřihlášen";
+}
+
+function matrixProfileForAuth(session: AuthSession): { avatarUrl?: string; displayName?: string } | undefined {
+  if (session.status !== "authenticated") {
+    return undefined;
+  }
+  const displayName = session.profile?.name?.trim() || session.profile?.username?.trim();
+  const avatarUrl = session.profile?.picture?.trim();
+  if (!displayName && !avatarUrl) {
+    return undefined;
+  }
+  return {
+    ...(avatarUrl ? { avatarUrl } : {}),
+    ...(displayName ? { displayName } : {})
+  };
 }
 
 function authSubtitle(session: AuthSession, config: AuthConfig): string {
