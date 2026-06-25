@@ -50,6 +50,7 @@ import {
   beginLogin,
   createInitialAuthSession,
   endSession,
+  getAuthorizationToken,
   initializeAuth,
   isAuthSessionActive,
   isOidcEnabled,
@@ -158,6 +159,33 @@ interface ChatListItem {
   title: string;
   type: "direct" | "group" | "room";
   unreadCount: number;
+}
+
+interface DemoConversationMetadata {
+  media: DemoConversationMedia[];
+  messages: DemoConversationMessage[];
+  pinnedContext?: string;
+  summary?: string;
+  title?: string;
+}
+
+interface DemoConversationMessage {
+  authorName?: string;
+  body: string;
+  direction?: "incoming" | "outgoing";
+  id: string;
+  link?: {
+    label?: string;
+  };
+  role?: string;
+  sentAt: string;
+}
+
+interface DemoConversationMedia {
+  byteSizeLabel?: string;
+  caption?: string;
+  kind: "document" | "location" | "photo" | "video";
+  title: string;
 }
 
 interface MessageActionPopoverState {
@@ -284,8 +312,8 @@ export function ChatApp() {
   const matrixSessionRef = React.useRef<MatrixMessagingSession | null>(null);
   const selectedRoomIdRef = React.useRef<string | null>(null);
 
-  const authenticated = isAuthSessionActive(authSession);
-  const authToken = authenticated ? authSession.accessToken : undefined;
+  const authToken = getAuthorizationToken(authSession, labToken);
+  const authenticated = Boolean(authToken);
   const authSubjectId = authSession.profile?.subjectId ?? authSession.profile?.username ?? authSession.profile?.email;
   const preferencesOwner = authSubjectId ?? authSession.profile?.username ?? "anonymous";
   const localUserPreferences = React.useMemo(
@@ -346,17 +374,23 @@ export function ChatApp() {
   const activeMessageRetentionSeconds = selectedRoomId && Object.prototype.hasOwnProperty.call(retentionOverrideByRoom, selectedRoomId)
     ? retentionOverrideByRoom[selectedRoomId] ?? null
     : messageRetentionSecondsForActiveChat(selectedRoom, selectedGroup);
-  const visibleTimeline = React.useMemo(
+  const retainedTimeline = React.useMemo(
     () => filterTimelineByRetention(timeline, activeMessageRetentionSeconds),
     [activeMessageRetentionSeconds, timeline]
   );
+  const demoTimeline = React.useMemo(
+    () => selectedGroup ? demoTimelineMessagesForGroup(selectedGroup, authSession) : [],
+    [authSession, selectedGroup]
+  );
+  const showingDemoTimeline = retainedTimeline.length === 0 && demoTimeline.length > 0;
+  const visibleTimeline = showingDemoTimeline ? demoTimeline : retainedTimeline;
   const timelineRows = React.useMemo(() => buildTimelineRows(visibleTimeline), [visibleTimeline]);
   const timelineMessages = React.useMemo(() => timelineRows.filter((row) => row.kind === "message").map((row) => row.message), [timelineRows]);
   const messageById = React.useMemo(
     () => new Map(timelineMessages.map((message) => [message.eventId, message])),
     [timelineMessages]
   );
-  const historyExhausted = selectedRoomId ? historyExhaustedByRoom[selectedRoomId] === true : true;
+  const historyExhausted = showingDemoTimeline || (selectedRoomId ? historyExhaustedByRoom[selectedRoomId] === true : true);
   const searchMatches = React.useMemo(
     () => messageSearchOpen && messageSearchQuery.trim()
       ? timelineMessages.filter((message) => messageMatchesQuery(message, messageSearchQuery))
@@ -948,6 +982,9 @@ export function ChatApp() {
   }
 
   function openMessageActions(message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen = false) {
+    if (isDemoTimelineMessage(message)) {
+      return;
+    }
     const width = Math.min(330, window.innerWidth - 24);
     const leftCandidate = message.own ? rect.right - width : rect.left;
     const left = Math.max(12, Math.min(leftCandidate, window.innerWidth - width - 12));
@@ -961,7 +998,7 @@ export function ChatApp() {
   }
 
   async function reactToMessage(message: MatrixTimelineMessage, key: string) {
-    if (!matrixSession || !selectedRoomId) {
+    if (!matrixSession || !selectedRoomId || isDemoTimelineMessage(message)) {
       return;
     }
     setError(null);
@@ -1840,7 +1877,7 @@ export function ChatApp() {
     });
   }
 
-  const connectionLocked = authenticated && !chatReady;
+  const connectionLocked = authenticated && !chatReady && !showingDemoTimeline;
   const embedded = React.useMemo(() => new URLSearchParams(window.location.search).get("embedded") === "1", []);
 
   return (
@@ -2049,14 +2086,14 @@ export function ChatApp() {
               />
             ) : preparingChatId ? (
               <ChatLockedState icon={<Loader2 className="spin" size={30} />} title="Připravuji chat" />
-            ) : !selectedRoomId ? (
+            ) : !selectedRoomId && !showingDemoTimeline ? (
               <ChatLockedState
                 actionLabel="Otevřít chat"
                 icon={<MessageCircle size={28} />}
                 title={activeChat.title}
                 onAction={() => void openChat(activeChat)}
               />
-            ) : !encryptionRecoveryReady ? (
+            ) : selectedRoomId && !encryptionRecoveryReady && !showingDemoTimeline ? (
               <ChatLockedState
                 actionLabel={encryptionRecoveryStatus?.needsSetup ? "Nastavit obnovu" : "Obnovit zařízení"}
                 icon={<KeyRound size={30} />}
@@ -3974,7 +4011,8 @@ function buildChatItems({
     const groupId = conversationCommunityGroupId(conversation) ?? group?.groupId;
     const roomId = conversation.matrix?.roomId ?? (group ? communityGroupMatrixRoomId(group) : undefined);
     const room = roomId ? rooms.find((item) => item.roomId === roomId) : undefined;
-    const latest = roomId ? lastTimelineMessage(timelineForRoom(roomId)) : undefined;
+    const roomLatest = roomId ? lastTimelineMessage(timelineForRoom(roomId)) : undefined;
+    const latest = roomLatest ?? (group ? demoLatestMessageForGroup(group) : undefined);
     const id = roomId
       ? `room:${roomId}`
       : groupId
@@ -4035,7 +4073,8 @@ function buildChatItems({
     }
     const metadataRoomId = communityGroupMatrixRoomId(group);
     const metadataRoom = metadataRoomId ? rooms.find((room) => room.roomId === metadataRoomId) : undefined;
-    const metadataLatest = metadataRoomId ? lastTimelineMessage(timelineForRoom(metadataRoomId)) : undefined;
+    const metadataRoomLatest = metadataRoomId ? lastTimelineMessage(timelineForRoom(metadataRoomId)) : undefined;
+    const metadataLatest = metadataRoomLatest ?? demoLatestMessageForGroup(group);
     remember({
       active: selectedGroupId === group.groupId || selectedRoomId === metadataRoomId,
       group,
@@ -4316,6 +4355,195 @@ function communityGroupChatMetadata(group: CommunityGroup): CommunityGroupChatMe
     matrixRoomId: typeof chat.matrixRoomId === "string" ? chat.matrixRoomId : undefined,
     source: typeof chat.source === "string" ? chat.source : undefined
   };
+}
+
+function demoConversationMetadata(group: CommunityGroup): DemoConversationMetadata | null {
+  const raw = asRecord(group.metadata?.demoConversation);
+  if (!raw) {
+    return null;
+  }
+  const messages = Array.isArray(raw.messages)
+    ? raw.messages.map(parseDemoConversationMessage).filter((message): message is DemoConversationMessage => Boolean(message))
+    : [];
+  const media = Array.isArray(raw.media)
+    ? raw.media.map(parseDemoConversationMedia).filter((item): item is DemoConversationMedia => Boolean(item))
+    : [];
+  const metadata: DemoConversationMetadata = {
+    media,
+    messages,
+    ...(typeof raw.pinnedContext === "string" && raw.pinnedContext.trim() ? { pinnedContext: raw.pinnedContext.trim() } : {}),
+    ...(typeof raw.summary === "string" && raw.summary.trim() ? { summary: raw.summary.trim() } : {}),
+    ...(typeof raw.title === "string" && raw.title.trim() ? { title: raw.title.trim() } : {})
+  };
+  return metadata.messages.length > 0 || metadata.media.length > 0 || metadata.summary || metadata.pinnedContext ? metadata : null;
+}
+
+function demoTimelineMessagesForGroup(group: CommunityGroup, authSession?: AuthSession): MatrixTimelineMessage[] {
+  const demo = demoConversationMetadata(group);
+  if (!demo) {
+    return [];
+  }
+  const messages: MatrixTimelineMessage[] = [];
+  const firstMessageMillis = Math.min(
+    ...demo.messages
+      .map((message) => timestampMillis(message.sentAt))
+      .filter((timestamp) => timestamp > 0)
+  );
+  const baseMillis = Number.isFinite(firstMessageMillis) && firstMessageMillis > 0 ? firstMessageMillis : timestampMillis(group.updatedAt) || Date.now();
+  if (demo.summary || demo.pinnedContext) {
+    messages.push({
+      body: [demo.summary, demo.pinnedContext].filter(Boolean).join("\n"),
+      eventId: `demo:${group.groupId}:summary`,
+      kind: "text",
+      own: false,
+      sender: `demo:${group.groupId}:system`,
+      senderDisplayName: demo.title ?? group.name,
+      timestamp: new Date(baseMillis - 60_000).toISOString()
+    });
+  }
+  demo.messages.forEach((message, index) => {
+    const own = message.direction === "outgoing";
+    messages.push({
+      body: [message.body, message.link?.label].filter(Boolean).join("\n"),
+      eventId: `demo:${group.groupId}:${message.id || index}`,
+      kind: "text",
+      own,
+      sender: own ? authSession?.profile?.subjectId ?? "demo:self" : `demo:${group.groupId}:member:${index}`,
+      senderDisplayName: own ? authSession?.profile?.name ?? message.authorName ?? "Vy" : demoSenderLabel(message),
+      timestamp: safeIsoTimestamp(message.sentAt, baseMillis + index * 60_000)
+    });
+  });
+  const mediaBaseMillis = Math.max(baseMillis, ...messages.map((message) => timestampMillis(message.timestamp)));
+  demo.media.forEach((item, index) => {
+    messages.push(demoMediaTimelineMessage(group, item, mediaBaseMillis + (index + 1) * 60_000, index));
+  });
+  return messages;
+}
+
+function demoLatestMessageForGroup(group: CommunityGroup): MatrixTimelineMessage | undefined {
+  return demoTimelineMessagesForGroup(group).at(-1);
+}
+
+function parseDemoConversationMessage(value: unknown): DemoConversationMessage | null {
+  const raw = asRecord(value);
+  const body = typeof raw?.body === "string" ? raw.body.trim() : "";
+  const id = typeof raw?.id === "string" ? raw.id.trim() : "";
+  if (!raw || !body || !id) {
+    return null;
+  }
+  const direction = raw.direction === "outgoing" ? "outgoing" : "incoming";
+  const link = asRecord(raw.link);
+  return {
+    body,
+    direction,
+    id,
+    ...(typeof raw.authorName === "string" && raw.authorName.trim() ? { authorName: raw.authorName.trim() } : {}),
+    ...(link && typeof link.label === "string" && link.label.trim() ? { link: { label: link.label.trim() } } : {}),
+    ...(typeof raw.role === "string" && raw.role.trim() ? { role: raw.role.trim() } : {}),
+    sentAt: typeof raw.sentAt === "string" && raw.sentAt.trim() ? raw.sentAt.trim() : new Date().toISOString()
+  };
+}
+
+function parseDemoConversationMedia(value: unknown): DemoConversationMedia | null {
+  const raw = asRecord(value);
+  const title = typeof raw?.title === "string" ? raw.title.trim() : "";
+  const kind = raw?.kind;
+  if (!raw || !title || (kind !== "document" && kind !== "location" && kind !== "photo" && kind !== "video")) {
+    return null;
+  }
+  return {
+    kind,
+    title,
+    ...(typeof raw.byteSizeLabel === "string" && raw.byteSizeLabel.trim() ? { byteSizeLabel: raw.byteSizeLabel.trim() } : {}),
+    ...(typeof raw.caption === "string" && raw.caption.trim() ? { caption: raw.caption.trim() } : {})
+  };
+}
+
+function demoSenderLabel(message: DemoConversationMessage): string {
+  return [message.authorName, message.role].filter(Boolean).join(" · ") || "Člen skupiny";
+}
+
+function demoMediaTimelineMessage(group: CommunityGroup, item: DemoConversationMedia, timestampMillisValue: number, index: number): MatrixTimelineMessage {
+  const timestamp = new Date(timestampMillisValue).toISOString();
+  const eventId = `demo:${group.groupId}:media:${index}`;
+  if (item.kind === "location") {
+    return {
+      body: item.caption ?? item.title,
+      eventId,
+      kind: "location",
+      location: parseDemoLocation(item),
+      own: false,
+      sender: `demo:${group.groupId}:system`,
+      senderDisplayName: "Sdílený kontext",
+      timestamp
+    };
+  }
+  const kind = item.kind === "photo" ? "image" : item.kind === "video" ? "video" : "file";
+  return {
+    attachment: {
+      contentType: demoMediaContentType(item),
+      fileName: item.title,
+      ...(parseDemoByteSize(item.byteSizeLabel) ? { size: parseDemoByteSize(item.byteSizeLabel) } : {})
+    },
+    body: item.caption ?? item.title,
+    eventId,
+    kind,
+    own: false,
+    sender: `demo:${group.groupId}:system`,
+    senderDisplayName: "Sdílená média",
+    timestamp
+  };
+}
+
+function parseDemoLocation(item: DemoConversationMedia): MatrixLocationShare {
+  const source = item.caption ?? item.title;
+  const match = /(-?\d+(?:[.,]\d+)?)\s*,\s*(-?\d+(?:[.,]\d+)?)/u.exec(source);
+  const lat = match ? Number.parseFloat(match[1]?.replace(",", ".") ?? "") : 50.0755;
+  const lon = match ? Number.parseFloat(match[2]?.replace(",", ".") ?? "") : 14.4378;
+  return {
+    label: item.title,
+    lat: Number.isFinite(lat) ? lat : 50.0755,
+    lon: Number.isFinite(lon) ? lon : 14.4378,
+    source: "map"
+  };
+}
+
+function safeIsoTimestamp(value: string, fallbackMillis: number): string {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date(fallbackMillis).toISOString();
+}
+
+function demoMediaContentType(item: DemoConversationMedia): string {
+  if (item.kind === "photo") {
+    return "image/jpeg";
+  }
+  if (item.kind === "video") {
+    return "video/mp4";
+  }
+  return item.title.toLocaleLowerCase("cs-CZ").endsWith(".pdf") ? "application/pdf" : "application/octet-stream";
+}
+
+function parseDemoByteSize(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const match = /(\d+(?:[.,]\d+)?)\s*(kb|kib|mb|mib|gb|gib|b)?/iu.exec(value.trim());
+  if (!match) {
+    return undefined;
+  }
+  const amount = Number.parseFloat(match[1]?.replace(",", ".") ?? "");
+  if (!Number.isFinite(amount)) {
+    return undefined;
+  }
+  const unit = (match[2] ?? "b").toLocaleLowerCase("cs-CZ");
+  const multiplier = unit.startsWith("g")
+    ? 1_000_000_000
+    : unit.startsWith("m")
+      ? 1_000_000
+      : unit.startsWith("k")
+        ? 1_000
+        : 1;
+  return Math.round(amount * multiplier);
 }
 
 function communityGroupConversationId(group: CommunityGroup): string | undefined {
@@ -4894,6 +5122,10 @@ function matrixReplyTarget(message: MatrixTimelineMessage, session: AuthSession)
     eventId: message.eventId,
     sender: message.own ? "Vy" : message.senderDisplayName ?? message.sender ?? session.profile?.username ?? "Člen"
   };
+}
+
+function isDemoTimelineMessage(message: MatrixTimelineMessage): boolean {
+  return message.eventId.startsWith("demo:");
 }
 
 function formatMessageForClipboard(message: MatrixTimelineMessage): string {

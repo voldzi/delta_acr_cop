@@ -42,11 +42,39 @@ Každý uzel má stabilní identitu:
     "mcp-gateway"
   ],
   "classificationMax": "SENSITIVE",
+  "nodeTrustDomain": "cop-central",
+  "dataEndpoints": [
+    "/api/v1/map/catalog",
+    "/api/v1/map/query",
+    "/api/v1/events/domain",
+    "/api/v1/edge/replay"
+  ],
+  "eventSubscriptions": [
+    "cop.domain.events",
+    "cop.provider.health",
+    "cop.node.sync"
+  ],
+  "mcpEndpoint": "/api/v1/mcp",
+  "publicKeyRef": "oidc:cop-api",
+  "releaseScopes": [
+    "public",
+    "internal",
+    "role:central-orchestrator",
+    "node:node_central_cop"
+  ],
   "softwareVersion": "0.1.0",
   "lastSeenAt": "2026-06-19T12:00:00Z",
   "health": "ok"
 }
 ```
+
+Node registry je provozní zdroj pravdy pro federované schopnosti uzlů. `dataEndpoints`
+popisují standardní REST/OpenAPI nebo GeoJSON/OGC rozhraní, `eventSubscriptions`
+deklarují spotřebované event kanály, `nodeTrustDomain` odděluje důvěryhodnostní
+hranice, `publicKeyRef` odkazuje na klíč/issuer a `releaseScopes` se používají
+při policy-filtered edge replay. `mcpEndpoint` je pouze diagnostický/read-only
+vstup pro agenty; produkční datová integrace mezi COP, SIM, edge a messaging
+uzly zůstává přes REST/OpenAPI, GeoJSON/OGC a event log.
 
 ## Event Transport
 

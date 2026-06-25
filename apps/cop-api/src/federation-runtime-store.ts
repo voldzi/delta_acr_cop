@@ -3,6 +3,8 @@ import {
   buildDomainDeadLetterRecord,
   buildDomainEventRecord,
   createDefaultFederatedNodes,
+  defaultReleaseScopes,
+  defaultTrustDomainForRole,
   type DomainDeadLetterRecord,
   type DomainDeadLetterRedriveResult,
   type DomainEventChannel,
@@ -544,18 +546,39 @@ CREATE TABLE IF NOT EXISTS cop_edge_replay_cursors (
 function nodeFromRow(row: FederatedNodeRow): FederatedNodeRecord {
   const nodeJson = typeof row.node_json === "string" ? JSON.parse(row.node_json) as Partial<FederatedNodeRecord> : row.node_json;
   const detail = row.detail ?? nodeJson.detail;
+  const dataEndpoints = stringArrayFromJson(nodeJson.dataEndpoints);
+  const eventSubscriptions = stringArrayFromJson(nodeJson.eventSubscriptions);
+  const releaseScopes = stringArrayFromJson(nodeJson.releaseScopes);
   return {
     capabilities: Array.isArray(row.capabilities) ? row.capabilities : parsePostgresArray(row.capabilities),
     classificationMax: row.classification_max,
     contractVersion: "cop-federation-node-v1",
+    dataEndpoints,
     ...(detail ? { detail } : {}),
+    eventSubscriptions,
     health: row.health,
     lastSeenAt: isoString(row.last_seen_at),
+    ...(typeof nodeJson.mcpEndpoint === "string" && nodeJson.mcpEndpoint.trim() ? { mcpEndpoint: nodeJson.mcpEndpoint.trim() } : {}),
     nodeId: row.node_id,
     nodeName: row.node_name,
     nodeRole: row.node_role,
+    nodeTrustDomain: typeof nodeJson.nodeTrustDomain === "string" && nodeJson.nodeTrustDomain.trim()
+      ? nodeJson.nodeTrustDomain.trim()
+      : defaultTrustDomainForRole(row.node_role),
+    ...(typeof nodeJson.publicKeyRef === "string" && nodeJson.publicKeyRef.trim() ? { publicKeyRef: nodeJson.publicKeyRef.trim() } : {}),
+    releaseScopes: releaseScopes.length > 0 ? releaseScopes : defaultReleaseScopes(row.node_id, row.node_role),
     softwareVersion: row.software_version
   };
+}
+
+function stringArrayFromJson(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function eventFromRow(row: DomainEventRow): DomainEventRecord {

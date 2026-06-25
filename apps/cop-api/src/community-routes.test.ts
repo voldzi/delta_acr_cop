@@ -678,6 +678,13 @@ describe("community report routes", () => {
     expect(reportResponse.statusCode).toBe(200);
     expect(reportResponse.json()).toMatchObject({
       featureCollection: {
+        features: expect.arrayContaining([
+          expect.objectContaining({
+            properties: expect.objectContaining({
+              groupName: "DEMO Povodeň - Středočeský kraj"
+            })
+          })
+        ]),
         summary: {
           featureCount: 3
         }

@@ -8672,9 +8672,13 @@ components:
         - nodeName
         - capabilities
         - classificationMax
+        - dataEndpoints
+        - eventSubscriptions
         - softwareVersion
         - lastSeenAt
         - health
+        - nodeTrustDomain
+        - releaseScopes
       properties:
         contractVersion:
           type: string
@@ -8691,6 +8695,16 @@ components:
             type: string
         classificationMax:
           $ref: "#/components/schemas/PilotClassificationLevel"
+        dataEndpoints:
+          type: array
+          description: REST/OpenAPI, GeoJSON/OGC or service endpoints exposed by the node.
+          items:
+            type: string
+        eventSubscriptions:
+          type: array
+          description: Event channels or topics the node consumes from the federation backbone.
+          items:
+            type: string
         softwareVersion:
           type: string
         lastSeenAt:
@@ -8700,6 +8714,20 @@ components:
           $ref: "#/components/schemas/FederatedNodeHealth"
         detail:
           type: string
+        mcpEndpoint:
+          type: string
+          description: Optional MCP endpoint advertised by the node for read-only agent diagnostics.
+        nodeTrustDomain:
+          type: string
+          description: Trust boundary used for policy, audit and key ownership decisions.
+        publicKeyRef:
+          type: string
+          description: Reference to the node public key or JWKS/issuer record.
+        releaseScopes:
+          type: array
+          description: Scopes that may match event releasePolicy.allowedScopes for edge replay.
+          items:
+            type: string
       additionalProperties: false
     FederatedNodeList:
       type: object
@@ -8732,12 +8760,30 @@ components:
             type: string
         classificationMax:
           $ref: "#/components/schemas/PilotClassificationLevel"
+        dataEndpoints:
+          type: array
+          items:
+            type: string
+        eventSubscriptions:
+          type: array
+          items:
+            type: string
         softwareVersion:
           type: string
         health:
           $ref: "#/components/schemas/FederatedNodeHealth"
         detail:
           type: string
+        mcpEndpoint:
+          type: string
+        nodeTrustDomain:
+          type: string
+        publicKeyRef:
+          type: string
+        releaseScopes:
+          type: array
+          items:
+            type: string
       additionalProperties: false
     DomainEventType:
       type: string

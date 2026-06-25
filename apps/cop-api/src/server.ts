@@ -6925,53 +6925,53 @@ function floodDemoGroupMetadata(actor: AuthenticatedActor): Record<string, unkno
         },
         {
           byteSizeLabel: "18 MB",
-          caption: "Prutok u mostu",
+          caption: "Průtok u mostu",
           kind: "video",
           title: "IMG_4822.mp4"
         },
         {
           byteSizeLabel: "1,2 MB",
-          caption: "Koordinacni podklady",
+          caption: "Koordinační podklady",
           kind: "document",
           title: "Situacni_zprava.pdf"
         },
         {
           caption: "50.1047, 14.4252",
           kind: "location",
-          title: "Most Zelezny"
+          title: "Most Železný"
         }
       ],
       messages: [
         {
           authorName: "Jan Novak",
-          body: "Aktualizace stavu hladiny na tocich v postizene oblasti. Zadame potvrzeni prujezdnosti mostu.",
+          body: "Aktualizace stavu hladiny na tocích v postižené oblasti. Žádáme potvrzení průjezdnosti mostu.",
           direction: "incoming",
           id: "demo-msg-1",
-          role: "operacni dustojnik",
+          role: "operační důstojník",
           sentAt: "2026-05-16T10:18:00Z"
         },
         {
           authorName: "Petr Svoboda",
-          body: "Na rece Berounce bude 3. SPA dosazen v odpolednich hodinach. Doplnuji prioritu evakuacni trasy.",
+          body: "Na řece Berounce bude 3. SPA dosažen v odpoledních hodinách. Doplňuji prioritu evakuační trasy.",
           direction: "incoming",
           id: "demo-msg-2",
           link: {
-            label: "Udalost: E2025-0516-0001"
+            label: "Událost: E2025-0516-0001"
           },
-          role: "HZS Stredocesky kraj",
+          role: "HZS Středočeský kraj",
           sentAt: "2026-05-16T10:21:00Z"
         },
         {
           authorName: actor.displayName,
-          body: "Prosim o upresneni predpokladaneho casu a mista. Zanesu to do situacni mapy.",
+          body: "Prosím o upřesnění předpokládaného času a místa. Zanesu to do situační mapy.",
           direction: "outgoing",
           id: "demo-msg-3",
           role: "COP",
           sentAt: "2026-05-16T10:24:00Z"
         }
       ],
-      pinnedContext: "Dulezite kontakty, odkazy a media k povodnove udalosti.",
-      summary: "Koordinace povodnove situace, hlaseni z terenu a sdilena media.",
+      pinnedContext: "Důležité kontakty, odkazy a média k povodňové události.",
+      summary: "Koordinace povodňové situace, hlášení z terénu a sdílená média.",
       title: "Krizový štáb - Povodeň"
     },
     event: {
@@ -6979,13 +6979,13 @@ function floodDemoGroupMetadata(actor: AuthenticatedActor): Record<string, unkno
       kind: "flood",
       startedAt: "2026-05-16T08:30:00Z",
       status: "active",
-      title: "Povoden - Stredocesky kraj"
+      title: "Povodeň - Středočeský kraj"
     }
   });
 }
 
 function floodDemoReportSeeds(groupId: string, requestNow: Date) {
-  const groupName = "DEMO Povoden - Stredocesky kraj";
+  const groupName = "DEMO Povodeň - Středočeský kraj";
   return [
     {
       category: "flood" as const,

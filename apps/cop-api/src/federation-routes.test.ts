@@ -41,8 +41,14 @@ describe("federation runtime routes", () => {
         contractVersion: "cop-federation-node-list-v1",
         items: expect.arrayContaining([
           expect.objectContaining({
+            dataEndpoints: expect.arrayContaining(["/api/v1/map/query", "/api/v1/events/domain"]),
+            eventSubscriptions: expect.arrayContaining(["cop.domain.events"]),
+            mcpEndpoint: "/api/v1/mcp",
             nodeId: "node_central_cop",
-            nodeRole: "central-orchestrator"
+            nodeRole: "central-orchestrator",
+            nodeTrustDomain: "cop-central",
+            publicKeyRef: "oidc:cop-api",
+            releaseScopes: expect.arrayContaining(["public", "internal", "role:central-orchestrator"])
           })
         ])
       });
@@ -172,9 +178,15 @@ describe("federation runtime routes", () => {
         payload: {
           capabilities: ["offline-outbox", "domain-events"],
           classificationMax: "INTERNAL",
+          dataEndpoints: ["https://edge.example.test/api"],
+          eventSubscriptions: ["cop.node.sync", "cop.domain.events"],
           health: "ok",
+          mcpEndpoint: "https://edge.example.test/mcp",
           nodeName: "iPad field node",
           nodeRole: "edge-node",
+          nodeTrustDomain: "edge-poc",
+          publicKeyRef: "jwks:edge-ipad-01",
+          releaseScopes: ["public", "internal", "edge-field"],
           softwareVersion: "0.1.0"
         },
         url: "/api/v1/federation/nodes/node_edge_ipad_01/heartbeat"
@@ -182,9 +194,15 @@ describe("federation runtime routes", () => {
       expect(heartbeatResponse.statusCode).toBe(201);
       expect(heartbeatResponse.json()).toMatchObject({
         capabilities: ["offline-outbox", "domain-events"],
+        dataEndpoints: ["https://edge.example.test/api"],
+        eventSubscriptions: ["cop.node.sync", "cop.domain.events"],
         health: "ok",
+        mcpEndpoint: "https://edge.example.test/mcp",
         nodeId: "node_edge_ipad_01",
-        nodeRole: "edge-node"
+        nodeRole: "edge-node",
+        nodeTrustDomain: "edge-poc",
+        publicKeyRef: "jwks:edge-ipad-01",
+        releaseScopes: ["public", "internal", "edge-field"]
       });
     } finally {
       await app.close();
@@ -356,6 +374,7 @@ describe("federation runtime routes", () => {
           health: "ok",
           nodeName: "policy edge",
           nodeRole: "edge-node",
+          releaseScopes: ["public", "internal", "edge-field"],
           softwareVersion: "0.1.0"
         },
         url: "/api/v1/federation/nodes/node_edge_policy_01/heartbeat"
@@ -394,6 +413,16 @@ describe("federation runtime routes", () => {
         },
         {
           classification: { level: "INTERNAL" },
+          entityId: "task-release-scope-1",
+          entityType: "task",
+          eventId: "event-release-scope-1",
+          payload: { title: "Scoped field task" },
+          producerNodeId: "node_central_cop",
+          releasePolicy: { allowedScopes: ["edge-field"], visibility: "private" },
+          type: "task.created"
+        },
+        {
+          classification: { level: "INTERNAL" },
           entityId: "task-private-1",
           entityType: "task",
           eventId: "event-private-other-node-1",
@@ -424,9 +453,10 @@ describe("federation runtime routes", () => {
         contractVersion: "cop-edge-domain-event-replay-v1",
         items: [
           expect.objectContaining({ id: "event-public-1", replayOffset: 1 }),
-          expect.objectContaining({ id: "event-edge-internal-1", replayOffset: 3 })
+          expect.objectContaining({ id: "event-edge-internal-1", replayOffset: 3 }),
+          expect.objectContaining({ id: "event-release-scope-1", replayOffset: 4 })
         ],
-        nextOffset: 4,
+        nextOffset: 5,
         policy: {
           classificationMax: "INTERNAL",
           filteredOut: {
@@ -437,9 +467,9 @@ describe("federation runtime routes", () => {
           nodeRole: "edge-node"
         },
         summary: {
-          count: 2,
-          scanned: 4,
-          totalAvailable: 4
+          count: 3,
+          scanned: 5,
+          totalAvailable: 5
         }
       });
 
@@ -452,7 +482,7 @@ describe("federation runtime routes", () => {
       expect(ack.statusCode).toBe(200);
       expect(ack.json()).toMatchObject({
         cursor: {
-          lastAckedOffset: 4,
+          lastAckedOffset: 5,
           nodeId: "node_edge_policy_01"
         }
       });

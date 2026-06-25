@@ -66,12 +66,18 @@ export interface FederatedNodeRecord {
   capabilities: string[];
   classificationMax: PilotClassificationLevel;
   contractVersion: "cop-federation-node-v1";
+  dataEndpoints: string[];
   detail?: string;
+  eventSubscriptions: string[];
   health: FederatedNodeHealth;
   lastSeenAt: string;
+  mcpEndpoint?: string;
   nodeId: string;
   nodeName: string;
   nodeRole: FederatedNodeRole;
+  nodeTrustDomain: string;
+  publicKeyRef?: string;
+  releaseScopes: string[];
   softwareVersion: string;
 }
 
@@ -215,11 +221,22 @@ export function createDefaultFederatedNodes(now: Date = new Date()): Map<string,
         capabilities: ["domain-events", "audit-events", "map-features", "notification-decisions", "mcp-gateway"],
         classificationMax: "SENSITIVE",
         contractVersion: "cop-federation-node-v1",
+        dataEndpoints: [
+          "/api/v1/map/catalog",
+          "/api/v1/map/query",
+          "/api/v1/events/domain",
+          "/api/v1/edge/replay"
+        ],
+        eventSubscriptions: ["cop.domain.events", "cop.provider.health", "cop.node.sync", "cop.ai.audit"],
         health: "ok",
         lastSeenAt: timestamp,
+        mcpEndpoint: "/api/v1/mcp",
         nodeId: "node_central_cop",
         nodeName: "CSM/COP Central",
         nodeRole: "central-orchestrator",
+        nodeTrustDomain: "cop-central",
+        publicKeyRef: "oidc:cop-api",
+        releaseScopes: ["public", "internal", "role:central-orchestrator", "node:node_central_cop"],
         softwareVersion: process.env.npm_package_version ?? "0.1.0"
       }
     ],
@@ -229,11 +246,19 @@ export function createDefaultFederatedNodes(now: Date = new Date()): Map<string,
         capabilities: ["map-features", "provider-observability", "domain-events"],
         classificationMax: "INTERNAL",
         contractVersion: "cop-federation-node-v1",
+        dataEndpoints: [
+          process.env.COP_SITUATION_DATA_BASE_URL ?? "sim:situation-data-api",
+          process.env.COP_SAFETY_DATA_BASE_URL ?? "sim:safety-data-api",
+          process.env.COP_FLIGHT_DATA_BASE_URL ?? "sim:flight-data-api"
+        ],
+        eventSubscriptions: ["cop.provider.health"],
         health: "ok",
         lastSeenAt: timestamp,
         nodeId: "node_sim_provider",
         nodeName: "SIM Provider Gateway",
         nodeRole: "provider-node",
+        nodeTrustDomain: "sim-provider",
+        releaseScopes: ["public", "internal", "role:provider-node", "node:node_sim_provider"],
         softwareVersion: "external"
       }
     ],
@@ -243,11 +268,15 @@ export function createDefaultFederatedNodes(now: Date = new Date()): Map<string,
         capabilities: ["chat-metadata", "device-registry", "push-notifications", "delivery-audit"],
         classificationMax: "SENSITIVE",
         contractVersion: "cop-federation-node-v1",
+        dataEndpoints: [process.env.COP_CSM_MESSAGING_BASE_URL ?? "csm:messaging-api"],
+        eventSubscriptions: ["cop.notifications.requested", "cop.domain.events"],
         health: "ok",
         lastSeenAt: timestamp,
         nodeId: "node_csm_messaging",
         nodeName: "CSM Messaging",
         nodeRole: "messaging-node",
+        nodeTrustDomain: "csm-messaging",
+        releaseScopes: ["public", "internal", "role:messaging-node", "node:node_csm_messaging"],
         softwareVersion: "external"
       }
     ]
@@ -429,6 +458,7 @@ export function canDeliverDomainEventToNode(event: DomainEventRecord, node: Fede
   }
 
   const scopes = new Set(releasePolicy.allowedScopes.map((scope) => scope.trim().toLowerCase()).filter(Boolean));
+  const nodeReleaseScopes = new Set((node.releaseScopes ?? defaultReleaseScopes(node.nodeId, node.nodeRole)).map((scope) => scope.trim().toLowerCase()).filter(Boolean));
   const nodeId = node.nodeId.toLowerCase();
   const nodeRole = node.nodeRole.toLowerCase();
   const capabilities = new Set(node.capabilities.map((capability) => capability.trim().toLowerCase()).filter(Boolean));
@@ -441,6 +471,7 @@ export function canDeliverDomainEventToNode(event: DomainEventRecord, node: Fede
     || scopes.has(`edge:${nodeId}`)
     || scopes.has(nodeRole)
     || scopes.has(`role:${nodeRole}`)
+    || [...scopes].some((scope) => nodeReleaseScopes.has(scope))
   ) {
     return { allowed: true, reason: "allowed" };
   }
@@ -503,6 +534,8 @@ export function updateFederatedNodeHeartbeat(
   const nodeRole = stringValue(body.nodeRole);
   const health = stringValue(body.health);
   const classificationMax = stringValue(body.classificationMax);
+  const mcpEndpoint = parseOptionalUriLike(body.mcpEndpoint);
+  const publicKeyRef = stringValue(body.publicKeyRef);
   const resolvedRole = isFederatedNodeRole(nodeRole) ? nodeRole : existing?.nodeRole;
   if (!resolvedRole) {
     return { ok: false, message: "nodeRole is required for new nodes." };
@@ -512,12 +545,18 @@ export function updateFederatedNodeHeartbeat(
     capabilities: parseStringArray(body.capabilities) ?? existing?.capabilities ?? [],
     classificationMax: isPilotClassificationLevel(classificationMax) ? classificationMax : existing?.classificationMax ?? "INTERNAL",
     contractVersion: "cop-federation-node-v1",
+    dataEndpoints: parseUriLikeArray(body.dataEndpoints) ?? existing?.dataEndpoints ?? [],
     ...(stringValue(body.detail) ? { detail: stringValue(body.detail) } : existing?.detail ? { detail: existing.detail } : {}),
+    eventSubscriptions: parseStringArray(body.eventSubscriptions) ?? existing?.eventSubscriptions ?? [],
     health: isFederatedNodeHealth(health) ? health : existing?.health ?? "ok",
     lastSeenAt: now.toISOString(),
+    ...(mcpEndpoint ? { mcpEndpoint } : existing?.mcpEndpoint ? { mcpEndpoint: existing.mcpEndpoint } : {}),
     nodeId,
     nodeName: stringValue(body.nodeName) ?? existing?.nodeName ?? nodeId,
     nodeRole: resolvedRole,
+    nodeTrustDomain: stringValue(body.nodeTrustDomain) ?? existing?.nodeTrustDomain ?? defaultTrustDomainForRole(resolvedRole),
+    ...(publicKeyRef ? { publicKeyRef } : existing?.publicKeyRef ? { publicKeyRef: existing.publicKeyRef } : {}),
+    releaseScopes: parseStringArray(body.releaseScopes) ?? existing?.releaseScopes ?? defaultReleaseScopes(nodeId, resolvedRole),
     softwareVersion: stringValue(body.softwareVersion) ?? existing?.softwareVersion ?? "unknown"
   };
   state.federatedNodes.set(nodeId, updated);
@@ -601,6 +640,46 @@ function parseDomainEventChannel(value: unknown): DomainEventChannel | undefined
     || channel === "cop.provider.health"
   ) {
     return channel;
+  }
+  return undefined;
+}
+
+export function defaultTrustDomainForRole(role: FederatedNodeRole): string {
+  switch (role) {
+    case "central-orchestrator":
+      return "cop-central";
+    case "civil-crisis-node":
+      return "cop-client";
+    case "edge-node":
+      return "cop-edge";
+    case "messaging-node":
+      return "csm-messaging";
+    case "provider-node":
+      return "provider";
+  }
+}
+
+export function defaultReleaseScopes(nodeId: string, role: FederatedNodeRole): string[] {
+  return ["public", "internal", `role:${role}`, `node:${nodeId}`];
+}
+
+function parseUriLikeArray(value: unknown): string[] | undefined {
+  const parsed = parseStringArray(value)
+    ?.map((item) => parseOptionalUriLike(item))
+    .filter((item): item is string => Boolean(item));
+  return parsed && parsed.length > 0 ? parsed : undefined;
+}
+
+function parseOptionalUriLike(value: unknown): string | undefined {
+  const text = stringValue(value);
+  if (!text) {
+    return undefined;
+  }
+  if (
+    text.startsWith("/") ||
+    /^[a-z][a-z0-9+.-]*:/iu.test(text)
+  ) {
+    return text;
   }
   return undefined;
 }
