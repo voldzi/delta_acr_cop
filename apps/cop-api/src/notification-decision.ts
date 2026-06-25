@@ -146,7 +146,7 @@ export function buildSafetyFeatureNotificationDecision(
   const sourceName = properties.sourceName ?? properties.source ?? properties.sourceId;
   const validFrom = properties.validFrom ?? properties.effectiveAt ?? properties.observedAt ?? properties.updatedAt ?? "";
   const validUntil = properties.validUntil ?? properties.expiresAt ?? "";
-  const severity = normalizeNotificationSeverity(properties.severity ?? properties.status) ?? "info";
+  const severity = safetyFeatureNotificationSeverity(properties) ?? "info";
   const title = safetyTitle(properties.headline, properties.hazardType, severity);
   return {
     contractVersion: "cop-notification-decision-v1",
@@ -192,7 +192,7 @@ export function buildSafetyFeatureNotificationDecision(
 export function evaluateSafetyFeatureCandidate(feature: SafetyFeature, requestNow: Date): { ok: boolean; reason: string } {
   const properties = feature.properties;
   const layerId = publicSafetyLayerId(properties.layer, properties.layerId);
-  const severity = normalizeNotificationSeverity(properties.severity ?? properties.status);
+  const severity = safetyFeatureNotificationSeverity(properties);
   if (!properties.featureId) {
     return { ok: false, reason: "Safety feature has no stable featureId." };
   }
@@ -367,6 +367,32 @@ function normalizeNotificationSeverity(value: unknown): CopNotificationSeverity 
     return "warning";
   }
   return undefined;
+}
+
+function safetyFeatureNotificationSeverity(properties: SafetyFeature["properties"]): CopNotificationSeverity | undefined {
+  if (properties.layer === "flood") {
+    const fromStage = floodStageNotificationSeverity(properties.floodStage);
+    if (fromStage) {
+      return fromStage;
+    }
+  }
+  return normalizeNotificationSeverity(properties.severity ?? properties.status);
+}
+
+function floodStageNotificationSeverity(value: unknown): CopNotificationSeverity | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value <= 0) {
+    return "info";
+  }
+  if (value === 1) {
+    return "advisory";
+  }
+  if (value === 2) {
+    return "warning";
+  }
+  return "critical";
 }
 
 function isCommunityPushSeverity(severity: CopNotificationSeverity): boolean {

@@ -5973,6 +5973,187 @@ dd {
   font-size: 9px;
 }
 
+.hydro-detail {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.hydro-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hydro-detail-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hydro-detail-header strong {
+  color: #edf3f8;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.hydro-detail-header span,
+.hydro-detail-empty,
+.hydro-detail-warning {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hydro-detail-error {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(127, 29, 29, 0.18);
+  color: #fecaca;
+  font-size: 12px;
+  padding: 8px;
+}
+
+.hydro-chart {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hydro-chart-panel {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  background: rgba(3, 10, 18, 0.38);
+}
+
+.hydro-chart-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #dbeafe;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hydro-chart-panel-title span {
+  color: var(--muted);
+}
+
+.hydro-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.hydro-axis {
+  stroke: rgba(148, 163, 184, 0.42);
+  stroke-width: 1;
+}
+
+.hydro-axis-label,
+.hydro-threshold-label {
+  fill: #94a3b8;
+  font-size: 10px;
+}
+
+.hydro-axis-label.end {
+  text-anchor: end;
+}
+
+.hydro-threshold {
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
+.hydro-threshold.dry {
+  stroke: #94a3b8;
+}
+
+.hydro-threshold.spa1 {
+  stroke: #facc15;
+}
+
+.hydro-threshold.spa2 {
+  stroke: #fb923c;
+}
+
+.hydro-threshold.spa3,
+.hydro-threshold.spa4 {
+  stroke: #ef4444;
+}
+
+.hydro-threshold-label.spa3,
+.hydro-threshold-label.spa4 {
+  fill: #fecaca;
+}
+
+.hydro-now-line {
+  stroke: #ef4444;
+  stroke-width: 1.5;
+  stroke-dasharray: 2 5;
+}
+
+.hydro-series {
+  stroke: #38bdf8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+}
+
+.hydro-series.forecast {
+  stroke: #7dd3fc;
+  stroke-dasharray: 7 5;
+}
+
+.hydro-series.TH {
+  stroke: #f59e0b;
+}
+
+.hydro-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.hydro-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-line {
+  width: 18px;
+  border-top: 2px solid #38bdf8;
+}
+
+.legend-line.forecast {
+  border-top-color: #7dd3fc;
+  border-top-style: dashed;
+}
+
+.legend-line.dry {
+  border-top-color: #94a3b8;
+  border-top-style: dashed;
+}
+
+.legend-line.spa {
+  border-top-color: #ef4444;
+}
+
+.legend-line.now {
+  border-top-color: #ef4444;
+  border-top-style: dotted;
+}
+
 .confidence-factor-list,
 .conflict-list,
 .object-history-list {

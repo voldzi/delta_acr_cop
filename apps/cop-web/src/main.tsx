@@ -91,6 +91,7 @@ import {
   fetchMapCatalog,
   fetchMapFeatures,
   fetchPlaceGeocode,
+  fetchSafetyHydroStationDetail,
   fetchDemoScenarioStatus,
   fetchSketchDrawings,
   fetchUserProfile,
@@ -134,6 +135,8 @@ import {
   type FlightDataAttributes,
   type FlightReferenceFeatureCollectionResponse,
   type HealthStatus,
+  type HydroSeriesId,
+  type HydroStationDetailResponse,
   type IncidentFusionSuggestion,
   type IncidentRecord,
   type IncidentSeverity,
@@ -4115,6 +4118,7 @@ export function App() {
                 </React.Suspense>
               </div>
               <DataWorkspaceBoard
+                authToken={authToken}
                 metrics={metrics}
                 objects={visibleObjects}
                 selectedObject={selectedObject ?? null}
@@ -5464,6 +5468,7 @@ function PersonalAlertBoard({
 }
 
 function DataWorkspaceBoard({
+  authToken,
   metrics,
   objects,
   selectedObject,
@@ -5471,6 +5476,7 @@ function DataWorkspaceBoard({
   situationFeatures,
   onOpenSettings
 }: {
+  authToken: string | undefined;
   metrics: DashboardMetrics;
   objects: CopObject[];
   selectedObject: CopObject | null;
@@ -5498,7 +5504,7 @@ function DataWorkspaceBoard({
       </div>
 
       {selectedSituationFeature ? (
-        <SelectedSituationDataCard feature={selectedSituationFeature} />
+        <SelectedSituationDataCard authToken={authToken} feature={selectedSituationFeature} />
       ) : selectedObject ? (
         <SelectedObjectDataCard object={selectedObject} />
       ) : (
@@ -5535,7 +5541,7 @@ function SelectedObjectDataCard({ object }: { object: CopObject }) {
   );
 }
 
-function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
+function SelectedSituationDataCard({ authToken, feature }: { authToken: string | undefined; feature: SituationFeature }) {
   const status = situationFeatureStatusModel(feature);
   const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature);
   const rows: Array<[string, React.ReactNode]> = [
@@ -5560,7 +5566,7 @@ function SelectedSituationDataCard({ feature }: { feature: SituationFeature }) {
       {isCommunicationTowerFeature(feature) ? <CommunicationTowerSummary feature={feature} /> : null}
       {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {feature.properties.layer === "traffic" ? <TrafficSummary feature={feature} /> : null}
-      {isSafetyLayerId(feature.properties.layer) ? <SafetyRiskSummary feature={feature} /> : null}
+      {isSafetyLayerId(feature.properties.layer) ? <SafetyRiskSummary authToken={authToken} feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherContext ? <WeatherContextSummary feature={feature} /> : null}
     </ObjectDetailSection>
@@ -5674,10 +5680,40 @@ function WeatherContextSummary({ feature }: { feature: SituationFeature }) {
   );
 }
 
-function SafetyRiskSummary({ feature }: { feature: SituationFeature }) {
+function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefined; feature: SituationFeature }) {
   const properties = feature.properties;
   const metrics = isRecord(properties.metrics) ? properties.metrics : {};
   const status = situationFeatureStatusModel(feature);
+  const hydroDetailUrl = React.useMemo(() => hydrologyDetailUrl(properties), [properties.detailUrl, properties.stationId, properties.timelineUrl]);
+  const [hydroDetail, setHydroDetail] = React.useState<HydroStationDetailResponse | null>(null);
+  const [hydroError, setHydroError] = React.useState<string | null>(null);
+  const [hydroLoading, setHydroLoading] = React.useState(false);
+  const loadHydroDetail = React.useCallback(async () => {
+    if (!hydroDetailUrl) {
+      return;
+    }
+    setHydroLoading(true);
+    setHydroError(null);
+    try {
+      setHydroDetail(await fetchSafetyHydroStationDetail(apiBase, authToken, hydroDetailUrl));
+    } catch (error) {
+      setHydroDetail(null);
+      setHydroError(error instanceof Error ? humanizeApiError(error.message) : "Detail hydrologické stanice se nepodařilo načíst.");
+    } finally {
+      setHydroLoading(false);
+    }
+  }, [authToken, hydroDetailUrl]);
+
+  React.useEffect(() => {
+    if (properties.layer !== "flood" || !hydroDetailUrl) {
+      setHydroDetail(null);
+      setHydroError(null);
+      setHydroLoading(false);
+      return;
+    }
+    void loadHydroDetail();
+  }, [hydroDetailUrl, loadHydroDetail, properties.layer]);
+
   const rows: Array<[string, React.ReactNode]> = [
     ["Riziko", safetyHazardLabel(properties.hazardType ?? properties.category)],
     ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
@@ -5697,6 +5733,8 @@ function SafetyRiskSummary({ feature }: { feature: SituationFeature }) {
       ["Trend", <StatusBadge key="trend" label={floodTrendLabel(properties.trend)} tone={floodTrendTone(properties.trend)} />],
       ["Hladina", formatOptionalNumber(safetyMetricNumber(properties, metrics, "waterLevelCm"), " cm")],
       ["Průtok", formatOptionalNumber(safetyMetricNumber(properties, metrics, "discharge", "flowM3s"), " m3/s")],
+      ["Teplota vody", formatOptionalNumber(safetyMetricNumber(properties, metrics, "waterTemperatureC"), " °C")],
+      ["Předpověď", formatHydroForecast(properties, metrics)],
       ["Změna hladiny", formatSignedMetric(safetyMetricNumber(properties, metrics, "waterLevelDeltaCm"), " cm")],
       ["Změna průtoku", formatSignedMetric(safetyMetricNumber(properties, metrics, "flowDeltaM3s"), " m3/s")],
       ["Stáří měření", formatDurationSeconds(safetyMetricNumber(properties, metrics, "observationAgeSeconds"))],
@@ -5718,8 +5756,192 @@ function SafetyRiskSummary({ feature }: { feature: SituationFeature }) {
   return (
     <ObjectDetailSection title={properties.layer === "flood" ? "Hydrologie" : properties.layer === "fire" ? "Požární riziko" : "Výstraha"}>
       <DetailGrid rows={rows} />
+      {properties.layer === "flood" ? (
+        <HydroStationDetailCard
+          detail={hydroDetail}
+          detailUrl={hydroDetailUrl}
+          error={hydroError}
+          loading={hydroLoading}
+          onRefresh={loadHydroDetail}
+        />
+      ) : null}
     </ObjectDetailSection>
   );
+}
+
+function HydroStationDetailCard({
+  detail,
+  detailUrl,
+  error,
+  loading,
+  onRefresh
+}: {
+  detail: HydroStationDetailResponse | null;
+  detailUrl: string | undefined;
+  error: string | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  if (!detailUrl) {
+    return <div className="hydro-detail-empty">Detailní graf pro tento hlásný profil zatím není dostupný.</div>;
+  }
+  return (
+    <div className="hydro-detail">
+      <div className="hydro-detail-header">
+        <div>
+          <strong>{detail?.chart.title ?? "Detail hlásného profilu"}</strong>
+          <span>{detail ? `${formatShortDateTime(detail.window.from)} - ${formatShortDateTime(detail.window.to)}` : "Časová řada ČHMÚ"}</span>
+        </div>
+        <button className="mini-button" disabled={loading} onClick={onRefresh} type="button">
+          {loading ? "Načítám" : "Obnovit"}
+        </button>
+      </div>
+      {error ? <div className="hydro-detail-error">{error}</div> : null}
+      {loading && !detail ? <div className="hydro-detail-empty">Načítám hydrologická měření...</div> : null}
+      {detail ? <HydroStationChart detail={detail} /> : null}
+      {detail?.warnings.length ? <div className="hydro-detail-warning">{detail.warnings.slice(0, 2).join(" · ")}</div> : null}
+    </div>
+  );
+}
+
+function HydroStationChart({ detail }: { detail: HydroStationDetailResponse }) {
+  const panels = detail.chart.panels.filter((panel) => panel.seriesIds.some((seriesId) => hydroSeriesById(detail, seriesId)?.points.length));
+  if (panels.length === 0) {
+    return <div className="hydro-detail-empty">Pro zvolené období zatím nejsou dostupné hodnoty grafu.</div>;
+  }
+  return (
+    <div className="hydro-chart">
+      {panels.map((panel) => (
+        <HydroChartPanel detail={detail} key={panel.id} panel={panel} />
+      ))}
+      <div className="hydro-chart-legend">
+        <span><i className="legend-line measured" /> měření</span>
+        <span><i className="legend-line forecast" /> předpověď</span>
+        <span><i className="legend-line dry" /> sucho</span>
+        <span><i className="legend-line spa" /> SPA</span>
+        <span><i className="legend-line now" /> aktuální čas</span>
+      </div>
+    </div>
+  );
+}
+
+function HydroChartPanel({
+  detail,
+  panel
+}: {
+  detail: HydroStationDetailResponse;
+  panel: HydroStationDetailResponse["chart"]["panels"][number];
+}) {
+  const series = panel.seriesIds
+    .map((seriesId) => hydroSeriesById(detail, seriesId))
+    .filter((item): item is NonNullable<ReturnType<typeof hydroSeriesById>> => Boolean(item && item.points.length));
+  const allPoints = series.flatMap((item) => item.points);
+  const timeDomain = hydroTimeDomain(allPoints, detail.chart.currentTime);
+  const thresholdValues = hydroThresholdLines(detail, panel.thresholdSet).map((line) => line.value);
+  const valueDomain = hydroValueDomain([...allPoints.map((point) => point.value), ...thresholdValues]);
+  const width = 640;
+  const height = panel.id === "temperature" ? 150 : 190;
+  const padding = { bottom: 26, left: 54, right: 16, top: 20 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const x = (at: string) => padding.left + ((Date.parse(at) - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
+  const y = (value: number) => padding.top + chartHeight - ((value - valueDomain.min) / Math.max(1, valueDomain.max - valueDomain.min)) * chartHeight;
+  const nowX = x(detail.chart.currentTime);
+
+  return (
+    <div className="hydro-chart-panel">
+      <div className="hydro-chart-panel-title">
+        <strong>{panel.title}</strong>
+        <span>{panel.yAxis.unit}</span>
+      </div>
+      <svg aria-label={panel.title} className="hydro-chart-svg" role="img" viewBox={`0 0 ${width} ${height}`}>
+        <line className="hydro-axis" x1={padding.left} x2={padding.left + chartWidth} y1={padding.top + chartHeight} y2={padding.top + chartHeight} />
+        <line className="hydro-axis" x1={padding.left} x2={padding.left} y1={padding.top} y2={padding.top + chartHeight} />
+        <text className="hydro-axis-label" x={padding.left} y={height - 6}>{formatShortTime(timeDomain.min)}</text>
+        <text className="hydro-axis-label end" x={padding.left + chartWidth} y={height - 6}>{formatShortTime(timeDomain.max)}</text>
+        <text className="hydro-axis-label" x={4} y={padding.top + 6}>{formatHydroAxisValue(valueDomain.max, panel.yAxis.unit)}</text>
+        <text className="hydro-axis-label" x={4} y={padding.top + chartHeight}>{formatHydroAxisValue(valueDomain.min, panel.yAxis.unit)}</text>
+        {hydroThresholdLines(detail, panel.thresholdSet).map((line) => (
+          <g key={line.key}>
+            <line className={`hydro-threshold ${line.key}`} x1={padding.left} x2={padding.left + chartWidth} y1={y(line.value)} y2={y(line.value)} />
+            <text className={`hydro-threshold-label ${line.key}`} x={padding.left + 4} y={y(line.value) - 4}>{line.label}</text>
+          </g>
+        ))}
+        {Number.isFinite(nowX) ? <line className="hydro-now-line" x1={nowX} x2={nowX} y1={padding.top} y2={padding.top + chartHeight} /> : null}
+        {series.map((item) => (
+          <polyline
+            className={`hydro-series ${item.role === "forecast" ? "forecast" : "measured"} ${item.id}`}
+            fill="none"
+            key={item.id}
+            points={item.points.map((point) => `${x(point.at)},${y(point.value)}`).join(" ")}
+          />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function hydrologyDetailUrl(properties: SituationFeature["properties"]): string | undefined {
+  const directUrl = properties.detailUrl ?? properties.timelineUrl;
+  if (directUrl) {
+    return directUrl;
+  }
+  return properties.stationId ? `/safety-data/api/v1/hydro/stations/${encodeURIComponent(properties.stationId)}/observations` : undefined;
+}
+
+function hydroSeriesById(detail: HydroStationDetailResponse, seriesId: HydroSeriesId): HydroStationDetailResponse["series"][number] | undefined {
+  return detail.series.find((series) => series.id === seriesId);
+}
+
+function hydroTimeDomain(points: Array<{ at: string }>, currentTime: string): { max: number; min: number } {
+  const values = [...points.map((point) => Date.parse(point.at)), Date.parse(currentTime)].filter(Number.isFinite);
+  if (values.length === 0) {
+    const now = Date.now();
+    return { max: now + 60 * 60 * 1000, min: now - 60 * 60 * 1000 };
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const padding = Math.max(30 * 60 * 1000, (max - min) * 0.04);
+  return { max: max + padding, min: min - padding };
+}
+
+function hydroValueDomain(values: number[]): { max: number; min: number } {
+  const finite = values.filter(Number.isFinite);
+  if (finite.length === 0) {
+    return { max: 1, min: 0 };
+  }
+  const min = Math.min(...finite);
+  const max = Math.max(...finite);
+  if (min === max) {
+    return { max: max + Math.max(1, Math.abs(max) * 0.1), min: min - Math.max(1, Math.abs(min) * 0.1) };
+  }
+  const padding = (max - min) * 0.12;
+  return { max: max + padding, min: Math.max(0, min - padding) };
+}
+
+function hydroThresholdLines(
+  detail: HydroStationDetailResponse,
+  thresholdSet: "discharge" | "waterLevel" | undefined
+): Array<{ key: string; label: string; value: number }> {
+  if (!thresholdSet) {
+    return [];
+  }
+  const thresholds = detail.thresholds[thresholdSet];
+  return [
+    { key: "dry", label: "sucho", value: thresholds.dry },
+    { key: "spa1", label: "SPA 1", value: thresholds.spa1 },
+    { key: "spa2", label: "SPA 2", value: thresholds.spa2 },
+    { key: "spa3", label: "SPA 3", value: thresholds.spa3 },
+    { key: "spa4", label: "SPA 4", value: thresholds.spa4 }
+  ].flatMap((item) => typeof item.value === "number" && Number.isFinite(item.value) ? [{ ...item, value: item.value }] : []);
+}
+
+function formatHydroAxisValue(value: number, unit: string): string {
+  return `${Math.round(value * 10) / 10} ${unit}`;
+}
+
+function formatShortTime(value: number): string {
+  return new Intl.DateTimeFormat("cs-CZ", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
 function StatusBadge({ label, tone }: { label: string; tone: "neutral" | "ok" | "warn" | "critical" }) {
@@ -10955,6 +11177,13 @@ function situationFeatureStatusModel(feature: SituationFeature): { label: string
   if (feature.properties.stale) {
     return { label: "starší data", tone: "warn" };
   }
+  if (feature.properties.layer === "flood") {
+    const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+    const floodStage = safetyMetricNumber(feature.properties, metrics, "floodStage", "floodActivityLevel");
+    if (floodStage !== undefined) {
+      return floodStageStatusModel(floodStage);
+    }
+  }
   const aviationCategory = aviationFlightCategoryModel(feature);
   if (aviationCategory) {
     return aviationCategory;
@@ -11519,6 +11748,31 @@ function floodStageLabel(value: number | undefined): string {
   return `${Math.round(value)}. SPA`;
 }
 
+function floodStageStatusModel(value: number): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } {
+  if (value <= 0) {
+    return { label: "bez SPA", tone: "ok" };
+  }
+  if (value === 1) {
+    return { label: "1. SPA", tone: "warn" };
+  }
+  if (value === 2) {
+    return { label: "2. SPA", tone: "warn" };
+  }
+  return { label: value >= 4 ? "extrémní SPA" : "3. SPA", tone: "critical" };
+}
+
+function formatHydroForecast(properties: SituationFeature["properties"], metrics: Record<string, unknown>): string {
+  const available = booleanProperty(properties.forecastAvailable) ?? booleanProperty(metrics.forecastAvailable);
+  const until = properties.forecastUntil ?? stringProperty(metrics.forecastUntil);
+  if (available === false) {
+    return "není dostupná";
+  }
+  if (available === true) {
+    return until ? `dostupná do ${formatShortDateTime(until)}` : "dostupná";
+  }
+  return until ? `do ${formatShortDateTime(until)}` : "n/a";
+}
+
 function floodTrendLabel(value: string | undefined): string {
   switch (value) {
     case "rising":
@@ -11765,6 +12019,22 @@ function stringProperty(value: unknown): string | undefined {
 
 function numberProperty(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanProperty(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "ano"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "no", "ne"].includes(normalized)) {
+      return false;
+    }
+  }
+  return undefined;
 }
 
 function formatRecordValue(value: unknown): string {

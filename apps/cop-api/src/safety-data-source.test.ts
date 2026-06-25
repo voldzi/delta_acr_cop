@@ -39,7 +39,8 @@ describe("SafetyDataSourceAdapter", () => {
     const features = await adapter.fetchFeatures({
       bbox: { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: ["warnings", "flood"],
-      limit: 20
+      limit: 20,
+      sources: ["chmi_alerts", "chmi_hydro"]
     }, new Date("2026-05-20T10:00:06Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/catalog");
@@ -48,7 +49,7 @@ describe("SafetyDataSourceAdapter", () => {
       "https://sim.zeleznalady.cz/safety-data/api/v1/observability"
     );
     expect(String(fetchMock.mock.calls[3]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/safety-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=warnings%2Cflood&limit=20"
+      "https://sim.zeleznalady.cz/safety-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=warnings%2Cflood&limit=20&source=chmi_alerts%2Cchmi_hydro"
     );
     expect(layers).toMatchObject([
       {
@@ -105,6 +106,61 @@ describe("SafetyDataSourceAdapter", () => {
       upstreamBbox: { east: 15.75, north: 50.75, south: 49.5, west: 13.5 }
     });
     expect(features.query.bbox).toEqual({ east: 15.35, north: 50.45, south: 49.65, west: 13.85 });
+    expect(features.query.sources).toEqual(["chmi_alerts", "chmi_hydro"]);
+  });
+
+  it("proxies CHMI hydro station detail through the SIM safety-data contract", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).not.toMatchObject({ Authorization: expect.any(String) });
+      return new Response(JSON.stringify({
+        chart: {
+          currentTime: "2026-06-25T10:00:00Z",
+          panels: [
+            {
+              id: "water_level",
+              seriesIds: ["H", "H_F"],
+              thresholdSet: "waterLevel",
+              title: "Vodní stav",
+              yAxis: { label: "vodní stav [cm]", unit: "cm" }
+            }
+          ],
+          title: "Hlásný profil"
+        },
+        contractVersion: "chmi-hydro-station-detail-v1",
+        generatedAt: "2026-06-25T10:00:00Z",
+        providerId: "sim.safety-data",
+        series: [],
+        sourceId: "chmi_hydro",
+        station: { stationId: "0-203-1-239000", stationName: "Hlásný profil" },
+        thresholds: {},
+        warnings: [],
+        window: { from: "2026-06-25T00:00:00Z", to: "2026-06-25T10:00:00Z" }
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SafetyDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/safety-data/api/v1/",
+      cacheTtlMs: 120000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const detail = await adapter.fetchHydroStationDetail("0-203-1-239000", {
+      from: "2026-06-25T00:00:00Z",
+      series: "H,Q,TH,H_F,Q_F",
+      to: "2026-06-25T10:00:00Z"
+    }, new Date("2026-06-25T10:00:00Z"));
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://sim.zeleznalady.cz/safety-data/api/v1/hydro/stations/0-203-1-239000/observations?from=2026-06-25T00%3A00%3A00Z&to=2026-06-25T10%3A00%3A00Z&series=H%2CQ%2CTH%2CH_F%2CQ_F"
+    );
+    expect(detail).toMatchObject({
+      contractVersion: "chmi-hydro-station-detail-v1",
+      sourceId: "chmi_hydro",
+      station: { stationId: "0-203-1-239000" }
+    });
   });
 
   it("uses safety-data observability as source health without treating degraded external data as an outage", async () => {

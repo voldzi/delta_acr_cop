@@ -380,6 +380,7 @@ export interface SituationFeatureProperties {
   dataQuality?: string;
   demSource?: string;
   description?: string;
+  detailUrl?: string;
   discharge?: number;
   effectiveAt?: string;
   disclaimer?: string;
@@ -388,6 +389,8 @@ export interface SituationFeatureProperties {
   featureId: string;
   fireStatus?: string;
   floodStage?: number;
+  forecastAvailable?: boolean;
+  forecastUntil?: string;
   generatedAt?: string;
   geocodes?: Array<{ scheme: string; value: string }>;
   geometryMode?: string;
@@ -454,6 +457,7 @@ export interface SituationFeatureProperties {
   teamLabel?: string;
   teamScores?: MissionArenaTeamScore[];
   technology?: string;
+  timelineUrl?: string;
   totalVotes?: number;
   trend?: string;
   urgency?: string;
@@ -461,6 +465,7 @@ export interface SituationFeatureProperties {
   validFrom?: string;
   validUntil?: string;
   voteCount?: number;
+  waterTemperatureC?: number;
   waterLevelCm?: number;
 }
 
@@ -643,12 +648,15 @@ export interface SafetyFeatureProperties {
   certainty?: string;
   confidence?: number;
   description?: string;
+  detailUrl?: string;
   discharge?: number;
   effectiveAt?: string;
   expiresAt?: string;
   featureId: string;
   fireStatus?: string;
   floodStage?: number;
+  forecastAvailable?: boolean;
+  forecastUntil?: string;
   geocodes?: Array<{ scheme: string; value: string }>;
   geometryMode?: string;
   hazardType?: string;
@@ -674,12 +682,88 @@ export interface SafetyFeatureProperties {
   status?: string;
   styleHint?: string;
   tags?: Record<string, unknown>;
+  timelineUrl?: string;
   trend?: string;
   updatedAt?: string;
   urgency?: string;
   validFrom?: string;
   validUntil?: string;
+  waterTemperatureC?: number;
   waterLevelCm?: number;
+}
+
+export type HydroSeriesId = "H" | "Q" | "TH" | "H_F" | "Q_F";
+
+export interface HydroStationDetailPoint {
+  at: string;
+  ingestedAt: string;
+  source: "live_now" | "local_history" | "recent_backfill";
+  value: number;
+}
+
+export interface HydroStationDetailSeries {
+  id: HydroSeriesId;
+  label: string;
+  points: HydroStationDetailPoint[];
+  role: "forecast" | "observation";
+  unit: string;
+}
+
+export interface HydroStationDetailResponse {
+  chart: {
+    currentTime: string;
+    panels: Array<{
+      forecastSeriesIds?: HydroSeriesId[];
+      id: "discharge" | "temperature" | "water_level";
+      seriesIds: HydroSeriesId[];
+      thresholdSet?: "discharge" | "waterLevel";
+      title: string;
+      yAxis: {
+        label: string;
+        unit: string;
+      };
+    }>;
+    title: string;
+  };
+  contractVersion: "chmi-hydro-station-detail-v1";
+  generatedAt: string;
+  providerId: "sim.safety-data";
+  series: HydroStationDetailSeries[];
+  sourceId: "chmi_hydro";
+  station: {
+    catchmentAreaKm2?: number;
+    hydrologicalOrder?: string;
+    lat: number;
+    lon: number;
+    spaType?: string;
+    stationCode?: string;
+    stationId: string;
+    stationName: string;
+    streamName?: string;
+  };
+  thresholds: {
+    discharge: {
+      dry?: number;
+      spa1?: number;
+      spa2?: number;
+      spa3?: number;
+      spa4?: number;
+      unit: "m3/s";
+    };
+    waterLevel: {
+      dry?: number;
+      spa1?: number;
+      spa2?: number;
+      spa3?: number;
+      spa4?: number;
+      unit: "cm";
+    };
+  };
+  warnings: string[];
+  window: {
+    from: string;
+    to: string;
+  };
 }
 
 export interface SafetySourceDescriptor {
@@ -1878,6 +1962,40 @@ export async function fetchMapFeatures(
     },
     method: "POST"
   });
+}
+
+export async function fetchSafetyHydroStationDetail(
+  apiBase: string,
+  token: string | undefined,
+  detailUrl: string
+): Promise<HydroStationDetailResponse> {
+  const request = safetyHydroStationDetailRequest(detailUrl);
+  if (!request.query.has("series")) {
+    request.query.set("series", "H,Q,TH,H_F,Q_F");
+  }
+  const suffix = request.query.toString() ? `?${request.query.toString()}` : "";
+  return fetchJson<HydroStationDetailResponse>(
+    `${apiBase}/api/v1/safety/hydro/stations/${encodeURIComponent(request.stationId)}/observations${suffix}`,
+    {
+      headers: {
+        ...(authHeaders(token) ?? {}),
+        Accept: "application/json"
+      }
+    }
+  );
+}
+
+function safetyHydroStationDetailRequest(detailUrl: string): { query: URLSearchParams; stationId: string } {
+  const url = new URL(detailUrl, "https://cop.local");
+  const match = /^\/safety-data\/api\/v1\/hydro\/stations\/([^/]+)\/observations$/u.exec(url.pathname);
+  const stationId = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+  if (!stationId) {
+    throw new Error("Neplatná adresa detailu hydrologické stanice.");
+  }
+  return {
+    query: new URLSearchParams(url.searchParams),
+    stationId
+  };
 }
 
 export async function fetchWeatherRadarFrames(

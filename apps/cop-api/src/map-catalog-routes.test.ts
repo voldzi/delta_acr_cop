@@ -7,6 +7,7 @@ import type {
   SafetyDataSourceConfig,
   SafetyFeatureCollection,
   SafetyFeatureQuery,
+  SafetyHydroStationDetailQuery,
   SafetyLayerDescriptor,
   SafetySourceDescriptor
 } from "./safety-data-source.js";
@@ -317,7 +318,7 @@ describe("map catalog route", () => {
           }
         },
         includePartner: true,
-        layerIds: ["public.mobile.network", "public.safety.warnings", "partner.tak.mobile"],
+        layerIds: ["public.mobile.network", "public.safety.warnings", "public.safety.flood", "partner.tak.mobile"],
         limit: 20
       },
       method: "POST",
@@ -332,16 +333,37 @@ describe("map catalog route", () => {
       tak?: TakGatewayFeatureCollection;
       warnings: string[];
     };
-    expect(body.query.layerIds).toEqual(expect.arrayContaining(["public.mobile.network", "public.safety.warnings"]));
-    expect(body.query.layerIds).toHaveLength(2);
+    expect(body.query.layerIds).toEqual(expect.arrayContaining(["public.mobile.network", "public.safety.warnings", "public.safety.flood"]));
+    expect(body.query.layerIds).toHaveLength(3);
     expect(body.situation?.query).toMatchObject({
       layers: ["mobile_network"],
       sources: ["mobile_network_model"],
       technology: "4G"
     });
-    expect(body.safety?.query.layers).toEqual(["warnings"]);
+    expect(body.safety?.query.layers).toEqual(["warnings", "flood"]);
+    expect(body.safety?.query.sources).toEqual(["chmi_alerts", "chmi_hydro"]);
     expect(body.tak).toBeUndefined();
     expect(body.warnings.join(" ")).toContain("partner.tak.mobile");
+  });
+
+  it("proxies CHMI hydro station detail through COP API", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      now: () => new Date("2026-06-25T10:00:00Z"),
+      safetyDataSource: new FakeSafetyDataSource()
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/safety/hydro/stations/0-203-1-239000/observations?series=H,Q"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      contractVersion: "chmi-hydro-station-detail-v1",
+      sourceId: "chmi_hydro",
+      station: { stationId: "0-203-1-239000" }
+    });
   });
 
   it("uses catalog defaults for mobile-network technology filters", async () => {
@@ -1145,6 +1167,60 @@ class FakeSafetyDataSource implements SafetyDataSource {
       },
       type: "FeatureCollection",
       warnings: []
+    };
+  }
+
+  async fetchHydroStationDetail(stationId: string, query: SafetyHydroStationDetailQuery, requestNow: Date): Promise<unknown> {
+    return {
+      chart: {
+        currentTime: requestNow.toISOString(),
+        panels: [
+          {
+            id: "water_level",
+            seriesIds: ["H"],
+            thresholdSet: "waterLevel",
+            title: "Vodní stav",
+            yAxis: { label: "vodní stav [cm]", unit: "cm" }
+          }
+        ],
+        title: "Test station - Test river"
+      },
+      contractVersion: "chmi-hydro-station-detail-v1",
+      generatedAt: requestNow.toISOString(),
+      providerId: "sim.safety-data",
+      series: [
+        {
+          id: "H",
+          label: "Vodní stav",
+          points: [
+            {
+              at: requestNow.toISOString(),
+              ingestedAt: requestNow.toISOString(),
+              source: "live_now",
+              value: 145
+            }
+          ],
+          role: "observation",
+          unit: "cm"
+        }
+      ],
+      sourceId: "chmi_hydro",
+      station: {
+        lat: 50.1,
+        lon: 14.4,
+        stationId,
+        stationName: "Test station",
+        streamName: "Test river"
+      },
+      thresholds: {
+        discharge: { dry: 3, spa1: 50, spa2: 80, spa3: 110, unit: "m3/s" },
+        waterLevel: { dry: 80, spa1: 140, spa2: 170, spa3: 190, unit: "cm" }
+      },
+      warnings: [],
+      window: {
+        from: query.from ?? "2026-06-25T00:00:00Z",
+        to: query.to ?? requestNow.toISOString()
+      }
     };
   }
 }

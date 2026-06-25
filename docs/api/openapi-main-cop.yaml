@@ -440,6 +440,60 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/safety/hydro/stations/{stationId}/observations:
+    get:
+      tags:
+        - Map Catalog
+      summary: Return CHMI hydro station observation detail through COP.
+      operationId: getSafetyHydroStationObservations
+      description: >
+        Server-side proxy for the SIM safety-data CHMI hydro station detail endpoint. Clients derive
+        stationId and query parameters from SafetyFeatureProperties.detailUrl and call COP API, so
+        browsers and native clients do not need direct SIM connectivity.
+      parameters:
+        - name: stationId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: series
+          in: query
+          required: false
+          schema:
+            type: string
+            default: H,Q,TH,H_F,Q_F
+            pattern: ^(H|Q|TH|H_F|Q_F)(,(H|Q|TH|H_F|Q_F))*$
+      responses:
+        "200":
+          description: CHMI hydro station observation detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HydroStationDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          description: SIM safety-data hydro detail is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/mobile/devices:
     post:
       tags:
@@ -7264,14 +7318,29 @@ components:
           type: string
         stationId:
           type: string
+        detailUrl:
+          type: string
+          description: Relative SIM safety-data detail URL for CHMI hydro station observations.
+        timelineUrl:
+          type: string
+          description: Compatibility alias for the hydro station observation timeline URL.
         waterLevelCm:
           type: number
         discharge:
           type: number
           description: Current discharge in m3/s when available.
+        waterTemperatureC:
+          type: number
+          description: Current water temperature in Celsius when the station publishes TH.
         floodStage:
           type: number
           description: Flood activity level, where 0 means no SPA and 1-3 are Czech SPA levels.
+        forecastAvailable:
+          type: boolean
+          description: True when CHMI provides H_F or Q_F forecast series for the station.
+        forecastUntil:
+          type: string
+          format: date-time
         trend:
           type: string
           enum:
@@ -7338,6 +7407,212 @@ components:
         tags:
           type: object
           additionalProperties: true
+    HydroSeriesId:
+      type: string
+      enum:
+        - H
+        - Q
+        - TH
+        - H_F
+        - Q_F
+    HydroStationDetailPoint:
+      type: object
+      required:
+        - at
+        - ingestedAt
+        - source
+        - value
+      properties:
+        at:
+          type: string
+          format: date-time
+        value:
+          type: number
+        source:
+          type: string
+          enum:
+            - live_now
+            - local_history
+            - recent_backfill
+        ingestedAt:
+          type: string
+          format: date-time
+    HydroStationDetailSeries:
+      type: object
+      required:
+        - id
+        - label
+        - points
+        - role
+        - unit
+      properties:
+        id:
+          $ref: "#/components/schemas/HydroSeriesId"
+        label:
+          type: string
+        unit:
+          type: string
+        role:
+          type: string
+          enum:
+            - observation
+            - forecast
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/HydroStationDetailPoint"
+    HydroStationThresholdSet:
+      type: object
+      required:
+        - unit
+      properties:
+        unit:
+          type: string
+        dry:
+          type: number
+        spa1:
+          type: number
+        spa2:
+          type: number
+        spa3:
+          type: number
+        spa4:
+          type: number
+    HydroStationDetail:
+      type: object
+      required:
+        - chart
+        - contractVersion
+        - generatedAt
+        - providerId
+        - series
+        - sourceId
+        - station
+        - thresholds
+        - warnings
+        - window
+      properties:
+        contractVersion:
+          type: string
+          const: chmi-hydro-station-detail-v1
+        generatedAt:
+          type: string
+          format: date-time
+        providerId:
+          type: string
+          const: sim.safety-data
+        sourceId:
+          type: string
+          const: chmi_hydro
+        station:
+          type: object
+          required:
+            - lat
+            - lon
+            - stationId
+            - stationName
+          properties:
+            stationId:
+              type: string
+            stationCode:
+              type: string
+            stationName:
+              type: string
+            streamName:
+              type: string
+            lat:
+              type: number
+            lon:
+              type: number
+            spaType:
+              type: string
+            catchmentAreaKm2:
+              type: number
+            hydrologicalOrder:
+              type: string
+        window:
+          type: object
+          required:
+            - from
+            - to
+          properties:
+            from:
+              type: string
+              format: date-time
+            to:
+              type: string
+              format: date-time
+        thresholds:
+          type: object
+          required:
+            - discharge
+            - waterLevel
+          properties:
+            waterLevel:
+              $ref: "#/components/schemas/HydroStationThresholdSet"
+            discharge:
+              $ref: "#/components/schemas/HydroStationThresholdSet"
+        series:
+          type: array
+          items:
+            $ref: "#/components/schemas/HydroStationDetailSeries"
+        chart:
+          type: object
+          required:
+            - currentTime
+            - panels
+            - title
+          properties:
+            title:
+              type: string
+            currentTime:
+              type: string
+              format: date-time
+            panels:
+              type: array
+              items:
+                type: object
+                required:
+                  - id
+                  - seriesIds
+                  - title
+                  - yAxis
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - water_level
+                      - discharge
+                      - temperature
+                  title:
+                    type: string
+                  yAxis:
+                    type: object
+                    required:
+                      - label
+                      - unit
+                    properties:
+                      label:
+                        type: string
+                      unit:
+                        type: string
+                  seriesIds:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HydroSeriesId"
+                  thresholdSet:
+                    type: string
+                    enum:
+                      - waterLevel
+                      - discharge
+                  forecastSeriesIds:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HydroSeriesId"
+        warnings:
+          type: array
+          items:
+            type: string
     SafetySummary:
       type: object
       required:

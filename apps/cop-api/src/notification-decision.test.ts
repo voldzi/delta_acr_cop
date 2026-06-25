@@ -53,6 +53,50 @@ describe("notification decision", () => {
     });
   });
 
+  it("maps CHMI hydro floodStage to notification severity without promoting trend alone", () => {
+    const warningDecision = buildSafetyFeatureNotificationDecision(safetyFeature({
+      featureId: "hydro-2spa",
+      floodStage: 2,
+      layer: "flood",
+      layerId: "public.safety.flood",
+      severity: undefined,
+      sourceId: "chmi_hydro",
+      trend: "stable"
+    }), {
+      audience: { groupIds: ["group-river"] },
+      now: requestNow
+    });
+    expect(warningDecision.shouldSend).toBe(true);
+    expect(warningDecision.notification.severity).toBe("warning");
+    expect(warningDecision.notification.priority).toBe("time_sensitive");
+
+    const criticalDecision = buildSafetyFeatureNotificationDecision(safetyFeature({
+      featureId: "hydro-3spa",
+      floodStage: 3,
+      layer: "flood",
+      layerId: "public.safety.flood",
+      severity: undefined,
+      sourceId: "chmi_hydro"
+    }), {
+      audience: { groupIds: ["group-river"] },
+      now: requestNow
+    });
+    expect(criticalDecision.shouldSend).toBe(true);
+    expect(criticalDecision.notification.severity).toBe("critical");
+
+    expect(evaluateSafetyFeatureCandidate(safetyFeature({
+      floodStage: 0,
+      layer: "flood",
+      layerId: "public.safety.flood",
+      severity: undefined,
+      sourceId: "chmi_hydro",
+      trend: "rising"
+    }), requestNow)).toMatchObject({
+      ok: false,
+      reason: "Safety feature severity is below push threshold."
+    });
+  });
+
   it("matches safety features to a user's watched area before dispatch", () => {
     const decision = buildSafetyFeatureNotificationDecision(safetyFeature({}), {
       actor: { subjectId: "user-1" },

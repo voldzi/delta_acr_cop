@@ -572,11 +572,12 @@ COP consumes the current SIM safety-data read model without parsing provider-nat
 | `geometryMode` | `admin_boundary` means the alert is polygonized from an administrative boundary; `representative_point` is a controlled fallback. |
 | `areaName`, `adminLevel`, `affectedAreas` | Human-readable area context. |
 | `fireStatus`, `sourceIncident` | Fire-specific state and source classification. `fireStatus=risk` with `sourceIncident=CHMI_CAP_FIRE_DANGER` means fire danger conditions, not a confirmed fire. |
-| `riverName`, `stationId`, `waterLevelCm`, `discharge`, `floodStage`, `trend`, `basin`, `catchmentAreaKm2` | Hydrology-specific fields for `public.safety.flood`. |
+| `riverName`, `stationId`, `waterLevelCm`, `discharge`, `waterTemperatureC`, `floodStage`, `trend`, `basin`, `catchmentAreaKm2` | Hydrology-specific fields for `public.safety.flood`. |
+| `detailUrl`, `timelineUrl`, `forecastAvailable`, `forecastUntil` | Hydrology detail/timeline metadata. COP derives `stationId` and query from SIM `detailUrl`, calls COP proxy `/api/v1/safety/hydro/stations/{stationId}/observations`, and renders H/Q/TH history, H_F/Q_F forecast, drought and SPA thresholds. |
 
 For ČHMÚ CAP alerts COP renders `Polygon`/`MultiPolygon` as the primary representation. If SIM returns `geometryMode=representative_point`, COP may still show the point, but the detail must make clear that the original administrative geometry was unavailable.
 
-For hydrology COP displays flood stage and trend as informational context. It does not infer evacuation, routing, rescue priorities, or any operational action from those values.
+For hydrology COP maps `floodStage=0` to info, `1` to advisory, `2` to warning and `>=3` to critical for citizen notification evaluation. `trend=rising` is displayed as a trend highlight only and must not become a critical trigger by itself. COP does not infer evacuation, routing, rescue priorities, or any operational action from those values.
 
 For fire COP distinguishes confirmed/observed fire context from ČHMÚ fire danger. ČHMÚ `fire_weather`/`CHMI_CAP_FIRE_DANGER` features are shown as official fire-risk polygons, not as confirmed incident locations.
 

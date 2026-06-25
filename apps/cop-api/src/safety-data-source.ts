@@ -35,6 +35,13 @@ export interface SafetyFeatureQuery {
   bbox: SafetyBbox;
   layers: SafetyLayerId[];
   limit: number;
+  sources?: SafetyDataSourceId[];
+}
+
+export interface SafetyHydroStationDetailQuery {
+  from?: string;
+  series?: string;
+  to?: string;
 }
 
 export interface SafetyBbox {
@@ -122,12 +129,15 @@ export interface SafetyFeatureProperties {
   certainty?: string;
   confidence?: number;
   description?: string;
+  detailUrl?: string;
   discharge?: number;
   effectiveAt?: string;
   expiresAt?: string;
   featureId: string;
   fireStatus?: string;
   floodStage?: number;
+  forecastAvailable?: boolean;
+  forecastUntil?: string;
   geocodes?: Array<{ scheme: string; value: string }>;
   geometryMode?: string;
   hazardType?: string;
@@ -153,11 +163,13 @@ export interface SafetyFeatureProperties {
   status?: string;
   styleHint?: string;
   tags?: Record<string, unknown>;
+  timelineUrl?: string;
   trend?: string;
   updatedAt?: string;
   urgency?: string;
   validFrom?: string;
   validUntil?: string;
+  waterTemperatureC?: number;
   waterLevelCm?: number;
 }
 
@@ -209,6 +221,7 @@ export interface SafetyDataSource {
   fetchCatalog?(requestNow: Date): Promise<ProviderMapCatalog>;
   fetchConfig(requestNow: Date): Promise<SafetyDataPublicConfig>;
   fetchFeatures(query: SafetyFeatureQuery, requestNow: Date): Promise<SafetyFeatureCollection>;
+  fetchHydroStationDetail?(stationId: string, query: SafetyHydroStationDetailQuery, requestNow: Date): Promise<unknown>;
   fetchLayers(requestNow: Date): Promise<SafetyLayerDescriptor[]>;
   fetchObservability?(requestNow: Date): Promise<SafetyDataObservability>;
   fetchSources(requestNow: Date): Promise<SafetySourceDescriptor[]>;
@@ -371,6 +384,10 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
       ttlMs,
       upstreamBbox: upstreamQuery.bbox
     });
+  }
+
+  async fetchHydroStationDetail(stationId: string, query: SafetyHydroStationDetailQuery, requestNow: Date): Promise<unknown> {
+    return fetchSafetyHydroStationDetail(this.config, stationId, query, requestNow);
   }
 }
 
@@ -620,17 +637,20 @@ export function emptySafetyFeatureCollection(query: SafetyFeatureQuery, requestN
 
 export function parseSafetyFeatureQuery(rawQuery: Record<string, unknown>, config: SafetyDataSourceConfig): SafetyFeatureQuery | null {
   const bbox = typeof rawQuery.bbox === "string" ? parseSafetyBbox(rawQuery.bbox) : null;
+  const rawSources = rawQuery.source ?? rawQuery.sources;
   if (!bbox) {
     return null;
   }
   return normalizeSafetyFeatureQuery({
     bbox,
     layers: parseSafetyLayers(typeof rawQuery.layers === "string" ? rawQuery.layers : undefined),
-    limit: optionalNumber(rawQuery.limit) ?? config.maxLimit
+    limit: optionalNumber(rawQuery.limit) ?? config.maxLimit,
+    sources: parseSafetySources(typeof rawSources === "string" ? rawSources : undefined)
   }, config);
 }
 
 export function normalizeSafetyFeatureQuery(query: SafetyFeatureQuery, config: SafetyDataSourceConfig): SafetyFeatureQuery {
+  const sources = query.sources?.filter(isSafetyDataSourceId);
   return {
     bbox: {
       east: clampNumber(query.bbox.east, -180, 180),
@@ -639,7 +659,8 @@ export function normalizeSafetyFeatureQuery(query: SafetyFeatureQuery, config: S
       west: clampNumber(query.bbox.west, -180, 180)
     },
     layers: query.layers.filter(isSafetyLayerId).length > 0 ? uniqueLayers(query.layers.filter(isSafetyLayerId)) : ["warnings", "flood"],
-    limit: Math.round(clampNumber(query.limit, 1, config.maxLimit))
+    limit: Math.round(clampNumber(query.limit, 1, config.maxLimit)),
+    ...(sources && sources.length > 0 ? { sources: uniqueSafetySources(sources) } : {})
   };
 }
 
@@ -656,7 +677,8 @@ function canonicalizeSafetyFeatureQuery(query: SafetyFeatureQuery): SafetyFeatur
   return {
     bbox: snapBboxToGrid(paddedBbox, gridSizeDegrees),
     layers: query.layers,
-    limit: query.limit
+    limit: query.limit,
+    ...(query.sources && query.sources.length > 0 ? { sources: query.sources } : {})
   };
 }
 
@@ -667,8 +689,12 @@ function projectSafetyFeatureCollection(
 ): SafetyFeatureCollection {
   const features = collection.features.filter((feature) =>
     requestQuery.layers.includes(feature.properties.layer)
+    && (!requestQuery.sources?.length || requestQuery.sources.includes(feature.properties.sourceId as SafetyDataSourceId))
     && (feature.properties.layer === "warnings" || isFeatureInBbox(feature, requestQuery.bbox))
   );
+  const sources = requestQuery.sources?.length
+    ? collection.sources.filter((source) => requestQuery.sources?.includes(source.sourceId))
+    : collection.sources;
   const warnings = options.cacheStatus === "stale"
     ? [...collection.warnings, "COP served stale safety-data cache because SIM refresh failed."]
     : collection.warnings;
@@ -685,13 +711,14 @@ function projectSafetyFeatureCollection(
       bbox: requestQuery.bbox,
       layers: requestQuery.layers,
       limit: requestQuery.limit,
-      sources: collection.query.sources
+      sources: requestQuery.sources ?? collection.query.sources
     },
+    sources,
     summary: {
       advisoryCount: features.filter((feature) => feature.properties.severity === "advisory").length,
       criticalCount: features.filter((feature) => feature.properties.severity === "critical").length,
       featureCount: features.length,
-      sourceCount: collection.summary.sourceCount,
+      sourceCount: sources.length,
       staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
       warningCount: features.filter((feature) => feature.properties.severity === "warning").length
     },
@@ -704,7 +731,29 @@ async function fetchSafetyFeatures(config: SafetyDataSourceConfig, query: Safety
   url.searchParams.set("bbox", `${query.bbox.west},${query.bbox.south},${query.bbox.east},${query.bbox.north}`);
   url.searchParams.set("layers", query.layers.join(","));
   url.searchParams.set("limit", String(query.limit));
+  if (query.sources && query.sources.length > 0) {
+    url.searchParams.set("source", query.sources.join(","));
+  }
   return normalizeSafetyFeatureCollection(await fetchJson(url, config, requestNow), query);
+}
+
+async function fetchSafetyHydroStationDetail(
+  config: SafetyDataSourceConfig,
+  stationId: string,
+  query: SafetyHydroStationDetailQuery,
+  requestNow: Date
+): Promise<unknown> {
+  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/hydro/stations/${encodeURIComponent(stationId)}/observations`);
+  if (query.from) {
+    url.searchParams.set("from", query.from);
+  }
+  if (query.to) {
+    url.searchParams.set("to", query.to);
+  }
+  if (query.series) {
+    url.searchParams.set("series", query.series);
+  }
+  return fetchJson(url, config, requestNow);
 }
 
 async function fetchSafetyCatalog(config: SafetyDataSourceConfig, requestNow: Date): Promise<ProviderMapCatalog> {
@@ -845,12 +894,15 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     certainty: optionalString(value.certainty),
     confidence: optionalFinite(value.confidence),
     description: optionalString(value.description),
+    detailUrl: optionalString(value.detailUrl),
     discharge: optionalFinite(value.discharge) ?? optionalFinite(metrics?.flowM3s),
     effectiveAt: optionalString(value.effectiveAt),
     expiresAt: optionalString(value.expiresAt),
     featureId,
     fireStatus: optionalString(value.fireStatus),
     floodStage: optionalFinite(value.floodStage) ?? optionalFinite(metrics?.floodActivityLevel),
+    forecastAvailable: typeof value.forecastAvailable === "boolean" ? value.forecastAvailable : undefined,
+    forecastUntil: optionalString(value.forecastUntil),
     geocodes: normalizeGeocodes(value.geocodes),
     geometryMode: optionalString(value.geometryMode) ?? optionalString(metrics?.geometryMode) ?? optionalString(tags?.geometryMode),
     hazardType: optionalString(value.hazardType),
@@ -876,11 +928,13 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     status: optionalString(value.status),
     styleHint: optionalString(value.styleHint),
     tags,
+    timelineUrl: optionalString(value.timelineUrl),
     trend: optionalString(value.trend),
     updatedAt: optionalString(value.updatedAt),
     urgency: optionalString(value.urgency),
     validFrom: optionalString(value.validFrom),
     validUntil: optionalString(value.validUntil),
+    waterTemperatureC: optionalFinite(value.waterTemperatureC) ?? optionalFinite(metrics?.waterTemperatureC),
     waterLevelCm: optionalFinite(value.waterLevelCm) ?? optionalFinite(metrics?.waterLevelCm)
   };
 }
@@ -1108,6 +1162,14 @@ function parseSafetyLayers(value: string | undefined): SafetyLayerId[] {
   return layers.length > 0 ? uniqueLayers(layers) : ["warnings", "flood"];
 }
 
+function parseSafetySources(value: string | undefined): SafetyDataSourceId[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const sources = value.split(",").map((item) => item.trim()).filter(isSafetyDataSourceId);
+  return sources.length > 0 ? uniqueSafetySources(sources) : undefined;
+}
+
 function safetyFeatureCacheKey(query: SafetyFeatureQuery): string {
   return [
     query.bbox.west.toFixed(4),
@@ -1115,6 +1177,7 @@ function safetyFeatureCacheKey(query: SafetyFeatureQuery): string {
     query.bbox.east.toFixed(4),
     query.bbox.north.toFixed(4),
     query.layers.join(","),
+    query.sources?.join(",") ?? "",
     query.limit
   ].join("|");
 }
@@ -1238,6 +1301,10 @@ function normalizeGeocodes(value: unknown): Array<{ scheme: string; value: strin
 
 function uniqueLayers(layers: SafetyLayerId[]): SafetyLayerId[] {
   return allowedLayerIds.filter((layer) => layers.includes(layer));
+}
+
+function uniqueSafetySources(sources: SafetyDataSourceId[]): SafetyDataSourceId[] {
+  return Array.from(new Set(sources));
 }
 
 function uniqueStrings(values: string[]): string[] {

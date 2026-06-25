@@ -144,8 +144,10 @@ import {
   emptySafetyFeatureCollection,
   unavailableSafetyDataHealth,
   type SafetyDataSource,
+  type SafetyDataSourceId,
   type SafetyFeature,
   type SafetyFeatureQuery,
+  type SafetyHydroStationDetailQuery,
   type SafetyLayerId
 } from "./safety-data-source.js";
 import {
@@ -3788,6 +3790,29 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
+  app.get("/api/v1/safety/hydro/stations/:stationId/observations", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
+    const params = request.params as { stationId: string };
+    const stationId = optionalTrimmedString(params.stationId, 160);
+    if (!stationId) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Hydro station detail requires stationId.", correlationId);
+    }
+    if (!safetyDataSource?.fetchHydroStationDetail) {
+      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Safety hydro station detail source is disabled.", correlationId);
+    }
+    const query = parseSafetyHydroStationDetailQuery(request.query as Record<string, unknown>);
+    if (!query) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Hydro station detail query supports optional from, to and series=H,Q,TH,H_F,Q_F.", correlationId);
+    }
+    try {
+      return await safetyDataSource.fetchHydroStationDetail(stationId, query, requestNow);
+    } catch (error) {
+      app.log.warn({ error, stationId }, "Safety hydro station detail failed.");
+      return sendError(reply, 502, "SAFETY_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
   async function listFederatedNodes(): Promise<FederatedNodeRecord[]> {
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
@@ -6088,6 +6113,35 @@ function parseMapQueryBbox(value: unknown): SituationFeatureQuery["bbox"] | null
   };
 }
 
+function parseSafetyHydroStationDetailQuery(value: Record<string, unknown>): SafetyHydroStationDetailQuery | null {
+  const from = optionalIsoString(value.from);
+  const to = optionalIsoString(value.to);
+  const series = optionalTrimmedString(value.series, 80);
+  if ((value.from !== undefined && !from) || (value.to !== undefined && !to)) {
+    return null;
+  }
+  if (series && !series.split(",").every((item) => isHydroSeriesId(item.trim()))) {
+    return null;
+  }
+  return {
+    ...(from ? { from } : {}),
+    ...(series ? { series } : {}),
+    ...(to ? { to } : {})
+  };
+}
+
+function optionalIsoString(value: unknown): string | undefined {
+  const raw = optionalTrimmedString(value, 80);
+  if (!raw) {
+    return undefined;
+  }
+  return Number.isFinite(Date.parse(raw)) ? raw : undefined;
+}
+
+function isHydroSeriesId(value: string): boolean {
+  return value === "H" || value === "Q" || value === "TH" || value === "H_F" || value === "Q_F";
+}
+
 function normalizeSafetyNotificationEvaluationRequest(value: Record<string, unknown>): {
   audience?: CopNotificationAudience;
   currentLocation?: { lat: number; lon: number; radiusKm?: number };
@@ -6182,6 +6236,7 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
   const situationLayers = new Set<SituationLayerId>();
   const situationSources = new Set<string>();
   const safetyLayers = new Set<SafetyLayerId>();
+  const safetySources = new Set<SafetyDataSourceId>();
   const flightLayers = new Set<FlightReferenceLayerId>();
   const missionArenaLayers = new Set<MissionArenaLayerId>();
   const takLayers = new Set<TakGatewayLayerId>();
@@ -6209,6 +6264,11 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
       for (const layerId of layer.query.providerLayerIds ?? []) {
         if (isSafetyLayerId(layerId)) {
           safetyLayers.add(layerId);
+        }
+      }
+      for (const sourceId of layer.query.providerSourceIds ?? []) {
+        if (isSafetyDataSourceId(sourceId)) {
+          safetySources.add(sourceId);
         }
       }
     } else if (layer.query.providerId === "sim.flight-data") {
@@ -6247,7 +6307,8 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
           safety: {
             bbox: request.bbox,
             layers: Array.from(safetyLayers),
-            limit: request.limit
+            limit: request.limit,
+            ...(safetySources.size > 0 ? { sources: Array.from(safetySources) } : {})
           }
         }
       : {}),
@@ -6405,6 +6466,17 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
 
 function isSafetyLayerId(value: string): value is SafetyLayerId {
   return value === "boundary_admin" || value === "fire" || value === "flood" || value === "warnings" || value === "weather_alerts";
+}
+
+function isSafetyDataSourceId(value: string): value is SafetyDataSourceId {
+  return value === "admin_boundaries"
+    || value === "chmi_alerts"
+    || value === "chmi_hydro"
+    || value === "fire_hotspots"
+    || value === "fire_incidents"
+    || value === "mock"
+    || value === "nasa_firms"
+    || value === "weather_alerts";
 }
 
 function isFlightReferenceLayerId(value: string): value is FlightReferenceLayerId {
