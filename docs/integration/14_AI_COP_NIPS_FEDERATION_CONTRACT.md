@@ -202,6 +202,7 @@ Nejde o obecnou exekuci nástrojů. Registry vrací pouze allowlistované,
 client-safe metadata. Aktuální implementované nástroje jsou read-only:
 
 - `cop.federation.nodes.list`,
+- `cop.area.summary`,
 - `cop.events.replay`,
 - `cop.events.dead_letters.list`,
 - `cop.audit.events.list`.
@@ -210,6 +211,10 @@ Každé úspěšné volání zapisuje audit `MCP_TOOL_INVOKED` a současně publ
 domain event `ai.tool.invoked` na kanál `cop.ai.audit`. Payload auditního
 eventu obsahuje identitu nástroje, subject volajícího, výsledek a dobu běhu,
 nikoli provider tokeny, plaintext chat zprávy ani citlivé binární přílohy.
+`cop.area.summary` používá stejný katalog, policy filtraci a provider query
+cestu jako mapové vrstvy. Vrací jen kompaktní situační souhrn, zdroje,
+confidence a nejistoty; nevrací celé GeoJSON payloady ani žádná mutační
+doporučení.
 Měnící AI/MCP nástroje zůstávají mimo tento endpoint; musí vrátit návrh a
 skutečnou změnu provede až explicitní COP command API s potvrzením uživatele.
 

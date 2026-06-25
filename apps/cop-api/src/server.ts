@@ -258,6 +258,7 @@ interface MobileSnapshotQuery {
 }
 
 type CopMcpToolId =
+  | "cop.area.summary"
   | "cop.audit.events.list"
   | "cop.events.dead_letters.list"
   | "cop.events.replay"
@@ -288,6 +289,53 @@ interface CopMcpToolInvocationEnvelope {
 type McpJsonRpcId = string | number | null;
 
 const copMcpTools: CopMcpToolDefinition[] = [
+  {
+    description: "Build a compact, policy-filtered situation summary for an area from COP map providers. The tool returns sources, uncertainty and confidence; it never changes state.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        bbox: {
+          description: "Bounding box as [west,south,east,north] or {west,south,east,north}. Defaults to the flood PoC area.",
+          oneOf: [
+            {
+              items: { type: "number" },
+              maxItems: 4,
+              minItems: 4,
+              type: "array"
+            },
+            {
+              additionalProperties: false,
+              properties: {
+                east: { type: "number" },
+                north: { type: "number" },
+                south: { type: "number" },
+                west: { type: "number" }
+              },
+              required: ["west", "south", "east", "north"],
+              type: "object"
+            }
+          ]
+        },
+        includePartner: { type: "boolean" },
+        layerIds: {
+          items: { type: "string" },
+          maxItems: 24,
+          type: "array"
+        },
+        layers: {
+          items: { type: "string" },
+          maxItems: 24,
+          type: "array"
+        },
+        limit: { maximum: 500, minimum: 1, type: "integer" }
+      },
+      type: "object"
+    },
+    mode: "read_only",
+    output: "cop-area-summary-v1",
+    title: "Summarize area situation",
+    toolId: "cop.area.summary"
+  },
   {
     description: "List registered COP federation nodes for operator diagnostics and edge sync planning.",
     inputSchema: {
@@ -5089,6 +5137,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     let result: Record<string, unknown>;
 
     switch (tool.toolId) {
+      case "cop.area.summary": {
+        result = await buildCopAreaSummaryToolResult(input, actor ?? null, invocationId);
+        break;
+      }
       case "cop.federation.nodes.list": {
         const nodes = await listFederatedNodes();
         result = {
@@ -5198,6 +5250,61 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         title: tool.title
       }
     };
+  }
+
+  async function buildCopAreaSummaryToolResult(
+    input: Record<string, unknown>,
+    actor: AuthenticatedActor | null,
+    invocationId: string
+  ): Promise<Record<string, unknown>> {
+    const requestNow = now();
+    const query = normalizeCopAreaSummaryMapRequest(input);
+    const includePartner = Boolean(actor) && query.includePartner;
+    const providers = await readMapCatalogProviders(requestNow, actor, includePartner);
+    const catalog = buildMapCatalog({
+      flight: providers.flight,
+      generatedAt: requestNow,
+      includeDiagnostics: false,
+      includePartner,
+      locale: "cs-CZ",
+      missionArena: providers.missionArena,
+      safety: providers.safety,
+      situation: providers.situation,
+      tak: providers.tak
+    });
+    const selectedLayers = catalog.layers.filter((layer) => query.layerIds.includes(layer.layerId));
+    const unknownLayerIds = query.layerIds.filter((layerId) => !catalog.layers.some((layer) => layer.layerId === layerId));
+    const providerQueries = buildProviderFeatureQueries(selectedLayers, query);
+    const warnings = [
+      ...catalog.warnings,
+      ...(unknownLayerIds.length > 0 ? [`Unknown or unauthorized map layers ignored: ${unknownLayerIds.join(", ")}.`] : [])
+    ];
+
+    const [situationCollection, safetyCollection, flightCollection, communityCollection, missionArenaCollection, takCollection] = await Promise.all([
+      readSituationMapQuery(providerQueries.situation, requestNow, actor, selectedLayers),
+      readSafetyMapQuery(providerQueries.safety, requestNow),
+      readFlightReferenceMapQuery(providerQueries.flight, requestNow),
+      readCommunityMapQuery(providerQueries.community, requestNow, actor),
+      readMissionArenaMapQuery(providerQueries.missionArena, requestNow),
+      includePartner ? readTakMapQuery(providerQueries.tak, requestNow) : Promise.resolve(undefined)
+    ]);
+
+    return buildCopAreaSummaryPayload({
+      bbox: query.bbox,
+      collections: [
+        areaSummaryProviderSlice("situation", "SIM situation", situationCollection),
+        areaSummaryProviderSlice("safety", "SIM safety", safetyCollection),
+        areaSummaryProviderSlice("flight", "SIM flight reference", flightCollection),
+        areaSummaryProviderSlice("community", "COP community reports", communityCollection),
+        areaSummaryProviderSlice("missionArena", "Mission Arena", missionArenaCollection),
+        areaSummaryProviderSlice("tak", "TAK Gateway", takCollection)
+      ],
+      generatedAt: requestNow.toISOString(),
+      invocationId,
+      layerIds: selectedLayers.map((layer) => layer.layerId),
+      requestedLayerIds: query.layerIds,
+      warnings
+    });
   }
 
   app.get("/api/v1/mcp", async () => ({
@@ -6155,6 +6262,284 @@ interface CommunityMapFeatureQuery {
   bbox: CommunityReportQuery["bbox"];
   layerIds: string[];
   limit: number;
+}
+
+const copAreaSummaryDefaultLayerIds = [
+  "public.safety.flood",
+  "public.safety.weather_alerts",
+  "public.safety.warnings",
+  "user.community.reports",
+  "public.weather.webcams",
+  "public.mobile.network"
+];
+
+type AreaSummarySeverity = "advisory" | "critical" | "info" | "warning";
+
+interface AreaSummaryFeatureCandidate {
+  category?: string;
+  confidence?: number;
+  detail?: string;
+  featureId?: string;
+  label: string;
+  layer?: string;
+  observedAt?: string;
+  providerId: string;
+  severity: AreaSummarySeverity;
+  sourceId?: string;
+  stale: boolean;
+  validUntil?: string;
+}
+
+interface AreaSummaryProviderSlice {
+  featureCount: number;
+  generatedAt?: string;
+  health?: SourceHealthOverride["health"];
+  label: string;
+  notableFeatures: AreaSummaryFeatureCandidate[];
+  providerId: string;
+  sourceCount: number;
+  sourceIds: string[];
+  staleFeatureCount: number;
+  warningCount: number;
+  warnings: string[];
+}
+
+interface CopAreaSummaryPayloadInput {
+  bbox: MapFeatureQueryRequest["bbox"];
+  collections: Array<AreaSummaryProviderSlice | undefined>;
+  generatedAt: string;
+  invocationId: string;
+  layerIds: string[];
+  requestedLayerIds: string[];
+  warnings: string[];
+}
+
+function normalizeCopAreaSummaryMapRequest(input: Record<string, unknown>): MapFeatureQueryRequest {
+  const bbox = parseMapQueryBbox(input.bbox) ?? floodDemoBbox;
+  const layerIds = normalizeMapQueryStringList(input.layerIds ?? input.layers);
+  return {
+    bbox,
+    filters: normalizeMapQueryFilters(input.filters),
+    includeDiagnostics: false,
+    includePartner: parseBooleanQuery(input.includePartner),
+    layerIds: layerIds.length > 0 ? layerIds : copAreaSummaryDefaultLayerIds,
+    limit: optionalFiniteNumber(input.limit, 1, 500) ?? 250
+  };
+}
+
+function areaSummaryProviderSlice(
+  providerId: string,
+  label: string,
+  collection: unknown
+): AreaSummaryProviderSlice | undefined {
+  if (!isRecord(collection)) {
+    return undefined;
+  }
+  const features = Array.isArray(collection.features) ? collection.features : [];
+  const warnings = areaSummaryStringArray(collection.warnings);
+  const sourceIds = areaSummarySourceIds(collection.sources);
+  const sourceHealth = isRecord(collection.sourceHealth) ? collection.sourceHealth : undefined;
+  const featureCount = areaSummarySummaryNumber(collection, "featureCount", features.length);
+  const staleFeatureCount = areaSummarySummaryNumber(
+    collection,
+    "staleFeatureCount",
+    features.filter((feature) => areaSummaryFeatureProperties(feature).stale === true).length
+  );
+  const warningCount = areaSummarySummaryNumber(collection, "warningCount", warnings.length);
+  return {
+    featureCount,
+    generatedAt: optionalTrimmedString(collection.generatedAt, 80),
+    health: isSourceHealthOverride(sourceHealth?.health) ? sourceHealth.health : undefined,
+    label,
+    notableFeatures: features.flatMap((feature) => areaSummaryFeatureCandidate(providerId, feature)).slice(0, 25),
+    providerId,
+    sourceCount: areaSummarySummaryNumber(collection, "sourceCount", sourceIds.length),
+    sourceIds,
+    staleFeatureCount,
+    warningCount,
+    warnings: warnings.slice(0, 10)
+  };
+}
+
+function buildCopAreaSummaryPayload(input: CopAreaSummaryPayloadInput): Record<string, unknown> {
+  const providerSlices = input.collections.filter((item): item is AreaSummaryProviderSlice => Boolean(item));
+  const allCandidates = providerSlices
+    .flatMap((slice) => slice.notableFeatures)
+    .sort(compareAreaSummaryFeatureCandidates);
+  const notableFeatures = allCandidates.slice(0, 12);
+  const sourceIds = Array.from(new Set(providerSlices.flatMap((slice) => slice.sourceIds))).sort();
+  const featureCount = providerSlices.reduce((sum, slice) => sum + slice.featureCount, 0);
+  const staleFeatureCount = providerSlices.reduce((sum, slice) => sum + slice.staleFeatureCount, 0);
+  const providerWarnings = providerSlices.flatMap((slice) => slice.warnings.map((warning) => `${slice.label}: ${warning}`));
+  const uncertainties = Array.from(new Set([
+    ...input.warnings,
+    ...providerWarnings,
+    ...providerSlices.flatMap((slice) => slice.health && slice.health !== "ONLINE" ? [`${slice.label} health is ${slice.health}.`] : [])
+  ])).slice(0, 20);
+  const criticalCount = allCandidates.filter((feature) => feature.severity === "critical").length;
+  const warningCount = allCandidates.filter((feature) => feature.severity === "warning").length;
+  return {
+    audit: {
+      eventType: "ai.tool.invoked",
+      invocationId: input.invocationId
+    },
+    confidence: areaSummaryConfidence(featureCount, staleFeatureCount, uncertainties.length, providerSlices),
+    contractVersion: "cop-area-summary-v1",
+    generatedAt: input.generatedAt,
+    headline: areaSummaryHeadline(featureCount, notableFeatures),
+    notableFeatures,
+    scope: {
+      bbox: input.bbox,
+      layerIds: input.layerIds,
+      requestedLayerIds: input.requestedLayerIds
+    },
+    sources: providerSlices.map((slice) => ({
+      featureCount: slice.featureCount,
+      generatedAt: slice.generatedAt,
+      health: slice.health ?? "UNKNOWN",
+      label: slice.label,
+      providerId: slice.providerId,
+      sourceCount: slice.sourceCount,
+      sourceIds: slice.sourceIds,
+      staleFeatureCount: slice.staleFeatureCount,
+      warningCount: slice.warningCount
+    })),
+    summary: {
+      criticalCount,
+      featureCount,
+      providerCount: providerSlices.length,
+      sourceCount: sourceIds.length,
+      staleFeatureCount,
+      uncertaintyCount: uncertainties.length,
+      warningCount
+    },
+    uncertainties
+  };
+}
+
+function areaSummaryFeatureCandidate(providerId: string, feature: unknown): AreaSummaryFeatureCandidate[] {
+  const properties = areaSummaryFeatureProperties(feature);
+  const label = areaSummaryText(properties, ["headline", "label", "title", "name", "areaName", "sourceName", "featureId"]);
+  if (!label) {
+    return [];
+  }
+  const severity = normalizeAreaSummarySeverity(properties.severity ?? properties.hazardSeverity ?? properties.floodStage ?? properties.status);
+  return [{
+    ...(areaSummaryText(properties, ["category"]) ? { category: areaSummaryText(properties, ["category"]) } : {}),
+    ...(optionalFiniteNumber(properties.confidence, 0, 1) !== undefined ? { confidence: optionalFiniteNumber(properties.confidence, 0, 1) } : {}),
+    ...(areaSummaryText(properties, ["recommendedAction", "description", "summary"], 240) ? { detail: areaSummaryText(properties, ["recommendedAction", "description", "summary"], 240) } : {}),
+    ...(areaSummaryText(properties, ["featureId", "reportId", "stationId"], 160) ? { featureId: areaSummaryText(properties, ["featureId", "reportId", "stationId"], 160) } : {}),
+    label,
+    ...(areaSummaryText(properties, ["layer", "layerId"], 120) ? { layer: areaSummaryText(properties, ["layer", "layerId"], 120) } : {}),
+    ...(areaSummaryText(properties, ["observedAt", "updatedAt", "effectiveAt", "validFrom"], 80) ? { observedAt: areaSummaryText(properties, ["observedAt", "updatedAt", "effectiveAt", "validFrom"], 80) } : {}),
+    providerId,
+    severity,
+    ...(areaSummaryText(properties, ["sourceId", "source"], 120) ? { sourceId: areaSummaryText(properties, ["sourceId", "source"], 120) } : {}),
+    stale: properties.stale === true,
+    ...(areaSummaryText(properties, ["validUntil", "expiresAt", "forecastUntil"], 80) ? { validUntil: areaSummaryText(properties, ["validUntil", "expiresAt", "forecastUntil"], 80) } : {})
+  }];
+}
+
+function areaSummaryFeatureProperties(feature: unknown): Record<string, unknown> {
+  return isRecord(feature) && isRecord(feature.properties) ? feature.properties : {};
+}
+
+function areaSummaryText(properties: Record<string, unknown>, keys: string[], maxLength = 180): string | undefined {
+  for (const key of keys) {
+    const value = optionalTrimmedString(properties[key], maxLength);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function normalizeAreaSummarySeverity(value: unknown): AreaSummarySeverity {
+  if (typeof value === "number") {
+    return value >= 3 ? "critical" : value === 2 ? "warning" : value === 1 ? "advisory" : "info";
+  }
+  const text = optionalTrimmedString(value, 80)?.toLowerCase() ?? "";
+  if (["critical", "severe", "danger", "emergency", "alarm"].some((item) => text.includes(item))) {
+    return "critical";
+  }
+  if (["warning", "warn", "high", "orange"].some((item) => text.includes(item))) {
+    return "warning";
+  }
+  if (["advisory", "watch", "moderate", "yellow"].some((item) => text.includes(item))) {
+    return "advisory";
+  }
+  return "info";
+}
+
+function compareAreaSummaryFeatureCandidates(a: AreaSummaryFeatureCandidate, b: AreaSummaryFeatureCandidate): number {
+  const severityDelta = areaSummarySeverityRank(b.severity) - areaSummarySeverityRank(a.severity);
+  if (severityDelta !== 0) {
+    return severityDelta;
+  }
+  if (a.stale !== b.stale) {
+    return a.stale ? 1 : -1;
+  }
+  return (b.confidence ?? 0) - (a.confidence ?? 0);
+}
+
+function areaSummarySeverityRank(value: AreaSummarySeverity): number {
+  return value === "critical" ? 4 : value === "warning" ? 3 : value === "advisory" ? 2 : 1;
+}
+
+function areaSummaryHeadline(featureCount: number, notableFeatures: AreaSummaryFeatureCandidate[]): string {
+  if (featureCount === 0) {
+    return "Ve vybrané oblasti nejsou v dostupných vrstvách aktivní objekty.";
+  }
+  const top = notableFeatures[0];
+  if (!top) {
+    return `Ve vybrané oblasti je ${featureCount} dostupných objektů bez výrazné priority.`;
+  }
+  return top.severity === "critical" || top.severity === "warning"
+    ? `Priorita v oblasti: ${top.label}.`
+    : `Ve vybrané oblasti je ${featureCount} dostupných objektů; nejbližší kontext: ${top.label}.`;
+}
+
+function areaSummaryConfidence(
+  featureCount: number,
+  staleFeatureCount: number,
+  uncertaintyCount: number,
+  providers: AreaSummaryProviderSlice[]
+): "high" | "low" | "medium" {
+  if (providers.length === 0 || uncertaintyCount >= 5) {
+    return "low";
+  }
+  if (featureCount > 0 && staleFeatureCount === 0 && uncertaintyCount === 0) {
+    return "high";
+  }
+  return "medium";
+}
+
+function areaSummarySourceIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(new Set(value.flatMap((source) => {
+    if (!isRecord(source)) {
+      return [];
+    }
+    const sourceId = optionalTrimmedString(source.sourceId, 160);
+    return sourceId ? [sourceId] : [];
+  }))).sort();
+}
+
+function areaSummaryStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.flatMap((item) => {
+        const text = optionalTrimmedString(item, 280);
+        return text ? [text] : [];
+      })
+    : [];
+}
+
+function areaSummarySummaryNumber(collection: Record<string, unknown>, key: string, fallback: number): number {
+  const summary = isRecord(collection.summary) ? collection.summary : {};
+  const value = Number(summary[key]);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function parseMapQueryRequest(body: unknown): MapFeatureQueryRequest | null {

@@ -505,6 +505,10 @@ describe("federation runtime routes", () => {
         items: expect.arrayContaining([
           expect.objectContaining({
             mode: "read_only",
+            toolId: "cop.area.summary"
+          }),
+          expect.objectContaining({
+            mode: "read_only",
             toolId: "cop.federation.nodes.list"
           }),
           expect.objectContaining({
@@ -513,7 +517,7 @@ describe("federation runtime routes", () => {
           })
         ]),
         summary: {
-          count: 4
+          count: 5
         }
       });
 
@@ -559,6 +563,80 @@ describe("federation runtime routes", () => {
               payload: expect.objectContaining({
                 status: "ok",
                 toolId: "cop.federation.nodes.list"
+              })
+            }),
+            type: "ai.tool.invoked"
+          })
+        ],
+        summary: {
+          count: 1,
+          totalAvailable: 1
+        }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("builds an audited read-only MCP area summary", async () => {
+    const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
+    try {
+      const invocation = await app.inject({
+        headers: {
+          ...authHeaders,
+          "x-correlation-id": "corr-mcp-area-summary"
+        },
+        method: "POST",
+        payload: {
+          input: {
+            bbox: [13.75, 49.75, 15.6, 50.65],
+            layerIds: ["user.community.reports"],
+            limit: 25
+          }
+        },
+        url: "/api/v1/mcp/tools/cop.area.summary/invoke"
+      });
+      expect(invocation.statusCode).toBe(200);
+      expect(invocation.json()).toMatchObject({
+        contractVersion: "cop-mcp-tool-invocation-v1",
+        result: {
+          contractVersion: "cop-area-summary-v1",
+          confidence: expect.any(String),
+          headline: expect.any(String),
+          scope: {
+            layerIds: ["user.community.reports"]
+          },
+          sources: expect.arrayContaining([
+            expect.objectContaining({
+              providerId: "community"
+            })
+          ]),
+          summary: expect.objectContaining({
+            featureCount: 0,
+            providerCount: 1
+          })
+        },
+        status: "ok",
+        tool: {
+          mode: "read_only",
+          toolId: "cop.area.summary"
+        }
+      });
+
+      const auditReplay = await app.inject({
+        headers: authHeaders,
+        method: "GET",
+        url: "/api/v1/events/domain?fromOffset=0&limit=10&type=ai.tool.invoked"
+      });
+      expect(auditReplay.statusCode).toBe(200);
+      expect(auditReplay.json()).toMatchObject({
+        items: [
+          expect.objectContaining({
+            data: expect.objectContaining({
+              correlationId: "corr-mcp-area-summary",
+              payload: expect.objectContaining({
+                status: "ok",
+                toolId: "cop.area.summary"
               })
             }),
             type: "ai.tool.invoked"
