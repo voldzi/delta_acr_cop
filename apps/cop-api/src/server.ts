@@ -537,8 +537,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       {
         name: "ai-gateway",
         status: "degraded",
-        detail: `AI gateway dependency check timed out after ${healthDependencyTimeoutMs()} ms.`
-      }
+        detail: `AI gateway dependency check timed out after ${aiHealthDependencyTimeoutMs()} ms.`
+      },
+      aiHealthDependencyTimeoutMs()
     );
     return {
       status: "ok",
@@ -848,9 +849,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   function withDependencyTimeout<T extends { detail?: string; name: string; status: DependencyStatus }>(
     dependencyName: string,
     operation: Promise<T>,
-    fallback: T
+    fallback: T,
+    timeoutOverrideMs?: number
   ): Promise<T> {
-    const timeoutMs = healthDependencyTimeoutMs();
+    const timeoutMs = timeoutOverrideMs ?? healthDependencyTimeoutMs();
     return new Promise<T>((resolve) => {
       let settled = false;
       const timeout = setTimeout(() => {
@@ -9344,6 +9346,10 @@ function mapCatalogProviderTimeoutMs(): number {
 
 function healthDependencyTimeoutMs(): number {
   return readPositiveInteger(process.env.COP_HEALTH_DEPENDENCY_TIMEOUT_MS, 2500);
+}
+
+function aiHealthDependencyTimeoutMs(): number {
+  return readPositiveInteger(process.env.COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS, 10000);
 }
 
 function parseBooleanQuery(value: unknown): boolean {

@@ -170,25 +170,34 @@ export class OllamaAiProvider implements AiProvider {
   }
 
   async health(): Promise<AiProviderHealth> {
-    try {
-      await this.requestJsonWithFallback(
-        "/api/tags",
-        {
-          method: "GET",
-          headers: this.headers()
-        },
-        Math.min(this.options.timeoutMs, 3000)
-      );
-      return {
-        status: "ok",
-        detail: `COP Ollama provider ready; model ${this.model}`
-      };
-    } catch (error) {
-      return {
-        status: "degraded",
-        detail: `COP Ollama provider unavailable: ${errorMessage(error)}`
-      };
+    const errors: string[] = [];
+    const timeoutMs = Math.min(this.options.timeoutMs, 1500);
+    for (const baseUrl of this.normalizedBaseUrls()) {
+      try {
+        const response = await fetchWithTimeout(
+          `${baseUrl}/api/tags`,
+          {
+            method: "GET",
+            headers: this.headers()
+          },
+          timeoutMs
+        );
+        if (!response.ok) {
+          errors.push(`${baseUrl}: HTTP ${response.status}`);
+          continue;
+        }
+        return {
+          status: "ok",
+          detail: `COP Ollama provider ready; model ${this.model}; endpoint ${baseUrl}`
+        };
+      } catch (error) {
+        errors.push(`${baseUrl}: ${errorMessage(error)}`);
+      }
     }
+    return {
+      status: "degraded",
+      detail: `COP Ollama provider unavailable: ${errors.join("; ") || "no endpoint responded"}`
+    };
   }
 
   private async postChat(query: AiCopQuery): Promise<OllamaChatResponse> {
@@ -516,14 +525,47 @@ export class AiGateway {
   }
 
   async health(): Promise<AiProviderHealth> {
-    const provider = this.selectProvider("auto");
-    if (provider.health) {
-      return provider.health();
+    const checked: string[] = [];
+    for (const provider of this.healthProviderCandidates()) {
+      if (!provider.available) {
+        checked.push(`${provider.id}: disabled`);
+        continue;
+      }
+      if (!provider.health) {
+        return {
+          status: "ok",
+          detail: `${provider.id} provider available; no provider health probe`
+        };
+      }
+      const health = await provider.health();
+      checked.push(`${provider.id}: ${health.status} (${health.detail})`);
+      if (health.status === "ok") {
+        return health;
+      }
+      if (health.status === "disabled") {
+        continue;
+      }
     }
     return {
-      status: provider.available ? "ok" : "disabled",
-      detail: `${provider.id} provider ${provider.available ? "available" : "disabled"}`
+      status: checked.every((item) => item.includes(": disabled")) ? "disabled" : "degraded",
+      detail: checked.join("; ") || "AI providers are not configured"
     };
+  }
+
+  private healthProviderCandidates(): AiProvider[] {
+    const candidates: AiProvider[] = [];
+    const append = (provider: AiProvider | undefined) => {
+      if (provider && !candidates.some((candidate) => candidate.id === provider.id)) {
+        candidates.push(provider);
+      }
+    };
+    if (this.defaultProvider !== "auto") {
+      append(this.providers.get(this.defaultProvider));
+    }
+    append(this.providers.get("ollama"));
+    append(this.providers.get("local"));
+    append(this.providers.get("mock"));
+    return candidates;
   }
 
   private selectProvider(preference: AiProviderId | "auto"): AiProvider {

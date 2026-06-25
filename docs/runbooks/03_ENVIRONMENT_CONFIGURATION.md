@@ -65,6 +65,7 @@ fallback.
 ```env
 COP_EXTERNAL_AI_ENABLED=true
 COP_AI_DEFAULT_PROVIDER=ollama
+COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS=10000
 COP_AI_OLLAMA_BASE_URLS=http://192.168.200.2:11434,http://host.docker.internal:11434,http://192.168.1.176:11434
 COP_AI_OLLAMA_TOKEN=<service-token-pokud-je-vyžadován>
 COP_AI_OLLAMA_MODEL=gemma4:12b

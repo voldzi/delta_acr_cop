@@ -56,6 +56,7 @@ Lokální AI je defaultně vypnutá. Pro zapnutí v produkci:
 ```env
 COP_EXTERNAL_AI_ENABLED=true
 COP_AI_DEFAULT_PROVIDER=ollama
+COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS=10000
 COP_AI_OLLAMA_BASE_URLS=http://192.168.200.2:11434,http://host.docker.internal:11434,http://192.168.1.176:11434
 COP_AI_OLLAMA_TOKEN=<service-token-pokud-je-vyžadován>
 COP_AI_OLLAMA_MODEL=gemma4:12b
@@ -68,7 +69,9 @@ COP_AI_OLLAMA_THINK=false
 `COP_AI_DEFAULT_PROVIDER=mock` ponechává bezpečný vývojový režim bez externího
 volání. `providerPreference=auto` v klientovi znamená: použij konfigurovaný
 produkční provider, jinak `ollama`, potom kompatibilní `local` gateway, a teprve
-potom `mock` fallback.
+potom `mock` fallback. `COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS` řídí pouze
+obalový timeout pro `/health/dependencies`; samotné AI dotazy používají provider
+timeouty `COP_AI_OLLAMA_TIMEOUT_MS` a `COP_AI_LOCAL_TIMEOUT_MS`.
 
 Volitelný compatibility fallback přes AI KnowledgeBase LLM Gateway:
 

@@ -5,6 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile.api
     image: delta-acr-cop-api:local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       COP_API_PORT: "4310"
       COP_AUTH_MODE: "${COP_AUTH_MODE:-lab}"
@@ -18,6 +20,7 @@ services:
       COP_OIDC_REQUIRED_ROLE: "${COP_OIDC_REQUIRED_ROLE:-}"
       COP_EXTERNAL_AI_ENABLED: "${COP_EXTERNAL_AI_ENABLED:-false}"
       COP_AI_DEFAULT_PROVIDER: "${COP_AI_DEFAULT_PROVIDER:-mock}"
+      COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS: "${COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS:-10000}"
       COP_AI_OLLAMA_BASE_URL: "${COP_AI_OLLAMA_BASE_URL:-}"
       COP_AI_OLLAMA_BASE_URLS: "${COP_AI_OLLAMA_BASE_URLS:-}"
       COP_AI_OLLAMA_TOKEN: "${COP_AI_OLLAMA_TOKEN:-}"
