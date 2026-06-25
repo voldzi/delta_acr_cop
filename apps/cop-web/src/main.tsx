@@ -5886,7 +5886,7 @@ function hydrologyDetailUrl(properties: SituationFeature["properties"]): string 
   if (directUrl) {
     return directUrl;
   }
-  return properties.stationId ? `/safety-data/api/v1/hydro/stations/${encodeURIComponent(properties.stationId)}/observations` : undefined;
+  return undefined;
 }
 
 function hydroSeriesById(detail: HydroStationDetailResponse, seriesId: HydroSeriesId): HydroStationDetailResponse["series"][number] | undefined {
