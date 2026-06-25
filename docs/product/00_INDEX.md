@@ -8,3 +8,4 @@
 - [06 Professional Civil Map Roadmap](06_DELTA_INSPIRED_ROADMAP.md)
 - [07 AI-COP/NIPS Target Roadmap](07_AI_COP_NIPS_TARGET_ROADMAP.md)
 - [09 PoC Readiness and Completion Plan](09_POC_READINESS_AND_COMPLETION_PLAN.md)
+- [10 AI-COP Federation Gap Closure Assignment](10_AI_COP_FEDERATION_GAP_CLOSURE_ASSIGNMENT.md)
