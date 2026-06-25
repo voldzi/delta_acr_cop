@@ -509,6 +509,10 @@ describe("federation runtime routes", () => {
           }),
           expect.objectContaining({
             mode: "read_only",
+            toolId: "cop.fusion.explain"
+          }),
+          expect.objectContaining({
+            mode: "read_only",
             toolId: "cop.federation.nodes.list"
           }),
           expect.objectContaining({
@@ -517,7 +521,7 @@ describe("federation runtime routes", () => {
           })
         ]),
         summary: {
-          count: 5
+          count: 6
         }
       });
 
@@ -637,6 +641,81 @@ describe("federation runtime routes", () => {
               payload: expect.objectContaining({
                 status: "ok",
                 toolId: "cop.area.summary"
+              })
+            }),
+            type: "ai.tool.invoked"
+          })
+        ],
+        summary: {
+          count: 1,
+          totalAvailable: 1
+        }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("builds an audited read-only MCP fusion explanation", async () => {
+    const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
+    try {
+      const invocation = await app.inject({
+        headers: {
+          ...authHeaders,
+          "x-correlation-id": "corr-mcp-fusion-explain"
+        },
+        method: "POST",
+        payload: {
+          input: {
+            bbox: [13.75, 49.75, 15.6, 50.65],
+            layerIds: ["user.community.reports"],
+            limit: 25,
+            priorityLimit: 5
+          }
+        },
+        url: "/api/v1/mcp/tools/cop.fusion.explain/invoke"
+      });
+      expect(invocation.statusCode).toBe(200);
+      expect(invocation.json()).toMatchObject({
+        contractVersion: "cop-mcp-tool-invocation-v1",
+        result: {
+          contractVersion: "cop-area-fusion-v1",
+          confidence: expect.any(String),
+          headline: expect.any(String),
+          priorities: expect.any(Array),
+          scope: {
+            layerIds: ["user.community.reports"]
+          },
+          sourceSummary: expect.objectContaining({
+            evidenceCount: 0,
+            providerCount: 0
+          }),
+          summary: expect.objectContaining({
+            evidenceCount: 0,
+            priorityCount: 0
+          })
+        },
+        status: "ok",
+        tool: {
+          mode: "read_only",
+          toolId: "cop.fusion.explain"
+        }
+      });
+
+      const auditReplay = await app.inject({
+        headers: authHeaders,
+        method: "GET",
+        url: "/api/v1/events/domain?fromOffset=0&limit=10&type=ai.tool.invoked"
+      });
+      expect(auditReplay.statusCode).toBe(200);
+      expect(auditReplay.json()).toMatchObject({
+        items: [
+          expect.objectContaining({
+            data: expect.objectContaining({
+              correlationId: "corr-mcp-fusion-explain",
+              payload: expect.objectContaining({
+                status: "ok",
+                toolId: "cop.fusion.explain"
               })
             }),
             type: "ai.tool.invoked"

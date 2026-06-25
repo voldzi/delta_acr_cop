@@ -262,7 +262,8 @@ type CopMcpToolId =
   | "cop.audit.events.list"
   | "cop.events.dead_letters.list"
   | "cop.events.replay"
-  | "cop.federation.nodes.list";
+  | "cop.federation.nodes.list"
+  | "cop.fusion.explain";
 
 interface CopMcpToolDefinition {
   description: string;
@@ -335,6 +336,54 @@ const copMcpTools: CopMcpToolDefinition[] = [
     output: "cop-area-summary-v1",
     title: "Summarize area situation",
     toolId: "cop.area.summary"
+  },
+  {
+    description: "Explain deterministic fusion priorities for an area by correlating COP map evidence across providers. The tool returns evidence, confidence and uncertainty; it never creates or updates incidents.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        bbox: {
+          description: "Bounding box as [west,south,east,north] or {west,south,east,north}. Defaults to the flood PoC area.",
+          oneOf: [
+            {
+              items: { type: "number" },
+              maxItems: 4,
+              minItems: 4,
+              type: "array"
+            },
+            {
+              additionalProperties: false,
+              properties: {
+                east: { type: "number" },
+                north: { type: "number" },
+                south: { type: "number" },
+                west: { type: "number" }
+              },
+              required: ["west", "south", "east", "north"],
+              type: "object"
+            }
+          ]
+        },
+        includePartner: { type: "boolean" },
+        layerIds: {
+          items: { type: "string" },
+          maxItems: 24,
+          type: "array"
+        },
+        layers: {
+          items: { type: "string" },
+          maxItems: 24,
+          type: "array"
+        },
+        limit: { maximum: 500, minimum: 1, type: "integer" },
+        priorityLimit: { maximum: 20, minimum: 1, type: "integer" }
+      },
+      type: "object"
+    },
+    mode: "read_only",
+    output: "cop-area-fusion-v1",
+    title: "Explain area fusion priorities",
+    toolId: "cop.fusion.explain"
   },
   {
     description: "List registered COP federation nodes for operator diagnostics and edge sync planning.",
@@ -5141,6 +5190,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         result = await buildCopAreaSummaryToolResult(input, actor ?? null, invocationId);
         break;
       }
+      case "cop.fusion.explain": {
+        result = await buildCopAreaFusionToolResult(input, actor ?? null, invocationId);
+        break;
+      }
       case "cop.federation.nodes.list": {
         const nodes = await listFederatedNodes();
         result = {
@@ -5304,6 +5357,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       layerIds: selectedLayers.map((layer) => layer.layerId),
       requestedLayerIds: query.layerIds,
       warnings
+    });
+  }
+
+  async function buildCopAreaFusionToolResult(
+    input: Record<string, unknown>,
+    actor: AuthenticatedActor | null,
+    invocationId: string
+  ): Promise<Record<string, unknown>> {
+    const areaSummary = await buildCopAreaSummaryToolResult(input, actor, invocationId);
+    return buildCopAreaFusionPayload({
+      areaSummary,
+      generatedAt: now().toISOString(),
+      invocationId,
+      priorityLimit: optionalFiniteNumber(input.priorityLimit, 1, 20) ?? 8
     });
   }
 
@@ -6275,6 +6342,11 @@ const copAreaSummaryDefaultLayerIds = [
 
 type AreaSummarySeverity = "advisory" | "critical" | "info" | "warning";
 
+interface AreaSummaryLocation {
+  lat: number;
+  lon: number;
+}
+
 interface AreaSummaryFeatureCandidate {
   category?: string;
   confidence?: number;
@@ -6282,6 +6354,7 @@ interface AreaSummaryFeatureCandidate {
   featureId?: string;
   label: string;
   layer?: string;
+  location?: AreaSummaryLocation;
   observedAt?: string;
   providerId: string;
   severity: AreaSummarySeverity;
@@ -6424,6 +6497,7 @@ function areaSummaryFeatureCandidate(providerId: string, feature: unknown): Area
     return [];
   }
   const severity = normalizeAreaSummarySeverity(properties.severity ?? properties.hazardSeverity ?? properties.floodStage ?? properties.status);
+  const location = areaSummaryFeatureLocation(feature, properties);
   return [{
     ...(areaSummaryText(properties, ["category"]) ? { category: areaSummaryText(properties, ["category"]) } : {}),
     ...(optionalFiniteNumber(properties.confidence, 0, 1) !== undefined ? { confidence: optionalFiniteNumber(properties.confidence, 0, 1) } : {}),
@@ -6431,6 +6505,7 @@ function areaSummaryFeatureCandidate(providerId: string, feature: unknown): Area
     ...(areaSummaryText(properties, ["featureId", "reportId", "stationId"], 160) ? { featureId: areaSummaryText(properties, ["featureId", "reportId", "stationId"], 160) } : {}),
     label,
     ...(areaSummaryText(properties, ["layer", "layerId"], 120) ? { layer: areaSummaryText(properties, ["layer", "layerId"], 120) } : {}),
+    ...(location ? { location } : {}),
     ...(areaSummaryText(properties, ["observedAt", "updatedAt", "effectiveAt", "validFrom"], 80) ? { observedAt: areaSummaryText(properties, ["observedAt", "updatedAt", "effectiveAt", "validFrom"], 80) } : {}),
     providerId,
     severity,
@@ -6442,6 +6517,68 @@ function areaSummaryFeatureCandidate(providerId: string, feature: unknown): Area
 
 function areaSummaryFeatureProperties(feature: unknown): Record<string, unknown> {
   return isRecord(feature) && isRecord(feature.properties) ? feature.properties : {};
+}
+
+function areaSummaryFeatureLocation(feature: unknown, properties: Record<string, unknown>): AreaSummaryLocation | undefined {
+  const propertyLocation = areaSummaryLocationFromProperties(properties);
+  if (propertyLocation) {
+    return propertyLocation;
+  }
+  if (!isRecord(feature) || !isRecord(feature.geometry)) {
+    return undefined;
+  }
+  const geometry = feature.geometry;
+  const type = optionalTrimmedString(geometry.type, 40);
+  if (type === "Point") {
+    return areaSummaryCoordinatePair(geometry.coordinates);
+  }
+  const pairs = areaSummaryCoordinatePairs(geometry.coordinates);
+  if (pairs.length === 0) {
+    return undefined;
+  }
+  const sum = pairs.reduce(
+    (accumulator, pair) => ({
+      lat: accumulator.lat + pair.lat,
+      lon: accumulator.lon + pair.lon
+    }),
+    { lat: 0, lon: 0 }
+  );
+  return {
+    lat: Math.round((sum.lat / pairs.length) * 1_000_000) / 1_000_000,
+    lon: Math.round((sum.lon / pairs.length) * 1_000_000) / 1_000_000
+  };
+}
+
+function areaSummaryLocationFromProperties(properties: Record<string, unknown>): AreaSummaryLocation | undefined {
+  const lat = optionalFiniteNumber(properties.lat ?? properties.latitude, -90, 90);
+  const lon = optionalFiniteNumber(properties.lon ?? properties.lng ?? properties.longitude, -180, 180);
+  if (lat !== undefined && lon !== undefined) {
+    return { lat, lon };
+  }
+  const location = isRecord(properties.location) ? properties.location : undefined;
+  const nestedLat = optionalFiniteNumber(location?.lat ?? location?.latitude, -90, 90);
+  const nestedLon = optionalFiniteNumber(location?.lon ?? location?.lng ?? location?.longitude, -180, 180);
+  return nestedLat !== undefined && nestedLon !== undefined ? { lat: nestedLat, lon: nestedLon } : undefined;
+}
+
+function areaSummaryCoordinatePair(value: unknown): AreaSummaryLocation | undefined {
+  if (!Array.isArray(value) || value.length < 2) {
+    return undefined;
+  }
+  const lon = optionalFiniteNumber(value[0], -180, 180);
+  const lat = optionalFiniteNumber(value[1], -90, 90);
+  return lat !== undefined && lon !== undefined ? { lat, lon } : undefined;
+}
+
+function areaSummaryCoordinatePairs(value: unknown): AreaSummaryLocation[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const pair = areaSummaryCoordinatePair(value);
+  if (pair) {
+    return [pair];
+  }
+  return value.flatMap((item) => areaSummaryCoordinatePairs(item)).slice(0, 500);
 }
 
 function areaSummaryText(properties: Record<string, unknown>, keys: string[], maxLength = 180): string | undefined {
@@ -6540,6 +6677,370 @@ function areaSummarySummaryNumber(collection: Record<string, unknown>, key: stri
   const summary = isRecord(collection.summary) ? collection.summary : {};
   const value = Number(summary[key]);
   return Number.isFinite(value) ? value : fallback;
+}
+
+interface CopAreaFusionPayloadInput {
+  areaSummary: Record<string, unknown>;
+  generatedAt: string;
+  invocationId: string;
+  priorityLimit: number;
+}
+
+interface AreaFusionEvidence {
+  category?: string;
+  confidence?: number;
+  detail?: string;
+  evidenceId: string;
+  featureId?: string;
+  label: string;
+  layer?: string;
+  location?: AreaSummaryLocation;
+  observedAt?: string;
+  providerId: string;
+  severity: AreaSummarySeverity;
+  sourceId?: string;
+  stale: boolean;
+  validUntil?: string;
+}
+
+interface AreaFusionPriority {
+  category?: string;
+  confidence: number;
+  evidence: AreaFusionEvidence[];
+  explanation: string;
+  location?: AreaSummaryLocation;
+  metrics: {
+    evidenceCount: number;
+    locatedEvidenceCount: number;
+    providerCount: number;
+    staleEvidenceCount: number;
+  };
+  priorityId: string;
+  recommendedAction: string;
+  severity: AreaSummarySeverity;
+  sourceRefs: Array<Record<string, unknown>>;
+  title: string;
+}
+
+function buildCopAreaFusionPayload(input: CopAreaFusionPayloadInput): Record<string, unknown> {
+  const evidence = areaFusionEvidenceFromSummary(input.areaSummary).sort(compareAreaFusionEvidence);
+  const actionableEvidence = evidence.filter((item) => item.severity !== "info");
+  const fusionEvidence = actionableEvidence.length > 0 ? actionableEvidence : evidence;
+  const priorities = buildAreaFusionPriorities(fusionEvidence, input.priorityLimit);
+  const summary = isRecord(input.areaSummary.summary) ? input.areaSummary.summary : {};
+  const summaryFeatureCount = Number(summary.featureCount);
+  const uncertainties = areaFusionUncertainties(input.areaSummary, fusionEvidence);
+  const providerIds = Array.from(new Set(evidence.map((item) => item.providerId))).sort();
+  const criticalPriorityCount = priorities.filter((priority) => priority.severity === "critical").length;
+  const warningPriorityCount = priorities.filter((priority) => priority.severity === "warning").length;
+  return {
+    audit: {
+      eventType: "ai.tool.invoked",
+      invocationId: input.invocationId
+    },
+    confidence: areaFusionOverallConfidence(priorities, uncertainties),
+    contractVersion: "cop-area-fusion-v1",
+    generatedAt: input.generatedAt,
+    headline: areaFusionHeadline(priorities, Number.isFinite(summaryFeatureCount) ? summaryFeatureCount : evidence.length),
+    priorities,
+    scope: isRecord(input.areaSummary.scope) ? input.areaSummary.scope : {},
+    sourceSummary: {
+      evidenceCount: evidence.length,
+      providerCount: providerIds.length,
+      providers: providerIds,
+      sources: Array.isArray(input.areaSummary.sources) ? input.areaSummary.sources.slice(0, 12) : []
+    },
+    summary: {
+      criticalPriorityCount,
+      evidenceCount: evidence.length,
+      priorityCount: priorities.length,
+      providerCount: providerIds.length,
+      uncertaintyCount: uncertainties.length,
+      warningPriorityCount
+    },
+    uncertainties
+  };
+}
+
+function areaFusionEvidenceFromSummary(areaSummary: Record<string, unknown>): AreaFusionEvidence[] {
+  if (!Array.isArray(areaSummary.notableFeatures)) {
+    return [];
+  }
+  return areaSummary.notableFeatures.flatMap((candidate, index) => areaFusionEvidenceFromCandidate(candidate, index));
+}
+
+function areaFusionEvidenceFromCandidate(candidate: unknown, index: number): AreaFusionEvidence[] {
+  if (!isRecord(candidate)) {
+    return [];
+  }
+  const label = optionalTrimmedString(candidate.label, 180);
+  const providerId = optionalTrimmedString(candidate.providerId, 80);
+  if (!label || !providerId) {
+    return [];
+  }
+  const featureId = optionalTrimmedString(candidate.featureId, 160);
+  const layer = optionalTrimmedString(candidate.layer, 120);
+  const sourceId = optionalTrimmedString(candidate.sourceId, 120);
+  const location = areaFusionLocationFromCandidate(candidate);
+  return [{
+    ...(optionalTrimmedString(candidate.category, 120) ? { category: optionalTrimmedString(candidate.category, 120) } : {}),
+    ...(optionalFiniteNumber(candidate.confidence, 0, 1) !== undefined ? { confidence: optionalFiniteNumber(candidate.confidence, 0, 1) } : {}),
+    ...(optionalTrimmedString(candidate.detail, 240) ? { detail: optionalTrimmedString(candidate.detail, 240) } : {}),
+    evidenceId: featureId ?? areaFusionStableId("evidence", { index, label, layer, providerId }),
+    ...(featureId ? { featureId } : {}),
+    label,
+    ...(layer ? { layer } : {}),
+    ...(location ? { location } : {}),
+    ...(optionalTrimmedString(candidate.observedAt, 80) ? { observedAt: optionalTrimmedString(candidate.observedAt, 80) } : {}),
+    providerId,
+    severity: normalizeAreaSummarySeverity(candidate.severity),
+    ...(sourceId ? { sourceId } : {}),
+    stale: candidate.stale === true,
+    ...(optionalTrimmedString(candidate.validUntil, 80) ? { validUntil: optionalTrimmedString(candidate.validUntil, 80) } : {})
+  }];
+}
+
+function areaFusionLocationFromCandidate(candidate: Record<string, unknown>): AreaSummaryLocation | undefined {
+  const location = isRecord(candidate.location) ? candidate.location : undefined;
+  const lat = optionalFiniteNumber(location?.lat, -90, 90);
+  const lon = optionalFiniteNumber(location?.lon, -180, 180);
+  return lat !== undefined && lon !== undefined ? { lat, lon } : undefined;
+}
+
+function buildAreaFusionPriorities(evidence: AreaFusionEvidence[], limit: number): AreaFusionPriority[] {
+  const groups: AreaFusionEvidence[][] = [];
+  for (const item of evidence) {
+    const compatibleGroup = groups.find((group) => areaFusionCanJoinGroup(group, item));
+    if (compatibleGroup) {
+      compatibleGroup.push(item);
+    } else {
+      groups.push([item]);
+    }
+  }
+  return groups
+    .map(buildAreaFusionPriority)
+    .sort(compareAreaFusionPriorities)
+    .slice(0, limit);
+}
+
+function areaFusionCanJoinGroup(group: AreaFusionEvidence[], item: AreaFusionEvidence): boolean {
+  const lead = group[0];
+  if (!lead) {
+    return false;
+  }
+  const categoryMatch = areaFusionCategoryKey(lead) === areaFusionCategoryKey(item);
+  const severityClose = Math.abs(areaSummarySeverityRank(lead.severity) - areaSummarySeverityRank(item.severity)) <= 1;
+  if (lead.location && item.location) {
+    return areaFusionHaversineMeters(lead.location.lat, lead.location.lon, item.location.lat, item.location.lon) <= 3_000 && (categoryMatch || severityClose);
+  }
+  return categoryMatch && severityClose;
+}
+
+function buildAreaFusionPriority(group: AreaFusionEvidence[]): AreaFusionPriority {
+  const sortedEvidence = [...group].sort(compareAreaFusionEvidence);
+  const top = sortedEvidence[0] ?? group[0];
+  const severity = sortedEvidence.reduce<AreaSummarySeverity>(
+    (highest, item) => areaSummarySeverityRank(item.severity) > areaSummarySeverityRank(highest) ? item.severity : highest,
+    "info"
+  );
+  const providerCount = new Set(sortedEvidence.map((item) => item.providerId)).size;
+  const staleEvidenceCount = sortedEvidence.filter((item) => item.stale).length;
+  const locatedEvidenceCount = sortedEvidence.filter((item) => item.location).length;
+  const category = top?.category ?? top?.layer;
+  const location = areaFusionCentroid(sortedEvidence);
+  return {
+    ...(category ? { category } : {}),
+    confidence: areaFusionPriorityConfidence(sortedEvidence, severity),
+    evidence: sortedEvidence,
+    explanation: areaFusionExplanation(sortedEvidence, severity),
+    ...(location ? { location } : {}),
+    metrics: {
+      evidenceCount: sortedEvidence.length,
+      locatedEvidenceCount,
+      providerCount,
+      staleEvidenceCount
+    },
+    priorityId: areaFusionStableId("fusion", sortedEvidence.map((item) => item.evidenceId)),
+    recommendedAction: areaFusionRecommendedAction(severity),
+    severity,
+    sourceRefs: sortedEvidence.map(areaFusionSourceRef),
+    title: areaFusionPriorityTitle(severity, sortedEvidence)
+  };
+}
+
+function compareAreaFusionEvidence(a: AreaFusionEvidence, b: AreaFusionEvidence): number {
+  const severityDelta = areaSummarySeverityRank(b.severity) - areaSummarySeverityRank(a.severity);
+  if (severityDelta !== 0) {
+    return severityDelta;
+  }
+  if (a.stale !== b.stale) {
+    return a.stale ? 1 : -1;
+  }
+  const confidenceDelta = (b.confidence ?? 0) - (a.confidence ?? 0);
+  if (confidenceDelta !== 0) {
+    return confidenceDelta;
+  }
+  return areaFusionTimeRank(b.observedAt) - areaFusionTimeRank(a.observedAt);
+}
+
+function compareAreaFusionPriorities(a: AreaFusionPriority, b: AreaFusionPriority): number {
+  const severityDelta = areaSummarySeverityRank(b.severity) - areaSummarySeverityRank(a.severity);
+  if (severityDelta !== 0) {
+    return severityDelta;
+  }
+  const confidenceDelta = b.confidence - a.confidence;
+  if (confidenceDelta !== 0) {
+    return confidenceDelta;
+  }
+  return b.metrics.evidenceCount - a.metrics.evidenceCount;
+}
+
+function areaFusionPriorityConfidence(evidence: AreaFusionEvidence[], severity: AreaSummarySeverity): number {
+  const providerCount = new Set(evidence.map((item) => item.providerId)).size;
+  const averageEvidenceConfidence = evidence
+    .map((item) => item.confidence)
+    .filter((value): value is number => typeof value === "number")
+    .reduce((sum, value, _index, values) => sum + value / Math.max(1, values.length), 0);
+  const stalePenalty = evidence.some((item) => item.stale) ? 0.12 : 0;
+  const locationPenalty = evidence.some((item) => !item.location) ? 0.04 : 0;
+  const value =
+    0.34 +
+    Math.min(0.24, evidence.length * 0.08) +
+    Math.min(0.16, providerCount * 0.05) +
+    areaSummarySeverityRank(severity) * 0.04 +
+    Math.min(0.12, averageEvidenceConfidence * 0.12) -
+    stalePenalty -
+    locationPenalty;
+  return Math.round(Math.max(0.2, Math.min(0.95, value)) * 100) / 100;
+}
+
+function areaFusionCentroid(evidence: AreaFusionEvidence[]): AreaSummaryLocation | undefined {
+  const locations = evidence.flatMap((item) => item.location ? [item.location] : []);
+  if (locations.length === 0) {
+    return undefined;
+  }
+  const sum = locations.reduce(
+    (accumulator, location) => ({
+      lat: accumulator.lat + location.lat,
+      lon: accumulator.lon + location.lon
+    }),
+    { lat: 0, lon: 0 }
+  );
+  return {
+    lat: Math.round((sum.lat / locations.length) * 1_000_000) / 1_000_000,
+    lon: Math.round((sum.lon / locations.length) * 1_000_000) / 1_000_000
+  };
+}
+
+function areaFusionCategoryKey(evidence: AreaFusionEvidence): string {
+  return (evidence.category ?? evidence.layer ?? evidence.providerId).toLowerCase();
+}
+
+function areaFusionPriorityTitle(severity: AreaSummarySeverity, evidence: AreaFusionEvidence[]): string {
+  const top = evidence[0];
+  const prefix: Record<AreaSummarySeverity, string> = {
+    advisory: "Sledovat",
+    critical: "Kritická priorita",
+    info: "Kontext",
+    warning: "Výstraha"
+  };
+  if (!top) {
+    return `${prefix[severity]} v oblasti`;
+  }
+  return evidence.length > 1
+    ? `${prefix[severity]}: ${top.label} + ${evidence.length - 1} související podklad`
+    : `${prefix[severity]}: ${top.label}`;
+}
+
+function areaFusionExplanation(evidence: AreaFusionEvidence[], severity: AreaSummarySeverity): string {
+  const providerCount = new Set(evidence.map((item) => item.providerId)).size;
+  const locatedEvidenceCount = evidence.filter((item) => item.location).length;
+  return [
+    "Deterministická fúze vybrala prioritu podle závažnosti, aktuálnosti, kategorie a dostupné polohy.",
+    `Závažnost: ${severity}.`,
+    `Evidence: ${evidence.length} podkladů z ${providerCount} providerů; ${locatedEvidenceCount} podkladů má použitelnou polohu.`,
+    "Výsledek je návrh pro ověření operátorem, nikoli automaticky založený incident."
+  ].join(" ");
+}
+
+function areaFusionRecommendedAction(severity: AreaSummarySeverity): string {
+  if (severity === "critical") {
+    return "Okamžitě ověřit situaci proti primárnímu zdroji, informovat odpovědnou roli a připravit nebo aktualizovat incident.";
+  }
+  if (severity === "warning") {
+    return "Prověřit detail zdroje, zkontrolovat související hlášení a podle dopadu eskalovat na incident.";
+  }
+  if (severity === "advisory") {
+    return "Sledovat vývoj, doplnit chybějící kontext a upozornit uživatele pouze při zhoršení.";
+  }
+  return "Použít jako situační kontext bez samostatné eskalace.";
+}
+
+function areaFusionSourceRef(evidence: AreaFusionEvidence): Record<string, unknown> {
+  return {
+    id: evidence.featureId ?? evidence.evidenceId,
+    kind: evidence.providerId === "community" ? "community_report" : "provider_feature",
+    ...(evidence.observedAt ? { observedAt: evidence.observedAt } : {}),
+    sourceId: evidence.sourceId ?? evidence.providerId,
+    title: evidence.label
+  };
+}
+
+function areaFusionUncertainties(areaSummary: Record<string, unknown>, evidence: AreaFusionEvidence[]): string[] {
+  const base = areaSummaryStringArray(areaSummary.uncertainties);
+  const locatedEvidenceCount = evidence.filter((item) => item.location).length;
+  const geometryWarning = evidence.length > 0 && locatedEvidenceCount === 0
+    ? ["Fúze nemá k dispozici přesnou polohu vybraných podkladů; prostorová korelace je omezená."]
+    : [];
+  const staleWarning = evidence.some((item) => item.stale)
+    ? ["Některé podklady jsou označené jako zastaralé."]
+    : [];
+  return Array.from(new Set([...base, ...geometryWarning, ...staleWarning])).slice(0, 20);
+}
+
+function areaFusionOverallConfidence(priorities: AreaFusionPriority[], uncertainties: string[]): "high" | "low" | "medium" {
+  if (priorities.length === 0 || uncertainties.length >= 5) {
+    return "low";
+  }
+  if (priorities.some((priority) => priority.confidence >= 0.75) && uncertainties.length === 0) {
+    return "high";
+  }
+  return "medium";
+}
+
+function areaFusionHeadline(priorities: AreaFusionPriority[], featureCount: number): string {
+  const top = priorities[0];
+  if (!top) {
+    return featureCount > 0
+      ? `Ve vybrané oblasti je ${featureCount} objektů, ale žádná silná fúzní priorita.`
+      : "Ve vybrané oblasti nejsou z dostupných podkladů odvozené fúzní priority.";
+  }
+  return priorities.length > 1
+    ? `${top.title}; dalších priorit: ${priorities.length - 1}.`
+    : top.title;
+}
+
+function areaFusionStableId(prefix: string, payload: unknown): string {
+  return `${prefix}_${createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 20)}`;
+}
+
+function areaFusionTimeRank(value: string | undefined): number {
+  const timestamp = Date.parse(value ?? "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function areaFusionHaversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const radius = 6_371_000;
+  const phi1 = areaFusionToRadians(lat1);
+  const phi2 = areaFusionToRadians(lat2);
+  const deltaPhi = areaFusionToRadians(lat2 - lat1);
+  const deltaLambda = areaFusionToRadians(lon2 - lon1);
+  const a = Math.sin(deltaPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2;
+  return 2 * radius * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function areaFusionToRadians(degrees: number): number {
+  return degrees * Math.PI / 180;
 }
 
 function parseMapQueryRequest(body: unknown): MapFeatureQueryRequest | null {

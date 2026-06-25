@@ -203,6 +203,7 @@ client-safe metadata. Aktuální implementované nástroje jsou read-only:
 
 - `cop.federation.nodes.list`,
 - `cop.area.summary`,
+- `cop.fusion.explain`,
 - `cop.events.replay`,
 - `cop.events.dead_letters.list`,
 - `cop.audit.events.list`.
@@ -215,6 +216,11 @@ nikoli provider tokeny, plaintext chat zprávy ani citlivé binární přílohy.
 cestu jako mapové vrstvy. Vrací jen kompaktní situační souhrn, zdroje,
 confidence a nejistoty; nevrací celé GeoJSON payloady ani žádná mutační
 doporučení.
+`cop.fusion.explain` navazuje na stejný souhrn a deterministicky sestaví
+vysvětlitelné priority podle závažnosti, providerů, kategorie, polohy,
+aktuálnosti a nejistot. Výstup obsahuje evidenci a doporučený další krok pro
+operátora nebo klientskou aplikaci, ale nikdy sám nezakládá ani neupravuje
+incident.
 Měnící AI/MCP nástroje zůstávají mimo tento endpoint; musí vrátit návrh a
 skutečnou změnu provede až explicitní COP command API s potvrzením uživatele.
 
