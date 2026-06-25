@@ -982,7 +982,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const health = readSituationDataHealth(state.sources.get(situationDataSource.sourceSystem.sourceSystemId));
     if (!health) {
-      return { detail: "waiting for first request", name: "situation-data-source", status: "degraded" };
+      return { detail: "idle; waiting for first request", name: "situation-data-source", status: "ok" };
     }
     return {
       detail: health.detail ?? health.lastError ?? health.health.toLowerCase(),
@@ -1034,7 +1034,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const health = readSafetyDataHealth(state.sources.get(safetyDataSource.sourceSystem.sourceSystemId));
     if (!health) {
-      return { detail: "waiting for first request", name: "safety-data-source", status: "degraded" };
+      return { detail: "idle; waiting for first request", name: "safety-data-source", status: "ok" };
     }
     return {
       detail: health.detail ?? health.lastError ?? health.health.toLowerCase(),
@@ -1138,7 +1138,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const health = readMissionArenaHealth(state.sources.get(missionArenaSource.sourceSystem.sourceSystemId));
     if (!health) {
-      return { detail: "waiting for first request", name: "mission-arena-source", status: "degraded" };
+      return { detail: "idle; waiting for first request", name: "mission-arena-source", status: "ok" };
     }
     return {
       detail: health.detail ?? health.lastError ?? health.health.toLowerCase(),

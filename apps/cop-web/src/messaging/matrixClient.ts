@@ -8,6 +8,7 @@ import type {
   MatrixMessageReaction,
   MatrixMessageReplyTarget,
   MatrixMessagingSession,
+  MatrixPresenceState,
   MatrixRoomSummary,
   MatrixTimelineAttachment,
   MatrixTimelineMessage
@@ -19,6 +20,7 @@ interface MatrixClientLike {
   getJoinedRooms?: () => Promise<{ joined_rooms?: unknown } | unknown[]>;
   getRooms?: () => unknown[];
   getUserId?: () => string | null;
+  getUser?: (userId: string) => MatrixUserPresenceLike | undefined;
   initRustCrypto?: (args?: { cryptoDatabasePrefix?: string }) => Promise<void>;
   invite?: (roomId: string, userId: string) => Promise<unknown>;
   isRoomEncrypted?: (roomId: string) => boolean;
@@ -31,6 +33,7 @@ interface MatrixClientLike {
   sendMessage?: (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
   sendStateEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, stateKey?: string) => Promise<unknown>;
   sendTextMessage?: (roomId: string, body: string) => Promise<unknown>;
+  setPresence?: (options: { presence: "offline" | "online" | "unavailable" }) => Promise<unknown>;
   startClient?: (options?: Record<string, unknown>) => Promise<void> | void;
   stopClient?: () => void;
   scrollback?: (room: MatrixRoomLike, limit?: number) => Promise<unknown>;
@@ -76,6 +79,7 @@ interface MatrixSdkLike {
 }
 
 interface MatrixRoomLike {
+  getJoinedMembers?: () => MatrixRoomMemberLike[];
   getMember?: (userId: string) => MatrixRoomMemberLike | null;
   getMyMembership?: () => string;
   getUnreadNotificationCount?: () => number;
@@ -99,11 +103,19 @@ interface MatrixRoomStateLike {
 }
 
 interface MatrixRoomMemberLike {
+  membership?: string;
   name?: string;
   rawDisplayName?: string;
-  user?: {
-    displayName?: string;
-  };
+  user?: MatrixUserPresenceLike;
+  userId?: string;
+}
+
+interface MatrixUserPresenceLike {
+  currentlyActive?: boolean;
+  displayName?: string;
+  lastActiveAgo?: number;
+  lastPresenceTs?: number;
+  presence?: string;
   userId?: string;
 }
 
@@ -114,6 +126,7 @@ interface MatrixEventLike {
   getRelation?: () => Record<string, unknown> | null;
   getRoomId?: () => string | undefined;
   getSender?: () => string | undefined;
+  getStateKey?: () => string | undefined;
   getTs?: () => number | undefined;
   getType?: () => string | undefined;
 }
@@ -164,12 +177,57 @@ export async function createMatrixMessagingSession(
   let inviteJoinInFlight: Promise<void> | null = null;
   const canReadServerJoinedRooms = typeof client.getJoinedRooms === "function" || typeof window !== "undefined";
   let joinedRoomIds: Set<string> | null = canReadServerJoinedRooms ? new Set() : null;
+  let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const roomPresenceByUserId = new Map<string, MatrixUserPresenceLike & { fetchedAt: number }>();
   const refreshJoinedRoomIds = async () => {
     joinedRoomIds = await readServerJoinedRoomIds(client, homeserverBaseUrl, bootstrap.accessToken, joinedRoomIds);
   };
-  const readVisibleRooms = () => readRooms(client, { allowedRoomIds: joinedRoomIds });
+  const readVisibleRooms = () => readRooms(client, {
+    allowedRoomIds: joinedRoomIds,
+    ownUserId: bootstrap.userId,
+    presenceByUserId: roomPresenceByUserId
+  });
   const publishRooms = () => {
     callbacks.onRoomsChanged?.(readVisibleRooms());
+  };
+  const refreshVisibleRoomPresence = async () => {
+    const rooms = (client.getRooms?.() ?? [])
+      .map(asRoom)
+      .filter((room): room is MatrixRoomLike & { roomId: string } => Boolean(room?.roomId))
+      .filter((room) => !joinedRoomIds || joinedRoomIds.has(room.roomId));
+    const userIds = new Set<string>();
+    for (const room of rooms) {
+      for (const member of readRoomJoinedMembers(room)) {
+        const userId = member.userId;
+        if (userId && userId !== bootstrap.userId) {
+          userIds.add(userId);
+        }
+      }
+    }
+    const nowMs = Date.now();
+    const staleUserIds = Array.from(userIds)
+      .filter((userId) => nowMs - (roomPresenceByUserId.get(userId)?.fetchedAt ?? 0) > 30_000)
+      .slice(0, 48);
+    if (staleUserIds.length === 0) {
+      return;
+    }
+    await Promise.all(staleUserIds.map(async (userId) => {
+      const presence = await fetchMatrixPresence(homeserverBaseUrl, bootstrap.accessToken, userId);
+      if (presence) {
+        roomPresenceByUserId.set(userId, { ...presence, fetchedAt: Date.now(), userId });
+      }
+    }));
+  };
+  const schedulePresenceRefresh = (delayMs = 250) => {
+    if (presenceRefreshTimer !== undefined) {
+      return;
+    }
+    presenceRefreshTimer = setTimeout(() => {
+      presenceRefreshTimer = undefined;
+      void refreshVisibleRoomPresence()
+        .then(publishRooms)
+        .catch(() => undefined);
+    }, delayMs);
   };
   const joinInvitedRooms = async () => {
     if (inviteJoinInFlight) {
@@ -188,6 +246,7 @@ export async function createMatrixMessagingSession(
     void joinInvitedRooms().then(() => {
       publishRooms();
       callbacks.onTimelineChanged?.();
+      schedulePresenceRefresh();
     });
     publishRooms();
     callbacks.onTimelineChanged?.();
@@ -195,15 +254,24 @@ export async function createMatrixMessagingSession(
   const timelineListener = () => {
     publishRooms();
     callbacks.onTimelineChanged?.();
+    schedulePresenceRefresh();
+  };
+  const presenceListener = () => {
+    publishRooms();
+    schedulePresenceRefresh(750);
   };
   client.on?.("sync", syncListener);
   client.on?.("Room.timeline", timelineListener);
   client.on?.("Event.decrypted", timelineListener);
+  client.on?.("User.presence", presenceListener);
+  client.on?.("RoomMember.membership", presenceListener);
   await refreshJoinedRoomIds();
   await client.startClient?.({ initialSyncLimit: 30 });
+  void client.setPresence?.({ presence: "online" }).catch(() => undefined);
   await joinInvitedRooms();
   await refreshJoinedRoomIds();
   publishRooms();
+  schedulePresenceRefresh(0);
   const exhaustedTimelineRooms = new Set<string>();
 
   return {
@@ -444,9 +512,15 @@ export async function createMatrixMessagingSession(
       }
     },
     stop: () => {
+      if (presenceRefreshTimer !== undefined) {
+        clearTimeout(presenceRefreshTimer);
+      }
+      void client.setPresence?.({ presence: "offline" }).catch(() => undefined);
       client.off?.("sync", syncListener);
       client.off?.("Room.timeline", timelineListener);
       client.off?.("Event.decrypted", timelineListener);
+      client.off?.("User.presence", presenceListener);
+      client.off?.("RoomMember.membership", presenceListener);
       client.stopClient?.();
     }
   };
@@ -939,6 +1013,38 @@ async function fetchJoinedRooms(homeserverBaseUrl: string, accessToken: string |
   return await response.json() as { joined_rooms?: unknown };
 }
 
+async function fetchMatrixPresence(
+  homeserverBaseUrl: string,
+  accessToken: string | undefined,
+  userId: string
+): Promise<MatrixUserPresenceLike | undefined> {
+  if (!accessToken || typeof fetch !== "function") {
+    return undefined;
+  }
+  try {
+    const response = await fetch(`${homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/presence/${encodeURIComponent(userId)}/status`, {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      mode: "cors"
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+    const payload = await response.json() as Record<string, unknown>;
+    const lastActiveAgo = typeof payload.last_active_ago === "number" ? payload.last_active_ago : undefined;
+    const presence = typeof payload.presence === "string" ? payload.presence : undefined;
+    return {
+      currentlyActive: payload.currently_active === true,
+      ...(lastActiveAgo !== undefined ? { lastActiveAgo } : {}),
+      ...(presence ? { presence } : {}),
+      userId
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export async function clearMatrixMessagingCryptoStateForBootstrap(bootstrap: MessagingBootstrapResponse): Promise<void> {
   if (typeof window === "undefined") {
     return;
@@ -1030,7 +1136,11 @@ function isLikelyMatrixForbiddenError(caught: unknown): boolean {
   return caught instanceof Error && /m_forbidden|forbidden|permission|power level/iu.test(caught.message);
 }
 
-function readRooms(client: MatrixClientLike, options: { allowedRoomIds?: Set<string> | null } = {}): MatrixRoomSummary[] {
+function readRooms(client: MatrixClientLike, options: {
+  allowedRoomIds?: Set<string> | null;
+  ownUserId?: string;
+  presenceByUserId?: Map<string, MatrixUserPresenceLike & { fetchedAt: number }>;
+} = {}): MatrixRoomSummary[] {
   return (client.getRooms?.() ?? [])
     .map(asRoom)
     .filter((room): room is MatrixRoomLike & { roomId: string } => Boolean(room?.roomId))
@@ -1041,15 +1151,125 @@ function readRooms(client: MatrixClientLike, options: { allowedRoomIds?: Set<str
     })
     .map((room) => {
       const messageRetentionSeconds = readRoomRetentionSeconds(room);
+      const presence = readRoomPresence(room, client, options.ownUserId, options.presenceByUserId);
       return {
         encrypted: Boolean(client.isRoomEncrypted?.(room.roomId)),
         ...(messageRetentionSeconds ? { messageRetentionSeconds } : {}),
         name: room.name?.trim() || room.roomId,
+        ...(presence ? { presence } : {}),
         roomId: room.roomId,
         unreadCount: Math.max(0, room.getUnreadNotificationCount?.() ?? 0)
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name, "cs"));
+}
+
+function readRoomPresence(
+  room: MatrixRoomLike,
+  client: MatrixClientLike,
+  ownUserId: string | undefined,
+  presenceByUserId: Map<string, MatrixUserPresenceLike & { fetchedAt: number }> | undefined
+): MatrixRoomSummary["presence"] {
+  const members = readRoomJoinedMembers(room)
+    .filter((member) => member.userId && member.userId !== ownUserId);
+  if (members.length === 0) {
+    return {
+      activeMemberCount: 0,
+      offlineMemberCount: 0,
+      onlineMemberCount: 0,
+      state: "unknown",
+      totalMemberCount: 0,
+      unavailableMemberCount: 0,
+      unknownMemberCount: 0
+    };
+  }
+
+  let onlineMemberCount = 0;
+  let unavailableMemberCount = 0;
+  let offlineMemberCount = 0;
+  let unknownMemberCount = 0;
+  let latestPresenceAt = 0;
+
+  for (const member of members) {
+    const cached = member.userId ? presenceByUserId?.get(member.userId) : undefined;
+    const sdkUser = member.userId ? client.getUser?.(member.userId) : undefined;
+    const user = cached ?? sdkUser ?? member.user;
+    const presence = normalizeMatrixPresence(user);
+    if (cached?.fetchedAt) {
+      latestPresenceAt = Math.max(latestPresenceAt, cached.fetchedAt);
+    }
+    switch (presence) {
+      case "online":
+        onlineMemberCount += 1;
+        break;
+      case "unavailable":
+        unavailableMemberCount += 1;
+        break;
+      case "offline":
+        offlineMemberCount += 1;
+        break;
+      default:
+        unknownMemberCount += 1;
+        break;
+    }
+  }
+
+  const state: MatrixPresenceState = onlineMemberCount > 0
+    ? "online"
+    : unavailableMemberCount > 0 || unknownMemberCount > 0
+      ? "unknown"
+      : "offline";
+  return {
+    activeMemberCount: onlineMemberCount + unavailableMemberCount,
+    offlineMemberCount,
+    onlineMemberCount,
+    state,
+    totalMemberCount: members.length,
+    unavailableMemberCount,
+    unknownMemberCount,
+    ...(latestPresenceAt > 0 ? { updatedAt: new Date(latestPresenceAt).toISOString() } : {})
+  };
+}
+
+function readRoomJoinedMembers(room: MatrixRoomLike): MatrixRoomMemberLike[] {
+  const joinedMembers = room.getJoinedMembers?.();
+  if (Array.isArray(joinedMembers) && joinedMembers.length > 0) {
+    return joinedMembers.filter((member) => !member.membership || member.membership === "join");
+  }
+  const stateMembers = room.currentState?.getStateEvents?.("m.room.member");
+  if (!Array.isArray(stateMembers)) {
+    return [];
+  }
+  return stateMembers
+    .map(asEvent)
+    .flatMap((event) => {
+      if (!event) {
+        return [];
+      }
+      const content = event.getContent?.() ?? {};
+      if (content.membership !== "join") {
+        return [];
+      }
+      const userId = event.getStateKey?.() ?? event.getSender?.();
+      return userId ? [{ userId }] : [];
+    });
+}
+
+function normalizeMatrixPresence(user: MatrixUserPresenceLike | undefined): MatrixPresenceState {
+  if (user?.currentlyActive === true) {
+    return "online";
+  }
+  const presence = typeof user?.presence === "string" ? user.presence.toLowerCase() : "";
+  if (presence === "online") {
+    return "online";
+  }
+  if (presence === "unavailable" || presence === "busy") {
+    return "unavailable";
+  }
+  if (presence === "offline") {
+    return "offline";
+  }
+  return "unknown";
 }
 
 function findMatrixRoom(client: MatrixClientLike, roomId: string): MatrixRoomLike | undefined {

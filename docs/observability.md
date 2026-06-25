@@ -19,6 +19,10 @@ Current runtime observability surfaces:
 
 Provider-level diagnostics from SIM are consumed server-side and exposed only
 as COP source health or operator diagnostics, not as public map layers.
+Lazy map providers that have not received their first viewport request are
+reported in `/health/dependencies` as `ok` with an `idle; waiting for first
+request` detail. This prevents an unused optional layer from making the PoC
+health view look degraded before an operator opens that layer.
 
 ## OpenTelemetry Status
 

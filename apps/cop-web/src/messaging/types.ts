@@ -4,8 +4,22 @@ export interface MatrixRoomSummary {
   encrypted: boolean;
   messageRetentionSeconds?: number;
   name: string;
+  presence?: MatrixRoomPresenceSummary;
   roomId: string;
   unreadCount: number;
+}
+
+export type MatrixPresenceState = "offline" | "online" | "unavailable" | "unknown";
+
+export interface MatrixRoomPresenceSummary {
+  activeMemberCount: number;
+  offlineMemberCount: number;
+  onlineMemberCount: number;
+  state: MatrixPresenceState;
+  totalMemberCount: number;
+  unavailableMemberCount: number;
+  unknownMemberCount: number;
+  updatedAt?: string;
 }
 
 export interface MatrixTimelineMessage {

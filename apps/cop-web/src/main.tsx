@@ -91,6 +91,7 @@ import {
   fetchMapCatalog,
   fetchMapFeatures,
   fetchPlaceGeocode,
+  fetchDemoScenarioStatus,
   fetchSketchDrawings,
   fetchUserProfile,
   fetchWeatherRadarFrames,
@@ -103,7 +104,9 @@ import {
   getUavCount,
   isPublicFlightObject,
   saveUserProfile,
+  seedDemoScenario,
   submitCommunityReport,
+  resetDemoScenario,
   updateSketchDrawing,
   updateCommunityReport,
   updateIncident,
@@ -121,6 +124,7 @@ import {
   type CommunityAttachmentKind,
   type CommunityAttachmentUploadProgress,
   type CommunityFeatureCollectionResponse,
+  type DemoScenarioResponse,
   type CommunityReportCategory,
   type CommunityReportHazardSeverity,
   type CommunityReportLocation,
@@ -310,6 +314,7 @@ const appLanguageOptions: Array<[AppLanguage, string]> = [
 const defaultSituationLayerIds: SituationLayerId[] = ["weather"];
 const defaultSafetyLayerIds: SafetyLayerId[] = ["warnings"];
 const defaultTakLayerIds: TakLayerId[] = [];
+const pocDemoScenarioId = "flood-central-bohemia";
 const zoneColorOptions = ["#8cb6d8", "#c8f08d", "#facc15", "#fb923c", "#ef4444", "#a78bfa"] as const;
 const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["adaptive", "Adaptivní"],
@@ -483,6 +488,9 @@ export function App() {
   const [trackHistory, setTrackHistory] = React.useState<TrackHistory>({});
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<SettingsTab>("map");
+  const [demoScenario, setDemoScenario] = React.useState<DemoScenarioResponse | null>(null);
+  const [demoScenarioBusy, setDemoScenarioBusy] = React.useState<"loading" | "resetting" | "seeding" | null>(null);
+  const [demoScenarioError, setDemoScenarioError] = React.useState<string | null>(null);
   const [activeCatalogGroupId, setActiveCatalogGroupId] = React.useState<string | null>(null);
   const [visibleCatalogLayerIds, setVisibleCatalogLayerIds] = React.useState<string[]>(() =>
     normalizeCatalogLayerIds(initialPreferences.catalogLayerIds)
@@ -943,6 +951,70 @@ export function App() {
       // Main data loading already reports API errors; alert refresh should not obscure the current situation view.
     }
   }, [authToken]);
+
+  const refreshDemoScenario = React.useCallback(async () => {
+    if (!authToken) {
+      setDemoScenario(null);
+      setDemoScenarioError(null);
+      return;
+    }
+    setDemoScenarioBusy("loading");
+    setDemoScenarioError(null);
+    try {
+      setDemoScenario(await fetchDemoScenarioStatus(apiBase, authToken, pocDemoScenarioId));
+    } catch (error) {
+      setDemoScenarioError(error instanceof Error ? error.message : "Stav PoC scénáře se nepodařilo načíst.");
+    } finally {
+      setDemoScenarioBusy((current) => current === "loading" ? null : current);
+    }
+  }, [authToken]);
+
+  const handleSeedDemoScenario = React.useCallback(async () => {
+    if (!authToken) {
+      setDemoScenarioError("PoC scénář vyžaduje přihlášeného operátora.");
+      return;
+    }
+    setDemoScenarioBusy("seeding");
+    setDemoScenarioError(null);
+    try {
+      setDemoScenario(await seedDemoScenario(apiBase, authToken, pocDemoScenarioId));
+      setCommunityRefreshNonce((current) => current + 1);
+      void load();
+    } catch (error) {
+      setDemoScenarioError(error instanceof Error ? error.message : "PoC scénář se nepodařilo připravit.");
+    } finally {
+      setDemoScenarioBusy(null);
+    }
+  }, [authToken, load]);
+
+  const handleResetDemoScenario = React.useCallback(async () => {
+    if (!authToken) {
+      setDemoScenarioError("PoC scénář vyžaduje přihlášeného operátora.");
+      return;
+    }
+    const confirmed = window.confirm("Vyčistit PoC demo data? Smažou se demo skupiny, hlášení a zákresy pro tento scénář.");
+    if (!confirmed) {
+      return;
+    }
+    setDemoScenarioBusy("resetting");
+    setDemoScenarioError(null);
+    try {
+      setDemoScenario(await resetDemoScenario(apiBase, authToken, pocDemoScenarioId));
+      setCommunityRefreshNonce((current) => current + 1);
+      void load();
+    } catch (error) {
+      setDemoScenarioError(error instanceof Error ? error.message : "PoC scénář se nepodařilo vyčistit.");
+    } finally {
+      setDemoScenarioBusy(null);
+    }
+  }, [authToken, load]);
+
+  React.useEffect(() => {
+    if (!settingsOpen || settingsTab !== "data" || !authToken) {
+      return;
+    }
+    void refreshDemoScenario();
+  }, [authToken, refreshDemoScenario, settingsOpen, settingsTab]);
 
   React.useEffect(() => {
     void load();
@@ -4380,14 +4452,18 @@ export function App() {
       <MobileBottomNav
         activeSheet={mobileSheet}
         messagingOpen={messagingOpen}
+        settingsOpen={settingsOpen}
         sketchOpen={mobileSketchOpen}
         onChat={() => {
+          setSettingsOpen(false);
           setMobileSheet(null);
           setMobileSketchOpen(false);
           setMessagingOpen(true);
           setMessagingPinned(true);
         }}
         onLayers={() => {
+          setSettingsOpen(false);
+          setMessagingOpen(false);
           setActiveWorkspace("map");
           setMobileSketchOpen(false);
           if (workspaceLayout.leftPanelMode !== "open") {
@@ -4400,6 +4476,8 @@ export function App() {
           setMobileSheet((current) => current === "layers" ? null : "layers");
         }}
         onMap={() => {
+          setSettingsOpen(false);
+          setMessagingOpen(false);
           setActiveWorkspace("map");
           setMobileSketchOpen(false);
           setMobileSheet(null);
@@ -4407,14 +4485,22 @@ export function App() {
         onMenu={() => {
           setMobileSheet(null);
           setMobileSketchOpen(false);
+          setMessagingOpen(false);
+          if (settingsOpen) {
+            setSettingsOpen(false);
+            return;
+          }
           openSettings("map");
         }}
         onReport={() => {
+          setSettingsOpen(false);
+          setMessagingOpen(false);
           setMobileSheet(null);
           setMobileSketchOpen(false);
           startCommunityReportCapture();
         }}
         onSketch={() => {
+          setSettingsOpen(false);
           setActiveWorkspace("map");
           setMobileSheet(null);
           setMessagingOpen(false);
@@ -4460,6 +4546,9 @@ export function App() {
           authDiagnostics={authDiagnostics}
           authSession={authSession}
           autoRefresh={autoRefresh}
+          demoScenario={demoScenario}
+          demoScenarioBusy={demoScenarioBusy}
+          demoScenarioError={demoScenarioError}
           includeSynthetic={includeSynthetic}
           language={language}
           mapBasemapMode={mapBasemapMode}
@@ -4501,6 +4590,9 @@ export function App() {
           }}
           onAutoRefreshChange={setAutoRefresh}
           onClose={() => setSettingsOpen(false)}
+          onDemoScenarioRefresh={() => void refreshDemoScenario()}
+          onDemoScenarioReset={() => void handleResetDemoScenario()}
+          onDemoScenarioSeed={() => void handleSeedDemoScenario()}
           onIncludeSyntheticChange={setIncludeSynthetic}
           onLanguageChange={setLanguage}
           onMapBasemapModeChange={setMapBasemapMode}
@@ -5758,6 +5850,7 @@ function WorkspaceNavigator({
 function MobileBottomNav({
   activeSheet,
   messagingOpen,
+  settingsOpen,
   sketchOpen,
   onChat,
   onLayers,
@@ -5768,6 +5861,7 @@ function MobileBottomNav({
 }: {
   activeSheet: MobileSheet;
   messagingOpen: boolean;
+  settingsOpen: boolean;
   sketchOpen: boolean;
   onChat: () => void;
   onLayers: () => void;
@@ -5778,7 +5872,7 @@ function MobileBottomNav({
 }) {
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobilní navigace">
-      <button className={!activeSheet && !messagingOpen && !sketchOpen ? "active" : ""} onClick={onMap} type="button">
+      <button className={!activeSheet && !messagingOpen && !settingsOpen && !sketchOpen ? "active" : ""} onClick={onMap} type="button">
         <Layers size={18} />
         <span>Mapa</span>
       </button>
@@ -5798,7 +5892,7 @@ function MobileBottomNav({
         <Plus size={19} />
         <span>Nahlásit</span>
       </button>
-      <button onClick={onMenu} type="button">
+      <button className={settingsOpen ? "active" : ""} onClick={onMenu} type="button">
         <Settings size={18} />
         <span>Menu</span>
       </button>
@@ -6359,6 +6453,9 @@ function SettingsDrawer({
   authDiagnostics,
   authSession,
   autoRefresh,
+  demoScenario,
+  demoScenarioBusy,
+  demoScenarioError,
   includeSynthetic,
   language,
   mapBasemapMode,
@@ -6390,6 +6487,9 @@ function SettingsDrawer({
   onAoiRuleRadiusKmChange,
   onAutoRefreshChange,
   onClose,
+  onDemoScenarioRefresh,
+  onDemoScenarioReset,
+  onDemoScenarioSeed,
   onIncludeSyntheticChange,
   onLanguageChange,
   onMapBasemapModeChange,
@@ -6424,6 +6524,9 @@ function SettingsDrawer({
   authDiagnostics: AuthDiagnostics;
   authSession: AuthSession;
   autoRefresh: boolean;
+  demoScenario: DemoScenarioResponse | null;
+  demoScenarioBusy: "loading" | "resetting" | "seeding" | null;
+  demoScenarioError: string | null;
   includeSynthetic: boolean;
   language: AppLanguage;
   mapBasemapMode: MapBasemapMode;
@@ -6455,6 +6558,9 @@ function SettingsDrawer({
   onAoiRuleRadiusKmChange: (value: number) => void;
   onAutoRefreshChange: (value: boolean) => void;
   onClose: () => void;
+  onDemoScenarioRefresh: () => void;
+  onDemoScenarioReset: () => void;
+  onDemoScenarioSeed: () => void;
   onIncludeSyntheticChange: (value: boolean) => void;
   onLanguageChange: (value: AppLanguage) => void;
   onMapBasemapModeChange: (value: MapBasemapMode) => void;
@@ -6615,6 +6721,14 @@ function SettingsDrawer({
                 <input type="checkbox" checked={includeSynthetic} onChange={(event) => onIncludeSyntheticChange(event.target.checked)} />
                 Zobrazit cvičná data
               </label>
+              <PocDemoScenarioPanel
+                busy={demoScenarioBusy}
+                error={demoScenarioError}
+                scenario={demoScenario}
+                onRefresh={onDemoScenarioRefresh}
+                onReset={onDemoScenarioReset}
+                onSeed={onDemoScenarioSeed}
+              />
               <label className="range-label">
                 Minimální jistota dat
                 <input type="range" min="0" max="1" step="0.05" value={minConfidence} onChange={(event) => onMinConfidenceChange(Number(event.target.value))} />
@@ -6752,6 +6866,61 @@ function SettingsDrawer({
           ) : null}
         </div>
       </aside>
+    </div>
+  );
+}
+
+function PocDemoScenarioPanel({
+  busy,
+  error,
+  onRefresh,
+  onReset,
+  onSeed,
+  scenario
+}: {
+  busy: "loading" | "resetting" | "seeding" | null;
+  error: string | null;
+  onRefresh: () => void;
+  onReset: () => void;
+  onSeed: () => void;
+  scenario: DemoScenarioResponse | null;
+}) {
+  const summary = scenario?.scenario.summary;
+  const disabled = busy !== null;
+  const status = scenario?.scenario.status ?? "empty";
+  const generatedAt = scenario?.generatedAt ? new Date(scenario.generatedAt) : null;
+  const generatedAtLabel = generatedAt && Number.isFinite(generatedAt.getTime())
+    ? generatedAt.toLocaleString("cs-CZ", { day: "2-digit", hour: "2-digit", minute: "2-digit", month: "2-digit" })
+    : null;
+  return (
+    <div className="settings-subsection poc-demo-panel">
+      <div className="settings-title-row">
+        <PanelTitle icon={<Database size={17} />} title="PoC demo data" />
+        <button className="mini-button" disabled={disabled} onClick={onRefresh} type="button">
+          <RefreshCw size={14} />
+          {busy === "loading" ? "Kontroluji..." : "Obnovit"}
+        </button>
+      </div>
+      <p className="settings-help">
+        Řízený scénář připraví ukázkové skupiny, hlášení a zákresy pro PoC průchod. Reset smaže pouze data označená tímto demo scénářem.
+      </p>
+      <ReadinessRow label="Scénář" value={scenario?.scenario.label ?? "Povodeň - Středočeský kraj"} tone="neutral" />
+      <ReadinessRow label="Stav" value={status === "ready" ? "připraveno" : "prázdné"} tone={status === "ready" ? "ok" : "neutral"} />
+      <ReadinessRow label="Skupiny" value={String(summary?.groupCount ?? 0)} tone={(summary?.groupCount ?? 0) > 0 ? "ok" : "neutral"} />
+      <ReadinessRow label="Hlášení" value={String(summary?.reportCount ?? 0)} tone={(summary?.reportCount ?? 0) > 0 ? "ok" : "neutral"} />
+      <ReadinessRow label="Zákresy" value={String(summary?.drawingCount ?? 0)} tone={(summary?.drawingCount ?? 0) > 0 ? "ok" : "neutral"} />
+      {generatedAtLabel ? <ReadinessRow label="Kontrola" value={generatedAtLabel} tone="neutral" /> : null}
+      {error ? <div className="error-banner">PoC demo: {error}</div> : null}
+      <div className="settings-button-row">
+        <button className="primary-button secondary" disabled={disabled} onClick={onSeed} type="button">
+          <Play size={16} />
+          {busy === "seeding" ? "Připravuji..." : "Připravit PoC data"}
+        </button>
+        <button className="mini-button danger" disabled={disabled} onClick={onReset} type="button">
+          <Trash2 size={15} />
+          {busy === "resetting" ? "Čistím..." : "Vyčistit demo"}
+        </button>
+      </div>
     </div>
   );
 }

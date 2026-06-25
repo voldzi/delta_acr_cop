@@ -12,6 +12,38 @@ export interface SourceSystem {
   attributes?: Record<string, unknown>;
 }
 
+export interface DemoScenarioStatus {
+  bbox: {
+    east: number;
+    north: number;
+    south: number;
+    west: number;
+  };
+  demoScenarioId: string;
+  description: string;
+  eventId: string;
+  label: string;
+  status: "empty" | "ready";
+  summary: {
+    drawingCount: number;
+    groupCount: number;
+    reportCount: number;
+  };
+}
+
+export interface DemoScenarioResponse {
+  contractVersion: "cop-demo-scenarios-v1";
+  generatedAt: string;
+  operation?: Record<string, boolean | number | string>;
+  scenario: DemoScenarioStatus;
+}
+
+export interface DemoScenarioListResponse {
+  contractVersion: "cop-demo-scenarios-v1";
+  generatedAt: string;
+  items: DemoScenarioStatus[];
+}
+
 export interface CopObject {
   objectId: string;
   objectType: string;
@@ -2027,6 +2059,32 @@ export async function fetchMessagingBootstrap(apiBase: string, token: string, de
 export async function fetchMessagingConversations(apiBase: string, token: string): Promise<MessagingConversationListResponse> {
   return fetchJson<MessagingConversationListResponse>(`${apiBase}/api/v1/messaging/conversations`, {
     headers: authHeaders(token)
+  });
+}
+
+export async function fetchDemoScenarios(apiBase: string, token: string): Promise<DemoScenarioListResponse> {
+  return fetchJson<DemoScenarioListResponse>(`${apiBase}/api/v1/demo/scenarios`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function fetchDemoScenarioStatus(apiBase: string, token: string, scenarioId: string): Promise<DemoScenarioResponse> {
+  return fetchJson<DemoScenarioResponse>(`${apiBase}/api/v1/demo/scenarios/${encodeURIComponent(scenarioId)}/status`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function seedDemoScenario(apiBase: string, token: string, scenarioId: string): Promise<DemoScenarioResponse> {
+  return fetchJson<DemoScenarioResponse>(`${apiBase}/api/v1/demo/scenarios/${encodeURIComponent(scenarioId)}/seed`, {
+    headers: authHeaders(token),
+    method: "POST"
+  });
+}
+
+export async function resetDemoScenario(apiBase: string, token: string, scenarioId: string): Promise<DemoScenarioResponse> {
+  return fetchJson<DemoScenarioResponse>(`${apiBase}/api/v1/demo/scenarios/${encodeURIComponent(scenarioId)}/reset`, {
+    headers: authHeaders(token),
+    method: "POST"
   });
 }
 

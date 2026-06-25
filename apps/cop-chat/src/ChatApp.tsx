@@ -3805,10 +3805,10 @@ function Avatar({ label, small = false }: { label: string; small?: boolean }) {
 
 function ConnectionDot({ state }: { state: ChatConnectionState }) {
   const label = state === "online"
-    ? "Chat je připojený"
+    ? "Kontakt nebo skupina je online"
     : state === "syncing"
-      ? "Chat se synchronizuje"
-      : "Chat není připojený";
+      ? "Stav spojení se zjišťuje"
+      : "Kontakt nebo skupina není online";
   return <span className={clsx("connection-dot", state)} aria-label={label} role="img" title={label} />;
 }
 
@@ -4481,9 +4481,19 @@ function normalizeAttachmentKind(file: File, requestedKind: MatrixAttachmentKind
 
 function conversationSubtitle(item: ChatListItem, room: MatrixRoomSummary | null): string {
   if (item.type === "direct") {
-    return room ? "online" : "přímý chat";
+    return roomPresenceLabel(room) ?? (room ? "stav se zjišťuje" : "přímý chat");
   }
-  return `${item.memberCount} ${item.memberCount === 1 ? "člen" : item.memberCount < 5 ? "členové" : "členů"}`;
+  const memberLabel = `${item.memberCount} ${item.memberCount === 1 ? "člen" : item.memberCount < 5 ? "členové" : "členů"}`;
+  if (!room?.presence) {
+    return memberLabel;
+  }
+  if (room.presence.onlineMemberCount > 0) {
+    return `${memberLabel} · ${room.presence.onlineMemberCount} online`;
+  }
+  if (room.presence.state === "offline") {
+    return `${memberLabel} · nikdo online`;
+  }
+  return `${memberLabel} · stav se zjišťuje`;
 }
 
 function authDisplayName(session: AuthSession, config: AuthConfig): string {
@@ -4542,7 +4552,31 @@ function chatConnectionStateFor(
   if (preparing || !matrixSession || isMatrixSyncWarming(syncState)) {
     return "syncing";
   }
-  return item.roomId || item.room ? "online" : "offline";
+  if (!item.roomId && !item.room) {
+    return "offline";
+  }
+  const presenceState = item.room?.presence?.state;
+  if (presenceState === "online") {
+    return "online";
+  }
+  if (presenceState === "offline") {
+    return "offline";
+  }
+  return "syncing";
+}
+
+function roomPresenceLabel(room: MatrixRoomSummary | null): string | null {
+  const presence = room?.presence;
+  if (!presence) {
+    return null;
+  }
+  if (presence.onlineMemberCount > 0) {
+    return "online";
+  }
+  if (presence.state === "offline") {
+    return "offline";
+  }
+  return "stav se zjišťuje";
 }
 
 function isMatrixSyncWarming(syncState: string): boolean {
