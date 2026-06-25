@@ -6478,6 +6478,7 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "traffic"
     || value === "warnings"
     || value === "weather_alerts"
+    || value === "weather_webcams"
     || value === "weather"
     || value === "weather_humidity_grid"
     || value === "weather_precipitation_grid"
@@ -6514,7 +6515,7 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "weather.webcams":
     case "weather_webcams":
     case "public.weather.webcams":
-      return "weather";
+      return "weather_webcams";
     case "weather.radar_nowcast":
     case "weather_radar_nowcast":
     case "public.weather.radar_nowcast":

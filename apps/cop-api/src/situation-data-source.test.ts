@@ -87,20 +87,26 @@ describe("SituationDataSourceAdapter", () => {
     const sources = await adapter.fetchSources(new Date("2026-05-20T10:00:05Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/situation-data/api/v1/catalog");
-    expect(sources).toMatchObject([
-      {
+    expect(sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
         enabled: true,
         label: "NOAA AWC METAR/TAF aviation weather",
         layers: ["weather"],
         sourceId: "aviation_weather"
-      },
-      {
+      }),
+      expect.objectContaining({
+        enabled: true,
+        label: "ČHMÚ webkamery",
+        layers: ["weather_webcams"],
+        sourceId: "chmi_weather_webcams"
+      }),
+      expect.objectContaining({
         enabled: false,
         label: "ARDOS partner field operations",
         layers: ["ground", "mobile", "traffic"],
         sourceId: "ardos_partner"
-      }
-    ]);
+      })
+    ]));
   });
 
   it("reuses canonical viewport cache for small map pans", async () => {
@@ -202,6 +208,46 @@ describe("SituationDataSourceAdapter", () => {
         }
       }
     ]);
+  });
+
+  it("proxies CHMI weather webcams through the dedicated SIM layer", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleWebcamFeatureCollection()), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SituationDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/situation-data/api/v1",
+      cacheTtlMs: 20000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const features = await adapter.fetchFeatures({
+      bbox: { east: 18.9, north: 51.2, south: 48.5, west: 12.0 },
+      layers: ["weather_webcams"],
+      limit: 250,
+      sources: ["chmi_weather_webcams"]
+    }, new Date("2026-06-25T10:00:00Z"));
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/features?bbox=10.5%2C48%2C20.5%2C52&layers=weather_webcams&limit=250&source=chmi_weather_webcams"
+    );
+    expect(features.cache?.ttlMs).toBe(10 * 60 * 1000);
+    expect(features.features).toMatchObject([
+      {
+        properties: {
+          category: "weather.webcam",
+          featureId: "webcam:chmi:lysa-hora",
+          layer: "weather_webcams",
+          providerLayerId: "weather_webcams",
+          sourceId: "chmi_weather_webcams"
+        }
+      }
+    ]);
+    expect(features.query).toMatchObject({
+      layers: ["weather_webcams"],
+      sources: ["chmi_weather_webcams"]
+    });
   });
 
   it("proxies unified mobile network layer and preserves assessment metadata", async () => {
@@ -333,6 +379,29 @@ function sampleCatalogResponse() {
         styleProfile: "aviation-weather-v1"
       },
       {
+        audience: "public",
+        cacheTtlSeconds: 600,
+        defaultVisible: false,
+        description: "CHMI weather webcams.",
+        geometryTypes: ["Point"],
+        kind: "vector_features",
+        label: "ČHMÚ webkamery",
+        providerLayerId: "weather_webcams",
+        query: {
+          mode: "bbox",
+          providerId: "sim.situation-data",
+          providerLayerIds: ["weather_webcams"],
+          providerSourceIds: ["chmi_weather_webcams"],
+          streamId: "features"
+        },
+        recommendedCatalogLayerId: "public.weather.webcams",
+        refreshSeconds: 600,
+        role: "reference",
+        selectable: true,
+        sourceIds: ["chmi_weather_webcams"],
+        styleProfile: "weather-webcams-v1"
+      },
+      {
         audience: "diagnostic",
         defaultVisible: false,
         label: "ARDOS partner field operations",
@@ -363,6 +432,16 @@ function sampleCatalogResponse() {
         updateCadenceSeconds: 600
       },
       {
+        audience: "public",
+        enabled: true,
+        label: "ČHMÚ webkamery",
+        layers: ["weather_webcams"],
+        selectableInMap: true,
+        sourceId: "chmi_weather_webcams",
+        sourceRole: "final",
+        updateCadenceSeconds: 600
+      },
+      {
         audience: "diagnostic",
         enabled: false,
         label: "ARDOS partner field operations",
@@ -373,6 +452,71 @@ function sampleCatalogResponse() {
         updateCadenceSeconds: 15
       }
     ]
+  };
+}
+
+function sampleWebcamFeatureCollection() {
+  return {
+    contractVersion: "cop-situation-source-v1",
+    features: [
+      {
+        geometry: {
+          coordinates: [18.45, 49.55],
+          type: "Point"
+        },
+        properties: {
+          category: "weather.webcam",
+          confidence: 1,
+          featureId: "webcam:chmi:lysa-hora",
+          label: "Lysá hora",
+          layer: "weather_webcams",
+          license: {
+            attribution: "Český hydrometeorologický ústav",
+            name: "CHMI open data"
+          },
+          observedAt: "2026-06-25T10:00:00Z",
+          providerLayerId: "weather_webcams",
+          providerProperties: {
+            camera: {
+              detailUrl: "/situation-data/api/v1/weather/webcams/lysa-hora",
+              snapshotUrl: "/situation-data/api/v1/weather/webcams/lysa-hora/snapshot"
+            }
+          },
+          severity: "info",
+          sourceId: "chmi_weather_webcams",
+          stale: false
+        },
+        type: "Feature"
+      }
+    ],
+    generatedAt: "2026-06-25T10:00:00Z",
+    query: {
+      bbox: { east: 18.9, north: 51.2, south: 48.5, west: 12.0 },
+      layers: ["weather_webcams"],
+      limit: 250,
+      sources: ["chmi_weather_webcams"]
+    },
+    source: {
+      generatedAt: "2026-06-25T10:00:00Z",
+      sourceId: "situation-data-api",
+      sourceType: "PUBLIC_SITUATION_AGGREGATE"
+    },
+    sources: [
+      {
+        enabled: true,
+        label: "ČHMÚ webkamery",
+        layers: ["weather_webcams"],
+        sourceId: "chmi_weather_webcams"
+      }
+    ],
+    summary: {
+      featureCount: 1,
+      sourceCount: 1,
+      staleFeatureCount: 0,
+      warningCount: 0
+    },
+    type: "FeatureCollection",
+    warnings: []
   };
 }
 

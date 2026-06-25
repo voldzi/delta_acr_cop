@@ -11717,6 +11717,7 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     warnings: "Výstrahy",
     weather_alerts: "Meteorologické výstrahy",
     weather: "Počasí",
+    weather_webcams: "Webkamery ČHMÚ",
     weather_humidity_grid: "Vlhkost",
     weather_precipitation_grid: "Srážky",
     weather_pressure_grid: "Tlak",
@@ -14121,6 +14122,7 @@ function normalizeSourceIds(value: string[] | undefined): string[] {
 function isSituationLayerId(value: string): value is SituationLayerId {
   return value === "weather"
     || value === "weather_temperature_grid"
+    || value === "weather_webcams"
     || value === "weather_wind_field"
     || value === "weather_precipitation_grid"
     || value === "weather_humidity_grid"
@@ -14177,7 +14179,7 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "weather.webcams":
     case "weather_webcams":
     case "public.weather.webcams":
-      return "weather";
+      return "weather_webcams";
     case "weather.radar_nowcast":
     case "weather_radar_nowcast":
     case "public.weather.radar_nowcast":
@@ -14298,15 +14300,15 @@ function stableSituationRequestKey(layerIds: string[], filters: Record<string, R
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {
-  const width = Math.abs(bounds.east - bounds.west);
-  const height = Math.abs(bounds.north - bounds.south);
-  return (zoom ?? 0) < 5 || width > 11 || height > 7;
+  void bounds;
+  void zoom;
+  return false;
 }
 
 function shouldSkipSafetyFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {
-  const width = Math.abs(bounds.east - bounds.west);
-  const height = Math.abs(bounds.north - bounds.south);
-  return (zoom ?? 0) < 4 || width > 16 || height > 10;
+  void bounds;
+  void zoom;
+  return false;
 }
 
 function sourceQualityWarnings(warnings: string[]): string[] {

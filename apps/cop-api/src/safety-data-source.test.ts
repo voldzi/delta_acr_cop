@@ -163,6 +163,43 @@ describe("SafetyDataSourceAdapter", () => {
     });
   });
 
+  it("preserves hydrology numeric values while clamping ratio fields", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).not.toMatchObject({ Authorization: expect.any(String) });
+      return new Response(JSON.stringify(sampleHydroFeatureCollection()), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SafetyDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/safety-data/api/v1/",
+      cacheTtlMs: 120000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const features = await adapter.fetchFeatures({
+      bbox: { east: 18.9, north: 51.2, south: 48.5, west: 12.0 },
+      layers: ["flood"],
+      limit: 250,
+      sources: ["chmi_hydro"]
+    }, new Date("2026-06-25T10:00:00Z"));
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://sim.zeleznalady.cz/safety-data/api/v1/features?bbox=10.5%2C48%2C20.5%2C52&layers=flood&limit=250&source=chmi_hydro"
+    );
+    expect(features.features).toHaveLength(1);
+    expect(features.features[0]?.properties).toMatchObject({
+      catchmentAreaKm2: 1234,
+      confidence: 1,
+      discharge: 38.7,
+      floodStage: 2,
+      stationId: "0-203-1-239000",
+      waterLevelCm: 186,
+      waterTemperatureC: 12.4
+    });
+  });
+
   it("uses safety-data observability as source health without treating degraded external data as an outage", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -357,6 +394,74 @@ function sampleFeatureCollection() {
         label: "CHMI Alerts",
         layers: ["warnings"],
         sourceId: "chmi_alerts"
+      }
+    ],
+    summary: {
+      advisoryCount: 0,
+      criticalCount: 0,
+      featureCount: 1,
+      sourceCount: 1,
+      staleFeatureCount: 0,
+      warningCount: 1
+    },
+    type: "FeatureCollection",
+    warnings: []
+  };
+}
+
+function sampleHydroFeatureCollection() {
+  return {
+    contractVersion: "cop-safety-source-v1",
+    features: [
+      {
+        geometry: {
+          coordinates: [14.36, 49.98],
+          type: "Point"
+        },
+        properties: {
+          category: "flood.hydro_station",
+          confidence: 1.5,
+          featureId: "hydro:0-203-1-239000",
+          floodStage: 2,
+          headline: "Berounka - Praha Radotín",
+          layer: "flood",
+          metrics: {
+            catchmentAreaKm2: 1234,
+            floodActivityLevel: 2,
+            flowM3s: 38.7,
+            waterLevelCm: 186,
+            waterTemperatureC: 12.4
+          },
+          observedAt: "2026-06-25T10:00:00Z",
+          severity: "warning",
+          sourceId: "chmi_hydro",
+          stale: false,
+          stationId: "0-203-1-239000",
+          trend: "rising",
+          waterLevelCm: 186,
+          waterTemperatureC: 12.4
+        },
+        type: "Feature"
+      }
+    ],
+    generatedAt: "2026-06-25T10:00:00Z",
+    query: {
+      bbox: { east: 18.9, north: 51.2, south: 48.5, west: 12.0 },
+      layers: ["flood"],
+      limit: 250,
+      sources: ["chmi_hydro"]
+    },
+    source: {
+      generatedAt: "2026-06-25T10:00:00Z",
+      sourceId: "safety-data-api",
+      sourceType: "PUBLIC_SAFETY_AGGREGATE"
+    },
+    sources: [
+      {
+        enabled: true,
+        label: "CHMI Hydro",
+        layers: ["flood"],
+        sourceId: "chmi_hydro"
       }
     ],
     summary: {

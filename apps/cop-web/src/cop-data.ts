@@ -184,6 +184,7 @@ export type SituationLayerId =
   | "traffic"
   | "warnings"
   | "weather_alerts"
+  | "weather_webcams"
   | "weather"
   | "weather_humidity_grid"
   | "weather_precipitation_grid"

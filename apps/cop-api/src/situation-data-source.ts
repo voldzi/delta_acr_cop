@@ -22,6 +22,7 @@ export type SituationLayerId =
   | "warnings"
   | "weather"
   | "weather_alerts"
+  | "weather_webcams"
   | "weather_humidity_grid"
   | "weather_precipitation_grid"
   | "weather_pressure_grid"
@@ -218,6 +219,7 @@ const defaultConfig: SituationDataSourceConfig = {
     warnings: 5 * 60 * 1000,
     weather: 5 * 60 * 1000,
     weather_alerts: 5 * 60 * 1000,
+    weather_webcams: 10 * 60 * 1000,
     weather_humidity_grid: 10 * 60 * 1000,
     weather_precipitation_grid: 10 * 60 * 1000,
     weather_pressure_grid: 10 * 60 * 1000,
@@ -246,6 +248,7 @@ const defaultConfig: SituationDataSourceConfig = {
 
 const allowedLayerIds: SituationLayerId[] = [
   "weather",
+  "weather_webcams",
   "weather_temperature_grid",
   "weather_wind_field",
   "weather_precipitation_grid",
@@ -301,6 +304,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       warnings: readInteger(env.COP_SITUATION_DATA_WARNINGS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_alerts: readInteger(env.COP_SITUATION_DATA_WEATHER_ALERTS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_webcams: readInteger(env.COP_SITUATION_DATA_WEATHER_WEBCAMS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_humidity_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_HUMIDITY_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_precipitation_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_PRECIPITATION_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_pressure_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_PRESSURE_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),

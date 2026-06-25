@@ -100,7 +100,7 @@ describe("map catalog route", () => {
     expect(body.layers.find((layer) => layer.layerId === "public.weather.webcams")).toMatchObject({
       groupId: "risks.weather",
       query: {
-        providerLayerIds: ["weather"],
+        providerLayerIds: ["weather_webcams"],
         providerSourceIds: ["chmi_weather_webcams"]
       },
       selectable: true
@@ -179,7 +179,7 @@ describe("map catalog route", () => {
         label: "Webkamery ČHMÚ",
         layerId: "public.weather.webcams",
         query: expect.objectContaining({
-          providerLayerIds: ["weather"],
+          providerLayerIds: ["weather_webcams"],
           providerSourceIds: ["chmi_weather_webcams"]
         }),
         selectable: true
@@ -443,6 +443,36 @@ describe("map catalog route", () => {
     });
   });
 
+  it("queries CHMI weather webcams with the dedicated SIM weather_webcams layer", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const situationDataSource = new FakeSituationDataSource();
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [12.0, 48.5, 18.9, 51.2],
+        layerIds: ["public.weather.webcams"],
+        limit: 250
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { situation?: SituationFeatureCollection };
+    expect(situationDataSource.lastFeatureQuery).toMatchObject({
+      layers: ["weather_webcams"],
+      sources: ["chmi_weather_webcams"]
+    });
+    expect(body.situation?.query).toMatchObject({
+      layers: ["weather_webcams"],
+      sources: ["chmi_weather_webcams"]
+    });
+  });
+
   it("post-filters provider features by catalog category ids", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const app = buildServer({
@@ -673,10 +703,12 @@ class FakeSituationDataSource implements SituationDataSource {
   };
 
   readonly sourceSystem = createPublicSituationAggregateSourceSystem();
+  lastFeatureQuery: SituationFeatureQuery | null = null;
 
   async fetchLayers(_requestNow: Date): Promise<SituationLayerDescriptor[]> {
     return [
       { defaultVisible: true, expectedCadenceSeconds: 600, geometryTypes: ["Point"], label: "Weather", layerId: "weather" },
+      { defaultVisible: false, expectedCadenceSeconds: 600, geometryTypes: ["Point"], label: "ČHMÚ webkamery", layerId: "weather_webcams" },
       { defaultVisible: false, expectedCadenceSeconds: 900, geometryTypes: ["Point"], label: "Air quality", layerId: "air_quality" },
       { defaultVisible: false, expectedCadenceSeconds: 3600, geometryTypes: ["Polygon"], label: "Unified mobile network", layerId: "mobile_network" },
       { defaultVisible: false, expectedCadenceSeconds: 21600, geometryTypes: ["Polygon"], label: "Mobile coverage", layerId: "mobile_coverage" },
@@ -690,7 +722,7 @@ class FakeSituationDataSource implements SituationDataSource {
     return [
       { enabled: true, label: "Open-Meteo", layers: ["weather"], sourceId: "open_meteo", updateCadenceSeconds: 600 },
       { enabled: true, label: "ČHMÚ měřené počasí", layers: ["weather"], sourceId: "chmi_weather_stations", updateCadenceSeconds: 600 },
-      { enabled: true, label: "ČHMÚ webkamery", layers: ["weather"], sourceId: "chmi_weather_webcams", updateCadenceSeconds: 600 },
+      { enabled: true, label: "ČHMÚ webkamery", layers: ["weather_webcams"], sourceId: "chmi_weather_webcams", updateCadenceSeconds: 600 },
       { enabled: true, label: "ČHMÚ kvalita ovzduší", layers: ["air_quality"], sourceId: "chmi_air_quality", updateCadenceSeconds: 900 },
       { enabled: true, label: "Unified mobile network assessment", layers: ["mobile_network"], sourceId: "mobile_network_model", updateCadenceSeconds: 3600 },
       { enabled: true, label: "Mobile coverage estimate model", layers: ["mobile_coverage"], sourceId: "mobile_coverage_model", updateCadenceSeconds: 21600 },
@@ -701,6 +733,7 @@ class FakeSituationDataSource implements SituationDataSource {
   }
 
   async fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
+    this.lastFeatureQuery = query;
     return {
       contractVersion: "cop-situation-source-v1",
       features: [],

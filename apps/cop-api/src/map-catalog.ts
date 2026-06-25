@@ -919,7 +919,7 @@ function buildWeatherWebcamCatalogLayer(sources: SituationSourceDescriptor[]): M
       maxFeatures: 200,
       mode: "bbox",
       providerId: "sim.situation-data",
-      providerLayerIds: ["weather"],
+      providerLayerIds: ["weather_webcams"],
       providerSourceIds: ["chmi_weather_webcams"],
       streamId: "features"
     },

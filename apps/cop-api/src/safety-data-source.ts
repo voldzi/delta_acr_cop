@@ -892,7 +892,7 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     catchmentAreaKm2: optionalFinite(value.catchmentAreaKm2) ?? optionalFinite(metrics?.catchmentAreaKm2),
     category,
     certainty: optionalString(value.certainty),
-    confidence: optionalFinite(value.confidence),
+    confidence: optionalRatio(value.confidence),
     description: optionalString(value.description),
     detailUrl: optionalString(value.detailUrl),
     discharge: optionalFinite(value.discharge) ?? optionalFinite(metrics?.flowM3s),
@@ -1363,7 +1363,12 @@ function optionalNumber(value: unknown): number | undefined {
 
 function optionalFinite(value: unknown): number | undefined {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? clampNumber(parsed, 0, 1) : undefined;
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function optionalRatio(value: unknown): number | undefined {
+  const parsed = optionalFinite(value);
+  return parsed === undefined ? undefined : clampNumber(parsed, 0, 1);
 }
 
 function optionalString(value: unknown): string | undefined {

@@ -527,7 +527,7 @@ Provider-native fields may be preserved under:
 | `public.place.settlements` | Sídla | `sim.situation-data` layer `place_settlements`, source `osm_postgis` |
 | `public.weather.current` | Počasí | `sim.situation-data` layer `weather`, source `open_meteo` |
 | `public.weather.observations` | Měřené počasí ČHMÚ | `sim.situation-data` layer `weather`, source `chmi_weather_stations` |
-| `public.weather.webcams` | Webkamery ČHMÚ | `sim.situation-data` layer `weather`, source `chmi_weather_webcams`; používá `properties.providerProperties.camera.detailUrl` nebo `snapshotUrl` přes COP proxy |
+| `public.weather.webcams` | Webkamery ČHMÚ | `sim.situation-data` layer `weather_webcams`, source `chmi_weather_webcams`; používá `properties.providerProperties.camera.detailUrl` nebo `snapshotUrl` přes COP proxy |
 | `public.weather.aviation` | Letištní počasí | `sim.situation-data` layer `weather`, source `aviation_weather` |
 | `public.safety.air_quality` | Kvalita ovzduší | `sim.situation-data` layer `air_quality`, source `chmi_air_quality` |
 | `public.weather.temperature_grid` | Teplota | `sim.situation-data` layer `weather_temperature_grid`, source `chmi_weather_stations` |
