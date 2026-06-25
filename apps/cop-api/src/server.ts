@@ -1718,7 +1718,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const operation = {
       createdDrawings: 0,
       createdGroups: 0,
-      createdReports: 0
+      createdReports: 0,
+      repairedReports: 0
     };
     if (!group) {
       group = await createCommunityGroup({
@@ -1738,10 +1739,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     group = await refreshFloodDemoGroupMetadata(group, actor, requestNow);
     group = await ensureFloodDemoGroupMembers(group, actor, requestNow);
 
-    const reportTitles = new Set(before.reports.map((report) => report.title));
+    const reportsByTitle = new Map(before.reports.map((report) => [report.title, report]));
     for (const seed of floodDemoReportSeeds(group.groupId, requestNow)) {
-      if (reportTitles.has(seed.title)) {
+      const existingReport = reportsByTitle.get(seed.title);
+      if (existingReport && isFloodDemoReportSeedCurrent(existingReport, seed)) {
         continue;
+      }
+      if (existingReport) {
+        if (await deleteCommunityReportForDemoScenario(existingReport.reportId, floodDemoScenarioId, requestNow)) {
+          operation.repairedReports += 1;
+        } else {
+          app.log.warn({ reportId: existingReport.reportId, title: existingReport.title }, "Demo flood report repair skipped because stale report could not be deleted.");
+          continue;
+        }
       }
       const report = await createCommunityReport({
         category: seed.category,
@@ -7033,6 +7043,15 @@ function floodDemoReportSeeds(groupId: string, requestNow: Date) {
       visibility: "public" as const
     }
   ];
+}
+
+function isFloodDemoReportSeedCurrent(report: CommunityReportRecord, seed: { properties: Record<string, unknown> }): boolean {
+  return report.properties.demoScenarioId === seed.properties.demoScenarioId
+    && report.properties.eventId === seed.properties.eventId
+    && report.properties.groupId === seed.properties.groupId
+    && report.properties.groupName === seed.properties.groupName
+    && report.properties.hazardSeverity === seed.properties.hazardSeverity
+    && report.properties.recommendedAction === seed.properties.recommendedAction;
 }
 
 function floodDemoDrawingSeeds(groupId: string): Array<Omit<CreateSketchDrawingInput, "actor">> {
