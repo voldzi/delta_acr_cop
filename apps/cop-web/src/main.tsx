@@ -14333,6 +14333,7 @@ function sourceQualityWarningText(warning: string): string {
   }
   if (
     lower.includes("timeout")
+    || lower.includes("aborted")
     || lower.includes("unavailable")
     || lower.includes("failed")
     || lower.includes("fetch")
