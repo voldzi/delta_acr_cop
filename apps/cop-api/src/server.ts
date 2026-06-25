@@ -6999,47 +6999,47 @@ function floodDemoReportSeeds(groupId: string, requestNow: Date) {
   return [
     {
       category: "flood" as const,
-      description: "Voda postupne zaplavuje podjezd. Prijezd je vhodny jen pro slozky s vyssi prujezdnosti.",
+      description: "Voda postupně zaplavuje podjezd. Příjezd je vhodný jen pro složky s vyšší průjezdností.",
       location: { accuracyM: 20, lat: 50.1585, lon: 14.3974, source: "manual" as const },
       observedAt: "2026-05-16T10:12:00Z",
       properties: floodDemoBaseMetadata({
         groupId,
         groupName,
         hazardSeverity: "warning",
-        recommendedAction: "Zobrazit v mape, overit prujezdnost a informovat mistni skupinu.",
+        recommendedAction: "Zobrazit v mapě, ověřit průjezdnost a informovat místní skupinu.",
         validUntil: isoAfter(requestNow, 8)
       }),
-      title: "Zaplaveny podjezd u Roztok",
+      title: "Zaplavený podjezd u Roztok",
       visibility: "public" as const
     },
     {
       category: "bridge_damage" as const,
-      description: "Most ma poskozeny kraj vozovky a je nutne jej oznacit jako rizikove misto.",
+      description: "Most má poškozený kraj vozovky a je nutné jej označit jako rizikové místo.",
       location: { accuracyM: 18, lat: 49.9781, lon: 14.392, source: "manual" as const },
       observedAt: "2026-05-16T10:18:00Z",
       properties: floodDemoBaseMetadata({
         groupId,
         groupName,
         hazardSeverity: "critical",
-        recommendedAction: "Omezit prujezd, pripojit fotografii a predat do udalosti.",
+        recommendedAction: "Omezit průjezd, připojit fotografii a předat do události.",
         validUntil: isoAfter(requestNow, 12)
       }),
-      title: "Poskozeny most Zbraslav",
+      title: "Poškozený most Zbraslav",
       visibility: "public" as const
     },
     {
       category: "road_blockage" as const,
-      description: "Nabrezi je neprujezdne kvuli stojici vode a naplaveninam.",
+      description: "Nábřeží je neprůjezdné kvůli stojící vodě a naplaveninám.",
       location: { accuracyM: 15, lat: 50.0912, lon: 14.414, source: "manual" as const },
       observedAt: "2026-05-16T10:24:00Z",
       properties: floodDemoBaseMetadata({
         groupId,
         groupName,
         hazardSeverity: "warning",
-        recommendedAction: "Pouzit navrzenou objizdnou trasu v zakresu.",
+        recommendedAction: "Použít navrženou objízdnou trasu v zákresu.",
         validUntil: isoAfter(requestNow, 6)
       }),
-      title: "Uzavirka nabrezi",
+      title: "Uzavírka nábřeží",
       visibility: "public" as const
     }
   ];
