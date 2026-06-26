@@ -19,7 +19,7 @@ Decision record: [ADR 0009](adr/0009_STANDARD_DOCUMENTATION_MAPPING_AND_JSON_OPE
 | `docs/operations.md` | [operations.md](operations.md), [runbooks/00_INDEX.md](runbooks/00_INDEX.md), [runbooks/03_ENVIRONMENT_CONFIGURATION.md](runbooks/03_ENVIRONMENT_CONFIGURATION.md), [runbooks/04_RUNNING_MAIN_COP.md](runbooks/04_RUNNING_MAIN_COP.md), [runbooks/13_EDGE_NODE_RUNTIME.md](runbooks/13_EDGE_NODE_RUNTIME.md) |
 | `docs/observability.md` | [observability.md](observability.md), [application/08_AUDIT_AND_OBSERVABILITY.md](application/08_AUDIT_AND_OBSERVABILITY.md), [runbooks/04_RUNNING_MAIN_COP.md](runbooks/04_RUNNING_MAIN_COP.md) |
 | `docs/runbook.md` | [runbook.md](runbook.md), [runbooks/00_INDEX.md](runbooks/00_INDEX.md) |
-| Product scope and roadmap | [product/00_INDEX.md](product/00_INDEX.md), [product/07_AI_COP_NIPS_TARGET_ROADMAP.md](product/07_AI_COP_NIPS_TARGET_ROADMAP.md), [product/10_AI_COP_FEDERATION_GAP_CLOSURE_ASSIGNMENT.md](product/10_AI_COP_FEDERATION_GAP_CLOSURE_ASSIGNMENT.md) |
+| Product scope, roadmap and scale | [product/00_INDEX.md](product/00_INDEX.md), [product/07_AI_COP_NIPS_TARGET_ROADMAP.md](product/07_AI_COP_NIPS_TARGET_ROADMAP.md), [product/10_AI_COP_FEDERATION_GAP_CLOSURE_ASSIGNMENT.md](product/10_AI_COP_FEDERATION_GAP_CLOSURE_ASSIGNMENT.md), [COP Performance and Scale Playbook](COP_PERFORMANCE_AND_SCALE_PROPOSAL.md) |
 | ADRs | [adr/00_INDEX.md](adr/00_INDEX.md) |
 | OpenAPI | [../openapi/openapi.json](../openapi/openapi.json), generated export [api/openapi-main-cop.yaml](api/openapi-main-cop.yaml) |
 

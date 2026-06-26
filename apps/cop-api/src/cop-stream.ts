@@ -190,7 +190,7 @@ export class CopStreamBroadcaster {
     return message;
   }
 
-  publishObjectUpserts(objects: ObservedObject[], now: Date): CopStreamMessage | undefined {
+  createObjectUpserts(objects: ObservedObject[], now: Date): CopStreamMessage | undefined {
     if (objects.length === 0) {
       return undefined;
     }
@@ -205,8 +205,19 @@ export class CopStreamBroadcaster {
       type: "delta"
     };
     this.recordCreatedMessage(message);
-    this.publish(message);
     return message;
+  }
+
+  publishObjectUpserts(objects: ObservedObject[], now: Date): CopStreamMessage | undefined {
+    const message = this.createObjectUpserts(objects, now);
+    if (message) {
+      this.publishMessage(message);
+    }
+    return message;
+  }
+
+  publishMessage(message: CopStreamMessage): void {
+    this.publish(message);
   }
 
   recordWriteError(now = new Date()): void {

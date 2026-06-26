@@ -28,6 +28,7 @@ import {
   type CommunityReportVisibility
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
+import { createCopStreamBusFromEnv, type CopStreamBus } from "./cop-stream-bus.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
 import {
@@ -204,6 +205,7 @@ export interface BuildServerOptions {
   now?: () => Date;
   trackHistoryStore?: TrackHistoryStore;
   trackLifecycle?: TrackLifecycleConfig;
+  streamBus?: CopStreamBus;
   streamBroadcaster?: CopStreamBroadcaster;
   userProfileStore?: UserProfileStore;
 }
@@ -504,6 +506,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
   const federationRuntimeStore = options.federationRuntimeStore ?? createFederationRuntimeStoreFromEnv();
   const streamBroadcaster = options.streamBroadcaster ?? createStreamBroadcasterFromEnv();
+  const streamBus = options.streamBus ?? createCopStreamBusFromEnv();
+  const unsubscribeStreamBus = streamBus.subscribe((message) => streamBroadcaster.publishMessage(message));
   const userProfileStore = options.userProfileStore ?? createUserProfileStoreFromEnv();
   const userProfileFallbackStore = new InMemoryUserProfileStore("memory-fallback");
   const communityReportStore = options.communityReportStore ?? createCommunityReportStoreFromEnv();
@@ -543,6 +547,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let sketchDrawingStoreDetail = sketchDrawingStore ? `${sketchDrawingStore.name}: initializing` : "disabled";
   let mediaStorageStatus: DependencyStatus = mediaStorage ? "degraded" : "disabled";
   let mediaStorageDetail = mediaStorage ? `${mediaStorage.name}: initializing` : "disabled";
+  let streamBusStatus: DependencyStatus = streamBus.name === "memory" ? "ok" : "degraded";
+  let streamBusDetail = streamBus.diagnostics();
   let restoredCurrentTrackCount = 0;
   let flightDataPollTimer: ReturnType<typeof setInterval> | undefined;
   let trackPersistenceFlushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -582,6 +588,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   );
   app.addHook("preHandler", requireBearerToken);
   app.addHook("onReady", async () => {
+    await initializeStreamBus();
     await initializeFederationRuntimeStore();
     await initializeUserProfileStore();
     await initializeCommunityReportStore();
@@ -613,6 +620,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!trackPersistenceFlushInFlight) {
       await flushQueuedTrackPersistence();
     }
+    unsubscribeStreamBus();
+    await streamBus.close();
     await trackHistoryStore?.close();
     await federationRuntimeStore?.close();
     await userProfileStore.close();
@@ -666,6 +675,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       dependencies: [
       { name: "source-registry", status: "ok" },
       { name: "in-memory-cop-state", status: "ok" },
+      { name: "cop-stream-bus", status: streamBusDependencyStatus(), detail: streamBusDependencyDetail() },
       { name: "federation-runtime-store", status: federationRuntimeStoreStatus, detail: federationRuntimeStoreDependencyDetail() },
       { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
       { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
@@ -690,6 +700,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const trackHistoryPointCount = await countTrackHistoryPoints();
     const persistedCurrentTrackCount = await countPersistedCurrentTracks();
     const streamMetrics = streamBroadcaster.metrics;
+    const streamBusMetrics = streamBus.metrics;
+    const streamBusMode = escapePrometheusLabel(streamBusMetrics.mode);
     const lines = [
       "# HELP cop_sources_total Registered COP source systems.",
       "# TYPE cop_sources_total gauge",
@@ -719,6 +731,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       "# HELP cop_stream_write_errors_total COP live stream write errors.",
       "# TYPE cop_stream_write_errors_total counter",
       `cop_stream_write_errors_total ${streamMetrics.writeErrorsTotal}`,
+      "# HELP cop_stream_bus_ready Whether COP stream fan-out bus is ready.",
+      "# TYPE cop_stream_bus_ready gauge",
+      `cop_stream_bus_ready{mode="${streamBusMode}"} ${streamBusMetrics.ready ? 1 : 0}`,
+      "# HELP cop_stream_bus_messages_total COP stream fan-out bus messages.",
+      "# TYPE cop_stream_bus_messages_total counter",
+      `cop_stream_bus_messages_total{mode="${streamBusMode}",direction="published"} ${streamBusMetrics.publishedMessagesTotal}`,
+      `cop_stream_bus_messages_total{mode="${streamBusMode}",direction="received"} ${streamBusMetrics.receivedMessagesTotal}`,
+      `cop_stream_bus_messages_total{mode="${streamBusMode}",direction="local_delivery"} ${streamBusMetrics.localDeliveriesTotal}`,
       "# HELP cop_stream_backpressure_active Whether COP stream backpressure is currently active.",
       "# TYPE cop_stream_backpressure_active gauge",
       `cop_stream_backpressure_active ${streamMetrics.backpressureActive ? 1 : 0}`,
@@ -738,6 +758,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     ];
     return reply.type("text/plain").send(`${lines.join("\n")}\n`);
   });
+
+  async function initializeStreamBus(): Promise<void> {
+    try {
+      await streamBus.init();
+      streamBusStatus = "ok";
+      streamBusDetail = streamBus.diagnostics();
+    } catch (error) {
+      streamBusStatus = "degraded";
+      streamBusDetail = `${streamBus.name}: ${errorMessage(error)}`;
+      app.log.error({ error }, "COP stream bus initialization failed; live stream will remain local-only.");
+    }
+  }
 
   async function initializeFederationRuntimeStore(): Promise<void> {
     if (!federationRuntimeStore) {
@@ -955,6 +987,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   function mediaStorageDependencyDetail(): string {
     const diagnostics = mediaStorage?.diagnostics?.();
     return diagnostics ? `${mediaStorageDetail}; ${diagnostics}` : mediaStorageDetail;
+  }
+
+  function streamBusDependencyDetail(): string {
+    return streamBus.diagnostics() || streamBusDetail;
+  }
+
+  function streamBusDependencyStatus(): DependencyStatus {
+    return streamBus.metrics.ready || streamBus.name === "memory" ? "ok" : streamBusStatus;
   }
 
   async function messagingDependency(): Promise<{ detail: string; name: string; status: DependencyStatus }> {
@@ -6251,7 +6291,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       objects.filter((object) => canReadObject(subject, object)),
       requestNow
     );
-    streamBroadcaster.publishObjectUpserts(readableObjects, requestNow);
+    const message = streamBroadcaster.createObjectUpserts(readableObjects, requestNow);
+    if (message) {
+      await streamBus.publish(message);
+      streamBusDetail = streamBus.diagnostics();
+      streamBusStatus = streamBus.metrics.ready || streamBus.name === "memory" ? "ok" : "degraded";
+    }
   }
 
   return app;
@@ -10736,6 +10781,10 @@ function timestampSeconds(value: string | undefined): number {
   }
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? Math.floor(timestamp / 1000) : 0;
+}
+
+function escapePrometheusLabel(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"").replaceAll("\n", "\\n");
 }
 
 function streamHealthStatus(metrics: CopStreamBroadcaster["metrics"], now: Date): "degraded" | "ok" {

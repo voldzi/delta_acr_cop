@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createPublicFlightAggregateSourceSystem, type Affiliation, type CanonicalEventEnvelope, type ObjectStatus, type ObservedObject } from "@cop/canonical-model";
+import type { CopStreamBus, CopStreamBusMetrics } from "./cop-stream-bus.js";
+import type { CopStreamMessage } from "./cop-stream.js";
 import type { FlightDataSource } from "./flight-data-source.js";
 import { buildServer } from "./server.js";
 import type { TrackHistoryStore } from "./track-history-store.js";
@@ -87,6 +89,35 @@ describe("COP state temporal history", () => {
           ]
         }
       ]
+    });
+
+    await app.close();
+  });
+
+  it("publishes accepted ingest deltas through the configured stream bus", async () => {
+    const streamBus = new FakeStreamBus();
+    const app = buildServer({
+      now: () => new Date("2026-05-19T08:02:10Z"),
+      streamBus
+    });
+
+    await ingestTrack(app, "00000000-0000-4000-8000-000000000900", "2026-05-19T08:01:00Z", 50.04, 14.04);
+
+    expect(streamBus.published).toHaveLength(1);
+    expect(streamBus.published[0]).toMatchObject({
+      changes: [
+        {
+          changeType: "OBJECT_UPSERT",
+          object: {
+            objectId: "AIR_SIM_UAV-0001",
+            position: {
+              lat: 50.04,
+              lon: 14.04
+            }
+          }
+        }
+      ],
+      type: "delta"
     });
 
     await app.close();
@@ -811,6 +842,46 @@ class FakeFlightDataSource implements FlightDataSource {
         tracks: [],
         warnings: []
       }
+    };
+  }
+}
+
+class FakeStreamBus implements CopStreamBus {
+  readonly name = "fake";
+  readonly published: CopStreamMessage[] = [];
+  private readonly subscribers = new Set<(message: CopStreamMessage) => void>();
+
+  get metrics(): CopStreamBusMetrics {
+    return {
+      localDeliveriesTotal: this.published.length,
+      mode: this.name,
+      publishedMessagesTotal: this.published.length,
+      ready: true,
+      receivedMessagesTotal: 0
+    };
+  }
+
+  async init(): Promise<void> {}
+
+  async close(): Promise<void> {
+    this.subscribers.clear();
+  }
+
+  diagnostics(): string {
+    return "fake: ready";
+  }
+
+  async publish(message: CopStreamMessage): Promise<void> {
+    this.published.push(message);
+    for (const subscriber of Array.from(this.subscribers)) {
+      subscriber(message);
+    }
+  }
+
+  subscribe(subscriber: (message: CopStreamMessage) => void): () => void {
+    this.subscribers.add(subscriber);
+    return () => {
+      this.subscribers.delete(subscriber);
     };
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ObservedObject } from "@cop/canonical-model";
-import { CopStreamBroadcaster } from "./cop-stream.js";
+import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 
 describe("COP stream broadcaster", () => {
   it("publishes object upserts with monotonic sequences", () => {
@@ -36,6 +36,25 @@ describe("COP stream broadcaster", () => {
       sequence: 2,
       snapshotMessagesTotal: 0,
       writeErrorsTotal: 0
+    });
+  });
+
+  it("can create object upserts without immediately notifying subscribers", () => {
+    const broadcaster = new CopStreamBroadcaster();
+    const messages: CopStreamMessage[] = [];
+    const unsubscribe = broadcaster.subscribe((message) => messages.push(message));
+
+    const message = broadcaster.createObjectUpserts([object("AIR_SIM_UAV-0002")], new Date("2026-05-19T08:00:30Z"));
+
+    unsubscribe();
+    expect(message).toMatchObject({
+      sequence: 1,
+      type: "delta"
+    });
+    expect(messages).toHaveLength(0);
+    expect(broadcaster.metrics).toMatchObject({
+      deltaMessagesTotal: 1,
+      sequence: 1
     });
   });
 

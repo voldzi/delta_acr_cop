@@ -29,7 +29,7 @@ Ověření:
 
 - `/health/live` vrací stav procesu,
 - `/health/ready` potvrzuje připravenost API,
-- `/health/dependencies` ukazuje stav DB/cache/bus/AI,
+- `/health/dependencies` ukazuje stav DB/cache/stream bus/AI,
 - `/metrics` publikuje základní metriky,
 - Source Registry umožňuje registraci laboratorního SIM zdroje,
 - ingest endpoint přijme validní syntetický event.
@@ -79,6 +79,24 @@ COP_PUBLIC_API_BASE_URL=http://docker.home.cz:4310
 COP_ALLOW_LAB_TOKEN=true
 COP_LAB_TOKEN=dev-lab-token
 ```
+
+## COP stream bus pro více API instancí
+
+Výchozí režim `COP_STREAM_BUS=memory` zachovává lokální SSE doručování v jedné
+API instanci. Pro horizontální běh více `cop-api` instancí nastav sdílený
+Postgres fan-out:
+
+```bash
+COP_STREAM_BUS=postgres
+COP_DATABASE_URL=postgres://...
+COP_STREAM_BUS_CHANNEL=cop_stream_events
+COP_STREAM_BUS_INSTANCE_ID=$(hostname)
+```
+
+COP vytvoří tabulku `cop_stream_bus_events`, publikuje delty přes
+`LISTEN/NOTIFY` a vlastní echo potlačí podle `COP_STREAM_BUS_INSTANCE_ID`.
+Stav je vidět v `/health/dependencies` jako `cop-stream-bus` a v metrikách
+`cop_stream_bus_*`.
 
 Nasazení:
 
