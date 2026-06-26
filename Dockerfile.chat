@@ -6,11 +6,13 @@ FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
 COPY apps/cop-chat/package.json apps/cop-chat/package.json
 COPY apps/cop-web/package.json apps/cop-web/package.json
+COPY packages/messaging/package.json packages/messaging/package.json
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY apps/cop-chat apps/cop-chat
 COPY apps/cop-web apps/cop-web
+COPY packages/messaging packages/messaging
 ARG VITE_COP_API_BASE_URL=http://localhost:4310
 ARG VITE_COP_PUBLIC_LAB_VALUE=dev-lab-token
 ARG VITE_COP_AUTH_MODE=lab
