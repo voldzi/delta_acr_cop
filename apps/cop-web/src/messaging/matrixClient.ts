@@ -31,10 +31,12 @@ interface MatrixClientLike {
   off?: (event: string, listener: (...args: unknown[]) => void) => void;
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
   redactEvent?: (roomId: string, eventId: string, txnId?: string, opts?: Record<string, unknown>) => Promise<unknown>;
+  sendReadReceipt?: (event: MatrixEventLike, receiptType?: string) => Promise<unknown>;
   sendEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string) => Promise<unknown>;
   sendMessage?: (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
   sendStateEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, stateKey?: string) => Promise<unknown>;
   sendTextMessage?: (roomId: string, body: string) => Promise<unknown>;
+  setRoomReadMarkers?: (roomId: string, readMarkerEventId: string, readReceiptEvent?: MatrixEventLike) => Promise<unknown>;
   setPresence?: (options: { presence: "offline" | "online" | "unavailable" }) => Promise<unknown>;
   startClient?: (options?: Record<string, unknown>) => Promise<void> | void;
   stopClient?: () => void;
@@ -107,6 +109,8 @@ interface MatrixRoomStateLike {
 }
 
 interface MatrixRoomMemberLike {
+  avatarUrl?: string;
+  displayName?: string;
   getMxcAvatarUrl?: () => string | null;
   membership?: string;
   name?: string;
@@ -391,6 +395,32 @@ export async function createMatrixMessagingSession(
         };
       } catch (caught) {
         throw formatMatrixClientError(caught, homeserverBaseUrl, "načíst starší zprávy");
+      }
+    },
+    markRoomRead: async (roomId) => {
+      if (typeof client.sendReadReceipt !== "function" && typeof client.setRoomReadMarkers !== "function") {
+        return;
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        const room = findMatrixRoom(client, roomId);
+        const latestEvent = latestReadableMessageEvent(room);
+        const latestEventId = latestEvent?.getId?.();
+        if (!latestEvent || !latestEventId) {
+          return;
+        }
+        const operations: Array<Promise<unknown>> = [];
+        if (typeof client.sendReadReceipt === "function") {
+          operations.push(client.sendReadReceipt(latestEvent));
+        }
+        if (typeof client.setRoomReadMarkers === "function") {
+          operations.push(client.setRoomReadMarkers(roomId, latestEventId, latestEvent));
+        }
+        await Promise.allSettled(operations);
+        publishRooms();
+      } catch {
+        // Read receipts are a best-effort UX signal. Message delivery must not fail because of them.
       }
     },
     restoreEncryptionRecovery: async (recoveryKey) => restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey),
@@ -1263,8 +1293,12 @@ function readRooms(client: MatrixClientLike, options: {
       const messageRetentionSeconds = readRoomRetentionSeconds(room);
       const presence = readRoomPresence(room, client, options.ownUserId, options.presenceByUserId);
       const avatarUrl = options.homeserverBaseUrl ? readRoomAvatarUrl(room, client, options.homeserverBaseUrl, options.ownUserId) : undefined;
+      const directPeer = options.homeserverBaseUrl
+        ? readRoomDirectPeer(room, client, options.homeserverBaseUrl, options.ownUserId)
+        : undefined;
       return {
         ...(avatarUrl ? { avatarUrl } : {}),
+        ...(directPeer ? { directPeer } : {}),
         encrypted: Boolean(client.isRoomEncrypted?.(room.roomId)),
         ...(messageRetentionSeconds ? { messageRetentionSeconds } : {}),
         name: room.name?.trim() || room.roomId,
@@ -1363,7 +1397,13 @@ function readRoomJoinedMembers(room: MatrixRoomLike): MatrixRoomMemberLike[] {
         return [];
       }
       const userId = event.getStateKey?.() ?? event.getSender?.();
-      return userId ? [{ userId }] : [];
+      return userId ? [{
+        avatarUrl: stringValue(content.avatar_url),
+        displayName: stringValue(content.displayname),
+        name: stringValue(content.displayname),
+        rawDisplayName: stringValue(content.displayname),
+        userId
+      }] : [];
     });
 }
 
@@ -1390,6 +1430,36 @@ function readRoomAvatarUrl(
   return readMemberAvatarUrl(otherMembers[0], client, homeserverBaseUrl);
 }
 
+function readRoomDirectPeer(
+  room: MatrixRoomLike,
+  client: MatrixClientLike,
+  homeserverBaseUrl: string,
+  ownUserId: string | undefined
+): MatrixRoomSummary["directPeer"] {
+  const otherMembers = readRoomJoinedMembers(room)
+    .filter((member) => member.userId && member.userId !== ownUserId);
+  if (otherMembers.length !== 1) {
+    return undefined;
+  }
+  const member = otherMembers[0];
+  const userId = member?.userId;
+  if (!member || !userId) {
+    return undefined;
+  }
+  const user = client.getUser?.(userId) ?? member.user;
+  const displayName = trimmedMatrixString(member.name)
+    ?? trimmedMatrixString(member.rawDisplayName)
+    ?? trimmedMatrixString(member.displayName)
+    ?? trimmedMatrixString(user?.displayName)
+    ?? matrixLocalpart(userId);
+  const avatarUrl = readMemberAvatarUrl(member, client, homeserverBaseUrl);
+  return {
+    ...(avatarUrl ? { avatarUrl } : {}),
+    displayName,
+    userId
+  };
+}
+
 function readMemberAvatarUrl(
   member: MatrixRoomMemberLike | undefined,
   client: MatrixClientLike,
@@ -1397,12 +1467,26 @@ function readMemberAvatarUrl(
 ): string | undefined {
   const candidates = [
     member?.getMxcAvatarUrl?.() ?? undefined,
+    member?.avatarUrl,
     member?.user?.avatarUrl
   ];
   const avatarUrl = candidates
     .map((value) => typeof value === "string" && value.trim() ? value.trim() : undefined)
     .find((value): value is string => Boolean(value));
   return avatarUrl ? matrixMediaHttpUrl(client, homeserverBaseUrl, avatarUrl, true) ?? avatarUrl : undefined;
+}
+
+function trimmedMatrixString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function matrixLocalpart(userId: string): string {
+  const localpart = /^@([^:]+):/u.exec(userId)?.[1];
+  return localpart ? localpart.replace(/[._-]+/gu, " ") : userId;
 }
 
 function normalizeMatrixPresence(user: MatrixUserPresenceLike | undefined): MatrixPresenceState {
@@ -1471,6 +1555,19 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
       }];
     })
     .filter((message) => messageWithinRetention(message, retentionSeconds));
+}
+
+function latestReadableMessageEvent(room: MatrixRoomLike | undefined): MatrixEventLike | undefined {
+  const events = (room?.timeline ?? [])
+    .map(asEvent)
+    .filter((event): event is MatrixEventLike => Boolean(event));
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.getType?.() === "m.room.message" && event.getId?.()) {
+      return event;
+    }
+  }
+  return undefined;
 }
 
 function readRedactedEventIds(events: MatrixEventLike[]): Set<string> {

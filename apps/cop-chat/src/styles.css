@@ -1156,6 +1156,7 @@ button {
 
 .message-row {
   display: flex;
+  position: relative;
   width: 100%;
   justify-content: flex-start;
   align-items: center;
@@ -1201,6 +1202,21 @@ button {
 .message-row.search-active .message-bubble {
   outline: 2px solid rgba(0, 128, 105, 0.62);
   box-shadow: 0 0 0 4px rgba(0, 168, 132, 0.12);
+}
+
+.message-canvas.action-focus-active .message-row:not(.action-focused) .message-bubble {
+  filter: blur(1.2px) saturate(0.86);
+  opacity: 0.62;
+  transition: filter 140ms ease, opacity 140ms ease;
+}
+
+.message-row.action-focused {
+  z-index: 55;
+}
+
+.message-row.action-focused .message-bubble {
+  outline: 2px solid rgba(0, 168, 132, 0.45);
+  box-shadow: 0 10px 26px rgba(17, 27, 33, 0.22);
 }
 
 .message-select {
@@ -1325,10 +1341,53 @@ button {
   font-weight: 800;
 }
 
+.message-hover-actions {
+  position: absolute;
+  top: 5px;
+  right: -48px;
+  display: none;
+  gap: 4px;
+}
+
+.message-row.own .message-hover-actions {
+  right: auto;
+  left: -48px;
+}
+
+.message-hover-actions button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 10px rgba(17, 27, 33, 0.14);
+  color: #54656f;
+  cursor: pointer;
+  transform: translateY(2px) scale(0.94);
+  transition: background 130ms ease, color 130ms ease, opacity 130ms ease, transform 130ms ease;
+}
+
+.message-hover-actions button:hover,
+.message-hover-actions button:focus-visible {
+  background: #e1f4ee;
+  color: var(--accent-dark);
+  outline: none;
+  transform: translateY(0) scale(1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .message-row:hover .message-hover-actions,
+  .message-row:focus-within .message-hover-actions {
+    display: inline-flex;
+  }
+}
+
 .message-action-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 52;
+  z-index: 50;
   border: 0;
   background: rgba(17, 27, 33, 0.16);
   backdrop-filter: blur(8px) saturate(1.15);
@@ -1338,7 +1397,7 @@ button {
 
 .message-action-popover {
   position: fixed;
-  z-index: 53;
+  z-index: 60;
   display: grid;
   width: min(330px, calc(100vw - 24px));
   gap: 8px;
@@ -1561,9 +1620,29 @@ button {
   height: 54px;
   place-items: center;
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(0, 168, 132, 0.22), transparent 45%),
-    linear-gradient(45deg, #d8e5d3 25%, #eef0d7 25% 50%, #d8e5d3 50% 75%, #eef0d7 75%);
+  overflow: hidden;
+  border: 1px solid rgba(17, 27, 33, 0.08);
+  background-color: #d8e5d3;
+  background-position: center;
+  background-size: cover;
+  color: var(--accent-dark);
+  box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.08);
+}
+
+.map-tile.large {
+  width: min(560px, calc(100vw - 56px));
+  height: min(360px, 46dvh);
+  border-radius: 14px;
+}
+
+.map-pin-dot {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(17, 27, 33, 0.24);
   color: var(--accent-dark);
 }
 
@@ -2527,6 +2606,26 @@ button {
   font-size: 1.04rem;
 }
 
+.forward-send {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 820;
+  padding: 0 13px;
+}
+
+.forward-send:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
 .preview-dialog header span {
   min-width: 0;
 }
@@ -2635,6 +2734,20 @@ button {
   outline: 0;
 }
 
+.forward-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 18px 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.forward-summary strong {
+  color: var(--accent-dark);
+}
+
 .forward-list {
   display: grid;
   min-height: 180px;
@@ -2669,27 +2782,47 @@ button {
   outline: none;
 }
 
+.forward-list button.selected {
+  background: #e1f4ee;
+}
+
 .forward-list button:disabled {
   cursor: wait;
   opacity: 0.72;
 }
 
-.forward-list button span {
+.forward-list button > span:not(.forward-check) {
   display: grid;
   min-width: 0;
   flex: 1;
 }
 
-.forward-list button strong,
-.forward-list button small {
+.forward-list button > span:not(.forward-check) strong,
+.forward-list button > span:not(.forward-check) small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.forward-list button small {
+.forward-list button > span:not(.forward-check) small {
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.forward-check {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid #d8dee2;
+  border-radius: 50%;
+  color: var(--accent-dark);
+}
+
+.forward-list button.selected .forward-check {
+  border-color: var(--accent);
+  background: #ffffff;
 }
 
 .spin {
@@ -2764,12 +2897,43 @@ button {
 }
 
 .large-map {
-  width: min(480px, 88vw);
-  height: 320px;
+  width: min(620px, 92vw);
+  min-height: 420px;
+  align-content: center;
+  padding: 18px;
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(0, 168, 132, 0.38), transparent 45%),
-    linear-gradient(45deg, #8dbb98 25%, #d7d0aa 25% 50%, #8dbb98 50% 75%, #d7d0aa 75%);
+  background: #0f171d;
+}
+
+.large-map-copy {
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+
+.large-map-copy small {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.map-center-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 820;
+  padding: 0 16px;
+}
+
+.map-center-button:hover,
+.map-center-button:focus-visible {
+  background: var(--accent-dark);
+  outline: none;
 }
 
 .preview-dialog p {

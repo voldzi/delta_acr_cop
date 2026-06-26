@@ -7,6 +7,7 @@ export interface MatrixUserProfileSyncInput {
 
 export interface MatrixRoomSummary {
   avatarUrl?: string;
+  directPeer?: MatrixRoomMemberSummary;
   encrypted: boolean;
   messageRetentionSeconds?: number;
   name: string;
@@ -16,6 +17,12 @@ export interface MatrixRoomSummary {
 }
 
 export type MatrixPresenceState = "offline" | "online" | "unavailable" | "unknown";
+
+export interface MatrixRoomMemberSummary {
+  avatarUrl?: string;
+  displayName: string;
+  userId: string;
+}
 
 export interface MatrixRoomPresenceSummary {
   activeMemberCount: number;
@@ -110,6 +117,7 @@ export interface MatrixMessagingSession {
   inviteUsersToRoom(roomId: string, userIds: string[]): Promise<void>;
   joinInvitedRooms(): Promise<void>;
   loadMoreTimeline(roomId: string, limit?: number): Promise<{ exhausted: boolean; messages: MatrixTimelineMessage[] }>;
+  markRoomRead(roomId: string): Promise<void>;
   restoreEncryptionRecovery(recoveryKey: string): Promise<void>;
   setMessageRetentionPolicy(roomId: string, seconds: number | null): Promise<void>;
   sendAttachment(roomId: string, attachment: MatrixAttachmentUpload): Promise<void>;

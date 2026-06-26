@@ -197,6 +197,16 @@ interface MessageActionPopoverState {
   top: number;
 }
 
+interface ForwardTarget {
+  avatarUrl?: string;
+  chat?: ChatListItem;
+  key: string;
+  subtitle: string;
+  title: string;
+  type: "chat" | "user";
+  user?: UserDirectoryEntry;
+}
+
 interface IncomingChatNotification {
   chat: ChatListItem | null;
   message: MatrixTimelineMessage;
@@ -247,6 +257,7 @@ export function ChatApp() {
   const [rooms, setRooms] = React.useState<MatrixRoomSummary[]>([]);
   const [timeline, setTimeline] = React.useState<MatrixTimelineMessage[]>([]);
   const [timelineRevision, setTimelineRevision] = React.useState(0);
+  const [timelineCacheRevision, setTimelineCacheRevision] = React.useState(0);
   const [historyExhaustedByRoom, setHistoryExhaustedByRoom] = React.useState<Record<string, boolean>>({});
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const [matrixSession, setMatrixSession] = React.useState<MatrixMessagingSession | null>(null);
@@ -285,6 +296,10 @@ export function ChatApp() {
   const [replyDraft, setReplyDraft] = React.useState<MatrixTimelineMessage | null>(null);
   const [forwardDraftMessages, setForwardDraftMessages] = React.useState<MatrixTimelineMessage[]>([]);
   const [forwardQuery, setForwardQuery] = React.useState("");
+  const [forwardSearchLoading, setForwardSearchLoading] = React.useState(false);
+  const [forwardSelectedTargetKeys, setForwardSelectedTargetKeys] = React.useState<Set<string>>(() => new Set());
+  const [forwardSelectedTargetsByKey, setForwardSelectedTargetsByKey] = React.useState<Record<string, ForwardTarget>>({});
+  const [forwardUserSuggestions, setForwardUserSuggestions] = React.useState<UserDirectoryEntry[]>([]);
   const [forwardWorkingId, setForwardWorkingId] = React.useState<string | null>(null);
   const [recoveryDialogOpen, setRecoveryDialogOpen] = React.useState(false);
   const [recoveryKeyInput, setRecoveryKeyInput] = React.useState("");
@@ -313,10 +328,15 @@ export function ChatApp() {
   const notificationsPrimedRef = React.useRef(false);
   const matrixSessionRef = React.useRef<MatrixMessagingSession | null>(null);
   const selectedRoomIdRef = React.useRef<string | null>(null);
+  const timelineCacheRef = React.useRef<Map<string, MatrixTimelineMessage[]>>(new Map());
 
   const authToken = getAuthorizationToken(authSession, labToken);
   const authenticated = Boolean(authToken);
   const authSubjectId = authSession.profile?.subjectId ?? authSession.profile?.username ?? authSession.profile?.email;
+  const ownIdentityIds = React.useMemo(
+    () => ownChatIdentityIds(authSession, matrixSession?.bootstrap.userId),
+    [authSession, matrixSession?.bootstrap.userId]
+  );
   const preferencesOwner = authSubjectId ?? authSession.profile?.username ?? "anonymous";
   const localUserPreferences = React.useMemo(
     () => readLocalUserPreferences(preferencesOwner),
@@ -347,17 +367,25 @@ export function ChatApp() {
       : null;
   const rawChatItems = React.useMemo(
     () => buildChatItems({
+      authSubjectId,
       conversations,
       filter: chatFilter,
       groups,
+      ownIdentityIds,
       query: conversationQuery,
       rooms,
       selectedConversationId,
       selectedGroupId,
       selectedRoomId,
-      timelineForRoom: (roomId) => matrixSession?.getTimeline(roomId) ?? (roomId === selectedRoomId ? timeline : [])
+      timelineForRoom: (roomId) => {
+        const liveTimeline = matrixSession?.getTimeline(roomId) ?? [];
+        if (liveTimeline.length > 0) {
+          return liveTimeline;
+        }
+        return timelineCacheRef.current.get(roomId) ?? (roomId === selectedRoomId ? timeline : []);
+      }
     }),
-    [chatFilter, conversationQuery, conversations, groups, matrixSession, rooms, selectedConversationId, selectedGroupId, selectedRoomId, timeline, timelineRevision]
+    [authSubjectId, chatFilter, conversationQuery, conversations, groups, matrixSession, ownIdentityIds, rooms, selectedConversationId, selectedGroupId, selectedRoomId, timeline, timelineCacheRevision, timelineRevision]
   );
   const chatItems = React.useMemo(
     () => applyChatPreferences(rawChatItems, chatPreferences),
@@ -373,6 +401,10 @@ export function ChatApp() {
   );
   const activeChat = chatItems.find((item) => item.active) ?? null;
   const routeChatSelected = Boolean(activeChat && readRouteSelection());
+  const totalUnreadCount = React.useMemo(
+    () => chatItems.reduce((count, item) => count + (!item.muted ? item.unreadCount : 0), 0),
+    [chatItems]
+  );
   const activeMessageRetentionSeconds = selectedRoomId && Object.prototype.hasOwnProperty.call(retentionOverrideByRoom, selectedRoomId)
     ? retentionOverrideByRoom[selectedRoomId] ?? null
     : messageRetentionSecondsForActiveChat(selectedRoom, selectedGroup);
@@ -404,6 +436,11 @@ export function ChatApp() {
     () => timelineMessages.filter((message) => selectedMessageIds.has(message.eventId)),
     [selectedMessageIds, timelineMessages]
   );
+  const forwardTargets = React.useMemo(
+    () => buildForwardTargets(chatItems, forwardUserSuggestions, forwardQuery),
+    [chatItems, forwardQuery, forwardUserSuggestions]
+  );
+  const selectedForwardTargets = React.useMemo(() => Object.values(forwardSelectedTargetsByKey), [forwardSelectedTargetsByKey]);
   const actionMessage = messageActionPopover ? messageById.get(messageActionPopover.messageId) ?? null : null;
   const statusLabel = statusLabelFor(status, matrixSession, syncState, matrixLoading);
   const recoveryBanner = matrixSession && encryptionRecoveryStatus && !encryptionRecoveryStatus.ready
@@ -603,6 +640,8 @@ export function ChatApp() {
       setRecoveryKeyInput("");
       setRooms([]);
       setTimeline([]);
+      timelineCacheRef.current.clear();
+      setTimelineCacheRevision((value) => value + 1);
       notifiedEventIdsRef.current.clear();
       notificationsPrimedRef.current = false;
       return;
@@ -638,10 +677,10 @@ export function ChatApp() {
 
   React.useEffect(() => {
     if (!matrixSession || !selectedRoomId) {
-      setTimeline([]);
       return;
     }
-    setTimeline(matrixSession.getTimeline(selectedRoomId));
+    const liveTimeline = matrixSession.getTimeline(selectedRoomId);
+    setTimeline(rememberRoomTimeline(selectedRoomId, liveTimeline));
   }, [matrixSession, rooms, selectedRoomId, timelineRevision]);
 
   React.useEffect(() => {
@@ -769,6 +808,21 @@ export function ChatApp() {
   }, [selectedConversationId, selectedGroupId, selectedRoomId, showJumpToLatest, timeline.length]);
 
   React.useEffect(() => {
+    if (!activeChat || !selectedRoomId || !matrixSession) {
+      return;
+    }
+    if (activeChat.unreadCount === 0 && !activeChat.manuallyUnread) {
+      return;
+    }
+    markChatRead(activeChat);
+    void matrixSession.markRoomRead(selectedRoomId);
+  }, [activeChat?.latest?.eventId, activeChat?.manuallyUnread, activeChat?.preferenceKey, activeChat?.unreadCount, matrixSession, selectedRoomId]);
+
+  React.useEffect(() => {
+    publishChatUnreadCount(totalUnreadCount);
+  }, [totalUnreadCount]);
+
+  React.useEffect(() => {
     if (!authToken || composeMode !== "direct" || directQuery.trim().length < 2) {
       setDirectSuggestions([]);
       setSearchLoading(false);
@@ -825,11 +879,72 @@ export function ChatApp() {
     };
   }, [authSubjectId, authToken, memberQuery]);
 
+  React.useEffect(() => {
+    if (!authToken || forwardDraftMessages.length === 0 || forwardQuery.trim().length < 2) {
+      setForwardUserSuggestions([]);
+      setForwardSearchLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setForwardSearchLoading(true);
+      searchUserDirectory(apiBase, authToken, forwardQuery.trim(), 12)
+        .then((result) => {
+          if (!cancelled) {
+            setForwardUserSuggestions(result.items.filter((item) => item.subjectId !== authSubjectId));
+          }
+        })
+        .catch((caught: unknown) => {
+          if (!cancelled) {
+            setError(caught instanceof Error ? caught.message : "Vyhledání příjemce selhalo.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setForwardSearchLoading(false);
+          }
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [authSubjectId, authToken, forwardDraftMessages.length, forwardQuery]);
+
   function updateChatPreferences(updater: (current: ChatPreferences) => ChatPreferences) {
     setChatPreferences((current) => {
       const next = normalizeChatPreferences(updater(current));
       writeChatPreferences(preferencesOwner, next);
       return next;
+    });
+  }
+
+  function rememberRoomTimeline(roomId: string, messages: MatrixTimelineMessage[], allowEmpty = false): MatrixTimelineMessage[] {
+    const cached = timelineCacheRef.current.get(roomId) ?? [];
+    if (messages.length === 0 && cached.length > 0 && !allowEmpty) {
+      return cached;
+    }
+    if (messages.length === 0 && cached.length === 0 && !allowEmpty) {
+      return cached;
+    }
+    const nextMessages = messages.length > 0 && cached.length > 0 ? mergeTimelineMessages(cached, messages) : messages;
+    timelineCacheRef.current.set(roomId, nextMessages);
+    setTimelineCacheRevision((value) => value + 1);
+    return nextMessages;
+  }
+
+  function markChatRead(item: ChatListItem | null) {
+    if (!item) {
+      return;
+    }
+    updateChatPreferences((current) => {
+      const nextReadOverride = { ...current.readOverrideByKey };
+      nextReadOverride[item.preferenceKey] = chatPreferenceSnapshot(item);
+      return {
+        ...current,
+        manualUnreadKeys: current.manualUnreadKeys.filter((key) => key !== item.preferenceKey),
+        readOverrideByKey: nextReadOverride
+      };
     });
   }
 
@@ -1007,7 +1122,12 @@ export function ChatApp() {
     try {
       await matrixSession.setReaction(selectedRoomId, message.eventId, key);
       const senderLabel = chatIdentity.displayName;
-      setTimeline((current) => applyLocalReaction(current, message.eventId, key, senderLabel));
+      setTimeline((current) => {
+        const next = applyLocalReaction(current, message.eventId, key, senderLabel);
+        timelineCacheRef.current.set(selectedRoomId, next);
+        setTimelineCacheRevision((value) => value + 1);
+        return next;
+      });
       setMessageActionPopover(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Reakci se nepodařilo odeslat.");
@@ -1035,24 +1155,81 @@ export function ChatApp() {
     setSelectedMessageIds(new Set());
     setForwardDraftMessages(messages);
     setForwardQuery("");
+    setForwardSelectedTargetKeys(new Set());
+    setForwardSelectedTargetsByKey({});
+    setForwardUserSuggestions([]);
   }
 
-  async function forwardMessagesToChat(item: ChatListItem) {
+  function toggleForwardTarget(target: ForwardTarget) {
+    setForwardSelectedTargetKeys((current) => {
+      const next = new Set(current);
+      if (next.has(target.key)) {
+        next.delete(target.key);
+      } else {
+        next.add(target.key);
+      }
+      return next;
+    });
+    setForwardSelectedTargetsByKey((current) => {
+      if (current[target.key]) {
+        const next = { ...current };
+        delete next[target.key];
+        return next;
+      }
+      return {
+        ...current,
+        [target.key]: target
+      };
+    });
+  }
+
+  async function ensureRoomForForwardTarget(target: ForwardTarget, session: MatrixMessagingSession): Promise<{ roomId: string; title: string }> {
+    if (target.chat) {
+      const roomId = await ensureRoomForChatItem(target.chat, session);
+      return { roomId, title: target.title };
+    }
+    if (!target.user) {
+      throw new Error("Příjemce chatu není dostupný.");
+    }
+    const title = target.user.displayName?.trim() || target.user.username || target.user.subjectId;
+    const existing = findExistingDirectConversation(target.user, conversations, title);
+    const conversation = ensureConversationHasMember(existing ?? await createDirectConversation(target.user, title), target.user);
+    setConversations((current) => upsertConversation(current, conversation));
+    const roomId = conversation.matrix?.roomId ?? await createRoomForConversation(conversation, session);
+    return { roomId, title };
+  }
+
+  async function forwardMessagesToSelectedTargets() {
     if (forwardDraftMessages.length === 0) {
       return;
     }
-    setForwardWorkingId(item.id);
+    if (selectedForwardTargets.length === 0) {
+      setError("Vyberte alespoň jednoho příjemce.");
+      return;
+    }
     setError(null);
     try {
-      const session = await ensureMatrixSession(item.id);
+      const session = await ensureMatrixSession(selectedForwardTargets[0]?.key);
       await ensureEncryptionRecoveryReady(session);
-      const roomId = await ensureRoomForChatItem(item, session);
       const text = forwardDraftMessages.map(formatMessageForForward).join("\n\n");
-      await session.sendMessage(roomId, text);
-      setTimeline(session.getTimeline(roomId));
+      const sentTitles: string[] = [];
+      for (const target of selectedForwardTargets) {
+        setForwardWorkingId(target.key);
+        const { roomId, title } = await ensureRoomForForwardTarget(target, session);
+        await session.sendMessage(roomId, text);
+        const nextTimeline = rememberRoomTimeline(roomId, session.getTimeline(roomId));
+        if (selectedRoomIdRef.current === roomId) {
+          setTimeline(nextTimeline);
+        }
+        sentTitles.push(title);
+      }
       setForwardDraftMessages([]);
       setForwardQuery("");
-      setNotice(`${forwardDraftMessages.length === 1 ? "Zpráva přeposlána" : "Zprávy přeposlány"} do chatu ${item.title}.`);
+      setForwardSelectedTargetKeys(new Set());
+      setForwardSelectedTargetsByKey({});
+      setForwardUserSuggestions([]);
+      const recipientLabel = sentTitles.length === 1 ? sentTitles[0] : `${sentTitles.length} příjemcům`;
+      setNotice(`${forwardDraftMessages.length === 1 ? "Zpráva přeposlána" : "Zprávy přeposlány"} do ${recipientLabel}.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Zprávu se nepodařilo přeposlat.");
     } finally {
@@ -1067,7 +1244,12 @@ export function ChatApp() {
     setError(null);
     try {
       await matrixSession.deleteMessage(selectedRoomId, message.eventId);
-      setTimeline((current) => current.filter((item) => item.eventId !== message.eventId));
+      setTimeline((current) => {
+        const next = current.filter((item) => item.eventId !== message.eventId);
+        timelineCacheRef.current.set(selectedRoomId, next);
+        setTimelineCacheRevision((value) => value + 1);
+        return next;
+      });
       setMessageActionPopover(null);
       setNotice("Zpráva odstraněna.");
     } catch (caught) {
@@ -1144,7 +1326,7 @@ export function ChatApp() {
         [selectedRoomId]: seconds
       }));
       setRooms(matrixSession.getRooms());
-      setTimeline(matrixSession.getTimeline(selectedRoomId));
+      setTimeline(rememberRoomTimeline(selectedRoomId, matrixSession.getTimeline(selectedRoomId)));
       if (selectedGroup && authToken && canUpdateCommunityGroupMetadata(selectedGroup, authSubjectId)) {
         const updatedGroup = await updateCommunityGroupMetadata(apiBase, authToken, selectedGroup.groupId, {
           chat: {
@@ -1317,7 +1499,7 @@ export function ChatApp() {
       setRecoveryKeyInput("");
       await refreshEncryptionRecoveryStatus(session);
       if (selectedRoomId) {
-        setTimeline(session.getTimeline(selectedRoomId));
+        setTimeline(rememberRoomTimeline(selectedRoomId, session.getTimeline(selectedRoomId)));
       }
       setRecoveryDialogOpen(false);
       setNotice("Zařízení bylo obnoveno a E2EE key backup je aktivní.");
@@ -1759,8 +1941,9 @@ export function ChatApp() {
     }
     try {
       const result = await session.loadMoreTimeline(roomId, limit);
+      const nextTimeline = rememberRoomTimeline(roomId, result.messages);
       if (selectedRoomIdRef.current === roomId) {
-        setTimeline(result.messages);
+        setTimeline(nextTimeline);
       }
       setHistoryExhaustedByRoom((current) => ({
         ...current,
@@ -1798,7 +1981,7 @@ export function ChatApp() {
       setComposerText("");
       setReplyDraft(null);
       clearPendingAttachment();
-      setTimeline(matrixSession.getTimeline(selectedRoomId));
+      setTimeline(rememberRoomTimeline(selectedRoomId, matrixSession.getTimeline(selectedRoomId)));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Zprávu se nepodařilo odeslat.");
     } finally {
@@ -1815,7 +1998,7 @@ export function ChatApp() {
     try {
       const location = await getDeviceLocation();
       await matrixSession.sendLocation(selectedRoomId, location);
-      setTimeline(matrixSession.getTimeline(selectedRoomId));
+      setTimeline(rememberRoomTimeline(selectedRoomId, matrixSession.getTimeline(selectedRoomId)));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Polohu se nepodařilo sdílet.");
     } finally {
@@ -2108,7 +2291,7 @@ export function ChatApp() {
             ) : (
               <>
                 <div
-                  className="message-canvas"
+                  className={clsx("message-canvas", messageActionPopover && "action-focus-active")}
                   onScroll={(event) => {
                     const node = event.currentTarget;
                     setShowJumpToLatest(node.scrollHeight - node.scrollTop - node.clientHeight > 180);
@@ -2129,6 +2312,7 @@ export function ChatApp() {
                       key={row.message.eventId}
                       matrixSession={matrixSession}
                       message={row.message}
+                      focused={messageActionPopover?.messageId === row.message.eventId}
                       replyToMessage={row.message.replyToEventId ? messageById.get(row.message.replyToEventId) ?? null : null}
                       searchQuery={messageSearchQuery}
                       selectable={selectionMode}
@@ -2226,14 +2410,22 @@ export function ChatApp() {
 
       {forwardDraftMessages.length > 0 ? (
         <ForwardDialog
-          items={chatItems}
+          draftCount={forwardDraftMessages.length}
           query={forwardQuery}
+          searchLoading={forwardSearchLoading}
+          selectedCount={selectedForwardTargets.length}
+          selectedKeys={forwardSelectedTargetKeys}
+          targets={forwardTargets}
           workingId={forwardWorkingId}
           onClose={() => {
             setForwardDraftMessages([]);
             setForwardQuery("");
+            setForwardSelectedTargetKeys(new Set());
+            setForwardSelectedTargetsByKey({});
+            setForwardUserSuggestions([]);
           }}
-          onForward={(item) => void forwardMessagesToChat(item)}
+          onSend={() => void forwardMessagesToSelectedTargets()}
+          onToggleTarget={toggleForwardTarget}
           onQueryChange={setForwardQuery}
         />
       ) : null}
@@ -2730,24 +2922,30 @@ function MessageActionPopover({
 }
 
 function ForwardDialog({
-  items,
+  draftCount,
   query,
+  searchLoading,
+  selectedCount,
+  selectedKeys,
+  targets,
   workingId,
   onClose,
-  onForward,
+  onSend,
+  onToggleTarget,
   onQueryChange
 }: {
-  items: ChatListItem[];
+  draftCount: number;
   query: string;
+  searchLoading: boolean;
+  selectedCount: number;
+  selectedKeys: Set<string>;
+  targets: ForwardTarget[];
   workingId: string | null;
   onClose: () => void;
-  onForward: (item: ChatListItem) => void;
+  onSend: () => void;
+  onToggleTarget: (target: ForwardTarget) => void;
   onQueryChange: (query: string) => void;
 }) {
-  const normalizedQuery = query.trim().toLocaleLowerCase("cs-CZ");
-  const filteredItems = items
-    .filter((item) => !normalizedQuery || item.searchable.toLocaleLowerCase("cs-CZ").includes(normalizedQuery) || item.title.toLocaleLowerCase("cs-CZ").includes(normalizedQuery))
-    .slice(0, 24);
   return (
     <div className="dialog-backdrop" role="presentation">
       <section className="forward-dialog" role="dialog" aria-modal="true" aria-label="Přeposlat zprávu">
@@ -2756,23 +2954,41 @@ function ForwardDialog({
             <X size={19} />
           </button>
           <strong>Přeposlat</strong>
-          <span />
+          <button className="forward-send" disabled={selectedCount === 0 || Boolean(workingId)} onClick={onSend} type="button">
+            {workingId ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
+            Odeslat
+          </button>
         </header>
         <label className="forward-search">
           <Search size={18} />
-          <input autoFocus placeholder="Hledat chat" value={query} onChange={(event) => onQueryChange(event.target.value)} />
+          <input autoFocus placeholder="Hledat chat nebo osobu" value={query} onChange={(event) => onQueryChange(event.target.value)} />
         </label>
+        <div className="forward-summary">
+          <span>{draftCount === 1 ? "1 zpráva" : `${draftCount} zpráv`}</span>
+          <strong>{selectedCount === 0 ? "Vyberte příjemce" : `Vybráno ${selectedCount}`}</strong>
+        </div>
         <div className="forward-list" role="list">
-          {filteredItems.length === 0 ? (
-            <p>Žádný chat neodpovídá hledání.</p>
-          ) : filteredItems.map((item) => (
-            <button disabled={Boolean(workingId)} key={item.id} onClick={() => onForward(item)} role="listitem" type="button">
-              <Avatar label={item.title} src={item.room?.avatarUrl} />
+          {targets.length === 0 ? (
+            <p>{searchLoading ? "Vyhledávám příjemce..." : "Žádný chat ani osoba neodpovídá hledání."}</p>
+          ) : targets.map((target) => (
+            <button
+              className={selectedKeys.has(target.key) ? "selected" : ""}
+              disabled={Boolean(workingId)}
+              key={target.key}
+              onClick={() => onToggleTarget(target)}
+              role="listitem"
+              type="button"
+            >
+              <Avatar label={target.title} src={target.avatarUrl} />
               <span>
-                <strong>{item.title}</strong>
-                <small>{item.type === "direct" ? "přímý chat" : "skupina"}</small>
+                <strong>{target.title}</strong>
+                <small>{target.subtitle}</small>
               </span>
-              {workingId === item.id ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+              {workingId === target.key ? <Loader2 className="spin" size={18} /> : (
+                <span className="forward-check" aria-hidden="true">
+                  {selectedKeys.has(target.key) ? <Check size={17} /> : null}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -2952,6 +3168,7 @@ function Composer({
 
 function MessageRow({
   activeSearchMatch,
+  focused,
   grouped,
   matrixSession,
   message,
@@ -2967,6 +3184,7 @@ function MessageRow({
   onToggleSelected
 }: {
   activeSearchMatch: boolean;
+  focused: boolean;
   grouped: boolean;
   matrixSession: MatrixMessagingSession | null;
   message: MatrixTimelineMessage;
@@ -3007,7 +3225,7 @@ function MessageRow({
   return (
     <article
       ref={rowRef}
-      className={clsx("message-row", message.own && "own", grouped && "grouped", selectable && "selectable", selected && "selected", activeSearchMatch && "search-active", hasReactions && "has-reactions")}
+      className={clsx("message-row", message.own && "own", grouped && "grouped", selectable && "selectable", selected && "selected", focused && "action-focused", activeSearchMatch && "search-active", hasReactions && "has-reactions")}
       data-message-id={message.eventId}
       onClick={(event) => {
         if (longPressHandledRef.current) {
@@ -3023,7 +3241,6 @@ function MessageRow({
         if (isInteractiveMessageTarget(event.target)) {
           return;
         }
-        openActions(false);
       }}
       onContextMenu={(event) => {
         if (selectable || isInteractiveMessageTarget(event.target)) {
@@ -3033,7 +3250,7 @@ function MessageRow({
         openActions(false);
       }}
       onPointerDown={(event) => {
-        if (selectable || isInteractiveMessageTarget(event.target)) {
+        if (event.pointerType === "mouse" || selectable || isInteractiveMessageTarget(event.target)) {
           return;
         }
         clearLongPressTimer();
@@ -3095,6 +3312,30 @@ function MessageRow({
             onOpenActions={onOpenActions}
             onReact={onReact}
           />
+        ) : null}
+        {!selectable ? (
+          <span className="message-hover-actions" aria-label="Akce zprávy">
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                openActions(true);
+              }}
+              type="button"
+              aria-label="Reagovat na zprávu"
+            >
+              <Smile size={16} />
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                openActions(false);
+              }}
+              type="button"
+              aria-label="Otevřít menu zprávy"
+            >
+              <ChevronDown size={16} />
+            </button>
+          </span>
         ) : null}
       </div>
     </article>
@@ -3266,14 +3507,25 @@ function LocationMessage({ message, onOpenPreview }: { message: MatrixTimelineMe
   }
   return (
     <button className="location-card" onClick={() => onOpenPreview(matrixMessagePreviewItem(message))} type="button">
-      <span className="map-tile" aria-hidden="true">
-        <MapPin size={22} />
-      </span>
+      <StaticLocationMap location={location} />
       <span>
         <strong>{location.label ?? "Sdílená poloha"}</strong>
         <small>{formatCoordinates(location)}</small>
       </span>
     </button>
+  );
+}
+
+function StaticLocationMap({ large = false, location }: { large?: boolean; location: MatrixLocationShare }) {
+  const tileUrl = osmTileUrlForLocation(location, large ? 15 : 14);
+  return (
+    <span
+      className={clsx("map-tile", large && "large")}
+      style={{ backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.04)), url("${tileUrl}")` }}
+      aria-hidden="true"
+    >
+      <span className="map-pin-dot"><MapPin size={large ? 26 : 18} /></span>
+    </span>
   );
 }
 
@@ -3542,8 +3794,15 @@ function MediaPreviewDialog({ item, onClose }: { item: MediaPreviewItem; onClose
           ) : null}
           {item.kind === "location" && item.location ? (
             <div className="large-map">
-              <MapPin size={32} />
-              <strong>{formatCoordinates(item.location)}</strong>
+              <StaticLocationMap location={item.location} large />
+              <div className="large-map-copy">
+                <strong>{formatCoordinates(item.location)}</strong>
+                <small>{item.caption ?? "Sdílená poloha"}</small>
+              </div>
+              <button className="map-center-button" onClick={() => centerLocationInCop(item.location!)} type="button">
+                <MapPin size={17} />
+                Vycentrovat mapu
+              </button>
             </div>
           ) : null}
           {((item.kind !== "image" && item.kind !== "video" && item.kind !== "location") || (!item.url && !item.posterUrl)) && item.kind !== "location" ? (
@@ -3989,9 +4248,11 @@ function ConnectionDot({ state }: { state: ChatConnectionState }) {
 }
 
 function buildChatItems({
+  authSubjectId,
   conversations,
   filter,
   groups,
+  ownIdentityIds,
   query,
   rooms,
   selectedConversationId,
@@ -3999,9 +4260,11 @@ function buildChatItems({
   selectedRoomId,
   timelineForRoom
 }: {
+  authSubjectId?: string;
   conversations: MessagingConversationSummary[];
   filter: ChatFilter;
   groups: CommunityGroup[];
+  ownIdentityIds: Set<string>;
   query: string;
   rooms: MatrixRoomSummary[];
   selectedConversationId: string | null;
@@ -4034,6 +4297,7 @@ function buildChatItems({
     const groupId = conversationCommunityGroupId(conversation) ?? group?.groupId;
     const roomId = conversation.matrix?.roomId ?? (group ? communityGroupMatrixRoomId(group) : undefined);
     const room = roomId ? rooms.find((item) => item.roomId === roomId) : undefined;
+    const title = chatTitleForConversation(conversation, room, authSubjectId, ownIdentityIds);
     const roomLatest = roomId ? lastTimelineMessage(timelineForRoom(roomId)) : undefined;
     const latest = roomLatest ?? (group ? demoLatestMessageForGroup(group) : undefined);
     const id = roomId
@@ -4054,10 +4318,10 @@ function buildChatItems({
       preview: latest ? latestMessagePreview(latest) : roomId ? "Nový chat" : "Klepnutím otevřít chat",
       ...(room ? { room } : {}),
       roomId,
-      searchable: `${conversation.title} ${group?.name ?? ""} ${conversation.members?.map((member) => member.displayName ?? member.userId).join(" ") ?? ""}`,
+      searchable: `${title} ${conversation.title} ${group?.name ?? ""} ${conversation.members?.map((member) => member.displayName ?? member.userId).join(" ") ?? ""}`,
       sortAt: timestampMillis(latest?.timestamp ?? conversation.updatedAt ?? group?.updatedAt),
       timestamp: latest ? formatShortTimestamp(latest.timestamp) : formatShortTimestamp(conversation.updatedAt ?? group?.updatedAt),
-      title: conversation.title,
+      title,
       type: conversation.type,
       unreadCount: room?.unreadCount ?? 0
     });
@@ -4125,6 +4389,7 @@ function buildChatItems({
       return;
     }
     const latest = lastTimelineMessage(timelineForRoom(room.roomId));
+    const roomTitle = room.directPeer?.displayName || room.name;
     const titleKey = byTitleAndType.get(titleTypeKey(room.name, "group"));
     if (titleKey) {
       const current = items.get(titleKey);
@@ -4157,11 +4422,11 @@ function buildChatItems({
       preview: latest ? latestMessagePreview(latest) : "Nový chat",
       room,
       roomId: room.roomId,
-      searchable: room.name,
+      searchable: `${roomTitle} ${room.name}`,
       sortAt: timestampMillis(latest?.timestamp),
       timestamp: latest ? formatShortTimestamp(latest.timestamp) : undefined,
-      title: room.name,
-      type: "room",
+      title: roomTitle,
+      type: room.directPeer ? "direct" : "room",
       unreadCount: room.unreadCount
     });
   });
@@ -4275,6 +4540,100 @@ function applyChatPreferences(items: ChatListItem[], preferences: ChatPreference
 
 function chatPreferenceSnapshot(item: ChatListItem): string {
   return item.latest?.eventId ?? "__no_latest__";
+}
+
+function chatTitleForConversation(
+  conversation: MessagingConversationSummary,
+  room: MatrixRoomSummary | undefined,
+  authSubjectId: string | undefined,
+  ownIdentityIds: Set<string>
+): string {
+  if (conversation.type !== "direct") {
+    return conversation.title;
+  }
+  return room?.directPeer?.displayName
+    ?? conversationDirectPeer(conversation, authSubjectId, ownIdentityIds)?.displayName
+    ?? conversation.title;
+}
+
+function conversationDirectPeer(
+  conversation: MessagingConversationSummary,
+  authSubjectId: string | undefined,
+  ownIdentityIds: Set<string>
+): { displayName: string; userId: string } | undefined {
+  const members = conversation.members ?? [];
+  const fallbackOwnIds = authSubjectId ? new Set([normalizeIdentityId(authSubjectId)]) : new Set<string>();
+  const ownIds = ownIdentityIds.size > 0 ? ownIdentityIds : fallbackOwnIds;
+  const peer = members.find((member) => !ownIds.has(normalizeIdentityId(member.userId))) ?? (members.length === 1 ? members[0] : undefined);
+  if (!peer) {
+    return undefined;
+  }
+  return {
+    displayName: peer.displayName?.trim() || peer.userId,
+    userId: peer.userId
+  };
+}
+
+function ownChatIdentityIds(session: AuthSession, matrixUserId: string | undefined): Set<string> {
+  const values = [
+    session.profile?.subjectId,
+    session.profile?.username,
+    session.profile?.email,
+    matrixUserId,
+    matrixUserId ? matrixUserIdLocalpart(matrixUserId) : undefined
+  ];
+  return new Set(values
+    .map((value) => value ? normalizeIdentityId(value) : "")
+    .filter(Boolean));
+}
+
+function normalizeIdentityId(value: string): string {
+  return value.trim().toLocaleLowerCase("cs-CZ");
+}
+
+function matrixUserIdLocalpart(userId: string): string | undefined {
+  return /^@([^:]+):/u.exec(userId.trim())?.[1];
+}
+
+function buildForwardTargets(chatItems: ChatListItem[], users: UserDirectoryEntry[], query: string): ForwardTarget[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase("cs-CZ");
+  const targets = new Map<string, ForwardTarget>();
+  for (const item of chatItems) {
+    if (normalizedQuery && !`${item.title} ${item.preview} ${item.searchable}`.toLocaleLowerCase("cs-CZ").includes(normalizedQuery)) {
+      continue;
+    }
+    targets.set(`chat:${item.id}`, {
+      avatarUrl: item.room?.avatarUrl,
+      chat: item,
+      key: `chat:${item.id}`,
+      subtitle: item.type === "direct" ? "přímý chat" : "skupina",
+      title: item.title,
+      type: "chat"
+    });
+  }
+  for (const user of users) {
+    const title = user.displayName?.trim() || user.username || user.subjectId;
+    const directKey = `user:${user.subjectId}`;
+    const alreadyVisible = Array.from(targets.values()).some((target) => target.chat?.conversation?.members?.some((member) => member.userId === user.subjectId));
+    if (alreadyVisible) {
+      continue;
+    }
+    targets.set(directKey, {
+      key: directKey,
+      subtitle: user.email || user.username || "osoba",
+      title,
+      type: "user",
+      user
+    });
+  }
+  return Array.from(targets.values())
+    .sort((left, right) => {
+      if (left.type !== right.type) {
+        return left.type === "chat" ? -1 : 1;
+      }
+      return left.title.localeCompare(right.title, "cs-CZ");
+    })
+    .slice(0, 36);
 }
 
 function chatPreferenceKeyForConversation(conversation: MessagingConversationSummary, group?: CommunityGroup): string {
@@ -4721,6 +5080,18 @@ function lastTimelineMessage(messages: MatrixTimelineMessage[]): MatrixTimelineM
   return messages[messages.length - 1];
 }
 
+function mergeTimelineMessages(cached: MatrixTimelineMessage[], live: MatrixTimelineMessage[]): MatrixTimelineMessage[] {
+  const byEventId = new Map<string, MatrixTimelineMessage>();
+  for (const message of cached) {
+    byEventId.set(message.eventId, message);
+  }
+  for (const message of live) {
+    byEventId.set(message.eventId, message);
+  }
+  return Array.from(byEventId.values())
+    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
 function messageSenderLabel(message: MatrixTimelineMessage, conversation: MessagingConversationSummary | null, session: AuthSession): string {
   if (message.own) {
     return "Vy";
@@ -4998,7 +5369,7 @@ function chatConnectionStateFor(
   if (!chatReady || isMatrixSyncOffline(syncState)) {
     return "offline";
   }
-  if (preparing || !matrixSession || isMatrixSyncWarming(syncState)) {
+  if (preparing || !matrixSession) {
     return "syncing";
   }
   if (!item.roomId && !item.room) {
@@ -5010,6 +5381,9 @@ function chatConnectionStateFor(
   }
   if (presenceState === "offline") {
     return "offline";
+  }
+  if (isMatrixSyncWarming(syncState)) {
+    return "syncing";
   }
   return "syncing";
 }
@@ -5030,8 +5404,7 @@ function roomPresenceLabel(room: MatrixRoomSummary | null): string | null {
 
 function isMatrixSyncWarming(syncState: string): boolean {
   const normalized = syncState.toLowerCase();
-  return normalized.includes("sync")
-    || normalized.includes("catch")
+  return normalized.includes("catch")
     || normalized.includes("prep")
     || normalized.includes("reconnect")
     || normalized.includes("start");
@@ -5554,6 +5927,48 @@ function formatBytes(bytes: number): string {
 
 function formatCoordinates(location: { lat: number; lon: number }): string {
   return `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)}`;
+}
+
+function osmTileUrlForLocation(location: { lat: number; lon: number }, zoom: number): string {
+  const z = Math.max(1, Math.min(18, Math.trunc(zoom)));
+  const latRad = location.lat * Math.PI / 180;
+  const scale = 2 ** z;
+  const x = Math.floor((location.lon + 180) / 360 * scale);
+  const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * scale);
+  return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+}
+
+function centerLocationInCop(location: MatrixLocationShare): void {
+  if (window.parent !== window) {
+    window.parent.postMessage({
+      lat: location.lat,
+      lon: location.lon,
+      type: "cop-chat:center-location"
+    }, window.location.origin);
+    return;
+  }
+  window.open(`https://www.openstreetmap.org/?mlat=${location.lat}&mlon=${location.lon}#map=16/${location.lat}/${location.lon}`, "_blank", "noopener,noreferrer");
+}
+
+function publishChatUnreadCount(count: number): void {
+  const payload = { at: Date.now(), count, type: "cop-chat:unread" };
+  if (window.parent !== window) {
+    window.parent.postMessage(payload, window.location.origin);
+  }
+  try {
+    window.localStorage.setItem("cop.chat.unread.v1", JSON.stringify(payload));
+  } catch {
+    // Same-origin host badge is best effort; chat must keep working when storage is blocked.
+  }
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      const channel = new BroadcastChannel("cop-chat");
+      channel.postMessage(payload);
+      channel.close();
+    } catch {
+      // BroadcastChannel is optional and may be blocked in private browsing modes.
+    }
+  }
 }
 
 function formatDate(value: string): string {

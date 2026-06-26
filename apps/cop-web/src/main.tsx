@@ -621,6 +621,7 @@ export function App() {
   const [messagingPinned, setMessagingPinned] = React.useState(false);
   const [messagingDockWidth, setMessagingDockWidth] = React.useState(() => readMessagingDockWidth());
   const [messagingSelection, setMessagingSelection] = React.useState<MessagingSelectionCommand | null>(null);
+  const [messagingUnreadCount, setMessagingUnreadCount] = React.useState(0);
   const messagingSelectionNonceRef = React.useRef(0);
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [webPushBusy, setWebPushBusy] = React.useState(false);
@@ -628,6 +629,78 @@ export function App() {
   const [incidents, setIncidents] = React.useState<IncidentRecord[]>([]);
   const [incidentTasksById, setIncidentTasksById] = React.useState<Record<string, IncidentTaskRecord[]>>({});
   const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const applyChatUnreadPayload = (value: unknown) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return false;
+      }
+      const data = value as { count?: unknown; type?: unknown };
+      if (data.type !== "cop-chat:unread" || typeof data.count !== "number" || !Number.isFinite(data.count)) {
+        return false;
+      }
+      setMessagingUnreadCount(Math.max(0, Math.trunc(data.count)));
+      return true;
+    };
+    const readStoredChatUnreadCount = () => {
+      try {
+        const stored = window.localStorage.getItem("cop.chat.unread.v1");
+        if (stored) {
+          applyChatUnreadPayload(JSON.parse(stored) as unknown);
+        }
+      } catch {
+        // Unread badge sync is best effort; blocked storage must not affect the map.
+      }
+    };
+    const handleChatMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || !event.data || typeof event.data !== "object" || Array.isArray(event.data)) {
+        return;
+      }
+      const data = event.data as { count?: unknown; lat?: unknown; lon?: unknown; type?: unknown };
+      if (applyChatUnreadPayload(data)) {
+        return;
+      }
+      if (data.type === "cop-chat:center-location" && typeof data.lat === "number" && typeof data.lon === "number" && Number.isFinite(data.lat) && Number.isFinite(data.lon)) {
+        setActiveWorkspace("map");
+        setMessagingOpen(false);
+        setMapView((current) => ({
+          bearing: current?.bearing ?? 0,
+          center: [data.lon as number, data.lat as number],
+          pitch: current?.pitch ?? 0,
+          zoom: Math.max(current?.zoom ?? 0, 15)
+        }));
+      }
+    };
+    const handleChatStorage = (event: StorageEvent) => {
+      if (event.key !== "cop.chat.unread.v1" || !event.newValue) {
+        return;
+      }
+      try {
+        applyChatUnreadPayload(JSON.parse(event.newValue) as unknown);
+      } catch {
+        // Ignore malformed external values.
+      }
+    };
+    let channel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== "undefined") {
+      try {
+        channel = new BroadcastChannel("cop-chat");
+        channel.addEventListener("message", (event) => {
+          applyChatUnreadPayload(event.data);
+        });
+      } catch {
+        channel = null;
+      }
+    }
+    readStoredChatUnreadCount();
+    window.addEventListener("message", handleChatMessage);
+    window.addEventListener("storage", handleChatStorage);
+    return () => {
+      channel?.close();
+      window.removeEventListener("message", handleChatMessage);
+      window.removeEventListener("storage", handleChatStorage);
+    };
+  }, []);
   const [incidentTaskDraft, setIncidentTaskDraft] = React.useState("");
   const [incidentWorkflowLoading, setIncidentWorkflowLoading] = React.useState(false);
   const [incidentWorkflowError, setIncidentWorkflowError] = React.useState<string | null>(null);
@@ -3865,6 +3938,7 @@ export function App() {
       <section className="app-shell-body">
         <WorkspaceNavigator
           activeWorkspace={activeWorkspace}
+          chatUnreadCount={messagingUnreadCount}
           onChange={setActiveWorkspace}
           onOpenMessaging={() => {
             setMessagingOpen(true);
@@ -4597,6 +4671,7 @@ export function App() {
 
       <MobileBottomNav
         activeSheet={mobileSheet}
+        chatUnreadCount={messagingUnreadCount}
         messagingOpen={messagingOpen}
         settingsOpen={settingsOpen}
         sketchOpen={mobileSketchOpen}
@@ -6232,6 +6307,13 @@ function StatusBadge({ label, tone }: { label: string; tone: "neutral" | "ok" | 
   return <span className={`status-badge ${tone}`}>{label}</span>;
 }
 
+function formatUnreadBadge(count: number): string {
+  if (!Number.isFinite(count) || count <= 0) {
+    return "";
+  }
+  return count > 99 ? "99+" : String(Math.trunc(count));
+}
+
 function EmbeddedCopChatPanel({
   dockWidth,
   pinned,
@@ -6347,12 +6429,14 @@ function EmbeddedCopChatPanel({
 
 function WorkspaceNavigator({
   activeWorkspace,
+  chatUnreadCount,
   onChange,
   onOpenMessaging,
   onOpenSettings,
   onStartReport
 }: {
   activeWorkspace: WorkspaceModule;
+  chatUnreadCount: number;
   onChange: (workspace: WorkspaceModule) => void;
   onOpenMessaging: () => void;
   onOpenSettings: () => void;
@@ -6380,6 +6464,7 @@ function WorkspaceNavigator({
       <button className="workspace-tab" onClick={onOpenMessaging} title="Otevřít komunikaci" type="button">
         <MessageCircle size={16} />
         <span>Komunikace</span>
+        {chatUnreadCount > 0 ? <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong> : null}
       </button>
       <button className="workspace-tab" onClick={onStartReport} title="Vložit nové hlášení" type="button">
         <Plus size={16} />
@@ -6395,6 +6480,7 @@ function WorkspaceNavigator({
 
 function MobileBottomNav({
   activeSheet,
+  chatUnreadCount,
   messagingOpen,
   settingsOpen,
   sketchOpen,
@@ -6406,6 +6492,7 @@ function MobileBottomNav({
   onSketch
 }: {
   activeSheet: MobileSheet;
+  chatUnreadCount: number;
   messagingOpen: boolean;
   settingsOpen: boolean;
   sketchOpen: boolean;
@@ -6433,6 +6520,7 @@ function MobileBottomNav({
       <button className={messagingOpen ? "active" : ""} onClick={onChat} type="button">
         <MessageCircle size={18} />
         <span>Chat</span>
+        {chatUnreadCount > 0 ? <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong> : null}
       </button>
       <button className="report" onClick={onReport} type="button">
         <Plus size={19} />

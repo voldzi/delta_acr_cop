@@ -1393,6 +1393,7 @@ h1 {
 .workspace-tab,
 .workspace-settings-button {
   display: grid;
+  position: relative;
   grid-template-columns: 1fr;
   align-items: center;
   justify-content: center;
@@ -1445,6 +1446,24 @@ h1 {
 
 .workspace-tab.active svg {
   color: var(--lime);
+}
+
+.nav-unread-badge {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 2px solid rgba(7, 11, 15, 0.95);
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1;
+  padding: 0 4px;
 }
 
 .workspace-settings-button {
@@ -8131,6 +8150,7 @@ dd {
 
   .mobile-bottom-nav button {
     display: grid;
+    position: relative;
     grid-template-rows: 22px 14px;
     align-content: center;
     justify-items: center;
