@@ -1988,7 +1988,8 @@ export async function fetchSafetyHydroStationDetail(
 
 function safetyHydroStationDetailRequest(detailUrl: string): { query: URLSearchParams; stationId: string } {
   const url = new URL(detailUrl, "https://cop.local");
-  const match = /^\/safety-data\/api\/v1\/hydro\/stations\/([^/]+)\/observations$/u.exec(url.pathname);
+  const match = /^(?:\/safety-data)?\/api\/v1\/hydro\/stations\/([^/]+)\/observations$/u.exec(url.pathname)
+    ?? /^\/api\/v1\/safety\/hydro\/stations\/([^/]+)\/observations$/u.exec(url.pathname);
   const stationId = match?.[1] ? decodeURIComponent(match[1]) : undefined;
   if (!stationId) {
     throw new Error("Neplatná adresa detailu hydrologické stanice.");

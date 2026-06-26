@@ -6162,6 +6162,53 @@ dd {
   margin-top: 2px;
 }
 
+.hydro-status-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.hydro-status-card {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(142, 157, 170, 0.18);
+  background: rgba(6, 16, 25, 0.38);
+}
+
+.hydro-status-card span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.hydro-status-card strong {
+  color: #edf3f8;
+  font-size: 14px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.hydro-status-card.ok {
+  border-color: rgba(34, 197, 94, 0.38);
+  background: rgba(20, 83, 45, 0.22);
+}
+
+.hydro-status-card.warn {
+  border-color: rgba(250, 204, 21, 0.38);
+  background: rgba(113, 63, 18, 0.22);
+}
+
+.hydro-status-card.critical {
+  border-color: rgba(239, 68, 68, 0.42);
+  background: rgba(127, 29, 29, 0.22);
+}
+
 .weather-camera-window {
   display: grid;
   gap: 10px;

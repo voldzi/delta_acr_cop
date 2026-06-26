@@ -123,6 +123,7 @@ const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
 const situationTrafficSymbolLayerId = "cop-situation-traffic-symbol";
 const situationRiskPointLayerId = "cop-situation-risk-point";
 const situationRiskIconLayerId = "cop-situation-risk-icon";
+const situationFloodTrendLayerId = "cop-situation-flood-trend";
 const situationRiskLabelLayerId = "cop-situation-risk-label";
 const situationPointLayerId = "cop-situation-point";
 const situationLabelLayerId = "cop-situation-label";
@@ -155,6 +156,7 @@ const mapFeatureClickPriorityLayerIds = [
   sketchLineLayerId,
   sketchFillLayerId,
   situationRiskIconLayerId,
+  situationFloodTrendLayerId,
   situationRiskPointLayerId,
   situationRiskLabelLayerId,
   situationTrafficSymbolLayerId,
@@ -199,6 +201,7 @@ const mapPointRaiseLayerIds = [
   situationTrafficSymbolLayerId,
   situationRiskPointLayerId,
   situationRiskIconLayerId,
+  situationFloodTrendLayerId,
   situationRiskLabelLayerId,
   situationOsmSymbolLayerId,
   situationMobileSymbolLayerId,
@@ -241,6 +244,11 @@ type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
 const riskIconPrefix = "cop-risk";
 const riskIconIds = ["fire", "flood", "warning", "weather", "unknown"] as const;
 type RiskIconId = (typeof riskIconIds)[number];
+const floodTrendIconPrefix = "cop-flood-trend";
+const floodTrendDirections = ["rising", "falling", "stable"] as const;
+type FloodTrendDirection = (typeof floodTrendDirections)[number];
+const floodStageTones = ["ok", "warn", "critical"] as const;
+type FloodStageTone = (typeof floodStageTones)[number];
 const weatherConditionIconPrefix = "cop-weather-condition";
 const weatherConditionIconIds = ["sun", "partly_cloudy", "cloud", "fog", "rain", "snow", "storm", "unknown"] as const;
 type WeatherConditionIconId = (typeof weatherConditionIconIds)[number];
@@ -458,6 +466,9 @@ export interface SituationContextFeatureCollection {
       osmPoi?: boolean;
       osmSymbolKey?: string;
       riskFeature?: boolean;
+      floodStageLabel?: string;
+      floodTrendIconKey?: string;
+      floodTrendLabel?: string;
       riskIconKey?: string;
       riskKind?: RiskIconId;
       riskMapLabel?: string;
@@ -1877,6 +1888,24 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationFloodTrendLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["has", "floodTrendIconKey"]],
+          layout: {
+            "icon-image": ["get", "floodTrendIconKey"],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.2, 10, 0.28, 15, 0.38],
+            "icon-anchor": "center",
+            "icon-offset": ["interpolate", ["linear"], ["zoom"], 5, ["literal", [22, -22]], 12, ["literal", [30, -30]], 16, ["literal", [36, -36]]],
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.72, 0.98]
+          }
+        });
+
+        map.addLayer({
           id: situationRiskLabelLayerId,
           type: "symbol",
           source: situationSourceId,
@@ -2718,6 +2747,9 @@ export function CopMap({
         map.on("mouseenter", situationRiskIconLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationFloodTrendLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationRiskLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -2776,6 +2808,9 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationRiskIconLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationFloodTrendLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationRiskLabelLayerId, () => {
@@ -4888,8 +4923,16 @@ function buildSituationRenderProperties(
   }
   if (isRiskFeature(feature)) {
     const kind = riskIconKind(feature);
+    const floodStage = kind === "flood" ? floodStageValue(feature) : undefined;
+    const floodTrend = kind === "flood" ? floodTrendDirection(feature.properties.trend) : undefined;
+    const floodTone = kind === "flood" ? floodStageTone(floodStage) : undefined;
     return {
       riskFeature: true,
+      ...(kind === "flood" && floodTrend && floodTone ? {
+        floodStageLabel: typeof floodStage === "number" && floodStage > 0 ? `${Math.round(floodStage)}. SPA` : "bez SPA",
+        floodTrendIconKey: getFloodTrendIconKey(floodTrend, floodTone),
+        floodTrendLabel: floodTrendShortLabel(feature.properties.trend)
+      } : {}),
       riskIconKey: getRiskIconKey(kind),
       riskKind: kind,
       riskMapLabel: formatRiskMapLabel(feature, status),
@@ -5024,8 +5067,7 @@ function formatRiskMapLabel(feature: SituationFeature, status: { label: string }
     const floodName = feature.properties.riverName ?? feature.properties.areaName ?? headline;
     const stage = floodStageValue(feature);
     const suffix = [
-      typeof stage === "number" && stage > 0 ? `${Math.round(stage)}. SPA` : undefined,
-      floodTrendShortLabel(feature.properties.trend)
+      typeof stage === "number" && stage > 0 ? `${Math.round(stage)}. SPA` : undefined
     ].filter(Boolean).join(" · ");
     return [compactRiskHeadline(floodName), suffix].filter(Boolean).join(" ") || status.label || category;
   }
@@ -5205,28 +5247,50 @@ function floodStageValue(feature: SituationFeature): number | undefined {
 function floodRiskColor(feature: SituationFeature): string {
   const stage = floodStageValue(feature);
   if (stage === undefined || stage <= 0) {
-    return "#38bdf8";
+    return "#22c55e";
   }
   if (stage === 1) {
     return "#facc15";
   }
-  if (stage === 2) {
-    return "#fb923c";
-  }
   return "#ef4444";
 }
 
-function floodTrendShortLabel(value: string | undefined): string | undefined {
+function floodStageTone(value: number | undefined): FloodStageTone {
+  if (value === undefined || value <= 0) {
+    return "ok";
+  }
+  if (value === 1) {
+    return "warn";
+  }
+  return "critical";
+}
+
+function floodTrendDirection(value: string | undefined): FloodTrendDirection {
   switch (value) {
+    case "rising":
+      return "rising";
+    case "falling":
+      return "falling";
+    case "stable":
+      return "stable";
+    default:
+      return "stable";
+  }
+}
+
+function floodTrendShortLabel(value: string | undefined): string {
+  switch (floodTrendDirection(value)) {
     case "rising":
       return "stoupá";
     case "falling":
       return "klesá";
     case "stable":
       return "stabilní";
-    default:
-      return undefined;
   }
+}
+
+function getFloodTrendIconKey(direction: FloodTrendDirection, tone: FloodStageTone): string {
+  return `${floodTrendIconPrefix}-${direction}-${tone}`;
 }
 
 function isCommunicationTowerFeature(feature: SituationFeature): boolean {
@@ -7167,6 +7231,16 @@ async function registerSituationSymbolImages(map: maplibregl.Map) {
       });
     }
   });
+  floodTrendDirections.forEach((direction) => {
+    floodStageTones.forEach((tone) => {
+      const key = getFloodTrendIconKey(direction, tone);
+      if (!map.hasImage(key)) {
+        map.addImage(key, createFloodTrendSymbolImage(direction, tone), {
+          pixelRatio: window.devicePixelRatio || 1
+        });
+      }
+    });
+  });
   weatherConditionIconIds.forEach((iconId) => {
     const key = getWeatherConditionIconKey(iconId);
     if (!map.hasImage(key)) {
@@ -7804,6 +7878,76 @@ function createWeatherCameraSymbolImage(): ImageData {
   drawCamera("#38bdf8", "#dff8ff", 2.2, 0.96);
 
   return context.getImageData(0, 0, size, size);
+}
+
+function createFloodTrendSymbolImage(direction: FloodTrendDirection, tone: FloodStageTone): ImageData {
+  const canvas = document.createElement("canvas");
+  const size = 92;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+
+  const color = floodStageToneColor(tone);
+  context.clearRect(0, 0, size, size);
+  context.save();
+  context.shadowColor = "rgba(0, 0, 0, 0.46)";
+  context.shadowBlur = 8;
+  context.shadowOffsetY = 3;
+  context.fillStyle = color;
+  context.beginPath();
+  context.arc(46, 46, 35, 0, Math.PI * 2);
+  context.fill();
+  context.restore();
+
+  context.save();
+  context.strokeStyle = "rgba(248, 250, 252, 0.98)";
+  context.lineWidth = 7;
+  context.beginPath();
+  context.arc(46, 46, 35, 0, Math.PI * 2);
+  context.stroke();
+  context.restore();
+
+  context.save();
+  context.translate(46, 46);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.strokeStyle = "#061019";
+  context.fillStyle = "#061019";
+  context.lineWidth = 9;
+  if (direction === "stable") {
+    context.beginPath();
+    context.arc(0, 0, 11, 0, Math.PI * 2);
+    context.fill();
+  } else {
+    const sign = direction === "rising" ? -1 : 1;
+    context.beginPath();
+    context.moveTo(0, 23 * sign);
+    context.lineTo(0, -23 * sign);
+    context.stroke();
+    context.beginPath();
+    context.moveTo(0, -26 * sign);
+    context.lineTo(-15, -9 * sign);
+    context.lineTo(15, -9 * sign);
+    context.closePath();
+    context.fill();
+  }
+  context.restore();
+
+  return context.getImageData(0, 0, size, size);
+}
+
+function floodStageToneColor(tone: FloodStageTone): string {
+  switch (tone) {
+    case "critical":
+      return "#ef4444";
+    case "warn":
+      return "#facc15";
+    case "ok":
+      return "#22c55e";
+  }
 }
 
 function createRiskSymbolImage(iconId: RiskIconId): ImageData {

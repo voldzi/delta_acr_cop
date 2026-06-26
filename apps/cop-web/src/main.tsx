@@ -6130,7 +6130,7 @@ function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefin
   const properties = feature.properties;
   const metrics = isRecord(properties.metrics) ? properties.metrics : {};
   const status = situationFeatureStatusModel(feature);
-  const hydroDetailUrl = React.useMemo(() => hydrologyDetailUrl(properties), [properties.detailUrl, properties.stationId, properties.timelineUrl]);
+  const hydroDetailUrl = React.useMemo(() => hydrologyDetailUrl(properties), [properties.detailUrl, properties.stationId, properties.tags, properties.timelineUrl]);
   const [hydroDetail, setHydroDetail] = React.useState<HydroStationDetailResponse | null>(null);
   const [hydroError, setHydroError] = React.useState<string | null>(null);
   const [hydroLoading, setHydroLoading] = React.useState(false);
@@ -6201,6 +6201,7 @@ function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefin
 
   return (
     <ObjectDetailSection title={properties.layer === "flood" ? "Hydrologie" : properties.layer === "fire" ? "Požární riziko" : "Výstraha"}>
+      {properties.layer === "flood" ? <HydrologyStatusOverview feature={feature} metrics={metrics} /> : null}
       <DetailGrid rows={rows} />
       {properties.layer === "flood" ? (
         <HydroStationDetailCard
@@ -6212,6 +6213,38 @@ function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefin
         />
       ) : null}
     </ObjectDetailSection>
+  );
+}
+
+function HydrologyStatusOverview({ feature, metrics }: { feature: SituationFeature; metrics: Record<string, unknown> }) {
+  const properties = feature.properties;
+  const floodStage = safetyMetricNumber(properties, metrics, "floodStage", "floodActivityLevel") ?? 0;
+  const stage = floodStageStatusModel(floodStage);
+  const trend = floodTrendLabel(properties.trend);
+  const trendTone = floodTrendTone(properties.trend);
+  return (
+    <div className="hydro-status-overview">
+      <div className={`hydro-status-card ${stage.tone}`}>
+        <span>Stupeň povodňové aktivity</span>
+        <strong>{floodStageLabel(floodStage)}</strong>
+      </div>
+      <div className={`hydro-status-card ${trendTone}`}>
+        <span>Trend</span>
+        <strong>{trend}</strong>
+      </div>
+      <div className="hydro-status-card neutral">
+        <span>Vodní stav</span>
+        <strong>{formatOptionalNumber(safetyMetricNumber(properties, metrics, "waterLevelCm"), " cm")}</strong>
+      </div>
+      <div className="hydro-status-card neutral">
+        <span>Průtok</span>
+        <strong>{formatOptionalNumber(safetyMetricNumber(properties, metrics, "discharge", "flowM3s"), " m3/s")}</strong>
+      </div>
+      <div className="hydro-status-card neutral">
+        <span>Teplota vody</span>
+        <strong>{formatOptionalNumber(safetyMetricNumber(properties, metrics, "waterTemperatureC"), " °C")}</strong>
+      </div>
+    </div>
   );
 }
 
@@ -6332,6 +6365,11 @@ function hydrologyDetailUrl(properties: SituationFeature["properties"]): string 
   if (directUrl) {
     return directUrl;
   }
+  const tags = isRecord(properties.tags) ? properties.tags : {};
+  const stationId = properties.stationId ?? recordString(tags, "stationId");
+  if (stationId) {
+    return `/safety-data/api/v1/hydro/stations/${encodeURIComponent(stationId)}/observations`;
+  }
   return undefined;
 }
 
@@ -6383,7 +6421,11 @@ function hydroThresholdLines(
 }
 
 function formatHydroAxisValue(value: number, unit: string): string {
-  return `${Math.round(value * 10) / 10} ${unit}`;
+  return `${Math.round(value * 10) / 10} ${normalizeHydroUnit(unit)}`;
+}
+
+function normalizeHydroUnit(unit: string): string {
+  return unit === "0C" ? "°C" : unit;
 }
 
 function formatShortTime(value: number): string {

@@ -1032,6 +1032,9 @@ describe("COP map data helpers", () => {
             headline: "Labe",
             label: "Labe",
             layer: "flood",
+            metrics: {
+              floodActivityLevel: 2
+            },
             observedAt: "2026-05-28T08:11:11Z",
             riverName: "Labe",
             sourceId: "chmi_hydro",
@@ -1064,10 +1067,14 @@ describe("COP map data helpers", () => {
     });
 
     expect(collection.features[0]?.properties).toMatchObject({
+      floodStageLabel: "2. SPA",
+      floodTrendIconKey: "cop-flood-trend-falling-critical",
+      floodTrendLabel: "klesá",
       riskKind: "flood",
-      riskMapLabel: "Labe klesá"
+      riskMapLabel: "Labe 2. SPA"
     });
     expect(collection.features[0]?.properties.riskMapLabel).not.toContain("Povodeň");
+    expect(collection.features[0]?.properties.riskMapLabel).not.toContain("klesá");
   });
 
   it("renders weather grid polygons as thematic map fields", () => {
