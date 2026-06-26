@@ -49,7 +49,7 @@ COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 COP_WEB_REFRESH_MS=5000
 ```
 
-`COP_PUBLIC_API_BASE_URL=` musi zustat prazdne, aby frontend volal `/api/...` pres verejnou domenu. `COP_DEPLOY_DOMAIN`, `COP_WEB_ALLOWED_HOSTS` a `COP_CHAT_ALLOWED_HOSTS` se predavaji do Vite preview serveru a povoluji verejny host i lokalni pilot `docker.home.cz`. `COP_CHAT_BASE_PATH=/chat/` musi zustat sladene s nginx location.
+`COP_PUBLIC_API_BASE_URL=` musi zustat prazdne, aby frontend volal `/api/...` pres verejnou domenu. `COP_DEPLOY_DOMAIN`, `COP_WEB_ALLOWED_HOSTS` a `COP_CHAT_ALLOWED_HOSTS` se predavaji do Vite preview serveru a povoluji verejny host i lokalni pilot `docker.home.cz`. `COP_CHAT_ALLOWED_HOSTS` zaroven omezuje CORS origin pro `/chat/oidc/token`; token proxy nesmi odrazet libovolny `Origin`. `COP_CHAT_BASE_PATH=/chat/` musi zustat sladene s nginx location.
 Samostatny chat v produkcnim buildu pouziva same-origin `/chat/oidc/token`
 proxy pro OIDC token exchange. Pokud `login.zeleznalady.cz` rezolvuje na
 privatni adresu, browser jinak muze z verejne origin `cop.zeleznalady.cz`

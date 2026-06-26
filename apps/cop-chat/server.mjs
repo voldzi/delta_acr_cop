@@ -59,13 +59,18 @@ async function handleRequest(request, response) {
 }
 
 async function proxyOidcTokenRequest(request, response) {
+  const corsHeaders = corsHeadersForOrigin(request.headers.origin, request.headers.host);
+  if (request.headers.origin && !corsHeaders) {
+    response.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Forbidden");
+    return;
+  }
   if (request.method === "OPTIONS") {
-    const origin = request.headers.origin ?? "";
     response.writeHead(204, {
       "Access-Control-Allow-Headers": "Content-Type",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      ...(origin ? { "Access-Control-Allow-Origin": origin } : {}),
-      "Access-Control-Max-Age": "3600"
+      "Access-Control-Max-Age": "3600",
+      ...corsHeaders
     });
     response.end();
     return;
@@ -97,7 +102,8 @@ async function proxyOidcTokenRequest(request, response) {
     "Cache-Control": "no-store",
     "Content-Length": String(payload.length),
     "Content-Type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8",
-    "Pragma": "no-cache"
+    "Pragma": "no-cache",
+    ...corsHeaders
   });
   response.end(payload);
 }
@@ -174,8 +180,44 @@ function isAllowedHost(value) {
   if (allowedHosts.size === 0) {
     return true;
   }
-  const host = (value ?? "").split(":")[0]?.toLowerCase();
-  return Boolean(host && (allowedHosts.has(host) || host === "localhost" || host === "127.0.0.1"));
+  const host = hostnameFromAuthority(value);
+  return Boolean(host && (allowedHosts.has(host) || isLocalhost(host)));
+}
+
+function corsHeadersForOrigin(value, requestHost) {
+  if (!value) {
+    return {};
+  }
+  if (!isAllowedOrigin(value, requestHost)) {
+    return null;
+  }
+  return {
+    "Access-Control-Allow-Origin": value,
+    "Vary": "Origin"
+  };
+}
+
+function isAllowedOrigin(value, requestHost) {
+  let origin;
+  try {
+    origin = new URL(value);
+  } catch {
+    return false;
+  }
+  if (origin.protocol !== "http:" && origin.protocol !== "https:") {
+    return false;
+  }
+  const originHost = origin.hostname.toLowerCase();
+  const host = hostnameFromAuthority(requestHost);
+  return Boolean(originHost && (originHost === host || allowedHosts.has(originHost) || isLocalhost(originHost)));
+}
+
+function hostnameFromAuthority(value) {
+  return (value ?? "").replace(/^\[/u, "").split("]")[0].split(":")[0]?.toLowerCase() ?? "";
+}
+
+function isLocalhost(host) {
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
 }
 
 async function readRequestBody(request, maxBytes) {

@@ -55,6 +55,8 @@ prázdné, aby oba browser klienti volali COP API relativně přes `/api/...`.
 chatem pro OIDC token exchange; chrání `/chat/` před browser blokací
 public-to-private token requestů, když `login.zeleznalady.cz` v pilotní síti
 rezolvuje na privátní adresu.
+`COP_CHAT_ALLOWED_HOSTS` omezuje HTTP Host i CORS `Origin` pro tuto token proxy,
+aby endpoint neodrážel libovolný cizí origin.
 `COP_CHAT_PROXY_TARGET` používá pouze lokální Vite dev server mapové aplikace,
 aby iframe `/chat/` v COP při vývoji směroval na samostatný `cop-chat`.
 
