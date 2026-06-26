@@ -93,6 +93,10 @@ import {
   getOrCreateMatrixDeviceId,
   publishChatUnreadCount
 } from "../../cop-web/src/messaging/runtime";
+import {
+  decodeChatSelect,
+  encodeChatCenterLocation
+} from "../../cop-web/src/messaging/bridge";
 import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
@@ -5840,15 +5844,7 @@ function incomingNotificationBody(message: MatrixTimelineMessage): string {
 }
 
 export function embeddedChatSelectionFromMessage(data: unknown): string | null {
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
-    return null;
-  }
-  const message = data as { selection?: unknown; type?: unknown };
-  if (message.type !== "cop-chat:select" || typeof message.selection !== "string") {
-    return null;
-  }
-  const selection = message.selection.trim();
-  return selection || null;
+  return decodeChatSelect(data);
 }
 
 function findChatItemForSelection(selection: string, chatItems: ChatListItem[]): ChatListItem | null {
@@ -5979,11 +5975,7 @@ function osmTileUrlForLocation(location: { lat: number; lon: number }, zoom: num
 
 export function centerLocationInCop(location: MatrixLocationShare): void {
   if (window.parent !== window) {
-    window.parent.postMessage({
-      lat: location.lat,
-      lon: location.lon,
-      type: "cop-chat:center-location"
-    }, window.location.origin);
+    window.parent.postMessage(encodeChatCenterLocation(location.lat, location.lon), window.location.origin);
     return;
   }
   window.open(`https://www.openstreetmap.org/?mlat=${location.lat}&mlon=${location.lon}#map=16/${location.lat}/${location.lon}`, "_blank", "noopener,noreferrer");

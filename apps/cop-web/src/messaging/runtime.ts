@@ -1,7 +1,7 @@
 import type { MessagingBootstrapResponse } from "../cop-data";
+import { chatBridgeChannelName, chatUnreadStorageKey, decodeChatUnread, encodeChatUnread } from "./bridge";
 
 const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
-const chatUnreadStorageKey = "cop.chat.unread.v1";
 const fallbackMatrixDeviceIds = new Map<string, string>();
 
 export function getOrCreateMatrixDeviceId(ownerId: string): string {
@@ -22,7 +22,7 @@ export function getOrCreateMatrixDeviceId(ownerId: string): string {
 }
 
 export function publishChatUnreadCount(count: number): void {
-  const payload = { at: Date.now(), count: Math.max(0, Math.trunc(count)), type: "cop-chat:unread" };
+  const payload = encodeChatUnread(count);
   if (window.parent !== window) {
     window.parent.postMessage(payload, window.location.origin);
   }
@@ -33,7 +33,7 @@ export function publishChatUnreadCount(count: number): void {
   }
   if (typeof BroadcastChannel !== "undefined") {
     try {
-      const channel = new BroadcastChannel("cop-chat");
+      const channel = new BroadcastChannel(chatBridgeChannelName);
       channel.postMessage(payload);
       channel.close();
     } catch {
@@ -43,14 +43,11 @@ export function publishChatUnreadCount(count: number): void {
 }
 
 export function applyChatUnreadPayload(value: unknown, onCount: (count: number) => void): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  const count = decodeChatUnread(value);
+  if (count === null) {
     return false;
   }
-  const data = value as { count?: unknown; type?: unknown };
-  if (data.type !== "cop-chat:unread" || typeof data.count !== "number" || !Number.isFinite(data.count)) {
-    return false;
-  }
-  onCount(Math.max(0, Math.trunc(data.count)));
+  onCount(count);
   return true;
 }
 

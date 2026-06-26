@@ -208,6 +208,7 @@ import {
   publishChatUnreadCount,
   readStoredChatUnreadCount
 } from "./messaging/runtime";
+import { decodeChatCenterLocation, encodeChatSelect } from "./messaging/bridge";
 import {
   countHistoryPoints,
   getReplayTimestamp,
@@ -657,12 +658,13 @@ export function App() {
       if (applyUnread(data)) {
         return;
       }
-      if (data.type === "cop-chat:center-location" && typeof data.lat === "number" && typeof data.lon === "number" && Number.isFinite(data.lat) && Number.isFinite(data.lon)) {
+      const center = decodeChatCenterLocation(data);
+      if (center) {
         setActiveWorkspace("map");
         setMessagingOpen(false);
         setMapView((current) => ({
           bearing: current?.bearing ?? 0,
-          center: [data.lon as number, data.lat as number],
+          center: [center.lon, center.lat],
           pitch: current?.pitch ?? 0,
           zoom: Math.max(current?.zoom ?? 0, 15)
         }));
@@ -6467,7 +6469,7 @@ function EmbeddedCopChatPanel({
       return;
     }
     iframeRef.current.contentWindow.postMessage(
-      { selection: selection.id, type: "cop-chat:select" },
+      encodeChatSelect(selection.id),
       window.location.origin
     );
   }, [selection?.id, selection?.nonce]);
