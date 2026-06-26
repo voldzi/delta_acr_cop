@@ -436,6 +436,13 @@ export class SituationDataSourceAdapter implements SituationDataSource {
 
   async fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
     const normalizedQuery = normalizeSituationFeatureQuery(query, this.config);
+    if (shouldUseChunkedMobileNetworkQuery(normalizedQuery)) {
+      return this.fetchChunkedMobileNetworkFeatures(normalizedQuery, requestNow);
+    }
+    return this.fetchFeaturesUnchunked(normalizedQuery, requestNow);
+  }
+
+  private async fetchFeaturesUnchunked(normalizedQuery: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
     const upstreamQuery = canonicalizeSituationFeatureQuery(normalizedQuery);
     const cacheKey = situationFeatureCacheKey(upstreamQuery);
     const ttlMs = cacheTtlMsForSources(normalizedQuery.sources, this.config)
@@ -447,6 +454,36 @@ export class SituationDataSourceAdapter implements SituationDataSource {
       ttlMs,
       upstreamBbox: upstreamQuery.bbox
     });
+  }
+
+  private async fetchChunkedMobileNetworkFeatures(normalizedQuery: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
+    const nonMobileLayers = normalizedQuery.layers.filter((layer) => layer !== "mobile_network");
+    const mobileSources = normalizedQuery.sources?.filter((source) => source === "mobile_network_model");
+    const nonMobileSources = normalizedQuery.sources?.filter((source) => source !== "mobile_network_model");
+    const mobileChunks = splitBbox(normalizedQuery.bbox, mobileNetworkChunkDegrees);
+    const perChunkLimit = Math.max(1, Math.min(this.config.maxLimit, Math.ceil(normalizedQuery.limit / mobileChunks.length) + mobileNetworkChunkLimitSlack));
+    const [nonMobileCollection, ...mobileCollections] = await Promise.all([
+      nonMobileLayers.length > 0
+        ? this.fetchFeaturesUnchunked({
+            ...normalizedQuery,
+            layers: nonMobileLayers,
+            ...(nonMobileSources && nonMobileSources.length > 0 ? { sources: nonMobileSources } : {})
+          }, requestNow)
+        : Promise.resolve(emptySituationFeatureCollection({
+            ...normalizedQuery,
+            layers: [],
+            ...(nonMobileSources && nonMobileSources.length > 0 ? { sources: nonMobileSources } : {})
+          }, requestNow)),
+      ...mobileChunks.map((bbox) => this.fetchFeaturesUnchunked({
+        bbox,
+        layers: ["mobile_network"],
+        limit: perChunkLimit,
+        ...(mobileSources && mobileSources.length > 0 ? { sources: mobileSources } : {}),
+        ...(normalizedQuery.technology ? { technology: normalizedQuery.technology } : {})
+      }, requestNow))
+    ]);
+
+    return mergeSituationFeatureCollections([nonMobileCollection, ...mobileCollections], normalizedQuery, requestNow);
   }
 }
 
@@ -673,6 +710,11 @@ interface ProjectSituationFeatureCollectionOptions {
   upstreamBbox: SituationBbox;
 }
 
+const mobileNetworkChunkDegrees = 1;
+const mobileNetworkChunkLimitSlack = 8;
+const mobileNetworkChunkMinDimensionDegrees = 1.2;
+const mobileNetworkMaxChunks = 64;
+
 function canonicalizeSituationFeatureQuery(query: SituationFeatureQuery): SituationFeatureQuery {
   const gridSizeDegrees = gridSizeDegreesForBbox(query.bbox);
   const paddedBbox = padBbox(query.bbox, 0.18);
@@ -724,6 +766,89 @@ function projectSituationFeatureCollection(
       staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
       warningCount: warnings.length
     },
+    warnings
+  };
+}
+
+function shouldUseChunkedMobileNetworkQuery(query: SituationFeatureQuery): boolean {
+  if (!query.layers.includes("mobile_network")) {
+    return false;
+  }
+  if (query.sources && !query.sources.includes("mobile_network_model")) {
+    return false;
+  }
+  const width = Math.abs(query.bbox.east - query.bbox.west);
+  const height = Math.abs(query.bbox.north - query.bbox.south);
+  if (Math.max(width, height) < mobileNetworkChunkMinDimensionDegrees) {
+    return false;
+  }
+  return splitBbox(query.bbox, mobileNetworkChunkDegrees).length <= mobileNetworkMaxChunks;
+}
+
+function splitBbox(bbox: SituationBbox, maxDimensionDegrees: number): SituationBbox[] {
+  const width = Math.max(0.001, bbox.east - bbox.west);
+  const height = Math.max(0.001, bbox.north - bbox.south);
+  const lonSteps = Math.max(1, Math.ceil(width / maxDimensionDegrees));
+  const latSteps = Math.max(1, Math.ceil(height / maxDimensionDegrees));
+  const lonStep = width / lonSteps;
+  const latStep = height / latSteps;
+  const chunks: SituationBbox[] = [];
+  for (let latIndex = 0; latIndex < latSteps; latIndex += 1) {
+    for (let lonIndex = 0; lonIndex < lonSteps; lonIndex += 1) {
+      chunks.push({
+        east: round(lonIndex === lonSteps - 1 ? bbox.east : bbox.west + lonStep * (lonIndex + 1), 6),
+        north: round(latIndex === latSteps - 1 ? bbox.north : bbox.south + latStep * (latIndex + 1), 6),
+        south: round(bbox.south + latStep * latIndex, 6),
+        west: round(bbox.west + lonStep * lonIndex, 6)
+      });
+    }
+  }
+  return chunks;
+}
+
+function mergeSituationFeatureCollections(
+  collections: SituationFeatureCollection[],
+  query: SituationFeatureQuery,
+  requestNow: Date,
+  extraWarnings: string[] = []
+): SituationFeatureCollection {
+  const featuresById = new Map<string, SituationFeature>();
+  for (const collection of collections) {
+    for (const feature of collection.features) {
+      const id = String(feature.properties.featureId || feature.id || `${feature.properties.layer}:${featuresById.size}`);
+      if (!featuresById.has(id) && isFeatureInBbox(feature, query.bbox)) {
+        featuresById.set(id, feature);
+      }
+    }
+  }
+  const features = Array.from(featuresById.values()).slice(0, query.limit);
+  const sourcesById = new Map<string, SituationSourceDescriptor>();
+  for (const collection of collections) {
+    for (const source of collection.sources) {
+      if (!sourcesById.has(source.sourceId)) {
+        sourcesById.set(source.sourceId, source);
+      }
+    }
+  }
+  const warnings = uniqueStrings([...collections.flatMap((collection) => collection.warnings), ...extraWarnings]);
+  return {
+    contractVersion: "cop-situation-source-v1",
+    features,
+    generatedAt: requestNow.toISOString(),
+    query,
+    source: {
+      generatedAt: requestNow.toISOString(),
+      sourceId: "situation-data-api",
+      sourceType: "PUBLIC_SITUATION_AGGREGATE"
+    },
+    sources: Array.from(sourcesById.values()),
+    summary: {
+      featureCount: features.length,
+      sourceCount: sourcesById.size,
+      staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
+      warningCount: warnings.length
+    },
+    type: "FeatureCollection",
     warnings
   };
 }

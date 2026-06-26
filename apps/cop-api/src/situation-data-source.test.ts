@@ -324,6 +324,60 @@ describe("SituationDataSourceAdapter", () => {
     ]);
   });
 
+  it("splits large mobile network map queries into smaller SIM read-model requests", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = new URL(String(input));
+      const parts = (url.searchParams.get("bbox") ?? "").split(",").map(Number);
+      if (parts.length !== 4 || !parts.every(Number.isFinite)) {
+        throw new Error("Expected chunked mobile network request to include bbox.");
+      }
+      const [west, south, east, north] = parts as [number, number, number, number];
+      const featureId = `mobile_network:aggregate:4g:${roundForTest(west)}:${roundForTest(south)}`;
+      return new Response(JSON.stringify(sampleMobileNetworkFeatureCollection({
+        bbox: { east, north, south, west },
+        featureId,
+        geometry: {
+          coordinates: [[
+            [west, south],
+            [east, south],
+            [east, north],
+            [west, north],
+            [west, south]
+          ]],
+          type: "Polygon"
+        }
+      })), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SituationDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/situation-data/api/v1",
+      cacheTtlMs: 20000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const features = await adapter.fetchFeatures({
+      bbox: { east: 14.4, north: 48.8, south: 48.0, west: 12.0 },
+      layers: ["mobile_network"],
+      limit: 250,
+      sources: ["mobile_network_model"],
+      technology: "4G"
+    }, new Date("2026-05-21T16:30:00Z"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(features.features).toHaveLength(3);
+    expect(features.summary.featureCount).toBe(3);
+    expect(features.query.bbox).toEqual({ east: 14.4, north: 48.8, south: 48.0, west: 12.0 });
+    for (const call of fetchMock.mock.calls) {
+      const url = new URL(String(call[0]));
+      expect(url.searchParams.get("layers")).toBe("mobile_network");
+      expect(url.searchParams.get("source")).toBe("mobile_network_model");
+      expect(url.searchParams.get("technology")).toBe("4G");
+    }
+  });
+
   it("falls back to layer ttl when an explicit source has no source-specific ttl", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -650,12 +704,18 @@ function sampleCoverageFeatureCollection() {
   };
 }
 
-function sampleMobileNetworkFeatureCollection() {
+function sampleMobileNetworkFeatureCollection(overrides: {
+  bbox?: { east: number; north: number; south: number; west: number };
+  featureId?: string;
+  geometry?: Record<string, unknown>;
+} = {}) {
+  const bbox = overrides.bbox ?? { east: 14.6, north: 50.2, south: 49.95, west: 14.2 };
+  const featureId = overrides.featureId ?? "mobile_network:aggregate:4g:6-4";
   return {
     contractVersion: "cop-situation-source-v1",
     features: [
       {
-        geometry: {
+        geometry: overrides.geometry ?? {
           coordinates: [[
             [14.2, 49.95],
             [14.3, 49.95],
@@ -665,7 +725,7 @@ function sampleMobileNetworkFeatureCollection() {
           ]],
           type: "Polygon"
         },
-        id: "mobile_network:aggregate:4g:6-4",
+        id: featureId,
         properties: {
           basis: ["PRECOMPUTED_COVERAGE_READ_MODEL", "OSM_INFRASTRUCTURE_HINT", "INFERRED_COVERAGE", "NO_OPERATOR_BTS_STATUS"],
           btsStatus: "operator_feed_unavailable",
@@ -675,7 +735,7 @@ function sampleMobileNetworkFeatureCollection() {
           demSource: "not-used-phase-1",
           disclaimer: "Inferred assessment, not guaranteed service availability.",
           estimatedSignalDbm: -98,
-          featureId: "mobile_network:aggregate:4g:6-4",
+          featureId,
           generatedAt: "2026-05-21T16:08:56.211Z",
           label: "4G mobile network assessment",
           layer: "mobile_network",
@@ -709,7 +769,7 @@ function sampleMobileNetworkFeatureCollection() {
     ],
     generatedAt: "2026-05-21T16:08:56.211Z",
     query: {
-      bbox: { east: 14.6, north: 50.2, south: 49.95, west: 14.2 },
+      bbox,
       layers: ["mobile_network"],
       limit: 20,
       sources: ["mobile_network_model"],
@@ -737,6 +797,10 @@ function sampleMobileNetworkFeatureCollection() {
     type: "FeatureCollection",
     warnings: []
   };
+}
+
+function roundForTest(value: number): string {
+  return String(Math.round(value * 1000) / 1000);
 }
 
 function sampleTaxonomyResponse() {
