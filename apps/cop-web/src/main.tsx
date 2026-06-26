@@ -3676,6 +3676,7 @@ export function App() {
     "shell",
     "app-shell-v2",
     `app-skin-${workspaceSkin}`,
+    isWebKitRuntime() && "webkit-runtime",
     mobileSheet && `mobile-sheet-${mobileSheet}`,
     mobileSheet && "mobile-sheet-open",
     messagingOpen && messagingPinned && "shell-messaging-docked",
@@ -14166,6 +14167,14 @@ function normalizePublicFlightSymbolMode(value: string | undefined): PublicFligh
 
 function normalizeMapBasemapMode(value: string | undefined): MapBasemapMode {
   return value === "civil" || value === "risk" || value === "dark" || value === "outline" ? value : "standard";
+}
+
+function isWebKitRuntime(): boolean {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+  const userAgent = navigator.userAgent;
+  return /AppleWebKit/u.test(userAgent) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox/u.test(userAgent);
 }
 
 function normalizeAppLanguage(value: string | undefined): AppLanguage {

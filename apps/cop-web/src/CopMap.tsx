@@ -766,6 +766,7 @@ export function CopMap({
   const [sketchLineWidth, setSketchLineWidth] = React.useState(defaultSketchStyle.lineWidth);
   const [sketchFillPattern, setSketchFillPattern] = React.useState<SketchFillPattern>("solid");
   const [sketchSymbol, setSketchSymbol] = React.useState<SketchSymbolPreset>(defaultSketchSymbol);
+  const webKitMapRuntime = React.useMemo(() => isWebKitRuntime(), []);
   const sketchStyleSettingsRef = React.useRef({
     fill: defaultSketchStyle.fill,
     lineWidth: defaultSketchStyle.lineWidth,
@@ -949,6 +950,18 @@ export function CopMap({
     });
 
     mapRef.current = map;
+    const mapCanvas = map.getCanvas();
+    const handleWebGlContextLost = (event: Event) => {
+      event.preventDefault();
+      setMapError("Safari obnovuje mapový podklad po ztrátě WebGL kontextu.");
+    };
+    const handleWebGlContextRestored = () => {
+      setMapError(null);
+      map.resize();
+      map.triggerRepaint();
+    };
+    mapCanvas.addEventListener("webglcontextlost", handleWebGlContextLost);
+    mapCanvas.addEventListener("webglcontextrestored", handleWebGlContextRestored);
     enableMapInteractions(map);
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
@@ -2785,6 +2798,8 @@ export function CopMap({
     return () => {
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
+      mapCanvas.removeEventListener("webglcontextlost", handleWebGlContextLost);
+      mapCanvas.removeEventListener("webglcontextrestored", handleWebGlContextRestored);
       map.remove();
       mapRef.current = null;
     };
@@ -2810,8 +2825,8 @@ export function CopMap({
     if (!mapReady || !map) {
       return;
     }
-    applyBasemapMode(map, mapBasemapMode);
-  }, [mapBasemapMode, mapReady]);
+    applyBasemapMode(map, mapBasemapMode, { webKitRuntime: webKitMapRuntime });
+  }, [mapBasemapMode, mapReady, webKitMapRuntime]);
 
   React.useEffect(() => {
     const source = mapRef.current?.getSource(userLocationSourceId);
@@ -3306,6 +3321,7 @@ export function CopMap({
       className={[
         "map-container",
         `basemap-${mapBasemapMode}`,
+        webKitMapRuntime ? "webkit-map-runtime" : "",
         `sketch-cursor-${sketchMode}`,
         mapFullscreen ? "fullscreen" : "",
         mobileSketchControlsOpen ? "mobile-sketch-controls-open" : ""
@@ -6683,7 +6699,11 @@ function createRasterStyle(tiles: string, attribution: string, glyphs: string): 
   };
 }
 
-function applyBasemapMode(map: maplibregl.Map, mode: MapBasemapMode): void {
+function applyBasemapMode(map: maplibregl.Map, mode: MapBasemapMode, options: { webKitRuntime?: boolean } = {}): void {
+  if (options.webKitRuntime) {
+    applyWebKitSafeBasemapMode(map);
+    return;
+  }
   const settings = basemapPaintSettings(mode);
   const brightnessMin = clampRasterBrightness(settings.brightnessMin);
   const brightnessMax = Math.max(brightnessMin, clampRasterBrightnessMax(settings.brightnessMax));
@@ -6702,6 +6722,11 @@ function applyBasemapMode(map: maplibregl.Map, mode: MapBasemapMode): void {
         // External styles can contain provider-specific raster layers; keep overlays alive if one layer rejects tuning.
       }
     });
+}
+
+function applyWebKitSafeBasemapMode(map: maplibregl.Map): void {
+  map.resize();
+  map.triggerRepaint();
 }
 
 function basemapPaintSettings(mode: MapBasemapMode): {
@@ -6732,6 +6757,14 @@ function clampRasterBrightness(value: number): number {
 
 function clampRasterBrightnessMax(value: number): number {
   return Math.max(0, Math.min(0.99, Number.isFinite(value) ? value : 0.99));
+}
+
+function isWebKitRuntime(): boolean {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+  const userAgent = navigator.userAgent;
+  return /AppleWebKit/u.test(userAgent) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox/u.test(userAgent);
 }
 
 export function isRecoverableMapError(message: string): boolean {

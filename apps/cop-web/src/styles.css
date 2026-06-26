@@ -1832,6 +1832,28 @@ h1 {
   padding: 8px;
 }
 
+.shell.app-shell-v2.webkit-runtime .map-toolbar,
+.shell.app-shell-v2.webkit-runtime .map-legend,
+.shell.app-shell-v2.webkit-runtime .map-selection-card,
+.shell.app-shell-v2.webkit-runtime .map-report-button,
+.shell.app-shell-v2.webkit-runtime .map-cluster-panel,
+.shell.app-shell-v2.webkit-runtime .map-notice,
+.shell.app-shell-v2.webkit-runtime .map-empty,
+.shell.app-shell-v2.webkit-runtime .map-global-search-field,
+.shell.app-shell-v2.webkit-runtime .map-global-search-results,
+.shell.app-shell-v2.webkit-runtime .weather-radar-playback-panel {
+  background: rgba(8, 13, 18, 0.94);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.shell.app-shell-v2.webkit-runtime .map-container,
+.shell.app-shell-v2.webkit-runtime .map-canvas,
+.shell.app-shell-v2.webkit-runtime .map-canvas canvas {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
 .shell.app-shell-v2 .map-action {
   min-height: 36px;
   border-color: rgba(122, 148, 172, 0.28);
