@@ -410,8 +410,8 @@ describe("map catalog route", () => {
     expect(body.query.layerIds).toEqual(expect.arrayContaining(["public.mobile.network", "public.safety.warnings", "public.safety.flood"]));
     expect(body.query.layerIds).toHaveLength(3);
     expect(body.situation?.query).toMatchObject({
-      layers: ["mobile_network", "mobile"],
-      sources: ["mobile_network_model", "osm_postgis"],
+      layers: ["mobile_network"],
+      sources: ["mobile_network_model"],
       technology: "4G"
     });
     expect(body.safety?.query.layers).toEqual(["warnings", "flood"]);
@@ -461,8 +461,8 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as { situation?: SituationFeatureCollection };
     expect(body.situation?.query).toMatchObject({
-      layers: ["mobile_network", "mobile"],
-      sources: ["mobile_network_model", "osm_postgis"],
+      layers: ["mobile_network"],
+      sources: ["mobile_network_model"],
       technology: "4G"
     });
   });
@@ -546,7 +546,7 @@ describe("map catalog route", () => {
     expect(body.situation?.summary.featureCount).toBe(1);
   });
 
-  it("shows BTS reference context when the mobile network read-model is empty", async () => {
+  it("keeps BTS reference context out of the public mobile-network layer", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const situationDataSource = new FakeProviderCatalogSituationDataSource();
     const app = buildServer({
@@ -568,12 +568,12 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as { situation?: SituationFeatureCollection };
     expect(situationDataSource.lastFeatureQuery).toMatchObject({
-      layers: ["mobile_network", "mobile"],
-      sources: ["mobile_network_model", "osm_postgis"]
+      layers: ["mobile_network"],
+      sources: ["mobile_network_model"]
     });
-    expect(body.situation?.features.map((feature) => feature.properties.category)).toEqual(["communications_tower"]);
-    expect(body.situation?.summary.featureCount).toBe(1);
-    expect(body.situation?.warnings.join(" ")).toContain("BTS / komunikační stožáry");
+    expect(body.situation?.features).toEqual([]);
+    expect(body.situation?.summary.featureCount).toBe(0);
+    expect(body.situation?.warnings.join(" ")).not.toContain("BTS / komunikační stožáry");
   });
 
   it("queries flight reference layers from the provider catalog", async () => {

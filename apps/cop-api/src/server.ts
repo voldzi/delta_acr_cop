@@ -7397,10 +7397,6 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
       for (const sourceId of layer.query.providerSourceIds ?? []) {
         situationSources.add(sourceId);
       }
-      if (layer.layerId === "public.mobile.network") {
-        situationLayers.add("mobile");
-        situationSources.add("osm_postgis");
-      }
       situationTechnology = situationTechnology ?? readMapQueryTechnology(request.filters[layer.layerId]) ?? readDefaultTechnologyFilter(layer);
     } else if (layer.query.providerId === "sim.safety-data") {
       for (const layerId of layer.query.providerLayerIds ?? []) {
@@ -7717,15 +7713,7 @@ function filterSituationCollectionForCatalogLayers(
   const features = collection.features.filter((feature) => situationLayers.some((layer) => situationFeatureMatchesCatalogLayer(feature, layer)));
   const sourceIds = new Set(features.map((feature) => feature.properties.sourceId));
   const sources = sourceIds.size > 0 ? collection.sources.filter((source) => sourceIds.has(source.sourceId)) : collection.sources;
-  const selectedMobileNetwork = situationLayers.some((layer) => layer.layerId === "public.mobile.network");
-  const hasMobileNetworkModel = features.some((feature) => feature.properties.layer === "mobile_network");
-  const hasSupportingBts = features.some(isMobileNetworkSupportingBtsFeature);
-  const warnings = selectedMobileNetwork && !hasMobileNetworkModel && hasSupportingBts
-    ? Array.from(new Set([
-        ...collection.warnings,
-        "Mobilní síť zatím nemá dostupné reálné modelové buňky; mapa zobrazuje BTS / komunikační stožáry jako referenční kontext."
-      ]))
-    : collection.warnings;
+  const warnings = collection.warnings;
   return {
     ...collection,
     features,
@@ -7742,9 +7730,6 @@ function filterSituationCollectionForCatalogLayers(
 }
 
 function situationFeatureMatchesCatalogLayer(feature: SituationFeature, layer: MapCatalogLayer): boolean {
-  if (layer.layerId === "public.mobile.network" && isMobileNetworkSupportingBtsFeature(feature)) {
-    return true;
-  }
   const providerLayerIds = layer.query.providerLayerIds ?? [];
   if (providerLayerIds.length > 0) {
     const normalizedProviderLayerIds = providerLayerIds
@@ -7767,12 +7752,6 @@ function situationFeatureMatchesCatalogLayer(feature: SituationFeature, layer: M
     return false;
   }
   return true;
-}
-
-function isMobileNetworkSupportingBtsFeature(feature: SituationFeature): boolean {
-  return feature.properties.layer === "mobile"
-    && feature.properties.sourceId === "osm_postgis"
-    && normalizeSituationCategoryId(feature.properties.category ?? "") === "communications_tower";
 }
 
 function normalizeSituationCategoryId(value: string): string {
