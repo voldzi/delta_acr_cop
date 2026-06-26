@@ -1161,6 +1161,13 @@ button {
   justify-content: flex-start;
   align-items: center;
   gap: 9px;
+  /* Skip render/layout for off-screen rows in long histories. The `auto`
+     intrinsic size remembers each row's real height once measured, so the
+     scrollbar stays stable; the value is only a first-paint estimate. DOM
+     nodes stay in place, so search scroll-to (data-message-id) and the
+     auto-scroll-to-latest behavior keep working unchanged. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
 }
 
 .message-row.own {
