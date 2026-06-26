@@ -32,7 +32,7 @@ ENV VITE_COP_OIDC_SCOPE="${VITE_COP_OIDC_SCOPE}"
 ENV VITE_COP_OIDC_TOKEN_ENDPOINT=${VITE_COP_OIDC_TOKEN_ENDPOINT}
 ENV COP_CHAT_BASE_PATH=${COP_CHAT_BASE_PATH}
 ENV NODE_OPTIONS=--max-old-space-size=768
-RUN pnpm --filter @cop/cop-chat build
+RUN pnpm --filter @cop/cop-chat... build
 
 FROM node:24-alpine AS runtime
 WORKDIR /app
