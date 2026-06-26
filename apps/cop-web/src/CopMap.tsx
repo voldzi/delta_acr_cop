@@ -4877,6 +4877,7 @@ function buildSituationRenderProperties(
     const label = formatWeatherWebcamLabel(feature);
     return {
       mapLabel: label,
+      mapPointSuppressed: true,
       situationStatusColor: "#38bdf8",
       situationStatusLabel: "KAMERA",
       situationStatusTone: "info",
@@ -5095,12 +5096,18 @@ function weatherWebcamProviderMetadata(feature: SituationFeature): Record<string
 
 function formatWeatherWebcamLabel(feature: SituationFeature): string {
   const camera = weatherWebcamProviderMetadata(feature);
-  return stringProperty(camera.label)
+  const label = stringProperty(camera.label)
     ?? stringProperty(camera.name)
     ?? stringProperty(camera.title)
     ?? feature.properties.headline
     ?? feature.properties.label
     ?? "Webkamera ČHMÚ";
+  return normalizeWeatherWebcamDisplayLabel(label);
+}
+
+function normalizeWeatherWebcamDisplayLabel(label: string): string {
+  const trimmed = label.replace(/\s+/g, " ").trim();
+  return /^ČHMÚ webkamera\s+\d/i.test(trimmed) ? "Webkamera ČHMÚ" : trimmed;
 }
 
 function isCurrentWeatherSummaryFeature(feature: SituationFeature): boolean {

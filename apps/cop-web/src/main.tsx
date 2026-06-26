@@ -565,6 +565,7 @@ export function App() {
   const [situationFeatures, setSituationFeatures] = React.useState<SituationFeatureCollectionResponse | null>(null);
   const [situationStatus, setSituationStatus] = React.useState<SituationLayerStatus>("loading");
   const [situationWarnings, setSituationWarnings] = React.useState<string[]>([]);
+  const [weatherWebcamDetailCache, setWeatherWebcamDetailCache] = React.useState<Record<string, WeatherWebcamDetailCacheEntry>>({});
   const [situationRasterRefreshTick, setSituationRasterRefreshTick] = React.useState(0);
   const [weatherRadarFrames, setWeatherRadarFrames] = React.useState<WeatherRadarFrame[]>([]);
   const [weatherRadarFrameIndex, setWeatherRadarFrameIndex] = React.useState(0);
@@ -1533,6 +1534,78 @@ export function App() {
   }, [autoRefresh, dataAccessReady, weatherRadarSelected]);
 
   React.useEffect(() => {
+    const candidates = (situationFeatures?.features ?? [])
+      .filter(isWeatherWebcamFeature)
+      .flatMap((feature) => {
+        const metadata = weatherWebcamMetadata(feature);
+        const detailUrl = metadata.detailUrl;
+        const key = weatherWebcamDetailCacheKey(feature);
+        return detailUrl && key ? [{ detailUrl, feature, key }] : [];
+      })
+      .filter(({ feature, key }) => {
+        const entry = weatherWebcamDetailCache[key];
+        return !entry || (entry.status === "ready" && !entry.locationLabel && isGenericWeatherWebcamLabel(weatherWebcamTitle(feature)));
+      })
+      .slice(0, 60);
+    if (candidates.length === 0) {
+      return;
+    }
+    setWeatherWebcamDetailCache((current) => {
+      let changed = false;
+      const next = { ...current };
+      candidates.forEach(({ key }) => {
+        if (!next[key] || next[key].status === "error") {
+          next[key] = { status: "loading" };
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+    let cancelled = false;
+    candidates.forEach(({ detailUrl, feature, key }) => {
+      const proxyUrl = weatherCameraProxyUrl(detailUrl);
+      if (!proxyUrl) {
+        setWeatherWebcamDetailCache((current) => ({ ...current, [key]: { status: "error" } }));
+        return;
+      }
+      void fetch(proxyUrl, {
+        headers: {
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          Accept: "application/json"
+        }
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          return response.json();
+        })
+        .then((value) => {
+          if (cancelled) {
+            return;
+          }
+          const detail = normalizeWeatherWebcamDetail(value);
+          setWeatherWebcamDetailCache((current) => ({
+            ...current,
+            [key]: {
+              detail,
+              locationLabel: weatherWebcamLocationLabel(feature, detail),
+              status: "ready"
+            }
+          }));
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setWeatherWebcamDetailCache((current) => ({ ...current, [key]: { status: "error" } }));
+          }
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, situationFeatures, weatherWebcamDetailCache]);
+
+  React.useEffect(() => {
     if (!weatherRadarPlaybackEnabled || weatherRadarFrames.length < 2) {
       return;
     }
@@ -2049,9 +2122,13 @@ export function App() {
     () => applyWeatherRadarFrameToSituationFeatures(situationFeatures, weatherRadarCurrentFrame),
     [situationFeatures, weatherRadarCurrentFrame]
   );
+  const enrichedSituationFeatures = React.useMemo(
+    () => applyWeatherWebcamDetailsToSituationFeatures(animatedSituationFeatures, weatherWebcamDetailCache),
+    [animatedSituationFeatures, weatherWebcamDetailCache]
+  );
   const combinedSituationFeatures = React.useMemo(
-    () => mergeSituationSafetyFlightCommunityMissionAndTakFeatures(animatedSituationFeatures, safetyFeatures, flightFeatures, communityFeatures, missionArenaFeatures, takFeatures),
-    [animatedSituationFeatures, communityFeatures, flightFeatures, missionArenaFeatures, safetyFeatures, takFeatures]
+    () => mergeSituationSafetyFlightCommunityMissionAndTakFeatures(enrichedSituationFeatures, safetyFeatures, flightFeatures, communityFeatures, missionArenaFeatures, takFeatures),
+    [communityFeatures, enrichedSituationFeatures, flightFeatures, missionArenaFeatures, safetyFeatures, takFeatures]
   );
   const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
@@ -4572,26 +4649,20 @@ export function App() {
           ) : null}
 
           {activeWorkspace === "map" || activeWorkspace === "alerts" ? (
-            <>
-              <AccountAccessBox
-                authenticated={profileAccessReady}
-                session={authSession}
-              />
-              <div className="personal-awareness-box">
-                <PanelTitle icon={<MapPin size={17} />} title="Moje poloha" />
-                <button className="primary-button secondary" disabled={isLocating} onClick={locateUser} type="button">
-                  <MapPin size={16} />
-                  {isLocating ? "Zaměřuji polohu" : "Centrovat na mou polohu"}
-                </button>
-                <p>{locationStatus}</p>
-                <ReadinessRow label="Výstraha" value={proximityAlertEnabled ? `${alertRadiusKm} km` : "vypnuto"} tone={proximityAlertEnabled ? "ok" : "neutral"} />
-                <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
-                  <Settings size={14} />
-                  Nastavení výstrah
-                </button>
-                <ProximityAlertList alerts={proximityAlerts} />
-              </div>
-            </>
+            <div className="personal-awareness-box">
+              <PanelTitle icon={<MapPin size={17} />} title="Moje poloha" />
+              <button className="primary-button secondary" disabled={isLocating} onClick={locateUser} type="button">
+                <MapPin size={16} />
+                {isLocating ? "Zaměřuji polohu" : "Centrovat na mou polohu"}
+              </button>
+              <p>{locationStatus}</p>
+              <ReadinessRow label="Výstraha" value={proximityAlertEnabled ? `${alertRadiusKm} km` : "vypnuto"} tone={proximityAlertEnabled ? "ok" : "neutral"} />
+              <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
+                <Settings size={14} />
+                Nastavení výstrah
+              </button>
+              <ProximityAlertList alerts={proximityAlerts} />
+            </div>
           ) : null}
 
           {activeWorkspace === "data" ? (
@@ -5685,32 +5756,6 @@ function IncidentWorkflowBoard({
   );
 }
 
-function AccountAccessBox({
-  authenticated,
-  session
-}: {
-  authenticated: boolean;
-  session: AuthSession;
-}) {
-  const displayName = session.profile?.name ?? session.profile?.username ?? "Přihlášený uživatel";
-  return (
-    <div className="account-access-box">
-      <PanelTitle icon={<UserCircle size={17} />} title="Účet" />
-      {authenticated ? (
-        <div className="account-access-summary">
-          <strong>{displayName}</strong>
-          <span>Profil, hlášení a komunikace jsou dostupné.</span>
-        </div>
-      ) : (
-        <>
-          <p>Mapu lze prohlížet bez účtu. Přihlášení zapne ukládání profilu, hlášení a komunikaci.</p>
-          <span className="auth-hint">Přihlášení najdete v horní liště.</span>
-        </>
-      )}
-    </div>
-  );
-}
-
 function PersonalAlertBoard({
   alerts,
   alertRadiusKm,
@@ -5985,6 +6030,8 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
   const activeIndex = Math.min(selectedIndex, Math.max(0, cameras.length - 1));
   const activeCamera = cameras[activeIndex] ?? fallbackCamera;
   const snapshotUrl = weatherCameraProxyUrl(activeCamera.snapshotUrl);
+  const locationLabel = weatherWebcamLocationLabel(feature, detail) ?? weatherWebcamTitle(feature);
+  const locationCoordinates = weatherWebcamLocationCoordinates(feature, detail);
 
   React.useEffect(() => {
     setImageFailed(false);
@@ -6000,6 +6047,12 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
               {loading ? "Načítám" : "Obnovit"}
             </button>
           ) : null}
+        </div>
+        <div className="weather-camera-meta">
+          <span>Název lokality</span>
+          <strong>{locationLabel}</strong>
+          <span>Poloha</span>
+          <strong>{locationCoordinates}</strong>
         </div>
         {cameras.length > 1 ? (
           <div aria-label="Kamery" className="weather-camera-tabs" role="tablist">
@@ -12296,6 +12349,17 @@ interface WeatherCameraInfo {
 interface WeatherWebcamDetail {
   cameras: WeatherCameraInfo[];
   generatedAt?: string;
+  location?: {
+    label?: string;
+    lat?: number;
+    lon?: number;
+  };
+}
+
+interface WeatherWebcamDetailCacheEntry {
+  detail?: WeatherWebcamDetail;
+  locationLabel?: string;
+  status: "error" | "loading" | "ready";
 }
 
 function isWeatherWebcamFeature(feature: SituationFeature): boolean {
@@ -12338,6 +12402,7 @@ function weatherWebcamMetadata(feature: SituationFeature): WeatherCameraInfo {
 
 function normalizeWeatherWebcamDetail(value: unknown): WeatherWebcamDetail {
   const root = isRecord(value) ? value : {};
+  const location = isRecord(root.location) ? root.location : {};
   const camerasValue = Array.isArray(root.cameras)
     ? root.cameras
     : Array.isArray(root.items)
@@ -12350,7 +12415,12 @@ function normalizeWeatherWebcamDetail(value: unknown): WeatherWebcamDetail {
       const camera = normalizeWeatherCameraInfo(entry, `Kamera ${index + 1}`);
       return camera ? [camera] : [];
     }),
-    generatedAt: stringProperty(root.generatedAt) ?? stringProperty(root.updatedAt)
+    generatedAt: stringProperty(root.generatedAt) ?? stringProperty(root.updatedAt),
+    location: {
+      label: stringProperty(location.label) ?? stringProperty(location.name) ?? stringProperty(root.label),
+      lat: numberProperty(location.lat),
+      lon: numberProperty(location.lon)
+    }
   };
 }
 
@@ -12381,10 +12451,15 @@ function normalizeWeatherCameraInfo(value: unknown, fallbackLabel: string): Weat
 }
 
 function weatherWebcamCandidates(fallback: WeatherCameraInfo, detail: WeatherWebcamDetail | null): WeatherCameraInfo[] {
-  const candidates = [...(detail?.cameras ?? []), fallback].filter((camera) => camera.snapshotUrl || camera.detailUrl);
+  const detailCameras = (detail?.cameras ?? []).filter((camera) => camera.snapshotUrl || camera.detailUrl);
+  const candidates = detailCameras.length > 0 ? detailCameras : [fallback].filter((camera) => camera.snapshotUrl || camera.detailUrl);
+  return uniqueWeatherCameras(candidates);
+}
+
+function uniqueWeatherCameras(candidates: WeatherCameraInfo[]): WeatherCameraInfo[] {
   const seen = new Set<string>();
   return candidates.filter((camera) => {
-    const key = `${camera.label ?? ""}|${camera.snapshotUrl ?? ""}|${camera.detailUrl ?? ""}`;
+    const key = camera.snapshotUrl ?? camera.detailUrl ?? weatherCameraBaseLocationName(camera.label) ?? camera.label ?? "";
     if (seen.has(key)) {
       return false;
     }
@@ -12394,7 +12469,94 @@ function weatherWebcamCandidates(fallback: WeatherCameraInfo, detail: WeatherWeb
 }
 
 function weatherWebcamTitle(feature: SituationFeature): string {
-  return weatherWebcamMetadata(feature).label ?? "Webkamera ČHMÚ";
+  return normalizeWeatherWebcamDisplayLabel(weatherWebcamMetadata(feature).label ?? "Webkamera ČHMÚ");
+}
+
+function normalizeWeatherWebcamDisplayLabel(label: string): string {
+  const trimmed = label.replace(/\s+/g, " ").trim();
+  return isGenericWeatherWebcamLabel(trimmed) ? "Webkamera ČHMÚ" : trimmed;
+}
+
+function isGenericWeatherWebcamLabel(label: string | undefined): boolean {
+  const normalized = label?.replace(/\s+/g, " ").trim() ?? "";
+  return normalized.length === 0 || /^ČHMÚ webkamera\s+[-+]?\d/i.test(normalized);
+}
+
+function weatherCameraBaseLocationName(label: string | undefined): string | undefined {
+  const normalized = stringProperty(label);
+  if (!normalized || isGenericWeatherWebcamLabel(normalized)) {
+    return undefined;
+  }
+  return normalized.replace(/\s*\([^)]*\)\s*$/u, "").trim() || normalized;
+}
+
+function weatherWebcamDetailCacheKey(feature: SituationFeature): string | undefined {
+  const metadata = weatherWebcamMetadata(feature);
+  return metadata.detailUrl ? `${feature.properties.featureId}:${metadata.detailUrl}` : feature.properties.featureId;
+}
+
+function weatherWebcamLocationLabel(feature: SituationFeature, detail: WeatherWebcamDetail | null): string | undefined {
+  const cameraBaseLabels = Array.from(new Set((detail?.cameras ?? [])
+    .map((camera) => weatherCameraBaseLocationName(camera.label))
+    .filter((value): value is string => Boolean(value))));
+  if (cameraBaseLabels.length === 1) {
+    return cameraBaseLabels[0];
+  }
+  const detailLocationLabel = normalizeWeatherWebcamDisplayLabel(detail?.location?.label ?? "");
+  if (detailLocationLabel !== "Webkamera ČHMÚ") {
+    return detailLocationLabel;
+  }
+  const featureLabel = weatherWebcamTitle(feature);
+  return featureLabel !== "Webkamera ČHMÚ" ? featureLabel : undefined;
+}
+
+function weatherWebcamLocationCoordinates(feature: SituationFeature, detail: WeatherWebcamDetail | null): string {
+  const lat = detail?.location?.lat;
+  const lon = detail?.location?.lon;
+  if (typeof lat === "number" && typeof lon === "number") {
+    return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  }
+  return formatSituationCoordinates(feature);
+}
+
+function applyWeatherWebcamDetailsToSituationFeatures(
+  collection: SituationFeatureCollectionResponse | null,
+  cache: Record<string, WeatherWebcamDetailCacheEntry>
+): SituationFeatureCollectionResponse | null {
+  if (!collection) {
+    return collection;
+  }
+  let changed = false;
+  const features = collection.features.map((feature) => {
+    if (!isWeatherWebcamFeature(feature)) {
+      return feature;
+    }
+    const key = weatherWebcamDetailCacheKey(feature);
+    const entry = key ? cache[key] : undefined;
+    const locationLabel = entry?.locationLabel;
+    if (!locationLabel) {
+      return feature;
+    }
+    const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+    const camera = weatherWebcamProviderMetadata(feature);
+    changed = true;
+    return {
+      ...feature,
+      properties: {
+        ...feature.properties,
+        headline: locationLabel,
+        label: locationLabel,
+        providerProperties: {
+          ...providerProperties,
+          camera: {
+            ...camera,
+            label: locationLabel
+          }
+        }
+      }
+    };
+  });
+  return changed ? { ...collection, features } : collection;
 }
 
 function weatherWebcamSubtitle(feature: SituationFeature): string {

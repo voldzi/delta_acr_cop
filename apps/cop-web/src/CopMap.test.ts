@@ -259,6 +259,7 @@ describe("COP map data helpers", () => {
 
     expect(collection.features[0]?.properties).toMatchObject({
       mapLabel: "Praha-Libuš",
+      mapPointSuppressed: true,
       situationStatusLabel: "KAMERA",
       situationStatusTone: "info",
       weatherCamera: true,

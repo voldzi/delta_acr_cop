@@ -3308,7 +3308,6 @@ h1 {
 .source-list,
 .source-health-box,
 .ai-box,
-.account-access-box,
 .readiness-box,
 .personal-awareness-box {
   padding-top: 13px;
@@ -6192,6 +6191,29 @@ dd {
   overflow-wrap: anywhere;
 }
 
+.weather-camera-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.weather-camera-meta span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.weather-camera-meta strong {
+  min-width: 0;
+  color: #edf3f8;
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .weather-camera-tabs {
   display: flex;
   gap: 6px;
@@ -6672,38 +6694,6 @@ dd {
 .personal-awareness-box {
   display: grid;
   gap: 10px;
-}
-
-.account-access-box {
-  display: grid;
-  gap: 8px;
-}
-
-.account-access-summary {
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  border: 1px solid rgba(122, 148, 172, 0.18);
-  background: rgba(11, 18, 24, 0.42);
-}
-
-.account-access-summary strong {
-  color: #e8f1fb;
-  font-size: 14px;
-  font-weight: 900;
-}
-
-.account-access-summary span {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.account-access-box p {
-  margin: 0;
-  color: #cbd5df;
-  font-size: 12px;
-  line-height: 1.45;
 }
 
 .personal-awareness-box p {
