@@ -263,6 +263,92 @@ function useEventCallback<A extends unknown[], R>(handler: (...args: A) => R): (
   return React.useCallback((...args: A) => handlerRef.current(...args), []);
 }
 
+const modalFocusableSelector = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])"
+].join(",");
+
+function useModalFocus<T extends HTMLElement>(onClose: () => void): {
+  dialogRef: React.RefObject<T | null>;
+  onDialogKeyDown: (event: React.KeyboardEvent<T>) => void;
+} {
+  const dialogRef = React.useRef<T | null>(null);
+  const closeDialog = useEventCallback(onClose);
+
+  React.useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      if (!dialog) {
+        return;
+      }
+      const preferredFocus = preferredModalFocusElement(dialog);
+      if (preferredFocus && preferredFocus !== document.activeElement) {
+        preferredFocus.focus({ preventScroll: true });
+        return;
+      }
+      if (!dialog.contains(document.activeElement)) {
+        const target = focusableModalElements(dialog)[0] ?? dialog;
+        target.focus({ preventScroll: true });
+      }
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (previousFocus && document.contains(previousFocus)) {
+        previousFocus.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
+  const onDialogKeyDown = React.useCallback((event: React.KeyboardEvent<T>) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      closeDialog();
+      return;
+    }
+    if (event.key !== "Tab") {
+      return;
+    }
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    const focusable = focusableModalElements(dialog);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialog.focus({ preventScroll: true });
+      return;
+    }
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const activeIndex = activeElement ? focusable.indexOf(activeElement) : -1;
+    const nextIndex = event.shiftKey
+      ? activeIndex <= 0 ? focusable.length - 1 : activeIndex - 1
+      : activeIndex === focusable.length - 1 ? 0 : activeIndex + 1;
+    event.preventDefault();
+    focusable[nextIndex]?.focus({ preventScroll: true });
+  }, [closeDialog]);
+
+  return { dialogRef, onDialogKeyDown };
+}
+
+function focusableModalElements(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(modalFocusableSelector))
+    .filter((element) => !element.hasAttribute("disabled") && isVisibleElement(element));
+}
+
+function preferredModalFocusElement(root: HTMLElement): HTMLElement | null {
+  const target = root.querySelector<HTMLElement>("[data-modal-autofocus='true'], [autofocus]");
+  return target && isVisibleElement(target) && !target.hasAttribute("disabled") ? target : null;
+}
+
+function isVisibleElement(element: HTMLElement): boolean {
+  return Boolean(element.offsetWidth || element.offsetHeight || element.getClientRects().length);
+}
+
 // Memoized row components: re-render only when their own props change. Combined
 // with the stable handlers above, a parent state update (e.g. typing elsewhere)
 // no longer re-renders every chat row and message bubble.
@@ -2975,9 +3061,19 @@ function ForwardDialog({
   onToggleTarget: (target: ForwardTarget) => void;
   onQueryChange: (query: string) => void;
 }) {
+  const modal = useModalFocus<HTMLElement>(onClose);
   return (
-    <div className="dialog-backdrop" role="presentation">
-      <section className="forward-dialog" role="dialog" aria-modal="true" aria-label="Přeposlat zprávu">
+    <div className="dialog-backdrop" role="presentation" onClick={onClose}>
+      <section
+        ref={modal.dialogRef}
+        className="forward-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Přeposlat zprávu"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={modal.onDialogKeyDown}
+      >
         <header>
           <button className="round-icon" onClick={onClose} type="button" aria-label="Zavřít">
             <X size={19} />
@@ -2990,7 +3086,7 @@ function ForwardDialog({
         </header>
         <label className="forward-search">
           <Search size={18} />
-          <input autoFocus placeholder="Hledat chat nebo osobu" value={query} onChange={(event) => onQueryChange(event.target.value)} />
+          <input autoFocus data-modal-autofocus="true" placeholder="Hledat chat nebo osobu" value={query} onChange={(event) => onQueryChange(event.target.value)} />
         </label>
         <div className="forward-summary">
           <span>{draftCount === 1 ? "1 zpráva" : `${draftCount} zpráv`}</span>
@@ -3599,9 +3695,19 @@ function NewChatDialog({
   onModeChange: (value: ComposeMode) => void;
 }) {
   const directActive = mode === "direct";
+  const modal = useModalFocus<HTMLElement>(onClose);
   return (
     <div className="dialog-backdrop" role="presentation" onClick={onClose}>
-      <section className="new-chat-dialog" role="dialog" aria-modal="true" aria-label={directActive ? "Nový chat" : "Nová skupina"} onClick={(event) => event.stopPropagation()}>
+      <section
+        ref={modal.dialogRef}
+        className="new-chat-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={directActive ? "Nový chat" : "Nová skupina"}
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={modal.onDialogKeyDown}
+      >
         <header>
           <button className="round-icon mobile-only" onClick={onClose} type="button" aria-label="Zavřít">
             <ArrowLeft size={20} />
@@ -3628,6 +3734,7 @@ function NewChatDialog({
               <Search size={18} />
               <input
                 autoFocus
+                data-modal-autofocus="true"
                 disabled={!canChat}
                 placeholder="Jméno, e-mail nebo login"
                 value={directQuery}
@@ -3659,6 +3766,7 @@ function NewChatDialog({
               <Users size={18} />
               <input
                 autoFocus
+                data-modal-autofocus="true"
                 disabled={!canChat}
                 maxLength={80}
                 placeholder="Název skupiny"
@@ -3805,9 +3913,19 @@ function ChatSkeleton() {
 }
 
 function MediaPreviewDialog({ item, onClose }: { item: MediaPreviewItem; onClose: () => void }) {
+  const modal = useModalFocus<HTMLElement>(onClose);
   return (
     <div className="preview-backdrop" onClick={onClose} role="presentation">
-      <section className="preview-dialog" role="dialog" aria-modal="true" aria-label={`Náhled ${item.title}`} onClick={(event) => event.stopPropagation()}>
+      <section
+        ref={modal.dialogRef}
+        className="preview-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Náhled ${item.title}`}
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={modal.onDialogKeyDown}
+      >
         <header>
           <span>
             <strong>{item.title}</strong>
@@ -3897,9 +4015,19 @@ function ChatInfoPanel({
   const locationMessages = messages.filter((message) => message.kind === "location" && message.location);
   const activeMediaMessages = mediaTab === "media" ? mediaMessages : mediaTab === "documents" ? documentMessages : locationMessages;
   const title = isDirect ? "O kontaktu" : "O skupině";
+  const modal = useModalFocus<HTMLElement>(onClose);
   return (
     <div className="info-backdrop" role="presentation" onClick={onClose}>
-      <section className="info-panel" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+      <section
+        ref={modal.dialogRef}
+        className="info-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={modal.onDialogKeyDown}
+      >
         <aside className="info-nav" aria-label="Kategorie detailu">
           <header>
             <strong>{title}</strong>
@@ -4017,9 +4145,19 @@ function InfoMetric({ label, value }: { label: string; value: string }) {
 }
 
 function MuteDialog({ title, onClose, onMute }: { title: string; onClose: () => void; onMute: (choice: MuteChoice) => void }) {
+  const modal = useModalFocus<HTMLElement>(onClose);
   return (
     <div className="mute-backdrop" role="presentation" onClick={onClose}>
-      <section className="mute-dialog" role="dialog" aria-modal="true" aria-label={`Ztlumit ${title}`} onClick={(event) => event.stopPropagation()}>
+      <section
+        ref={modal.dialogRef}
+        className="mute-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Ztlumit ${title}`}
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={modal.onDialogKeyDown}
+      >
         <h2>Ztlumit upozornění</h2>
         <p>Ostatní členové neuvidí, že jste chat ztlumil/a. Upozornění stále dostanete, pokud vás někdo zmíní.</p>
         <button onClick={() => onMute("8h")} type="button">8 hodin</button>
@@ -4032,9 +4170,19 @@ function MuteDialog({ title, onClose, onMute }: { title: string; onClose: () => 
 }
 
 function DeleteChatDialog({ title, onClose, onConfirm }: { title: string; onClose: () => void; onConfirm: () => void }) {
+  const modal = useModalFocus<HTMLElement>(onClose);
   return (
     <div className="mute-backdrop" role="presentation" onClick={onClose}>
-      <section className="mute-dialog delete-chat-dialog" role="dialog" aria-modal="true" aria-label={`Smazat ${title}`} onClick={(event) => event.stopPropagation()}>
+      <section
+        ref={modal.dialogRef}
+        className="mute-dialog delete-chat-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Smazat ${title}`}
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={modal.onDialogKeyDown}
+      >
         <h2>Smazat chat ze seznamu?</h2>
         <p>Chat {title} se skryje z tohoto seznamu. Historie zpráv na serveru zůstane zachovaná a nová zpráva chat znovu zobrazí.</p>
         <button className="danger" onClick={onConfirm} type="button">Smazat ze seznamu</button>
@@ -4057,9 +4205,19 @@ function MessageRetentionDialog({
   onClose: () => void;
   onSelect: (seconds: MessageRetentionSeconds) => void;
 }) {
+  const modal = useModalFocus<HTMLElement>(onClose);
   return (
     <div className="mute-backdrop" role="presentation" onClick={onClose}>
-      <section className="retention-dialog" role="dialog" aria-modal="true" aria-label={`Automatické odstraňování zpráv ${title}`} onClick={(event) => event.stopPropagation()}>
+      <section
+        ref={modal.dialogRef}
+        className="retention-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Automatické odstraňování zpráv ${title}`}
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={modal.onDialogKeyDown}
+      >
         <header>
           <button className="round-icon small" onClick={onClose} type="button" aria-label="Zpět">
             <ArrowLeft size={20} />
@@ -4131,6 +4289,7 @@ function EncryptionRecoveryDialog({
     const timeout = window.setTimeout(() => setCopyState("idle"), 1800);
     return () => window.clearTimeout(timeout);
   }, [copyState]);
+  const modal = useModalFocus<HTMLElement>(onClose);
 
   async function copyRecoveryKey() {
     if (!generatedRecoveryKey) {
@@ -4146,7 +4305,16 @@ function EncryptionRecoveryDialog({
 
   return (
     <div className="mute-backdrop" role="presentation" onClick={onClose}>
-      <section className="recovery-dialog" role="dialog" aria-modal="true" aria-label="Obnova E2EE" onClick={(event) => event.stopPropagation()}>
+      <section
+        ref={modal.dialogRef}
+        className="recovery-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Obnova E2EE"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={modal.onDialogKeyDown}
+      >
         <header>
           <button className="round-icon small" onClick={onClose} type="button" aria-label="Zavřít">
             <ArrowLeft size={20} />
@@ -4212,6 +4380,7 @@ function EncryptionRecoveryDialog({
               <span>Obnovovací klíč</span>
               <textarea
                 autoFocus
+                data-modal-autofocus="true"
                 spellCheck={false}
                 value={recoveryKeyInput}
                 onChange={(event) => onRecoveryKeyInputChange(event.target.value)}
