@@ -89,6 +89,10 @@ import {
   createMatrixMessagingSession,
   isMatrixAccountStoreMismatchError
 } from "../../cop-web/src/messaging/matrixClient";
+import {
+  getOrCreateMatrixDeviceId,
+  publishChatUnreadCount
+} from "../../cop-web/src/messaging/runtime";
 import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
@@ -227,7 +231,6 @@ const apiBase = trimTrailingSlash(import.meta.env.VITE_COP_API_BASE_URL ?? "");
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
 const copUserPreferencesStorageKey = "cop.user.preferences.v1";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
-const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
 const initialHistoryLoadRetryLimit = 8;
 const messageRetentionOptions: Array<{ description: string; label: string; seconds: MessageRetentionSeconds }> = [
   { description: "Nové zprávy zmizí po jednom dni.", label: "24 hodin", seconds: 86_400 },
@@ -237,7 +240,6 @@ const messageRetentionOptions: Array<{ description: string; label: string; secon
 ];
 const quickReactionKeys = ["👍", "❤️", "😂", "😮", "😢", "🙏", "⭐"];
 const stickerReactionKeys = ["✅", "🚨", "🔥", "💯", "👀", "🎉", "💪", "🫡", "👏", "🤝", "📍", "⚠️"];
-const fallbackMatrixDeviceIds = new Map<string, string>();
 const emptyChatPreferences: ChatPreferences = {
   hiddenByKey: {},
   manualUnreadKeys: [],
@@ -5080,7 +5082,7 @@ function lastTimelineMessage(messages: MatrixTimelineMessage[]): MatrixTimelineM
   return messages[messages.length - 1];
 }
 
-function mergeTimelineMessages(cached: MatrixTimelineMessage[], live: MatrixTimelineMessage[]): MatrixTimelineMessage[] {
+export function mergeTimelineMessages(cached: MatrixTimelineMessage[], live: MatrixTimelineMessage[]): MatrixTimelineMessage[] {
   const byEventId = new Map<string, MatrixTimelineMessage>();
   for (const message of cached) {
     byEventId.set(message.eventId, message);
@@ -5088,8 +5090,53 @@ function mergeTimelineMessages(cached: MatrixTimelineMessage[], live: MatrixTime
   for (const message of live) {
     byEventId.set(message.eventId, message);
   }
-  return Array.from(byEventId.values())
+  return removeConfirmedLocalEchoes(Array.from(byEventId.values()))
     .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+function removeConfirmedLocalEchoes(messages: MatrixTimelineMessage[]): MatrixTimelineMessage[] {
+  const confirmedOwnMessages = messages.filter((message) => message.own && isServerMatrixEventId(message.eventId));
+  if (confirmedOwnMessages.length === 0) {
+    return messages;
+  }
+  return messages.filter((message) => {
+    if (!message.own || !isTemporaryMatrixEventId(message.eventId)) {
+      return true;
+    }
+    return !confirmedOwnMessages.some((confirmed) => isConfirmedLocalEchoPair(message, confirmed));
+  });
+}
+
+function isConfirmedLocalEchoPair(localEcho: MatrixTimelineMessage, confirmed: MatrixTimelineMessage): boolean {
+  if (localEcho.sender !== confirmed.sender || localEcho.kind !== confirmed.kind || localEcho.body !== confirmed.body) {
+    return false;
+  }
+  if ((localEcho.replyToEventId ?? "") !== (confirmed.replyToEventId ?? "")) {
+    return false;
+  }
+  if (attachmentSignature(localEcho) !== attachmentSignature(confirmed) || locationSignature(localEcho) !== locationSignature(confirmed)) {
+    return false;
+  }
+  const localAt = Date.parse(localEcho.timestamp);
+  const confirmedAt = Date.parse(confirmed.timestamp);
+  return Number.isFinite(localAt) && Number.isFinite(confirmedAt) && Math.abs(localAt - confirmedAt) <= 90_000;
+}
+
+function isServerMatrixEventId(eventId: string): boolean {
+  return eventId.startsWith("$");
+}
+
+function isTemporaryMatrixEventId(eventId: string): boolean {
+  return eventId.startsWith("~") || eventId.startsWith("local-") || !isServerMatrixEventId(eventId);
+}
+
+function attachmentSignature(message: MatrixTimelineMessage): string {
+  const attachment = message.attachment;
+  return attachment ? `${attachment.contentType ?? ""}:${attachment.fileName}:${attachment.size ?? ""}:${attachment.mediaUrl ?? ""}` : "";
+}
+
+function locationSignature(message: MatrixTimelineMessage): string {
+  return message.location ? `${message.location.lat.toFixed(5)}:${message.location.lon.toFixed(5)}` : "";
 }
 
 function messageSenderLabel(message: MatrixTimelineMessage, conversation: MessagingConversationSummary | null, session: AuthSession): string {
@@ -5827,36 +5874,6 @@ function writeChatRoute(selection: string | null) {
   window.history.pushState({}, "", nextUrl);
 }
 
-function getOrCreateMatrixDeviceId(ownerId: string): string {
-  const storageKey = `${matrixDeviceIdStoragePrefix}.${stableStorageKey(ownerId)}`;
-  try {
-    const stored = window.localStorage.getItem(storageKey);
-    if (isValidMatrixDeviceId(stored)) {
-      return stored;
-    }
-    const next = createMatrixDeviceId();
-    window.localStorage.setItem(storageKey, next);
-    return next;
-  } catch {
-    const fallback = fallbackMatrixDeviceIds.get(storageKey) ?? createMatrixDeviceId();
-    fallbackMatrixDeviceIds.set(storageKey, fallback);
-    return fallback;
-  }
-}
-
-function createMatrixDeviceId(): string {
-  const bytes = new Uint8Array(16);
-  globalThis.crypto?.getRandomValues?.(bytes);
-  if (bytes.every((value) => value === 0)) {
-    return `COPWEB.${Date.now().toString(36)}`;
-  }
-  return `COPWEB.${Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")}`;
-}
-
-function isValidMatrixDeviceId(value: string | null): value is string {
-  return Boolean(value && /^[A-Za-z0-9._=-]{1,64}$/u.test(value));
-}
-
 function stableStorageKey(value: string): string {
   return value
     .trim()
@@ -5948,27 +5965,6 @@ function centerLocationInCop(location: MatrixLocationShare): void {
     return;
   }
   window.open(`https://www.openstreetmap.org/?mlat=${location.lat}&mlon=${location.lon}#map=16/${location.lat}/${location.lon}`, "_blank", "noopener,noreferrer");
-}
-
-function publishChatUnreadCount(count: number): void {
-  const payload = { at: Date.now(), count, type: "cop-chat:unread" };
-  if (window.parent !== window) {
-    window.parent.postMessage(payload, window.location.origin);
-  }
-  try {
-    window.localStorage.setItem("cop.chat.unread.v1", JSON.stringify(payload));
-  } catch {
-    // Same-origin host badge is best effort; chat must keep working when storage is blocked.
-  }
-  if (typeof BroadcastChannel !== "undefined") {
-    try {
-      const channel = new BroadcastChannel("cop-chat");
-      channel.postMessage(payload);
-      channel.close();
-    } catch {
-      // BroadcastChannel is optional and may be blocked in private browsing modes.
-    }
-  }
 }
 
 function formatDate(value: string): string {

@@ -94,6 +94,7 @@ import {
   fetchIncidents,
   fetchMapCatalog,
   fetchMapFeatures,
+  fetchMessagingBootstrap,
   fetchPlaceGeocode,
   fetchSafetyHydroStationDetail,
   fetchDemoScenarioStatus,
@@ -200,6 +201,13 @@ import {
   type RefreshSeconds
 } from "./refresh-config";
 import { buildMapSearchResults, buildPlaceSearchResults, type MapSearchResult } from "./map-search";
+import {
+  applyChatUnreadPayload,
+  fetchMatrixUnreadCount,
+  getOrCreateMatrixDeviceId,
+  publishChatUnreadCount,
+  readStoredChatUnreadCount
+} from "./messaging/runtime";
 import {
   countHistoryPoints,
   getReplayTimestamp,
@@ -631,25 +639,11 @@ export function App() {
   const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    const applyChatUnreadPayload = (value: unknown) => {
-      if (!value || typeof value !== "object" || Array.isArray(value)) {
-        return false;
-      }
-      const data = value as { count?: unknown; type?: unknown };
-      if (data.type !== "cop-chat:unread" || typeof data.count !== "number" || !Number.isFinite(data.count)) {
-        return false;
-      }
-      setMessagingUnreadCount(Math.max(0, Math.trunc(data.count)));
-      return true;
-    };
-    const readStoredChatUnreadCount = () => {
-      try {
-        const stored = window.localStorage.getItem("cop.chat.unread.v1");
-        if (stored) {
-          applyChatUnreadPayload(JSON.parse(stored) as unknown);
-        }
-      } catch {
-        // Unread badge sync is best effort; blocked storage must not affect the map.
+    const applyUnread = (value: unknown) => applyChatUnreadPayload(value, setMessagingUnreadCount);
+    const hydrateStoredUnread = () => {
+      const count = readStoredChatUnreadCount();
+      if (count !== null) {
+        setMessagingUnreadCount(count);
       }
     };
     const handleChatMessage = (event: MessageEvent) => {
@@ -657,7 +651,7 @@ export function App() {
         return;
       }
       const data = event.data as { count?: unknown; lat?: unknown; lon?: unknown; type?: unknown };
-      if (applyChatUnreadPayload(data)) {
+      if (applyUnread(data)) {
         return;
       }
       if (data.type === "cop-chat:center-location" && typeof data.lat === "number" && typeof data.lon === "number" && Number.isFinite(data.lat) && Number.isFinite(data.lon)) {
@@ -676,7 +670,7 @@ export function App() {
         return;
       }
       try {
-        applyChatUnreadPayload(JSON.parse(event.newValue) as unknown);
+        applyUnread(JSON.parse(event.newValue) as unknown);
       } catch {
         // Ignore malformed external values.
       }
@@ -686,13 +680,13 @@ export function App() {
       try {
         channel = new BroadcastChannel("cop-chat");
         channel.addEventListener("message", (event) => {
-          applyChatUnreadPayload(event.data);
+          applyUnread(event.data);
         });
       } catch {
         channel = null;
       }
     }
-    readStoredChatUnreadCount();
+    hydrateStoredUnread();
     window.addEventListener("message", handleChatMessage);
     window.addEventListener("storage", handleChatStorage);
     return () => {
@@ -721,6 +715,46 @@ export function App() {
   const profileAccessReady = Boolean(authToken);
   const messagingAuthenticated = authenticatedSessionActive;
   const authSubjectId = subjectIdFromAuthSession(authSession);
+
+  React.useEffect(() => {
+    if (!authenticatedSessionActive || !authToken || messagingOpen) {
+      return undefined;
+    }
+    let cancelled = false;
+    let timer: number | undefined;
+    let controller: AbortController | null = null;
+    const ownerId = authSubjectId ?? authSession.profile?.username ?? "anonymous";
+    const refreshUnread = async () => {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, getOrCreateMatrixDeviceId(ownerId));
+        const count = await fetchMatrixUnreadCount(bootstrap, controller.signal);
+        if (!cancelled) {
+          setMessagingUnreadCount(count);
+          publishChatUnreadCount(count);
+        }
+      } catch {
+        // The chat panel is the authoritative UI; the shell badge monitor is best effort.
+      } finally {
+        if (!cancelled) {
+          timer = window.setTimeout(refreshUnread, 15_000);
+        }
+      }
+    };
+    const storedCount = readStoredChatUnreadCount();
+    if (storedCount !== null) {
+      setMessagingUnreadCount(storedCount);
+    }
+    void refreshUnread();
+    return () => {
+      cancelled = true;
+      controller?.abort();
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [authSession.profile?.username, authSubjectId, authToken, authenticatedSessionActive, messagingOpen]);
 
   React.useEffect(() => {
     let cancelled = false;
