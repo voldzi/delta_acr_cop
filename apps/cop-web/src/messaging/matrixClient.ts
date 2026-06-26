@@ -1315,6 +1315,7 @@ function readRooms(client: MatrixClientLike, options: {
   ownUserId?: string;
   presenceByUserId?: Map<string, MatrixUserPresenceLike & { fetchedAt: number }>;
 } = {}): MatrixRoomSummary[] {
+  const currentUserId = client.getUserId?.() ?? undefined;
   return (client.getRooms?.() ?? [])
     .map(asRoom)
     .filter((room): room is MatrixRoomLike & { roomId: string } => Boolean(room?.roomId))
@@ -1330,10 +1331,14 @@ function readRooms(client: MatrixClientLike, options: {
       const directPeer = options.homeserverBaseUrl
         ? readRoomDirectPeer(room, client, options.homeserverBaseUrl, options.ownUserId)
         : undefined;
+      const latestMessage = options.homeserverBaseUrl
+        ? readRoomLatestMessage(client, room, options.homeserverBaseUrl, currentUserId)
+        : undefined;
       return {
         ...(avatarUrl ? { avatarUrl } : {}),
         ...(directPeer ? { directPeer } : {}),
         encrypted: Boolean(client.isRoomEncrypted?.(room.roomId)),
+        ...(latestMessage ? { latestMessage } : {}),
         ...(messageRetentionSeconds ? { messageRetentionSeconds } : {}),
         name: room.name?.trim() || room.roomId,
         ...(presence ? { presence } : {}),
@@ -1562,33 +1567,76 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
       if (redactedEventIds.has(eventId)) {
         return [];
       }
-      const content = event.getContent?.() ?? {};
-      const body = normalizeMatrixMessageBody(stripMatrixReplyFallback(typeof content.body === "string" ? content.body.trim() : ""));
-      const kind = matrixMessageKind(content);
-      const attachment = matrixAttachmentFromContent(client, homeserverBaseUrl, content);
-      const geoUri = readLocationUri(content);
-      const location = geoUri ? matrixLocationFromGeoUri(geoUri, content) : undefined;
-      if (!body && !attachment && !location) {
-        return [];
-      }
-      const sender = event.getSender?.() ?? "";
-      const senderDisplayName = displayNameForMatrixSender(room ?? undefined, sender);
-      return [{
-        ...(attachment ? { attachment } : {}),
-        body,
-        eventId,
-        ...(geoUri ? { geoUri } : {}),
-        kind,
-        ...(location ? { location } : {}),
-        own: Boolean(currentUserId && sender === currentUserId),
-        ...(reactionsByEventId.get(eventId)?.length ? { reactions: reactionsByEventId.get(eventId) } : {}),
-        ...(readReplyToEventId(content) ? { replyToEventId: readReplyToEventId(content) } : {}),
-        sender,
-        ...(senderDisplayName ? { senderDisplayName } : {}),
-        timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString()
-      }];
+      const mapped = mapMatrixMessageEvent(client, room ?? undefined, homeserverBaseUrl, event, currentUserId, reactionsByEventId.get(eventId));
+      return mapped ? [mapped] : [];
     })
     .filter((message) => messageWithinRetention(message, retentionSeconds));
+}
+
+// Maps a single m.room.message event to a timeline message. Returns null for
+// empty/redacted content. Shared by full-timeline reads and the cheap
+// last-message summary so both stay in sync.
+function mapMatrixMessageEvent(
+  client: MatrixClientLike,
+  room: MatrixRoomLike | undefined,
+  homeserverBaseUrl: string,
+  event: MatrixEventLike,
+  currentUserId: string | undefined,
+  reactions?: MatrixMessageReaction[]
+): MatrixTimelineMessage | null {
+  const eventId = event.getId?.() ?? `${event.getSender?.() ?? "sender"}-${event.getTs?.() ?? Date.now()}`;
+  const content = event.getContent?.() ?? {};
+  const body = normalizeMatrixMessageBody(stripMatrixReplyFallback(typeof content.body === "string" ? content.body.trim() : ""));
+  const kind = matrixMessageKind(content);
+  const attachment = matrixAttachmentFromContent(client, homeserverBaseUrl, content);
+  const geoUri = readLocationUri(content);
+  const location = geoUri ? matrixLocationFromGeoUri(geoUri, content) : undefined;
+  if (!body && !attachment && !location) {
+    return null;
+  }
+  const sender = event.getSender?.() ?? "";
+  const senderDisplayName = displayNameForMatrixSender(room, sender);
+  return {
+    ...(attachment ? { attachment } : {}),
+    body,
+    eventId,
+    ...(geoUri ? { geoUri } : {}),
+    kind,
+    ...(location ? { location } : {}),
+    own: Boolean(currentUserId && sender === currentUserId),
+    ...(reactions?.length ? { reactions } : {}),
+    ...(readReplyToEventId(content) ? { replyToEventId: readReplyToEventId(content) } : {}),
+    sender,
+    ...(senderDisplayName ? { senderDisplayName } : {}),
+    timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString()
+  };
+}
+
+// Cheap last-message preview for the chat list: scans the room timeline from the
+// end and maps only the first readable message, instead of materializing the
+// whole timeline for every room on every update. Reactions are omitted (the list
+// preview does not render them).
+function readRoomLatestMessage(
+  client: MatrixClientLike,
+  room: MatrixRoomLike | undefined,
+  homeserverBaseUrl: string,
+  currentUserId: string | undefined
+): MatrixTimelineMessage | undefined {
+  const retentionSeconds = room ? readRoomRetentionSeconds(room) : undefined;
+  const events = (room?.timeline ?? [])
+    .map(asEvent)
+    .filter((event): event is MatrixEventLike => Boolean(event));
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.getType?.() !== "m.room.message") {
+      continue;
+    }
+    const mapped = mapMatrixMessageEvent(client, room, homeserverBaseUrl, event, currentUserId);
+    if (mapped && messageWithinRetention(mapped, retentionSeconds)) {
+      return mapped;
+    }
+  }
+  return undefined;
 }
 
 function latestReadableMessageEvent(room: MatrixRoomLike | undefined): MatrixEventLike | undefined {

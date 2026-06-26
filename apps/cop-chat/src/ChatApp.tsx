@@ -394,16 +394,9 @@ export function ChatApp() {
       rooms,
       selectedConversationId,
       selectedGroupId,
-      selectedRoomId,
-      timelineForRoom: (roomId) => {
-        const liveTimeline = matrixSession?.getTimeline(roomId) ?? [];
-        if (liveTimeline.length > 0) {
-          return liveTimeline;
-        }
-        return timelineCacheRef.current.get(roomId) ?? (roomId === selectedRoomId ? timeline : []);
-      }
+      selectedRoomId
     }),
-    [authSubjectId, chatFilter, conversationQuery, conversations, groups, matrixSession, ownIdentityIds, rooms, selectedConversationId, selectedGroupId, selectedRoomId, timeline, timelineCacheRevision, timelineRevision]
+    [authSubjectId, chatFilter, conversationQuery, conversations, groups, ownIdentityIds, rooms, selectedConversationId, selectedGroupId, selectedRoomId]
   );
   const chatItems = React.useMemo(
     () => applyChatPreferences(rawChatItems, chatPreferences),
@@ -4294,8 +4287,7 @@ export function buildChatItems({
   rooms,
   selectedConversationId,
   selectedGroupId,
-  selectedRoomId,
-  timelineForRoom
+  selectedRoomId
 }: {
   authSubjectId?: string;
   conversations: MessagingConversationSummary[];
@@ -4307,7 +4299,6 @@ export function buildChatItems({
   selectedConversationId: string | null;
   selectedGroupId: string | null;
   selectedRoomId: string | null;
-  timelineForRoom: (roomId: string) => MatrixTimelineMessage[];
 }): ChatListItem[] {
   const items = new Map<string, ChatListItem>();
   const byRoomId = new Map<string, string>();
@@ -4335,7 +4326,7 @@ export function buildChatItems({
     const roomId = conversation.matrix?.roomId ?? (group ? communityGroupMatrixRoomId(group) : undefined);
     const room = roomId ? rooms.find((item) => item.roomId === roomId) : undefined;
     const title = chatTitleForConversation(conversation, room, authSubjectId, ownIdentityIds);
-    const roomLatest = roomId ? lastTimelineMessage(timelineForRoom(roomId)) : undefined;
+    const roomLatest = room?.latestMessage;
     const latest = roomLatest ?? (group ? demoLatestMessageForGroup(group) : undefined);
     const id = roomId
       ? `room:${roomId}`
@@ -4397,7 +4388,7 @@ export function buildChatItems({
     }
     const metadataRoomId = communityGroupMatrixRoomId(group);
     const metadataRoom = metadataRoomId ? rooms.find((room) => room.roomId === metadataRoomId) : undefined;
-    const metadataRoomLatest = metadataRoomId ? lastTimelineMessage(timelineForRoom(metadataRoomId)) : undefined;
+    const metadataRoomLatest = metadataRoom?.latestMessage;
     const metadataLatest = metadataRoomLatest ?? demoLatestMessageForGroup(group);
     remember({
       active: selectedGroupId === group.groupId || selectedRoomId === metadataRoomId,
@@ -4425,7 +4416,7 @@ export function buildChatItems({
     if (roomKey) {
       return;
     }
-    const latest = lastTimelineMessage(timelineForRoom(room.roomId));
+    const latest = room.latestMessage;
     const roomTitle = room.directPeer?.displayName || room.name;
     const titleKey = byTitleAndType.get(titleTypeKey(room.name, "group"));
     if (titleKey) {
@@ -5111,10 +5102,6 @@ function selectRoomIdFromKey(selection: string | null | undefined, conversations
     return conversation.matrix.roomId;
   }
   return rooms.some((room) => room.roomId === selection) ? selection : null;
-}
-
-function lastTimelineMessage(messages: MatrixTimelineMessage[]): MatrixTimelineMessage | undefined {
-  return messages[messages.length - 1];
 }
 
 export function mergeTimelineMessages(cached: MatrixTimelineMessage[], live: MatrixTimelineMessage[]): MatrixTimelineMessage[] {

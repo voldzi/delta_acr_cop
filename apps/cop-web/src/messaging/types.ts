@@ -9,6 +9,7 @@ export interface MatrixRoomSummary {
   avatarUrl?: string;
   directPeer?: MatrixRoomMemberSummary;
   encrypted: boolean;
+  latestMessage?: MatrixTimelineMessage;
   messageRetentionSeconds?: number;
   name: string;
   presence?: MatrixRoomPresenceSummary;

@@ -196,7 +196,7 @@ describe("dedupeChatItems", () => {
 });
 
 describe("buildChatItems", () => {
-  it("derives latest/preview/unread/sortAt for a room-backed direct conversation from timelineForRoom", () => {
+  it("derives latest/preview/unread/sortAt for a room-backed direct conversation from the room summary", () => {
     const conversation = {
       conversationId: "c1",
       matrix: { roomId: "!room:example.cz" },
@@ -206,8 +206,8 @@ describe("buildChatItems", () => {
       type: "direct",
       updatedAt: "2026-06-26T07:00:00.000Z"
     } as unknown as MessagingConversationSummary;
-    const room = { roomId: "!room:example.cz", unreadCount: 3 } as unknown as MatrixRoomSummary;
     const latest = message({ eventId: "$latest", body: "Poslední zpráva", timestamp: "2026-06-26T08:30:00.000Z" });
+    const room = { roomId: "!room:example.cz", unreadCount: 3, latestMessage: latest } as unknown as MatrixRoomSummary;
 
     const items = buildChatItems({
       authSubjectId: "@me:example.cz",
@@ -219,8 +219,7 @@ describe("buildChatItems", () => {
       rooms: [room],
       selectedConversationId: null,
       selectedGroupId: null,
-      selectedRoomId: "!room:example.cz",
-      timelineForRoom: (roomId) => (roomId === "!room:example.cz" ? [latest] : [])
+      selectedRoomId: "!room:example.cz"
     });
 
     expect(items).toHaveLength(1);
