@@ -614,12 +614,15 @@ export function buildSituationDataHealth(
   }
 
   const warnings = uniqueStrings([...response.warnings, ...(taxonomy?.warnings ?? [])]);
-  const warningCount = warnings.length || response.summary.warningCount;
-  const health: SourceHealthOverride["health"] = warningCount > 0
-    ? "DEGRADED"
-    : response.summary.staleFeatureCount > 0
+  const reportedWarningCount = response.summary.warningCount;
+  const warningCount = warnings.length || reportedWarningCount;
+  const operationalWarningCount = warnings.filter(isOperationalSituationWarning).length;
+  const hasUnclassifiedWarnings = warnings.length === 0 && reportedWarningCount > 0;
+  const health: SourceHealthOverride["health"] = response.summary.staleFeatureCount > 0
       ? "STALE"
-      : "ONLINE";
+      : operationalWarningCount > 0 || hasUnclassifiedWarnings
+        ? "DEGRADED"
+        : "ONLINE";
   return {
     detail: `features ${response.summary.featureCount}, stale ${response.summary.staleFeatureCount}, warnings ${warningCount}`,
     evaluatedAt: requestNow.toISOString(),
@@ -636,6 +639,25 @@ export function buildSituationDataHealth(
     },
     warnings
   };
+}
+
+function isOperationalSituationWarning(warning: string): boolean {
+  const normalized = warning.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (
+    normalized.includes("operator_feed_unavailable")
+    || normalized.includes("no_operator_bts_status")
+    || /operator.*feed.*unavailable/.test(normalized)
+    || /bts.*status.*unavailable/.test(normalized)
+    || normalized.includes("modelový odhad")
+    || normalized.includes("model-only")
+    || normalized.includes("inferred assessment")
+  ) {
+    return false;
+  }
+  return /\b(unavailable|failed|failure|timeout|timed out|error|refused|stale|disabled|invalid|unauthorized|forbidden|degraded|empty|missing)\b/.test(normalized);
 }
 
 export function unavailableSituationDataHealth(error: unknown, requestNow: Date): SourceHealthOverride {

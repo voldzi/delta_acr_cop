@@ -1,9 +1,44 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SituationDataSourceAdapter } from "./situation-data-source.js";
+import { buildSituationDataHealth, emptySituationFeatureCollection, SituationDataSourceAdapter } from "./situation-data-source.js";
 
 describe("SituationDataSourceAdapter", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("keeps model-only mobile network warnings as online dependency health", () => {
+    const now = new Date("2026-06-26T22:05:00Z");
+    const response = {
+      ...sampleHealthFeatureCollection(now),
+      summary: {
+        featureCount: 10,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 1
+      },
+      warnings: ["Mobile network is a model-only assessment; operator feed unavailable."]
+    };
+    const health = buildSituationDataHealth(response, now);
+
+    expect(health.health).toBe("ONLINE");
+    expect(health.detail).toBe("features 10, stale 0, warnings 1");
+  });
+
+  it("marks operational situation-data warnings as degraded dependency health", () => {
+    const now = new Date("2026-06-26T22:05:00Z");
+    const response = {
+      ...sampleHealthFeatureCollection(now),
+      summary: {
+        featureCount: 0,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 1
+      },
+      warnings: ["Situation data provider request failed."]
+    };
+    const health = buildSituationDataHealth(response, now);
+
+    expect(health.health).toBe("DEGRADED");
   });
 
   it("proxies SIM situation-data layers and context features without forwarding authorization", async () => {
@@ -400,6 +435,14 @@ describe("SituationDataSourceAdapter", () => {
     expect(features.cache?.ttlMs).toBe(15 * 60 * 1000);
   });
 });
+
+function sampleHealthFeatureCollection(now: Date) {
+  return emptySituationFeatureCollection({
+    bbox: { east: 14.5, north: 50.1, south: 50.0, west: 14.4 },
+    layers: ["mobile_network"],
+    limit: 10
+  }, now);
+}
 
 function sampleCatalogResponse() {
   return {
