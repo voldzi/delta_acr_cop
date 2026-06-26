@@ -5325,6 +5325,14 @@ h1 {
   margin-top: 8px;
 }
 
+.mobile-model-explanation {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .data-metric {
   display: grid;
   gap: 4px;

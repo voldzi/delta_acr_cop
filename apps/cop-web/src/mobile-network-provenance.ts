@@ -1,7 +1,9 @@
 export interface MobileNetworkProvenanceProperties {
+  btsStatus?: string;
   basis?: string[];
   dataQuality?: string;
   metrics?: Record<string, unknown>;
+  operatorStatusAvailable?: boolean;
   readModel?: boolean;
   sourceRevision?: string;
 }
@@ -33,6 +35,35 @@ export function isMobileNetworkReadModel(properties: MobileNetworkProvenanceProp
 
 export function mobileNetworkModelLabel(properties: MobileNetworkProvenanceProperties): string {
   return isMobileNetworkReadModel(properties) ? "Předpočítané pokrytí" : "Modelový odhad";
+}
+
+export function isMobileNetworkModelEstimate(properties: MobileNetworkProvenanceProperties): boolean {
+  return properties.operatorStatusAvailable === false
+    || properties.btsStatus === "operator_feed_unavailable"
+    || (properties.basis ?? []).includes("NO_OPERATOR_BTS_STATUS");
+}
+
+export function mobileNetworkOperationalModeLabel(properties: MobileNetworkProvenanceProperties): string {
+  return isMobileNetworkModelEstimate(properties)
+    ? "modelový odhad bez potvrzeného stavu BTS"
+    : "stav s operátorským podkladem";
+}
+
+export function mobileNetworkBtsStatusLabel(properties: MobileNetworkProvenanceProperties): string {
+  if (properties.btsStatus === "operator_feed_unavailable" || properties.operatorStatusAvailable === false) {
+    return "operátorský feed není dostupný";
+  }
+  if (!properties.btsStatus) {
+    return "n/a";
+  }
+  return humanizeBasisCode(properties.btsStatus);
+}
+
+export function mobileNetworkModelExplanation(properties: MobileNetworkProvenanceProperties): string {
+  if (isMobileNetworkModelEstimate(properties)) {
+    return "Mobilní pokrytí je modelový odhad SIM založený na referenčních BTS/věžích, vzdálenostním modelu a DEM. Stav konkrétní BTS není potvrzen, protože není připojen autorizovaný operátorský/NOC feed.";
+  }
+  return "Mobilní pokrytí využívá dostupný operátorský stav BTS a modelové hodnoty slouží jako vysvětlující kontext.";
 }
 
 export function mobileNetworkDataQualityLabel(value: string | undefined): string {
@@ -72,6 +103,7 @@ function humanizeBasisCode(value: string): string {
         data: "data",
         dem: "výšková data",
         distance: "vzdálenost",
+        feed: "feed",
         inferred: "odhad",
         measurement: "měření",
         mobile: "mobilní",
@@ -81,7 +113,8 @@ function humanizeBasisCode(value: string): string {
         osm: "OSM",
         signal: "signál",
         status: "stav",
-        terrain: "terén"
+        terrain: "terén",
+        unavailable: "nedostupný"
       };
       return translations[word] ?? word;
     });

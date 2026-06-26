@@ -269,9 +269,13 @@ import {
 } from "./situation-source-policy";
 import {
   formatMobileNetworkSourceRevision,
+  isMobileNetworkModelEstimate,
   mobileNetworkBasisLabels,
+  mobileNetworkBtsStatusLabel,
   mobileNetworkBtsStatusNotice,
   mobileNetworkDataQualityLabel,
+  mobileNetworkOperationalModeLabel,
+  mobileNetworkModelExplanation,
   mobileNetworkModelLabel
 } from "./mobile-network-provenance";
 import {
@@ -4620,6 +4624,7 @@ export function App() {
           <PanelTitle icon={<Database size={17} />} title={selectedSituationFeature ? "Detail prvku" : "Detail objektu"} />
           {selectedSituationFeature ? (
             <SituationFeatureDetail
+              apiBase={apiBase}
               authToken={authToken}
               feature={selectedSituationFeature}
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
@@ -4741,6 +4746,7 @@ export function App() {
         >
           {selectedSituationFeature ? (
             <SituationFeatureDetail
+              apiBase={apiBase}
               authToken={authToken}
               feature={selectedSituationFeature}
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
@@ -5900,6 +5906,7 @@ function MobileCoverageSummary({ feature }: { feature: SituationFeature }) {
       <DataMetric label="Stav" value={formatMobileNetworkStatus(properties.status)} tone="neutral" />
       <DataMetric label="Technologie" value={properties.technology ?? "n/a"} tone="neutral" />
       <DataMetric label="Signál" value={formatOptionalNumber(properties.estimatedSignalDbm, " dBm")} tone={mobileMetricTone(properties.estimatedSignalDbm, -95, -110, true)} />
+      <DataMetric label="BTS" value={mobileNetworkBtsStatusLabel(properties)} tone="neutral" />
       <DataMetric label="Model" value={properties.modelVersion ?? "n/a"} tone="neutral" />
     </div>
   );
@@ -9709,7 +9716,125 @@ function ObjectDetail({
   );
 }
 
+type MobileTechnicalCoverageState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { feature: SituationFeature | null; status: "loaded"; warnings: string[] }
+  | { error: string; status: "error" };
+
+function useMobileNetworkTechnicalCoverage(
+  apiBase: string,
+  authToken: string | undefined,
+  feature: SituationFeature
+): MobileTechnicalCoverageState {
+  const [state, setState] = React.useState<MobileTechnicalCoverageState>({ status: "idle" });
+
+  React.useEffect(() => {
+    if (feature.properties.layer === "mobile_coverage") {
+      setState({ feature, status: "loaded", warnings: [] });
+      return;
+    }
+    if (feature.properties.layer !== "mobile_network") {
+      setState({ status: "idle" });
+      return;
+    }
+    const bbox = mobileNetworkDetailBbox(feature);
+    if (!bbox) {
+      setState({ feature: null, status: "loaded", warnings: ["Technický model pokrytí nemá použitelnou geometrii."] });
+      return;
+    }
+
+    let cancelled = false;
+    const technology = normalizeMobileDetailTechnology(feature.properties.technology);
+    setState({ status: "loading" });
+    fetchMapFeatures(apiBase, authToken, {
+      bbox,
+      filters: technology ? { "diagnostic.mobile.coverage": { technology: [technology] } } : {},
+      includeDiagnostics: true,
+      layerIds: ["diagnostic.mobile.coverage"],
+      limit: 80
+    })
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        const candidates = response.situation?.features.filter((candidate) =>
+          candidate.properties.layer === "mobile_coverage"
+          && (!technology || normalizeMobileDetailTechnology(candidate.properties.technology) === technology)
+        ) ?? [];
+        setState({
+          feature: candidates[0] ?? null,
+          status: "loaded",
+          warnings: [...response.warnings, ...(response.situation?.warnings ?? [])].slice(0, 3)
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setState({
+          error: error instanceof Error ? error.message : "Technický model pokrytí není dostupný.",
+          status: "error"
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, authToken, feature]);
+
+  return state;
+}
+
+function normalizeMobileDetailTechnology(value: string | undefined): CoverageTechnology | undefined {
+  const normalized = value?.trim().toUpperCase();
+  return normalized === "2G" || normalized === "4G" || normalized === "5G" ? normalized : undefined;
+}
+
+function mobileNetworkDetailBbox(feature: SituationFeature): MapBounds | null {
+  const coordinates = situationGeometryCoordinates(feature.geometry);
+  if (coordinates.length === 0) {
+    return null;
+  }
+  const west = Math.min(...coordinates.map(([lon]) => lon));
+  const east = Math.max(...coordinates.map(([lon]) => lon));
+  const south = Math.min(...coordinates.map(([, lat]) => lat));
+  const north = Math.max(...coordinates.map(([, lat]) => lat));
+  const span = Math.max(east - west, north - south, 0.01);
+  const padding = Math.min(0.08, Math.max(0.01, span * 0.2));
+  return {
+    east: clamp(east + padding, -180, 180),
+    north: clamp(north + padding, -90, 90),
+    south: clamp(south - padding, -90, 90),
+    west: clamp(west - padding, -180, 180)
+  };
+}
+
+function situationGeometryCoordinates(geometry: SituationFeature["geometry"]): Array<[number, number]> {
+  const coordinates: Array<[number, number]> = [];
+  collectSituationCoordinates(geometry.coordinates, coordinates);
+  return coordinates;
+}
+
+function collectSituationCoordinates(value: unknown, coordinates: Array<[number, number]>): void {
+  if (!Array.isArray(value)) {
+    return;
+  }
+  if (value.length >= 2 && typeof value[0] === "number" && typeof value[1] === "number") {
+    const lon = Number(value[0]);
+    const lat = Number(value[1]);
+    if (Number.isFinite(lon) && Number.isFinite(lat)) {
+      coordinates.push([clamp(lon, -180, 180), clamp(lat, -90, 90)]);
+    }
+    return;
+  }
+  for (const item of value) {
+    collectSituationCoordinates(item, coordinates);
+  }
+}
+
 function SituationFeatureDetail({
+  apiBase,
   authToken,
   feature,
   onDeleteReport,
@@ -9717,6 +9842,7 @@ function SituationFeatureDetail({
   onOpenChat,
   onOpenGallery
 }: {
+  apiBase: string;
   authToken: string | undefined;
   feature: SituationFeature;
   onDeleteReport?: (reportId: string) => void;
@@ -9730,6 +9856,7 @@ function SituationFeatureDetail({
   ) => void;
 }) {
   const properties = feature.properties;
+  const technicalCoverage = useMobileNetworkTechnicalCoverage(apiBase, authToken, feature);
   const status = situationFeatureStatusModel(feature);
   const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
   const trafficPresentation = properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
@@ -9808,17 +9935,20 @@ function SituationFeatureDetail({
         <ObjectDetailSection title={properties.layer === "mobile_network" ? "Mobilní síť" : "Mobilní pokrytí"}>
           <DetailGrid
             rows={[
+              ["Režim", mobileNetworkOperationalModeLabel(properties)],
               ["Model pokrytí", mobileNetworkModelLabel(properties)],
               ["Kvalita", mobileCoverageQualityModel(properties.quality).label],
               ["Stav", formatMobileNetworkStatus(properties.status)],
               ["Technologie", properties.technology ?? "n/a"],
               ["Operátor", properties.operator ?? "n/a"],
+              ["Stav BTS", mobileNetworkBtsStatusLabel(properties)],
+              ["Operátorský feed", formatAvailability(properties.operatorStatusAvailable)],
               ["Odhad signálu", formatOptionalNumber(properties.estimatedSignalDbm, " dBm")],
               ["Jistota", formatOptionalPercent(properties.confidence)],
               ["Kvalita dat", mobileNetworkDataQualityLabel(properties.dataQuality)],
               ["Shrnutí", properties.summary ?? "n/a"],
               ["Datové podklady", mobileNetworkBasisLabels(properties.basis)],
-              ["Stav BTS", mobileNetworkBtsStatusNotice(properties.basis)],
+              ["Upozornění", mobileNetworkBtsStatusNotice(properties.basis)],
               ["Poznámky", formatStringList(properties.notices)],
               ["Model", properties.modelVersion ?? "n/a"],
               ["Revize modelu", formatMobileNetworkSourceRevision(properties.sourceRevision)],
@@ -9828,7 +9958,12 @@ function SituationFeatureDetail({
               ["Poznámka", properties.disclaimer ?? "n/a"]
             ]}
           />
+          <p className="mobile-model-explanation">{mobileNetworkModelExplanation(properties)}</p>
         </ObjectDetailSection>
+      ) : null}
+
+      {properties.layer === "mobile_coverage" || properties.layer === "mobile_network" ? (
+        <MobileNetworkTechnicalCoverageSection state={technicalCoverage} />
       ) : null}
 
       {isCommunicationTowerFeature(feature) ? (
@@ -9893,10 +10028,64 @@ function SituationFeatureDetail({
       <div className="object-flags">
         <span className="situation-badge">KONTEXT</span>
         {isSafetyLayerId(properties.layer) ? <span className="warning-badge">VÝSTRAŽNÁ VRSTVA</span> : null}
+        {properties.layer === "mobile_network" && isMobileNetworkModelEstimate(properties) ? <span className="warning-badge">MODELOVÝ ODHAD</span> : null}
         {properties.stale ? <span className="warning-badge">STARŠÍ DATA</span> : null}
         {properties.severity ? <span className="warning-badge">{communitySeverityDisplay(properties.severity)}</span> : null}
       </div>
     </div>
+  );
+}
+
+function MobileNetworkTechnicalCoverageSection({ state }: { state: MobileTechnicalCoverageState }) {
+  if (state.status === "idle") {
+    return null;
+  }
+  if (state.status === "loading") {
+    return (
+      <ObjectDetailSection title="Technický kontext pokrytí">
+        <div className="empty-mini">Načítám LoS/DEM detail modelu pokrytí ze SIM.</div>
+      </ObjectDetailSection>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <ObjectDetailSection title="Technický kontext pokrytí">
+        <div className="situation-warning">Technický detail pokrytí není dostupný: {state.error}</div>
+      </ObjectDetailSection>
+    );
+  }
+  if (!state.feature) {
+    return (
+      <ObjectDetailSection title="Technický kontext pokrytí">
+        <div className="empty-mini">SIM pro tuto buňku nevrátila odpovídající technický LoS/DEM detail.</div>
+        {state.warnings.map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
+      </ObjectDetailSection>
+    );
+  }
+  const properties = state.feature.properties;
+  const metrics = isRecord(properties.metrics) ? properties.metrics : {};
+  const assumptions = isRecord(properties.assumptions) ? properties.assumptions : {};
+  return (
+    <ObjectDetailSection title="Technický kontext pokrytí">
+      <DetailGrid
+        rows={[
+          ["Zdroj detailu", properties.sourceName ?? sourceDisplayName(properties.sourceId)],
+          ["Vrstva detailu", situationLayerLabel(properties.layer)],
+          ["Model", properties.modelVersion ?? "n/a"],
+          ["Technologie", properties.technology ?? "n/a"],
+          ["DEM", properties.demSource ?? stringProperty(assumptions.demSource) ?? "n/a"],
+          ["Terén použit", formatBooleanLike(assumptions.terrainApplied)],
+          ["Propagační model", stringProperty(assumptions.propagationModel) ?? "n/a"],
+          ["Útlum terénu", formatOptionalNumber(recordNumber(metrics, "terrainPenaltyDb"), " dB")],
+          ["Max. překážka terénu", formatOptionalNumber(recordNumber(metrics, "terrainMaxObstructionM"), " m")],
+          ["Vzdálenost k BTS", formatOptionalNumber(recordNumber(metrics, "distanceToNearestTowerM"), " m")],
+          ["Výška BTS", formatOptionalNumber(recordNumber(metrics, "towerElevationM"), " m n. m.")],
+          ["Výška cíle", formatOptionalNumber(recordNumber(metrics, "targetElevationM"), " m n. m.")],
+          ["LoS vzorky", formatOptionalInteger(recordNumber(metrics, "terrainSamples"))]
+        ]}
+      />
+      {state.warnings.map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
+    </ObjectDetailSection>
   );
 }
 
@@ -12280,6 +12469,26 @@ function formatSituationRecord(value: Record<string, unknown> | undefined): stri
 
 function formatStringList(value: string[] | undefined): string {
   return value && value.length > 0 ? value.slice(0, 6).join(", ") : "n/a";
+}
+
+function formatAvailability(value: boolean | undefined): string {
+  if (value === true) {
+    return "dostupný";
+  }
+  if (value === false) {
+    return "není dostupný";
+  }
+  return "n/a";
+}
+
+function formatBooleanLike(value: unknown): string {
+  if (value === true || value === "true") {
+    return "ano";
+  }
+  if (value === false || value === "false") {
+    return "ne";
+  }
+  return stringProperty(value) ?? "n/a";
 }
 
 function formatGeocodes(value: Array<{ scheme: string; value: string }> | undefined): string {

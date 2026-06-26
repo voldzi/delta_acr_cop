@@ -699,6 +699,24 @@ The following provider metadata is preserved by COP:
 - `basis` - translated into user-readable data provenance labels,
 - `metrics.coverageReadModel` - secondary read-model indicator.
 
+For the normal public map COP uses the SIM situation-data feature flow with
+provider layer `mobile_network` and source `mobile_network_model`. COP does not
+call deprecated provider shortcuts for this layer. When SIM returns
+`operatorStatusAvailable: false` or
+`btsStatus: "operator_feed_unavailable"`, COP must present the feature as a
+model estimate, not as a confirmed BTS outage or confirmed operator state.
+User-facing detail should prioritize `quality`, `status`, `confidence`,
+`summary` and `notices`.
+
+If a user opens a mobile-network cell detail, COP may query the diagnostic
+provider layer `mobile_coverage` with source `mobile_coverage_model` for the
+same local area and selected technology. That technical detail can expose LoS
+and DEM context such as `metrics.terrainPenaltyDb`,
+`metrics.terrainMaxObstructionM`, `metrics.distanceToNearestTowerM`,
+`metrics.towerElevationM`, `metrics.targetElevationM`, `demSource`,
+`assumptions.terrainApplied` and `assumptions.propagationModel`. It remains
+diagnostic evidence only.
+
 COP must not expose `mobile_coverage` as a normal public layer. Diagnostic
 mobile layers such as `diagnostic.mobile.coverage`,
 `diagnostic.mobile.ctu_measurements`, and

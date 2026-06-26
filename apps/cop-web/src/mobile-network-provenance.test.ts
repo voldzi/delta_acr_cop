@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  isMobileNetworkModelEstimate,
   mobileNetworkBasisLabels,
+  mobileNetworkBtsStatusLabel,
   mobileNetworkBtsStatusNotice,
   mobileNetworkDataQualityLabel,
+  mobileNetworkModelExplanation,
+  mobileNetworkOperationalModeLabel,
   mobileNetworkModelLabel
 } from "./mobile-network-provenance";
 
@@ -27,6 +31,18 @@ describe("mobile network provenance", () => {
   it("explains that BTS status is not operator-confirmed", () => {
     expect(mobileNetworkBtsStatusNotice(["NO_OPERATOR_BTS_STATUS"])).toBe("Nejde o potvrzený aktuální stav BTS ani výpadek operátora.");
     expect(mobileNetworkBtsStatusNotice(["INFERRED_COVERAGE"])).toBe("n/a");
+  });
+
+  it("treats unavailable operator feed as model estimate, not outage", () => {
+    const properties = {
+      btsStatus: "operator_feed_unavailable",
+      operatorStatusAvailable: false
+    };
+
+    expect(isMobileNetworkModelEstimate(properties)).toBe(true);
+    expect(mobileNetworkOperationalModeLabel(properties)).toBe("modelový odhad bez potvrzeného stavu BTS");
+    expect(mobileNetworkBtsStatusLabel(properties)).toBe("operátorský feed není dostupný");
+    expect(mobileNetworkModelExplanation(properties)).toContain("modelový odhad SIM");
   });
 
   it("labels data quality", () => {
