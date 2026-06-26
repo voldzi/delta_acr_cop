@@ -1,5 +1,5 @@
-import type { MessagingBootstrapResponse } from "../cop-data";
-import { chatBridgeChannelName, chatUnreadStorageKey, decodeChatUnread, encodeChatUnread } from "./bridge";
+import type { MessagingBootstrapResponse } from "./types.js";
+import { chatBridgeChannelName, chatUnreadStorageKey, decodeChatUnread, encodeChatUnread } from "./bridge.js";
 
 const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
 const fallbackMatrixDeviceIds = new Map<string, string>();

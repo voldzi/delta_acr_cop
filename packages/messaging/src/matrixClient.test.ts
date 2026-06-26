@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMatrixMessagingSession, formatMatrixClientError, normalizeMatrixMessageBody } from "./matrixClient";
-import type { MessagingBootstrapResponse } from "../cop-data";
+import { createMatrixMessagingSession, formatMatrixClientError, normalizeMatrixMessageBody } from "./matrixClient.js";
+import type { MessagingBootstrapResponse } from "./types.js";
 
 type MockMatrixClient = {
   getCrypto?: () => MockMatrixCrypto;

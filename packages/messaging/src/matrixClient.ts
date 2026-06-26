@@ -1,5 +1,5 @@
-import type { MessagingBootstrapResponse } from "../cop-data";
 import type {
+  MessagingBootstrapResponse,
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
   MatrixEncryptedFileRef,
@@ -13,7 +13,7 @@ import type {
   MatrixRoomSummary,
   MatrixTimelineAttachment,
   MatrixTimelineMessage
-} from "./types";
+} from "./types.js";
 
 interface MatrixClientLike {
   createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;

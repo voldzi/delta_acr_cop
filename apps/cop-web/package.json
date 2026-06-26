@@ -8,6 +8,7 @@
     "preview": "vite preview --host 0.0.0.0 --port ${COP_WEB_PORT:-4311}"
   },
   "dependencies": {
+    "@cop/messaging": "workspace:*",
     "@cop/nato-symbol-renderer": "workspace:*",
     "@radix-ui/react-context-menu": "^2.2.16",
     "@radix-ui/react-dialog": "^1.1.15",

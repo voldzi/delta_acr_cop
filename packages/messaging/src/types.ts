@@ -1,4 +1,20 @@
-import type { MessagingBootstrapResponse } from "../cop-data";
+export interface MessagingBootstrapResponse {
+  accessToken?: string;
+  chatAvailable: boolean;
+  contractVersion: "cop-messaging-bootstrap-v1";
+  detail?: string;
+  deviceId?: string;
+  e2eeRequired?: boolean;
+  enabled: boolean;
+  expiresAt?: string;
+  homeserverBaseUrl?: string;
+  providerId: "csm.messaging";
+  serverName?: string;
+  status: "degraded" | "disabled" | "online";
+  tokenAvailable: boolean;
+  userId?: string;
+  warnings: string[];
+}
 
 export interface MatrixUserProfileSyncInput {
   avatarUrl?: string;

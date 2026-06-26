@@ -10,7 +10,7 @@ import {
   encodeChatCenterLocation,
   encodeChatSelect,
   encodeChatUnread
-} from "./bridge";
+} from "./bridge.js";
 
 // Single source of truth for the cop-chat <-> cop-web wire contract. These tests
 // pin the exact constants and payload shapes so both apps stay compatible.

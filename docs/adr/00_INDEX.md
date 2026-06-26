@@ -11,3 +11,4 @@
 - [0008 Professional UX Without Weapon Workflow](0008_DELTA_INSPIRED_UX_WITHOUT_WEAPON_WORKFLOW.md)
 - [0009 Standard Documentation Mapping and JSON OpenAPI](0009_STANDARD_DOCUMENTATION_MAPPING_AND_JSON_OPENAPI.md)
 - [0010 Federated Civil COP Capability](0010_FEDERATED_CIVIL_COP_CAPABILITY.md)
+- [0011 Shared Messaging Workspace Package](0011_SHARED_MESSAGING_WORKSPACE_PACKAGE.md)

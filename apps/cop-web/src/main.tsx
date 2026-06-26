@@ -207,8 +207,8 @@ import {
   getOrCreateMatrixDeviceId,
   publishChatUnreadCount,
   readStoredChatUnreadCount
-} from "./messaging/runtime";
-import { decodeChatCenterLocation, encodeChatSelect } from "./messaging/bridge";
+} from "@cop/messaging/runtime";
+import { decodeChatCenterLocation, encodeChatSelect } from "@cop/messaging/bridge";
 import {
   countHistoryPoints,
   getReplayTimestamp,

@@ -1113,6 +1113,11 @@ button {
   padding: 18px clamp(18px, 6vw, 92px) 16px;
 }
 
+.timeline-spacer {
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
 .history-loader {
   display: flex;
   justify-content: center;

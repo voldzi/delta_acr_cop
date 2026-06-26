@@ -108,6 +108,9 @@ importers:
 
   apps/cop-chat:
     dependencies:
+      '@cop/messaging':
+        specifier: workspace:*
+        version: link:../../packages/messaging
       '@vitejs/plugin-react':
         specifier: ^5.1.1
         version: 5.2.0(vite@7.3.3(@types/node@25.9.0)(jiti@1.21.7)(tsx@4.22.2)(yaml@2.9.0))
@@ -144,6 +147,9 @@ importers:
 
   apps/cop-web:
     dependencies:
+      '@cop/messaging':
+        specifier: workspace:*
+        version: link:../../packages/messaging
       '@cop/nato-symbol-renderer':
         specifier: workspace:*
         version: link:../../packages/nato-symbol-renderer
@@ -227,6 +233,12 @@ importers:
       '@cop/canonical-model':
         specifier: workspace:*
         version: link:../canonical-model
+
+  packages/messaging:
+    dependencies:
+      matrix-js-sdk:
+        specifier: 41.6.0
+        version: 41.6.0
 
   packages/nato-symbol-renderer: {}
 

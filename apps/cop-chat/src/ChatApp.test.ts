@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { mergeTimelineMessages } from "./ChatApp";
-import type { MatrixTimelineMessage } from "../../cop-web/src/messaging/types";
+import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
 describe("mergeTimelineMessages", () => {
   const baseMessage: MatrixTimelineMessage = {

@@ -7,7 +7,7 @@ import {
   readRouteSelection,
   writeChatRoute
 } from "./ChatApp";
-import type { MatrixLocationShare } from "../../cop-web/src/messaging/types";
+import type { MatrixLocationShare } from "@cop/messaging/types";
 
 // Bridge / wire-protocol contract tests. These pin the exact cross-app contract
 // (message `type` strings, payload shapes, URL route encoding) that cop-web relies

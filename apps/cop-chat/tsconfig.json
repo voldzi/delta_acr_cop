@@ -13,10 +13,6 @@
     "src/**/*.tsx",
     "vite.config.ts",
     "../cop-web/src/auth.ts",
-    "../cop-web/src/cop-data.ts",
-    "../cop-web/src/messaging/bridge.ts",
-    "../cop-web/src/messaging/matrixClient.ts",
-    "../cop-web/src/messaging/runtime.ts",
-    "../cop-web/src/messaging/types.ts"
+    "../cop-web/src/cop-data.ts"
   ]
 }

@@ -88,15 +88,15 @@ import {
   clearMatrixMessagingCryptoStateForBootstrap,
   createMatrixMessagingSession,
   isMatrixAccountStoreMismatchError
-} from "../../cop-web/src/messaging/matrixClient";
+} from "@cop/messaging/matrixClient";
 import {
   getOrCreateMatrixDeviceId,
   publishChatUnreadCount
-} from "../../cop-web/src/messaging/runtime";
+} from "@cop/messaging/runtime";
 import {
   decodeChatSelect,
   encodeChatCenterLocation
-} from "../../cop-web/src/messaging/bridge";
+} from "@cop/messaging/bridge";
 import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
@@ -105,7 +105,11 @@ import type {
   MatrixMessagingSession,
   MatrixRoomSummary,
   MatrixTimelineMessage
-} from "../../cop-web/src/messaging/types";
+} from "@cop/messaging/types";
+import { chatText } from "./i18n";
+import { useEventCallback, useModalFocus } from "./hooks/useModalFocus";
+
+const EncryptionRecoveryDialog = React.lazy(() => import("./dialogs/EncryptionRecoveryDialog"));
 
 type ChatFilter = "all" | "direct" | "group";
 type ComposeMode = "direct" | "group" | null;
@@ -170,6 +174,10 @@ export interface ChatListItem {
   unreadCount: number;
 }
 
+export type TimelineRow =
+  | { id: string; kind: "date"; label: string }
+  | { grouped: boolean; kind: "message"; message: MatrixTimelineMessage };
+
 interface DemoConversationMetadata {
   media: DemoConversationMedia[];
   messages: DemoConversationMessage[];
@@ -177,6 +185,20 @@ interface DemoConversationMetadata {
   summary?: string;
   title?: string;
 }
+
+export interface ChatSelectionState {
+  conversationId: string | null;
+  groupId: string | null;
+  roomId: string | null;
+}
+
+export type ChatSelectionValue = string | null | ((current: string | null) => string | null);
+
+export type ChatSelectionAction =
+  | { type: "clear" }
+  | { type: "conversation"; value: ChatSelectionValue }
+  | { type: "group"; value: ChatSelectionValue }
+  | { type: "room"; value: ChatSelectionValue };
 
 interface DemoConversationMessage {
   authorName?: string;
@@ -252,101 +274,199 @@ const emptyChatPreferences: ChatPreferences = {
   readOverrideByKey: {}
 };
 
-// Returns a referentially stable callback that always invokes the latest handler.
-// Lets memoized row components (ChatRow, MessageRow) skip re-rendering when only
-// unrelated parent state changes, without risking stale closures.
-function useEventCallback<A extends unknown[], R>(handler: (...args: A) => R): (...args: A) => R {
-  const handlerRef = React.useRef(handler);
-  React.useLayoutEffect(() => {
-    handlerRef.current = handler;
-  });
-  return React.useCallback((...args: A) => handlerRef.current(...args), []);
+const timelineVirtualizationThreshold = 80;
+const timelineVirtualizationOverscan = 10;
+
+interface VirtualTimelineWindow {
+  enabled: boolean;
+  endIndex: number;
+  paddingBottom: number;
+  paddingTop: number;
+  rows: TimelineRow[];
+  scrollToRow(index: number, block?: "center" | "end" | "start"): void;
+  startIndex: number;
 }
 
-const modalFocusableSelector = [
-  "a[href]",
-  "button:not([disabled])",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])"
-].join(",");
+interface VirtualTimelineWindowInput {
+  clientHeight: number;
+  overscan?: number;
+  rows: TimelineRow[];
+  scrollTop: number;
+  threshold?: number;
+}
 
-function useModalFocus<T extends HTMLElement>(onClose: () => void): {
-  dialogRef: React.RefObject<T | null>;
-  onDialogKeyDown: (event: React.KeyboardEvent<T>) => void;
-} {
-  const dialogRef = React.useRef<T | null>(null);
-  const closeDialog = useEventCallback(onClose);
+interface ComputedVirtualTimelineWindow {
+  enabled: boolean;
+  endIndex: number;
+  paddingBottom: number;
+  paddingTop: number;
+  rows: TimelineRow[];
+  startIndex: number;
+}
+
+function useVirtualTimelineRows(
+  rows: TimelineRow[],
+  containerRef: React.RefObject<HTMLElement | null>
+): VirtualTimelineWindow {
+  const [viewport, setViewport] = React.useState({ clientHeight: 0, scrollTop: 0 });
+  const enabled = rows.length > timelineVirtualizationThreshold;
+  const heights = React.useMemo(() => rows.map(estimateTimelineRowHeight), [rows]);
+  const offsets = React.useMemo(() => {
+    const nextOffsets = new Array<number>(heights.length + 1);
+    nextOffsets[0] = 0;
+    heights.forEach((height, index) => {
+      nextOffsets[index + 1] = (nextOffsets[index] ?? 0) + height;
+    });
+    return nextOffsets;
+  }, [heights]);
+  const totalHeight = offsets[offsets.length - 1] ?? 0;
+
+  const refreshViewport = React.useCallback(() => {
+    const node = containerRef.current;
+    if (!node) {
+      return;
+    }
+    setViewport((current) => {
+      const next = { clientHeight: node.clientHeight, scrollTop: node.scrollTop };
+      return current.clientHeight === next.clientHeight && current.scrollTop === next.scrollTop ? current : next;
+    });
+  }, [containerRef]);
+
+  React.useLayoutEffect(() => {
+    refreshViewport();
+  }, [refreshViewport, rows.length]);
 
   React.useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const frame = window.requestAnimationFrame(() => {
-      const dialog = dialogRef.current;
-      if (!dialog) {
-        return;
-      }
-      const preferredFocus = preferredModalFocusElement(dialog);
-      if (preferredFocus && preferredFocus !== document.activeElement) {
-        preferredFocus.focus({ preventScroll: true });
-        return;
-      }
-      if (!dialog.contains(document.activeElement)) {
-        const target = focusableModalElements(dialog)[0] ?? dialog;
-        target.focus({ preventScroll: true });
-      }
-    });
-    return () => {
-      window.cancelAnimationFrame(frame);
-      if (previousFocus && document.contains(previousFocus)) {
-        previousFocus.focus({ preventScroll: true });
-      }
-    };
-  }, []);
+    const node = containerRef.current;
+    if (!node) {
+      return;
+    }
+    node.addEventListener("scroll", refreshViewport, { passive: true });
+    return () => node.removeEventListener("scroll", refreshViewport);
+  }, [containerRef, refreshViewport]);
 
-  const onDialogKeyDown = React.useCallback((event: React.KeyboardEvent<T>) => {
-    if (event.key === "Escape") {
-      event.stopPropagation();
-      closeDialog();
+  React.useEffect(() => {
+    const node = containerRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
       return;
     }
-    if (event.key !== "Tab") {
-      return;
-    }
-    const dialog = dialogRef.current;
-    if (!dialog) {
-      return;
-    }
-    const focusable = focusableModalElements(dialog);
-    if (focusable.length === 0) {
-      event.preventDefault();
-      dialog.focus({ preventScroll: true });
-      return;
-    }
-    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const activeIndex = activeElement ? focusable.indexOf(activeElement) : -1;
-    const nextIndex = event.shiftKey
-      ? activeIndex <= 0 ? focusable.length - 1 : activeIndex - 1
-      : activeIndex === focusable.length - 1 ? 0 : activeIndex + 1;
-    event.preventDefault();
-    focusable[nextIndex]?.focus({ preventScroll: true });
-  }, [closeDialog]);
+    const observer = new ResizeObserver(() => refreshViewport());
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [containerRef, refreshViewport]);
 
-  return { dialogRef, onDialogKeyDown };
+  const scrollToRow = React.useCallback((index: number, block: "center" | "end" | "start" = "center") => {
+    const node = containerRef.current;
+    if (!node) {
+      return;
+    }
+    const rowStart = offsets[Math.max(0, Math.min(index, rows.length - 1))] ?? 0;
+    const rowHeight = heights[Math.max(0, Math.min(index, heights.length - 1))] ?? 52;
+    const nextTop = block === "start"
+      ? rowStart
+      : block === "end"
+        ? rowStart + rowHeight - node.clientHeight
+        : rowStart - Math.max(0, (node.clientHeight - rowHeight) / 2);
+    node.scrollTo({ behavior: "smooth", top: Math.max(0, nextTop) });
+  }, [containerRef, heights, offsets, rows.length]);
+
+  if (!enabled) {
+    return { enabled: false, endIndex: rows.length, paddingBottom: 0, paddingTop: 0, rows, scrollToRow, startIndex: 0 };
+  }
+
+  const window = computeVirtualTimelineWindow({
+    clientHeight: viewport.clientHeight,
+    overscan: timelineVirtualizationOverscan,
+    rows,
+    scrollTop: viewport.scrollTop,
+    threshold: timelineVirtualizationThreshold
+  });
+  return {
+    ...window,
+    scrollToRow
+  };
 }
 
-function focusableModalElements(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(modalFocusableSelector))
-    .filter((element) => !element.hasAttribute("disabled") && isVisibleElement(element));
+export function computeVirtualTimelineWindow({
+  clientHeight,
+  overscan = timelineVirtualizationOverscan,
+  rows,
+  scrollTop,
+  threshold = timelineVirtualizationThreshold
+}: VirtualTimelineWindowInput): ComputedVirtualTimelineWindow {
+  if (rows.length <= threshold) {
+    return { enabled: false, endIndex: rows.length, paddingBottom: 0, paddingTop: 0, rows, startIndex: 0 };
+  }
+  const heights = rows.map(estimateTimelineRowHeight);
+  const offsets = new Array<number>(heights.length + 1);
+  offsets[0] = 0;
+  heights.forEach((height, index) => {
+    offsets[index + 1] = (offsets[index] ?? 0) + height;
+  });
+  const totalHeight = offsets[offsets.length - 1] ?? 0;
+  const visibleStart = Math.max(0, scrollTop - 360);
+  const visibleEnd = Math.min(totalHeight, scrollTop + clientHeight + 360);
+  const startIndex = Math.max(0, lowerBound(offsets, visibleStart) - overscan);
+  const endIndex = Math.min(rows.length, lowerBound(offsets, visibleEnd) + overscan);
+  return {
+    enabled: true,
+    endIndex,
+    paddingBottom: Math.max(0, totalHeight - (offsets[endIndex] ?? totalHeight)),
+    paddingTop: offsets[startIndex] ?? 0,
+    rows: rows.slice(startIndex, endIndex),
+    startIndex
+  };
 }
 
-function preferredModalFocusElement(root: HTMLElement): HTMLElement | null {
-  const target = root.querySelector<HTMLElement>("[data-modal-autofocus='true'], [autofocus]");
-  return target && isVisibleElement(target) && !target.hasAttribute("disabled") ? target : null;
+function lowerBound(values: number[], target: number): number {
+  let left = 0;
+  let right = values.length - 1;
+  while (left < right) {
+    const middle = Math.floor((left + right) / 2);
+    if ((values[middle] ?? 0) < target) {
+      left = middle + 1;
+    } else {
+      right = middle;
+    }
+  }
+  return left;
 }
 
-function isVisibleElement(element: HTMLElement): boolean {
-  return Boolean(element.offsetWidth || element.offsetHeight || element.getClientRects().length);
+function estimateTimelineRowHeight(row: TimelineRow): number {
+  if (row.kind === "date") {
+    return 44;
+  }
+  const message = row.message;
+  const bodyLines = Math.max(1, Math.ceil(message.body.length / 54));
+  const replyHeight = message.replyToEventId ? 58 : 0;
+  const reactionHeight = message.reactions?.length ? 30 : 0;
+  const attachmentHeight = message.kind === "image" || message.kind === "video"
+    ? 236
+    : message.kind === "location"
+      ? 112
+      : message.kind === "file"
+        ? 84
+        : 0;
+  return Math.max(48, 28 + bodyLines * 24 + replyHeight + reactionHeight + attachmentHeight);
+}
+
+export function chatSelectionReducer(state: ChatSelectionState, action: ChatSelectionAction): ChatSelectionState {
+  switch (action.type) {
+    case "clear":
+      return { conversationId: null, groupId: null, roomId: null };
+    case "conversation":
+      return { ...state, conversationId: resolveSelectionValue(action.value, state.conversationId) };
+    case "group":
+      return { ...state, groupId: resolveSelectionValue(action.value, state.groupId) };
+    case "room":
+      return { ...state, roomId: resolveSelectionValue(action.value, state.roomId) };
+    default:
+      return state;
+  }
+}
+
+function resolveSelectionValue(value: ChatSelectionValue, current: string | null): string | null {
+  return typeof value === "function" ? value(current) : value;
 }
 
 // Memoized row components: re-render only when their own props change. Combined
@@ -371,9 +491,18 @@ export function ChatApp() {
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const [matrixSession, setMatrixSession] = React.useState<MatrixMessagingSession | null>(null);
   const [encryptionRecoveryStatus, setEncryptionRecoveryStatus] = React.useState<MatrixEncryptionRecoveryStatus | null>(null);
-  const [selectedConversationId, setSelectedConversationId] = React.useState<string | null>(null);
-  const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
-  const [selectedRoomId, setSelectedRoomId] = React.useState<string | null>(null);
+  const [chatSelection, dispatchChatSelection] = React.useReducer(chatSelectionReducer, {
+    conversationId: null,
+    groupId: null,
+    roomId: null
+  });
+  const selectedConversationId = chatSelection.conversationId;
+  const selectedGroupId = chatSelection.groupId;
+  const selectedRoomId = chatSelection.roomId;
+  const setSelectedConversationId = React.useCallback((value: ChatSelectionValue) => dispatchChatSelection({ type: "conversation", value }), []);
+  const setSelectedGroupId = React.useCallback((value: ChatSelectionValue) => dispatchChatSelection({ type: "group", value }), []);
+  const setSelectedRoomId = React.useCallback((value: ChatSelectionValue) => dispatchChatSelection({ type: "room", value }), []);
+  const clearChatSelection = React.useCallback(() => dispatchChatSelection({ type: "clear" }), []);
   const [pendingAttachment, setPendingAttachment] = React.useState<PendingChatAttachment | null>(null);
   const [conversationQuery, setConversationQuery] = React.useState("");
   const [messageSearchQuery, setMessageSearchQuery] = React.useState("");
@@ -426,6 +555,7 @@ export function ChatApp() {
   const [localPreferencesRevision, setLocalPreferencesRevision] = React.useState(0);
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
   const messageMenuRef = React.useRef<HTMLDivElement | null>(null);
+  const messageCanvasRef = React.useRef<HTMLDivElement | null>(null);
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
   const routeAppliedRef = React.useRef(false);
   const routeOpenAttemptRef = React.useRef<string | null>(null);
@@ -520,6 +650,7 @@ export function ChatApp() {
   const showingDemoTimeline = retainedTimeline.length === 0 && demoTimeline.length > 0;
   const visibleTimeline = showingDemoTimeline ? demoTimeline : retainedTimeline;
   const timelineRows = React.useMemo(() => buildTimelineRows(visibleTimeline), [visibleTimeline]);
+  const virtualTimeline = useVirtualTimelineRows(timelineRows, messageCanvasRef);
   const timelineMessages = React.useMemo(() => timelineRows.filter((row) => row.kind === "message").map((row) => row.message), [timelineRows]);
   const messageById = React.useMemo(
     () => new Map(timelineMessages.map((message) => [message.eventId, message])),
@@ -609,8 +740,16 @@ export function ChatApp() {
       return;
     }
     const selector = `[data-message-id="${cssEscape(activeSearchMessageId)}"]`;
-    document.querySelector<HTMLElement>(selector)?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [activeSearchMessageId]);
+    const existingNode = document.querySelector<HTMLElement>(selector);
+    if (existingNode) {
+      existingNode.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
+    const rowIndex = timelineRows.findIndex((row) => row.kind === "message" && row.message.eventId === activeSearchMessageId);
+    if (rowIndex >= 0) {
+      virtualTimeline.scrollToRow(rowIndex, "center");
+    }
+  }, [activeSearchMessageId, timelineRows, virtualTimeline.scrollToRow]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1617,9 +1756,7 @@ export function ChatApp() {
 
   function applyRouteSelection(selection: string | null): boolean {
     if (!selection) {
-      setSelectedConversationId(null);
-      setSelectedGroupId(null);
-      setSelectedRoomId(null);
+      clearChatSelection();
       return true;
     }
     const conversation = conversations.find((item) => item.conversationId === selection || item.matrix?.roomId === selection);
@@ -1684,9 +1821,7 @@ export function ChatApp() {
   }
 
   function clearMobileSelection() {
-    setSelectedConversationId(null);
-    setSelectedGroupId(null);
-    setSelectedRoomId(null);
+    clearChatSelection();
     writeChatRoute(null);
   }
 
@@ -2312,10 +2447,22 @@ export function ChatApp() {
               </div>
               <div className="conversation-actions">
                 {selectedRoom?.encrypted ? <span className="e2ee-chip"><ShieldCheck size={14} /> E2EE</span> : null}
-                <button className="round-icon" disabled type="button" aria-label="Videohovor">
+                <button
+                  className="round-icon"
+                  onClick={() => setNotice(chatText("calls.videoComingSoon"))}
+                  title={chatText("calls.videoTitle")}
+                  type="button"
+                  aria-label={chatText("calls.videoTitle")}
+                >
                   <Video size={21} />
                 </button>
-                <button className="round-icon" disabled type="button" aria-label="Hovor">
+                <button
+                  className="round-icon"
+                  onClick={() => setNotice(chatText("calls.audioComingSoon"))}
+                  title={chatText("calls.audioTitle")}
+                  type="button"
+                  aria-label={chatText("calls.audioTitle")}
+                >
                   <Phone size={21} />
                 </button>
                 <div className="chat-menu-anchor" ref={messageMenuRef}>
@@ -2408,9 +2555,12 @@ export function ChatApp() {
             ) : (
               <>
                 <div
+                  ref={messageCanvasRef}
                   className={clsx("message-canvas", messageActionPopover && "action-focus-active")}
                   onScroll={(event) => {
                     const node = event.currentTarget;
+                    // Keep the virtual timeline window synchronized with the real scroll position.
+                    // State updates are cheap here because only the visible row slice changes.
                     setShowJumpToLatest(node.scrollHeight - node.scrollTop - node.clientHeight > 180);
                   }}
                 >
@@ -2420,7 +2570,10 @@ export function ChatApp() {
                     onLoad={() => void loadOlderMessages()}
                   />
                   {timelineRows.length === 0 ? <div className="day-pill">Dnes</div> : null}
-                  {timelineRows.map((row) => row.kind === "date" ? (
+                  {virtualTimeline.enabled && virtualTimeline.paddingTop > 0 ? (
+                    <div className="timeline-spacer" style={{ height: virtualTimeline.paddingTop }} aria-hidden="true" />
+                  ) : null}
+                  {virtualTimeline.rows.map((row) => row.kind === "date" ? (
                     <div className="day-pill" key={row.id}>{row.label}</div>
                   ) : (
                     <MessageRowMemo
@@ -2442,6 +2595,9 @@ export function ChatApp() {
                       onToggleSelected={handleToggleSelectedMessage}
                     />
                   ))}
+                  {virtualTimeline.enabled && virtualTimeline.paddingBottom > 0 ? (
+                    <div className="timeline-spacer" style={{ height: virtualTimeline.paddingBottom }} aria-hidden="true" />
+                  ) : null}
                   <div ref={timelineEndRef} aria-hidden="true" />
                 </div>
                 {showJumpToLatest ? (
@@ -2591,22 +2747,35 @@ export function ChatApp() {
         />
       ) : null}
       {recoveryDialogOpen ? (
-        <EncryptionRecoveryDialog
-          generatedRecoveryKey={generatedRecoveryKey}
-          recoveryKeyInput={recoveryKeyInput}
-          saving={recoveryWorking}
-          status={encryptionRecoveryStatus}
-          onClose={() => {
-            setRecoveryDialogOpen(false);
-            setGeneratedRecoveryKey(null);
-          }}
-          onCreate={() => void createEncryptionRecovery(false)}
-          onRecoveryKeyInputChange={setRecoveryKeyInput}
-          onReset={() => void createEncryptionRecovery(true)}
-          onRestore={() => void restoreEncryptionRecovery()}
-        />
+        <React.Suspense fallback={<DialogLoadingFallback label="Obnova E2EE" />}>
+          <EncryptionRecoveryDialog
+            generatedRecoveryKey={generatedRecoveryKey}
+            recoveryKeyInput={recoveryKeyInput}
+            saving={recoveryWorking}
+            status={encryptionRecoveryStatus}
+            onClose={() => {
+              setRecoveryDialogOpen(false);
+              setGeneratedRecoveryKey(null);
+            }}
+            onCreate={() => void createEncryptionRecovery(false)}
+            onRecoveryKeyInputChange={setRecoveryKeyInput}
+            onReset={() => void createEncryptionRecovery(true)}
+            onRestore={() => void restoreEncryptionRecovery()}
+          />
+        </React.Suspense>
       ) : null}
     </main>
+  );
+}
+
+function DialogLoadingFallback({ label }: { label: string }) {
+  return (
+    <div className="mute-backdrop" role="presentation">
+      <section className="mute-dialog" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>
+        <h2>{label}</h2>
+        <p>{chatText("dialog.loading")}</p>
+      </section>
+    </div>
   );
 }
 
@@ -4252,167 +4421,6 @@ function MessageRetentionDialog({
         <footer>
           <button disabled={saving} onClick={onClose} type="button">Hotovo</button>
         </footer>
-      </section>
-    </div>
-  );
-}
-
-function EncryptionRecoveryDialog({
-  generatedRecoveryKey,
-  recoveryKeyInput,
-  saving,
-  status,
-  onClose,
-  onCreate,
-  onRecoveryKeyInputChange,
-  onReset,
-  onRestore
-}: {
-  generatedRecoveryKey: string | null;
-  recoveryKeyInput: string;
-  saving: boolean;
-  status: MatrixEncryptionRecoveryStatus | null;
-  onClose: () => void;
-  onCreate: () => void;
-  onRecoveryKeyInputChange: (value: string) => void;
-  onReset: () => void;
-  onRestore: () => void;
-}) {
-  const hasBackup = status?.keyBackupExists === true;
-  const ready = status?.ready === true;
-  const [copyState, setCopyState] = React.useState<"copied" | "error" | "idle">("idle");
-
-  React.useEffect(() => {
-    if (copyState === "idle") {
-      return undefined;
-    }
-    const timeout = window.setTimeout(() => setCopyState("idle"), 1800);
-    return () => window.clearTimeout(timeout);
-  }, [copyState]);
-  const modal = useModalFocus<HTMLElement>(onClose);
-
-  async function copyRecoveryKey() {
-    if (!generatedRecoveryKey) {
-      return;
-    }
-    try {
-      await navigator.clipboard?.writeText(generatedRecoveryKey);
-      setCopyState("copied");
-    } catch {
-      setCopyState("error");
-    }
-  }
-
-  return (
-    <div className="mute-backdrop" role="presentation" onClick={onClose}>
-      <section
-        ref={modal.dialogRef}
-        className="recovery-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Obnova E2EE"
-        tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={modal.onDialogKeyDown}
-      >
-        <header>
-          <button className="round-icon small" onClick={onClose} type="button" aria-label="Zavřít">
-            <ArrowLeft size={20} />
-          </button>
-          <span>
-            <h2>Obnova E2EE</h2>
-            <small>{ready ? "Key backup je aktivní" : hasBackup ? "Obnovte toto zařízení" : "Nastavte více zařízení"}</small>
-          </span>
-        </header>
-        <div className="recovery-illustration" aria-hidden="true">
-          <KeyRound size={54} />
-        </div>
-
-        {generatedRecoveryKey ? (
-          <>
-            <p>
-              Uložte tento obnovovací klíč do správce hesel nebo na bezpečné místo.
-              Bez něj nepůjde obnovit E2EE na novém zařízení, pokud nebude dostupné jiné ověřené zařízení.
-            </p>
-            <div className="recovery-key-box">
-              <code>{generatedRecoveryKey}</code>
-              <button
-                className={clsx("recovery-copy-button", copyState !== "idle" && copyState)}
-                onClick={() => void copyRecoveryKey()}
-                type="button"
-                aria-label="Zkopírovat obnovovací klíč"
-              >
-                {copyState === "copied" ? <Check size={18} /> : <Copy size={18} />}
-                {copyState === "copied" ? "Zkopírováno" : "Zkopírovat"}
-              </button>
-              <span className={clsx("recovery-copy-feedback", copyState)} role="status" aria-live="polite">
-                {copyState === "copied"
-                  ? "Klíč je zkopírovaný do schránky."
-                  : copyState === "error"
-                    ? "Kopírování se nepodařilo. Označte klíč ručně."
-                    : ""}
-              </span>
-            </div>
-            <footer>
-              <button className="primary-dialog-action" onClick={onClose} type="button">Mám uloženo</button>
-            </footer>
-          </>
-        ) : ready ? (
-          <>
-            <p>
-              Toto zařízení má přístup k E2EE key backupu. Pokud obnovovací klíč unikl nebo iOS hlásí
-              nekompatibilní E2EE metadata, resetujte obnovu a použijte nově vygenerovaný klíč.
-            </p>
-            <footer>
-              <button className="primary-dialog-action" onClick={onClose} type="button">Hotovo</button>
-              <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
-                Resetovat E2EE obnovu
-              </button>
-            </footer>
-          </>
-        ) : hasBackup ? (
-          <>
-            <p>
-              Zadejte obnovovací klíč uložený při prvním nastavení. Klíč zůstane pouze v tomto prohlížeči
-              a použije se k odemčení šifrované zálohy.
-            </p>
-            <label className="recovery-input">
-              <span>Obnovovací klíč</span>
-              <textarea
-                autoFocus
-                data-modal-autofocus="true"
-                spellCheck={false}
-                value={recoveryKeyInput}
-                onChange={(event) => onRecoveryKeyInputChange(event.target.value)}
-              />
-            </label>
-            <footer>
-              <button disabled={saving || !recoveryKeyInput.trim()} className="primary-dialog-action" onClick={onRestore} type="button">
-                {saving ? <Loader2 className="spin" size={18} /> : <KeyRound size={18} />}
-                Obnovit zařízení
-              </button>
-              <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
-                Začít znovu bez staré historie
-              </button>
-            </footer>
-          </>
-        ) : (
-          <>
-            <p>
-              Vytvořte obnovovací klíč před psaním zpráv. COP ani Matrix server tento klíč neznají;
-              bez uloženého klíče ztratíte možnost obnovit historii na novém zařízení.
-            </p>
-            <footer>
-              <button disabled={saving} className="primary-dialog-action" onClick={onCreate} type="button">
-                {saving ? <Loader2 className="spin" size={18} /> : <KeyRound size={18} />}
-                Vytvořit obnovovací klíč
-              </button>
-              <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
-                Resetovat staré nastavení
-              </button>
-            </footer>
-          </>
-        )}
       </section>
     </div>
   );
