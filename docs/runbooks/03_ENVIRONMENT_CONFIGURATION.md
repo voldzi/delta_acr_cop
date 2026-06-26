@@ -39,6 +39,7 @@ samostatný chat:
 COP_API_PORT=4310
 COP_WEB_PORT=4311
 COP_CHAT_PORT=4314
+COP_CHAT_PROXY_TARGET=http://localhost:4314
 COP_PUBLIC_API_BASE_URL=
 COP_DEPLOY_DOMAIN=cop.zeleznalady.cz
 COP_WEB_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
@@ -54,6 +55,8 @@ prázdné, aby oba browser klienti volali COP API relativně přes `/api/...`.
 chatem pro OIDC token exchange; chrání `/chat/` před browser blokací
 public-to-private token requestů, když `login.zeleznalady.cz` v pilotní síti
 rezolvuje na privátní adresu.
+`COP_CHAT_PROXY_TARGET` používá pouze lokální Vite dev server mapové aplikace,
+aby iframe `/chat/` v COP při vývoji směroval na samostatný `cop-chat`.
 
 ## AI Provider / COP Ollama Provider
 
