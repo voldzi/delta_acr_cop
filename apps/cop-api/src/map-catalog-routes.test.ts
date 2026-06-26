@@ -258,7 +258,7 @@ describe("map catalog route", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      layers: Array<{ compatibilityOnly?: boolean; layerId: string; preferredProviderId?: string; query: { providerId: string; providerLayerIds?: string[]; providerSourceIds?: string[] } }>;
+      layers: Array<{ compatibilityOnly?: boolean; layerId: string; preferredProviderId?: string; query: { maxFeatures?: number; providerId: string; providerLayerIds?: string[]; providerSourceIds?: string[] } }>;
       sources: Array<{ compatibilityOnly?: boolean; providerId: string; sourceId: string }>;
     };
     const fireLayer = body.layers.find((layer) => layer.layerId === "public.safety.fire");
@@ -272,6 +272,15 @@ describe("map catalog route", () => {
     expect(fireLayer?.compatibilityOnly).toBeUndefined();
     expect(fireLayer?.preferredProviderId).toBeUndefined();
     expect(body.layers.filter((layer) => layer.layerId === "public.safety.fire")).toHaveLength(1);
+    const floodLayer = body.layers.find((layer) => layer.layerId === "public.safety.flood");
+    expect(floodLayer).toMatchObject({
+      query: {
+        maxFeatures: 600,
+        providerId: "sim.safety-data",
+        providerLayerIds: ["flood"],
+        providerSourceIds: ["chmi_hydro"]
+      }
+    });
     expect(body.sources).not.toEqual(expect.arrayContaining([
       expect.objectContaining({
         compatibilityOnly: true,
@@ -1421,6 +1430,29 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
           audience: "public",
           cacheTtlSeconds: 600,
           defaultVisible: false,
+          geometryTypes: ["Point"],
+          kind: "vector_features",
+          label: "Vodní stavy a průtoky",
+          providerLayerId: "flood",
+          query: {
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.safety-data",
+            providerLayerIds: ["flood"],
+            providerSourceIds: ["chmi_hydro"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "public.safety.flood",
+          refreshSeconds: 600,
+          role: "overlay",
+          selectable: true,
+          sourceIds: ["chmi_hydro"],
+          styleProfile: "water-level-v1"
+        },
+        {
+          audience: "public",
+          cacheTtlSeconds: 600,
+          defaultVisible: false,
           geometryTypes: ["Point", "Polygon", "MultiPolygon"],
           kind: "vector_features",
           label: "Požáry",
@@ -1452,6 +1484,17 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
           sourceId: "chmi_alerts",
           sourceRole: "final",
           updateCadenceSeconds: 300,
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.safety.flood"],
+          label: "CHMI Hydro",
+          selectableInMap: true,
+          sourceId: "chmi_hydro",
+          sourceRole: "final",
+          updateCadenceSeconds: 600,
           visibleInDiagnostics: true
         },
         {

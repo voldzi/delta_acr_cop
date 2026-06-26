@@ -243,7 +243,7 @@ const defaultConfig: SafetyDataSourceConfig = {
     warnings: 2 * 60 * 1000,
     weather_alerts: 5 * 60 * 1000
   },
-  maxLimit: 250,
+  maxLimit: 600,
   observabilityCacheTtlMs: 60000,
   staleIfErrorMs: 20 * 60 * 1000,
   timeoutMs: 15000

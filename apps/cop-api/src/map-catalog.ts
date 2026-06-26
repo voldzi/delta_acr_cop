@@ -295,7 +295,7 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
       },
       query: {
         ...(categoryIds.length > 0 ? { categoryIds } : {}),
-        maxFeatures: layer.query?.maxFeatures,
+        maxFeatures: maxFeaturesForCatalogLayer(layer),
         mode,
         providerId: layer.query?.providerId ?? providerId,
         ...(providerLayerIds.length > 0 ? { providerLayerIds } : {}),
@@ -308,6 +308,13 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
       styleProfile: layer.styleProfile ?? styleProfileForCatalogLayer(layer)
     }
   ];
+}
+
+function maxFeaturesForCatalogLayer(layer: ProviderCatalogLayer): number | undefined {
+  if (layer.recommendedCatalogLayerId === "public.safety.flood") {
+    return Math.max(layer.query?.maxFeatures ?? 0, 600);
+  }
+  return layer.query?.maxFeatures;
 }
 
 function defaultVisibleForCatalogLayer(layer: ProviderCatalogLayer): boolean {
