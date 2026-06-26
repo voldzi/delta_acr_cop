@@ -1,5 +1,11 @@
 import { createPublicSituationAggregateSourceSystem, type SourceSystem } from "@cop/canonical-model";
-import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
+import {
+  normalizeProviderMapCatalog,
+  normalizeProviderTaxonomy,
+  providerTaxonomyEntryCount,
+  type ProviderMapCatalog,
+  type ProviderTaxonomy
+} from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
 
 export type SituationLayerId =
@@ -197,6 +203,7 @@ export interface SituationDataSource {
   fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection>;
   fetchLayers(requestNow: Date): Promise<SituationLayerDescriptor[]>;
   fetchSources(requestNow: Date): Promise<SituationSourceDescriptor[]>;
+  fetchTaxonomy?(requestNow: Date): Promise<ProviderTaxonomy>;
 }
 
 const defaultConfig: SituationDataSourceConfig = {
@@ -348,6 +355,8 @@ export class SituationDataSourceAdapter implements SituationDataSource {
   private catalogInflight: Promise<ProviderMapCatalog> | null = null;
   private layerCache: { expiresAtMs: number; value: SituationLayerDescriptor[] } | null = null;
   private sourceCache: { expiresAtMs: number; value: SituationSourceDescriptor[] } | null = null;
+  private taxonomyCache: { expiresAtMs: number; value: ProviderTaxonomy } | null = null;
+  private taxonomyInflight: Promise<ProviderTaxonomy> | null = null;
 
   constructor(readonly config: SituationDataSourceConfig) {
     this.sourceSystem = createPublicSituationAggregateSourceSystem();
@@ -403,6 +412,26 @@ export class SituationDataSourceAdapter implements SituationDataSource {
       value: sources
     };
     return sources;
+  }
+
+  async fetchTaxonomy(requestNow: Date): Promise<ProviderTaxonomy> {
+    if (this.taxonomyCache && this.taxonomyCache.expiresAtMs > requestNow.getTime()) {
+      return this.taxonomyCache.value;
+    }
+    if (this.taxonomyInflight) {
+      return this.taxonomyInflight;
+    }
+    this.taxonomyInflight = fetchSituationTaxonomy(this.config, requestNow);
+    try {
+      const value = await this.taxonomyInflight;
+      this.taxonomyCache = {
+        expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
+        value
+      };
+      return value;
+    } finally {
+      this.taxonomyInflight = null;
+    }
   }
 
   async fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
@@ -527,7 +556,11 @@ class ManagedSituationCache<T> {
   }
 }
 
-export function buildSituationDataHealth(response: SituationFeatureCollection | SituationLayerDescriptor[], requestNow: Date): SourceHealthOverride {
+export function buildSituationDataHealth(
+  response: SituationFeatureCollection | SituationLayerDescriptor[],
+  requestNow: Date,
+  taxonomy?: ProviderTaxonomy
+): SourceHealthOverride {
   if (Array.isArray(response)) {
     return {
       detail: `layers ${response.length}`,
@@ -536,12 +569,15 @@ export function buildSituationDataHealth(response: SituationFeatureCollection | 
       lastPollAt: requestNow.toISOString(),
       lastSuccessAt: requestNow.toISOString(),
       summary: {
-        layerCount: response.length
-      }
+        layerCount: response.length,
+        ...taxonomyHealthSummary(taxonomy)
+      },
+      ...(taxonomy?.warnings.length ? { warnings: taxonomy.warnings } : {})
     };
   }
 
-  const warningCount = response.warnings.length || response.summary.warningCount;
+  const warnings = uniqueStrings([...response.warnings, ...(taxonomy?.warnings ?? [])]);
+  const warningCount = warnings.length || response.summary.warningCount;
   const health: SourceHealthOverride["health"] = warningCount > 0
     ? "DEGRADED"
     : response.summary.staleFeatureCount > 0
@@ -558,9 +594,10 @@ export function buildSituationDataHealth(response: SituationFeatureCollection | 
       featureCount: response.summary.featureCount,
       sourceCount: response.summary.sourceCount,
       staleFeatureCount: response.summary.staleFeatureCount,
-      warningCount
+      warningCount,
+      ...taxonomyHealthSummary(taxonomy)
     },
-    warnings: response.warnings
+    warnings
   };
 }
 
@@ -693,6 +730,21 @@ function projectSituationFeatureCollection(
 
 async function fetchSituationCatalog(config: SituationDataSourceConfig, requestNow: Date): Promise<ProviderMapCatalog> {
   return normalizeProviderMapCatalog(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/catalog`), config, requestNow), "sim.situation-data");
+}
+
+async function fetchSituationTaxonomy(config: SituationDataSourceConfig, requestNow: Date): Promise<ProviderTaxonomy> {
+  return normalizeProviderTaxonomy(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/taxonomy`), config, requestNow), "sim.situation-data");
+}
+
+function taxonomyHealthSummary(taxonomy: ProviderTaxonomy | undefined): Record<string, unknown> {
+  if (!taxonomy) {
+    return {};
+  }
+  return {
+    taxonomyCount: taxonomy.taxonomies.length,
+    taxonomyEntryCount: providerTaxonomyEntryCount(taxonomy),
+    ...(taxonomy.generatedAt ? { taxonomyGeneratedAt: taxonomy.generatedAt } : {})
+  };
 }
 
 function situationLayersFromProviderCatalog(catalog: ProviderMapCatalog): SituationLayerDescriptor[] {

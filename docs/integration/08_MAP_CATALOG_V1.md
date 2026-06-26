@@ -467,6 +467,23 @@ source-neutral `/features` endpoint. Deprecated compatibility aliases such as
 SIM `/cop/features` must not be called by COP web, native clients or new server
 adapters, and must not be stored in user preferences.
 
+SIM taxonomy endpoints are server-side COP inputs:
+
+```http
+GET /situation-data/api/v1/taxonomy
+GET /safety-data/api/v1/taxonomy
+```
+
+COP reads them through the configured internal provider URL, caches the response
+with the provider adapter and exposes only derived provider health metadata to
+clients. Clients must not call taxonomy endpoints directly. Layer and alert
+meaning is determined from stable fields such as `layerId`, `sourceId`,
+`typeCode`, `sourceCode`, `sourceSystem`, `hazardType`, `category`, `severity`,
+`validFrom`, `validUntil`, `metrics`, `tags`, `localized`,
+`providerProperties.taxonomy`, `providerProperties.presentation` and
+`providerProperties.notification`; localized Czech or English text is
+presentation only.
+
 ## Feature Requirements
 
 Every rendered feature should carry:

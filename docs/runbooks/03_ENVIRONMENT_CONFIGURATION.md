@@ -144,7 +144,7 @@ COP_WEATHER_CAMERA_IMAGE_CACHE_SECONDS=180
 COP_WEATHER_CAMERA_TIMEOUT_MS=8000
 ```
 
-Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora. Při výpadku SIM endpointu vrací prázdný degraded `FeatureCollection`, aby mapa zůstala použitelná. Timeout je vyšší než běžná obnovovací kadence mapy, protože kombinované veřejné vrstvy mohou po studeném startu trvat několik sekund.
+Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora a v produkci používá interní server-to-server URL `http://docker.home.cz:5020/...`, nikoli veřejné browser API. COP při čtení katalogu načítá také `GET /situation-data/api/v1/taxonomy`; taxonomy zůstává server-side a promítá se do Source Health, zatímco rozhodování o významu vrstev a jevů vychází ze stabilních polí `layerId`, `sourceId`, `typeCode`, `category`, `severity`, `metrics`, `tags` a `localized`, ne z českého nebo anglického textu. Při výpadku SIM endpointu vrací prázdný degraded `FeatureCollection`, aby mapa zůstala použitelná. Timeout je vyšší než běžná obnovovací kadence mapy, protože kombinované veřejné vrstvy mohou po studeném startu trvat několik sekund.
 
 ČHMÚ radar COP načítá pouze přes SIM. Aktuální raster overlay používá SIM clean
 URL z `providerProperties.raster.url`; frame katalog pro animaci jde přes COP
@@ -171,7 +171,7 @@ COP_SAFETY_DATA_OBSERVABILITY_CACHE_TTL_MS=60000
 COP_SAFETY_DATA_TIMEOUT_MS=15000
 ```
 
-Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora, slučuje malé posuny mapy do kanonického bbox cache klíče a při výpadku vrací prázdný degraded `FeatureCollection`.
+Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora a v produkci používá interní server-to-server URL `http://docker.home.cz:5020/...`, nikoli veřejné browser API. COP při čtení katalogu načítá také `GET /safety-data/api/v1/taxonomy`; taxonomy zůstává server-side a promítá se do Source Health. ČHMÚ výstrahy se vyhodnocují podle normalizovaných polí `typeCode`, `sourceCode`, `sourceSystem`, `hazardType`, `category`, `severity`, `validFrom`, `validUntil`, `metrics`, `providerProperties.taxonomy`, `providerProperties.presentation` a `providerProperties.notification`; jazyková varianta `localized.cs`/`localized.en` je pouze prezentace a nesmí vytvářet duplicitní události. COP slučuje malé posuny mapy do kanonického bbox cache klíče a při výpadku vrací prázdný degraded `FeatureCollection`.
 
 COP také server-side čte `GET /safety-data/api/v1/observability`. Tento endpoint se nepoužívá jako mapová vrstva; promítá se jen do Source Health jako provozní kvalita safety provideru, cache hit-rate, stale feature count a varování zdrojových cache. `status=degraded` znamená sníženou kvalitu externích dat, ne výpadek SIM.
 

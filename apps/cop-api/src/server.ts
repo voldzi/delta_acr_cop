@@ -5781,13 +5781,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     try {
-      const [catalog, layers, rawSources] = await Promise.all([
+      const [catalog, layers, rawSources, taxonomy] = await Promise.all([
         situationDataSource.fetchCatalog ? situationDataSource.fetchCatalog(requestNow) : Promise.resolve(undefined),
         situationDataSource.fetchLayers(requestNow),
-        situationDataSource.fetchSources(requestNow)
+        situationDataSource.fetchSources(requestNow),
+        readSituationTaxonomy(requestNow)
       ]);
       const sources = filterSituationSourcesForActor(rawSources, actor);
-      const health = buildSituationDataHealth(layers, requestNow);
+      const health = buildSituationDataHealth(layers, requestNow, taxonomy);
       state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
       return {
         catalog,
@@ -5823,13 +5824,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     try {
-      const [catalog, layers, sources, observability] = await Promise.all([
+      const [catalog, layers, sources, observability, taxonomy] = await Promise.all([
         safetyDataSource.fetchCatalog ? safetyDataSource.fetchCatalog(requestNow) : Promise.resolve(undefined),
         safetyDataSource.fetchLayers(requestNow),
         safetyDataSource.fetchSources(requestNow),
-        readSafetyObservability(requestNow)
+        readSafetyObservability(requestNow),
+        readSafetyTaxonomy(requestNow)
       ]);
-      const health = buildSafetyDataHealth(layers, requestNow, observability);
+      const health = buildSafetyDataHealth(layers, requestNow, observability, taxonomy);
       state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
       return {
         catalog,
@@ -5851,6 +5853,38 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         status: "unavailable" as const,
         warning: health.lastError ?? "Safety data catalog provider is unavailable."
       };
+    }
+  }
+
+  async function readSituationTaxonomy(requestNow: Date) {
+    if (!situationDataSource?.fetchTaxonomy) {
+      return undefined;
+    }
+    try {
+      return await situationDataSource.fetchTaxonomy(requestNow);
+    } catch (error) {
+      appendAudit(state, "MAP_CATALOG_SITUATION_TAXONOMY_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Situation data taxonomy request failed.");
+      return undefined;
+    }
+  }
+
+  async function readSafetyTaxonomy(requestNow: Date) {
+    if (!safetyDataSource?.fetchTaxonomy) {
+      return undefined;
+    }
+    try {
+      return await safetyDataSource.fetchTaxonomy(requestNow);
+    } catch (error) {
+      appendAudit(state, "MAP_CATALOG_SAFETY_TAXONOMY_FAILED", {
+        error: errorMessage(error),
+        sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
+      });
+      app.log.warn({ error }, "Safety data taxonomy request failed.");
+      return undefined;
     }
   }
 

@@ -19,6 +19,9 @@ describe("SafetyDataSourceAdapter", () => {
       if (url.endsWith("/observability")) {
         return new Response(JSON.stringify(sampleObservabilityResponse()), { status: 200 });
       }
+      if (url.endsWith("/taxonomy")) {
+        return new Response(JSON.stringify(sampleTaxonomyResponse()), { status: 200 });
+      }
       return new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -36,6 +39,7 @@ describe("SafetyDataSourceAdapter", () => {
     const sources = await adapter.fetchSources(requestNow);
     const config = await adapter.fetchConfig(requestNow);
     const observability = await adapter.fetchObservability(requestNow);
+    const taxonomy = await adapter.fetchTaxonomy(requestNow);
     const features = await adapter.fetchFeatures({
       bbox: { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: ["warnings", "flood"],
@@ -48,7 +52,8 @@ describe("SafetyDataSourceAdapter", () => {
     expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
       "https://sim.zeleznalady.cz/safety-data/api/v1/observability"
     );
-    expect(String(fetchMock.mock.calls[3]?.[0])).toBe(
+    expect(String(fetchMock.mock.calls[3]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/taxonomy");
+    expect(String(fetchMock.mock.calls[4]?.[0])).toBe(
       "https://sim.zeleznalady.cz/safety-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=warnings%2Cflood&limit=20&source=chmi_alerts%2Cchmi_hydro"
     );
     expect(layers).toMatchObject([
@@ -78,6 +83,21 @@ describe("SafetyDataSourceAdapter", () => {
         }
       ],
       status: "ok"
+    });
+    expect(taxonomy).toMatchObject({
+      contractVersion: "sim-provider-taxonomy-v1",
+      providerId: "sim.safety-data",
+      taxonomies: [
+        {
+          entries: [
+            expect.objectContaining({
+              sourceCode: "I.2",
+              typeCode: "weather.wind.strong"
+            })
+          ],
+          taxonomyId: "safety-hazard-types"
+        }
+      ]
     });
     expect(features).toMatchObject({
       contractVersion: "cop-safety-source-v1",
@@ -419,6 +439,32 @@ function sampleCatalogResponse() {
         sourceId: "chmi_alerts"
       }
     ]
+  };
+}
+
+function sampleTaxonomyResponse() {
+  return {
+    contractVersion: "sim-provider-taxonomy-v1",
+    generatedAt: "2026-05-20T10:00:00Z",
+    providerId: "sim.safety-data",
+    taxonomies: [
+      {
+        label: "Safety hazard types",
+        taxonomyId: "safety-hazard-types",
+        entries: [
+          {
+            category: "warning.wind",
+            hazardType: "wind",
+            layerId: "warnings",
+            severity: "warning",
+            sourceCode: "I.2",
+            sourceId: "chmi_alerts",
+            typeCode: "weather.wind.strong"
+          }
+        ]
+      }
+    ],
+    warnings: []
   };
 }
 

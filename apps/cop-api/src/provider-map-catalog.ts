@@ -75,6 +75,20 @@ export interface ProviderCatalogSource {
   selectableInMap?: boolean;
 }
 
+export interface ProviderTaxonomy {
+  contractVersion: "sim-provider-taxonomy-v1";
+  generatedAt?: string;
+  providerId: string;
+  taxonomies: ProviderTaxonomyGroup[];
+  warnings: string[];
+}
+
+export interface ProviderTaxonomyGroup {
+  entries: Array<Record<string, unknown>>;
+  label?: string;
+  taxonomyId: string;
+}
+
 export function normalizeProviderMapCatalog(value: unknown, expectedProviderId?: string): ProviderMapCatalog {
   if (!isRecord(value) || value.contractVersion !== "provider-map-catalog-v1") {
     throw new Error("Provider catalog response does not match provider-map-catalog-v1.");
@@ -92,6 +106,27 @@ export function normalizeProviderMapCatalog(value: unknown, expectedProviderId?:
     status: optionalString(value.status),
     warnings: stringList(value.warnings)
   };
+}
+
+export function normalizeProviderTaxonomy(value: unknown, expectedProviderId?: string): ProviderTaxonomy {
+  if (!isRecord(value) || value.contractVersion !== "sim-provider-taxonomy-v1") {
+    throw new Error("Provider taxonomy response does not match sim-provider-taxonomy-v1.");
+  }
+  const providerId = optionalString(value.providerId);
+  if (!providerId || (expectedProviderId && providerId !== expectedProviderId)) {
+    throw new Error(`Provider taxonomy id is invalid${expectedProviderId ? ` for ${expectedProviderId}` : ""}.`);
+  }
+  return {
+    contractVersion: "sim-provider-taxonomy-v1",
+    generatedAt: optionalString(value.generatedAt),
+    providerId,
+    taxonomies: Array.isArray(value.taxonomies) ? value.taxonomies.flatMap(normalizeProviderTaxonomyGroup) : [],
+    warnings: stringList(value.warnings)
+  };
+}
+
+export function providerTaxonomyEntryCount(taxonomy: ProviderTaxonomy | undefined): number {
+  return taxonomy?.taxonomies.reduce((count, group) => count + group.entries.length, 0) ?? 0;
 }
 
 function normalizeProviderCatalogLayer(value: unknown): ProviderCatalogLayer[] {
@@ -196,6 +231,23 @@ function normalizeProviderCatalogSource(value: unknown): ProviderCatalogSource[]
       usedByCatalogLayerIds: stringList(value.usedByCatalogLayerIds),
       visibleInDiagnostics: value.visibleInDiagnostics === true,
       selectableInMap: value.selectableInMap === true
+    }
+  ];
+}
+
+function normalizeProviderTaxonomyGroup(value: unknown): ProviderTaxonomyGroup[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const taxonomyId = optionalString(value.taxonomyId);
+  if (!taxonomyId) {
+    return [];
+  }
+  return [
+    {
+      entries: Array.isArray(value.entries) ? value.entries.filter(isRecord).map((entry) => ({ ...entry })) : [],
+      label: optionalString(value.label),
+      taxonomyId
     }
   ];
 }

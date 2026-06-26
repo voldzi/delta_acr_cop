@@ -1,5 +1,11 @@
 import { createPublicSafetyAggregateSourceSystem, type SourceSystem } from "@cop/canonical-model";
-import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
+import {
+  normalizeProviderMapCatalog,
+  normalizeProviderTaxonomy,
+  providerTaxonomyEntryCount,
+  type ProviderMapCatalog,
+  type ProviderTaxonomy
+} from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
 
 export type SafetyLayerId = "boundary_admin" | "fire" | "flood" | "warnings" | "weather_alerts";
@@ -229,6 +235,7 @@ export interface SafetyDataSource {
   fetchLayers(requestNow: Date): Promise<SafetyLayerDescriptor[]>;
   fetchObservability?(requestNow: Date): Promise<SafetyDataObservability>;
   fetchSources(requestNow: Date): Promise<SafetySourceDescriptor[]>;
+  fetchTaxonomy?(requestNow: Date): Promise<ProviderTaxonomy>;
 }
 
 const defaultConfig: SafetyDataSourceConfig = {
@@ -287,6 +294,8 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
   private observabilityCache: { expiresAtMs: number; value: SafetyDataObservability } | null = null;
   private observabilityInflight: Promise<SafetyDataObservability> | null = null;
   private sourceCache: { expiresAtMs: number; value: SafetySourceDescriptor[] } | null = null;
+  private taxonomyCache: { expiresAtMs: number; value: ProviderTaxonomy } | null = null;
+  private taxonomyInflight: Promise<ProviderTaxonomy> | null = null;
 
   constructor(readonly config: SafetyDataSourceConfig) {
     this.sourceSystem = createPublicSafetyAggregateSourceSystem();
@@ -374,6 +383,26 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
       value
     };
     return value;
+  }
+
+  async fetchTaxonomy(requestNow: Date): Promise<ProviderTaxonomy> {
+    if (this.taxonomyCache && this.taxonomyCache.expiresAtMs > requestNow.getTime()) {
+      return this.taxonomyCache.value;
+    }
+    if (this.taxonomyInflight) {
+      return this.taxonomyInflight;
+    }
+    this.taxonomyInflight = fetchSafetyTaxonomy(this.config, requestNow);
+    try {
+      const value = await this.taxonomyInflight;
+      this.taxonomyCache = {
+        expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
+        value
+      };
+      return value;
+    } finally {
+      this.taxonomyInflight = null;
+    }
   }
 
   async fetchFeatures(query: SafetyFeatureQuery, requestNow: Date): Promise<SafetyFeatureCollection> {
@@ -504,7 +533,8 @@ class ManagedSafetyCache<T> {
 export function buildSafetyDataHealth(
   response: SafetyFeatureCollection | SafetyLayerDescriptor[] | SafetySourceDescriptor[],
   requestNow: Date,
-  observability?: SafetyDataObservability
+  observability?: SafetyDataObservability,
+  taxonomy?: ProviderTaxonomy
 ): SourceHealthOverride {
   if (Array.isArray(response)) {
     return enrichSafetyDataHealth({
@@ -514,12 +544,15 @@ export function buildSafetyDataHealth(
       lastPollAt: requestNow.toISOString(),
       lastSuccessAt: requestNow.toISOString(),
       summary: {
-        itemCount: response.length
-      }
+        itemCount: response.length,
+        ...taxonomyHealthSummary(taxonomy)
+      },
+      ...(taxonomy?.warnings.length ? { warnings: taxonomy.warnings } : {})
     }, observability);
   }
 
-  const warningCount = response.warnings.length;
+  const warnings = uniqueStrings([...response.warnings, ...(taxonomy?.warnings ?? [])]);
+  const warningCount = warnings.length;
   const health: SourceHealthOverride["health"] = warningCount > 0
     ? "DEGRADED"
     : response.summary.staleFeatureCount > 0
@@ -538,9 +571,10 @@ export function buildSafetyDataHealth(
       featureCount: response.summary.featureCount,
       sourceCount: response.summary.sourceCount,
       staleFeatureCount: response.summary.staleFeatureCount,
-      warningCount: response.summary.warningCount
+      warningCount,
+      ...taxonomyHealthSummary(taxonomy)
     },
-    warnings: response.warnings
+    warnings
   }, observability);
 }
 
@@ -764,8 +798,23 @@ async function fetchSafetyCatalog(config: SafetyDataSourceConfig, requestNow: Da
   return normalizeProviderMapCatalog(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/catalog`), config, requestNow), "sim.safety-data");
 }
 
+async function fetchSafetyTaxonomy(config: SafetyDataSourceConfig, requestNow: Date): Promise<ProviderTaxonomy> {
+  return normalizeProviderTaxonomy(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/taxonomy`), config, requestNow), "sim.safety-data");
+}
+
 async function fetchSafetyObservability(config: SafetyDataSourceConfig, requestNow: Date): Promise<SafetyDataObservability> {
   return normalizeSafetyObservability(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/observability`), config, requestNow));
+}
+
+function taxonomyHealthSummary(taxonomy: ProviderTaxonomy | undefined): Record<string, unknown> {
+  if (!taxonomy) {
+    return {};
+  }
+  return {
+    taxonomyCount: taxonomy.taxonomies.length,
+    taxonomyEntryCount: providerTaxonomyEntryCount(taxonomy),
+    ...(taxonomy.generatedAt ? { taxonomyGeneratedAt: taxonomy.generatedAt } : {})
+  };
 }
 
 function safetyLayersFromProviderCatalog(catalog: ProviderMapCatalog): SafetyLayerDescriptor[] {

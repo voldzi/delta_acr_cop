@@ -13,6 +13,9 @@ describe("SituationDataSourceAdapter", () => {
       if (url.endsWith("/catalog")) {
         return new Response(JSON.stringify(sampleCatalogResponse()), { status: 200 });
       }
+      if (url.endsWith("/taxonomy")) {
+        return new Response(JSON.stringify(sampleTaxonomyResponse()), { status: 200 });
+      }
       return new Response(JSON.stringify(sampleFeatureCollection()), { status: 200 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -26,6 +29,7 @@ describe("SituationDataSourceAdapter", () => {
     });
 
     const layers = await adapter.fetchLayers(new Date("2026-05-20T10:00:05Z"));
+    const taxonomy = await adapter.fetchTaxonomy(new Date("2026-05-20T10:00:05Z"));
     const features = await adapter.fetchFeatures({
       bbox: { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: ["weather", "traffic"],
@@ -34,7 +38,8 @@ describe("SituationDataSourceAdapter", () => {
     }, new Date("2026-05-20T10:00:06Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/situation-data/api/v1/catalog");
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://sim.zeleznalady.cz/situation-data/api/v1/taxonomy");
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
       "https://sim.zeleznalady.cz/situation-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=weather%2Ctraffic&limit=20&source=aviation_weather"
     );
     expect(layers).toEqual(expect.arrayContaining([
@@ -44,6 +49,21 @@ describe("SituationDataSourceAdapter", () => {
         layerId: "weather"
       })
     ]));
+    expect(taxonomy).toMatchObject({
+      contractVersion: "sim-provider-taxonomy-v1",
+      providerId: "sim.situation-data",
+      taxonomies: [
+        {
+          entries: [
+            expect.objectContaining({
+              layerId: "weather",
+              typeCode: "weather.current"
+            })
+          ],
+          taxonomyId: "situation-layer-types"
+        }
+      ]
+    });
     expect(features).toMatchObject({
       contractVersion: "cop-situation-source-v1",
       features: [
@@ -715,6 +735,30 @@ function sampleMobileNetworkFeatureCollection() {
       warningCount: 0
     },
     type: "FeatureCollection",
+    warnings: []
+  };
+}
+
+function sampleTaxonomyResponse() {
+  return {
+    contractVersion: "sim-provider-taxonomy-v1",
+    generatedAt: "2026-05-20T10:00:00Z",
+    providerId: "sim.situation-data",
+    taxonomies: [
+      {
+        label: "Situation layer types",
+        taxonomyId: "situation-layer-types",
+        entries: [
+          {
+            category: "weather.current",
+            layerId: "weather",
+            severity: "info",
+            sourceId: "open_meteo",
+            typeCode: "weather.current"
+          }
+        ]
+      }
+    ],
     warnings: []
   };
 }
