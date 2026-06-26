@@ -2005,6 +2005,10 @@ export function App() {
     }
   }, [replayPosition, replayRunning]);
 
+  const operatingMode = React.useMemo(
+    () => resolveOperatingMode({ browserOnline, health, loadError, offlineSnapshotState, streamStatus }),
+    [browserOnline, health, loadError, offlineSnapshotState, streamStatus]
+  );
   const replayWindow = React.useMemo(() => getReplayWindow(trackHistory), [trackHistory]);
   const replayTimestamp = React.useMemo(
     () => (showHistory ? getReplayTimestamp(trackHistory, replayPosition) : null),
@@ -3765,10 +3769,6 @@ export function App() {
     }
   }, [apiBase, authToken]);
 
-  const operatingMode = React.useMemo(
-    () => resolveOperatingMode({ browserOnline, health, loadError, offlineSnapshotState, streamStatus }),
-    [browserOnline, health, loadError, offlineSnapshotState, streamStatus]
-  );
   const catalogGroupViews = React.useMemo(() => buildCatalogGroupViews(mapCatalog), [mapCatalog]);
   const activeCatalogGroup = catalogGroupViews.find((view) => view.group.groupId === activeCatalogGroupId) ?? null;
   const priorityAlert = priorityAlertSummary.primary;
@@ -13536,10 +13536,10 @@ function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
     return "Připraveno v katalogu, zobrazení se doplní v další integraci";
   }
   if (layer.layerId === "public.weather.current") {
-    return "Aktuální stav v mapovém výřezu";
+    return "Referenční bod pro střed mapy";
   }
   if (layer.layerId === "public.weather.observations") {
-    return "Měřené hodnoty ze stanic";
+    return "Měřené počasí ČHMÚ ve stanicích";
   }
   if (layer.layerId === "public.weather.webcams") {
     return "Bodové náhledy kamer ČHMÚ";
@@ -13549,6 +13549,21 @@ function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
   }
   if (layer.layerId === "public.safety.air_quality") {
     return "Měřicí stanice kvality ovzduší";
+  }
+  if (layer.layerId === "public.weather.temperature_grid") {
+    return "Plošná teplotní vrstva";
+  }
+  if (layer.layerId === "public.weather.wind_field") {
+    return "Plošná vrstva směru a rychlosti větru";
+  }
+  if (layer.layerId === "public.weather.precipitation_grid") {
+    return "Plošná vrstva srážek";
+  }
+  if (layer.layerId === "public.weather.humidity_grid") {
+    return "Plošná vrstva vlhkosti";
+  }
+  if (layer.layerId === "public.weather.pressure_grid") {
+    return "Plošná vrstva tlaku";
   }
   if (layer.kind === "raster_overlay") {
     return "Rastrová mapa nad podkladem";

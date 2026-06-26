@@ -263,7 +263,7 @@ function buildProviderCatalogLayers(catalog: ProviderMapCatalog, includeDiagnost
 
 function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatalogLayer): MapCatalogLayer[] {
   const mode = normalizeQueryMode(layer.query?.mode);
-  const role = normalizeLayerRole(layer.role);
+  const role = roleForCatalogLayer(layer);
   const audience = normalizeAudience(layer.audience);
   const kind = normalizeLayerKind(layer.kind);
   const providerLayerIds = layer.query?.providerLayerIds?.filter(Boolean) ?? [];
@@ -277,7 +277,7 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
       audience,
       cacheTtlSeconds: layer.cacheTtlSeconds,
       ...(layer.compatibilityOnly === true ? { compatibilityOnly: true } : {}),
-      defaultVisible: layer.defaultVisible === true,
+      defaultVisible: defaultVisibleForCatalogLayer(layer),
       description: layer.description,
       filters: normalizeProviderFilters(layer.filters),
       geometryTypes: geometryTypesForCatalogLayer(layer),
@@ -310,6 +310,26 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
   ];
 }
 
+function defaultVisibleForCatalogLayer(layer: ProviderCatalogLayer): boolean {
+  if (layer.recommendedCatalogLayerId === "public.weather.observations") {
+    return true;
+  }
+  if (layer.recommendedCatalogLayerId === "public.weather.current") {
+    return false;
+  }
+  return layer.defaultVisible === true;
+}
+
+function roleForCatalogLayer(layer: ProviderCatalogLayer): MapCatalogLayerRole {
+  if (layer.recommendedCatalogLayerId === "public.weather.observations") {
+    return "primary";
+  }
+  if (layer.recommendedCatalogLayerId === "public.weather.current") {
+    return "reference";
+  }
+  return normalizeLayerRole(layer.role);
+}
+
 function geometryTypesForCatalogLayer(layer: ProviderCatalogLayer): string[] | undefined {
   const geometryTypes = nonEmpty(layer.geometryTypes) ?? [];
   if (layer.recommendedCatalogLayerId === "public.safety.fire" || layer.recommendedCatalogLayerId === "public.safety.weather_alerts") {
@@ -329,6 +349,12 @@ function minZoomForCatalogLayer(layer: ProviderCatalogLayer): number | undefined
     layerId === "public.mobile.network"
     || layerId === "reference.infrastructure.communications"
     || layerId === "public.weather.webcams"
+    || layerId === "public.weather.observations"
+    || layerId === "public.weather.temperature_grid"
+    || layerId === "public.weather.wind_field"
+    || layerId === "public.weather.precipitation_grid"
+    || layerId === "public.weather.humidity_grid"
+    || layerId === "public.weather.pressure_grid"
     || layerId === "public.safety.flood"
   ) {
     return Math.min(layer.minZoom ?? 4, 4);
@@ -395,8 +421,13 @@ function shouldIncludeCatalogAudience(value: string | undefined, includeDiagnost
 
 const curatedWeatherLayerLabels: Record<string, string> = {
   "public.safety.air_quality": "Kvalita ovzduší",
-  "public.weather.current": "Počasí v oblasti",
-  "public.weather.observations": "Měřené stanice ČHMÚ",
+  "public.weather.current": "Počasí ve středu mapy",
+  "public.weather.observations": "Počasí",
+  "public.weather.temperature_grid": "Teplota",
+  "public.weather.wind_field": "Vítr",
+  "public.weather.precipitation_grid": "Srážky",
+  "public.weather.humidity_grid": "Vlhkost",
+  "public.weather.pressure_grid": "Tlak",
   "public.weather.webcams": "Webkamery ČHMÚ",
   "public.weather.radar_precipitation": "Radar srážek"
 };
@@ -404,14 +435,10 @@ const curatedWeatherLayerLabels: Record<string, string> = {
 const basicUiHiddenWeatherLayerIds = new Set([
   "public.safety.air_quality_grid",
   "public.safety.thunderstorm_risk",
+  "public.weather.current",
   "public.weather.aviation",
-  "public.weather.humidity_grid",
-  "public.weather.precipitation_grid",
-  "public.weather.pressure_grid",
   "public.weather.radar_nowcast",
-  "public.weather.radar_reflectivity",
-  "public.weather.temperature_grid",
-  "public.weather.wind_field"
+  "public.weather.radar_reflectivity"
 ]);
 
 function selectableForCatalogLayer(layer: ProviderCatalogLayer): boolean {
@@ -695,12 +722,12 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
     {
       audience: "public",
       cacheTtlSeconds: 300,
-      defaultVisible: weatherLayer?.defaultVisible ?? true,
-      description: "Aktuální počasí pro zobrazený výřez mapy.",
+      defaultVisible: false,
+      description: "Referenční bodový souhrn pro střed mapy. Pro běžné počasí v mapě používejte měřené stanice ČHMÚ.",
       geometryTypes: weatherLayer?.geometryTypes ?? ["Point"],
       groupId: "risks.weather",
       kind: "vector_features",
-      label: "Počasí",
+      label: "Počasí ve středu mapy",
       layerId: "public.weather.current",
       legal: legalFromSource(findSource(sources, "open_meteo")),
       maxZoom: 18,
@@ -717,8 +744,8 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         streamId: "features"
       },
       refreshSeconds: findSource(sources, "open_meteo")?.updateCadenceSeconds ?? weatherLayer?.expectedCadenceSeconds ?? 600,
-      role: "primary",
-      selectable: true,
+      role: "reference",
+      selectable: false,
       styleProfile: "weather-current-v1"
     },
     {
@@ -754,16 +781,16 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
     {
       audience: "public",
       cacheTtlSeconds: 600,
-      defaultVisible: false,
-      description: "Měřené meteorologické stanice ČHMÚ pro zobrazený výřez mapy.",
+      defaultVisible: true,
+      description: "Měřené počasí ze stanic ČHMÚ: teplota, vítr, srážky, vlhkost, tlak a odvozený stav počasí.",
       geometryTypes: ["Point"],
       groupId: "risks.weather",
       kind: "vector_features",
-      label: "Měřené počasí ČHMÚ",
+      label: "Počasí",
       layerId: "public.weather.observations",
       legal: legalFromSource(findSource(sources, "chmi_weather_stations")),
       maxZoom: 18,
-      minZoom: 5,
+      minZoom: 4,
       provenance: {
         sourceIds: ["sim.situation-data:chmi_weather_stations"]
       },
@@ -776,7 +803,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         streamId: "features"
       },
       refreshSeconds: findSource(sources, "chmi_weather_stations")?.updateCadenceSeconds ?? 600,
-      role: "overlay",
+      role: "primary",
       selectable: true,
       styleProfile: "weather-observations-v1"
     },
@@ -1444,7 +1471,7 @@ function buildSituationSources(sources: SituationSourceDescriptor[]): MapCatalog
 function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audience" | "feedsCatalogLayerIds" | "selectableInMap" | "sourceRole" | "usedByCatalogLayerIds"> {
   switch (sourceId) {
     case "open_meteo":
-      return { audience: "public", feedsCatalogLayerIds: ["public.weather.current"], selectableInMap: true, sourceRole: "final" };
+      return { audience: "public", feedsCatalogLayerIds: ["public.weather.current"], selectableInMap: false, sourceRole: "reference" };
     case "aviation_weather":
       return { audience: "public", feedsCatalogLayerIds: ["public.weather.aviation"], selectableInMap: true, sourceRole: "final" };
     case "chmi_weather_stations":

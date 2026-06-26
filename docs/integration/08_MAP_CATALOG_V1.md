@@ -33,14 +33,15 @@ Current weather curation:
 
 | Provider layer purpose | Public COP behavior |
 | --- | --- |
-| Current weather summary | selectable as `public.weather.current` |
-| ČHMÚ station observations | selectable as `public.weather.observations` |
+| Current weather summary | kept as non-selectable reference `public.weather.current` for diagnostics and fallback details |
+| ČHMÚ station observations | main selectable weather layer `public.weather.observations`, shown to users as `Počasí` |
 | ČHMÚ weather webcams | selectable as `public.weather.webcams` with camera point icons and preview through COP proxy |
 | ČHMÚ radar precipitation overlay | selectable as `public.weather.radar_precipitation` |
 | Air quality station observations | selectable as `public.safety.air_quality` |
 | Radar reflectivity / nowcast variants | kept in catalog, hidden from basic public selection until timeline/animation UI is ready |
-| Temperature, precipitation, humidity, pressure and air-quality grid fallbacks | kept in catalog, hidden from basic public selection until SIM provides dense stable tiles or a documented grid endpoint |
-| Wind vector field | kept in catalog, hidden from basic public selection until COP has a proper animated wind renderer |
+| Temperature, precipitation, humidity and pressure grid layers | selectable advanced weather overlays |
+| Wind vector field | selectable advanced weather overlay |
+| Air-quality grid fallback | kept in catalog, hidden from basic public selection until SIM provides dense stable tiles or a documented grid endpoint |
 
 Native clients should use the `selectable` flag for the normal user-facing
 layer picker and may expose non-selectable public layers only in an explicit
@@ -442,14 +443,22 @@ and refresh the catalog in live mode approximately every five minutes. Warnings
 from the frame catalog are source-quality diagnostics, not citizen safety
 alerts.
 
-`public.weather.current` is a point summary for the center of the current map
-view. It is identified by `providerLayerId=weather.open_meteo` or
-`tags.mapDisplayHint=weather_observation_point` and should be rendered as one
-weather marker/detail panel labeled "Počasí ve středu oblasti". It is not a
-polygon, grid or raster. Area weather visualization must use the grid/field
-layers such as `public.weather.temperature_grid`,
-`public.weather.precipitation_grid`, `public.weather.wind_field`,
-`public.weather.humidity_grid` and `public.weather.pressure_grid`.
+The normal user-facing weather layer is `public.weather.observations`: measured
+ČHMÚ stations rendered as weather symbols with locality name, temperature and a
+secondary metric such as wind or recent precipitation. If SIM provides
+`weatherSymbolKey` and `weatherConditionLabel`, COP renders those values
+directly. Otherwise COP may infer a conservative symbol from WMO weather code,
+precipitation, cloud cover, humidity, wind and temperature.
+
+`public.weather.current` is only a reference point summary for the center of the
+current map view. It is identified by `providerLayerId=weather.open_meteo` or
+`tags.mapDisplayHint=weather_observation_point` and should be labeled "Počasí
+ve středu mapy" in diagnostics or fallback details. It is not a polygon, grid
+or raster and should not be the primary public weather menu item. Area weather
+visualization uses the grid/field layers such as
+`public.weather.temperature_grid`, `public.weather.precipitation_grid`,
+`public.weather.wind_field`, `public.weather.humidity_grid` and
+`public.weather.pressure_grid`.
 
 Provider-specific metadata endpoints such as SIM `/layers` and `/sources` are
 legacy adapter details and must not be used by new COP integrations. Provider
@@ -525,8 +534,8 @@ Provider-native fields may be preserved under:
 | `public.boundary.orp` | ORP | `sim.situation-data` layer `boundary_orp`, source `osm_postgis` |
 | `public.boundary.municipality` | Obce | `sim.situation-data` layer `boundary_municipality`, source `osm_postgis` |
 | `public.place.settlements` | Sídla | `sim.situation-data` layer `place_settlements`, source `osm_postgis` |
-| `public.weather.current` | Počasí | `sim.situation-data` layer `weather`, source `open_meteo` |
-| `public.weather.observations` | Měřené počasí ČHMÚ | `sim.situation-data` layer `weather`, source `chmi_weather_stations` |
+| `public.weather.current` | Počasí ve středu mapy | `sim.situation-data` layer `weather`, source `open_meteo`; non-selectable reference/fallback layer |
+| `public.weather.observations` | Počasí | `sim.situation-data` layer `weather`, source `chmi_weather_stations`; primary public weather layer |
 | `public.weather.webcams` | Webkamery ČHMÚ | `sim.situation-data` layer `weather_webcams`, source `chmi_weather_webcams`; používá `properties.providerProperties.camera.detailUrl` nebo `snapshotUrl` přes COP proxy |
 | `public.weather.aviation` | Letištní počasí | `sim.situation-data` layer `weather`, source `aviation_weather` |
 | `public.safety.air_quality` | Kvalita ovzduší | `sim.situation-data` layer `air_quality`, source `chmi_air_quality` |

@@ -192,9 +192,12 @@ describe("COP map data helpers", () => {
             layer: "weather",
             selected: true,
             weatherCloudCoverPercent: 82,
+            weatherConditionLabel: "polojasno",
             weatherHeadline: "Počasí ve středu oblasti",
-            weatherLabel: "19°C\n3 m/s",
+            weatherLabel: "Střed mapy\n19°C · 3 m/s",
             weatherObservation: true,
+            weatherStationLabel: "Střed mapy",
+            weatherSymbolKey: "cop-weather-condition-partly_cloudy",
             weatherTemperatureC: 19.4,
             weatherWindDirectionDeg: 230,
             weatherWindSpeedMps: 3.2
@@ -364,9 +367,12 @@ describe("COP map data helpers", () => {
 
     expect(collection.features[0]?.properties).toMatchObject({
       featureId: "weather:chmi:praha",
-      weatherLabel: "21°C\n5 m/s",
+      weatherConditionLabel: "déšť",
+      weatherLabel: "Praha-Karlov\n21°C · 0.2 mm",
       weatherObservation: true,
       weatherPrecipitationMm: 0.2,
+      weatherStationLabel: "Praha-Karlov",
+      weatherSymbolKey: "cop-weather-condition-rain",
       weatherWindDirectionDeg: 245
     });
     expect(collection.features[1]?.properties).toMatchObject({

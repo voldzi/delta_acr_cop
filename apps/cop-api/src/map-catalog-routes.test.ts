@@ -61,7 +61,7 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
       catalogVersion: string;
-      layers: Array<{ groupId?: string; layerId: string; minZoom?: number; query?: { providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
+      layers: Array<{ defaultVisible?: boolean; groupId?: string; label?: string; layerId: string; minZoom?: number; query?: { providerLayerIds?: string[]; providerSourceIds?: string[] }; role?: string; selectable?: boolean }>;
       providers: Array<{ providerId: string; status: string }>;
       sources: Array<{ feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
     };
@@ -93,6 +93,23 @@ describe("map catalog route", () => {
         providerLayerIds: ["mobile_network"],
         providerSourceIds: ["mobile_network_model"]
       },
+      selectable: true
+    });
+    expect(body.layers.find((layer) => layer.layerId === "public.weather.current")).toMatchObject({
+      defaultVisible: false,
+      label: "Počasí ve středu mapy",
+      role: "reference",
+      selectable: false
+    });
+    expect(body.layers.find((layer) => layer.layerId === "public.weather.observations")).toMatchObject({
+      defaultVisible: true,
+      label: "Počasí",
+      minZoom: 4,
+      query: {
+        providerLayerIds: ["weather"],
+        providerSourceIds: ["chmi_weather_stations"]
+      },
+      role: "primary",
       selectable: true
     });
     expect(body.layers.find((layer) => layer.layerId === "public.traffic.transit")).toMatchObject({
@@ -190,7 +207,7 @@ describe("map catalog route", () => {
           providerLayerIds: ["weather.temperature_grid"],
           providerSourceIds: ["chmi_weather_stations"]
         }),
-        selectable: false
+        selectable: true
       }),
       expect.objectContaining({
         groupId: "risks.weather",

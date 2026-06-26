@@ -111,6 +111,7 @@ const situationWeatherGridLabelLayerId = "cop-situation-weather-grid-label";
 const situationWeatherPulseLayerId = "cop-situation-weather-pulse";
 const situationWeatherHeatLayerId = "cop-situation-weather-heat";
 const situationWeatherPointLayerId = "cop-situation-weather-point";
+const situationWeatherConditionLayerId = "cop-situation-weather-condition";
 const situationWeatherWindLayerId = "cop-situation-weather-wind";
 const situationWeatherLabelLayerId = "cop-situation-weather-label";
 const situationWeatherCameraLayerId = "cop-situation-weather-camera";
@@ -240,6 +241,9 @@ type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
 const riskIconPrefix = "cop-risk";
 const riskIconIds = ["fire", "flood", "warning", "weather", "unknown"] as const;
 type RiskIconId = (typeof riskIconIds)[number];
+const weatherConditionIconPrefix = "cop-weather-condition";
+const weatherConditionIconIds = ["sun", "partly_cloudy", "cloud", "fog", "rain", "snow", "storm", "unknown"] as const;
+type WeatherConditionIconId = (typeof weatherConditionIconIds)[number];
 const weatherWindIconKey = "cop-weather-wind-arrow";
 const weatherCameraIconKey = "cop-weather-camera";
 
@@ -418,9 +422,12 @@ export interface SituationContextFeatureCollection {
       weatherPulseColor?: string;
       weatherPulseOpacity?: number;
       weatherPulseRadius?: number;
+      weatherConditionLabel?: string;
       weatherSubtitle?: string;
       weatherPrecipitationMm?: number;
       weatherStationIcao?: string;
+      weatherStationLabel?: string;
+      weatherSymbolKey?: string;
       weatherTemperatureC?: number;
       weatherWindDirectionDeg?: number;
       weatherWindSpeedMps?: number;
@@ -2072,6 +2079,23 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationWeatherConditionLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "weatherSymbolKey"], getWeatherConditionIconKey("unknown")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.28, 9, 0.38, 13, 0.52, 16, 0.66],
+            "icon-anchor": "center",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.62, 0.98]
+          }
+        });
+
+        map.addLayer({
           id: situationWeatherLabelLayerId,
           type: "symbol",
           source: situationSourceId,
@@ -2079,17 +2103,18 @@ export function CopMap({
           layout: {
             "text-field": ["get", "weatherLabel"],
             "text-font": ["Noto Sans Bold"],
-            "text-size": ["interpolate", ["linear"], ["zoom"], 6, 10, 11, 12, 15, 14],
-            "text-allow-overlap": true,
-            "text-ignore-placement": true,
-            "text-offset": [0, 0],
-            "text-anchor": "center"
+            "text-size": ["interpolate", ["linear"], ["zoom"], 6, 9, 11, 11, 15, 13],
+            "text-allow-overlap": false,
+            "text-ignore-placement": false,
+            "text-optional": true,
+            "text-offset": [0, 2.05],
+            "text-anchor": "top"
           },
           paint: {
-            "text-color": "#061019",
-            "text-halo-color": "rgba(244, 247, 251, 0.88)",
-            "text-halo-width": 1.3,
-            "text-halo-blur": 0.2
+            "text-color": ["case", ["get", "stale"], "#facc15", "#f8fafc"],
+            "text-halo-color": "rgba(6, 16, 25, 0.92)",
+            "text-halo-width": 1.6,
+            "text-halo-blur": 0.35
           }
         });
 
@@ -4922,13 +4947,20 @@ function buildSituationRenderProperties(
   const weatherGrid = isWeatherGridFeature(feature);
   const currentWeatherSummary = isCurrentWeatherSummaryFeature(feature);
   const color = weatherContextColor(feature, status.color);
-  const weatherLabel = aviationCategory ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label) : formatWeatherContextMapLabel(feature, temperatureC, windSpeedMps, precipitationMm, humidityPercent, pressureHpa);
+  const weatherCondition = resolveWeatherConditionPresentation(feature, metrics, temperatureC, windSpeedMps, precipitationMm, cloudCoverPercent, humidityPercent);
+  const weatherStationLabel = formatWeatherStationLabel(feature, currentWeatherSummary);
+  const weatherLabel = aviationCategory
+    ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label)
+    : weatherGrid
+      ? formatWeatherContextMapLabel(feature, temperatureC, windSpeedMps, precipitationMm, humidityPercent, pressureHpa)
+      : formatWeatherObservationMapLabel(weatherStationLabel, weatherCondition.label, temperatureC, windSpeedMps, precipitationMm);
   const weatherHeadline = aviationCategory ? undefined : currentWeatherSummary ? "Počasí ve středu oblasti" : formatWeatherFeatureHeadline(feature);
   const weatherObservation = !weatherGrid && (currentWeatherSummary || feature.properties.layer !== "weather"
     || feature.properties.sourceId === "chmi_weather_stations"
     || providerLayerId?.includes("chmi_station") === true);
   return {
     weatherCloudCoverPercent: cloudCoverPercent,
+    weatherConditionLabel: weatherCondition.label,
     weatherFillColor: weatherGrid ? color : undefined,
     weatherFillOpacity: weatherGrid ? weatherGridFillOpacity(feature) : undefined,
     weatherFlightCategoryColor: aviationCategory ? aviationCategory.color : undefined,
@@ -4942,6 +4974,8 @@ function buildSituationRenderProperties(
     weatherSubtitle: aviationCategory ? undefined : formatWeatherFeatureSubtitle(feature),
     weatherPrecipitationMm: precipitationMm,
     weatherStationIcao: stationIcao,
+    weatherStationLabel,
+    weatherSymbolKey: weatherObservation ? getWeatherConditionIconKey(weatherCondition.iconId) : undefined,
     weatherTemperatureC: temperatureC,
     weatherWindDirectionDeg: windDirectionDeg,
     weatherWindSpeedMps: windSpeedMps,
@@ -5559,6 +5593,10 @@ function getRiskIconKey(iconId: RiskIconId): string {
   return `${riskIconPrefix}-${iconId}`;
 }
 
+function getWeatherConditionIconKey(iconId: string | undefined): string {
+  return `${weatherConditionIconPrefix}-${normalizeWeatherConditionIconId(iconId)}`;
+}
+
 function normalizeMobileNetworkIconTone(tone: string | undefined): MobileNetworkIconTone {
   return mobileNetworkIconTones.includes(tone as MobileNetworkIconTone) ? tone as MobileNetworkIconTone : "unknown";
 }
@@ -5573,6 +5611,223 @@ function mobileNetworkIconColor(tone: MobileNetworkIconTone): string {
     warning: "#facc15"
   };
   return colors[tone];
+}
+
+function normalizeWeatherConditionIconId(value: string | undefined): WeatherConditionIconId {
+  const normalized = normalizeCompactAscii(value ?? "");
+  if (["clear", "clearday", "sun", "sunny", "jasno"].includes(normalized)) {
+    return "sun";
+  }
+  if (["partlycloudy", "partlycloudyday", "mostlycloudy", "polojasno", "oblacno"].includes(normalized)) {
+    return "partly_cloudy";
+  }
+  if (["cloud", "cloudy", "overcast", "zatazeno"].includes(normalized)) {
+    return "cloud";
+  }
+  if (["fog", "mist", "mlha"].includes(normalized)) {
+    return "fog";
+  }
+  if (["rain", "showers", "drizzle", "precipitation", "dest", "mrholeni", "srazky"].includes(normalized)) {
+    return "rain";
+  }
+  if (["snow", "sleet", "snowfall", "snezeni", "snih"].includes(normalized)) {
+    return "snow";
+  }
+  if (["storm", "thunderstorm", "thunder", "bourka", "bourky"].includes(normalized)) {
+    return "storm";
+  }
+  return "unknown";
+}
+
+interface WeatherConditionPresentation {
+  iconId: WeatherConditionIconId;
+  label: string;
+}
+
+function formatWeatherStationLabel(feature: SituationFeature, currentWeatherSummary: boolean): string {
+  if (currentWeatherSummary) {
+    return "Střed mapy";
+  }
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const station = isRecord(providerProperties.station) ? providerProperties.station : {};
+  return stringProperty(feature.properties.label)
+    ?? stringProperty(feature.properties.headline)
+    ?? recordString(tags, "stationName")
+    ?? recordString(tags, "name")
+    ?? recordString(providerProperties, "stationName")
+    ?? recordString(providerProperties, "name")
+    ?? recordString(station, "name")
+    ?? "Počasí";
+}
+
+function formatWeatherObservationMapLabel(
+  stationLabel: string,
+  conditionLabel: string,
+  temperatureC: number | undefined,
+  windSpeedMps: number | undefined,
+  precipitationMm: number | undefined
+): string {
+  const metrics: string[] = [];
+  if (temperatureC !== undefined) {
+    metrics.push(`${Math.round(temperatureC)}°C`);
+  }
+  if (precipitationMm !== undefined && precipitationMm >= 0.05) {
+    metrics.push(formatPrecipitationAmount(precipitationMm));
+  } else if (windSpeedMps !== undefined && windSpeedMps >= 0.5) {
+    metrics.push(`${Math.round(windSpeedMps)} m/s`);
+  }
+  const primary = truncateMapLabel(stationLabel, 22);
+  const secondary = metrics.length > 0 ? metrics.slice(0, 2).join(" · ") : conditionLabel;
+  return secondary ? `${primary}\n${secondary}` : primary;
+}
+
+function truncateMapLabel(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+function resolveWeatherConditionPresentation(
+  feature: SituationFeature,
+  metrics: Record<string, unknown>,
+  temperatureC: number | undefined,
+  windSpeedMps: number | undefined,
+  precipitationMm: number | undefined,
+  cloudCoverPercent: number | undefined,
+  humidityPercent: number | undefined
+): WeatherConditionPresentation {
+  const metadataRecords = weatherMetadataRecords(feature);
+  const explicitIconId = firstRecordString(metadataRecords, "weatherSymbolKey", "weatherConditionKey", "conditionKey", "symbolKey", "icon");
+  const explicitLabel = firstRecordString(metadataRecords, "weatherConditionLabel", "conditionLabel", "weatherLabel", "condition");
+  if (explicitIconId) {
+    const iconId = normalizeWeatherConditionIconId(explicitIconId);
+    return { iconId, label: explicitLabel ?? weatherConditionDefaultLabel(iconId) };
+  }
+
+  const weatherCode = firstRecordNumber(metrics, "weatherCode", "wmoCode", "wmoWeatherCode", "openMeteoWeatherCode")
+    ?? firstRecordNumberFromRecords(metadataRecords, "weatherCode", "wmoCode", "wmoWeatherCode", "openMeteoWeatherCode");
+  if (weatherCode !== undefined) {
+    const iconId = weatherConditionIconFromWmoCode(weatherCode);
+    return { iconId, label: explicitLabel ?? weatherConditionDefaultLabel(iconId) };
+  }
+
+  const inferredIconId = inferWeatherConditionIconId(temperatureC, windSpeedMps, precipitationMm, cloudCoverPercent, humidityPercent);
+  return { iconId: inferredIconId, label: explicitLabel ?? weatherConditionDefaultLabel(inferredIconId) };
+}
+
+function weatherMetadataRecords(feature: SituationFeature): Record<string, unknown>[] {
+  const records: Record<string, unknown>[] = [feature.properties as unknown as Record<string, unknown>];
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : undefined;
+  const rendering = isRecord(feature.properties.rendering) ? feature.properties.rendering : undefined;
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : undefined;
+  const providerRendering = providerProperties && isRecord(providerProperties.rendering) ? providerProperties.rendering : undefined;
+  const providerWeather = providerProperties && isRecord(providerProperties.weather) ? providerProperties.weather : undefined;
+  const providerCondition = providerProperties && isRecord(providerProperties.condition) ? providerProperties.condition : undefined;
+  [tags, rendering, providerProperties, providerRendering, providerWeather, providerCondition].forEach((record) => {
+    if (record) {
+      records.push(record);
+    }
+  });
+  return records;
+}
+
+function firstRecordString(records: Record<string, unknown>[], ...keys: string[]): string | undefined {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = recordString(record, key);
+      if (value) {
+        return value;
+      }
+    }
+  }
+  return undefined;
+}
+
+function firstRecordNumberFromRecords(records: Record<string, unknown>[], ...keys: string[]): number | undefined {
+  for (const record of records) {
+    const value = firstRecordNumber(record, ...keys);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function weatherConditionIconFromWmoCode(code: number): WeatherConditionIconId {
+  const rounded = Math.round(code);
+  if (rounded === 0) {
+    return "sun";
+  }
+  if (rounded >= 1 && rounded <= 2) {
+    return "partly_cloudy";
+  }
+  if (rounded === 3) {
+    return "cloud";
+  }
+  if (rounded === 45 || rounded === 48) {
+    return "fog";
+  }
+  if ((rounded >= 51 && rounded <= 67) || (rounded >= 80 && rounded <= 82)) {
+    return "rain";
+  }
+  if ((rounded >= 71 && rounded <= 77) || rounded === 85 || rounded === 86) {
+    return "snow";
+  }
+  if (rounded >= 95 && rounded <= 99) {
+    return "storm";
+  }
+  return "unknown";
+}
+
+function inferWeatherConditionIconId(
+  temperatureC: number | undefined,
+  windSpeedMps: number | undefined,
+  precipitationMm: number | undefined,
+  cloudCoverPercent: number | undefined,
+  humidityPercent: number | undefined
+): WeatherConditionIconId {
+  if (precipitationMm !== undefined && precipitationMm >= 0.05) {
+    if (temperatureC !== undefined && temperatureC <= 1.5) {
+      return "snow";
+    }
+    return "rain";
+  }
+  if (humidityPercent !== undefined && humidityPercent >= 95 && (windSpeedMps === undefined || windSpeedMps < 3)) {
+    return "fog";
+  }
+  if (cloudCoverPercent !== undefined) {
+    if (cloudCoverPercent >= 85) {
+      return "cloud";
+    }
+    if (cloudCoverPercent >= 35) {
+      return "partly_cloudy";
+    }
+    return "sun";
+  }
+  if (temperatureC !== undefined || windSpeedMps !== undefined || humidityPercent !== undefined) {
+    return "partly_cloudy";
+  }
+  return "unknown";
+}
+
+function weatherConditionDefaultLabel(iconId: WeatherConditionIconId): string {
+  switch (iconId) {
+    case "sun":
+      return "jasno";
+    case "partly_cloudy":
+      return "polojasno";
+    case "cloud":
+      return "zataženo";
+    case "fog":
+      return "mlha";
+    case "rain":
+      return "déšť";
+    case "snow":
+      return "sníh";
+    case "storm":
+      return "bouřka";
+    case "unknown":
+      return "měřené počasí";
+  }
 }
 
 function formatWeatherMapLabel(temperatureC: number | undefined, windSpeedMps: number | undefined, precipitationMm: number | undefined): string {
@@ -6905,6 +7160,14 @@ async function registerSituationSymbolImages(map: maplibregl.Map) {
       });
     }
   });
+  weatherConditionIconIds.forEach((iconId) => {
+    const key = getWeatherConditionIconKey(iconId);
+    if (!map.hasImage(key)) {
+      map.addImage(key, createWeatherConditionSymbolImage(iconId), {
+        pixelRatio: window.devicePixelRatio || 1
+      });
+    }
+  });
   if (!map.hasImage(weatherWindIconKey)) {
     map.addImage(weatherWindIconKey, createWeatherWindArrowImage(), {
       pixelRatio: window.devicePixelRatio || 1
@@ -7249,6 +7512,192 @@ function createTransitSymbolImage(kind: TransportIconKind): ImageData {
       context.beginPath();
       context.arc(0, 0, 9, 0, Math.PI * 2);
       context.fill();
+      break;
+  }
+  context.restore();
+
+  return context.getImageData(0, 0, size, size);
+}
+
+function createWeatherConditionSymbolImage(iconId: WeatherConditionIconId): ImageData {
+  const canvas = document.createElement("canvas");
+  const size = 128;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+
+  const drawSun = (x: number, y: number, radius: number) => {
+    context.save();
+    context.strokeStyle = "#061019";
+    context.fillStyle = "#facc15";
+    context.lineWidth = 5;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    for (let i = 0; i < 8; i += 1) {
+      const angle = (Math.PI * 2 * i) / 8;
+      context.beginPath();
+      context.moveTo(x + Math.cos(angle) * (radius + 8), y + Math.sin(angle) * (radius + 8));
+      context.lineTo(x + Math.cos(angle) * (radius + 18), y + Math.sin(angle) * (radius + 18));
+      context.stroke();
+    }
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.restore();
+  };
+
+  const drawCloud = (x: number, y: number, scale = 1) => {
+    context.save();
+    context.translate(x, y);
+    context.scale(scale, scale);
+    context.fillStyle = "rgba(248, 250, 252, 0.98)";
+    context.strokeStyle = "#061019";
+    context.lineWidth = 6;
+    context.lineJoin = "round";
+    context.beginPath();
+    context.moveTo(-40, 17);
+    context.quadraticCurveTo(-48, 4, -35, -7);
+    context.quadraticCurveTo(-25, -28, -4, -17);
+    context.quadraticCurveTo(9, -39, 32, -24);
+    context.quadraticCurveTo(53, -20, 54, 3);
+    context.quadraticCurveTo(56, 18, 39, 21);
+    context.lineTo(-31, 21);
+    context.quadraticCurveTo(-37, 21, -40, 17);
+    context.closePath();
+    context.fill();
+    context.stroke();
+    context.fillStyle = "rgba(219, 234, 254, 0.9)";
+    context.fillRect(-32, 18, 69, 7);
+    context.restore();
+  };
+
+  const drawDrops = (snow = false) => {
+    const positions = [-26, 0, 26];
+    positions.forEach((x, index) => {
+      const y = 34 + (index % 2) * 8;
+      context.save();
+      context.translate(x, y);
+      context.strokeStyle = "#061019";
+      context.lineWidth = snow ? 3.5 : 4.5;
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      if (snow) {
+        context.strokeStyle = "#061019";
+        for (let i = 0; i < 3; i += 1) {
+          context.rotate(Math.PI / 3);
+          context.beginPath();
+          context.moveTo(-7, 0);
+          context.lineTo(7, 0);
+          context.stroke();
+        }
+        context.strokeStyle = "#e0f2fe";
+        context.lineWidth = 2;
+        for (let i = 0; i < 3; i += 1) {
+          context.rotate(Math.PI / 3);
+          context.beginPath();
+          context.moveTo(-7, 0);
+          context.lineTo(7, 0);
+          context.stroke();
+        }
+      } else {
+        context.fillStyle = "#38bdf8";
+        context.beginPath();
+        context.moveTo(0, -12);
+        context.bezierCurveTo(11, 0, 8, 15, 0, 16);
+        context.bezierCurveTo(-8, 15, -11, 0, 0, -12);
+        context.closePath();
+        context.fill();
+        context.stroke();
+      }
+      context.restore();
+    });
+  };
+
+  const drawLightning = () => {
+    context.save();
+    context.fillStyle = "#facc15";
+    context.strokeStyle = "#061019";
+    context.lineWidth = 5;
+    context.lineJoin = "round";
+    context.beginPath();
+    context.moveTo(10, -1);
+    context.lineTo(-5, 33);
+    context.lineTo(10, 30);
+    context.lineTo(-1, 60);
+    context.lineTo(29, 18);
+    context.lineTo(13, 22);
+    context.closePath();
+    context.fill();
+    context.stroke();
+    context.restore();
+  };
+
+  const drawFog = () => {
+    context.save();
+    context.strokeStyle = "#061019";
+    context.lineWidth = 4.8;
+    context.lineCap = "round";
+    [-8, 10, 28].forEach((y, index) => {
+      context.beginPath();
+      context.moveTo(-38 + index * 3, y);
+      context.bezierCurveTo(-17, y - 7, 12, y + 7, 38, y);
+      context.stroke();
+    });
+    context.strokeStyle = "rgba(226, 246, 255, 0.98)";
+    context.lineWidth = 2.6;
+    [-8, 10, 28].forEach((y, index) => {
+      context.beginPath();
+      context.moveTo(-38 + index * 3, y);
+      context.bezierCurveTo(-17, y - 7, 12, y + 7, 38, y);
+      context.stroke();
+    });
+    context.restore();
+  };
+
+  context.clearRect(0, 0, size, size);
+  context.save();
+  context.translate(64, 58);
+  context.shadowBlur = 10;
+  context.shadowColor = "rgba(6, 16, 25, 0.28)";
+
+  switch (iconId) {
+    case "sun":
+      drawSun(0, 2, 25);
+      break;
+    case "partly_cloudy":
+      drawSun(25, -21, 18);
+      drawCloud(-2, 5, 0.94);
+      break;
+    case "cloud":
+      drawCloud(0, 2, 1);
+      break;
+    case "fog":
+      drawCloud(0, -11, 0.86);
+      drawFog();
+      break;
+    case "rain":
+      drawCloud(0, -7, 0.92);
+      drawDrops(false);
+      break;
+    case "snow":
+      drawCloud(0, -8, 0.92);
+      drawDrops(true);
+      break;
+    case "storm":
+      drawCloud(0, -8, 0.9);
+      drawLightning();
+      break;
+    case "unknown":
+      drawCloud(0, -4, 0.82);
+      context.fillStyle = "#061019";
+      context.font = "700 34px sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText("?", 2, 35);
       break;
   }
   context.restore();
