@@ -278,7 +278,7 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
       cacheTtlSeconds: layer.cacheTtlSeconds,
       ...(layer.compatibilityOnly === true ? { compatibilityOnly: true } : {}),
       defaultVisible: defaultVisibleForCatalogLayer(layer),
-      description: layer.description,
+      description: descriptionForCatalogLayer(layer),
       filters: normalizeProviderFilters(layer.filters),
       geometryTypes: geometryTypesForCatalogLayer(layer),
       groupId: groupIdForCatalogLayer(layer),
@@ -419,8 +419,9 @@ function shouldIncludeCatalogAudience(value: string | undefined, includeDiagnost
   return true;
 }
 
-const curatedWeatherLayerLabels: Record<string, string> = {
+const curatedCatalogLayerLabels: Record<string, string> = {
   "public.safety.air_quality": "Kvalita ovzduší",
+  "public.safety.flood": "Vodní stavy a průtoky",
   "public.weather.current": "Počasí ve středu mapy",
   "public.weather.observations": "Počasí",
   "public.weather.temperature_grid": "Teplota",
@@ -430,6 +431,10 @@ const curatedWeatherLayerLabels: Record<string, string> = {
   "public.weather.pressure_grid": "Tlak",
   "public.weather.webcams": "Webkamery ČHMÚ",
   "public.weather.radar_precipitation": "Radar srážek"
+};
+
+const curatedCatalogLayerDescriptions: Record<string, string> = {
+  "public.safety.flood": "Hydrologické stanice, vodní stavy, průtoky a stupně povodňové aktivity."
 };
 
 const basicUiHiddenWeatherLayerIds = new Set([
@@ -452,7 +457,7 @@ function selectableForCatalogLayer(layer: ProviderCatalogLayer): boolean {
 }
 
 function labelForCatalogLayer(layer: ProviderCatalogLayer): string {
-  const curatedLabel = curatedWeatherLayerLabels[layer.recommendedCatalogLayerId];
+  const curatedLabel = curatedCatalogLayerLabels[layer.recommendedCatalogLayerId];
   if (curatedLabel) {
     return curatedLabel;
   }
@@ -463,6 +468,10 @@ function labelForCatalogLayer(layer: ProviderCatalogLayer): string {
     return "Veřejné lety";
   }
   return layer.label;
+}
+
+function descriptionForCatalogLayer(layer: ProviderCatalogLayer): string | undefined {
+  return curatedCatalogLayerDescriptions[layer.recommendedCatalogLayerId] ?? layer.description;
 }
 
 function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
