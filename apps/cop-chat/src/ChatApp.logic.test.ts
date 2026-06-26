@@ -5,8 +5,6 @@ import {
   buildChatItems,
   buildTimelineRows,
   chatPreferenceSnapshot,
-  chatSelectionReducer,
-  computeVirtualTimelineWindow,
   dedupeChatItems,
   filterTimelineByRetention,
   isChatMuted,
@@ -14,7 +12,6 @@ import {
   normalizeChatPreferences
 } from "./ChatApp";
 import type { ChatListItem, ChatPreferences } from "./ChatApp";
-import type { ChatSelectionState } from "./ChatApp";
 import type { MatrixRoomSummary, MatrixTimelineMessage } from "@cop/messaging/types";
 import type { MessagingConversationSummary } from "../../cop-web/src/cop-data";
 
@@ -83,47 +80,6 @@ describe("buildTimelineRows", () => {
 
   it("returns an empty array for no messages", () => {
     expect(buildTimelineRows([])).toEqual([]);
-  });
-});
-
-describe("computeVirtualTimelineWindow", () => {
-  it("renders all rows below the virtualization threshold", () => {
-    const rows = buildTimelineRows([message({ eventId: "$a" })]);
-    const window = computeVirtualTimelineWindow({ clientHeight: 600, rows, scrollTop: 0 });
-
-    expect(window.enabled).toBe(false);
-    expect(window.rows).toHaveLength(rows.length);
-    expect(window.paddingTop).toBe(0);
-    expect(window.paddingBottom).toBe(0);
-  });
-
-  it("renders only a window for long timelines and preserves spacer height", () => {
-    const messages = Array.from({ length: 220 }, (_, index) => message({
-      body: `Zpráva ${index}`,
-      eventId: `$evt-${index}`,
-      timestamp: `2026-06-26T08:${String(index % 60).padStart(2, "0")}:00.000Z`
-    }));
-    const rows = buildTimelineRows(messages);
-    const window = computeVirtualTimelineWindow({ clientHeight: 640, rows, scrollTop: 3_400 });
-
-    expect(window.enabled).toBe(true);
-    expect(window.rows.length).toBeLessThan(rows.length);
-    expect(window.startIndex).toBeGreaterThan(0);
-    expect(window.endIndex).toBeGreaterThan(window.startIndex);
-    expect(window.paddingTop).toBeGreaterThan(0);
-    expect(window.paddingBottom).toBeGreaterThan(0);
-  });
-});
-
-describe("chatSelectionReducer", () => {
-  it("updates related chat selection ids through one state object", () => {
-    let state: ChatSelectionState = { conversationId: null, groupId: null, roomId: null };
-    state = chatSelectionReducer(state, { type: "conversation", value: "conv-1" });
-    state = chatSelectionReducer(state, { type: "group", value: "group-1" });
-    state = chatSelectionReducer(state, { type: "room", value: (current) => current ?? "!room:cop.local" });
-
-    expect(state).toEqual({ conversationId: "conv-1", groupId: "group-1", roomId: "!room:cop.local" });
-    expect(chatSelectionReducer(state, { type: "clear" })).toEqual({ conversationId: null, groupId: null, roomId: null });
   });
 });
 
