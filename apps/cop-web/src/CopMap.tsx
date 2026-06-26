@@ -486,6 +486,7 @@ interface CopMapProps {
   mapLayerDetailLabel: string;
   mapLayerLabel: string;
   mapInteractionSuspended?: boolean;
+  mapResizeSuspended?: boolean;
   mobileSketchControlsOpen?: boolean;
   selectedSituationFeatureId?: string;
   selectedObjectId?: string;
@@ -676,6 +677,7 @@ export function CopMap({
   mapLayerDetailLabel,
   mapLayerLabel,
   mapInteractionSuspended = false,
+  mapResizeSuspended = false,
   mobileSketchControlsOpen = false,
   selectedSituationFeatureId,
   selectedObjectId,
@@ -2855,7 +2857,7 @@ export function CopMap({
   }, []);
 
   React.useEffect(() => {
-    if (!mapReady || !containerRef.current || typeof ResizeObserver === "undefined") {
+    if (!mapReady || !containerRef.current || typeof ResizeObserver === "undefined" || mapResizeSuspended) {
       return;
     }
     resizeObserverRef.current?.disconnect();
@@ -2863,11 +2865,12 @@ export function CopMap({
       mapRef.current?.resize();
     });
     resizeObserverRef.current.observe(containerRef.current);
+    mapRef.current?.resize();
     return () => {
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
     };
-  }, [mapReady]);
+  }, [mapReady, mapResizeSuspended]);
 
   React.useEffect(() => {
     const map = mapRef.current;
@@ -5066,13 +5069,25 @@ function formatRiskMapLabel(feature: SituationFeature, status: { label: string }
 }
 
 function riskTokens(feature: SituationFeature): string {
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const taxonomy = isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
   return [
     feature.properties.category,
     feature.properties.hazardType,
+    feature.properties.typeCode,
+    feature.properties.sourceCode,
     feature.properties.iconHint,
     feature.properties.styleHint,
     feature.properties.status,
-    feature.properties.severity
+    feature.properties.severity,
+    stringProperty(providerProperties.typeCode),
+    stringProperty(providerProperties.sourceCode),
+    stringProperty(providerProperties.domain),
+    stringProperty(taxonomy.typeCode),
+    stringProperty(taxonomy.sourceCode),
+    stringProperty(taxonomy.domain),
+    stringProperty(taxonomy.category),
+    stringProperty(taxonomy.hazardType)
   ]
     .map((value) => normalizeSituationCategory(value))
     .filter(Boolean)
@@ -5192,7 +5207,7 @@ function formatBoundaryLabel(feature: SituationFeature): string {
 function riskLabelForKind(kind: RiskIconId): string {
   const labels: Record<RiskIconId, string> = {
     fire: "Požár",
-    flood: "Povodeň",
+    flood: "Vodní stav",
     unknown: "Riziko",
     warning: "Výstraha",
     weather: "Počasí"
@@ -6584,7 +6599,7 @@ function situationLayerDisplayName(feature: SituationFeature): string {
     fire: "Požáry",
     flight_airports: "Letiště",
     flight_airspaces: "Letecký prostor",
-    flood: "Povodně",
+    flood: "Vodní stavy",
     ground: "Terén",
     mobile: "Mobilní síť",
     mobile_coverage: "Technické pokrytí",

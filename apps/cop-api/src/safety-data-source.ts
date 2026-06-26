@@ -143,6 +143,7 @@ export interface SafetyFeatureProperties {
   hazardType?: string;
   headline: string;
   iconHint?: string;
+  localized?: Record<string, unknown>;
   layer: SafetyLayerId;
   layerId?: string;
   license?: Record<string, unknown>;
@@ -155,8 +156,10 @@ export interface SafetyFeatureProperties {
   riverName?: string;
   severity?: SafetySeverity | string;
   source?: string;
+  sourceCode?: string;
   sourceId: string;
   sourceIncident?: string;
+  sourceSystem?: string;
   sourceName?: string;
   stale?: boolean;
   stationId?: string;
@@ -165,6 +168,7 @@ export interface SafetyFeatureProperties {
   tags?: Record<string, unknown>;
   timelineUrl?: string;
   trend?: string;
+  typeCode?: string;
   updatedAt?: string;
   urgency?: string;
   validFrom?: string;
@@ -908,6 +912,7 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     hazardType: optionalString(value.hazardType),
     headline,
     iconHint: optionalString(value.iconHint),
+    localized: isRecord(value.localized) ? value.localized : undefined,
     layer: value.layer,
     layerId: optionalString(value.layerId),
     license: isRecord(value.license) ? value.license : undefined,
@@ -920,8 +925,10 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     riverName: optionalString(value.riverName) ?? optionalString(tags?.streamName),
     severity: optionalString(value.severity),
     source: optionalString(value.source),
+    sourceCode: optionalString(value.sourceCode),
     sourceId,
     sourceIncident: optionalString(value.sourceIncident),
+    sourceSystem: optionalString(value.sourceSystem),
     sourceName: optionalString(value.sourceName),
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
     stationId: optionalString(value.stationId) ?? optionalString(tags?.stationId),
@@ -930,6 +937,7 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     tags,
     timelineUrl: optionalString(value.timelineUrl),
     trend: optionalString(value.trend),
+    typeCode: optionalString(value.typeCode),
     updatedAt: optionalString(value.updatedAt),
     urgency: optionalString(value.urgency),
     validFrom: optionalString(value.validFrom),

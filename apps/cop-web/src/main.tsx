@@ -485,6 +485,8 @@ export function App() {
   const [mapSearchDocked, setMapSearchDocked] = React.useState(() => readMapSearchDocked());
   const [mobileSheet, setMobileSheet] = React.useState<MobileSheet>(null);
   const [mobileSketchOpen, setMobileSketchOpen] = React.useState(false);
+  const shellRef = React.useRef<HTMLElement | null>(null);
+  const [workspaceResizeActive, setWorkspaceResizeActive] = React.useState(false);
   const [workspaceLayout, setWorkspaceLayout] = React.useState<Required<WorkspaceLayoutPreferences>>(() =>
     normalizeWorkspaceLayout(initialPreferences.workspaceLayout)
   );
@@ -3908,11 +3910,15 @@ export function App() {
     const startWidth = side === "left" ? workspaceLayout.leftPanelWidth : workspaceLayout.rightPanelWidth;
     const range = side === "left" ? workspaceLeftWidthRange : workspaceRightWidthRange;
     let pendingWidth = startWidth;
+    let finalWidth = startWidth;
     let frameId: number | null = null;
     const applyWidth = () => {
       frameId = null;
-      const nextWidth = clamp(pendingWidth, range.min, range.max);
-      updateWorkspaceLayout(side === "left" ? { leftPanelWidth: nextWidth } : { rightPanelWidth: nextWidth });
+      finalWidth = clamp(pendingWidth, range.min, range.max);
+      shellRef.current?.style.setProperty(
+        side === "left" ? "--workspace-left-width" : "--workspace-right-width",
+        `${finalWidth}px`
+      );
     };
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const delta = moveEvent.clientX - startX;
@@ -3926,11 +3932,14 @@ export function App() {
         window.cancelAnimationFrame(frameId);
         applyWidth();
       }
+      setWorkspaceResizeActive(false);
+      updateWorkspaceLayout(side === "left" ? { leftPanelWidth: finalWidth } : { rightPanelWidth: finalWidth });
       document.documentElement.classList.remove("layout-resizing");
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", finishResize);
       window.removeEventListener("pointercancel", finishResize);
     };
+    setWorkspaceResizeActive(true);
     document.documentElement.classList.add("layout-resizing");
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", finishResize, { once: true });
@@ -3953,6 +3962,7 @@ export function App() {
   return (
     <main
       className={shellClassName}
+      ref={shellRef}
       style={shellStyle}
     >
       <header className="topbar">
@@ -4341,6 +4351,7 @@ export function App() {
               publicFlightSymbolMode={publicFlightSymbolMode}
               mapBasemapMode={mapBasemapMode}
               mapInteractionSuspended={Boolean(mobileSheet) || settingsOpen}
+              mapResizeSuspended={workspaceResizeActive}
               mobileSketchControlsOpen={mobileSketchOpen}
               predictionMinutes={predictionMinutes}
               predictionMode={predictionMode}
@@ -6154,8 +6165,10 @@ function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefin
     void loadHydroDetail();
   }, [hydroDetailUrl, loadHydroDetail, properties.layer]);
 
+  const canonicalTypeCode = safetyCanonicalTypeCode(properties);
+  const canonicalSourceCode = safetyCanonicalSourceCode(properties);
   const rows: Array<[string, React.ReactNode]> = isFlood ? [] : [
-    ["Riziko", safetyHazardLabel(properties.hazardType ?? properties.category)],
+    ["Riziko", safetyHazardLabel(canonicalTypeCode ?? properties.hazardType ?? properties.category)],
     ["Stav", status ? <StatusBadge key="status" label={status.label} tone={status.tone} /> : "n/a"],
     ["Oblast", properties.areaName ?? properties.affectedArea ?? formatStringList(properties.affectedAreas)],
     ["Geometrie", safetyGeometryModeLabel(properties.geometryMode, feature.geometry.type)],
@@ -6164,6 +6177,9 @@ function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefin
     ["Zdroj", properties.sourceName ?? properties.source ?? properties.sourceId],
     ["Podklady", safetyBasisLabel(properties.basis)]
   ];
+  if (!isFlood && canonicalSourceCode) {
+    rows.splice(1, 0, ["Kód jevu", canonicalSourceCode]);
+  }
 
   if (isFlood) {
     rows.push(
@@ -11968,7 +11984,7 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     fire: "Požáry",
     flight_airports: "Letiště",
     flight_airspaces: "Letecké prostory",
-    flood: "Povodně",
+    flood: "Vodní stavy",
     ground: "Terén",
     mobile: "Mobilní síť",
     mobile_coverage: "Technické pokrytí",
@@ -12007,7 +12023,7 @@ function safetyLayerLabel(layerId: SafetyLayerId): string {
   const labels: Record<SafetyLayerId, string> = {
     boundary_admin: "Správní hranice",
     fire: "Požáry",
-    flood: "Povodně a voda",
+    flood: "Vodní stavy a průtoky",
     warnings: "Veřejné výstrahy",
     weather_alerts: "Meteorologické výstrahy"
   };
@@ -13042,8 +13058,50 @@ function safetyGeometryModeLabel(mode: string | undefined, geometryType: string)
   }
 }
 
+function safetyCanonicalTypeCode(properties: SituationFeature["properties"]): string | undefined {
+  const providerProperties = isRecord(properties.providerProperties) ? properties.providerProperties : {};
+  const taxonomy = isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
+  return properties.typeCode
+    ?? stringProperty(providerProperties.typeCode)
+    ?? stringProperty(taxonomy.typeCode);
+}
+
+function safetyCanonicalSourceCode(properties: SituationFeature["properties"]): string | undefined {
+  const providerProperties = isRecord(properties.providerProperties) ? properties.providerProperties : {};
+  const taxonomy = isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
+  const sourceCode = properties.sourceCode
+    ?? stringProperty(providerProperties.sourceCode)
+    ?? stringProperty(taxonomy.sourceCode);
+  if (!sourceCode) {
+    return undefined;
+  }
+  const sourceSystem = properties.sourceSystem
+    ?? stringProperty(providerProperties.sourceSystem)
+    ?? stringProperty(taxonomy.codeSystem)
+    ?? stringProperty(taxonomy.sourceSystem);
+  return sourceSystem ? `${sourceSystem} ${sourceCode}` : sourceCode;
+}
+
 function safetyHazardLabel(value: string | undefined): string {
   const normalized = (value ?? "").toLowerCase().replace(/[_-]/g, " ");
+  if (normalized.includes("air quality") || normalized.includes("pm10") || normalized.includes("no2") || normalized.includes("so2") || normalized.includes("o3")) {
+    return "Kvalita ovzduší";
+  }
+  if (normalized.includes("slippery") || normalized.includes("ice") || normalized.includes("naled") || normalized.includes("ledov")) {
+    return "Náledí / ledovka";
+  }
+  if (normalized.includes("snow")) {
+    return "Sníh a sněhové jevy";
+  }
+  if (normalized.includes("temperature high") || normalized.includes("heat")) {
+    return "Vysoké teploty";
+  }
+  if (normalized.includes("temperature low") || normalized.includes("cold")) {
+    return "Nízké teploty";
+  }
+  if (normalized.includes("drought")) {
+    return "Sucho";
+  }
   if (normalized.includes("fire")) {
     return "Nebezpečí požáru";
   }

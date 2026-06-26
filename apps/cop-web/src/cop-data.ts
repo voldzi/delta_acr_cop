@@ -401,6 +401,7 @@ export interface SituationFeatureProperties {
   hazardSeverity?: string;
   headline?: string;
   iconHint?: string;
+  localized?: Record<string, unknown>;
   label: string;
   layer: SituationLayerId;
   layerId?: string;
@@ -441,8 +442,10 @@ export interface SituationFeatureProperties {
   scoreDelta?: Record<string, number>;
   severity?: string;
   source?: string;
+  sourceCode?: string;
   sourceId: string;
   sourceIncident?: string;
+  sourceSystem?: string;
   sourceName?: string;
   sourceRevision?: string;
   stale?: boolean;
@@ -461,6 +464,7 @@ export interface SituationFeatureProperties {
   timelineUrl?: string;
   totalVotes?: number;
   trend?: string;
+  typeCode?: string;
   urgency?: string;
   updatedAt?: string;
   validFrom?: string;
@@ -663,6 +667,7 @@ export interface SafetyFeatureProperties {
   hazardType?: string;
   headline: string;
   iconHint?: string;
+  localized?: Record<string, unknown>;
   layer: SafetyLayerId;
   layerId?: string;
   license?: Record<string, unknown>;
@@ -675,8 +680,10 @@ export interface SafetyFeatureProperties {
   riverName?: string;
   severity?: string;
   source?: string;
+  sourceCode?: string;
   sourceId: string;
   sourceIncident?: string;
+  sourceSystem?: string;
   sourceName?: string;
   stale?: boolean;
   stationId?: string;
@@ -685,6 +692,7 @@ export interface SafetyFeatureProperties {
   tags?: Record<string, unknown>;
   timelineUrl?: string;
   trend?: string;
+  typeCode?: string;
   updatedAt?: string;
   urgency?: string;
   validFrom?: string;
