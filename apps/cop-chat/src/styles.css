@@ -83,6 +83,7 @@
 html,
 body,
 #root {
+  height: 100%;
   min-height: 100%;
   margin: 0;
 }
@@ -123,11 +124,16 @@ button {
 }
 
 .wa-shell.embedded {
+  position: relative;
   grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .wa-shell.embedded .chat-list-pane {
-  height: 100dvh;
+  height: 100%;
+  min-height: 0;
   border-right: 0;
 }
 
@@ -136,12 +142,13 @@ button {
 }
 
 .wa-shell.embedded .conversation-pane {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 10;
   display: none;
-  height: 100dvh;
-  max-height: 100dvh;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .wa-shell.embedded.chat-selected .conversation-pane {
@@ -3139,6 +3146,25 @@ button {
   .preview-backdrop {
     padding: 8px;
   }
+}
+
+.wa-shell.embedded {
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.wa-shell.embedded .chat-list-pane {
+  height: 100%;
+  min-height: 0;
+}
+
+.wa-shell.embedded .conversation-pane {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
 }
 
 @media (max-width: 420px) {

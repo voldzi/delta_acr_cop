@@ -8278,8 +8278,9 @@ dd {
   .shell.app-shell-v2 .embedded-chat-panel-main {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    height: 100dvh;
+    height: 100%;
     min-height: 0;
+    max-height: 100%;
     overflow: hidden;
   }
 
