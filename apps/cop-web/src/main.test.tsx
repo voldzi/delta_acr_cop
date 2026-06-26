@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { encodeChatCenterLocation } from "@cop/messaging/bridge";
 import { App, buildPriorityAlertSummary, buildStableSituationQueryBounds, mapBoundsContainedBy } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
 
@@ -11,16 +12,22 @@ vi.mock("./CopMap", async () => {
   return {
     CopMap: ({
       emptyMessage,
+      focusView,
+      focusViewRequest,
       mapInteractionSuspended,
       objects
     }: {
       emptyMessage: string | null;
+      focusView?: { center: [number, number]; zoom?: number };
+      focusViewRequest?: number;
       mapInteractionSuspended?: boolean;
       objects: Array<{ objectId: string }>;
     }) =>
       React.createElement(
         "div",
         {
+          "data-focus-center": focusView ? `${focusView.center[0].toFixed(5)},${focusView.center[1].toFixed(5)}` : "",
+          "data-focus-view-request": String(focusViewRequest ?? 0),
           "data-map-interaction-suspended": String(Boolean(mapInteractionSuspended)),
           "data-testid": "cop-map"
         },
@@ -286,6 +293,64 @@ describe("COP web dashboard", () => {
     expect(screen.getByRole("button", { name: "60s" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "60s" }));
     expect(screen.getByRole("button", { name: "60s" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keeps integrated chat open and focuses the map when chat sends a location", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {
+            trackHistoryLimit: 120,
+            trackHistoryWindowSeconds: 180
+          },
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [] });
+    }));
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Komunikace" }));
+    expect(screen.getByText("Integrovaný COP Chat")).toBeTruthy();
+
+    window.dispatchEvent(new MessageEvent("message", {
+      data: encodeChatCenterLocation(50.12951, 17.36297),
+      origin: window.location.origin
+    }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1");
+    });
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("17.36297,50.12951");
+    expect(screen.getByText("Integrovaný COP Chat")).toBeTruthy();
   });
 
   it("keeps an empty connected map clean when no active tracks are present", async () => {

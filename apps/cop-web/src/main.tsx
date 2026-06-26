@@ -661,13 +661,14 @@ export function App() {
       const center = decodeChatCenterLocation(data);
       if (center) {
         setActiveWorkspace("map");
-        setMessagingOpen(false);
+        setAutoFit(false);
         setMapView((current) => ({
           bearing: current?.bearing ?? 0,
           center: [center.lon, center.lat],
           pitch: current?.pitch ?? 0,
           zoom: Math.max(current?.zoom ?? 0, 15)
         }));
+        setFocusViewRequest((current) => current + 1);
       }
     };
     const handleChatStorage = (event: StorageEvent) => {
