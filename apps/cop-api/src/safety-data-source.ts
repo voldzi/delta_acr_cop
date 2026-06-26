@@ -879,7 +879,22 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
   }
   const featureId = optionalString(value.featureId);
   const category = optionalString(value.category);
-  const headline = optionalString(value.headline);
+  const localized = isRecord(value.localized) ? value.localized : undefined;
+  const providerProperties = isRecord(value.providerProperties) ? value.providerProperties : undefined;
+  const taxonomy = providerProperties && isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : undefined;
+  const presentation = providerProperties && isRecord(providerProperties.presentation) ? providerProperties.presentation : undefined;
+  const typeCode = optionalString(value.typeCode) ?? optionalString(providerProperties?.typeCode) ?? optionalString(taxonomy?.typeCode);
+  const sourceCode = optionalString(value.sourceCode) ?? optionalString(providerProperties?.sourceCode) ?? optionalString(taxonomy?.sourceCode);
+  const sourceSystem = optionalString(value.sourceSystem)
+    ?? optionalString(providerProperties?.sourceSystem)
+    ?? optionalString(taxonomy?.codeSystem)
+    ?? optionalString(taxonomy?.sourceSystem);
+  const headline = optionalString(value.headline)
+    ?? localizedSafetyString(localized, "cs", "headline", "title", "label", "name")
+    ?? optionalString(presentation?.label)
+    ?? optionalString(presentation?.title)
+    ?? typeCode
+    ?? sourceCode;
   const sourceId = optionalString(value.sourceId);
   if (!featureId || !category || !headline || !sourceId) {
     return null;
@@ -912,7 +927,7 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     hazardType: optionalString(value.hazardType),
     headline,
     iconHint: optionalString(value.iconHint),
-    localized: isRecord(value.localized) ? value.localized : undefined,
+    localized,
     layer: value.layer,
     layerId: optionalString(value.layerId),
     license: isRecord(value.license) ? value.license : undefined,
@@ -920,15 +935,15 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     observedAt: optionalString(value.observedAt),
     providerId: optionalString(value.providerId),
     providerLayerId: optionalString(value.providerLayerId),
-    providerProperties: isRecord(value.providerProperties) ? value.providerProperties : undefined,
+    providerProperties,
     recommendedAction: optionalString(value.recommendedAction),
     riverName: optionalString(value.riverName) ?? optionalString(tags?.streamName),
     severity: optionalString(value.severity),
     source: optionalString(value.source),
-    sourceCode: optionalString(value.sourceCode),
+    sourceCode,
     sourceId,
     sourceIncident: optionalString(value.sourceIncident),
-    sourceSystem: optionalString(value.sourceSystem),
+    sourceSystem,
     sourceName: optionalString(value.sourceName),
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
     stationId: optionalString(value.stationId) ?? optionalString(tags?.stationId),
@@ -937,7 +952,7 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     tags,
     timelineUrl: optionalString(value.timelineUrl),
     trend: optionalString(value.trend),
-    typeCode: optionalString(value.typeCode),
+    typeCode,
     updatedAt: optionalString(value.updatedAt),
     urgency: optionalString(value.urgency),
     validFrom: optionalString(value.validFrom),
@@ -945,6 +960,21 @@ function normalizeSafetyProperties(value: Record<string, unknown>): SafetyFeatur
     waterTemperatureC: optionalFinite(value.waterTemperatureC) ?? optionalFinite(metrics?.waterTemperatureC),
     waterLevelCm: optionalFinite(value.waterLevelCm) ?? optionalFinite(metrics?.waterLevelCm)
   };
+}
+
+function localizedSafetyString(localized: Record<string, unknown> | undefined, locale: string, ...keys: string[]): string | undefined {
+  if (!localized) {
+    return undefined;
+  }
+  const entry = localized[locale];
+  const record = isRecord(entry) ? entry : localized;
+  for (const key of keys) {
+    const value = optionalString(record[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function normalizeSafetyLayer(value: unknown): SafetyLayerDescriptor[] {

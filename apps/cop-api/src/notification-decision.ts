@@ -147,7 +147,9 @@ export function buildSafetyFeatureNotificationDecision(
   const validFrom = properties.validFrom ?? properties.effectiveAt ?? properties.observedAt ?? properties.updatedAt ?? "";
   const validUntil = properties.validUntil ?? properties.expiresAt ?? "";
   const severity = safetyFeatureNotificationSeverity(properties) ?? "info";
-  const title = safetyTitle(properties.headline, properties.hazardType, severity);
+  const titleCs = safetyTitle(properties, severity, "cs");
+  const titleEn = safetyTitle(properties, severity, "en") ?? titleCs;
+  const presentation = safetyPresentation(properties);
   return {
     contractVersion: "cop-notification-decision-v1",
     decisionId: createDecisionId("safety", featureId, `${validFrom}:${validUntil}`),
@@ -155,15 +157,19 @@ export function buildSafetyFeatureNotificationDecision(
     notification: {
       audience: audienceResult.audience,
       body: {
-        cs: safeSafetyBody(properties.recommendedAction),
-        en: "Open CSM for the current warning detail."
+        cs: safeSafetyBody(properties, "cs") ?? "Otevřete CSM pro aktuální detail výstrahy.",
+        en: safeSafetyBody(properties, "en") ?? "Open CSM for the current warning detail."
       },
       deepLink: `csm://map/alert/${encodeURIComponent(featureId)}`,
       ...(validUntil ? { expiresAt: validUntil } : {}),
       metadata: compactMetadata({
         certainty: properties.certainty,
         confidence: typeof properties.confidence === "number" ? properties.confidence : undefined,
-        hazardType: properties.hazardType,
+        iconKey: stringRecordValue(presentation, "iconKey"),
+        sourceCode: safetySourceCode(properties),
+        sourceSystem: safetySourceSystem(properties),
+        styleKey: stringRecordValue(presentation, "styleKey"),
+        typeCode: safetyTypeCode(properties),
         urgency: properties.urgency
       }),
       priority: priorityForSeverity(severity),
@@ -175,8 +181,8 @@ export function buildSafetyFeatureNotificationDecision(
         ...(sourceName ? { sourceName } : {})
       },
       title: {
-        cs: title,
-        en: title
+        cs: titleCs,
+        en: titleEn
       },
       type: "safety.alert"
     },
@@ -201,6 +207,9 @@ export function evaluateSafetyFeatureCandidate(feature: SafetyFeature, requestNo
   }
   if (properties.stale === true) {
     return { ok: false, reason: "Safety feature is stale." };
+  }
+  if (safetyNotificationEligible(properties) === false) {
+    return { ok: false, reason: "Safety feature is not eligible for notification by provider policy." };
   }
   if (isExpired(properties.validUntil ?? properties.expiresAt, requestNow)) {
     return { ok: false, reason: "Safety feature validity has expired." };
@@ -412,20 +421,134 @@ function priorityForSeverity(severity: CopNotificationSeverity): CopNotification
   return "low";
 }
 
-function safetyTitle(headline: string, hazardType: string | undefined, severity: CopNotificationSeverity): string {
-  if (headline.trim()) {
-    return headline.trim().slice(0, 120);
-  }
-  const label = hazardType?.trim() || "výstraha";
-  return severity === "critical" ? `Kritická výstraha: ${label}` : `Výstraha: ${label}`;
+function safetyTitle(
+  properties: SafetyFeature["properties"],
+  severity: CopNotificationSeverity,
+  locale: "cs" | "en"
+): string {
+  const title = localizedSafetyString(properties, locale, "headline", "title", "label", "name")
+    ?? safetyPresentationString(properties, "label", "title")
+    ?? properties.headline
+    ?? humanizeSafetyTypeCode(safetyTypeCode(properties))
+    ?? safetySourceCode(properties)
+    ?? (locale === "cs" ? "výstraha" : "alert");
+  const prefix = locale === "cs"
+    ? severity === "critical" ? "Kritická výstraha" : "Výstraha"
+    : severity === "critical" ? "Critical alert" : "Alert";
+  const trimmed = title.trim();
+  const normalized = trimmed.toLowerCase();
+  const withPrefix = normalized.includes("výstrah") || normalized.includes("alert") ? trimmed : `${prefix}: ${trimmed}`;
+  return withPrefix.slice(0, 120);
 }
 
-function safeSafetyBody(recommendedAction: string | undefined): string {
-  const action = recommendedAction?.trim();
+function safeSafetyBody(properties: SafetyFeature["properties"], locale: "cs" | "en"): string | undefined {
+  const action = localizedSafetyString(properties, locale, "recommendedAction", "instruction", "recommendation", "description", "detail")
+    ?? (locale === "cs" ? properties.recommendedAction : undefined);
   if (!action) {
-    return "Otevřete CSM pro aktuální detail výstrahy.";
+    return locale === "cs" ? "Otevřete CSM pro aktuální detail výstrahy." : undefined;
   }
-  return action.length <= 120 ? action : "Otevřete CSM pro aktuální detail výstrahy.";
+  return action.trim().length <= 180 ? action.trim() : locale === "cs" ? "Otevřete CSM pro aktuální detail výstrahy." : undefined;
+}
+
+function safetyNotificationEligible(properties: SafetyFeature["properties"]): boolean | undefined {
+  const notification = safetyNotification(properties);
+  const value = notification.eligible;
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function safetyTypeCode(properties: SafetyFeature["properties"]): string | undefined {
+  const providerProperties = safetyProviderProperties(properties);
+  const taxonomy = safetyTaxonomy(properties);
+  return properties.typeCode
+    ?? stringRecordValue(providerProperties, "typeCode")
+    ?? stringRecordValue(taxonomy, "typeCode");
+}
+
+function safetySourceCode(properties: SafetyFeature["properties"]): string | undefined {
+  const providerProperties = safetyProviderProperties(properties);
+  const taxonomy = safetyTaxonomy(properties);
+  return properties.sourceCode
+    ?? stringRecordValue(providerProperties, "sourceCode")
+    ?? stringRecordValue(taxonomy, "sourceCode");
+}
+
+function safetySourceSystem(properties: SafetyFeature["properties"]): string | undefined {
+  const providerProperties = safetyProviderProperties(properties);
+  const taxonomy = safetyTaxonomy(properties);
+  return properties.sourceSystem
+    ?? stringRecordValue(providerProperties, "sourceSystem")
+    ?? stringRecordValue(taxonomy, "codeSystem")
+    ?? stringRecordValue(taxonomy, "sourceSystem");
+}
+
+function localizedSafetyString(
+  properties: SafetyFeature["properties"],
+  locale: "cs" | "en",
+  ...keys: string[]
+): string | undefined {
+  const localized = properties.localized;
+  if (!localized || typeof localized !== "object") {
+    return undefined;
+  }
+  const entry = localized[locale];
+  const record = isRecord(entry) ? entry : localized;
+  for (const key of keys) {
+    const value = stringRecordValue(record, key);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function safetyPresentationString(properties: SafetyFeature["properties"], ...keys: string[]): string | undefined {
+  const presentation = safetyPresentation(properties);
+  for (const key of keys) {
+    const value = stringRecordValue(presentation, key);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function safetyProviderProperties(properties: SafetyFeature["properties"]): Record<string, unknown> {
+  return isRecord(properties.providerProperties) ? properties.providerProperties : {};
+}
+
+function safetyTaxonomy(properties: SafetyFeature["properties"]): Record<string, unknown> {
+  const providerProperties = safetyProviderProperties(properties);
+  return isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
+}
+
+function safetyPresentation(properties: SafetyFeature["properties"]): Record<string, unknown> {
+  const providerProperties = safetyProviderProperties(properties);
+  return isRecord(providerProperties.presentation) ? providerProperties.presentation : {};
+}
+
+function safetyNotification(properties: SafetyFeature["properties"]): Record<string, unknown> {
+  const providerProperties = safetyProviderProperties(properties);
+  return isRecord(providerProperties.notification) ? providerProperties.notification : {};
+}
+
+function stringRecordValue(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function humanizeSafetyTypeCode(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return value
+    .split(/[._-]+/u)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function normalizeAudience(audience: CopNotificationAudience): CopNotificationAudience {

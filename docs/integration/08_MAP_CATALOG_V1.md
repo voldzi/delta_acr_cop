@@ -584,12 +584,18 @@ COP consumes the current SIM safety-data read model without parsing provider-nat
 
 | Field | Meaning in COP |
 | --- | --- |
-| `hazardType`, `status`, `severity` | User-facing risk type and current state. |
+| `typeCode` | Authoritative machine type of the safety phenomenon, for example `weather.temperature.high`, `weather.fire_danger`, `hydro.flood.warning` or `air_quality.pm10.smog`. COP must prefer this field over legacy text fields such as `headline`, `event` or `hazardType` when classifying the feature. |
+| `sourceCode`, `sourceSystem` | Provider-native source code and code system, for example ČHMÚ/SIVS `I.2`, `VII.1`, `SMOGSIT.PM10` or CAP fallback `AWARENESS.5`. |
+| `localized.cs`, `localized.en` | Localized title, detail and recommendation text. COP uses `localized.cs` for Czech UI and notifications; `localized.en` is optional for bilingual clients. |
+| `providerProperties.taxonomy` | SIM canonical taxonomy fallback for `typeCode`, `sourceCode` and `sourceSystem` when top-level fields are absent. |
+| `providerProperties.presentation` | Presentation metadata. COP should use `iconKey`, `styleKey` and `detailTemplate` for map symbols, detail panels and concise UI labels. |
+| `providerProperties.notification` | Notification policy metadata. COP must respect `eligible=false` as a hard block for push notification candidates, while the feature may still be displayed on the map. |
+| `status`, `severity` | Current state and severity. They influence color and urgency, but they do not replace `typeCode`. |
 | `validFrom`, `validUntil`, `updatedAt` | Alert validity and freshness. |
 | `source`, `sourceName`, `basis` | Source/provenance summary. Raw provider URLs may stay in `basis`, but UI should translate known tokens. |
 | `geometryMode` | `admin_boundary` means the alert is polygonized from an administrative boundary; `representative_point` is a controlled fallback. |
 | `areaName`, `adminLevel`, `affectedAreas` | Human-readable area context. |
-| `fireStatus`, `sourceIncident` | Fire-specific state and source classification. `fireStatus=risk` with `sourceIncident=CHMI_CAP_FIRE_DANGER` means fire danger conditions, not a confirmed fire. |
+| `fireStatus`, `sourceIncident` | Fire-specific state and source classification. `typeCode=weather.fire_danger` or `sourceIncident=CHMI_CAP_FIRE_DANGER` means fire danger conditions, not a confirmed fire. |
 | `riverName`, `stationId`, `waterLevelCm`, `discharge`, `waterTemperatureC`, `floodStage`, `trend`, `basin`, `catchmentAreaKm2` | Hydrology-specific fields for `public.safety.flood`. |
 | `detailUrl`, `timelineUrl`, `forecastAvailable`, `forecastUntil` | Hydrology detail/timeline metadata. COP derives `stationId` and query from SIM `detailUrl`, calls COP proxy `/api/v1/safety/hydro/stations/{stationId}/observations`, and renders H/Q/TH history, H_F/Q_F forecast, drought and SPA thresholds. |
 
@@ -597,7 +603,7 @@ For ČHMÚ CAP alerts COP renders `Polygon`/`MultiPolygon` as the primary repres
 
 For hydrology COP maps `floodStage=0` to info, `1` to advisory, `2` to warning and `>=3` to critical for citizen notification evaluation. `trend=rising` is displayed as a trend highlight only and must not become a critical trigger by itself. COP does not infer evacuation, routing, rescue priorities, or any operational action from those values.
 
-For fire COP distinguishes confirmed/observed fire context from ČHMÚ fire danger. ČHMÚ `fire_weather`/`CHMI_CAP_FIRE_DANGER` features are shown as official fire-risk polygons, not as confirmed incident locations.
+For fire COP distinguishes confirmed/observed fire context from ČHMÚ fire danger. ČHMÚ `typeCode=weather.fire_danger` or `sourceIncident=CHMI_CAP_FIRE_DANGER` features are shown as official fire-risk polygons, not as confirmed incident locations.
 
 COP reads SIM safety operations only server-side through `GET /safety-data/api/v1/observability`. The response is sanitized operational metadata, not a user map layer. COP maps it into provider health: stale feature counts and source-cache errors become operational warnings, while `status=degraded` is displayed as reduced external data quality rather than a map or SIM outage. Public clients must keep using `/api/v1/map/catalog` and `/api/v1/map/query`; they must not query SIM `/observability` or `/metrics` directly.
 

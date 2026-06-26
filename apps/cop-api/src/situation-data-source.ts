@@ -146,6 +146,7 @@ export interface SituationFeatureProperties {
   layer: SituationLayerId;
   layerId?: string;
   license?: Record<string, unknown>;
+  localized?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
   modelVersion?: string;
   observedAt?: string;
@@ -161,7 +162,9 @@ export interface SituationFeatureProperties {
   rendering?: Record<string, unknown>;
   resolutionM?: number;
   severity?: "advisory" | "critical" | "info" | "warning" | string;
+  sourceCode?: string;
   sourceId: string;
+  sourceSystem?: string;
   sourceName?: string;
   stale?: boolean;
   status?: string;
@@ -170,6 +173,7 @@ export interface SituationFeatureProperties {
   sourceRevision?: string;
   tags?: Record<string, unknown>;
   technology?: string;
+  typeCode?: string;
   validUntil?: string;
 }
 
@@ -830,6 +834,8 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
   if (!featureId || !category || !label || !sourceId) {
     return null;
   }
+  const providerProperties = isRecord(value.providerProperties) ? value.providerProperties : undefined;
+  const taxonomy = providerProperties && isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : undefined;
   return {
     assumptions: isRecord(value.assumptions) ? value.assumptions : undefined,
     btsStatus: optionalString(value.btsStatus),
@@ -848,6 +854,7 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     layer: value.layer,
     layerId: optionalString(value.layerId),
     license: isRecord(value.license) ? value.license : undefined,
+    localized: isRecord(value.localized) ? value.localized : undefined,
     metrics: isRecord(value.metrics) ? value.metrics : undefined,
     modelVersion: optionalString(value.modelVersion),
     observedAt: optionalString(value.observedAt),
@@ -857,12 +864,17 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     quality: optionalString(value.quality),
     providerId: optionalString(value.providerId),
     providerLayerId: optionalString(value.providerLayerId),
-    providerProperties: isRecord(value.providerProperties) ? value.providerProperties : undefined,
+    providerProperties,
     readModel: optionalBoolean(value.readModel),
     rendering: isRecord(value.rendering) ? value.rendering : undefined,
     resolutionM: optionalNumber(value.resolutionM),
     severity: optionalString(value.severity),
+    sourceCode: optionalString(value.sourceCode) ?? optionalString(providerProperties?.sourceCode) ?? optionalString(taxonomy?.sourceCode),
     sourceId,
+    sourceSystem: optionalString(value.sourceSystem)
+      ?? optionalString(providerProperties?.sourceSystem)
+      ?? optionalString(taxonomy?.codeSystem)
+      ?? optionalString(taxonomy?.sourceSystem),
     sourceName: optionalString(value.sourceName),
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
     status: optionalString(value.status),
@@ -871,6 +883,7 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     sourceRevision: optionalString(value.sourceRevision),
     tags: isRecord(value.tags) ? value.tags : undefined,
     technology: normalizeCoverageTechnology(value.technology),
+    typeCode: optionalString(value.typeCode) ?? optionalString(providerProperties?.typeCode) ?? optionalString(taxonomy?.typeCode),
     validUntil: optionalString(value.validUntil)
   };
 }

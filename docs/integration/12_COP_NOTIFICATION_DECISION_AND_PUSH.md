@@ -152,6 +152,17 @@ Example body:
 COP does not include APNs tokens, device identifiers, Matrix tokens, media URLs
 or plaintext chat messages in notification intake.
 
+For SIM safety-data features COP treats SIM normalized metadata as authoritative.
+The notification title/body should prefer `localized.cs` and may use
+`localized.en` for an English fallback. The notification metadata carries
+`typeCode`, `sourceCode`, `sourceSystem`, `providerProperties.presentation.iconKey`
+and `providerProperties.presentation.styleKey` when present. COP must not derive
+the safety phenomenon from free text such as `headline`, `event` or legacy
+`hazardType` when `typeCode`/taxonomy metadata is available. If
+`providerProperties.notification.eligible=false`, COP must not dispatch a push
+candidate for that feature, even when severity would otherwise meet the
+threshold.
+
 ## Community Reports
 
 When an owned community report is submitted, COP creates a

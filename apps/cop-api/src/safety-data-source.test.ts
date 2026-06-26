@@ -163,6 +163,94 @@ describe("SafetyDataSourceAdapter", () => {
     });
   });
 
+  it("accepts canonical SIM safety features without legacy headline text", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      contractVersion: "cop-safety-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [14.42, 50.08],
+            type: "Point"
+          },
+          properties: {
+            category: "warning.weather",
+            featureId: "warning:heat:prague",
+            layer: "weather_alerts",
+            localized: {
+              cs: {
+                headline: "Vysoké teploty",
+                detail: "Výstraha pro území Prahy."
+              }
+            },
+            providerProperties: {
+              notification: {
+                eligible: false
+              },
+              presentation: {
+                iconKey: "weather.temperature.high",
+                styleKey: "heat-warning"
+              },
+              taxonomy: {
+                sourceCode: "I.2",
+                sourceSystem: "CHMI_SIVS",
+                typeCode: "weather.temperature.high"
+              }
+            },
+            severity: "warning",
+            sourceId: "chmi_alerts"
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-20T10:00:00Z",
+      query: {
+        bbox: { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
+        layers: ["weather_alerts"],
+        limit: 20
+      },
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 1
+      },
+      source: {
+        generatedAt: "2026-05-20T10:00:00Z",
+        sourceId: "safety-data-api",
+        sourceType: "PUBLIC_SAFETY_AGGREGATE"
+      },
+      type: "FeatureCollection",
+      warnings: []
+    }), { status: 200 })));
+
+    const adapter = new SafetyDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/safety-data/api/v1/",
+      cacheTtlMs: 120000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const features = await adapter.fetchFeatures({
+      bbox: { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
+      layers: ["weather_alerts"],
+      limit: 20
+    }, new Date("2026-05-20T10:00:06Z"));
+
+    expect(features.features).toHaveLength(1);
+    expect(features.features[0]?.properties).toMatchObject({
+      headline: "Vysoké teploty",
+      sourceCode: "I.2",
+      sourceSystem: "CHMI_SIVS",
+      typeCode: "weather.temperature.high"
+    });
+    expect(features.features[0]?.properties.providerProperties).toMatchObject({
+      notification: {
+        eligible: false
+      }
+    });
+  });
+
   it("preserves hydrology numeric values while clamping ratio fields", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.headers).not.toMatchObject({ Authorization: expect.any(String) });

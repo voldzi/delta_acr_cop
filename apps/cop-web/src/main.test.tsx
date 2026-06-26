@@ -113,6 +113,52 @@ describe("COP web dashboard", () => {
     expect(summary.reference.source).toBe("map");
   });
 
+  it("uses localized SIM safety metadata for priority alert titles", () => {
+    const now = Date.now();
+    const summary = buildPriorityAlertSummary({
+      alerts: [],
+      features: [
+        {
+          geometry: { coordinates: [14.438, 50.076], type: "Point" },
+          properties: {
+            category: "legacy.weather",
+            featureId: "heat-near",
+            hazardType: "legacy_hazard_text",
+            label: "Fallback label",
+            layer: "weather_alerts",
+            localized: {
+              cs: {
+                headline: "Vysoké teploty v okolí"
+              }
+            },
+            providerProperties: {
+              presentation: {
+                iconKey: "weather.temperature.high",
+                styleKey: "heat-warning"
+              },
+              taxonomy: {
+                sourceCode: "I.2",
+                sourceSystem: "CHMI_SIVS",
+                typeCode: "weather.temperature.high"
+              }
+            },
+            severity: "warning",
+            sourceId: "chmi_alerts",
+            validUntil: new Date(now + 60 * 60_000).toISOString()
+          },
+          type: "Feature"
+        }
+      ],
+      mapView: { center: [14.4378, 50.0755], zoom: 11 },
+      objects: [],
+      proximityAlerts: [],
+      userLocation: null
+    });
+
+    expect(summary.primary?.title).toBe("Vysoké teploty v okolí");
+    expect(summary.primary?.id).toBe("feature:heat-near");
+  });
+
   it("renders SIM tracks returned from COP API", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

@@ -5027,14 +5027,20 @@ function isSyntheticWarningPoint(feature: SituationFeature): boolean {
 
 function isRiskFeature(feature: SituationFeature): boolean {
   const tokens = riskTokens(feature);
+  const presentation = riskPresentationIconKind(feature);
   return feature.properties.layer === "warnings"
     || feature.properties.layer === "weather_alerts"
     || feature.properties.layer === "flood"
     || feature.properties.layer === "fire"
+    || Boolean(presentation)
     || ["fire", "wildfire", "flood", "warning", "weather_alert", "storm", "risk"].some((token) => tokens.includes(token));
 }
 
 function riskIconKind(feature: SituationFeature): RiskIconId {
+  const presentation = riskPresentationIconKind(feature);
+  if (presentation) {
+    return presentation;
+  }
   const tokens = riskTokens(feature);
   if (feature.properties.layer === "fire" || tokens.includes("fire") || tokens.includes("wildfire")) {
     return "fire";
@@ -5051,8 +5057,41 @@ function riskIconKind(feature: SituationFeature): RiskIconId {
   return "unknown";
 }
 
+function riskPresentationIconKind(feature: SituationFeature): RiskIconId | undefined {
+  const presentation = riskPresentation(feature);
+  const iconKey = normalizeSituationCategory(stringProperty(presentation.iconKey));
+  const styleKey = normalizeSituationCategory(stringProperty(presentation.styleKey));
+  const code = [iconKey, styleKey].filter(Boolean).join(" ");
+  if (!code) {
+    return undefined;
+  }
+  if (code.includes("fire")) {
+    return "fire";
+  }
+  if (code.includes("flood") || code.includes("hydro") || code.includes("water")) {
+    return "flood";
+  }
+  if (code.includes("weather") || code.includes("storm") || code.includes("wind") || code.includes("rain") || code.includes("snow") || code.includes("temperature")) {
+    return "weather";
+  }
+  if (code.includes("warning") || code.includes("alert") || code.includes("smog") || code.includes("air_quality")) {
+    return "warning";
+  }
+  return undefined;
+}
+
+function riskPresentation(feature: SituationFeature): Record<string, unknown> {
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  return isRecord(providerProperties.presentation) ? providerProperties.presentation : {};
+}
+
 function formatRiskMapLabel(feature: SituationFeature, status: { label: string }): string {
-  const headline = feature.properties.headline ?? feature.properties.areaName ?? feature.properties.label;
+  const presentation = riskPresentation(feature);
+  const headline = stringProperty(presentation.label)
+    ?? stringProperty(presentation.title)
+    ?? feature.properties.headline
+    ?? feature.properties.areaName
+    ?? feature.properties.label;
   const category = riskMapCategoryLabel(feature);
   if (feature.properties.layer === "flood") {
     const floodName = feature.properties.riverName ?? feature.properties.areaName ?? headline;
@@ -5073,7 +5112,6 @@ function riskTokens(feature: SituationFeature): string {
   const taxonomy = isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
   return [
     feature.properties.category,
-    feature.properties.hazardType,
     feature.properties.typeCode,
     feature.properties.sourceCode,
     feature.properties.iconHint,
@@ -5086,8 +5124,7 @@ function riskTokens(feature: SituationFeature): string {
     stringProperty(taxonomy.typeCode),
     stringProperty(taxonomy.sourceCode),
     stringProperty(taxonomy.domain),
-    stringProperty(taxonomy.category),
-    stringProperty(taxonomy.hazardType)
+    stringProperty(taxonomy.category)
   ]
     .map((value) => normalizeSituationCategory(value))
     .filter(Boolean)
@@ -5216,8 +5253,10 @@ function riskLabelForKind(kind: RiskIconId): string {
 }
 
 function riskMapCategoryLabel(feature: SituationFeature): string {
-  if (feature.properties.layer === "fire" && feature.properties.hazardType === "fire_weather") {
-    return "Požární riziko";
+  const presentation = riskPresentation(feature);
+  const label = stringProperty(presentation.label) ?? stringProperty(presentation.title);
+  if (label) {
+    return compactRiskHeadline(label);
   }
   return riskLabelForKind(riskIconKind(feature));
 }

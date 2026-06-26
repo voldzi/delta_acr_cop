@@ -51,6 +51,65 @@ describe("notification decision", () => {
       ok: false,
       reason: "Safety feature severity is below push threshold."
     });
+    expect(evaluateSafetyFeatureCandidate(safetyFeature({
+      providerProperties: {
+        notification: {
+          eligible: false
+        }
+      }
+    }), requestNow)).toMatchObject({
+      ok: false,
+      reason: "Safety feature is not eligible for notification by provider policy."
+    });
+  });
+
+  it("uses SIM canonical safety taxonomy and localized text in push payloads", () => {
+    const decision = buildSafetyFeatureNotificationDecision(safetyFeature({
+      category: "legacy.category",
+      hazardType: "legacy_hazard_text",
+      headline: "Fallback headline",
+      localized: {
+        cs: {
+          headline: "Vysoké teploty v okolí",
+          recommendation: "Omezte fyzickou zátěž a doplňujte tekutiny."
+        },
+        en: {
+          headline: "High temperatures nearby"
+        }
+      },
+      providerProperties: {
+        presentation: {
+          iconKey: "weather.temperature.high",
+          styleKey: "heat-warning"
+        },
+        taxonomy: {
+          sourceCode: "I.2",
+          sourceSystem: "CHMI_SIVS",
+          typeCode: "weather.temperature.high"
+        }
+      },
+      sourceCode: undefined,
+      sourceSystem: undefined,
+      typeCode: undefined
+    }), {
+      audience: { userIds: ["user-1"] },
+      now: requestNow
+    });
+
+    expect(decision.shouldSend).toBe(true);
+    expect(decision.notification.title).toEqual({
+      cs: "Výstraha: Vysoké teploty v okolí",
+      en: "Alert: High temperatures nearby"
+    });
+    expect(decision.notification.body.cs).toBe("Omezte fyzickou zátěž a doplňujte tekutiny.");
+    expect(decision.notification.metadata).toMatchObject({
+      iconKey: "weather.temperature.high",
+      sourceCode: "I.2",
+      sourceSystem: "CHMI_SIVS",
+      styleKey: "heat-warning",
+      typeCode: "weather.temperature.high"
+    });
+    expect(decision.notification.metadata).not.toHaveProperty("hazardType");
   });
 
   it("maps CHMI hydro floodStage to notification severity without promoting trend alone", () => {

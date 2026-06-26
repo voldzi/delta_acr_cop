@@ -6170,18 +6170,36 @@ function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefin
 
   const canonicalTypeCode = safetyCanonicalTypeCode(properties);
   const canonicalSourceCode = safetyCanonicalSourceCode(properties);
+  const canonicalSourceSystem = safetyCanonicalSourceSystem(properties);
+  const presentation = safetyProviderPresentation(properties);
+  const detailText = safetyDetailText(properties);
   const rows: Array<[string, React.ReactNode]> = isFlood ? [] : [
-    ["Riziko", safetyHazardLabel(canonicalTypeCode ?? properties.hazardType ?? properties.category)],
+    ["Jev", safetyDisplayLabel(properties)],
+    ["Typ jevu", canonicalTypeCode ? humanizeSafetyTypeCode(canonicalTypeCode) : "n/a"],
+    ["Strojový typ", canonicalTypeCode ?? "n/a"],
     ["Stav", status ? <StatusBadge key="status" label={status.label} tone={status.tone} /> : "n/a"],
     ["Oblast", properties.areaName ?? properties.affectedArea ?? formatStringList(properties.affectedAreas)],
     ["Geometrie", safetyGeometryModeLabel(properties.geometryMode, feature.geometry.type)],
     ["Platí od", formatShortDateTime(properties.validFrom ?? properties.effectiveAt)],
     ["Platí do", formatShortDateTime(properties.validUntil ?? properties.expiresAt)],
     ["Zdroj", properties.sourceName ?? properties.source ?? properties.sourceId],
-    ["Podklady", safetyBasisLabel(properties.basis)]
+    ["Podklady", safetyBasisLabel(properties.basis)],
+    ["Push kandidát", safetyNotificationEligibleLabel(properties)]
   ];
   if (!isFlood && canonicalSourceCode) {
-    rows.splice(1, 0, ["Kód jevu", canonicalSourceCode]);
+    rows.splice(3, 0, ["Zdrojový kód", canonicalSourceCode]);
+  }
+  if (!isFlood && canonicalSourceSystem) {
+    rows.splice(canonicalSourceCode ? 4 : 3, 0, ["Zdrojový systém", canonicalSourceSystem]);
+  }
+  if (!isFlood && stringProperty(presentation.iconKey)) {
+    rows.push(["Ikona", stringProperty(presentation.iconKey)]);
+  }
+  if (!isFlood && stringProperty(presentation.styleKey)) {
+    rows.push(["Styl", stringProperty(presentation.styleKey)]);
+  }
+  if (!isFlood && detailText) {
+    rows.push(["Detail", detailText]);
   }
 
   if (isFlood) {
@@ -6200,7 +6218,7 @@ function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefin
     rows.push(
       ["Požární stav", fireStatusLabel(properties.fireStatus ?? properties.status)],
       ["Typ zdroje", fireSourceIncidentLabel(properties.sourceIncident)],
-      ["Potvrzení", fireConfirmationLabel(properties.hazardType, properties.sourceIncident)],
+      ["Potvrzení", fireConfirmationLabel(canonicalTypeCode, properties.sourceIncident)],
       ["Poznámka", fireRiskNotice(properties)]
     );
   }
@@ -11267,7 +11285,7 @@ function priorityFeatureSeverityRank(feature: SituationFeature): number {
     }
   }
   if (feature.properties.layer === "fire") {
-    const fireRank = prioritySeverityValueRank(feature.properties.fireStatus ?? feature.properties.hazardType ?? feature.properties.sourceIncident);
+    const fireRank = prioritySeverityValueRank(safetyCanonicalTypeCode(feature.properties) ?? feature.properties.fireStatus ?? feature.properties.sourceIncident);
     return Math.max(rawRank, fireRank, 2);
   }
   if (feature.properties.layer === "community") {
@@ -11338,10 +11356,9 @@ function priorityFeatureTitle(feature: SituationFeature): string {
   if (isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature)) {
     return weatherFeatureHeadline(feature);
   }
-  return feature.properties.headline
+  return safetyDisplayLabel(feature.properties)
     ?? feature.properties.areaName
     ?? feature.properties.label
-    ?? safetyHazardLabel(feature.properties.hazardType)
     ?? feature.properties.featureId;
 }
 
@@ -13062,16 +13079,16 @@ function safetyGeometryModeLabel(mode: string | undefined, geometryType: string)
 }
 
 function safetyCanonicalTypeCode(properties: SituationFeature["properties"]): string | undefined {
-  const providerProperties = isRecord(properties.providerProperties) ? properties.providerProperties : {};
-  const taxonomy = isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
+  const providerProperties = safetyProviderProperties(properties);
+  const taxonomy = safetyProviderTaxonomy(properties);
   return properties.typeCode
     ?? stringProperty(providerProperties.typeCode)
     ?? stringProperty(taxonomy.typeCode);
 }
 
 function safetyCanonicalSourceCode(properties: SituationFeature["properties"]): string | undefined {
-  const providerProperties = isRecord(properties.providerProperties) ? properties.providerProperties : {};
-  const taxonomy = isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
+  const providerProperties = safetyProviderProperties(properties);
+  const taxonomy = safetyProviderTaxonomy(properties);
   const sourceCode = properties.sourceCode
     ?? stringProperty(providerProperties.sourceCode)
     ?? stringProperty(taxonomy.sourceCode);
@@ -13083,6 +13100,122 @@ function safetyCanonicalSourceCode(properties: SituationFeature["properties"]): 
     ?? stringProperty(taxonomy.codeSystem)
     ?? stringProperty(taxonomy.sourceSystem);
   return sourceSystem ? `${sourceSystem} ${sourceCode}` : sourceCode;
+}
+
+function safetyCanonicalSourceSystem(properties: SituationFeature["properties"]): string | undefined {
+  const providerProperties = safetyProviderProperties(properties);
+  const taxonomy = safetyProviderTaxonomy(properties);
+  return properties.sourceSystem
+    ?? stringProperty(providerProperties.sourceSystem)
+    ?? stringProperty(taxonomy.codeSystem)
+    ?? stringProperty(taxonomy.sourceSystem);
+}
+
+function safetyProviderProperties(properties: SituationFeature["properties"]): Record<string, unknown> {
+  return isRecord(properties.providerProperties) ? properties.providerProperties : {};
+}
+
+function safetyProviderTaxonomy(properties: SituationFeature["properties"]): Record<string, unknown> {
+  const providerProperties = safetyProviderProperties(properties);
+  return isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
+}
+
+function safetyProviderPresentation(properties: SituationFeature["properties"]): Record<string, unknown> {
+  const providerProperties = safetyProviderProperties(properties);
+  return isRecord(providerProperties.presentation) ? providerProperties.presentation : {};
+}
+
+function safetyProviderNotification(properties: SituationFeature["properties"]): Record<string, unknown> {
+  const providerProperties = safetyProviderProperties(properties);
+  return isRecord(providerProperties.notification) ? providerProperties.notification : {};
+}
+
+function localizedSafetyRecord(properties: SituationFeature["properties"], locale = "cs"): Record<string, unknown> {
+  const localized = isRecord(properties.localized) ? properties.localized : {};
+  const entry = localized[locale];
+  return isRecord(entry) ? entry : localized;
+}
+
+function localizedSafetyString(properties: SituationFeature["properties"], locale: "cs" | "en", ...keys: string[]): string | undefined {
+  const record = localizedSafetyRecord(properties, locale);
+  for (const key of keys) {
+    const value = stringProperty(record[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function safetyPresentationString(properties: SituationFeature["properties"], ...keys: string[]): string | undefined {
+  const presentation = safetyProviderPresentation(properties);
+  for (const key of keys) {
+    const value = stringProperty(presentation[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function safetyDisplayLabel(properties: SituationFeature["properties"]): string {
+  return localizedSafetyString(properties, "cs", "headline", "title", "label", "name")
+    ?? safetyPresentationString(properties, "label", "title")
+    ?? properties.headline
+    ?? properties.areaName
+    ?? properties.label
+    ?? humanizeSafetyTypeCode(safetyCanonicalTypeCode(properties))
+    ?? safetyCanonicalSourceCode(properties)
+    ?? "Výstraha";
+}
+
+function safetyDetailText(properties: SituationFeature["properties"]): string | undefined {
+  return localizedSafetyString(properties, "cs", "detail", "description", "summary")
+    ?? renderSafetyDetailTemplate(properties)
+    ?? properties.description
+    ?? properties.summary;
+}
+
+function renderSafetyDetailTemplate(properties: SituationFeature["properties"]): string | undefined {
+  const template = safetyPresentationString(properties, "detailTemplate");
+  if (!template) {
+    return undefined;
+  }
+  const values: Record<string, string> = {
+    areaName: properties.areaName ?? properties.affectedArea ?? "",
+    headline: properties.headline ?? properties.label ?? "",
+    label: safetyDisplayLabel(properties),
+    severity: properties.severity ?? properties.status ?? "",
+    sourceCode: safetyCanonicalSourceCode(properties) ?? "",
+    sourceSystem: safetyCanonicalSourceSystem(properties) ?? "",
+    typeCode: safetyCanonicalTypeCode(properties) ?? ""
+  };
+  return template.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) => values[key] ?? "").replace(/\s+/g, " ").trim() || undefined;
+}
+
+function safetyNotificationEligibleLabel(properties: SituationFeature["properties"]): string {
+  const notification = safetyProviderNotification(properties);
+  const value = notification.eligible;
+  if (value === false) {
+    return "ne";
+  }
+  if (value === true) {
+    return "ano";
+  }
+  return "neuvedeno";
+}
+
+function humanizeSafetyTypeCode(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const known: Record<string, string> = {
+    "air_quality.pm10.smog": "Smogová situace PM10",
+    "hydro.flood.warning": "Hydrologická výstraha",
+    "weather.fire_danger": "Nebezpečí požáru",
+    "weather.temperature.high": "Vysoké teploty"
+  };
+  return known[value] ?? value.split(/[._-]+/u).filter(Boolean).join(" ");
 }
 
 function safetyHazardLabel(value: string | undefined): string {
@@ -13245,8 +13378,8 @@ function fireSourceIncidentLabel(value: string | undefined): string {
   }
 }
 
-function fireConfirmationLabel(hazardType: string | undefined, sourceIncident: string | undefined): string {
-  if (hazardType === "fire_weather" || sourceIncident === "CHMI_CAP_FIRE_DANGER") {
+function fireConfirmationLabel(typeCode: string | undefined, sourceIncident: string | undefined): string {
+  if (typeCode === "weather.fire_danger" || sourceIncident === "CHMI_CAP_FIRE_DANGER") {
     return "nejde o potvrzený požár";
   }
   if (sourceIncident === "NASA_FIRMS_HOTSPOT") {
@@ -13256,7 +13389,7 @@ function fireConfirmationLabel(hazardType: string | undefined, sourceIncident: s
 }
 
 function fireRiskNotice(properties: SituationFeature["properties"]): string {
-  if (properties.hazardType === "fire_weather" || properties.sourceIncident === "CHMI_CAP_FIRE_DANGER") {
+  if (safetyCanonicalTypeCode(properties) === "weather.fire_danger" || properties.sourceIncident === "CHMI_CAP_FIRE_DANGER") {
     return "Oficiální výstraha ČHMÚ pro podmínky vzniku a šíření požárů.";
   }
   if (properties.sourceIncident === "NASA_FIRMS_HOTSPOT") {
