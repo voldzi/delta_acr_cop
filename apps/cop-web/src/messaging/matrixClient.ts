@@ -202,6 +202,42 @@ export async function createMatrixMessagingSession(
   const publishRooms = () => {
     callbacks.onRoomsChanged?.(readVisibleRooms());
   };
+  // High-frequency Matrix events (Room.timeline, Event.decrypted, sync,
+  // presence) are coalesced into a single microtask flush so that a burst of
+  // events during initial sync or a busy room produces one React update and one
+  // readVisibleRooms() pass instead of one per event. Imperative, user-initiated
+  // operations keep calling publishRooms directly for immediate feedback.
+  let notifyScheduled = false;
+  let pendingRoomsNotify = false;
+  let pendingTimelineNotify = false;
+  let sessionDisposed = false;
+  const flushNotifications = () => {
+    notifyScheduled = false;
+    if (sessionDisposed) {
+      return;
+    }
+    if (pendingRoomsNotify) {
+      pendingRoomsNotify = false;
+      publishRooms();
+    }
+    if (pendingTimelineNotify) {
+      pendingTimelineNotify = false;
+      callbacks.onTimelineChanged?.();
+    }
+  };
+  const scheduleNotify = (options: { rooms?: boolean; timeline?: boolean }) => {
+    if (options.rooms) {
+      pendingRoomsNotify = true;
+    }
+    if (options.timeline) {
+      pendingTimelineNotify = true;
+    }
+    if (notifyScheduled || sessionDisposed) {
+      return;
+    }
+    notifyScheduled = true;
+    queueMicrotask(flushNotifications);
+  };
   const refreshVisibleRoomPresence = async () => {
     const rooms = (client.getRooms?.() ?? [])
       .map(asRoom)
@@ -255,21 +291,18 @@ export async function createMatrixMessagingSession(
 
   const syncListener = (state: unknown) => {
     callbacks.onSyncState?.(typeof state === "string" ? state : "sync");
+    scheduleNotify({ rooms: true, timeline: true });
     void joinInvitedRooms().then(() => {
-      publishRooms();
-      callbacks.onTimelineChanged?.();
+      scheduleNotify({ rooms: true, timeline: true });
       schedulePresenceRefresh();
     });
-    publishRooms();
-    callbacks.onTimelineChanged?.();
   };
   const timelineListener = () => {
-    publishRooms();
-    callbacks.onTimelineChanged?.();
+    scheduleNotify({ rooms: true, timeline: true });
     schedulePresenceRefresh();
   };
   const presenceListener = () => {
-    publishRooms();
+    scheduleNotify({ rooms: true });
     schedulePresenceRefresh(750);
   };
   client.on?.("sync", syncListener);
@@ -552,6 +585,7 @@ export async function createMatrixMessagingSession(
     },
     syncUserProfile: async (profile) => syncMatrixUserProfile(client, bootstrap, profile),
     stop: () => {
+      sessionDisposed = true;
       if (presenceRefreshTimer !== undefined) {
         clearTimeout(presenceRefreshTimer);
       }

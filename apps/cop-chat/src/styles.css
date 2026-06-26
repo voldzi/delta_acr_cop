@@ -3202,3 +3202,44 @@ button {
     transition-duration: 1ms !important;
   }
 }
+
+.chat-fatal-error {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  text-align: center;
+  color: var(--text);
+  background: var(--app-bg);
+}
+
+.chat-fatal-error h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.chat-fatal-error p {
+  margin: 0;
+  max-width: 420px;
+  color: var(--muted);
+}
+
+.chat-fatal-error button {
+  margin-top: 8px;
+  padding: 10px 20px;
+  font: inherit;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--accent);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chat-fatal-error button:hover,
+.chat-fatal-error button:focus-visible {
+  background: var(--accent-dark);
+}

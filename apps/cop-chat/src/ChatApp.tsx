@@ -248,6 +248,23 @@ const emptyChatPreferences: ChatPreferences = {
   readOverrideByKey: {}
 };
 
+// Returns a referentially stable callback that always invokes the latest handler.
+// Lets memoized row components (ChatRow, MessageRow) skip re-rendering when only
+// unrelated parent state changes, without risking stale closures.
+function useEventCallback<A extends unknown[], R>(handler: (...args: A) => R): (...args: A) => R {
+  const handlerRef = React.useRef(handler);
+  React.useLayoutEffect(() => {
+    handlerRef.current = handler;
+  });
+  return React.useCallback((...args: A) => handlerRef.current(...args), []);
+}
+
+// Memoized row components: re-render only when their own props change. Combined
+// with the stable handlers above, a parent state update (e.g. typing elsewhere)
+// no longer re-renders every chat row and message bubble.
+const ChatRowMemo = React.memo(ChatRow);
+const MessageRowMemo = React.memo(MessageRow);
+
 export function ChatApp() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
@@ -267,7 +284,6 @@ export function ChatApp() {
   const [selectedConversationId, setSelectedConversationId] = React.useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = React.useState<string | null>(null);
-  const [composerText, setComposerText] = React.useState("");
   const [pendingAttachment, setPendingAttachment] = React.useState<PendingChatAttachment | null>(null);
   const [conversationQuery, setConversationQuery] = React.useState("");
   const [messageSearchQuery, setMessageSearchQuery] = React.useState("");
@@ -331,6 +347,7 @@ export function ChatApp() {
   const matrixSessionRef = React.useRef<MatrixMessagingSession | null>(null);
   const selectedRoomIdRef = React.useRef<string | null>(null);
   const timelineCacheRef = React.useRef<Map<string, MatrixTimelineMessage[]>>(new Map());
+  const conversationsRef = React.useRef<MessagingConversationSummary[]>(conversations);
 
   const authToken = getAuthorizationToken(authSession, labToken);
   const authenticated = Boolean(authToken);
@@ -351,7 +368,6 @@ export function ChatApp() {
   const chatReady = Boolean(authToken && status?.chatAvailable);
   const encryptionRecoveryReady = Boolean(!matrixSession || encryptionRecoveryStatus?.ready);
   const composerEnabled = Boolean(selectedRoomId && matrixSession && chatReady && !preparingChatId && encryptionRecoveryReady);
-  const hasDraft = Boolean(composerText.trim() || pendingAttachment);
   const selectedConversation = selectedConversationId
     ? conversations.find((conversation) => conversation.conversationId === selectedConversationId) ?? null
     : selectedRoomId
@@ -458,6 +474,10 @@ export function ChatApp() {
   React.useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
   }, [selectedRoomId]);
+
+  React.useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   React.useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
@@ -1399,7 +1419,7 @@ export function ChatApp() {
       const nextSession = await createMatrixMessagingSession(bootstrap, {
         onRoomsChanged: (nextRooms) => {
           setRooms(nextRooms);
-          setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversations, nextRooms));
+          setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversationsRef.current, nextRooms));
         },
         profile: chatIdentity.matrixProfile,
         onSyncState: setSyncState,
@@ -1412,7 +1432,7 @@ export function ChatApp() {
       setEncryptionRecoveryStatus(recoveryStatus);
       setRooms(nextRooms);
       setTimelineRevision((value) => value + 1);
-      setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversations, nextRooms));
+      setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversationsRef.current, nextRooms));
       setSyncState("starting");
       return nextSession;
     } catch (caught) {
@@ -1961,11 +1981,11 @@ export function ChatApp() {
     }
   }
 
-  async function sendMessage() {
-    if (!matrixSession || !selectedRoomId || !hasDraft) {
-      return;
+  async function sendMessage(draft: string): Promise<boolean> {
+    const text = draft.trim();
+    if (!matrixSession || !selectedRoomId || !(text || pendingAttachment)) {
+      return false;
     }
-    const text = composerText.trim();
     const attachment = pendingAttachment;
     setSending(true);
     setError(null);
@@ -1980,12 +2000,13 @@ export function ChatApp() {
       } else {
         await matrixSession.sendMessage(selectedRoomId, text, replyDraft ? { replyTo: matrixReplyTarget(replyDraft, authSession) } : undefined);
       }
-      setComposerText("");
       setReplyDraft(null);
       clearPendingAttachment();
       setTimeline(rememberRoomTimeline(selectedRoomId, matrixSession.getTimeline(selectedRoomId)));
+      return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Zprávu se nepodařilo odeslat.");
+      return false;
     } finally {
       setSending(false);
     }
@@ -2063,6 +2084,17 @@ export function ChatApp() {
       return null;
     });
   }
+
+  // Stable handler identities so memoized ChatRow/MessageRow only re-render when
+  // their own data props change, not on every parent state update.
+  const handleOpenChat = useEventCallback((item: ChatListItem) => { void openChat(item); });
+  const handleToggleMutedChat = useEventCallback((item: ChatListItem) => toggleMutedChat(item));
+  const handleTogglePinnedChat = useEventCallback((item: ChatListItem) => togglePinnedChat(item));
+  const handleToggleUnreadChat = useEventCallback((item: ChatListItem) => toggleUnreadChat(item));
+  const handleDownloadAttachment = useEventCallback((message: MatrixTimelineMessage) => { void downloadAttachment(message); });
+  const handleOpenMessageActions = useEventCallback((message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen?: boolean) => openMessageActions(message, rect, stickerTrayOpen));
+  const handleReactToMessage = useEventCallback((message: MatrixTimelineMessage, key: string) => { void reactToMessage(message, key); });
+  const handleToggleSelectedMessage = useEventCallback((messageId: string) => toggleSelectedMessage(messageId));
 
   const connectionLocked = authenticated && !chatReady && !showingDemoTimeline;
   const embedded = React.useMemo(() => new URLSearchParams(window.location.search).get("embedded") === "1", []);
@@ -2165,16 +2197,16 @@ export function ChatApp() {
           ) : regularChatItems.length === 0 && pinnedChatItems.length === 0 ? (
             <ListPrompt actionLabel="Nový chat" title="Žádné chaty" onAction={() => setComposeMode("direct")} />
           ) : regularChatItems.map((item) => (
-            <ChatRow
+            <ChatRowMemo
               item={item}
               key={item.id}
               connectionState={chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id)}
               onDeleteRequest={setDeleteChatCandidate}
-              onToggleMute={toggleMutedChat}
-              onTogglePinned={togglePinnedChat}
-              onToggleUnread={toggleUnreadChat}
+              onToggleMute={handleToggleMutedChat}
+              onTogglePinned={handleTogglePinnedChat}
+              onToggleUnread={handleToggleUnreadChat}
               preparing={preparingChatId === item.id}
-              onOpen={(nextItem) => void openChat(nextItem)}
+              onOpen={handleOpenChat}
             />
           ))}
         </div>
@@ -2308,7 +2340,7 @@ export function ChatApp() {
                   {timelineRows.map((row) => row.kind === "date" ? (
                     <div className="day-pill" key={row.id}>{row.label}</div>
                   ) : (
-                    <MessageRow
+                    <MessageRowMemo
                       grouped={row.grouped}
                       activeSearchMatch={activeSearchMessageId === row.message.eventId}
                       key={row.message.eventId}
@@ -2320,11 +2352,11 @@ export function ChatApp() {
                       selectable={selectionMode}
                       selected={selectedMessageIds.has(row.message.eventId)}
                       senderLabel={messageSenderLabel(row.message, selectedConversation, authSession)}
-                      onDownloadAttachment={(message) => void downloadAttachment(message)}
-                      onOpenActions={openMessageActions}
+                      onDownloadAttachment={handleDownloadAttachment}
+                      onOpenActions={handleOpenMessageActions}
                       onOpenPreview={setPreviewItem}
-                      onReact={(message, key) => void reactToMessage(message, key)}
-                      onToggleSelected={toggleSelectedMessage}
+                      onReact={handleReactToMessage}
+                      onToggleSelected={handleToggleSelectedMessage}
                     />
                   ))}
                   <div ref={timelineEndRef} aria-hidden="true" />
@@ -2348,13 +2380,11 @@ export function ChatApp() {
                     pendingAttachment={pendingAttachment}
                     replyTo={replyDraft}
                     sending={sending}
-                    text={composerText}
                     onAttachmentClear={clearPendingAttachment}
                     onAttachmentPick={pickAttachment}
                     onReplyClear={() => setReplyDraft(null)}
-                    onSend={() => void sendMessage()}
+                    onSend={sendMessage}
                     onShareLocation={() => void shareLocation()}
-                    onTextChange={setComposerText}
                   />
                 )}
               </>
@@ -3051,28 +3081,37 @@ function Composer({
   pendingAttachment,
   replyTo,
   sending,
-  text,
   onAttachmentClear,
   onAttachmentPick,
   onReplyClear,
   onSend,
-  onShareLocation,
-  onTextChange
+  onShareLocation
 }: {
   disabled: boolean;
   pendingAttachment: PendingChatAttachment | null;
   replyTo: MatrixTimelineMessage | null;
   sending: boolean;
-  text: string;
   onAttachmentClear: () => void;
   onAttachmentPick: (kind: MatrixAttachmentKind) => void;
   onReplyClear: () => void;
-  onSend: () => void;
+  onSend: (text: string) => Promise<boolean> | void;
   onShareLocation: () => void;
-  onTextChange: (value: string) => void;
 }) {
+  // The draft text lives locally so typing re-renders only the Composer, not the
+  // whole ChatApp tree (timeline, chat list, panels). The draft intentionally
+  // persists across chat switches, matching the previous shared-state behavior.
+  const [text, setText] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const canSend = Boolean(text.trim() || pendingAttachment) && !disabled;
+  const submitDraft = async () => {
+    if (!canSend) {
+      return;
+    }
+    const result = await onSend(text);
+    if (result !== false) {
+      setText("");
+    }
+  };
   const syncTextareaHeight = React.useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) {
@@ -3096,9 +3135,7 @@ function Composer({
       className="composer"
       onSubmit={(event) => {
         event.preventDefault();
-        if (canSend) {
-          onSend();
-        }
+        void submitDraft();
       }}
     >
       {replyTo ? (
@@ -3143,16 +3180,14 @@ function Composer({
             aria-label="Zpráva"
             disabled={disabled}
             onChange={(event) => {
-              onTextChange(event.target.value);
+              setText(event.target.value);
               syncTextareaHeight();
             }}
             onFocus={syncTextareaHeight}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                if (canSend) {
-                  onSend();
-                }
+                void submitDraft();
               }
             }}
             placeholder={disabled ? "Chat není připravený" : "Zpráva"}

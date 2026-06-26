@@ -222,7 +222,7 @@ describe("Matrix client diagnostics", () => {
     expect(session.getRooms().map((room) => room.roomId)).toEqual(["!active:cop.local"]);
   });
 
-  it("refreshes timeline callbacks when encrypted events finish decrypting", async () => {
+  it("coalesces a burst of decrypted events into a single timeline callback", async () => {
     const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
     const on = vi.fn<MatrixEventSubscription>((event, listener) => {
       listeners.set(event, [...(listeners.get(event) ?? []), listener]);
@@ -238,15 +238,46 @@ describe("Matrix client diagnostics", () => {
     const session = await createMatrixMessagingSession(createBootstrap(), { onTimelineChanged });
     onTimelineChanged.mockClear();
 
-    for (const listener of listeners.get("Event.decrypted") ?? []) {
-      listener();
+    // Fire several decrypt events synchronously, as the SDK does during sync.
+    for (let index = 0; index < 5; index += 1) {
+      for (const listener of listeners.get("Event.decrypted") ?? []) {
+        listener();
+      }
     }
+
+    // The callback is deferred to a microtask and coalesced: nothing fired yet.
+    expect(onTimelineChanged).not.toHaveBeenCalled();
+
+    await Promise.resolve();
 
     expect(on).toHaveBeenCalledWith("Event.decrypted", expect.any(Function));
     expect(onTimelineChanged).toHaveBeenCalledTimes(1);
 
     session.stop();
     expect(off).toHaveBeenCalledWith("Event.decrypted", expect.any(Function));
+  });
+
+  it("does not flush timeline callbacks scheduled after the session stops", async () => {
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+    const on = vi.fn<MatrixEventSubscription>((event, listener) => {
+      listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+    });
+    const onTimelineChanged = vi.fn();
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      on,
+      rooms: [createRoom({ roomId: "!chat:cop.local" })]
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onTimelineChanged });
+    onTimelineChanged.mockClear();
+
+    for (const listener of listeners.get("Event.decrypted") ?? []) {
+      listener();
+    }
+    session.stop();
+    await Promise.resolve();
+
+    expect(onTimelineChanged).not.toHaveBeenCalled();
   });
 
   it("sends Matrix reactions as annotation relation events", async () => {
