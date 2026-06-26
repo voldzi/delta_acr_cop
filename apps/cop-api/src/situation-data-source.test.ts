@@ -209,7 +209,7 @@ describe("SituationDataSourceAdapter", () => {
     }, new Date("2026-05-21T14:10:00Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/situation-data/api/v1/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=weather%2Cmobile_coverage&limit=20&source=mobile_coverage_model&technology=4G"
+      "https://sim.zeleznalady.cz/situation-data/api/v1/features?bbox=14.2%2C49.95%2C14.6%2C50.2&layers=weather%2Cmobile_coverage&limit=20&source=mobile_coverage_model&technology=4G"
     );
     expect(features.cache?.ttlMs).toBe(10 * 60 * 1000);
     expect(features.query.technology).toBe("4G");
@@ -291,7 +291,7 @@ describe("SituationDataSourceAdapter", () => {
     }, new Date("2026-05-21T16:20:00Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/situation-data/api/v1/features?bbox=14.1%2C49.9%2C14.7%2C50.25&layers=mobile_network&limit=20&source=mobile_network_model&technology=4G"
+      "https://sim.zeleznalady.cz/situation-data/api/v1/features?bbox=14.2%2C49.95%2C14.6%2C50.2&layers=mobile_network&limit=20&source=mobile_network_model&technology=4G"
     );
     expect(features.cache?.ttlMs).toBe(10 * 60 * 1000);
     expect(features.features).toMatchObject([

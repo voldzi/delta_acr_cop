@@ -716,6 +716,15 @@ const mobileNetworkChunkMinDimensionDegrees = 1.2;
 const mobileNetworkMaxChunks = 64;
 
 function canonicalizeSituationFeatureQuery(query: SituationFeatureQuery): SituationFeatureQuery {
+  if (shouldUseExactBboxForDenseGridQuery(query)) {
+    return {
+      bbox: query.bbox,
+      layers: query.layers,
+      limit: query.limit,
+      ...(query.sources && query.sources.length > 0 ? { sources: query.sources } : {}),
+      ...(query.technology ? { technology: query.technology } : {})
+    };
+  }
   const gridSizeDegrees = gridSizeDegreesForBbox(query.bbox);
   const paddedBbox = padBbox(query.bbox, 0.18);
   return {
@@ -725,6 +734,10 @@ function canonicalizeSituationFeatureQuery(query: SituationFeatureQuery): Situat
     ...(query.sources && query.sources.length > 0 ? { sources: query.sources } : {}),
     ...(query.technology ? { technology: query.technology } : {})
   };
+}
+
+function shouldUseExactBboxForDenseGridQuery(query: SituationFeatureQuery): boolean {
+  return query.layers.some((layer) => layer === "mobile_coverage" || layer === "mobile_network");
 }
 
 function projectSituationFeatureCollection(
