@@ -2007,9 +2007,9 @@ h1 {
 .panel-resize-handle {
   position: absolute;
   top: 0;
-  z-index: 4;
-  width: 8px;
-  height: 100%;
+  bottom: 0;
+  z-index: 40;
+  width: 16px;
   border: 0;
   background: transparent;
   cursor: col-resize;
@@ -2018,12 +2018,13 @@ h1 {
 
 .panel-resize-handle::after {
   position: absolute;
-  top: 18px;
-  bottom: 18px;
-  left: 3px;
+  top: 0;
+  bottom: 0;
+  left: 50%;
   width: 2px;
   background: rgba(140, 182, 216, 0.18);
   content: "";
+  transform: translateX(-50%);
 }
 
 .panel-resize-handle:hover::after {
@@ -2031,11 +2032,11 @@ h1 {
 }
 
 .panel-resize-handle.right {
-  right: -4px;
+  right: 0;
 }
 
 .panel-resize-handle.left {
-  left: -4px;
+  left: 0;
 }
 
 .collapsed-panel-rail {

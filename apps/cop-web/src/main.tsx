@@ -4648,23 +4648,6 @@ export function App() {
             </div>
           ) : null}
 
-          {activeWorkspace === "map" || activeWorkspace === "alerts" ? (
-            <div className="personal-awareness-box">
-              <PanelTitle icon={<MapPin size={17} />} title="Moje poloha" />
-              <button className="primary-button secondary" disabled={isLocating} onClick={locateUser} type="button">
-                <MapPin size={16} />
-                {isLocating ? "Zaměřuji polohu" : "Centrovat na mou polohu"}
-              </button>
-              <p>{locationStatus}</p>
-              <ReadinessRow label="Výstraha" value={proximityAlertEnabled ? `${alertRadiusKm} km` : "vypnuto"} tone={proximityAlertEnabled ? "ok" : "neutral"} />
-              <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
-                <Settings size={14} />
-                Nastavení výstrah
-              </button>
-              <ProximityAlertList alerts={proximityAlerts} />
-            </div>
-          ) : null}
-
           {activeWorkspace === "data" ? (
           <div className="ai-box">
             <PanelTitle icon={<Bot size={17} />} title="AI assistant" />
@@ -6139,7 +6122,8 @@ function WeatherContextSummary({ feature }: { feature: SituationFeature }) {
 function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefined; feature: SituationFeature }) {
   const properties = feature.properties;
   const metrics = isRecord(properties.metrics) ? properties.metrics : {};
-  const status = situationFeatureStatusModel(feature);
+  const isFlood = properties.layer === "flood";
+  const status = isFlood ? null : situationFeatureStatusModel(feature);
   const hydroDetailUrl = React.useMemo(() => hydrologyDetailUrl(properties), [properties.detailUrl, properties.stationId, properties.tags, properties.timelineUrl]);
   const [hydroDetail, setHydroDetail] = React.useState<HydroStationDetailResponse | null>(null);
   const [hydroError, setHydroError] = React.useState<string | null>(null);
@@ -6170,9 +6154,9 @@ function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefin
     void loadHydroDetail();
   }, [hydroDetailUrl, loadHydroDetail, properties.layer]);
 
-  const rows: Array<[string, React.ReactNode]> = [
+  const rows: Array<[string, React.ReactNode]> = isFlood ? [] : [
     ["Riziko", safetyHazardLabel(properties.hazardType ?? properties.category)],
-    ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
+    ["Stav", status ? <StatusBadge key="status" label={status.label} tone={status.tone} /> : "n/a"],
     ["Oblast", properties.areaName ?? properties.affectedArea ?? formatStringList(properties.affectedAreas)],
     ["Geometrie", safetyGeometryModeLabel(properties.geometryMode, feature.geometry.type)],
     ["Platí od", formatShortDateTime(properties.validFrom ?? properties.effectiveAt)],
@@ -6181,18 +6165,11 @@ function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefin
     ["Podklady", safetyBasisLabel(properties.basis)]
   ];
 
-  if (properties.layer === "flood") {
+  if (isFlood) {
     rows.push(
       ["Tok", properties.riverName ?? "n/a"],
       ["Stanice", properties.areaName ? [properties.areaName, properties.stationId].filter(Boolean).join(" · ") : properties.stationId ?? "n/a"],
-      ["SPA", floodStageLabel(safetyMetricNumber(properties, metrics, "floodStage", "floodActivityLevel"))],
-      ["Trend", <StatusBadge key="trend" label={floodTrendLabel(properties.trend)} tone={floodTrendTone(properties.trend)} />],
-      ["Hladina", formatOptionalNumber(safetyMetricNumber(properties, metrics, "waterLevelCm"), " cm")],
-      ["Průtok", formatOptionalNumber(safetyMetricNumber(properties, metrics, "discharge", "flowM3s"), " m3/s")],
-      ["Teplota vody", formatOptionalNumber(safetyMetricNumber(properties, metrics, "waterTemperatureC"), " °C")],
       ["Předpověď", formatHydroForecast(properties, metrics)],
-      ["Změna hladiny", formatSignedMetric(safetyMetricNumber(properties, metrics, "waterLevelDeltaCm"), " cm")],
-      ["Změna průtoku", formatSignedMetric(safetyMetricNumber(properties, metrics, "flowDeltaM3s"), " m3/s")],
       ["Stáří měření", formatDurationSeconds(safetyMetricNumber(properties, metrics, "observationAgeSeconds"))],
       ["Povodí", properties.basin ?? stringProperty(properties.tags?.hydrologicalOrder) ?? "n/a"],
       ["Plocha povodí", formatOptionalNumber(safetyMetricNumber(properties, metrics, "catchmentAreaKm2"), " km2")],
@@ -6210,10 +6187,10 @@ function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefin
   }
 
   return (
-    <ObjectDetailSection title={properties.layer === "flood" ? "Hydrologie" : properties.layer === "fire" ? "Požární riziko" : "Výstraha"}>
-      {properties.layer === "flood" ? <HydrologyStatusOverview feature={feature} metrics={metrics} /> : null}
+    <ObjectDetailSection title={isFlood ? "Hydrologie" : properties.layer === "fire" ? "Požární riziko" : "Výstraha"}>
+      {isFlood ? <HydrologyStatusOverview feature={feature} metrics={metrics} /> : null}
       <DetailGrid rows={rows} />
-      {properties.layer === "flood" ? (
+      {isFlood ? (
         <HydroStationDetailCard
           detail={hydroDetail}
           detailUrl={hydroDetailUrl}
@@ -9721,6 +9698,7 @@ function SituationFeatureDetail({
   const trafficPresentation = properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
   const weatherCamera = isWeatherWebcamFeature(feature);
   const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera;
+  const floodDetail = properties.layer === "flood";
   const title = isMissionArenaFeature(feature)
     ? missionArenaDetailTitle(feature)
     : weatherCamera
@@ -9750,7 +9728,7 @@ function SituationFeatureDetail({
         </div>
         <div className="object-header-badges">
           <em>{situationDisplayLayerLabel(feature)}</em>
-          <StatusBadge label={status.label} tone={status.tone} />
+          {floodDetail ? null : <StatusBadge label={status.label} tone={status.tone} />}
         </div>
       </div>
 
@@ -9767,14 +9745,16 @@ function SituationFeatureDetail({
           rows={[
             [isCommunityReport ? "Typ" : "Vrstva", isCommunityReport ? communityReportCategoryDisplay(properties.category) : situationLayerLabel(properties.layer)],
             ...(isCommunityReport && legacyCommunityGroup ? [["Skupina", legacyCommunityGroup] as [string, React.ReactNode]] : []),
-            ...(!isCommunityReport ? [[weatherContext || weatherCamera ? "Typ" : "Kategorie", weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : properties.category] as [string, React.ReactNode]] : []),
+            ...(!isCommunityReport && !floodDetail ? [[weatherContext || weatherCamera ? "Typ" : "Kategorie", weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : properties.category] as [string, React.ReactNode]] : []),
             ["Zdroj", properties.sourceName ?? sourceDisplayName(properties.sourceId)],
             [isCommunityReport ? "Vloženo" : "Pozorováno", formatShortDateTime(properties.observedAt)],
             [isCommunityReport ? "Platnost" : "Platí do", formatShortDateTime(properties.validUntil)],
             ["Stáří", formatAge(properties.observedAt)],
-            [isCommunityReport ? "Riziko" : "Naléhavost", communitySeverityDisplay(properties.hazardSeverity ?? properties.severity ?? properties.urgency)],
-            ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
-            ...(isCommunityReport || weatherContext || weatherCamera ? [] : [
+            ...(!floodDetail ? [
+              [isCommunityReport ? "Riziko" : "Naléhavost", communitySeverityDisplay(properties.hazardSeverity ?? properties.severity ?? properties.urgency)],
+              ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />]
+            ] as Array<[string, React.ReactNode]> : []),
+            ...(isCommunityReport || weatherContext || weatherCamera || floodDetail ? [] : [
               ["Účinné od", formatShortDateTime(properties.effectiveAt)],
               ["Konec platnosti", formatShortDateTime(properties.expiresAt)],
               ["Jistota", formatOptionalPercent(properties.confidence)],
