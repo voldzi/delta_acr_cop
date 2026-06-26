@@ -258,7 +258,6 @@ describe("COP map data helpers", () => {
     });
 
     expect(collection.features[0]?.properties).toMatchObject({
-      mapLabel: "Praha-Libuš",
       mapPointSuppressed: true,
       situationStatusLabel: "KAMERA",
       situationStatusTone: "info",
@@ -266,6 +265,7 @@ describe("COP map data helpers", () => {
       weatherCameraLabel: "Praha-Libuš",
       weatherObservation: false
     });
+    expect(collection.features[0]?.properties.mapLabel).toBeUndefined();
     expect(collection.features[0]?.properties.riskFeature).toBeUndefined();
   });
 

@@ -2157,21 +2157,10 @@ export function CopMap({
             "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.32, 11, 0.42, 15, 0.55],
             "icon-anchor": "bottom",
             "icon-allow-overlap": true,
-            "icon-ignore-placement": true,
-            "text-field": ["coalesce", ["get", "weatherCameraLabel"], ["get", "mapLabel"], ["get", "label"]],
-            "text-font": ["Noto Sans Bold"],
-            "text-size": ["interpolate", ["linear"], ["zoom"], 6, 0, 10, 10, 14, 12, 17, 13],
-            "text-offset": [0, -3.0],
-            "text-anchor": "bottom",
-            "text-allow-overlap": false,
-            "text-optional": true
+            "icon-ignore-placement": true
           },
           paint: {
-            "icon-opacity": ["case", ["get", "stale"], 0.62, 0.96],
-            "text-color": ["case", ["get", "stale"], "#facc15", "#dff8ff"],
-            "text-halo-color": "#061019",
-            "text-halo-width": 1.7,
-            "text-halo-blur": 0.35
+            "icon-opacity": ["case", ["get", "stale"], 0.62, 0.96]
           }
         });
 
@@ -4911,7 +4900,6 @@ function buildSituationRenderProperties(
   if (isWeatherWebcamFeature(feature)) {
     const label = formatWeatherWebcamLabel(feature);
     return {
-      mapLabel: label,
       mapPointSuppressed: true,
       situationStatusColor: "#38bdf8",
       situationStatusLabel: "KAMERA",

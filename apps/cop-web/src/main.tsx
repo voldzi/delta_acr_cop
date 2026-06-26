@@ -5965,9 +5965,10 @@ function TrafficDetailSection({ feature }: { feature: SituationFeature }) {
 
 function WeatherWebcamSummary({ feature }: { feature: SituationFeature }) {
   const camera = weatherWebcamMetadata(feature);
+  const locationLabel = weatherWebcamLocationLabel(feature, null) ?? weatherWebcamTitle(feature);
   return (
     <div className="mobile-status-summary weather-camera-summary">
-      <DataMetric label="Typ" value="Webkamera" tone="neutral" />
+      <DataMetric label="Místo" value={locationLabel} tone="neutral" />
       <DataMetric label="Náhled" value={camera.snapshotUrl ? "dostupný" : "čeká na detail"} tone={camera.snapshotUrl ? "ok" : "neutral"} />
       <DataMetric label="Detail" value={camera.detailUrl ? "dostupný" : "n/a"} tone={camera.detailUrl ? "ok" : "neutral"} />
       <DataMetric label="Atribuce" value="ČHMÚ" tone="neutral" />
@@ -6032,6 +6033,7 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
   const snapshotUrl = weatherCameraProxyUrl(activeCamera.snapshotUrl);
   const locationLabel = weatherWebcamLocationLabel(feature, detail) ?? weatherWebcamTitle(feature);
   const locationCoordinates = weatherWebcamLocationCoordinates(feature, detail);
+  const activeCameraLabel = weatherCameraDisplayLabel(activeCamera, locationLabel, activeIndex);
 
   React.useEffect(() => {
     setImageFailed(false);
@@ -6041,7 +6043,7 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
     <ObjectDetailSection title="Náhled kamery">
       <div className="weather-camera-window">
         <div className="weather-camera-window-header">
-          <span><Camera size={15} /> {activeCamera.label || weatherWebcamTitle(feature)}</span>
+          <span><Camera size={15} /> {activeCameraLabel}</span>
           {detailUrl ? (
             <button className="mini-button" disabled={loading} onClick={() => void loadDetail()} type="button">
               {loading ? "Načítám" : "Obnovit"}
@@ -6065,7 +6067,7 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
                 role="tab"
                 type="button"
               >
-                {camera.label || `Kamera ${index + 1}`}
+                {weatherCameraDisplayLabel(camera, locationLabel, index)}
               </button>
             ))}
           </div>
@@ -6074,7 +6076,7 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
         {loading && !detail ? <div className="weather-camera-empty">Načítám náhled kamery...</div> : null}
         {snapshotUrl && !imageFailed ? (
           <figure className="weather-camera-frame">
-            <img alt={activeCamera.label || weatherWebcamTitle(feature)} onError={() => setImageFailed(true)} src={snapshotUrl} />
+            <img alt={activeCameraLabel} onError={() => setImageFailed(true)} src={snapshotUrl} />
             <figcaption>
               {[activeCamera.observedAt ? formatShortDateTime(activeCamera.observedAt) : undefined, activeCamera.direction].filter(Boolean).join(" · ") || "Aktuální dostupný snapshot"}
             </figcaption>
@@ -6086,6 +6088,14 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
       </div>
     </ObjectDetailSection>
   );
+}
+
+function weatherCameraDisplayLabel(camera: WeatherCameraInfo, locationLabel: string, index: number): string {
+  const label = normalizeWeatherWebcamDisplayLabel(camera.label ?? "");
+  if (label && label !== "Webkamera ČHMÚ" && !/^Kamera\s+\d+$/i.test(label)) {
+    return label;
+  }
+  return index > 0 ? `${locationLabel} (${index + 1})` : locationLabel;
 }
 
 function CommunicationTowerSummary({ feature }: { feature: SituationFeature }) {
@@ -9775,6 +9785,7 @@ function SituationFeatureDetail({
       </ObjectDetailSection>
 
       {isMissionArenaFeature(feature) ? <MissionArenaSummary feature={feature} /> : null}
+      {isSafetyLayerId(properties.layer) ? <SafetyRiskSummary authToken={authToken} feature={feature} /> : null}
 
       {properties.layer === "mobile_coverage" || properties.layer === "mobile_network" ? (
         <ObjectDetailSection title={properties.layer === "mobile_network" ? "Mobilní síť" : "Mobilní pokrytí"}>
