@@ -1722,7 +1722,7 @@ export function App() {
       fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
         layerIds: catalogLayerIds,
-        limit: 500
+        limit: 600
       })
         .then((response) => {
           if (cancelled) {

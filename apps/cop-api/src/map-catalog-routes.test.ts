@@ -127,6 +127,9 @@ describe("map catalog route", () => {
     expect(body.layers.find((layer) => layer.layerId === "public.safety.flood")).toMatchObject({
       label: "Vodní stavy a průtoky",
       minZoom: 4,
+      query: {
+        maxFeatures: 600
+      },
       selectable: true
     });
 

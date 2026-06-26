@@ -620,7 +620,7 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
         sourceIds: ["sim.safety-data:chmi_hydro"]
       },
       query: {
-        maxFeatures: 250,
+        maxFeatures: 600,
         mode: "bbox",
         providerId: "sim.safety-data",
         providerLayerIds: ["flood"],
