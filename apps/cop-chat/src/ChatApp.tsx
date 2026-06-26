@@ -58,8 +58,8 @@ import {
   readAuthConfig,
   refreshAuthSession,
   shouldExpireAuthSessionAfterRefreshFailure
-} from "../../cop-web/src/auth";
-import type { AuthConfig, AuthSession } from "../../cop-web/src/auth";
+} from "@cop/core/auth";
+import type { AuthConfig, AuthSession } from "@cop/core/auth";
 import {
   bindMessagingConversationMatrixRoom,
   createCommunityGroup,
@@ -74,7 +74,7 @@ import {
   syncMessagingConversationMembers,
   updateCommunityGroupMetadata,
   upsertCommunityGroupMember
-} from "../../cop-web/src/cop-data";
+} from "@cop/core/cop-data";
 import type {
   CommunityGroup,
   MessagingConversationSummary,
@@ -83,7 +83,7 @@ import type {
   MessagingStatusResponse,
   ServerUserProfile,
   UserDirectoryEntry
-} from "../../cop-web/src/cop-data";
+} from "@cop/core/cop-data";
 import {
   clearMatrixMessagingCryptoStateForBootstrap,
   createMatrixMessagingSession,

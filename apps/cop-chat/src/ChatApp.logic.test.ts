@@ -13,7 +13,7 @@ import {
 } from "./ChatApp";
 import type { ChatListItem, ChatPreferences } from "./ChatApp";
 import type { MatrixRoomSummary, MatrixTimelineMessage } from "@cop/messaging/types";
-import type { MessagingConversationSummary } from "../../cop-web/src/cop-data";
+import type { MessagingConversationSummary } from "@cop/core/cop-data";
 
 // These are characterization tests: they pin the *current* observable behavior of
 // the pure functions before the Phase 1/2 refactor so any accidental change of

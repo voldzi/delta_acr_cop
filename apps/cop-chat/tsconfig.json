@@ -8,11 +8,6 @@
     "allowImportingTsExtensions": false,
     "noEmit": true
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "vite.config.ts",
-    "../cop-web/src/auth.ts",
-    "../cop-web/src/cop-data.ts"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
+  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/messaging" }]
 }

@@ -8,5 +8,10 @@
     "allowImportingTsExtensions": false,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/messaging" },
+    { "path": "../../packages/nato-symbol-renderer" }
+  ]
 }

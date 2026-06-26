@@ -8,6 +8,7 @@
     "preview": "node server.mjs"
   },
   "dependencies": {
+    "@cop/core": "workspace:*",
     "@cop/messaging": "workspace:*",
     "@vitejs/plugin-react": "^5.1.1",
     "clsx": "^2.1.1",

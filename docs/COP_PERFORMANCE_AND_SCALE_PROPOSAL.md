@@ -199,7 +199,7 @@ Redis/NATS dřív, než bude skutečně nutný samostatný message broker.
 |---|---|---|---|
 | 2.1 | Rozbít stav do domén | viz §9 mapa domén → `useAuthSession`, `useLiveSituation`, `useMapView`, `useMapCatalog`, `useSituationLayers`, `useSafetyLayers`, `useWeatherRadar`, `useReplay`, `useWorkspaceUI` | změna v jedné doméně nepřekresluje ostatní (Profiler) |
 | 2.2 | Feature-moduly | `features/{map,situation,community-report,incidents,alerts,sketch,messaging-host,replay,settings}` | žádný soubor > 800 ř.; `App()` = orchestrátor + router |
-| 2.3 | `@cop/core` | vyčlenit `auth.ts` + `cop-data.ts` (dnes cop-chat importuje relativně) | cop-chat i cop-web importují `@cop/core`; žádné `../../cop-web/src` |
+| 2.3 | `@cop/core` | **Hotovo pro `auth.ts` + `cop-data.ts`:** cop-chat importuje `@cop/core`, cop-web má kompatibilní re-exporty. Navazující krok: postupně přesunout další sdílené browser/API kontrakty, pokud se objeví mimo cop-web. | žádné `../../cop-web/src` v cop-chat; `pnpm lint/test/build` zelené |
 | 2.4 | `@cop/ui` | sdílené primitivy: `Dialog` (focus-trap, `aria-modal`), `StatusBanner`, `Avatar`, `useEventCallback` | jeden zdroj UI; a11y v jednom místě |
 | 2.5 | Dokončit rozbití `ChatApp.tsx` | `components/` + `hooks/` (`useMatrixSession`, `useChatRouting`, `useChatPreferences`) | žádná komponenta > 300 ř. |
 

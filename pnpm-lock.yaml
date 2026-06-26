@@ -108,6 +108,9 @@ importers:
 
   apps/cop-chat:
     dependencies:
+      '@cop/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@cop/messaging':
         specifier: workspace:*
         version: link:../../packages/messaging
@@ -147,6 +150,9 @@ importers:
 
   apps/cop-web:
     dependencies:
+      '@cop/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@cop/messaging':
         specifier: workspace:*
         version: link:../../packages/messaging
@@ -227,6 +233,8 @@ importers:
   packages/ai-guardrails: {}
 
   packages/canonical-model: {}
+
+  packages/core: {}
 
   packages/ingest-contracts:
     dependencies:
