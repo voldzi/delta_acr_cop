@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260601-1";
+const COP_SW_VERSION = "cop-pwa-offline-20260626-1";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -50,6 +50,9 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin === self.location.origin && API_PATH_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
+    return;
+  }
+  if (url.origin === self.location.origin && isChatRequestPath(url.pathname)) {
     return;
   }
 
@@ -201,6 +204,10 @@ function isAppAssetRequest(request, url) {
     return true;
   }
   return ["script", "style", "worker", "manifest", "font"].includes(request.destination);
+}
+
+function isChatRequestPath(pathname) {
+  return pathname === "/chat" || pathname.startsWith("/chat/");
 }
 
 function parsePushPayload(data) {
