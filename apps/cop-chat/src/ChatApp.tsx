@@ -118,7 +118,7 @@ interface PendingChatAttachment {
   previewUrl?: string;
 }
 
-interface ChatPreferences {
+export interface ChatPreferences {
   hiddenByKey: Record<string, string>;
   manualUnreadKeys: string[];
   mutedUntilByKey: Record<string, string>;
@@ -144,7 +144,7 @@ interface MediaPreviewItem {
   url?: string;
 }
 
-interface ChatListItem {
+export interface ChatListItem {
   active: boolean;
   conversation?: MessagingConversationSummary;
   group?: CommunityGroup;
@@ -4249,7 +4249,7 @@ function ConnectionDot({ state }: { state: ChatConnectionState }) {
   return <span className={clsx("connection-dot", state)} aria-label={label} role="img" title={label} />;
 }
 
-function buildChatItems({
+export function buildChatItems({
   authSubjectId,
   conversations,
   filter,
@@ -4440,7 +4440,7 @@ function buildChatItems({
     .sort((left, right) => right.sortAt - left.sortAt || left.title.localeCompare(right.title, "cs-CZ"));
 }
 
-function dedupeChatItems(items: ChatListItem[]): ChatListItem[] {
+export function dedupeChatItems(items: ChatListItem[]): ChatListItem[] {
   const deduped = new Map<string, ChatListItem>();
   items.forEach((item) => {
     const key = chatDedupeKey(item);
@@ -4477,7 +4477,7 @@ function preferChatListItem(left: ChatListItem, right: ChatListItem): ChatListIt
   return left.sortAt >= right.sortAt ? left : right;
 }
 
-function buildTimelineRows(messages: MatrixTimelineMessage[]): Array<
+export function buildTimelineRows(messages: MatrixTimelineMessage[]): Array<
   | { id: string; kind: "date"; label: string }
   | { grouped: boolean; kind: "message"; message: MatrixTimelineMessage }
 > {
@@ -4501,7 +4501,7 @@ function buildTimelineRows(messages: MatrixTimelineMessage[]): Array<
   return rows;
 }
 
-function applyChatPreferences(items: ChatListItem[], preferences: ChatPreferences): ChatListItem[] {
+export function applyChatPreferences(items: ChatListItem[], preferences: ChatPreferences): ChatListItem[] {
   const pinnedOrder = new Map(preferences.pinnedKeys.map((key, index) => [key, index]));
   return items
     .map((item) => {
@@ -4540,7 +4540,7 @@ function applyChatPreferences(items: ChatListItem[], preferences: ChatPreference
     });
 }
 
-function chatPreferenceSnapshot(item: ChatListItem): string {
+export function chatPreferenceSnapshot(item: ChatListItem): string {
   return item.latest?.eventId ?? "__no_latest__";
 }
 
@@ -4977,7 +4977,7 @@ function messageRetentionShortLabel(seconds: MessageRetentionSeconds): string {
   return seconds === null ? "Vyp." : messageRetentionLabel(seconds);
 }
 
-function filterTimelineByRetention(messages: MatrixTimelineMessage[], seconds: MessageRetentionSeconds): MatrixTimelineMessage[] {
+export function filterTimelineByRetention(messages: MatrixTimelineMessage[], seconds: MessageRetentionSeconds): MatrixTimelineMessage[] {
   if (seconds === null) {
     return messages;
   }
@@ -5528,7 +5528,7 @@ function writeChatPreferences(ownerId: string, preferences: ChatPreferences): vo
   }
 }
 
-function normalizeChatPreferences(preferences: Partial<ChatPreferences>): ChatPreferences {
+export function normalizeChatPreferences(preferences: Partial<ChatPreferences>): ChatPreferences {
   const now = Date.now();
   const mutedUntilByKey = Object.fromEntries(
     Object.entries(preferences.mutedUntilByKey ?? {})
@@ -5553,7 +5553,7 @@ function normalizeChatPreferences(preferences: Partial<ChatPreferences>): ChatPr
   };
 }
 
-function isChatMuted(value: string | undefined): boolean {
+export function isChatMuted(value: string | undefined): boolean {
   if (!value) {
     return false;
   }
@@ -5568,7 +5568,7 @@ function muteChoiceToStorageValue(choice: MuteChoice): string {
   return new Date(Date.now() + durationMs).toISOString();
 }
 
-function messageMatchesQuery(message: MatrixTimelineMessage, query: string): boolean {
+export function messageMatchesQuery(message: MatrixTimelineMessage, query: string): boolean {
   const normalized = query.trim().toLocaleLowerCase("cs-CZ");
   if (!normalized) {
     return false;
@@ -5817,7 +5817,7 @@ function incomingNotificationBody(message: MatrixTimelineMessage): string {
   return sender ? `${sender}: ${preview}` : preview;
 }
 
-function embeddedChatSelectionFromMessage(data: unknown): string | null {
+export function embeddedChatSelectionFromMessage(data: unknown): string | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     return null;
   }
@@ -5837,7 +5837,7 @@ function findChatItemForSelection(selection: string, chatItems: ChatListItem[]):
     || item.room?.roomId === selection) ?? null;
 }
 
-function readRouteSelection(): string | null {
+export function readRouteSelection(): string | null {
   const params = new URLSearchParams(window.location.search);
   const querySelection = params.get("selection")
     ?? params.get("groupId")
@@ -5862,7 +5862,7 @@ function readRouteSelection(): string | null {
   }
 }
 
-function writeChatRoute(selection: string | null) {
+export function writeChatRoute(selection: string | null) {
   const nextPath = selection ? `/chat/${encodeURIComponent(selection)}` : "/chat";
   const params = new URLSearchParams(window.location.search);
   params.delete("selection");
@@ -5955,7 +5955,7 @@ function osmTileUrlForLocation(location: { lat: number; lon: number }, zoom: num
   return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
 }
 
-function centerLocationInCop(location: MatrixLocationShare): void {
+export function centerLocationInCop(location: MatrixLocationShare): void {
   if (window.parent !== window) {
     window.parent.postMessage({
       lat: location.lat,
