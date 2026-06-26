@@ -9281,6 +9281,10 @@
               "type": "string"
             }
           },
+          "summary": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "lastEventAt": {
             "type": "string",
             "format": "date-time"

@@ -26,6 +26,7 @@ export interface SourceHealthItem {
   sourceType: SourceSystem["sourceType"];
   staleTracks: number;
   status: SourceSystem["status"];
+  summary?: Record<string, unknown>;
   synthetic: boolean;
   totalTracks: number;
 }
@@ -69,6 +70,7 @@ function buildSourceHealthItem(source: SourceSystem, state: CopState, now: Date,
     sourceType: source.sourceType,
     staleTracks: lifecycleStates.filter((track) => track.stale && !track.expired).length,
     status: source.status,
+    ...(override?.summary ? { summary: override.summary } : {}),
     synthetic: source.synthetic,
     totalTracks: sourceObjects.length,
     ...(override?.warnings && override.warnings.length > 0 ? { warnings: override.warnings } : {})
