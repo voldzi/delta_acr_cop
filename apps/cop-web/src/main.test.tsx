@@ -7,6 +7,8 @@ import { encodeChatCenterLocation } from "@cop/messaging/bridge";
 import { App, buildPriorityAlertSummary, buildStableSituationQueryBounds, mapBoundsContainedBy } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
 
+const initialMatchMedia = window.matchMedia;
+
 vi.mock("./CopMap", async () => {
   const React = await import("react");
   return {
@@ -15,13 +17,15 @@ vi.mock("./CopMap", async () => {
       focusView,
       focusViewRequest,
       mapInteractionSuspended,
-      objects
+      objects,
+      onSelectObject
     }: {
       emptyMessage: string | null;
       focusView?: { center: [number, number]; zoom?: number };
       focusViewRequest?: number;
       mapInteractionSuspended?: boolean;
       objects: Array<{ objectId: string }>;
+      onSelectObject?: (object: { objectId: string }) => void;
     }) =>
       React.createElement(
         "div",
@@ -33,7 +37,18 @@ vi.mock("./CopMap", async () => {
         },
         objects.length === 0 && emptyMessage
           ? React.createElement("span", null, emptyMessage)
-          : objects.map((object) => React.createElement("span", { key: object.objectId }, object.objectId))
+          : objects.map((object) =>
+            React.createElement(
+              "button",
+              {
+                "data-testid": `map-select-object-${object.objectId}`,
+                key: object.objectId,
+                onClick: () => onSelectObject?.(object),
+                type: "button"
+              },
+              object.objectId
+            )
+          )
       ),
     formatTrackLabel: (object: { attributes?: { flightData?: { callsign?: string; icao24?: string; registration?: string } }; objectId: string }) =>
       object.attributes?.flightData?.callsign
@@ -48,6 +63,10 @@ afterEach(() => {
   if (typeof window.localStorage?.clear === "function") {
     window.localStorage.clear();
   }
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: initialMatchMedia
+  });
   vi.restoreAllMocks();
 });
 
@@ -160,6 +179,7 @@ describe("COP web dashboard", () => {
   });
 
   it("renders SIM tracks returned from COP API", async () => {
+    installMatchMedia(true);
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/health/ready")) {
@@ -399,6 +419,80 @@ describe("COP web dashboard", () => {
     expect(screen.getByText("Integrovaný COP Chat")).toBeTruthy();
   });
 
+  it("opens the mobile detail sheet when a map object is selected", async () => {
+    const restoreMatchMedia = installMatchMedia(true);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {
+            trackHistoryLimit: 120,
+            trackHistoryWindowSeconds: 180
+          },
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({
+          items: [
+            {
+              affiliation: "FRIEND",
+              confidence: 0.82,
+              domain: "AIR",
+              objectId: "AIR_SIM_UAV-0001",
+              objectType: "UAV",
+              position: {
+                lat: 50.09,
+                lon: 14.43
+              },
+              status: "ACTIVE",
+              synthetic: true
+            }
+          ]
+        });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [] });
+    });
+
+    try {
+      vi.stubGlobal("fetch", fetchMock);
+      render(<App />);
+
+      await waitFor(() => expect(screen.getByTestId("map-select-object-AIR_SIM_UAV-0001")).toBeTruthy());
+      fireEvent.click(screen.getByTestId("map-select-object-AIR_SIM_UAV-0001"));
+
+      const detailSheet = await screen.findByTestId("mobile-sheet-surface");
+      expect(within(detailSheet).getByText("Detail objektu")).toBeTruthy();
+      expect(within(detailSheet).getByText("Identita")).toBeTruthy();
+      expect(within(detailSheet).getByText("Poloha")).toBeTruthy();
+      expect(screen.getByTestId("cop-map").getAttribute("data-map-interaction-suspended")).toBe("true");
+    } finally {
+      restoreMatchMedia();
+    }
+  });
+
   it("keeps an empty connected map clean when no active tracks are present", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -594,6 +688,29 @@ function jsonResponse(body: unknown): Response {
     statusText: "OK",
     json: async () => body
   } as Response;
+}
+
+function installMatchMedia(matches: boolean): () => void {
+  const original = window.matchMedia;
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn((query: string) => ({
+      addEventListener: vi.fn(),
+      addListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      matches,
+      media: query,
+      onchange: null,
+      removeEventListener: vi.fn(),
+      removeListener: vi.fn()
+    }))
+  });
+  return () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: original
+    });
+  };
 }
 
 function installTestLocalStorage(): void {

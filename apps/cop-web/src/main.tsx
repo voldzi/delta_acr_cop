@@ -446,6 +446,14 @@ interface PriorityAlertSummary {
 }
 
 type MobileSheet = "layers" | "detail" | null;
+const MOBILE_SHEET_MEDIA_QUERY = "(max-width: 860px)";
+
+function isMobileSheetViewport(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  return window.matchMedia(MOBILE_SHEET_MEDIA_QUERY).matches;
+}
 
 interface AccountChangeNotice {
   kind: "changed" | "cleared";
@@ -489,6 +497,7 @@ export function App() {
   const [mapSearchQuery, setMapSearchQuery] = React.useState("");
   const [mapSearchDocked, setMapSearchDocked] = React.useState(() => readMapSearchDocked());
   const [mobileSheet, setMobileSheet] = React.useState<MobileSheet>(null);
+  const [mobileSheetViewport, setMobileSheetViewport] = React.useState(() => isMobileSheetViewport());
   const [mobileSketchOpen, setMobileSketchOpen] = React.useState(false);
   const shellRef = React.useRef<HTMLElement | null>(null);
   const [workspaceResizeActive, setWorkspaceResizeActive] = React.useState(false);
@@ -2640,6 +2649,27 @@ export function App() {
   }, [combinedSituationFeatures, selectedSituationFeatureId]);
 
   React.useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+    const query = window.matchMedia(MOBILE_SHEET_MEDIA_QUERY);
+    const handleChange = () => setMobileSheetViewport(query.matches);
+    handleChange();
+    if (typeof query.addEventListener === "function") {
+      query.addEventListener("change", handleChange);
+      return () => query.removeEventListener("change", handleChange);
+    }
+    query.addListener(handleChange);
+    return () => query.removeListener(handleChange);
+  }, []);
+
+  React.useEffect(() => {
+    if (!mobileSheetViewport && mobileSheet) {
+      setMobileSheet(null);
+    }
+  }, [mobileSheet, mobileSheetViewport]);
+
+  React.useEffect(() => {
     if (mobileSheet === "detail" && !selectedSituationFeature && !explicitlySelectedObject) {
       setMobileSheet(null);
     }
@@ -3894,6 +3924,8 @@ export function App() {
     }
     return style;
   }, [messagingDockWidth, messagingOpen, messagingPinned, workspaceLayout.leftPanelWidth, workspaceLayout.rightPanelWidth]);
+  const mobileDetailSheetForSelection = React.useCallback((isSelected: boolean): MobileSheet =>
+    isSelected || !mobileSheetViewport ? null : "detail", [mobileSheetViewport]);
 
   const updateWorkspaceLayout = React.useCallback((patch: Partial<WorkspaceLayoutPreferences>) => {
     setWorkspaceLayout((current) => normalizeWorkspaceLayout({ ...current, ...patch }));
@@ -4380,7 +4412,7 @@ export function App() {
                 setSelectedSituationFeatureId(null);
                 setSelectedSketchDrawingId(null);
                 setMobileSketchOpen(false);
-                setMobileSheet(null);
+                setMobileSheet(mobileDetailSheetForSelection(isSelected));
               }}
               onSelectSituationFeature={(feature) => {
                 const isSelected = selectedSituationFeatureId === feature.properties.featureId;
@@ -4388,7 +4420,7 @@ export function App() {
                 setSelectedObjectId(null);
                 setSelectedSketchDrawingId(null);
                 setMobileSketchOpen(false);
-                setMobileSheet(null);
+                setMobileSheet(mobileDetailSheetForSelection(isSelected));
               }}
               onAutoFitChange={setAutoFit}
               onClearSelection={() => {
@@ -4453,7 +4485,7 @@ export function App() {
                       const isSelected = selectedObjectId === objectId;
                       setSelectedObjectId(isSelected ? null : objectId);
                       setSelectedSituationFeatureId(null);
-                      setMobileSheet(isSelected ? null : "detail");
+                      setMobileSheet(mobileDetailSheetForSelection(isSelected));
                     }}
                   />
                 </React.Suspense>
@@ -4501,7 +4533,7 @@ export function App() {
                   const isSelected = selectedObjectId === objectId;
                   setSelectedObjectId(isSelected ? null : objectId);
                   setSelectedSituationFeatureId(null);
-                  setMobileSheet(isSelected ? null : "detail");
+                  setMobileSheet(mobileDetailSheetForSelection(isSelected));
                 }}
               />
               <IncidentWorkflowBoard
@@ -4551,7 +4583,7 @@ export function App() {
                       const isSelected = selectedObjectId === objectId;
                       setSelectedObjectId(isSelected ? null : objectId);
                       setSelectedSituationFeatureId(null);
-                      setMobileSheet(isSelected ? null : "detail");
+                      setMobileSheet(mobileDetailSheetForSelection(isSelected));
                     }}
                   />
                 </React.Suspense>
