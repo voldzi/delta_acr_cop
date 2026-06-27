@@ -359,6 +359,49 @@ describe("SituationDataSourceAdapter", () => {
     ]);
   });
 
+  it("uses mobile coverage model as a public mobile-network fallback when the read model is empty", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.searchParams.get("layers") === "mobile_network") {
+        return new Response(JSON.stringify(sampleMobileNetworkFeatureCollection({ empty: true })), { status: 200 });
+      }
+      return new Response(JSON.stringify(sampleCoverageFeatureCollection()), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new SituationDataSourceAdapter({
+      baseUrl: "https://sim.zeleznalady.cz/situation-data/api/v1",
+      cacheTtlMs: 20000,
+      enabled: true,
+      maxLimit: 250,
+      timeoutMs: 7000
+    });
+
+    const features = await adapter.fetchFeatures({
+      bbox: { east: 14.6, north: 50.2, south: 49.95, west: 14.2 },
+      layers: ["mobile_network"],
+      limit: 20,
+      sources: ["mobile_network_model"],
+      technology: "4G"
+    }, new Date("2026-05-21T16:25:00Z"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("layers=mobile_network");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("layers=mobile_coverage");
+    expect(features.features).toHaveLength(1);
+    expect(features.features[0]?.properties).toMatchObject({
+      layer: "mobile_coverage",
+      sourceId: "mobile_coverage_model",
+      technology: "4G"
+    });
+    expect(features.query).toMatchObject({
+      layers: ["mobile_network"],
+      sources: ["mobile_network_model"],
+      technology: "4G"
+    });
+    expect(features.warnings.join(" ")).toContain("model-only fallback");
+  });
+
   it("splits large mobile network map queries into smaller SIM read-model requests", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = new URL(String(input));
@@ -749,6 +792,7 @@ function sampleCoverageFeatureCollection() {
 
 function sampleMobileNetworkFeatureCollection(overrides: {
   bbox?: { east: number; north: number; south: number; west: number };
+  empty?: boolean;
   featureId?: string;
   geometry?: Record<string, unknown>;
 } = {}) {
@@ -756,7 +800,7 @@ function sampleMobileNetworkFeatureCollection(overrides: {
   const featureId = overrides.featureId ?? "mobile_network:aggregate:4g:6-4";
   return {
     contractVersion: "cop-situation-source-v1",
-    features: [
+    features: overrides.empty ? [] : [
       {
         geometry: overrides.geometry ?? {
           coordinates: [[

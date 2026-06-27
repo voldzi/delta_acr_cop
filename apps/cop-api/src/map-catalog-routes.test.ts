@@ -734,6 +734,33 @@ describe("map catalog route", () => {
     expect(body.situation?.warnings.join(" ")).not.toContain("BTS / komunikační stožáry");
   });
 
+  it("allows model coverage fallback through the public mobile-network catalog layer", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource: new FakeMobileNetworkCoverageFallbackSource()
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [13.85, 49.65, 15.35, 50.45],
+        layerIds: ["public.mobile.network"],
+        limit: 20
+      },
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { situation?: SituationFeatureCollection };
+    expect(body.situation?.features).toHaveLength(1);
+    expect(body.situation?.features[0]?.properties).toMatchObject({
+      layer: "mobile_coverage",
+      sourceId: "mobile_coverage_model"
+    });
+  });
+
   it("queries flight reference layers from the provider catalog", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const app = buildServer({
@@ -1360,6 +1387,50 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
       source: { sourceId: "situation-data-api", sourceType: "PUBLIC_SITUATION_AGGREGATE" },
       sources: await this.fetchSources(requestNow),
       summary: { featureCount: 2, sourceCount: 1, staleFeatureCount: 0, warningCount: 0 },
+      type: "FeatureCollection",
+      warnings: []
+    };
+  }
+}
+
+class FakeMobileNetworkCoverageFallbackSource extends FakeProviderCatalogSituationDataSource {
+  override async fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
+    this.lastFeatureQuery = query;
+    return {
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [14.2, 49.95],
+              [14.3, 49.95],
+              [14.3, 50.05],
+              [14.2, 50.05],
+              [14.2, 49.95]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            category: "mobile_coverage",
+            confidence: 0.63,
+            featureId: "coverage:mobile:4g:6-4",
+            label: "4G coverage estimate",
+            layer: "mobile_coverage",
+            observedAt: requestNow.toISOString(),
+            quality: "weak",
+            severity: "warning",
+            sourceId: "mobile_coverage_model",
+            stale: false,
+            technology: "4G"
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: requestNow.toISOString(),
+      query,
+      source: { sourceId: "situation-data-api", sourceType: "PUBLIC_SITUATION_AGGREGATE" },
+      sources: await this.fetchSources(requestNow),
+      summary: { featureCount: 1, sourceCount: 1, staleFeatureCount: 0, warningCount: 0 },
       type: "FeatureCollection",
       warnings: []
     };

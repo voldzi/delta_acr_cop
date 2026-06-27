@@ -551,10 +551,13 @@ export class SituationDataSourceAdapter implements SituationDataSource {
 
   async fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
     const normalizedQuery = normalizeSituationFeatureQuery(query, this.config);
-    if (shouldUseChunkedMobileNetworkQuery(normalizedQuery)) {
-      return this.fetchChunkedMobileNetworkFeatures(normalizedQuery, requestNow);
+    const collection = shouldUseChunkedMobileNetworkQuery(normalizedQuery)
+      ? await this.fetchChunkedMobileNetworkFeatures(normalizedQuery, requestNow)
+      : await this.fetchFeaturesUnchunked(normalizedQuery, requestNow);
+    if (!shouldUseMobileNetworkCoverageFallback(normalizedQuery, collection)) {
+      return collection;
     }
-    return this.fetchFeaturesUnchunked(normalizedQuery, requestNow);
+    return this.fetchMobileNetworkCoverageFallback(normalizedQuery, collection, requestNow);
   }
 
   async fetchMobileTowerViewshed(towerId: string, query: MobileTowerViewshedQuery, requestNow: Date): Promise<MobileTowerViewshedResponse> {
@@ -623,6 +626,27 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     ]);
 
     return mergeSituationFeatureCollections([nonMobileCollection, ...mobileCollections], normalizedQuery, requestNow);
+  }
+
+  private async fetchMobileNetworkCoverageFallback(
+    normalizedQuery: SituationFeatureQuery,
+    primaryCollection: SituationFeatureCollection,
+    requestNow: Date
+  ): Promise<SituationFeatureCollection> {
+    const fallbackLimit = Math.max(1, normalizedQuery.limit - primaryCollection.features.length);
+    const fallbackCollection = await this.fetchFeaturesUnchunked({
+      bbox: normalizedQuery.bbox,
+      layers: ["mobile_coverage"],
+      limit: fallbackLimit,
+      sources: ["mobile_coverage_model"],
+      ...(normalizedQuery.technology ? { technology: normalizedQuery.technology } : {})
+    }, requestNow);
+    if (fallbackCollection.features.length === 0) {
+      return primaryCollection;
+    }
+    return mergeSituationFeatureCollections([primaryCollection, fallbackCollection], normalizedQuery, requestNow, [
+      "mobile_network_model returned no public read-model cells; COP is showing mobile_coverage_model as a model-only fallback."
+    ]);
   }
 }
 
@@ -957,6 +981,16 @@ function shouldUseChunkedMobileNetworkQuery(query: SituationFeatureQuery): boole
     return false;
   }
   return splitBbox(query.bbox, mobileNetworkChunkDegrees).length <= mobileNetworkMaxChunks;
+}
+
+function shouldUseMobileNetworkCoverageFallback(query: SituationFeatureQuery, collection: SituationFeatureCollection): boolean {
+  if (!query.layers.includes("mobile_network")) {
+    return false;
+  }
+  if (query.sources && !query.sources.includes("mobile_network_model")) {
+    return false;
+  }
+  return !collection.features.some((feature) => feature.properties.layer === "mobile_network");
 }
 
 function splitBbox(bbox: SituationBbox, maxDimensionDegrees: number): SituationBbox[] {

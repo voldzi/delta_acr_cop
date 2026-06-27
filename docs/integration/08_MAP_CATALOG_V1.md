@@ -708,6 +708,14 @@ model estimate, not as a confirmed BTS outage or confirmed operator state.
 User-facing detail should prioritize `quality`, `status`, `confidence`,
 `summary` and `notices`.
 
+If `mobile_network_model` returns no public read-model cells for a requested
+area, COP may fill `public.mobile.network` from `mobile_coverage_model` as a
+degraded model-only fallback. The feature provenance must remain visible
+(`sourceId: mobile_coverage_model`, `layer: mobile_coverage`) and the response
+must carry a warning that the result is not an operator-confirmed BTS status.
+This keeps the citizen layer usable while SIM rebuilds or backfills the final
+read model, without presenting diagnostic cells as authoritative operator data.
+
 If a user opens a mobile-network cell detail, COP may query the diagnostic
 provider layer `mobile_coverage` with source `mobile_coverage_model` for the
 same local area and selected technology. That technical detail can expose LoS

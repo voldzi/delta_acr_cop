@@ -8088,6 +8088,9 @@ function filterSituationCollectionForCatalogLayers(
 }
 
 function situationFeatureMatchesCatalogLayer(feature: SituationFeature, layer: MapCatalogLayer): boolean {
+  if (isMobileNetworkCoverageFallbackForCatalogLayer(feature, layer)) {
+    return true;
+  }
   const providerLayerIds = layer.query.providerLayerIds ?? [];
   if (providerLayerIds.length > 0) {
     const normalizedProviderLayerIds = providerLayerIds
@@ -8110,6 +8113,13 @@ function situationFeatureMatchesCatalogLayer(feature: SituationFeature, layer: M
     return false;
   }
   return true;
+}
+
+function isMobileNetworkCoverageFallbackForCatalogLayer(feature: SituationFeature, layer: MapCatalogLayer): boolean {
+  return layer.layerId === "public.mobile.network"
+    && (layer.query.providerLayerIds ?? []).includes("mobile_network")
+    && feature.properties.layer === "mobile_coverage"
+    && feature.properties.sourceId === "mobile_coverage_model";
 }
 
 function normalizeSituationCategoryId(value: string): string {
