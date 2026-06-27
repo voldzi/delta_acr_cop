@@ -77,6 +77,7 @@ const sketchDraftSourceId = "cop-sketch-draft";
 const sketchEditSourceId = "cop-sketch-edit";
 const alertAreaSourceId = "cop-alert-areas";
 const situationSourceId = "cop-situation-context";
+const situationDenseClusterSourceId = "cop-situation-dense-point-clusters";
 const trackHistoryLayerId = "cop-track-history-line";
 const trackPredictionLayerId = "cop-track-prediction-line";
 const userAlertRadiusFillLayerId = "cop-user-alert-radius-fill";
@@ -108,6 +109,8 @@ const situationPointSelectedLayerId = "cop-situation-point-selected";
 const situationWeatherGridFillLayerId = "cop-situation-weather-grid-fill";
 const situationWeatherGridLineLayerId = "cop-situation-weather-grid-line";
 const situationWeatherGridLabelLayerId = "cop-situation-weather-grid-label";
+const situationDenseClusterCircleLayerId = "cop-situation-dense-cluster-circle";
+const situationDenseClusterCountLayerId = "cop-situation-dense-cluster-count";
 const situationWeatherPulseLayerId = "cop-situation-weather-pulse";
 const situationWeatherHeatLayerId = "cop-situation-weather-heat";
 const situationWeatherPointLayerId = "cop-situation-weather-point";
@@ -141,7 +144,9 @@ const trackClusterLabelLayerId = "cop-live-track-cluster-label";
 
 const mapClusterClickLayerIds = [
   trackClusterCircleLayerId,
-  trackClusterCountLayerId
+  trackClusterCountLayerId,
+  situationDenseClusterCircleLayerId,
+  situationDenseClusterCountLayerId
 ] as const;
 
 const mapFeatureClickPriorityLayerIds = [
@@ -203,6 +208,8 @@ const mapPointRaiseLayerIds = [
   situationRiskIconLayerId,
   situationFloodTrendLayerId,
   situationRiskLabelLayerId,
+  situationDenseClusterCircleLayerId,
+  situationDenseClusterCountLayerId,
   situationOsmSymbolLayerId,
   situationMobileSymbolLayerId,
   situationWeatherCameraLayerId,
@@ -448,6 +455,7 @@ export interface SituationContextFeatureCollection {
       boundaryLabel?: string;
       boundaryReference?: boolean;
       communicationTower?: boolean;
+      densePointFeature?: boolean;
       mapLabel?: string;
       mapPointSuppressed?: boolean;
       missionArena?: boolean;
@@ -890,6 +898,10 @@ export function CopMap({
     () => situationFeaturesToFeatureCollection(situationFeatures, selectedSituationFeatureId, publicFlightSymbolMode),
     [publicFlightSymbolMode, selectedSituationFeatureId, situationFeatures]
   );
+  const situationDensePointFeatureCollection = React.useMemo(
+    () => situationDensePointFeaturesToFeatureCollection(situationFeatureCollection),
+    [situationFeatureCollection]
+  );
   const hasMobileCoverageFeatures = React.useMemo(
     () => situationFeatureCollection.features.some((feature) => feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network"),
     [situationFeatureCollection]
@@ -1071,6 +1083,13 @@ export function CopMap({
         map.addSource(situationSourceId, {
           type: "geojson",
           data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(situationDenseClusterSourceId, {
+          type: "geojson",
+          data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0],
+          cluster: true,
+          clusterMaxZoom: 10,
+          clusterRadius: 48
         });
         await registerNatoSymbolImages(map);
         await registerCivilAircraftSymbolImages(map);
@@ -1632,6 +1651,61 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationDenseClusterCircleLayerId,
+          type: "circle",
+          source: situationDenseClusterSourceId,
+          filter: ["has", "point_count"],
+          paint: {
+            "circle-color": [
+              "step",
+              ["get", "point_count"],
+              "#38bdf8",
+              10,
+              "#22c55e",
+              30,
+              "#facc15",
+              70,
+              "#fb923c"
+            ],
+            "circle-opacity": 0.82,
+            "circle-radius": [
+              "step",
+              ["get", "point_count"],
+              17,
+              10,
+              22,
+              30,
+              28,
+              70,
+              34
+            ],
+            "circle-stroke-color": "#061019",
+            "circle-stroke-opacity": 0.92,
+            "circle-stroke-width": 2.2
+          }
+        });
+
+        map.addLayer({
+          id: situationDenseClusterCountLayerId,
+          type: "symbol",
+          source: situationDenseClusterSourceId,
+          filter: ["has", "point_count"],
+          layout: {
+            "text-field": ["to-string", ["get", "point_count_abbreviated"]],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["step", ["get", "point_count"], 11, 10, 12, 30, 13, 70, 14],
+            "text-allow-overlap": true,
+            "text-ignore-placement": true
+          },
+          paint: {
+            "text-color": "#061019",
+            "text-halo-color": "rgba(248, 250, 252, 0.62)",
+            "text-halo-width": 1,
+            "text-halo-blur": 0.2
+          }
+        });
+
+        map.addLayer({
           id: situationWeatherHeatLayerId,
           type: "heatmap",
           source: situationSourceId,
@@ -1927,7 +2001,7 @@ export function CopMap({
           layout: {
             "text-field": ["coalesce", ["get", "riskMapLabel"], ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Bold"],
-            "text-size": ["interpolate", ["linear"], ["zoom"], 5, 0, 8, 10, 12, 12, 16, 14],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 5, 0, 8.5, 0, 10, 11, 13, 12, 16, 14],
             "text-offset": [0, 1.35],
             "text-anchor": "top",
             "text-allow-overlap": false,
@@ -1961,7 +2035,7 @@ export function CopMap({
             "text-optional": true
           },
           paint: {
-            "icon-opacity": ["case", ["get", "stale"], 0.68, 0.94],
+            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 0, 12, ["case", ["get", "stale"], 0.68, 0.94]],
             "text-color": ["case", ["get", "stale"], "#facc15", "#dff8ff"],
             "text-halo-color": "#061019",
             "text-halo-width": 1.5,
@@ -2046,14 +2120,14 @@ export function CopMap({
             "icon-ignore-placement": true,
             "text-field": ["coalesce", ["get", "mobileNetworkLabel"], "MOBILE"],
             "text-font": ["Noto Sans Bold"],
-            "text-size": ["interpolate", ["linear"], ["zoom"], 7, 9, 11, 11, 15, 13],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 0, 12, 11, 15, 13],
             "text-offset": [0, -2.2],
             "text-anchor": "bottom",
             "text-allow-overlap": false,
             "text-optional": true
           },
           paint: {
-            "icon-opacity": ["case", ["get", "stale"], 0.74, 0.96],
+            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 0, 12, ["case", ["get", "stale"], 0.74, 0.96]],
             "text-color": ["coalesce", ["get", "situationStatusColor"], "#dff8ff"],
             "text-halo-color": "#061019",
             "text-halo-width": 1.7,
@@ -2086,7 +2160,7 @@ export function CopMap({
                 "#ef4444"
               ]
             ],
-            "circle-opacity": ["case", ["get", "stale"], 0.48, 0.74],
+            "circle-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0, 9, 0, 11, ["case", ["get", "stale"], 0.48, 0.74]],
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 10, 11, 18, 16, 30],
             "circle-stroke-color": ["case", [">", ["coalesce", ["get", "weatherPrecipitationMm"], 0], 0], "#dff8ff", "#061019"],
             "circle-stroke-opacity": 0.9,
@@ -2117,7 +2191,7 @@ export function CopMap({
             "icon-anchor": "center"
           },
           paint: {
-            "icon-opacity": ["case", ["get", "stale"], 0.44, 0.72]
+            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0, 9, 0, 11, ["case", ["get", "stale"], 0.44, 0.72]]
           }
         });
 
@@ -2134,7 +2208,7 @@ export function CopMap({
             "icon-ignore-placement": true
           },
           paint: {
-            "icon-opacity": ["case", ["get", "stale"], 0.62, 0.98]
+            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0, 9, 0, 11, ["case", ["get", "stale"], 0.62, 0.98]]
           }
         });
 
@@ -2146,7 +2220,7 @@ export function CopMap({
           layout: {
             "text-field": ["get", "weatherLabel"],
             "text-font": ["Noto Sans Bold"],
-            "text-size": ["interpolate", ["linear"], ["zoom"], 6, 9, 11, 11, 15, 13],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 6, 0, 9, 0, 11, 11, 15, 13],
             "text-allow-overlap": false,
             "text-ignore-placement": false,
             "text-optional": true,
@@ -2174,7 +2248,7 @@ export function CopMap({
             "icon-ignore-placement": true
           },
           paint: {
-            "icon-opacity": ["case", ["get", "stale"], 0.62, 0.96]
+            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0, 9.5, 0, 11, ["case", ["get", "stale"], 0.62, 0.96]]
           }
         });
 
@@ -2185,7 +2259,7 @@ export function CopMap({
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "airQualityFeature"], true]],
           paint: {
             "circle-color": ["coalesce", ["get", "situationStatusColor"], "#22c55e"],
-            "circle-opacity": ["case", ["get", "stale"], 0.5, 0.82],
+            "circle-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0, 9, 0, 11, ["case", ["get", "stale"], 0.5, 0.82]],
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 7, 9, 11, 13, 16, 16, 22],
             "circle-stroke-color": "#061019",
             "circle-stroke-opacity": 0.92,
@@ -2201,7 +2275,7 @@ export function CopMap({
           layout: {
             "text-field": ["get", "airQualityLabel"],
             "text-font": ["Noto Sans Bold"],
-            "text-size": ["interpolate", ["linear"], ["zoom"], 5, 0, 8, 9, 12, 11, 16, 13],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 5, 0, 9, 0, 11, 10, 13, 11, 16, 13],
             "text-allow-overlap": false,
             "text-optional": true,
             "text-offset": [0, 1.35],
@@ -2427,10 +2501,15 @@ export function CopMap({
         raiseInteractivePointLayers(map);
 
         const handleClusterClick = (event: MapLayerMouseEvent) => {
-          void zoomToCluster(map, event, setClusterInfo);
+          void zoomToCluster(map, event, trackClusterSourceId, setClusterInfo);
+        };
+        const handleSituationDenseClusterClick = (event: MapLayerMouseEvent) => {
+          void zoomToCluster(map, event, situationDenseClusterSourceId, setClusterInfo);
         };
         map.on("click", trackClusterCircleLayerId, handleClusterClick);
         map.on("click", trackClusterCountLayerId, handleClusterClick);
+        map.on("click", situationDenseClusterCircleLayerId, handleSituationDenseClusterClick);
+        map.on("click", situationDenseClusterCountLayerId, handleSituationDenseClusterClick);
         const updateAoiEditPoint = (zoneId: string, index: number, lngLat: maplibregl.LngLat) => {
           const rule = findEditableAoiRule(aoiRulesRef.current, zoneId);
           const points = aoiRuleEditablePoints(rule);
@@ -2999,6 +3078,13 @@ export function CopMap({
       (source as GeoJSONSource).setData(situationFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
     }
   }, [mapReady, situationFeatureCollection]);
+
+  React.useEffect(() => {
+    const source = mapRef.current?.getSource(situationDenseClusterSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(situationDensePointFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [mapReady, situationDensePointFeatureCollection]);
 
   React.useEffect(() => {
     const map = mapRef.current;
@@ -3845,13 +3931,14 @@ function setLayerVisibility(map: maplibregl.Map, layerId: string, visible: boole
 async function zoomToCluster(
   map: maplibregl.Map,
   event: MapLayerMouseEvent,
+  sourceId: string,
   setClusterInfo: React.Dispatch<React.SetStateAction<ClusterInfo | null>>
 ): Promise<void> {
   const feature = event.features?.[0];
   const clusterId = Number(feature?.properties?.cluster_id);
   const pointCount = Number(feature?.properties?.point_count);
   const center = extractPointCoordinates(feature);
-  const source = map.getSource(trackClusterSourceId);
+  const source = map.getSource(sourceId);
   if (!Number.isFinite(clusterId) || !Number.isFinite(pointCount) || !center || !source || !("getClusterExpansionZoom" in source)) {
     return;
   }
@@ -3914,11 +4001,18 @@ function clusterLeafToInfo(feature: unknown): ClusterInfo["leaves"][number] | nu
   if (!properties) {
     return null;
   }
+  const situationLabel = stringProperty(properties.weatherLabel)
+    ?? stringProperty(properties.riskMapLabel)
+    ?? stringProperty(properties.weatherCameraLabel)
+    ?? stringProperty(properties.airQualityLabel)
+    ?? stringProperty(properties.mobileNetworkLabel)
+    ?? stringProperty(properties.coverageLabel)
+    ?? stringProperty(properties.mapLabel);
   return {
     affiliation: stringProperty(properties.affiliation) ?? "UNKNOWN",
-    label: stringProperty(properties.label) ?? stringProperty(properties.objectId) ?? "track",
-    objectType: stringProperty(properties.objectType) ?? "UNKNOWN",
-    status: stringProperty(properties.status) ?? "n/a"
+    label: situationLabel ?? stringProperty(properties.label) ?? stringProperty(properties.objectId) ?? stringProperty(properties.featureId) ?? "bod",
+    objectType: stringProperty(properties.objectType) ?? stringProperty(properties.layer) ?? "bod",
+    status: stringProperty(properties.status) ?? stringProperty(properties.situationStatusLabel) ?? stringProperty(properties.quality) ?? "n/a"
   };
 }
 
@@ -4520,6 +4614,20 @@ export function situationFeaturesToFeatureCollection(
   };
 }
 
+export function situationDensePointFeaturesToFeatureCollection(
+  collection: SituationContextFeatureCollection
+): SituationContextFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: collection.features.filter((feature) => (
+      feature.geometry.type === "Point"
+      && feature.properties.densePointFeature === true
+      && feature.properties.selected !== true
+      && feature.properties.riskFeature !== true
+    ))
+  };
+}
+
 const czechiaMobileNetworkEnvelope = {
   west: 11.8,
   south: 48.5,
@@ -4873,6 +4981,7 @@ function buildSituationRenderProperties(
   }
   if (feature.properties.layer === "flight_airports") {
     return {
+      densePointFeature: true,
       osmCategoryLabel: "Letiště",
       osmPoi: true,
       osmSymbolKey: getOsmCategoryIconKey("airport"),
@@ -4885,6 +4994,7 @@ function buildSituationRenderProperties(
     const referenceStatus = communicationTowerReferenceStatus();
     return {
       communicationTower: true,
+      densePointFeature: true,
       mobileNetworkLabel: formatCommunicationTowerLabel(feature),
       mobileSymbolKey: getMobileNetworkIconKey(referenceStatus.tone),
       situationStatusColor: referenceStatus.color,
@@ -4895,6 +5005,7 @@ function buildSituationRenderProperties(
   const osmCategory = resolveOsmCategoryPresentation(feature);
   if (osmCategory) {
     return {
+      densePointFeature: true,
       osmCategoryLabel: osmCategory.label,
       osmPoi: true,
       osmSymbolKey: getOsmCategoryIconKey(osmCategory.iconId),
@@ -4911,6 +5022,7 @@ function buildSituationRenderProperties(
       coverageOpacity: coverageOpacityForFeature(feature),
       coverageQuality: normalizeCoverageQuality(feature.properties.quality),
       coverageTechnology: feature.properties.technology,
+      densePointFeature: true,
       situationStatusColor: status.color,
       situationStatusLabel: status.label,
       situationStatusTone: status.tone
@@ -4918,6 +5030,7 @@ function buildSituationRenderProperties(
   }
   if (feature.properties.layer === "mobile") {
     return {
+      densePointFeature: true,
       mobileNetworkLabel: formatMobileNetworkLabel(feature),
       mobileSymbolKey: getMobileNetworkIconKey(status.tone),
       situationStatusColor: status.color,
@@ -4939,6 +5052,7 @@ function buildSituationRenderProperties(
   if (isWeatherWebcamFeature(feature)) {
     const label = formatWeatherWebcamLabel(feature);
     return {
+      densePointFeature: true,
       mapPointSuppressed: true,
       situationStatusColor: "#38bdf8",
       situationStatusLabel: "KAMERA",
@@ -4979,6 +5093,7 @@ function buildSituationRenderProperties(
     const weatherGrid = feature.properties.layer === "air_quality_grid" && feature.geometry.type !== "Point";
     return {
       airQualityDominantPollutant: dominantPollutant,
+      densePointFeature: weatherGrid ? undefined : true,
       airQualityFeature: true,
       airQualityIndex,
       airQualityLabel: label,
@@ -5032,6 +5147,7 @@ function buildSituationRenderProperties(
   return {
     weatherCloudCoverPercent: cloudCoverPercent,
     weatherConditionLabel: weatherCondition.label,
+    densePointFeature: weatherObservation ? true : undefined,
     weatherFillColor: weatherGrid ? color : undefined,
     weatherFillOpacity: weatherGrid ? weatherGridFillOpacity(feature) : undefined,
     weatherFlightCategoryColor: aviationCategory ? aviationCategory.color : undefined,
@@ -5822,9 +5938,9 @@ function formatWeatherObservationMapLabel(
     metrics.push(`${Math.round(temperatureC)}°C`);
   }
   if (precipitationMm !== undefined && precipitationMm >= 0.05) {
-    metrics.push(formatPrecipitationAmount(precipitationMm));
+    metrics.push(`déšť ${formatPrecipitationAmount(precipitationMm)}/10 min`);
   } else if (windSpeedMps !== undefined && windSpeedMps >= 0.5) {
-    metrics.push(`${Math.round(windSpeedMps)} m/s`);
+    metrics.push(`vítr ${Math.round(windSpeedMps)} m/s`);
   }
   const primary = truncateMapLabel(stationLabel, 22);
   const secondary = metrics.length > 0 ? metrics.slice(0, 2).join(" · ") : conditionLabel;
@@ -5975,7 +6091,7 @@ function weatherConditionDefaultLabel(iconId: WeatherConditionIconId): string {
     case "storm":
       return "bouřka";
     case "unknown":
-      return "měřené počasí";
+      return "počasí";
   }
 }
 

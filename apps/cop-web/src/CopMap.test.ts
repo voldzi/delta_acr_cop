@@ -10,6 +10,7 @@ import {
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
   parseMapCenter,
+  situationDensePointFeaturesToFeatureCollection,
   situationFeaturesToFeatureCollection,
   userAlertRadiusToFeatureCollection,
   userLocationToFeatureCollection
@@ -194,7 +195,7 @@ describe("COP map data helpers", () => {
             weatherCloudCoverPercent: 82,
             weatherConditionLabel: "polojasno",
             weatherHeadline: "Počasí ve středu oblasti",
-            weatherLabel: "Střed mapy\n19°C · 3 m/s",
+            weatherLabel: "Střed mapy\n19°C · vítr 3 m/s",
             weatherObservation: true,
             weatherStationLabel: "Střed mapy",
             weatherSymbolKey: "cop-weather-condition-partly_cloudy",
@@ -205,6 +206,59 @@ describe("COP map data helpers", () => {
         }
       ]
     });
+  });
+
+  it("keeps SIM point coordinates unchanged when preparing dense map clusters", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.42, 50.08], type: "Point" },
+          properties: {
+            category: "weather.current",
+            confidence: 0.9,
+            featureId: "weather:prague",
+            label: "Praha-Karlov",
+            layer: "weather",
+            layerId: "public.weather.observations",
+            metrics: {
+              temperatureC: 21.2,
+              windSpeedMps: 2.7
+            },
+            observedAt: "2026-05-20T10:00:00Z",
+            providerLayerId: "weather.chmi_station_observations",
+            sourceId: "chmi_weather_stations",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-20T10:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["weather"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    const densePoints = situationDensePointFeaturesToFeatureCollection(collection);
+
+    expect(densePoints.features).toHaveLength(1);
+    expect(densePoints.features[0]?.geometry).toEqual({ coordinates: [14.42, 50.08], type: "Point" });
+    expect(densePoints.features[0]?.properties.weatherLabel).toBe("Praha-Karlov\n21°C · vítr 3 m/s");
   });
 
   it("renders CHMI weather webcams as camera points, not alerts or weather observations", () => {
@@ -369,7 +423,7 @@ describe("COP map data helpers", () => {
     expect(collection.features[0]?.properties).toMatchObject({
       featureId: "weather:chmi:praha",
       weatherConditionLabel: "déšť",
-      weatherLabel: "Praha-Karlov\n21°C · 0.2 mm",
+      weatherLabel: "Praha-Karlov\n21°C · déšť 0.2 mm/10 min",
       weatherObservation: true,
       weatherPrecipitationMm: 0.2,
       weatherStationLabel: "Praha-Karlov",
