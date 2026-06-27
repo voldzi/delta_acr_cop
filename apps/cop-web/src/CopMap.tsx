@@ -77,7 +77,6 @@ const sketchDraftSourceId = "cop-sketch-draft";
 const sketchEditSourceId = "cop-sketch-edit";
 const alertAreaSourceId = "cop-alert-areas";
 const situationSourceId = "cop-situation-context";
-const situationDenseClusterSourceId = "cop-situation-dense-point-clusters";
 const trackHistoryLayerId = "cop-track-history-line";
 const trackPredictionLayerId = "cop-track-prediction-line";
 const userAlertRadiusFillLayerId = "cop-user-alert-radius-fill";
@@ -109,11 +108,9 @@ const situationPointSelectedLayerId = "cop-situation-point-selected";
 const situationWeatherGridFillLayerId = "cop-situation-weather-grid-fill";
 const situationWeatherGridLineLayerId = "cop-situation-weather-grid-line";
 const situationWeatherGridLabelLayerId = "cop-situation-weather-grid-label";
-const situationDenseClusterCircleLayerId = "cop-situation-dense-cluster-circle";
-const situationDenseClusterCountLayerId = "cop-situation-dense-cluster-count";
 const situationWeatherPulseLayerId = "cop-situation-weather-pulse";
 const situationWeatherHeatLayerId = "cop-situation-weather-heat";
-const situationWeatherPointLayerId = "cop-situation-weather-point";
+const situationWeatherPriorityLayerId = "cop-situation-weather-priority";
 const situationWeatherConditionLayerId = "cop-situation-weather-condition";
 const situationWeatherWindLayerId = "cop-situation-weather-wind";
 const situationWeatherLabelLayerId = "cop-situation-weather-label";
@@ -144,9 +141,7 @@ const trackClusterLabelLayerId = "cop-live-track-cluster-label";
 
 const mapClusterClickLayerIds = [
   trackClusterCircleLayerId,
-  trackClusterCountLayerId,
-  situationDenseClusterCircleLayerId,
-  situationDenseClusterCountLayerId
+  trackClusterCountLayerId
 ] as const;
 
 const mapFeatureClickPriorityLayerIds = [
@@ -169,7 +164,8 @@ const mapFeatureClickPriorityLayerIds = [
   situationWeatherCameraLayerId,
   situationWeatherLabelLayerId,
   situationWeatherWindLayerId,
-  situationWeatherPointLayerId,
+  situationWeatherPriorityLayerId,
+  situationWeatherConditionLayerId,
   situationAirQualityLabelLayerId,
   situationAirQualityPointLayerId,
   situationOsmSymbolLayerId,
@@ -208,12 +204,11 @@ const mapPointRaiseLayerIds = [
   situationRiskIconLayerId,
   situationFloodTrendLayerId,
   situationRiskLabelLayerId,
-  situationDenseClusterCircleLayerId,
-  situationDenseClusterCountLayerId,
   situationOsmSymbolLayerId,
   situationMobileSymbolLayerId,
   situationWeatherCameraLayerId,
-  situationWeatherPointLayerId,
+  situationWeatherPriorityLayerId,
+  situationWeatherConditionLayerId,
   situationWeatherWindLayerId,
   situationWeatherLabelLayerId,
   situationAirQualityPointLayerId,
@@ -431,6 +426,7 @@ export interface SituationContextFeatureCollection {
       weatherHeadline?: string;
       weatherLabel?: string;
       weatherLineColor?: string;
+      weatherMapPriority?: number;
       weatherMetricLabel?: string;
       weatherObservation?: boolean;
       weatherPulse?: boolean;
@@ -455,7 +451,6 @@ export interface SituationContextFeatureCollection {
       boundaryLabel?: string;
       boundaryReference?: boolean;
       communicationTower?: boolean;
-      densePointFeature?: boolean;
       mapLabel?: string;
       mapPointSuppressed?: boolean;
       missionArena?: boolean;
@@ -898,10 +893,6 @@ export function CopMap({
     () => situationFeaturesToFeatureCollection(situationFeatures, selectedSituationFeatureId, publicFlightSymbolMode),
     [publicFlightSymbolMode, selectedSituationFeatureId, situationFeatures]
   );
-  const situationDensePointFeatureCollection = React.useMemo(
-    () => situationDensePointFeaturesToFeatureCollection(situationFeatureCollection),
-    [situationFeatureCollection]
-  );
   const hasMobileCoverageFeatures = React.useMemo(
     () => situationFeatureCollection.features.some((feature) => feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network"),
     [situationFeatureCollection]
@@ -1083,13 +1074,6 @@ export function CopMap({
         map.addSource(situationSourceId, {
           type: "geojson",
           data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
-        });
-        map.addSource(situationDenseClusterSourceId, {
-          type: "geojson",
-          data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0],
-          cluster: true,
-          clusterMaxZoom: 10,
-          clusterRadius: 48
         });
         await registerNatoSymbolImages(map);
         await registerCivilAircraftSymbolImages(map);
@@ -1651,61 +1635,6 @@ export function CopMap({
         });
 
         map.addLayer({
-          id: situationDenseClusterCircleLayerId,
-          type: "circle",
-          source: situationDenseClusterSourceId,
-          filter: ["has", "point_count"],
-          paint: {
-            "circle-color": [
-              "step",
-              ["get", "point_count"],
-              "#38bdf8",
-              10,
-              "#22c55e",
-              30,
-              "#facc15",
-              70,
-              "#fb923c"
-            ],
-            "circle-opacity": 0.82,
-            "circle-radius": [
-              "step",
-              ["get", "point_count"],
-              17,
-              10,
-              22,
-              30,
-              28,
-              70,
-              34
-            ],
-            "circle-stroke-color": "#061019",
-            "circle-stroke-opacity": 0.92,
-            "circle-stroke-width": 2.2
-          }
-        });
-
-        map.addLayer({
-          id: situationDenseClusterCountLayerId,
-          type: "symbol",
-          source: situationDenseClusterSourceId,
-          filter: ["has", "point_count"],
-          layout: {
-            "text-field": ["to-string", ["get", "point_count_abbreviated"]],
-            "text-font": ["Noto Sans Bold"],
-            "text-size": ["step", ["get", "point_count"], 11, 10, 12, 30, 13, 70, 14],
-            "text-allow-overlap": true,
-            "text-ignore-placement": true
-          },
-          paint: {
-            "text-color": "#061019",
-            "text-halo-color": "rgba(248, 250, 252, 0.62)",
-            "text-halo-width": 1,
-            "text-halo-blur": 0.2
-          }
-        });
-
-        map.addLayer({
           id: situationWeatherHeatLayerId,
           type: "heatmap",
           source: situationSourceId,
@@ -2136,43 +2065,21 @@ export function CopMap({
         });
 
         map.addLayer({
-          id: situationWeatherPointLayerId,
-          type: "circle",
+          id: situationWeatherPriorityLayerId,
+          type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], [">=", ["coalesce", ["get", "weatherMapPriority"], 0], 68]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "weatherSymbolKey"], getWeatherConditionIconKey("unknown")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.34, 8, 0.42, 12, 0.54, 16, 0.72],
+            "icon-anchor": "center",
+            "icon-allow-overlap": false,
+            "icon-ignore-placement": false,
+            "icon-optional": false,
+            "symbol-sort-key": ["-", ["coalesce", ["get", "weatherMapPriority"], 0]]
+          },
           paint: {
-            "circle-color": [
-              "coalesce",
-              ["get", "weatherFlightCategoryColor"],
-              [
-                "interpolate",
-                ["linear"],
-                ["coalesce", ["get", "weatherTemperatureC"], 12],
-                -15,
-                "#60a5fa",
-                0,
-                "#38bdf8",
-                15,
-                "#22c55e",
-                25,
-                "#facc15",
-                35,
-                "#ef4444"
-              ]
-            ],
-            "circle-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0, 9, 0, 11, ["case", ["get", "stale"], 0.48, 0.74]],
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 10, 11, 18, 16, 30],
-            "circle-stroke-color": ["case", [">", ["coalesce", ["get", "weatherPrecipitationMm"], 0], 0], "#dff8ff", "#061019"],
-            "circle-stroke-opacity": 0.9,
-            "circle-stroke-width": [
-              "interpolate",
-              ["linear"],
-              ["coalesce", ["get", "weatherCloudCoverPercent"], 0],
-              0,
-              1.2,
-              100,
-              3.2
-            ]
+            "icon-opacity": ["case", ["get", "stale"], 0.72, 0.98]
           }
         });
 
@@ -2180,7 +2087,8 @@ export function CopMap({
           id: situationWeatherWindLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], [">=", ["coalesce", ["get", "weatherWindSpeedMps"], 0], 0.5]],
+          minzoom: 11,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], [">=", ["coalesce", ["get", "weatherWindSpeedMps"], 0], 3]],
           layout: {
             "icon-image": weatherWindIconKey,
             "icon-rotate": ["+", ["coalesce", ["get", "weatherWindDirectionDeg"], 0], 180],
@@ -2191,7 +2099,7 @@ export function CopMap({
             "icon-anchor": "center"
           },
           paint: {
-            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0, 9, 0, 11, ["case", ["get", "stale"], 0.44, 0.72]]
+            "icon-opacity": ["case", ["get", "stale"], 0.44, 0.72]
           }
         });
 
@@ -2199,16 +2107,18 @@ export function CopMap({
           id: situationWeatherConditionLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true]],
+          minzoom: 10,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["<", ["coalesce", ["get", "weatherMapPriority"], 0], 68]],
           layout: {
             "icon-image": ["coalesce", ["get", "weatherSymbolKey"], getWeatherConditionIconKey("unknown")],
-            "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.28, 9, 0.38, 13, 0.52, 16, 0.66],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.38, 13, 0.52, 16, 0.66],
             "icon-anchor": "center",
-            "icon-allow-overlap": true,
-            "icon-ignore-placement": true
+            "icon-allow-overlap": false,
+            "icon-ignore-placement": false,
+            "icon-optional": true
           },
           paint: {
-            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0, 9, 0, 11, ["case", ["get", "stale"], 0.62, 0.98]]
+            "icon-opacity": ["case", ["get", "stale"], 0.62, 0.98]
           }
         });
 
@@ -2216,6 +2126,7 @@ export function CopMap({
           id: situationWeatherLabelLayerId,
           type: "symbol",
           source: situationSourceId,
+          minzoom: 11,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["has", "weatherLabel"]],
           layout: {
             "text-field": ["get", "weatherLabel"],
@@ -2503,13 +2414,8 @@ export function CopMap({
         const handleClusterClick = (event: MapLayerMouseEvent) => {
           void zoomToCluster(map, event, trackClusterSourceId, setClusterInfo);
         };
-        const handleSituationDenseClusterClick = (event: MapLayerMouseEvent) => {
-          void zoomToCluster(map, event, situationDenseClusterSourceId, setClusterInfo);
-        };
         map.on("click", trackClusterCircleLayerId, handleClusterClick);
         map.on("click", trackClusterCountLayerId, handleClusterClick);
-        map.on("click", situationDenseClusterCircleLayerId, handleSituationDenseClusterClick);
-        map.on("click", situationDenseClusterCountLayerId, handleSituationDenseClusterClick);
         const updateAoiEditPoint = (zoneId: string, index: number, lngLat: maplibregl.LngLat) => {
           const rule = findEditableAoiRule(aoiRulesRef.current, zoneId);
           const points = aoiRuleEditablePoints(rule);
@@ -2835,7 +2741,10 @@ export function CopMap({
         map.on("mouseenter", situationRiskLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
-        map.on("mouseenter", situationWeatherPointLayerId, () => {
+        map.on("mouseenter", situationWeatherPriorityLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationWeatherConditionLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
         map.on("mouseenter", situationWeatherWindLayerId, () => {
@@ -2898,7 +2807,10 @@ export function CopMap({
         map.on("mouseleave", situationRiskLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
-        map.on("mouseleave", situationWeatherPointLayerId, () => {
+        map.on("mouseleave", situationWeatherPriorityLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationWeatherConditionLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherWindLayerId, () => {
@@ -3078,13 +2990,6 @@ export function CopMap({
       (source as GeoJSONSource).setData(situationFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
     }
   }, [mapReady, situationFeatureCollection]);
-
-  React.useEffect(() => {
-    const source = mapRef.current?.getSource(situationDenseClusterSourceId);
-    if (mapReady && source && "setData" in source) {
-      (source as GeoJSONSource).setData(situationDensePointFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
-    }
-  }, [mapReady, situationDensePointFeatureCollection]);
 
   React.useEffect(() => {
     const map = mapRef.current;
@@ -4614,20 +4519,6 @@ export function situationFeaturesToFeatureCollection(
   };
 }
 
-export function situationDensePointFeaturesToFeatureCollection(
-  collection: SituationContextFeatureCollection
-): SituationContextFeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: collection.features.filter((feature) => (
-      feature.geometry.type === "Point"
-      && feature.properties.densePointFeature === true
-      && feature.properties.selected !== true
-      && feature.properties.riskFeature !== true
-    ))
-  };
-}
-
 const czechiaMobileNetworkEnvelope = {
   west: 11.8,
   south: 48.5,
@@ -4981,7 +4872,6 @@ function buildSituationRenderProperties(
   }
   if (feature.properties.layer === "flight_airports") {
     return {
-      densePointFeature: true,
       osmCategoryLabel: "Letiště",
       osmPoi: true,
       osmSymbolKey: getOsmCategoryIconKey("airport"),
@@ -4994,7 +4884,6 @@ function buildSituationRenderProperties(
     const referenceStatus = communicationTowerReferenceStatus();
     return {
       communicationTower: true,
-      densePointFeature: true,
       mobileNetworkLabel: formatCommunicationTowerLabel(feature),
       mobileSymbolKey: getMobileNetworkIconKey(referenceStatus.tone),
       situationStatusColor: referenceStatus.color,
@@ -5005,7 +4894,6 @@ function buildSituationRenderProperties(
   const osmCategory = resolveOsmCategoryPresentation(feature);
   if (osmCategory) {
     return {
-      densePointFeature: true,
       osmCategoryLabel: osmCategory.label,
       osmPoi: true,
       osmSymbolKey: getOsmCategoryIconKey(osmCategory.iconId),
@@ -5022,7 +4910,6 @@ function buildSituationRenderProperties(
       coverageOpacity: coverageOpacityForFeature(feature),
       coverageQuality: normalizeCoverageQuality(feature.properties.quality),
       coverageTechnology: feature.properties.technology,
-      densePointFeature: true,
       situationStatusColor: status.color,
       situationStatusLabel: status.label,
       situationStatusTone: status.tone
@@ -5030,7 +4917,6 @@ function buildSituationRenderProperties(
   }
   if (feature.properties.layer === "mobile") {
     return {
-      densePointFeature: true,
       mobileNetworkLabel: formatMobileNetworkLabel(feature),
       mobileSymbolKey: getMobileNetworkIconKey(status.tone),
       situationStatusColor: status.color,
@@ -5052,7 +4938,6 @@ function buildSituationRenderProperties(
   if (isWeatherWebcamFeature(feature)) {
     const label = formatWeatherWebcamLabel(feature);
     return {
-      densePointFeature: true,
       mapPointSuppressed: true,
       situationStatusColor: "#38bdf8",
       situationStatusLabel: "KAMERA",
@@ -5093,7 +4978,6 @@ function buildSituationRenderProperties(
     const weatherGrid = feature.properties.layer === "air_quality_grid" && feature.geometry.type !== "Point";
     return {
       airQualityDominantPollutant: dominantPollutant,
-      densePointFeature: weatherGrid ? undefined : true,
       airQualityFeature: true,
       airQualityIndex,
       airQualityLabel: label,
@@ -5123,6 +5007,7 @@ function buildSituationRenderProperties(
   const aviationCategory = aviationFlightCategory(feature);
   const temperatureC = weatherMetricValue(feature, metrics, "temperatureC");
   const windSpeedMps = weatherMetricValue(feature, metrics, "windSpeedMps");
+  const windGustMps = weatherMetricValue(feature, metrics, "windGustMps");
   const windDirectionDeg = recordNumber(metrics, "windDirectionDeg");
   const precipitationMm = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
   const cloudCoverPercent = recordNumber(metrics, "cloudCoverPercent");
@@ -5144,10 +5029,12 @@ function buildSituationRenderProperties(
   const weatherObservation = !weatherGrid && (currentWeatherSummary || feature.properties.layer !== "weather"
     || feature.properties.sourceId === "chmi_weather_stations"
     || providerLayerId?.includes("chmi_station") === true);
+  const weatherMapPriority = weatherObservation
+    ? weatherObservationMapPriority(temperatureC, windSpeedMps, windGustMps, precipitationMm, status.tone)
+    : undefined;
   return {
     weatherCloudCoverPercent: cloudCoverPercent,
     weatherConditionLabel: weatherCondition.label,
-    densePointFeature: weatherObservation ? true : undefined,
     weatherFillColor: weatherGrid ? color : undefined,
     weatherFillOpacity: weatherGrid ? weatherGridFillOpacity(feature) : undefined,
     weatherFlightCategoryColor: aviationCategory ? aviationCategory.color : undefined,
@@ -5156,6 +5043,7 @@ function buildSituationRenderProperties(
     weatherHeadline,
     weatherLabel,
     weatherLineColor: weatherGrid ? color : undefined,
+    weatherMapPriority,
     weatherMetricLabel: weatherGrid ? weatherLabel.replace("\n", " ") : undefined,
     weatherObservation,
     weatherSubtitle: aviationCategory ? undefined : formatWeatherFeatureSubtitle(feature),
@@ -5945,6 +5833,48 @@ function formatWeatherObservationMapLabel(
   const primary = truncateMapLabel(stationLabel, 22);
   const secondary = metrics.length > 0 ? metrics.slice(0, 2).join(" · ") : conditionLabel;
   return secondary ? `${primary}\n${secondary}` : primary;
+}
+
+function weatherObservationMapPriority(
+  temperatureC: number | undefined,
+  windSpeedMps: number | undefined,
+  windGustMps: number | undefined,
+  precipitationMm: number | undefined,
+  tone: string | undefined
+): number {
+  let priority = 35;
+  if (tone === "critical") {
+    priority = Math.max(priority, 100);
+  } else if (tone === "warning") {
+    priority = Math.max(priority, 90);
+  } else if (tone === "advisory") {
+    priority = Math.max(priority, 75);
+  }
+  if (precipitationMm !== undefined) {
+    if (precipitationMm >= 2) {
+      priority = Math.max(priority, 96);
+    } else if (precipitationMm >= 0.3) {
+      priority = Math.max(priority, 82);
+    } else if (precipitationMm >= 0.05) {
+      priority = Math.max(priority, 68);
+    }
+  }
+  const strongestWindMps = Math.max(windSpeedMps ?? 0, windGustMps ?? 0);
+  if (strongestWindMps >= 20) {
+    priority = Math.max(priority, 96);
+  } else if (strongestWindMps >= 12) {
+    priority = Math.max(priority, 86);
+  } else if (strongestWindMps >= 7) {
+    priority = Math.max(priority, 72);
+  }
+  if (temperatureC !== undefined) {
+    if (temperatureC >= 34 || temperatureC <= -12) {
+      priority = Math.max(priority, 94);
+    } else if (temperatureC >= 30 || temperatureC <= -6) {
+      priority = Math.max(priority, 78);
+    }
+  }
+  return priority;
 }
 
 function truncateMapLabel(value: string, maxLength: number): string {
