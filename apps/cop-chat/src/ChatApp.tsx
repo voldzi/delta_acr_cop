@@ -94,6 +94,7 @@ import type {
 } from "@cop/messaging/types";
 import { chatText } from "./i18n";
 import { Avatar } from "./components/Avatar";
+import { ChatActionMenu, MessageSearchBar, SelectionToolbar } from "./components/ConversationControls";
 import { DocumentThumb } from "./components/DocumentThumb";
 import { StaticLocationMap, formatCoordinates } from "./components/LocationPreview";
 import {
@@ -2735,122 +2736,6 @@ function ChatRow({
         {item.unreadCount > 0 && !item.muted ? <span className="unread-badge">{item.unreadCount}</span> : null}
       </div>
     </article>
-  );
-}
-
-function ChatActionMenu({
-  activeChat,
-  muted,
-  onInfo,
-  onMute,
-  onRecovery,
-  onSearch,
-  onSelect,
-  onToggleMute,
-  onTogglePinned
-}: {
-  activeChat: ChatListItem;
-  muted: boolean;
-  onInfo: () => void;
-  onMute: () => void;
-  onRecovery: () => void;
-  onSearch: () => void;
-  onSelect: () => void;
-  onToggleMute: () => void;
-  onTogglePinned: () => void;
-}) {
-  const infoLabel = activeChat.type === "direct" ? "O kontaktu" : "O skupině";
-  return (
-    <div className="chat-action-menu" role="menu" aria-label="Akce chatu">
-      <button onClick={onInfo} role="menuitem" type="button">
-        <Info size={17} />
-        {infoLabel}
-      </button>
-      <button onClick={onTogglePinned} role="menuitem" type="button">
-        {activeChat.pinned ? <PinOff size={17} /> : <Pin size={17} />}
-        {activeChat.pinned ? "Odepnout" : "Připnout"}
-      </button>
-      <button onClick={onSearch} role="menuitem" type="button">
-        <Search size={17} />
-        Hledat
-      </button>
-      <button onClick={onRecovery} role="menuitem" type="button">
-        <KeyRound size={17} />
-        Obnova E2EE
-      </button>
-      <button onClick={onSelect} role="menuitem" type="button">
-        <CheckCheck size={17} />
-        Vybrat zprávy
-      </button>
-      <button onClick={muted ? onToggleMute : onMute} role="menuitem" type="button">
-        <BellOff size={17} />
-        {muted ? "Zrušit ztlumení" : "Ztlumit"}
-      </button>
-    </div>
-  );
-}
-
-function MessageSearchBar({
-  activeIndex,
-  matchCount,
-  query,
-  onClose,
-  onMove,
-  onQueryChange
-}: {
-  activeIndex: number;
-  matchCount: number;
-  query: string;
-  onClose: () => void;
-  onMove: (delta: number) => void;
-  onQueryChange: (value: string) => void;
-}) {
-  return (
-    <div className="message-search-bar" role="search">
-      <Search size={19} />
-      <input autoFocus aria-label="Hledat ve zprávách" placeholder="Hledat ve zprávách" value={query} onChange={(event) => onQueryChange(event.target.value)} />
-      <span>{query.trim() ? `${matchCount ? activeIndex + 1 : 0}/${matchCount}` : ""}</span>
-      <button className="round-icon small" disabled={matchCount === 0} onClick={() => onMove(-1)} type="button" aria-label="Předchozí výsledek">
-        <ChevronUp size={18} />
-      </button>
-      <button className="round-icon small" disabled={matchCount === 0} onClick={() => onMove(1)} type="button" aria-label="Další výsledek">
-        <ChevronDown size={18} />
-      </button>
-      <button className="search-done" onClick={onClose} type="button">Hotovo</button>
-    </div>
-  );
-}
-
-function SelectionToolbar({
-  count,
-  onCancel,
-  onCopy,
-  onForward,
-  onShare
-}: {
-  count: number;
-  onCancel: () => void;
-  onCopy: () => void;
-  onForward: () => void;
-  onShare: () => void;
-}) {
-  return (
-    <div className="selection-toolbar" role="toolbar" aria-label="Vybrané zprávy">
-      <strong>Vybráno {count}</strong>
-      <button disabled={count === 0} onClick={onForward} type="button">
-        <Forward size={20} />
-        Přeposlat
-      </button>
-      <button disabled={count === 0} onClick={onCopy} type="button">
-        <Copy size={20} />
-        Zkopírovat
-      </button>
-      <button disabled={count === 0} onClick={onShare} type="button">
-        <Share2 size={20} />
-        Sdílet
-      </button>
-      <button className="selection-cancel" onClick={onCancel} type="button">Zrušit</button>
-    </div>
   );
 }
 
