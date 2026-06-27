@@ -10,24 +10,27 @@ afterEach(() => {
 });
 
 describe("MediaPreviewDialog", () => {
-  it("renders a document preview with metadata and close action", () => {
+  it("renders a document preview with metadata and close action", async () => {
     const onClose = vi.fn();
     render(
       <MediaPreviewDialog
         item={{
           byteSizeLabel: "128 KB",
           contentType: "application/pdf",
+          downloadName: "manual.pdf",
           kind: "document",
-          title: "manual.pdf"
+          title: "manual.pdf",
+          url: "blob:https://cop.zeleznalady.cz/manual"
         }}
         onClose={onClose}
       />
     );
 
     expect(screen.getByRole("dialog", { name: "Náhled manual.pdf" })).toBeTruthy();
-    expect(screen.getByText("Dokument")).toBeTruthy();
-    expect(screen.getByText("application/pdf")).toBeTruthy();
-    expect(screen.getByText("128 KB")).toBeTruthy();
+    expect(screen.getByText(/Dokument/u)).toBeTruthy();
+    expect(screen.getByText(/application\/pdf/u)).toBeTruthy();
+    expect(screen.getByText(/128 KB/u)).toBeTruthy();
+    expect(await screen.findByTitle("manual.pdf")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Zavřít" }));
     expect(onClose).toHaveBeenCalled();

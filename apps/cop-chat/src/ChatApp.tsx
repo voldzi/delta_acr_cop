@@ -3310,7 +3310,12 @@ function AttachmentMessage({
     return null;
   }
 
-  const preview = matrixMessagePreviewItem(message, objectUrl ?? undefined, thumbnailUrl ?? undefined);
+  const preview = matrixMessagePreviewItem(
+    message,
+    objectUrl ?? undefined,
+    thumbnailUrl ?? undefined,
+    matrixSession && attachment ? () => matrixSession.downloadAttachment(message) : undefined
+  );
   return (
     <>
       {showCaption ? <span className="message-text">{message.body}</span> : null}
@@ -3331,7 +3336,7 @@ function AttachmentMessage({
           ) : null}
           {message.kind === "image" && !objectUrl && !thumbnailUrl ? <PreviewPlaceholder loading={loading} failed={failed} icon={<ImageIcon size={22} />} /> : null}
           {message.kind === "video" && !objectUrl && !thumbnailUrl ? <PreviewPlaceholder loading={loading} failed={failed} icon={<Video size={22} />} /> : null}
-          {message.kind === "file" ? <DocumentThumb fileName={attachment.fileName} /> : null}
+          {message.kind === "file" ? <DocumentThumb contentType={attachment.contentType} fileName={attachment.fileName} /> : null}
         </button>
         <span className="attachment-copy">
           <strong>{attachment.fileName}</strong>
@@ -4570,7 +4575,7 @@ function attachmentIndicator(message: MatrixTimelineMessage): React.ReactNode {
   return null;
 }
 
-function matrixMessagePreviewItem(message: MatrixTimelineMessage, url?: string, posterUrl?: string): MediaPreviewItem {
+function matrixMessagePreviewItem(message: MatrixTimelineMessage, url?: string, posterUrl?: string, loadBlob?: () => Promise<Blob>): MediaPreviewItem {
   if (message.kind === "location" && message.location) {
     return {
       caption: message.location.source === "device" ? "Poloha ze zařízení" : "Poloha z mapy",
@@ -4597,7 +4602,9 @@ function matrixMessagePreviewItem(message: MatrixTimelineMessage, url?: string, 
   const previewUrl = url ?? (kind === "image" ? posterUrl : undefined);
   return {
     contentType: attachment.encrypted ? "chráněná příloha" : attachment.contentType ?? "soubor",
+    downloadName: attachment.fileName,
     kind,
+    ...(loadBlob ? { loadBlob } : {}),
     title: attachment.fileName,
     ...(attachment.size ? { byteSizeLabel: formatBytes(attachment.size) } : {}),
     ...(message.body && message.body !== attachment.fileName ? { caption: message.body } : {}),
