@@ -1214,7 +1214,7 @@ describe("COP map data helpers", () => {
       floodTrendLabel: "stabilní",
       hydroMapPriority: 35,
       riskKind: "flood",
-      riskMapLabel: "Rokycany"
+      riskMapLabel: "Klabava"
     });
     expect(collection.features[1]?.properties).toMatchObject({
       floodStageLabel: "bez SPA",

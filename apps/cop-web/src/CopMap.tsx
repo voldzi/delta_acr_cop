@@ -2131,7 +2131,17 @@ export function CopMap({
             "text-optional": true
           },
           paint: {
-            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 0, 12, ["case", ["get", "stale"], 0.74, 0.96]],
+            "icon-opacity": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              6,
+              ["case", ["get", "stale"], 0.24, 0.42],
+              9,
+              ["case", ["get", "stale"], 0.38, 0.66],
+              12,
+              ["case", ["get", "stale"], 0.74, 0.96]
+            ],
             "text-color": ["coalesce", ["get", "situationStatusColor"], "#dff8ff"],
             "text-halo-color": "#061019",
             "text-halo-width": 1.7,
