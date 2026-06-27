@@ -122,6 +122,33 @@ export interface SituationFeatureCollection {
   warnings: string[];
 }
 
+export type MobileCoverageTechnology = "2G" | "4G" | "5G";
+
+export interface MobileTowerViewshedQuery {
+  azimuthStepDeg: number;
+  distanceStepM: number;
+  radiusM: number;
+  technology: MobileCoverageTechnology;
+}
+
+export interface MobileTowerViewshedFeature {
+  geometry: SituationGeometry;
+  id?: string | number;
+  properties: Record<string, unknown>;
+  type: "Feature";
+}
+
+export interface MobileTowerViewshedResponse {
+  contractVersion: "sim-mobile-coverage-tower-viewshed-v1";
+  features: MobileTowerViewshedFeature[];
+  generatedAt?: string;
+  providerId?: string;
+  summary?: Record<string, unknown>;
+  tower?: Record<string, unknown>;
+  type: "FeatureCollection";
+  warnings: string[];
+}
+
 export interface SituationFeature {
   geometry: SituationGeometry;
   id?: string | number;
@@ -202,6 +229,7 @@ export interface SituationDataSource {
   fetchCatalog?(requestNow: Date): Promise<ProviderMapCatalog>;
   fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection>;
   fetchLayers(requestNow: Date): Promise<SituationLayerDescriptor[]>;
+  fetchMobileTowerViewshed?(towerId: string, query: MobileTowerViewshedQuery, requestNow: Date): Promise<MobileTowerViewshedResponse>;
   fetchSources(requestNow: Date): Promise<SituationSourceDescriptor[]>;
   fetchTaxonomy?(requestNow: Date): Promise<ProviderTaxonomy>;
 }
@@ -440,6 +468,10 @@ export class SituationDataSourceAdapter implements SituationDataSource {
       return this.fetchChunkedMobileNetworkFeatures(normalizedQuery, requestNow);
     }
     return this.fetchFeaturesUnchunked(normalizedQuery, requestNow);
+  }
+
+  async fetchMobileTowerViewshed(towerId: string, query: MobileTowerViewshedQuery, requestNow: Date): Promise<MobileTowerViewshedResponse> {
+    return fetchMobileTowerViewshed(this.config, towerId, query, requestNow);
   }
 
   private async fetchFeaturesUnchunked(normalizedQuery: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
@@ -956,6 +988,20 @@ async function fetchSituationFeatures(config: SituationDataSourceConfig, query: 
   return normalizeSituationFeatureCollection(await fetchJson(url, config, requestNow), query);
 }
 
+async function fetchMobileTowerViewshed(
+  config: SituationDataSourceConfig,
+  towerId: string,
+  query: MobileTowerViewshedQuery,
+  requestNow: Date
+): Promise<MobileTowerViewshedResponse> {
+  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/mobile-coverage/towers/${encodeURIComponent(towerId)}/viewshed`);
+  url.searchParams.set("technology", query.technology);
+  url.searchParams.set("radiusM", String(query.radiusM));
+  url.searchParams.set("azimuthStepDeg", String(query.azimuthStepDeg));
+  url.searchParams.set("distanceStepM", String(query.distanceStepM));
+  return normalizeMobileTowerViewshedResponse(await fetchJson(url, config, requestNow));
+}
+
 async function fetchJson(url: URL, config: SituationDataSourceConfig, requestNow: Date): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -974,6 +1020,40 @@ async function fetchJson(url: URL, config: SituationDataSourceConfig, requestNow
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function normalizeMobileTowerViewshedResponse(value: unknown): MobileTowerViewshedResponse {
+  if (!isRecord(value) || value.contractVersion !== "sim-mobile-coverage-tower-viewshed-v1" || value.type !== "FeatureCollection") {
+    throw new Error("Mobile tower viewshed response does not match sim-mobile-coverage-tower-viewshed-v1.");
+  }
+  return {
+    contractVersion: "sim-mobile-coverage-tower-viewshed-v1",
+    features: Array.isArray(value.features) ? value.features.flatMap(normalizeMobileTowerViewshedFeature) : [],
+    generatedAt: optionalString(value.generatedAt),
+    providerId: optionalString(value.providerId),
+    summary: isRecord(value.summary) ? value.summary : undefined,
+    tower: isRecord(value.tower) ? value.tower : undefined,
+    type: "FeatureCollection",
+    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : []
+  };
+}
+
+function normalizeMobileTowerViewshedFeature(value: unknown): MobileTowerViewshedFeature[] {
+  if (!isRecord(value) || value.type !== "Feature" || !isRecord(value.properties)) {
+    return [];
+  }
+  const geometry = normalizeGeometry(value.geometry);
+  if (!geometry) {
+    return [];
+  }
+  return [
+    {
+      geometry,
+      id: typeof value.id === "string" || typeof value.id === "number" ? value.id : undefined,
+      properties: value.properties,
+      type: "Feature"
+    }
+  ];
 }
 
 function normalizeSituationFeatureCollection(value: unknown, fallbackQuery: SituationFeatureQuery): SituationFeatureCollection {

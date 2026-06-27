@@ -21,8 +21,8 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          matrix: ["matrix-js-sdk"]
+        manualChunks(id) {
+          return id.includes("/node_modules/matrix-js-sdk/") ? "matrix" : undefined;
         }
       }
     }

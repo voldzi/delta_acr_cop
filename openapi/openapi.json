@@ -787,9 +787,6 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          },
           "502": {
             "description": "SIM safety-data hydro detail is unavailable.",
             "content": {
@@ -799,6 +796,107 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile-coverage/towers/{towerId}/viewshed": {
+      "get": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Return SIM per-BTS mobile coverage viewshed through COP.",
+        "operationId": "getMobileTowerViewshed",
+        "description": "Server-side proxy for the SIM situation-data per-BTS viewshed endpoint. Clients call this only after a user selects one communication tower/BTS reference; COP must not call it in bulk for all towers. The response is a model estimate, not confirmed operator/NOC BTS status.\n",
+        "parameters": [
+          {
+            "name": "towerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240,
+              "pattern": "^[A-Za-z0-9:_./-]+$"
+            }
+          },
+          {
+            "name": "technology",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2G",
+                "4G",
+                "5G"
+              ],
+              "default": "4G"
+            }
+          },
+          {
+            "name": "radiusM",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 50000,
+              "default": 12000
+            }
+          },
+          {
+            "name": "azimuthStepDeg",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 45,
+              "default": 10
+            }
+          },
+          {
+            "name": "distanceStepM",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 5000,
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-BTS mobile coverage viewshed model.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileTowerViewshed"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM situation-data mobile viewshed detail is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
@@ -15510,6 +15608,93 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/IncidentFusionSuggestion"
+            }
+          }
+        }
+      },
+      "MobileTowerViewshedFeature": {
+        "type": "object",
+        "required": [
+          "geometry",
+          "properties",
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Feature"
+          },
+          "id": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "geometry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GeoJsonPolygon"
+              },
+              {
+                "$ref": "#/components/schemas/GeoJsonMultiPolygon"
+              }
+            ]
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "SIM per-sector model properties such as quality, estimatedSignalDbm, confidence, assumptions and DEM/LoS metrics."
+          }
+        }
+      },
+      "MobileTowerViewshed": {
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "features",
+          "type",
+          "warnings"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "sim-mobile-coverage-tower-viewshed-v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "FeatureCollection"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "tower": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Selected tower metadata including btsStatus and operatorStatusAvailable when provided by SIM."
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Model summary and mandatory user-facing disclaimer."
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobileTowerViewshedFeature"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         }

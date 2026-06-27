@@ -501,6 +501,26 @@ export interface WeatherRadarFramesResponse {
   warnings?: string[];
 }
 
+export type MobileCoverageTechnology = "2G" | "4G" | "5G";
+
+export interface MobileTowerViewshedFeature {
+  geometry: SituationGeometry;
+  id?: string | number;
+  properties: Record<string, unknown>;
+  type: "Feature";
+}
+
+export interface MobileTowerViewshedResponse {
+  contractVersion: "sim-mobile-coverage-tower-viewshed-v1";
+  features: MobileTowerViewshedFeature[];
+  generatedAt?: string;
+  providerId?: string;
+  summary?: Record<string, unknown>;
+  tower?: Record<string, unknown>;
+  type: "FeatureCollection";
+  warnings: string[];
+}
+
 export interface MissionArenaTeamScore {
   aggregate?: number;
   aggregateDelta?: number;
@@ -1985,6 +2005,33 @@ export async function fetchSafetyHydroStationDetail(
   const suffix = request.query.toString() ? `?${request.query.toString()}` : "";
   return fetchJson<HydroStationDetailResponse>(
     `${apiBase}/api/v1/safety/hydro/stations/${encodeURIComponent(request.stationId)}/observations${suffix}`,
+    {
+      headers: {
+        ...(authHeaders(token) ?? {}),
+        Accept: "application/json"
+      }
+    }
+  );
+}
+
+export async function fetchMobileTowerViewshed(
+  apiBase: string,
+  token: string | undefined,
+  towerId: string,
+  options: {
+    azimuthStepDeg?: number;
+    distanceStepM?: number;
+    radiusM?: number;
+    technology?: MobileCoverageTechnology;
+  } = {}
+): Promise<MobileTowerViewshedResponse> {
+  const query = new URLSearchParams();
+  query.set("technology", options.technology ?? "4G");
+  query.set("radiusM", String(options.radiusM ?? 12_000));
+  query.set("azimuthStepDeg", String(options.azimuthStepDeg ?? 10));
+  query.set("distanceStepM", String(options.distanceStepM ?? 500));
+  return fetchJson<MobileTowerViewshedResponse>(
+    `${apiBase}/api/v1/mobile-coverage/towers/${encodeURIComponent(towerId)}/viewshed?${query.toString()}`,
     {
       headers: {
         ...(authHeaders(token) ?? {}),

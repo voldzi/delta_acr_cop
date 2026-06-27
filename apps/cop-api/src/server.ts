@@ -137,6 +137,7 @@ import {
   type SituationFeatureCollection,
   type SituationFeatureQuery,
   type SituationLayerId,
+  type MobileTowerViewshedQuery,
   type SituationSourceDescriptor
 } from "./situation-data-source.js";
 import {
@@ -4108,6 +4109,29 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  app.get("/api/v1/mobile-coverage/towers/:towerId/viewshed", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
+    const params = request.params as { towerId: string };
+    const towerId = parseMobileTowerId(params.towerId);
+    if (!towerId) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Mobile tower viewshed requires a valid towerId.", correlationId);
+    }
+    if (!situationDataSource?.fetchMobileTowerViewshed) {
+      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Mobile tower viewshed source is disabled.", correlationId);
+    }
+    const query = parseMobileTowerViewshedQuery(request.query as Record<string, unknown>);
+    if (!query) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Mobile tower viewshed supports technology=2G|4G|5G, radiusM, azimuthStepDeg and distanceStepM.", correlationId);
+    }
+    try {
+      return await situationDataSource.fetchMobileTowerViewshed(towerId, query, requestNow);
+    } catch (error) {
+      app.log.warn({ error, towerId }, "Mobile tower viewshed failed.");
+      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
   async function listFederatedNodes(): Promise<FederatedNodeRecord[]> {
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
@@ -7311,6 +7335,44 @@ function parseSafetyHydroStationDetailQuery(value: Record<string, unknown>): Saf
     ...(series ? { series } : {}),
     ...(to ? { to } : {})
   };
+}
+
+function parseMobileTowerId(value: unknown): string | null {
+  const towerId = optionalTrimmedString(value, 240);
+  if (!towerId || !/^[a-z0-9:_./-]+$/iu.test(towerId)) {
+    return null;
+  }
+  return towerId;
+}
+
+function parseMobileTowerViewshedQuery(value: Record<string, unknown>): MobileTowerViewshedQuery | null {
+  const technology = value.technology === undefined ? "4G" : optionalTrimmedString(value.technology, 8)?.toUpperCase();
+  if (technology !== "2G" && technology !== "4G" && technology !== "5G") {
+    return null;
+  }
+  const radiusM = boundedOptionalInteger(value.radiusM, 12_000, 1_000, 50_000);
+  const azimuthStepDeg = boundedOptionalInteger(value.azimuthStepDeg, 10, 1, 45);
+  const distanceStepM = boundedOptionalInteger(value.distanceStepM, 500, 100, 5_000);
+  if (radiusM === null || azimuthStepDeg === null || distanceStepM === null) {
+    return null;
+  }
+  return {
+    azimuthStepDeg,
+    distanceStepM,
+    radiusM,
+    technology
+  };
+}
+
+function boundedOptionalInteger(value: unknown, fallback: number, min: number, max: number): number | null {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+  const parsed = typeof value === "string" || typeof value === "number" ? Number(value) : Number.NaN;
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
 }
 
 function optionalIsoString(value: unknown): string | undefined {

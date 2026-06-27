@@ -717,6 +717,27 @@ and DEM context such as `metrics.terrainPenaltyDb`,
 `assumptions.terrainApplied` and `assumptions.propagationModel`. It remains
 diagnostic evidence only.
 
+When a user selects one BTS / communication tower reference, COP may fetch the
+interactive per-tower viewshed through the COP backend:
+
+`GET /api/v1/mobile-coverage/towers/{towerId}/viewshed?technology=4G&radiusM=12000&azimuthStepDeg=10&distanceStepM=500`
+
+The COP backend calls the SIM internal
+`/situation-data/api/v1/mobile-coverage/towers/{towerId}/viewshed` endpoint
+server-side. `towerId` is built from OSM tags as `{osmType}:{osmId}` when the
+selected feature is an OSM tower, or from `tags.nearestTowerId` when the user
+is viewing a coverage detail. COP must not call this endpoint for all BTS at
+once. The returned sectors are a temporary map overlay for the selected tower
+only. Sector color follows `properties.quality` and opacity follows
+`properties.confidence`.
+
+The detail panel must state that this is a SIM model estimate, not confirmed
+operator/NOC state. It should display `tower.btsStatus`,
+`tower.operatorStatusAvailable`, `summary.disclaimer`,
+`properties.assumptions.sectorAware`,
+`properties.assumptions.operatorRfPlanAvailable` and, when DEM is available,
+`terrainPenaltyDb`, `terrainMaxObstructionM` and `lineOfSightClear`.
+
 COP must not expose `mobile_coverage` as a normal public layer. Diagnostic
 mobile layers such as `diagnostic.mobile.coverage`,
 `diagnostic.mobile.ctu_measurements`, and

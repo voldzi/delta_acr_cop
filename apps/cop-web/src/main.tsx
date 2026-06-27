@@ -95,6 +95,7 @@ import {
   fetchMapCatalog,
   fetchMapFeatures,
   fetchMessagingBootstrap,
+  fetchMobileTowerViewshed,
   fetchPlaceGeocode,
   fetchSafetyHydroStationDetail,
   fetchDemoScenarioStatus,
@@ -155,6 +156,7 @@ import {
   type MapCatalogResponse,
   type MapCatalogSource,
   type MapBounds,
+  type MobileTowerViewshedResponse,
   type MissionArenaFeatureCollectionResponse,
   type ObjectProvenance,
   type PlaceGeocodeResult,
@@ -2144,9 +2146,15 @@ export function App() {
     () => applyWeatherWebcamDetailsToSituationFeatures(animatedSituationFeatures, weatherWebcamDetailCache),
     [animatedSituationFeatures, weatherWebcamDetailCache]
   );
-  const combinedSituationFeatures = React.useMemo(
+  const baseCombinedSituationFeatures = React.useMemo(
     () => mergeSituationSafetyFlightCommunityMissionAndTakFeatures(enrichedSituationFeatures, safetyFeatures, flightFeatures, communityFeatures, missionArenaFeatures, takFeatures),
     [communityFeatures, enrichedSituationFeatures, flightFeatures, missionArenaFeatures, safetyFeatures, takFeatures]
+  );
+  const selectedSituationFeature = baseCombinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
+  const mobileTowerViewshed = useMobileTowerViewshed(apiBase, authToken, selectedSituationFeature, coverageTechnology);
+  const combinedSituationFeatures = React.useMemo(
+    () => appendMobileTowerViewshedFeatures(baseCombinedSituationFeatures, mobileTowerViewshed),
+    [baseCombinedSituationFeatures, mobileTowerViewshed]
   );
   const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
@@ -2199,7 +2207,6 @@ export function App() {
   );
   const explicitlySelectedObject = selectedObjectId ? visibleObjects.find((object) => object.objectId === selectedObjectId) ?? null : null;
   const selectedObject = explicitlySelectedObject ?? visibleObjects[0] ?? null;
-  const selectedSituationFeature = combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
   const localMapSearchResults = React.useMemo(
     () => buildMapSearchResults(visibleObjectsSearchScope, combinedSituationFeatures?.features ?? [], mapSearchQuery),
     [combinedSituationFeatures, mapSearchQuery, visibleObjectsSearchScope]
@@ -4415,6 +4422,9 @@ export function App() {
                 setMobileSheet(mobileDetailSheetForSelection(isSelected));
               }}
               onSelectSituationFeature={(feature) => {
+                if (isMobileTowerViewshedOverlayFeature(feature)) {
+                  return;
+                }
                 const isSelected = selectedSituationFeatureId === feature.properties.featureId;
                 setSelectedSituationFeatureId(isSelected ? null : feature.properties.featureId);
                 setSelectedObjectId(null);
@@ -4659,6 +4669,7 @@ export function App() {
               apiBase={apiBase}
               authToken={authToken}
               feature={selectedSituationFeature}
+              mobileTowerViewshed={mobileTowerViewshed}
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
               onOpenChat={(feature) => openCommunityReportChat(feature)}
@@ -4781,6 +4792,7 @@ export function App() {
               apiBase={apiBase}
               authToken={authToken}
               feature={selectedSituationFeature}
+              mobileTowerViewshed={mobileTowerViewshed}
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
               onOpenChat={(feature) => openCommunityReportChat(feature)}
@@ -9754,6 +9766,209 @@ type MobileTechnicalCoverageState =
   | { feature: SituationFeature | null; status: "loaded"; warnings: string[] }
   | { error: string; status: "error" };
 
+type MobileTowerViewshedState =
+  | { status: "idle" }
+  | { status: "loading"; technology: CoverageTechnology; towerId: string }
+  | { error: string; status: "error"; technology: CoverageTechnology; towerId: string }
+  | {
+      features: SituationFeature[];
+      response: MobileTowerViewshedResponse;
+      status: "loaded";
+      technology: CoverageTechnology;
+      towerId: string;
+    };
+
+function useMobileTowerViewshed(
+  apiBase: string,
+  authToken: string | undefined,
+  feature: SituationFeature | null,
+  technology: CoverageTechnology
+): MobileTowerViewshedState {
+  const [state, setState] = React.useState<MobileTowerViewshedState>({ status: "idle" });
+
+  React.useEffect(() => {
+    if (!feature || !isCommunicationTowerFeature(feature)) {
+      setState({ status: "idle" });
+      return undefined;
+    }
+    const towerId = mobileTowerViewshedId(feature);
+    if (!towerId) {
+      setState({
+        error: "Vybraná věž nemá v datech OSM/SIM použitelný towerId.",
+        status: "error",
+        technology,
+        towerId: "n/a"
+      });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setState({ status: "loading", technology, towerId });
+    fetchMobileTowerViewshed(apiBase, authToken, towerId, {
+      azimuthStepDeg: 10,
+      distanceStepM: 500,
+      radiusM: 12_000,
+      technology
+    })
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setState({
+          features: mobileTowerViewshedResponseToSituationFeatures(response, feature, towerId, technology),
+          response,
+          status: "loaded",
+          technology,
+          towerId
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setState({
+          error: error instanceof Error ? humanizeApiError(error.message) : "Modelovaný dosah BTS se nepodařilo načíst.",
+          status: "error",
+          technology,
+          towerId
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, authToken, feature, technology]);
+
+  return state;
+}
+
+function appendMobileTowerViewshedFeatures(
+  collection: SituationFeatureCollectionResponse | null,
+  state: MobileTowerViewshedState
+): SituationFeatureCollectionResponse | null {
+  if (state.status !== "loaded" || state.features.length === 0 || !collection) {
+    return collection;
+  }
+  return {
+    ...collection,
+    features: [...collection.features, ...state.features],
+    summary: {
+      ...collection.summary,
+      featureCount: collection.summary.featureCount + state.features.length,
+      warningCount: collection.summary.warningCount + state.response.warnings.length
+    },
+    warnings: [...collection.warnings, ...state.response.warnings]
+  };
+}
+
+function mobileTowerViewshedId(feature: SituationFeature): string | undefined {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
+  const osmType = stringProperty(tags.osmType) ?? stringProperty(providerTags.osmType);
+  const osmId = stringProperty(tags.osmId) ?? stringProperty(providerTags.osmId);
+  if (osmType && osmId) {
+    return `${osmType}:${osmId}`;
+  }
+  return stringProperty(tags.nearestTowerId)
+    ?? stringProperty(providerTags.nearestTowerId)
+    ?? stringProperty(feature.properties.featureId?.startsWith("mobile:osm_postgis:") ? feature.properties.featureId.replace(/^mobile:osm_postgis:/u, "") : undefined);
+}
+
+function mobileTowerViewshedResponseToSituationFeatures(
+  response: MobileTowerViewshedResponse,
+  towerFeature: SituationFeature,
+  towerId: string,
+  technology: CoverageTechnology
+): SituationFeature[] {
+  const tower = isRecord(response.tower) ? response.tower : {};
+  const summary = isRecord(response.summary) ? response.summary : {};
+  const disclaimer = stringProperty(summary.disclaimer)
+    ?? "Mobilní pokrytí je modelovaný odhad SIM. Stav konkrétní BTS není potvrzen autorizovaným operátorským/NOC feedem.";
+  return response.features.flatMap((viewshedFeature, index) => {
+    const sourceProperties = viewshedFeature.properties;
+    const sourceMetrics = isRecord(sourceProperties.metrics) ? sourceProperties.metrics : {};
+    const sourceAssumptions = isRecord(sourceProperties.assumptions) ? sourceProperties.assumptions : {};
+    const confidence = boundedUnit(numberProperty(sourceProperties.confidence) ?? recordNumber(sourceMetrics, "confidence") ?? 0.45);
+    const quality = stringProperty(sourceProperties.quality) ?? "unknown";
+    const metrics = {
+      ...sourceMetrics,
+      ...(numberProperty(sourceProperties.estimatedSignalDbm) !== undefined ? { estimatedSignalDbm: numberProperty(sourceProperties.estimatedSignalDbm) } : {}),
+      ...(numberProperty(sourceProperties.terrainPenaltyDb) !== undefined ? { terrainPenaltyDb: numberProperty(sourceProperties.terrainPenaltyDb) } : {}),
+      ...(numberProperty(sourceProperties.terrainMaxObstructionM) !== undefined ? { terrainMaxObstructionM: numberProperty(sourceProperties.terrainMaxObstructionM) } : {})
+    };
+    const assumptions = {
+      ...sourceAssumptions,
+      lineOfSightClear: booleanProperty(sourceProperties.lineOfSightClear) ?? booleanProperty(sourceMetrics.lineOfSightClear),
+      operatorRfPlanAvailable: booleanProperty(sourceAssumptions.operatorRfPlanAvailable) ?? false,
+      sectorAware: booleanProperty(sourceAssumptions.sectorAware) ?? false
+    };
+    return [{
+      geometry: viewshedFeature.geometry,
+      id: viewshedFeature.id ?? `mobile:tower_viewshed:${towerId}:${technology}:${index}`,
+      properties: {
+        assumptions,
+        btsStatus: stringProperty(tower.btsStatus) ?? towerFeature.properties.btsStatus ?? "operator_feed_unavailable",
+        category: "tower_viewshed",
+        confidence,
+        dataQuality: "model",
+        demSource: stringProperty(sourceProperties.demSource) ?? towerFeature.properties.demSource,
+        disclaimer,
+        estimatedSignalDbm: numberProperty(sourceProperties.estimatedSignalDbm) ?? recordNumber(sourceMetrics, "estimatedSignalDbm"),
+        featureId: `mobile:tower_viewshed:${towerId}:${technology}:${index}`,
+        generatedAt: response.generatedAt,
+        label: `Modelovaný dosah ${technology}`,
+        layer: "mobile_coverage",
+        layerId: "diagnostic.mobile.tower_viewshed",
+        metrics,
+        modelVersion: stringProperty(sourceProperties.modelVersion) ?? towerFeature.properties.modelVersion,
+        observedAt: response.generatedAt,
+        operator: towerFeature.properties.operator,
+        operatorStatusAvailable: booleanProperty(tower.operatorStatusAvailable) ?? towerFeature.properties.operatorStatusAvailable ?? false,
+        providerId: "sim.situation-data",
+        providerLayerId: "mobile.tower_viewshed",
+        quality,
+        sourceId: "mobile_coverage_model",
+        sourceName: "SIM model dosahu BTS",
+        status: stringProperty(sourceProperties.status) ?? mobileViewshedStatusFromQuality(quality),
+        summary: stringProperty(sourceProperties.summary) ?? stringProperty(summary.label) ?? `Modelovaný sektor dosahu BTS ${towerId}`,
+        tags: {
+          parentFeatureId: towerFeature.properties.featureId,
+          towerId,
+          viewshedOverlay: "true"
+        },
+        technology,
+        validUntil: towerFeature.properties.validUntil
+      },
+      type: "Feature"
+    } satisfies SituationFeature];
+  });
+}
+
+function mobileViewshedStatusFromQuality(quality: string): string {
+  const normalized = quality.trim().toLowerCase();
+  if (normalized === "good") {
+    return "ok";
+  }
+  if (normalized === "fair" || normalized === "weak") {
+    return "weak_signal";
+  }
+  if (normalized === "none") {
+    return "degraded_possible";
+  }
+  return "unknown";
+}
+
+function isMobileTowerViewshedOverlayFeature(feature: SituationFeature): boolean {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return feature.properties.providerLayerId === "mobile.tower_viewshed"
+    || stringProperty(tags.viewshedOverlay) === "true";
+}
+
+function boundedUnit(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
 function useMobileNetworkTechnicalCoverage(
   apiBase: string,
   authToken: string | undefined,
@@ -9869,6 +10084,7 @@ function SituationFeatureDetail({
   apiBase,
   authToken,
   feature,
+  mobileTowerViewshed,
   onDeleteReport,
   onEditReport,
   onOpenChat,
@@ -9877,6 +10093,7 @@ function SituationFeatureDetail({
   apiBase: string;
   authToken: string | undefined;
   feature: SituationFeature;
+  mobileTowerViewshed?: MobileTowerViewshedState;
   onDeleteReport?: (reportId: string) => void;
   onEditReport?: (feature: SituationFeature) => void;
   onOpenChat?: (feature: SituationFeature) => void;
@@ -10012,6 +10229,9 @@ function SituationFeatureDetail({
           />
         </ObjectDetailSection>
       ) : null}
+      {isCommunicationTowerFeature(feature) && mobileTowerViewshed ? (
+        <MobileTowerViewshedSection state={mobileTowerViewshed} />
+      ) : null}
       {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {properties.layer === "traffic" ? <TrafficDetailSection feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
@@ -10119,6 +10339,90 @@ function MobileNetworkTechnicalCoverageSection({ state }: { state: MobileTechnic
       {state.warnings.map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
     </ObjectDetailSection>
   );
+}
+
+function MobileTowerViewshedSection({ state }: { state: MobileTowerViewshedState }) {
+  if (state.status === "idle") {
+    return null;
+  }
+  if (state.status === "loading") {
+    return (
+      <ObjectDetailSection title="Modelovaný dosah BTS">
+        <div className="empty-mini">Načítám sektorový odhad rádiového dosahu vybrané BTS ze SIM.</div>
+      </ObjectDetailSection>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <ObjectDetailSection title="Modelovaný dosah BTS">
+        <div className="situation-warning">Modelovaný dosah BTS není dostupný: {state.error}</div>
+      </ObjectDetailSection>
+    );
+  }
+
+  const tower = isRecord(state.response.tower) ? state.response.tower : {};
+  const summary = isRecord(state.response.summary) ? state.response.summary : {};
+  const firstFeature = state.features[0];
+  const firstProperties: Record<string, unknown> = firstFeature ? firstFeature.properties as unknown as Record<string, unknown> : {};
+  const firstAssumptions = isRecord(firstProperties.assumptions) ? firstProperties.assumptions : {};
+  const metricRecords = state.features
+    .map((feature) => isRecord(feature.properties.metrics) ? feature.properties.metrics : {})
+    .filter((record) => Object.keys(record).length > 0);
+  const disclaimer = stringProperty(summary.disclaimer)
+    ?? stringProperty(firstProperties.disclaimer)
+    ?? "Mobilní pokrytí je modelový odhad SIM. Stav konkrétní BTS není potvrzen autorizovaným operátorským/NOC feedem.";
+
+  return (
+    <ObjectDetailSection title="Modelovaný dosah BTS">
+      <DetailGrid
+        rows={[
+          ["Tower ID", state.towerId],
+          ["Technologie", state.technology],
+          ["Sektory", formatOptionalInteger(state.features.length)],
+          ["Stav BTS", stringProperty(tower.btsStatus) ?? stringProperty(firstProperties.btsStatus) ?? "operator_feed_unavailable"],
+          ["Operátorský feed", formatAvailability(booleanProperty(tower.operatorStatusAvailable) ?? booleanProperty(firstProperties.operatorStatusAvailable))],
+          ["Model", stringProperty(summary.modelVersion) ?? stringProperty(firstProperties.modelVersion) ?? "n/a"],
+          ["Sektorový model", formatBooleanLike(firstAssumptions.sectorAware)],
+          ["RF plán operátora", formatBooleanLike(firstAssumptions.operatorRfPlanAvailable)],
+          ["Útlum terénu", formatNumberRangeFromRecords(metricRecords, "terrainPenaltyDb", " dB")],
+          ["Max. překážka terénu", formatNumberRangeFromRecords(metricRecords, "terrainMaxObstructionM", " m")],
+          ["Čistá LoS", formatViewshedLosSummary(state.features)],
+          ["Upozornění", formatStringList(state.response.warnings)],
+          ["Poznámka", disclaimer]
+        ]}
+      />
+    </ObjectDetailSection>
+  );
+}
+
+function formatNumberRangeFromRecords(records: Array<Record<string, unknown>>, key: string, unit: string): string {
+  const values = records
+    .map((record) => recordNumber(record, key))
+    .filter((value): value is number => value !== undefined);
+  if (values.length === 0) {
+    return "n/a";
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (Math.abs(max - min) < 0.05) {
+    return formatOptionalNumber(min, unit);
+  }
+  return `${formatOptionalNumber(min, unit)} - ${formatOptionalNumber(max, unit)}`;
+}
+
+function formatViewshedLosSummary(features: SituationFeature[]): string {
+  const values = features
+    .map((feature) => {
+      const assumptions = isRecord(feature.properties.assumptions) ? feature.properties.assumptions : {};
+      return booleanProperty(assumptions.lineOfSightClear);
+    })
+    .filter((value): value is boolean => value !== undefined);
+  if (values.length === 0) {
+    return "n/a";
+  }
+  const clearCount = values.filter(Boolean).length;
+  const blockedCount = values.length - clearCount;
+  return `${clearCount} čistá / ${blockedCount} blokovaná`;
 }
 
 function MissionArenaSummary({ feature }: { feature: SituationFeature }) {

@@ -441,6 +441,8 @@ export interface SituationContextFeatureCollection {
       weatherWindSpeedMps?: number;
       coverageColor?: string;
       coverageLabel?: string;
+      coverageLineOpacity?: number;
+      coverageOpacity?: number;
       coverageQuality?: string;
       coverageTechnology?: string;
       boundaryLabel?: string;
@@ -1442,7 +1444,12 @@ export function CopMap({
             "fill-opacity": [
               "case",
               ["==", ["get", "layer"], "mobile_coverage"],
-              ["case", ["get", "stale"], 0.1, 0.2],
+              [
+                "case",
+                ["get", "stale"],
+                ["*", ["coalesce", ["get", "coverageOpacity"], 0.2], 0.5],
+                ["coalesce", ["get", "coverageOpacity"], 0.2]
+              ],
               ["==", ["get", "layer"], "mobile_network"],
               ["case", ["get", "stale"], 0.08, 0.16],
               ["==", ["get", "boundaryReference"], true],
@@ -1503,7 +1510,12 @@ export function CopMap({
             "line-opacity": [
               "case",
               ["==", ["get", "layer"], "mobile_coverage"],
-              ["case", ["get", "stale"], 0.42, 0.62],
+              [
+                "case",
+                ["get", "stale"],
+                ["*", ["coalesce", ["get", "coverageLineOpacity"], 0.62], 0.68],
+                ["coalesce", ["get", "coverageLineOpacity"], 0.62]
+              ],
               ["==", ["get", "layer"], "mobile_network"],
               ["case", ["get", "stale"], 0.26, 0.38],
               ["==", ["get", "boundaryReference"], true],
@@ -4714,6 +4726,28 @@ function clampUnit(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
+function coverageOpacityForFeature(feature: SituationFeature): number | undefined {
+  if (feature.properties.layer !== "mobile_coverage") {
+    return undefined;
+  }
+  const confidence = numberProperty(feature.properties.confidence);
+  if (confidence === undefined) {
+    return undefined;
+  }
+  return 0.08 + clampUnit(confidence) * 0.18;
+}
+
+function coverageLineOpacityForFeature(feature: SituationFeature): number | undefined {
+  if (feature.properties.layer !== "mobile_coverage") {
+    return undefined;
+  }
+  const confidence = numberProperty(feature.properties.confidence);
+  if (confidence === undefined) {
+    return undefined;
+  }
+  return 0.42 + clampUnit(confidence) * 0.28;
+}
+
 function renderSituationFeature(
   feature: SituationFeature,
   selectedFeatureId: string | undefined,
@@ -4873,6 +4907,8 @@ function buildSituationRenderProperties(
     return {
       coverageColor: status.color,
       coverageLabel: formatCoverageLabel(feature),
+      coverageLineOpacity: coverageLineOpacityForFeature(feature),
+      coverageOpacity: coverageOpacityForFeature(feature),
       coverageQuality: normalizeCoverageQuality(feature.properties.quality),
       coverageTechnology: feature.properties.technology,
       situationStatusColor: status.color,

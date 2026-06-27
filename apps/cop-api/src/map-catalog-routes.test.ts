@@ -12,6 +12,8 @@ import type {
   SafetySourceDescriptor
 } from "./safety-data-source.js";
 import type {
+  MobileTowerViewshedQuery,
+  MobileTowerViewshedResponse,
   SituationDataSource,
   SituationDataSourceConfig,
   SituationFeatureCollection,
@@ -440,6 +442,52 @@ describe("map catalog route", () => {
     });
   });
 
+  it("proxies per-BTS mobile viewshed through COP API", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const situationDataSource = new FakeSituationDataSource();
+    const app = buildServer({
+      now: () => new Date("2026-06-27T10:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/mobile-coverage/towers/node%3A123/viewshed?technology=4G&radiusM=12000&azimuthStepDeg=10&distanceStepM=500"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(situationDataSource.lastTowerViewshed).toEqual({
+      query: {
+        azimuthStepDeg: 10,
+        distanceStepM: 500,
+        radiusM: 12000,
+        technology: "4G"
+      },
+      towerId: "node:123"
+    });
+    expect(response.json()).toMatchObject({
+      contractVersion: "sim-mobile-coverage-tower-viewshed-v1",
+      features: [
+        {
+          properties: {
+            confidence: 0.82,
+            quality: "good"
+          },
+          type: "Feature"
+        }
+      ],
+      summary: {
+        disclaimer: expect.stringContaining("modelový odhad")
+      },
+      tower: {
+        btsStatus: "operator_feed_unavailable",
+        operatorStatusAvailable: false
+      },
+      type: "FeatureCollection"
+    });
+  });
+
   it("uses catalog defaults for mobile-network technology filters", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const app = buildServer({
@@ -784,6 +832,7 @@ class FakeSituationDataSource implements SituationDataSource {
 
   readonly sourceSystem = createPublicSituationAggregateSourceSystem();
   lastFeatureQuery: SituationFeatureQuery | null = null;
+  lastTowerViewshed: { query: MobileTowerViewshedQuery; towerId: string } | null = null;
 
   async fetchLayers(_requestNow: Date): Promise<SituationLayerDescriptor[]> {
     return [
@@ -822,6 +871,52 @@ class FakeSituationDataSource implements SituationDataSource {
       source: { sourceId: "situation-data-api", sourceType: "PUBLIC_SITUATION_AGGREGATE" },
       sources: await this.fetchSources(requestNow),
       summary: { featureCount: 0, sourceCount: 0, staleFeatureCount: 0, warningCount: 0 },
+      type: "FeatureCollection",
+      warnings: []
+    };
+  }
+
+  async fetchMobileTowerViewshed(towerId: string, query: MobileTowerViewshedQuery, requestNow: Date): Promise<MobileTowerViewshedResponse> {
+    this.lastTowerViewshed = { query, towerId };
+    return {
+      contractVersion: "sim-mobile-coverage-tower-viewshed-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [14.0, 50.0],
+              [14.1, 50.0],
+              [14.1, 50.1],
+              [14.0, 50.1],
+              [14.0, 50.0]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            assumptions: {
+              operatorRfPlanAvailable: false,
+              sectorAware: false
+            },
+            confidence: 0.82,
+            estimatedSignalDbm: -79,
+            metrics: {
+              terrainMaxObstructionM: 12,
+              terrainPenaltyDb: 6
+            },
+            quality: "good"
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: requestNow.toISOString(),
+      providerId: "sim.situation-data",
+      summary: {
+        disclaimer: "Mobilní pokrytí je modelový odhad SIM, ne potvrzený stav operátora."
+      },
+      tower: {
+        btsStatus: "operator_feed_unavailable",
+        operatorStatusAvailable: false
+      },
       type: "FeatureCollection",
       warnings: []
     };
