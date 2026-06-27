@@ -13,7 +13,7 @@ import {
 
 const customProfilesKey = "cop.user.viewProfiles.v1";
 
-export type WorkspaceModule = "map" | "data" | "sources" | "alerts" | "replay";
+export type WorkspaceModule = "map" | "data" | "sources" | "alerts" | "replay" | "radio";
 
 export interface ViewProfileSettings {
   activeWorkspace?: WorkspaceModule;
@@ -234,7 +234,7 @@ export function writeCustomViewProfiles(profiles: ViewProfile[], scope?: string)
 }
 
 export function normalizeWorkspaceModule(value: unknown, fallback: WorkspaceModule = "map"): WorkspaceModule {
-  return value === "map" || value === "data" || value === "sources" || value === "alerts" || value === "replay" ? value : fallback;
+  return value === "map" || value === "data" || value === "sources" || value === "alerts" || value === "replay" || value === "radio" ? value : fallback;
 }
 
 function normalizeViewProfile(value: unknown): ViewProfile | null {

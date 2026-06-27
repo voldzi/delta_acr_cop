@@ -738,6 +738,66 @@ operator/NOC state. It should display `tower.btsStatus`,
 `properties.assumptions.operatorRfPlanAvailable` and, when DEM is available,
 `terrainPenaltyDb`, `terrainMaxObstructionM` and `lineOfSightClear`.
 
+## Radio LoS Planning Tool
+
+Radio LoS is an interactive analysis tool, not a selectable catalog map layer.
+COP exposes it through its backend under `/api/v1/radio/*` and calls SIM
+server-side through the configured internal `situation-data` URL. Browsers and
+native clients must not call SIM radio endpoints directly.
+
+COP supports three operator workflows:
+
+- `POST /api/v1/radio/coverage` - coverage from the current or selected point.
+- `POST /api/v1/radio/link-check` - line-of-sight check between two points.
+- `POST /api/v1/radio/site-search` - best candidate sites inside the current
+  map bbox for one or more targets.
+
+The supporting profile catalog is:
+
+- `GET /api/v1/radio/profiles`
+- `POST /api/v1/radio/profiles`
+
+The profile shape is a non-sensitive technical template:
+
+```json
+{
+  "profileId": "pmr446_handheld",
+  "name": "PMR446 ruční stanice",
+  "frequencyMhz": 446,
+  "txPowerW": 0.5,
+  "antennaHeightM": 1.5,
+  "receiverHeightM": 1.5,
+  "antennaGainDbi": 0,
+  "systemLossDb": 2,
+  "requiredFresnelClearancePct": 60,
+  "maxRadiusM": 5000
+}
+```
+
+Mandatory profile fields are `name`, `frequencyMhz`, `antennaHeightM`,
+`receiverHeightM` and `maxRadiusM`. Optional fields are `txPowerW`,
+`antennaGainDbi`, `receiverSensitivityDbm`, `systemLossDb` and
+`requiredFresnelClearancePct`.
+
+Military-oriented profiles must remain generic templates. COP must not send
+classified frequencies, COMSEC information, callsigns, crypto/key material or
+operational tactical notes to SIM. COP rejects radio requests containing
+sensitive field names before it calls SIM.
+
+Every rendered result must display:
+
+> Výsledek je modelový odhad podle DEM a zadaných parametrů rádia. Nezahrnuje
+> budovy, vegetaci, rušení, reálné vytížení sítě ani utajené/operátorské RF
+> parametry.
+
+Coverage and site-search responses are rendered as temporary map overlays.
+Coverage sector color follows `properties.quality` (`good`, `fair`, `weak`,
+`none`, `unknown`) and opacity follows `properties.confidence`. Link-check
+results show `linkStatus`, `distanceM`, `azimuthDeg`,
+`maxObstructionM`, `fresnelClearancePct`,
+`requiredExtraAntennaHeightM` and the SIM-provided profile/elevation metadata
+when present.
+
 COP must not expose `mobile_coverage` as a normal public layer. Diagnostic
 mobile layers such as `diagnostic.mobile.coverage`,
 `diagnostic.mobile.ctu_measurements`, and

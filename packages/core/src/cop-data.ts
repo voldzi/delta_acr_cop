@@ -521,6 +521,91 @@ export interface MobileTowerViewshedResponse {
   warnings: string[];
 }
 
+export interface RadioProfile {
+  antennaGainDbi?: number;
+  antennaHeightM: number;
+  frequencyMhz: number;
+  maxRadiusM: number;
+  name: string;
+  profileId?: string;
+  receiverHeightM: number;
+  receiverSensitivityDbm?: number;
+  requiredFresnelClearancePct?: number;
+  systemLossDb?: number;
+  txPowerW?: number;
+}
+
+export interface RadioProfilesResponse {
+  contractVersion?: string;
+  generatedAt?: string;
+  profiles: RadioProfile[];
+  warnings: string[];
+}
+
+export interface RadioPoint {
+  antennaHeightM?: number;
+  lat: number;
+  lon: number;
+  receiverHeightM?: number;
+}
+
+export interface RadioCoverageRequest {
+  azimuthStepDeg?: number;
+  distanceStepM?: number;
+  profile?: RadioProfile;
+  profileId?: string;
+  radioName?: string;
+  radiusM?: number;
+  station: RadioPoint;
+}
+
+export interface RadioLinkCheckRequest {
+  from: RadioPoint;
+  profile?: RadioProfile;
+  profileId?: string;
+  radioName?: string;
+  to: RadioPoint;
+}
+
+export interface RadioSiteSearchRequest {
+  gridStepM?: number;
+  maxCandidates?: number;
+  profile?: RadioProfile;
+  profileId?: string;
+  radioName?: string;
+  searchArea: {
+    bbox: [number, number, number, number];
+  };
+  targets: RadioPoint[];
+}
+
+export interface RadioFeatureCollectionResponse {
+  contractVersion?: string;
+  features: MobileTowerViewshedFeature[];
+  generatedAt?: string;
+  metadata?: Record<string, unknown>;
+  providerId?: string;
+  summary?: Record<string, unknown>;
+  type: "FeatureCollection";
+  warnings: string[];
+}
+
+export interface RadioLinkCheckResponse {
+  azimuthDeg?: number;
+  contractVersion?: string;
+  distanceM?: number;
+  fresnelClearancePct?: number;
+  generatedAt?: string;
+  linkStatus?: "clear" | "marginal" | "obstructed" | "unknown" | string;
+  maxObstructionM?: number;
+  metadata?: Record<string, unknown>;
+  profile?: RadioProfile | Record<string, unknown>;
+  profileSamples?: Array<Record<string, unknown>>;
+  requiredExtraAntennaHeightM?: number;
+  summary?: Record<string, unknown>;
+  warnings: string[];
+}
+
 export interface MissionArenaTeamScore {
   aggregate?: number;
   aggregateDelta?: number;
@@ -2039,6 +2124,71 @@ export async function fetchMobileTowerViewshed(
       }
     }
   );
+}
+
+export async function fetchRadioProfiles(apiBase: string, token: string | undefined): Promise<RadioProfilesResponse> {
+  return fetchJson<RadioProfilesResponse>(`${apiBase}/api/v1/radio/profiles`, {
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      Accept: "application/json"
+    }
+  });
+}
+
+export async function createRadioProfile(apiBase: string, token: string | undefined, profile: RadioProfile): Promise<RadioProfilesResponse> {
+  return fetchJson<RadioProfilesResponse>(`${apiBase}/api/v1/radio/profiles`, {
+    body: JSON.stringify(profile),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function runRadioCoverage(
+  apiBase: string,
+  token: string | undefined,
+  request: RadioCoverageRequest
+): Promise<RadioFeatureCollectionResponse> {
+  return fetchJson<RadioFeatureCollectionResponse>(`${apiBase}/api/v1/radio/coverage`, {
+    body: JSON.stringify(request),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function runRadioLinkCheck(
+  apiBase: string,
+  token: string | undefined,
+  request: RadioLinkCheckRequest
+): Promise<RadioLinkCheckResponse> {
+  return fetchJson<RadioLinkCheckResponse>(`${apiBase}/api/v1/radio/link-check`, {
+    body: JSON.stringify(request),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function runRadioSiteSearch(
+  apiBase: string,
+  token: string | undefined,
+  request: RadioSiteSearchRequest
+): Promise<RadioFeatureCollectionResponse> {
+  return fetchJson<RadioFeatureCollectionResponse>(`${apiBase}/api/v1/radio/site-search`, {
+    body: JSON.stringify(request),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
 }
 
 function safetyHydroStationDetailRequest(detailUrl: string): { query: URLSearchParams; stationId: string } {

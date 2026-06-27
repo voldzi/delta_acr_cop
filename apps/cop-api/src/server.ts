@@ -138,6 +138,12 @@ import {
   type SituationFeatureQuery,
   type SituationLayerId,
   type MobileTowerViewshedQuery,
+  type RadioCoverageRequest,
+  type RadioLinkCheckRequest,
+  type RadioPoint,
+  type RadioProfile,
+  type RadioProfileRequestBase,
+  type RadioSiteSearchRequest,
   type SituationSourceDescriptor
 } from "./situation-data-source.js";
 import {
@@ -4132,6 +4138,92 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  app.get("/api/v1/radio/profiles", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
+    if (!situationDataSource?.fetchRadioProfiles) {
+      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio profile source is disabled.", correlationId);
+    }
+    try {
+      return await situationDataSource.fetchRadioProfiles(requestNow);
+    } catch (error) {
+      app.log.warn({ error }, "Radio profile catalog failed.");
+      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
+  app.post("/api/v1/radio/profiles", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
+    if (!situationDataSource?.createRadioProfile) {
+      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio profile source is disabled.", correlationId);
+    }
+    const profile = parseRadioProfile(request.body);
+    if (!profile) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Radio profile requires name, frequencyMhz, antennaHeightM, receiverHeightM and maxRadiusM with non-sensitive fields only.", correlationId);
+    }
+    try {
+      return await situationDataSource.createRadioProfile(profile, requestNow);
+    } catch (error) {
+      app.log.warn({ error }, "Radio profile creation failed.");
+      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
+  app.post("/api/v1/radio/coverage", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
+    if (!situationDataSource?.runRadioCoverage) {
+      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio coverage source is disabled.", correlationId);
+    }
+    const body = parseRadioCoverageRequest(request.body);
+    if (!body) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Radio coverage requires station coordinates and a profileId or valid custom profile.", correlationId);
+    }
+    try {
+      return await situationDataSource.runRadioCoverage(body, requestNow);
+    } catch (error) {
+      app.log.warn({ error }, "Radio coverage failed.");
+      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
+  app.post("/api/v1/radio/link-check", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
+    if (!situationDataSource?.runRadioLinkCheck) {
+      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio link-check source is disabled.", correlationId);
+    }
+    const body = parseRadioLinkCheckRequest(request.body);
+    if (!body) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Radio link-check requires from/to coordinates and a profileId or valid custom profile.", correlationId);
+    }
+    try {
+      return await situationDataSource.runRadioLinkCheck(body, requestNow);
+    } catch (error) {
+      app.log.warn({ error }, "Radio link-check failed.");
+      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
+  app.post("/api/v1/radio/site-search", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
+    if (!situationDataSource?.runRadioSiteSearch) {
+      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio site-search source is disabled.", correlationId);
+    }
+    const body = parseRadioSiteSearchRequest(request.body);
+    if (!body) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Radio site-search requires a bbox, at least one target and a profileId or valid custom profile.", correlationId);
+    }
+    try {
+      return await situationDataSource.runRadioSiteSearch(body, requestNow);
+    } catch (error) {
+      app.log.warn({ error }, "Radio site-search failed.");
+      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
   async function listFederatedNodes(): Promise<FederatedNodeRecord[]> {
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
@@ -7363,6 +7455,165 @@ function parseMobileTowerViewshedQuery(value: Record<string, unknown>): MobileTo
     technology
   };
 }
+
+function parseRadioProfile(value: unknown): RadioProfile | null {
+  if (!isRecord(value) || containsForbiddenRadioField(value)) {
+    return null;
+  }
+  const name = optionalTrimmedString(value.name, 80);
+  const frequencyMhz = optionalFiniteNumber(value.frequencyMhz, 1, 6000);
+  const antennaHeightM = optionalFiniteNumber(value.antennaHeightM, 0.1, 120);
+  const receiverHeightM = optionalFiniteNumber(value.receiverHeightM, 0.1, 120);
+  const maxRadiusM = optionalFiniteNumber(value.maxRadiusM, 100, 100000);
+  if (!name || frequencyMhz === undefined || antennaHeightM === undefined || receiverHeightM === undefined || maxRadiusM === undefined) {
+    return null;
+  }
+  const antennaGainDbi = optionalFiniteNumber(value.antennaGainDbi, -20, 60);
+  const profileId = optionalRadioIdentifier(value.profileId, 80);
+  const receiverSensitivityDbm = optionalFiniteNumber(value.receiverSensitivityDbm, -160, -20);
+  const requiredFresnelClearancePct = optionalFiniteNumber(value.requiredFresnelClearancePct, 0, 100);
+  const systemLossDb = optionalFiniteNumber(value.systemLossDb, 0, 80);
+  const txPowerW = optionalFiniteNumber(value.txPowerW, 0, 100);
+  return {
+    ...(antennaGainDbi !== undefined ? { antennaGainDbi } : {}),
+    antennaHeightM,
+    frequencyMhz,
+    maxRadiusM,
+    name,
+    ...(profileId ? { profileId } : {}),
+    receiverHeightM,
+    ...(receiverSensitivityDbm !== undefined ? { receiverSensitivityDbm } : {}),
+    ...(requiredFresnelClearancePct !== undefined ? { requiredFresnelClearancePct } : {}),
+    ...(systemLossDb !== undefined ? { systemLossDb } : {}),
+    ...(txPowerW !== undefined ? { txPowerW } : {})
+  };
+}
+
+function parseRadioCoverageRequest(value: unknown): RadioCoverageRequest | null {
+  if (!isRecord(value) || containsForbiddenRadioField(value)) {
+    return null;
+  }
+  const base = parseRadioRequestBase(value);
+  const station = parseRadioPoint(value.station);
+  if (!base || !station) {
+    return null;
+  }
+  return {
+    ...base,
+    azimuthStepDeg: boundedOptionalInteger(value.azimuthStepDeg, 5, 1, 45) ?? undefined,
+    distanceStepM: boundedOptionalInteger(value.distanceStepM, 250, 50, 5_000) ?? undefined,
+    radiusM: boundedOptionalInteger(value.radiusM, base.profile?.maxRadiusM ?? 15_000, 100, 100_000) ?? undefined,
+    station
+  };
+}
+
+function parseRadioLinkCheckRequest(value: unknown): RadioLinkCheckRequest | null {
+  if (!isRecord(value) || containsForbiddenRadioField(value)) {
+    return null;
+  }
+  const base = parseRadioRequestBase(value);
+  const from = parseRadioPoint(value.from);
+  const to = parseRadioPoint(value.to);
+  return base && from && to ? { ...base, from, to } : null;
+}
+
+function parseRadioSiteSearchRequest(value: unknown): RadioSiteSearchRequest | null {
+  if (!isRecord(value) || containsForbiddenRadioField(value)) {
+    return null;
+  }
+  const base = parseRadioRequestBase(value);
+  const searchArea = parseRadioSearchArea(value.searchArea);
+  const targets = Array.isArray(value.targets)
+    ? value.targets.flatMap((target) => {
+        const point = parseRadioPoint(target);
+        return point ? [point] : [];
+      }).slice(0, 20)
+    : [];
+  if (!base || !searchArea || targets.length === 0) {
+    return null;
+  }
+  return {
+    ...base,
+    gridStepM: boundedOptionalInteger(value.gridStepM, 250, 50, 5_000) ?? undefined,
+    maxCandidates: boundedOptionalInteger(value.maxCandidates, 20, 1, 100) ?? undefined,
+    searchArea,
+    targets
+  };
+}
+
+function parseRadioRequestBase(value: Record<string, unknown>): RadioProfileRequestBase | null {
+  const profile = isRecord(value.profile) ? parseRadioProfile(value.profile) : undefined;
+  const profileId = optionalRadioIdentifier(value.profileId, 80);
+  if (!profile && !profileId) {
+    return null;
+  }
+  const radioName = optionalTrimmedString(value.radioName, 80);
+  return {
+    ...(profile ? { profile } : {}),
+    ...(profileId ? { profileId } : {}),
+    ...(radioName ? { radioName } : {})
+  };
+}
+
+function parseRadioPoint(value: unknown): RadioPoint | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const lat = optionalFiniteNumber(value.lat, -90, 90);
+  const lon = optionalFiniteNumber(value.lon, -180, 180);
+  if (lat === undefined || lon === undefined) {
+    return null;
+  }
+  const antennaHeightM = optionalFiniteNumber(value.antennaHeightM, 0.1, 120);
+  const receiverHeightM = optionalFiniteNumber(value.receiverHeightM, 0.1, 120);
+  return {
+    ...(antennaHeightM !== undefined ? { antennaHeightM } : {}),
+    lat,
+    lon,
+    ...(receiverHeightM !== undefined ? { receiverHeightM } : {})
+  };
+}
+
+function parseRadioSearchArea(value: unknown): RadioSiteSearchRequest["searchArea"] | null {
+  if (!isRecord(value) || !Array.isArray(value.bbox) || value.bbox.length !== 4) {
+    return null;
+  }
+  const parts = value.bbox.map(Number);
+  if (!parts.every(Number.isFinite)) {
+    return null;
+  }
+  const [west, south, east, north] = parts as [number, number, number, number];
+  if (west >= east || south >= north) {
+    return null;
+  }
+  return {
+    bbox: [
+      clampNumber(west, -180, 180),
+      clampNumber(south, -90, 90),
+      clampNumber(east, -180, 180),
+      clampNumber(north, -90, 90)
+    ]
+  };
+}
+
+function optionalRadioIdentifier(value: unknown, maxLength: number): string | undefined {
+  const identifier = optionalTrimmedString(value, maxLength);
+  return identifier && /^[a-z0-9:_./-]+$/iu.test(identifier) ? identifier : undefined;
+}
+
+function containsForbiddenRadioField(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(containsForbiddenRadioField);
+  }
+  if (!isRecord(value)) {
+    return false;
+  }
+  return Object.entries(value).some(([key, nested]) =>
+    forbiddenRadioFieldPattern.test(key) || containsForbiddenRadioField(nested)
+  );
+}
+
+const forbiddenRadioFieldPattern = /^(?:callsign|comsec|crypto|classified|encryption|freqplan|frequencyplan|hopping|key|keys|notes?|rfplan|secret|tactical|utajovane|utajeni)$/iu;
 
 function boundedOptionalInteger(value: unknown, fallback: number, min: number, max: number): number | null {
   if (value === undefined || value === null || value === "") {

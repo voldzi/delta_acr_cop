@@ -5390,6 +5390,231 @@
           }
         }
       }
+    },
+    "/api/v1/radio/profiles": {
+      "get": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Return SIM radio profile catalog through COP.",
+        "operationId": "getRadioProfiles",
+        "description": "Server-side proxy for SIM radio profile catalog used by the Radio LoS tool. COP must not include classified frequencies, COMSEC, callsigns or tactical notes in profiles.",
+        "responses": {
+          "200": {
+            "description": "Radio profile catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadioProfilesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM situation-data radio service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Create a SIM radio profile through COP.",
+        "operationId": "createRadioProfile",
+        "description": "Stores a reusable non-sensitive radio profile in SIM. Requests with sensitive field names are rejected by COP before SIM is called.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RadioProfile"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated radio profile catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadioProfilesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM situation-data radio service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/radio/coverage": {
+      "post": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Run SIM Radio LoS coverage from one point.",
+        "operationId": "runRadioCoverage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RadioCoverageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Radio coverage sector polygons.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadioFeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM situation-data radio service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/radio/link-check": {
+      "post": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Run SIM Radio LoS link check between two points.",
+        "operationId": "runRadioLinkCheck",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RadioLinkCheckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Radio link-check result with Fresnel and terrain profile metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadioLinkCheckResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM situation-data radio service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/radio/site-search": {
+      "post": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Run SIM Radio LoS best-site search in current area.",
+        "operationId": "runRadioSiteSearch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RadioSiteSearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Candidate radio sites as GeoJSON features.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadioFeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM situation-data radio service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -15690,6 +15915,446 @@
             "items": {
               "$ref": "#/components/schemas/MobileTowerViewshedFeature"
             }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RadioProfile": {
+        "type": "object",
+        "required": [
+          "name",
+          "frequencyMhz",
+          "antennaHeightM",
+          "receiverHeightM",
+          "maxRadiusM"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9:_./-]+$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "frequencyMhz": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 6000
+          },
+          "txPowerW": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "antennaHeightM": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 120
+          },
+          "receiverHeightM": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 120
+          },
+          "antennaGainDbi": {
+            "type": "number",
+            "minimum": -20,
+            "maximum": 60
+          },
+          "receiverSensitivityDbm": {
+            "type": "number",
+            "minimum": -160,
+            "maximum": -20
+          },
+          "systemLossDb": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 80
+          },
+          "requiredFresnelClearancePct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "maxRadiusM": {
+            "type": "number",
+            "minimum": 100,
+            "maximum": 100000
+          }
+        },
+        "description": "General radio profile. Do not include classified frequencies, COMSEC, callsigns or tactical notes."
+      },
+      "RadioProfilesResponse": {
+        "type": "object",
+        "required": [
+          "profiles",
+          "warnings"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RadioProfile"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RadioPoint": {
+        "type": "object",
+        "required": [
+          "lon",
+          "lat"
+        ],
+        "properties": {
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "antennaHeightM": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 120
+          },
+          "receiverHeightM": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 120
+          }
+        }
+      },
+      "RadioCoverageRequest": {
+        "type": "object",
+        "required": [
+          "station"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "profileId"
+            ]
+          },
+          {
+            "required": [
+              "profile"
+            ]
+          }
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9:_./-]+$"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/RadioProfile"
+          },
+          "radioName": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "station": {
+            "$ref": "#/components/schemas/RadioPoint"
+          },
+          "radiusM": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 100000,
+            "default": 15000
+          },
+          "azimuthStepDeg": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 45,
+            "default": 5
+          },
+          "distanceStepM": {
+            "type": "integer",
+            "minimum": 50,
+            "maximum": 5000,
+            "default": 250
+          }
+        }
+      },
+      "RadioLinkCheckRequest": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "profileId"
+            ]
+          },
+          {
+            "required": [
+              "profile"
+            ]
+          }
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9:_./-]+$"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/RadioProfile"
+          },
+          "radioName": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "from": {
+            "$ref": "#/components/schemas/RadioPoint"
+          },
+          "to": {
+            "$ref": "#/components/schemas/RadioPoint"
+          }
+        }
+      },
+      "RadioSiteSearchRequest": {
+        "type": "object",
+        "required": [
+          "searchArea",
+          "targets"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "profileId"
+            ]
+          },
+          {
+            "required": [
+              "profile"
+            ]
+          }
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9:_./-]+$"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/RadioProfile"
+          },
+          "radioName": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "searchArea": {
+            "type": "object",
+            "required": [
+              "bbox"
+            ],
+            "properties": {
+              "bbox": {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 4,
+                "items": {
+                  "type": "number"
+                },
+                "description": "[west, south, east, north]"
+              }
+            }
+          },
+          "targets": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/RadioPoint"
+            }
+          },
+          "gridStepM": {
+            "type": "integer",
+            "minimum": 50,
+            "maximum": 5000,
+            "default": 250
+          },
+          "maxCandidates": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "RadioFeature": {
+        "type": "object",
+        "required": [
+          "geometry",
+          "properties",
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Feature"
+          },
+          "id": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "geometry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GeoJsonPoint"
+              },
+              {
+                "$ref": "#/components/schemas/GeoJsonLineString"
+              },
+              {
+                "$ref": "#/components/schemas/GeoJsonPolygon"
+              },
+              {
+                "$ref": "#/components/schemas/GeoJsonMultiPolygon"
+              }
+            ]
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "SIM radio model properties such as score, quality, estimatedSignalDbm, Fresnel and terrain metrics."
+          }
+        }
+      },
+      "RadioFeatureCollection": {
+        "type": "object",
+        "required": [
+          "features",
+          "type",
+          "warnings"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "FeatureCollection"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RadioFeature"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RadioLinkCheckResponse": {
+        "type": "object",
+        "required": [
+          "warnings"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "linkStatus": {
+            "type": "string",
+            "enum": [
+              "clear",
+              "marginal",
+              "obstructed",
+              "unknown"
+            ]
+          },
+          "distanceM": {
+            "type": "number"
+          },
+          "azimuthDeg": {
+            "type": "number"
+          },
+          "maxObstructionM": {
+            "type": "number"
+          },
+          "fresnelClearancePct": {
+            "type": "number"
+          },
+          "requiredExtraAntennaHeightM": {
+            "type": "number"
+          },
+          "profileSamples": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": true
           },
           "warnings": {
             "type": "array",

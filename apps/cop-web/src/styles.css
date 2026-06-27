@@ -5295,6 +5295,10 @@ h1 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.radio-operations-deck {
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+}
+
 .source-operations-board {
   display: grid;
   align-content: start;
@@ -5303,6 +5307,127 @@ h1 {
   min-height: 0;
   overflow: auto;
   padding: 12px;
+}
+
+.radio-los-panel {
+  gap: 12px;
+}
+
+.radio-profile-picker,
+.radio-point-editor,
+.radio-profile-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.radio-profile-picker {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.radio-profile-picker label,
+.radio-profile-editor label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.radio-profile-picker select,
+.radio-profile-editor input,
+.radio-number-input input {
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid rgba(140, 182, 216, 0.28);
+  background: rgba(2, 8, 12, 0.72);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.radio-profile-picker select,
+.radio-profile-editor input {
+  width: 100%;
+  padding: 0 9px;
+}
+
+.radio-point-editor {
+  padding: 10px;
+  border: 1px solid rgba(140, 182, 216, 0.18);
+  background: rgba(3, 9, 13, 0.48);
+}
+
+.radio-point-editor > strong {
+  color: var(--text);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.radio-number-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(112px, auto);
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.radio-number-input > span:last-child {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+  align-items: center;
+}
+
+.radio-number-input input {
+  width: 100%;
+  padding: 0 7px;
+}
+
+.radio-number-input em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.radio-los-hint,
+.radio-los-disclaimer {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.radio-los-disclaimer {
+  padding: 9px 10px;
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  background: rgba(250, 204, 21, 0.08);
+  color: #e5d99a;
+}
+
+.radio-result-board .panel-title {
+  margin-bottom: 2px;
+}
+
+.radio-link-summary,
+.radio-warning-list {
+  display: grid;
+  gap: 7px;
+}
+
+.radio-warning-list span {
+  padding: 7px 8px;
+  border: 1px solid rgba(250, 204, 21, 0.24);
+  background: rgba(250, 204, 21, 0.08);
+  color: #f5e7a1;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .data-workspace-board {

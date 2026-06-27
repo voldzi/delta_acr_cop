@@ -14,6 +14,12 @@ import type {
 import type {
   MobileTowerViewshedQuery,
   MobileTowerViewshedResponse,
+  RadioCoverageRequest,
+  RadioFeatureCollectionResponse,
+  RadioLinkCheckRequest,
+  RadioLinkCheckResponse,
+  RadioProfile,
+  RadioProfilesResponse,
   SituationDataSource,
   SituationDataSourceConfig,
   SituationFeatureCollection,
@@ -488,6 +494,110 @@ describe("map catalog route", () => {
     });
   });
 
+  it("proxies radio profile catalog through COP API", async () => {
+    const app = buildServer({
+      now: () => new Date("2026-06-27T10:00:00Z"),
+      situationDataSource: new FakeSituationDataSource()
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/radio/profiles"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      profiles: [
+        {
+          frequencyMhz: 446,
+          profileId: "pmr446_handheld"
+        }
+      ],
+      warnings: []
+    });
+  });
+
+  it("proxies radio coverage request through COP API", async () => {
+    const situationDataSource = new FakeSituationDataSource();
+    const app = buildServer({
+      now: () => new Date("2026-06-27T10:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        profileId: "pmr446_handheld",
+        radiusM: 5000,
+        station: { antennaHeightM: 1.5, lat: 50.08, lon: 14.42 }
+      },
+      url: "/api/v1/radio/coverage"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(situationDataSource.lastRadioCoverage).toMatchObject({
+      profileId: "pmr446_handheld",
+      radiusM: 5000,
+      station: { lat: 50.08, lon: 14.42 }
+    });
+    expect(response.json()).toMatchObject({
+      features: [
+        {
+          properties: {
+            quality: "fair"
+          }
+        }
+      ],
+      type: "FeatureCollection"
+    });
+  });
+
+  it("proxies radio link-check and rejects sensitive fields", async () => {
+    const situationDataSource = new FakeSituationDataSource();
+    const app = buildServer({
+      now: () => new Date("2026-06-27T10:00:00Z"),
+      situationDataSource
+    });
+
+    const rejected = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        callsign: "secret",
+        from: { lat: 50.08, lon: 14.42 },
+        profileId: "pmr446_handheld",
+        to: { lat: 50.11, lon: 14.51 }
+      },
+      url: "/api/v1/radio/link-check"
+    });
+
+    expect(rejected.statusCode).toBe(400);
+
+    const accepted = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        from: { antennaHeightM: 1.5, lat: 50.08, lon: 14.42 },
+        profileId: "pmr446_handheld",
+        radioName: "PMR tým A",
+        to: { lat: 50.11, lon: 14.51, receiverHeightM: 1.5 }
+      },
+      url: "/api/v1/radio/link-check"
+    });
+
+    expect(accepted.statusCode).toBe(200);
+    expect(situationDataSource.lastRadioLinkCheck).toMatchObject({
+      profileId: "pmr446_handheld",
+      radioName: "PMR tým A"
+    });
+    expect(accepted.json()).toMatchObject({
+      distanceM: 4200,
+      linkStatus: "clear"
+    });
+  });
+
   it("uses catalog defaults for mobile-network technology filters", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const app = buildServer({
@@ -832,6 +942,9 @@ class FakeSituationDataSource implements SituationDataSource {
 
   readonly sourceSystem = createPublicSituationAggregateSourceSystem();
   lastFeatureQuery: SituationFeatureQuery | null = null;
+  lastRadioCoverage: RadioCoverageRequest | null = null;
+  lastRadioLinkCheck: RadioLinkCheckRequest | null = null;
+  lastRadioProfile: RadioProfile | null = null;
   lastTowerViewshed: { query: MobileTowerViewshedQuery; towerId: string } | null = null;
 
   async fetchLayers(_requestNow: Date): Promise<SituationLayerDescriptor[]> {
@@ -918,6 +1031,78 @@ class FakeSituationDataSource implements SituationDataSource {
         operatorStatusAvailable: false
       },
       type: "FeatureCollection",
+      warnings: []
+    };
+  }
+
+  async fetchRadioProfiles(requestNow: Date): Promise<RadioProfilesResponse> {
+    return {
+      contractVersion: "sim-radio-profiles-v1",
+      generatedAt: requestNow.toISOString(),
+      profiles: [
+        {
+          antennaHeightM: 1.5,
+          frequencyMhz: 446,
+          maxRadiusM: 5000,
+          name: "PMR446 ruční stanice",
+          profileId: "pmr446_handheld",
+          receiverHeightM: 1.5,
+          txPowerW: 0.5
+        }
+      ],
+      warnings: []
+    };
+  }
+
+  async createRadioProfile(profile: RadioProfile, requestNow: Date): Promise<RadioProfilesResponse> {
+    this.lastRadioProfile = profile;
+    return {
+      contractVersion: "sim-radio-profiles-v1",
+      generatedAt: requestNow.toISOString(),
+      profiles: [profile],
+      warnings: []
+    };
+  }
+
+  async runRadioCoverage(request: RadioCoverageRequest, requestNow: Date): Promise<RadioFeatureCollectionResponse> {
+    this.lastRadioCoverage = request;
+    return {
+      contractVersion: "sim-radio-coverage-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [14.0, 50.0],
+              [14.05, 50.0],
+              [14.05, 50.05],
+              [14.0, 50.05],
+              [14.0, 50.0]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            confidence: 0.72,
+            estimatedSignalDbm: -84,
+            quality: "fair"
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: requestNow.toISOString(),
+      type: "FeatureCollection",
+      warnings: []
+    };
+  }
+
+  async runRadioLinkCheck(request: RadioLinkCheckRequest, _requestNow: Date): Promise<RadioLinkCheckResponse> {
+    this.lastRadioLinkCheck = request;
+    return {
+      azimuthDeg: 47,
+      distanceM: 4200,
+      fresnelClearancePct: 64,
+      linkStatus: "clear",
+      maxObstructionM: 0,
+      requiredExtraAntennaHeightM: 0,
       warnings: []
     };
   }

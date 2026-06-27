@@ -15,6 +15,7 @@ import {
   CloudSun,
   ChevronDown,
   ClipboardList,
+  Crosshair,
   Database,
   FileText,
   Gauge,
@@ -43,6 +44,7 @@ import {
   Plus,
   RefreshCw,
   RadioTower,
+  Save,
   Search,
   Settings,
   ShieldCheck,
@@ -83,6 +85,7 @@ import {
   createCommunityAttachmentUpload,
   createCommunityGroup,
   createCommunityReport,
+  createRadioProfile,
   createSketchDrawing,
   deleteCommunityGroup,
   deleteCommunityReport,
@@ -97,6 +100,7 @@ import {
   fetchMessagingBootstrap,
   fetchMobileTowerViewshed,
   fetchPlaceGeocode,
+  fetchRadioProfiles,
   fetchSafetyHydroStationDetail,
   fetchDemoScenarioStatus,
   fetchSketchDrawings,
@@ -114,6 +118,9 @@ import {
   seedDemoScenario,
   submitCommunityReport,
   resetDemoScenario,
+  runRadioCoverage,
+  runRadioLinkCheck,
+  runRadioSiteSearch,
   updateCommunityGroupMetadata,
   updateSketchDrawing,
   updateCommunityReport,
@@ -160,6 +167,14 @@ import {
   type MissionArenaFeatureCollectionResponse,
   type ObjectProvenance,
   type PlaceGeocodeResult,
+  type RadioCoverageRequest,
+  type RadioFeatureCollectionResponse,
+  type RadioLinkCheckRequest,
+  type RadioLinkCheckResponse,
+  type RadioPoint,
+  type RadioProfile,
+  type RadioProfilesResponse,
+  type RadioSiteSearchRequest,
   type SourceHealthItem,
   type SourceSystem,
   type SafetyDataSourceId,
@@ -461,6 +476,45 @@ interface AccountChangeNotice {
   kind: "changed" | "cleared";
 }
 
+type RadioLosMode = "coverage" | "link" | "site";
+type RadioLosStatus = "idle" | "loading" | "loaded" | "error";
+
+interface RadioLosMapOverlay {
+  features: SituationFeature[];
+  mode: RadioLosMode;
+  title: string;
+  warnings: string[];
+}
+
+interface RadioLosResult {
+  collection?: RadioFeatureCollectionResponse;
+  error?: string;
+  link?: RadioLinkCheckResponse;
+  mode: RadioLosMode;
+  status: RadioLosStatus;
+  title: string;
+  warnings: string[];
+}
+
+const radioLosDisclaimer = "Výsledek je modelový odhad podle DEM a zadaných parametrů rádia. Nezahrnuje budovy, vegetaci, rušení, reálné vytížení sítě ani utajené/operátorské RF parametry.";
+
+const fallbackRadioProfile: RadioProfile = { antennaHeightM: 1.5, frequencyMhz: 446, maxRadiusM: 5000, name: "PMR446 ruční stanice", profileId: "pmr446_handheld", receiverHeightM: 1.5, txPowerW: 0.5 };
+
+const defaultRadioProfiles: RadioProfile[] = [
+  fallbackRadioProfile,
+  { antennaHeightM: 2, frequencyMhz: 27, maxRadiusM: 15000, name: "CB handheld/vehicle", profileId: "cb_vehicle", receiverHeightM: 2, txPowerW: 4 },
+  { antennaHeightM: 1.5, frequencyMhz: 145, maxRadiusM: 15000, name: "HAM VHF handheld", profileId: "ham_vhf_handheld", receiverHeightM: 1.5, txPowerW: 5 },
+  { antennaHeightM: 1.5, frequencyMhz: 433, maxRadiusM: 10000, name: "HAM UHF handheld", profileId: "ham_uhf_handheld", receiverHeightM: 1.5, txPowerW: 5 },
+  { antennaHeightM: 10, frequencyMhz: 145, maxRadiusM: 40000, name: "HAM VHF base", profileId: "ham_vhf_base", receiverHeightM: 10, txPowerW: 25 },
+  { antennaHeightM: 5, frequencyMhz: 2400, maxRadiusM: 10000, name: "WiFi 2.4 GHz PtP", profileId: "wifi_24_ptp", receiverHeightM: 5, txPowerW: 0.1 },
+  { antennaHeightM: 1.5, frequencyMhz: 390, maxRadiusM: 12000, name: "TETRA generic handheld", profileId: "tetra_generic_handheld", receiverHeightM: 1.5, txPowerW: 1 },
+  { antennaHeightM: 2, frequencyMhz: 50, maxRadiusM: 25000, name: "Generic VHF manpack", profileId: "generic_vhf_manpack", receiverHeightM: 2, txPowerW: 5 },
+  { antennaHeightM: 3, frequencyMhz: 50, maxRadiusM: 40000, name: "Generic VHF vehicle", profileId: "generic_vhf_vehicle", receiverHeightM: 3, txPowerW: 25 },
+  { antennaHeightM: 10, frequencyMhz: 50, maxRadiusM: 60000, name: "Generic elevated relay", profileId: "generic_elevated_relay", receiverHeightM: 10, txPowerW: 25 }
+];
+
+const defaultRadioPoint: RadioPoint = { antennaHeightM: 1.5, lat: 50.08, lon: 14.42, receiverHeightM: 1.5 };
+
 export function App() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
@@ -516,6 +570,29 @@ export function App() {
   const [placeSearchItems, setPlaceSearchItems] = React.useState<PlaceGeocodeResult[]>([]);
   const [placeSearchLoading, setPlaceSearchLoading] = React.useState(false);
   const [placeSearchError, setPlaceSearchError] = React.useState<string | null>(null);
+  const [radioMode, setRadioMode] = React.useState<RadioLosMode>("coverage");
+  const [radioProfiles, setRadioProfiles] = React.useState<RadioProfile[]>(defaultRadioProfiles);
+  const [radioProfilesStatus, setRadioProfilesStatus] = React.useState<"idle" | "loading" | "loaded" | "error">("idle");
+  const [radioProfilesError, setRadioProfilesError] = React.useState<string | null>(null);
+  const [radioProfileId, setRadioProfileId] = React.useState("pmr446_handheld");
+  const [radioUseCustomProfile, setRadioUseCustomProfile] = React.useState(false);
+  const [radioCustomProfile, setRadioCustomProfile] = React.useState<RadioProfile>({
+    antennaHeightM: 1.5,
+    frequencyMhz: 446,
+    maxRadiusM: 5000,
+    name: "Vlastní rádio",
+    receiverHeightM: 1.5,
+    systemLossDb: 2,
+    txPowerW: 0.5
+  });
+  const [radioStation, setRadioStation] = React.useState<RadioPoint>(defaultRadioPoint);
+  const [radioLinkFrom, setRadioLinkFrom] = React.useState<RadioPoint>(defaultRadioPoint);
+  const [radioLinkTo, setRadioLinkTo] = React.useState<RadioPoint>({ antennaHeightM: 1.5, lat: 50.11, lon: 14.51, receiverHeightM: 1.5 });
+  const [radioSearchTargets, setRadioSearchTargets] = React.useState<RadioPoint[]>([{ lat: 50.08, lon: 14.42, receiverHeightM: 1.5 }]);
+  const [radioGridStepM, setRadioGridStepM] = React.useState(250);
+  const [radioRadiusM, setRadioRadiusM] = React.useState(5000);
+  const [radioResult, setRadioResult] = React.useState<RadioLosResult>({ mode: "coverage", status: "idle", title: "Radio LoS", warnings: [] });
+  const [radioOverlay, setRadioOverlay] = React.useState<RadioLosMapOverlay | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
   const [, setLastStreamAt] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -2152,10 +2229,10 @@ export function App() {
   );
   const selectedSituationFeature = baseCombinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
   const mobileTowerViewshed = useMobileTowerViewshed(apiBase, authToken, selectedSituationFeature, coverageTechnology);
-  const combinedSituationFeatures = React.useMemo(
-    () => appendMobileTowerViewshedFeatures(baseCombinedSituationFeatures, mobileTowerViewshed),
-    [baseCombinedSituationFeatures, mobileTowerViewshed]
-  );
+  const combinedSituationFeatures = React.useMemo(() => {
+    const withTowerViewshed = appendMobileTowerViewshedFeatures(baseCombinedSituationFeatures, mobileTowerViewshed);
+    return appendRadioLosFeatures(withTowerViewshed, radioOverlay);
+  }, [baseCombinedSituationFeatures, mobileTowerViewshed, radioOverlay]);
   const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleMissionArenaLayerCount = React.useMemo(() => countVisibleMissionArenaLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
@@ -3699,7 +3776,140 @@ export function App() {
   const showSourceControls = activeWorkspace === "sources";
   const showAlertControls = activeWorkspace === "alerts";
   const showReplayControls = activeWorkspace === "replay";
+  const showRadioControls = activeWorkspace === "radio";
   const openIncidentTaskStatuses = React.useMemo<IncidentTaskStatus[]>(() => ["open", "in_progress", "blocked"], []);
+
+  const selectedRadioProfile = React.useMemo(
+    () => radioProfiles.find((profile) => (profile.profileId ?? profile.name) === radioProfileId) ?? radioProfiles[0] ?? fallbackRadioProfile,
+    [radioProfileId, radioProfiles]
+  );
+  const radioRequestBase = React.useCallback(() => radioUseCustomProfile
+    ? { profile: radioCustomProfile }
+    : { profileId: selectedRadioProfile.profileId ?? radioProfileId },
+    [radioCustomProfile, radioProfileId, radioUseCustomProfile, selectedRadioProfile]
+  );
+  const radioReferencePoint = React.useCallback((): RadioPoint => {
+    if (userLocation) {
+      return { antennaHeightM: selectedRadioProfile.antennaHeightM, lat: userLocation.lat, lon: userLocation.lon, receiverHeightM: selectedRadioProfile.receiverHeightM };
+    }
+    const center = mapView?.center ?? [(mapBounds.west + mapBounds.east) / 2, (mapBounds.south + mapBounds.north) / 2];
+    return { antennaHeightM: selectedRadioProfile.antennaHeightM, lat: center[1], lon: center[0], receiverHeightM: selectedRadioProfile.receiverHeightM };
+  }, [mapBounds, mapView?.center, selectedRadioProfile, userLocation]);
+  const loadRadioProfiles = React.useCallback(async () => {
+    setRadioProfilesStatus("loading");
+    setRadioProfilesError(null);
+    try {
+      const response: RadioProfilesResponse = await fetchRadioProfiles(apiBase, authToken);
+      const profiles = response.profiles.length > 0 ? response.profiles : defaultRadioProfiles;
+      setRadioProfiles(profiles);
+      setRadioProfileId((current) => profiles.some((profile) => (profile.profileId ?? profile.name) === current) ? current : profiles[0]?.profileId ?? profiles[0]?.name ?? current);
+      setRadioProfilesStatus("loaded");
+    } catch (error) {
+      setRadioProfiles(defaultRadioProfiles);
+      setRadioProfilesError(error instanceof Error ? humanizeApiError(error.message) : "Katalog rádiových profilů není dostupný, používám lokální výchozí šablony.");
+      setRadioProfilesStatus("error");
+    }
+  }, [apiBase, authToken]);
+
+  React.useEffect(() => {
+    if (!showRadioControls || radioProfilesStatus !== "idle") {
+      return;
+    }
+    void loadRadioProfiles();
+  }, [loadRadioProfiles, radioProfilesStatus, showRadioControls]);
+
+  const applyRadioPointFromContext = React.useCallback((target: "station" | "from" | "to" | "site-target") => {
+    const point = radioReferencePoint();
+    if (target === "station") {
+      setRadioStation(point);
+    } else if (target === "from") {
+      setRadioLinkFrom(point);
+    } else if (target === "to") {
+      setRadioLinkTo(point);
+    } else {
+      setRadioSearchTargets([point]);
+    }
+  }, [radioReferencePoint]);
+
+  const saveCustomRadioProfile = React.useCallback(async () => {
+    setRadioProfilesStatus("loading");
+    setRadioProfilesError(null);
+    try {
+      const response = await createRadioProfile(apiBase, authToken, radioCustomProfile);
+      const profiles = response.profiles.length > 0 ? response.profiles : [radioCustomProfile, ...defaultRadioProfiles];
+      setRadioProfiles(profiles);
+      setRadioProfileId(profiles[0]?.profileId ?? radioCustomProfile.profileId ?? radioProfileId);
+      setRadioUseCustomProfile(false);
+      setRadioProfilesStatus("loaded");
+    } catch (error) {
+      setRadioProfilesError(error instanceof Error ? humanizeApiError(error.message) : "Vlastní profil se nepodařilo uložit.");
+      setRadioProfilesStatus("error");
+    }
+  }, [apiBase, authToken, radioCustomProfile, radioProfileId]);
+
+  const runRadioLos = React.useCallback(async () => {
+    const base = radioRequestBase();
+    setRadioResult({ mode: radioMode, status: "loading", title: radioLosModeLabel(radioMode), warnings: [] });
+    try {
+      if (radioMode === "coverage") {
+        const request: RadioCoverageRequest = {
+          ...base,
+          azimuthStepDeg: 5,
+          distanceStepM: 250,
+          radioName: selectedRadioProfile.name,
+          radiusM: radioRadiusM,
+          station: radioStation
+        };
+        const response = await runRadioCoverage(apiBase, authToken, request);
+        const features = radioFeatureCollectionToSituationFeatures(response, radioMode, selectedRadioProfile);
+        setRadioOverlay({ features, mode: radioMode, title: "Pokrytí z bodu", warnings: response.warnings });
+        setRadioResult({ collection: response, mode: radioMode, status: "loaded", title: "Pokrytí z bodu", warnings: response.warnings });
+        return;
+      }
+      if (radioMode === "site") {
+        const request: RadioSiteSearchRequest = {
+          ...base,
+          gridStepM: radioGridStepM,
+          maxCandidates: 20,
+          radioName: selectedRadioProfile.name,
+          searchArea: { bbox: [mapBounds.west, mapBounds.south, mapBounds.east, mapBounds.north] },
+          targets: radioSearchTargets
+        };
+        const response = await runRadioSiteSearch(apiBase, authToken, request);
+        const features = radioFeatureCollectionToSituationFeatures(response, radioMode, selectedRadioProfile);
+        setRadioOverlay({ features, mode: radioMode, title: "Kandidátní stanoviště", warnings: response.warnings });
+        setRadioResult({ collection: response, mode: radioMode, status: "loaded", title: "Kandidátní stanoviště", warnings: response.warnings });
+        return;
+      }
+      const request: RadioLinkCheckRequest = {
+        ...base,
+        from: radioLinkFrom,
+        radioName: selectedRadioProfile.name,
+        to: radioLinkTo
+      };
+      const response = await runRadioLinkCheck(apiBase, authToken, request);
+      const linkFeature = radioLinkCheckToSituationFeature(response, request, selectedRadioProfile);
+      setRadioOverlay({ features: [linkFeature], mode: radioMode, title: "Spojení bod-bod", warnings: response.warnings });
+      setRadioResult({ link: response, mode: radioMode, status: "loaded", title: "Spojení bod-bod", warnings: response.warnings });
+    } catch (error) {
+      const message = error instanceof Error ? humanizeApiError(error.message) : "Radio LoS výpočet selhal.";
+      setRadioOverlay(null);
+      setRadioResult({ error: message, mode: radioMode, status: "error", title: radioLosModeLabel(radioMode), warnings: [] });
+    }
+  }, [
+    apiBase,
+    authToken,
+    mapBounds,
+    radioGridStepM,
+    radioLinkFrom,
+    radioLinkTo,
+    radioMode,
+    radioRadiusM,
+    radioRequestBase,
+    radioSearchTargets,
+    radioStation,
+    selectedRadioProfile
+  ]);
 
   const loadIncidentTasks = React.useCallback(async (incidentId: string, token = authToken) => {
     if (!token) {
@@ -4303,6 +4513,39 @@ export function App() {
             </div>
           ) : null}
 
+          {showRadioControls ? (
+            <RadioLosControls
+              customProfile={radioCustomProfile}
+              gridStepM={radioGridStepM}
+              linkFrom={radioLinkFrom}
+              linkTo={radioLinkTo}
+              mode={radioMode}
+              profileId={radioProfileId}
+              profiles={radioProfiles}
+              profilesError={radioProfilesError}
+              profilesStatus={radioProfilesStatus}
+              radiusM={radioRadiusM}
+              result={radioResult}
+              searchTargets={radioSearchTargets}
+              station={radioStation}
+              useCustomProfile={radioUseCustomProfile}
+              onApplyContext={applyRadioPointFromContext}
+              onCustomProfileChange={setRadioCustomProfile}
+              onGridStepMChange={setRadioGridStepM}
+              onLinkFromChange={setRadioLinkFrom}
+              onLinkToChange={setRadioLinkTo}
+              onModeChange={setRadioMode}
+              onProfileIdChange={setRadioProfileId}
+              onRadiusMChange={setRadioRadiusM}
+              onRefreshProfiles={() => void loadRadioProfiles()}
+              onRun={() => void runRadioLos()}
+              onSaveCustomProfile={() => void saveCustomRadioProfile()}
+              onSearchTargetsChange={setRadioSearchTargets}
+              onStationChange={setRadioStation}
+              onUseCustomProfileChange={setRadioUseCustomProfile}
+            />
+          ) : null}
+
           {showSourceControls ? (
             <>
               <div className="source-list">
@@ -4510,6 +4753,17 @@ export function App() {
                 onOpenSettings={() => openSettings("data")}
               />
             </section>
+          ) : showRadioControls ? (
+            <RadioLosWorkspaceBoard
+              overlay={radioOverlay}
+              result={radioResult}
+              selectedProfile={selectedRadioProfile}
+              onClear={() => {
+                setRadioOverlay(null);
+                setRadioResult({ mode: radioMode, status: "idle", title: "Radio LoS", warnings: [] });
+              }}
+              onRun={() => void runRadioLos()}
+            />
           ) : showSourceControls ? (
             <section className="operations-deck source-operations-deck">
               <div className="source-operations-board">
@@ -6646,7 +6900,7 @@ function WorkspaceNavigator({
   onOpenSettings: () => void;
   onStartReport: () => void;
 }) {
-  const modules: WorkspaceModule[] = ["data", "map", "alerts", "sources", "replay"];
+  const modules: WorkspaceModule[] = ["data", "map", "alerts", "sources", "radio", "replay"];
   return (
     <nav className="workspace-nav app-module-rail" aria-label="Situační pracovní plocha">
       {modules.map((module) => {
@@ -6679,6 +6933,280 @@ function WorkspaceNavigator({
         <span>Nastavení</span>
       </button>
     </nav>
+  );
+}
+
+function RadioLosControls({
+  customProfile,
+  gridStepM,
+  linkFrom,
+  linkTo,
+  mode,
+  profileId,
+  profiles,
+  profilesError,
+  profilesStatus,
+  radiusM,
+  result,
+  searchTargets,
+  station,
+  useCustomProfile,
+  onApplyContext,
+  onCustomProfileChange,
+  onGridStepMChange,
+  onLinkFromChange,
+  onLinkToChange,
+  onModeChange,
+  onProfileIdChange,
+  onRadiusMChange,
+  onRefreshProfiles,
+  onRun,
+  onSaveCustomProfile,
+  onSearchTargetsChange,
+  onStationChange,
+  onUseCustomProfileChange
+}: {
+  customProfile: RadioProfile;
+  gridStepM: number;
+  linkFrom: RadioPoint;
+  linkTo: RadioPoint;
+  mode: RadioLosMode;
+  profileId: string;
+  profiles: RadioProfile[];
+  profilesError: string | null;
+  profilesStatus: "idle" | "loading" | "loaded" | "error";
+  radiusM: number;
+  result: RadioLosResult;
+  searchTargets: RadioPoint[];
+  station: RadioPoint;
+  useCustomProfile: boolean;
+  onApplyContext: (target: "station" | "from" | "to" | "site-target") => void;
+  onCustomProfileChange: (profile: RadioProfile) => void;
+  onGridStepMChange: (value: number) => void;
+  onLinkFromChange: (point: RadioPoint) => void;
+  onLinkToChange: (point: RadioPoint) => void;
+  onModeChange: (mode: RadioLosMode) => void;
+  onProfileIdChange: (profileId: string) => void;
+  onRadiusMChange: (value: number) => void;
+  onRefreshProfiles: () => void;
+  onRun: () => void;
+  onSaveCustomProfile: () => void;
+  onSearchTargetsChange: (targets: RadioPoint[]) => void;
+  onStationChange: (point: RadioPoint) => void;
+  onUseCustomProfileChange: (enabled: boolean) => void;
+}) {
+  const busy = result.status === "loading";
+  const target = searchTargets[0] ?? defaultRadioPoint;
+  return (
+    <div className="workspace-module-card radio-los-panel">
+      <PanelTitle icon={<RadioTower size={17} />} title="Radio LoS" />
+      <SegmentedControl
+        label="Režim"
+        options={[
+          ["coverage", "Pokrytí"],
+          ["link", "Spojení"],
+          ["site", "Stanoviště"]
+        ]}
+        value={mode}
+        onChange={(value) => onModeChange(value as RadioLosMode)}
+      />
+
+      <div className="radio-profile-picker">
+        <label>
+          Profil rádia
+          <select disabled={useCustomProfile} value={profileId} onChange={(event) => onProfileIdChange(event.target.value)}>
+            {profiles.map((profile) => (
+              <option key={profile.profileId ?? profile.name} value={profile.profileId ?? profile.name}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="mini-button compact-text" disabled={profilesStatus === "loading"} onClick={onRefreshProfiles} type="button">
+          <RefreshCw size={13} />
+          Profily
+        </button>
+      </div>
+      {profilesError ? <div className="error-banner compact">{profilesError}</div> : null}
+      <label className="toggle-row">
+        <input checked={useCustomProfile} onChange={(event) => onUseCustomProfileChange(event.target.checked)} type="checkbox" />
+        Vlastní rádio bez citlivých údajů
+      </label>
+      {useCustomProfile ? (
+        <RadioProfileEditor
+          profile={customProfile}
+          onChange={onCustomProfileChange}
+          onSave={onSaveCustomProfile}
+        />
+      ) : null}
+
+      {mode === "coverage" ? (
+        <>
+          <RadioPointEditor label="Stanice" point={station} onChange={onStationChange} />
+          <div className="module-action-row">
+            <button className="mini-button" onClick={() => onApplyContext("station")} type="button">
+              <MapPin size={13} />
+              Použít polohu
+            </button>
+          </div>
+          <RadioNumberInput label="Poloměr" suffix="m" value={radiusM} min={100} max={100000} onChange={onRadiusMChange} />
+        </>
+      ) : null}
+
+      {mode === "link" ? (
+        <>
+          <RadioPointEditor label="Odkud" point={linkFrom} onChange={onLinkFromChange} />
+          <button className="mini-button wide" onClick={() => onApplyContext("from")} type="button">
+            <MapPin size={13} />
+            Odkud = aktuální poloha/střed mapy
+          </button>
+          <RadioPointEditor label="Kam" point={linkTo} onChange={onLinkToChange} />
+          <button className="mini-button wide" onClick={() => onApplyContext("to")} type="button">
+            <Crosshair size={13} />
+            Kam = aktuální poloha/střed mapy
+          </button>
+        </>
+      ) : null}
+
+      {mode === "site" ? (
+        <>
+          <RadioPointEditor label="Cíl spojení" point={target} onChange={(point) => onSearchTargetsChange([point])} />
+          <button className="mini-button wide" onClick={() => onApplyContext("site-target")} type="button">
+            <Crosshair size={13} />
+            Cíl = aktuální poloha/střed mapy
+          </button>
+          <RadioNumberInput label="Krok mřížky" suffix="m" value={gridStepM} min={50} max={5000} onChange={onGridStepMChange} />
+          <p className="radio-los-hint">Prohledává se aktuálně zobrazený výřez mapy.</p>
+        </>
+      ) : null}
+
+      <button className="mini-button primary-lite wide" disabled={busy} onClick={onRun} type="button">
+        <Play size={14} />
+        {busy ? "Počítám..." : "Spustit výpočet"}
+      </button>
+      <p className="radio-los-disclaimer">{radioLosDisclaimer}</p>
+    </div>
+  );
+}
+
+function RadioProfileEditor({ profile, onChange, onSave }: {
+  profile: RadioProfile;
+  onChange: (profile: RadioProfile) => void;
+  onSave: () => void;
+}) {
+  const update = (patch: Partial<RadioProfile>) => onChange({ ...profile, ...patch });
+  return (
+    <div className="radio-profile-editor">
+      <label>
+        Název
+        <input value={profile.name} onChange={(event) => update({ name: event.target.value })} />
+      </label>
+      <RadioNumberInput label="Frekvence" suffix="MHz" value={profile.frequencyMhz} min={1} max={6000} onChange={(frequencyMhz) => update({ frequencyMhz })} />
+      <RadioNumberInput label="Výška TX antény" suffix="m" value={profile.antennaHeightM} min={0.1} max={120} onChange={(antennaHeightM) => update({ antennaHeightM })} />
+      <RadioNumberInput label="Výška RX antény" suffix="m" value={profile.receiverHeightM} min={0.1} max={120} onChange={(receiverHeightM) => update({ receiverHeightM })} />
+      <RadioNumberInput label="Max. poloměr" suffix="m" value={profile.maxRadiusM} min={100} max={100000} onChange={(maxRadiusM) => update({ maxRadiusM })} />
+      <button className="mini-button wide" onClick={onSave} type="button">
+        <Save size={13} />
+        Uložit profil v SIM
+      </button>
+    </div>
+  );
+}
+
+function RadioPointEditor({ label, point, onChange }: { label: string; point: RadioPoint; onChange: (point: RadioPoint) => void }) {
+  const update = (patch: Partial<RadioPoint>) => onChange({ ...point, ...patch });
+  return (
+    <div className="radio-point-editor">
+      <strong>{label}</strong>
+      <RadioNumberInput label="Lon" value={point.lon} min={-180} max={180} step={0.00001} onChange={(lon) => update({ lon })} />
+      <RadioNumberInput label="Lat" value={point.lat} min={-90} max={90} step={0.00001} onChange={(lat) => update({ lat })} />
+      <RadioNumberInput label="Výška antény" suffix="m" value={point.antennaHeightM ?? point.receiverHeightM ?? 1.5} min={0.1} max={120} onChange={(antennaHeightM) => update({ antennaHeightM, receiverHeightM: antennaHeightM })} />
+    </div>
+  );
+}
+
+function RadioNumberInput({ label, max, min, onChange, step = 1, suffix, value }: {
+  label: string;
+  max: number;
+  min: number;
+  onChange: (value: number) => void;
+  step?: number;
+  suffix?: string;
+  value: number;
+}) {
+  return (
+    <label className="radio-number-input">
+      <span>{label}</span>
+      <span>
+        <input
+          max={max}
+          min={min}
+          onChange={(event) => onChange(Number(event.target.value))}
+          step={step}
+          type="number"
+          value={Number.isFinite(value) ? value : min}
+        />
+        {suffix ? <em>{suffix}</em> : null}
+      </span>
+    </label>
+  );
+}
+
+function RadioLosWorkspaceBoard({ overlay, result, selectedProfile, onClear, onRun }: {
+  overlay: RadioLosMapOverlay | null;
+  result: RadioLosResult;
+  selectedProfile: RadioProfile;
+  onClear: () => void;
+  onRun: () => void;
+}) {
+  return (
+    <section className="operations-deck radio-operations-deck">
+      <div className="source-operations-board radio-result-board">
+        <div className="deck-header">
+          <PanelTitle icon={<RadioTower size={17} />} title="Radio LoS výsledek" />
+          <span>{result.status === "loaded" ? "hotovo" : result.status === "loading" ? "počítám" : "čeká na spuštění"}</span>
+        </div>
+        <ReadinessRow label="Režim" value={radioLosModeLabel(result.mode)} tone={result.status === "error" ? "warn" : "neutral"} />
+        <ReadinessRow label="Profil" value={selectedProfile.name} tone="neutral" />
+        {overlay ? <ReadinessRow label="Prvky na mapě" value={String(overlay.features.length)} tone={overlay.features.length > 0 ? "ok" : "warn"} /> : null}
+        {result.link ? <RadioLinkSummary link={result.link} /> : null}
+        {result.error ? <div className="error-banner">{result.error}</div> : null}
+        {result.warnings.length > 0 ? (
+          <div className="radio-warning-list">
+            {result.warnings.slice(0, 4).map((warning) => <span key={warning}>{warning}</span>)}
+          </div>
+        ) : null}
+        <div className="module-action-row">
+          <button className="mini-button primary-lite" disabled={result.status === "loading"} onClick={onRun} type="button">
+            <Play size={14} />
+            Přepočítat
+          </button>
+          <button className="mini-button" onClick={onClear} type="button">
+            <X size={14} />
+            Skrýt overlay
+          </button>
+        </div>
+      </div>
+      <div className="source-operations-board radio-result-board">
+        <PanelTitle icon={<ShieldCheck size={17} />} title="Interpretace" />
+        <p className="radio-los-disclaimer">{radioLosDisclaimer}</p>
+        <ReadinessRow label="DEM/LoS" value="modelový odhad" tone="neutral" />
+        <ReadinessRow label="Budovy/vegetace" value="nezahrnuto" tone="warn" />
+        <ReadinessRow label="RF tajné údaje" value="nepřenášet" tone="warn" />
+      </div>
+    </section>
+  );
+}
+
+function RadioLinkSummary({ link }: { link: RadioLinkCheckResponse }) {
+  return (
+    <div className="radio-link-summary">
+      <ReadinessRow label="Stav spojení" value={radioLinkStatusLabel(link.linkStatus)} tone={link.linkStatus === "clear" ? "ok" : link.linkStatus === "obstructed" ? "warn" : "neutral"} />
+      <ReadinessRow label="Vzdálenost" value={formatMeters(link.distanceM)} tone="neutral" />
+      <ReadinessRow label="Azimut" value={link.azimuthDeg !== undefined ? `${Math.round(link.azimuthDeg)}°` : "n/a"} tone="neutral" />
+      <ReadinessRow label="Fresnel" value={link.fresnelClearancePct !== undefined ? `${Math.round(link.fresnelClearancePct)} %` : "n/a"} tone={(link.fresnelClearancePct ?? 0) >= 60 ? "ok" : "warn"} />
+      <ReadinessRow label="Potřebné zvýšení" value={formatMeters(link.requiredExtraAntennaHeightM)} tone={(link.requiredExtraAntennaHeightM ?? 0) > 0 ? "warn" : "ok"} />
+    </div>
   );
 }
 
@@ -9777,6 +10305,208 @@ type MobileTowerViewshedState =
       technology: CoverageTechnology;
       towerId: string;
     };
+
+function appendRadioLosFeatures(
+  collection: SituationFeatureCollectionResponse | null,
+  overlay: RadioLosMapOverlay | null
+): SituationFeatureCollectionResponse | null {
+  if (!collection || !overlay || overlay.features.length === 0) {
+    return collection;
+  }
+  return {
+    ...collection,
+    features: [...collection.features, ...overlay.features],
+    summary: {
+      ...collection.summary,
+      featureCount: collection.summary.featureCount + overlay.features.length,
+      warningCount: collection.summary.warningCount + overlay.warnings.length
+    },
+    warnings: [...collection.warnings, ...overlay.warnings]
+  };
+}
+
+function radioFeatureCollectionToSituationFeatures(
+  response: RadioFeatureCollectionResponse,
+  mode: RadioLosMode,
+  profile: RadioProfile
+): SituationFeature[] {
+  return response.features.map((feature, index) => {
+    const sourceProperties = feature.properties;
+    const score = numberProperty(sourceProperties.score);
+    const quality = stringProperty(sourceProperties.quality) ?? radioQualityFromScore(score);
+    const confidence = boundedUnit(numberProperty(sourceProperties.confidence) ?? score ?? 0.45);
+    const candidateLabel = mode === "site" ? `Kandidát ${index + 1}` : radioLosModeLabel(mode);
+    const label = stringProperty(sourceProperties.label)
+      ?? stringProperty(sourceProperties.name)
+      ?? stringProperty(sourceProperties.summary)
+      ?? candidateLabel;
+    const layer: SituationLayerId = mode === "site" && feature.geometry.type === "Point" ? "mobile" : "mobile_coverage";
+    return {
+      geometry: feature.geometry,
+      id: feature.id ?? `radio:${mode}:${profile.profileId ?? "custom"}:${index}`,
+      properties: {
+        category: mode === "site" ? "radio_site_candidate" : "radio_los",
+        confidence,
+        dataQuality: "model",
+        disclaimer: radioLosDisclaimer,
+        estimatedSignalDbm: numberProperty(sourceProperties.estimatedSignalDbm),
+        featureId: `radio:${mode}:${profile.profileId ?? "custom"}:${index}`,
+        generatedAt: response.generatedAt,
+        label,
+        layer,
+        layerId: `analysis.radio.${mode}`,
+        metrics: {
+          ...(isRecord(sourceProperties.metrics) ? sourceProperties.metrics : {}),
+          ...(score !== undefined ? { score } : {}),
+          ...(numberProperty(sourceProperties.coveredAreaPct) !== undefined ? { coveredAreaPct: numberProperty(sourceProperties.coveredAreaPct) } : {}),
+          ...(numberProperty(sourceProperties.minClearanceM) !== undefined ? { minClearanceM: numberProperty(sourceProperties.minClearanceM) } : {}),
+          ...(numberProperty(sourceProperties.visibleTargetCount) !== undefined ? { visibleTargetCount: numberProperty(sourceProperties.visibleTargetCount) } : {})
+        },
+        modelVersion: stringProperty(sourceProperties.modelVersion) ?? stringProperty(response.metadata?.model),
+        providerId: response.providerId ?? "sim.situation-data",
+        providerLayerId: `radio.${mode}`,
+        providerProperties: sourceProperties,
+        quality,
+        sourceId: "radio_los_model",
+        sourceName: "SIM Radio LoS",
+        status: radioStatusFromQuality(quality),
+        summary: stringProperty(sourceProperties.summary) ?? radioLosDisclaimer,
+        tags: {
+          profileId: profile.profileId ?? "custom",
+          radioOverlay: "true",
+          radioOverlayMode: mode
+        },
+        typeCode: `radio.${mode}`,
+        validUntil: response.generatedAt
+      },
+      type: "Feature"
+    } satisfies SituationFeature;
+  });
+}
+
+function radioLinkCheckToSituationFeature(
+  response: RadioLinkCheckResponse,
+  request: RadioLinkCheckRequest,
+  profile: RadioProfile
+): SituationFeature {
+  const quality = radioQualityFromLinkStatus(response.linkStatus);
+  return {
+    geometry: {
+      coordinates: [[request.from.lon, request.from.lat], [request.to.lon, request.to.lat]],
+      type: "LineString"
+    },
+    id: `radio:link:${profile.profileId ?? "custom"}:${request.from.lon}:${request.from.lat}:${request.to.lon}:${request.to.lat}`,
+    properties: {
+      category: "radio_link_check",
+      confidence: boundedUnit((response.fresnelClearancePct ?? 0) / 100),
+      dataQuality: "model",
+      disclaimer: radioLosDisclaimer,
+      featureId: `radio:link:${profile.profileId ?? "custom"}:${Date.now()}`,
+      generatedAt: response.generatedAt,
+      label: `Spojení ${radioLinkStatusLabel(response.linkStatus)}`,
+      layer: "mobile_coverage",
+      layerId: "analysis.radio.link",
+      metrics: {
+        azimuthDeg: response.azimuthDeg,
+        distanceM: response.distanceM,
+        fresnelClearancePct: response.fresnelClearancePct,
+        maxObstructionM: response.maxObstructionM,
+        requiredExtraAntennaHeightM: response.requiredExtraAntennaHeightM
+      },
+      providerId: "sim.situation-data",
+      providerLayerId: "radio.link_check",
+      providerProperties: {
+        request,
+        response
+      },
+      quality,
+      sourceId: "radio_los_model",
+      sourceName: "SIM Radio LoS",
+      status: radioStatusFromQuality(quality),
+      summary: radioLosDisclaimer,
+      tags: {
+        profileId: profile.profileId ?? "custom",
+        radioOverlay: "true",
+        radioOverlayMode: "link"
+      },
+      typeCode: "radio.link_check"
+    },
+    type: "Feature"
+  };
+}
+
+function radioLosModeLabel(mode: RadioLosMode): string {
+  switch (mode) {
+    case "coverage":
+      return "Pokrytí z bodu";
+    case "link":
+      return "Spojení bod-bod";
+    case "site":
+      return "Najít stanoviště";
+  }
+}
+
+function radioQualityFromScore(score: number | undefined): string {
+  if (score === undefined) {
+    return "unknown";
+  }
+  if (score >= 0.78) {
+    return "good";
+  }
+  if (score >= 0.52) {
+    return "fair";
+  }
+  if (score >= 0.24) {
+    return "weak";
+  }
+  return "none";
+}
+
+function radioQualityFromLinkStatus(status: string | undefined): string {
+  if (status === "clear") {
+    return "good";
+  }
+  if (status === "marginal") {
+    return "fair";
+  }
+  if (status === "obstructed") {
+    return "none";
+  }
+  return "unknown";
+}
+
+function radioStatusFromQuality(quality: string): string {
+  if (quality === "good") {
+    return "ok";
+  }
+  if (quality === "fair" || quality === "weak") {
+    return "weak_signal";
+  }
+  if (quality === "none") {
+    return "degraded_possible";
+  }
+  return "unknown";
+}
+
+function radioLinkStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case "clear":
+      return "průchodné";
+    case "marginal":
+      return "mezní";
+    case "obstructed":
+      return "zastíněné";
+    default:
+      return "neznámé";
+  }
+}
+
+function formatMeters(value: number | undefined): string {
+  if (value === undefined) {
+    return "n/a";
+  }
+  return Math.abs(value) >= 1000 ? `${Math.round((value / 1000) * 10) / 10} km` : `${Math.round(value)} m`;
+}
 
 function useMobileTowerViewshed(
   apiBase: string,
@@ -14397,6 +15127,8 @@ function workspaceMetadata(module: WorkspaceModule): { description: string; labe
       return { description: "Stav zdrojů, odezva a kvalita přijatých dat.", label: "Zdroje" };
     case "alerts":
       return { description: "Výstrahy, oblast polohy operátora a aktivní přiblížení.", label: "Výstrahy" };
+    case "radio":
+      return { description: "Model DEM/LoS pro rádiové spojení, pokrytí a volbu stanoviště.", label: "Radio LoS" };
     case "replay":
       return { description: "Historie stop, zpětné přehrání a predikce.", label: "Replay" };
     case "map":
@@ -14415,6 +15147,8 @@ function workspaceRailLabel(module: WorkspaceModule): string {
       return "Přehled";
     case "alerts":
       return "Události";
+    case "radio":
+      return "Radio";
     case "replay":
       return "Analýzy";
     default:
@@ -14430,6 +15164,8 @@ function workspaceIcon(module: WorkspaceModule): React.ReactNode {
       return <RadioTower size={16} />;
     case "alerts":
       return <AlertTriangle size={16} />;
+    case "radio":
+      return <RadioTower size={16} />;
     case "replay":
       return <History size={16} />;
     case "map":

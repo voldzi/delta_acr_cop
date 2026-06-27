@@ -149,6 +149,88 @@ export interface MobileTowerViewshedResponse {
   warnings: string[];
 }
 
+export interface RadioProfile {
+  antennaGainDbi?: number;
+  antennaHeightM: number;
+  frequencyMhz: number;
+  maxRadiusM: number;
+  name: string;
+  profileId?: string;
+  receiverHeightM: number;
+  receiverSensitivityDbm?: number;
+  requiredFresnelClearancePct?: number;
+  systemLossDb?: number;
+  txPowerW?: number;
+}
+
+export interface RadioProfilesResponse {
+  contractVersion?: string;
+  generatedAt?: string;
+  profiles: RadioProfile[];
+  warnings: string[];
+}
+
+export interface RadioPoint {
+  antennaHeightM?: number;
+  lat: number;
+  lon: number;
+  receiverHeightM?: number;
+}
+
+export interface RadioProfileRequestBase {
+  profile?: RadioProfile;
+  profileId?: string;
+  radioName?: string;
+}
+
+export interface RadioCoverageRequest extends RadioProfileRequestBase {
+  azimuthStepDeg?: number;
+  distanceStepM?: number;
+  radiusM?: number;
+  station: RadioPoint;
+}
+
+export interface RadioLinkCheckRequest extends RadioProfileRequestBase {
+  from: RadioPoint;
+  to: RadioPoint;
+}
+
+export interface RadioSiteSearchRequest extends RadioProfileRequestBase {
+  gridStepM?: number;
+  maxCandidates?: number;
+  searchArea: {
+    bbox: [number, number, number, number];
+  };
+  targets: RadioPoint[];
+}
+
+export interface RadioFeatureCollectionResponse {
+  contractVersion?: string;
+  features: MobileTowerViewshedFeature[];
+  generatedAt?: string;
+  metadata?: Record<string, unknown>;
+  providerId?: string;
+  summary?: Record<string, unknown>;
+  type: "FeatureCollection";
+  warnings: string[];
+}
+
+export interface RadioLinkCheckResponse {
+  azimuthDeg?: number;
+  contractVersion?: string;
+  distanceM?: number;
+  fresnelClearancePct?: number;
+  generatedAt?: string;
+  linkStatus?: "clear" | "marginal" | "obstructed" | "unknown" | string;
+  maxObstructionM?: number;
+  metadata?: Record<string, unknown>;
+  profile?: RadioProfile | Record<string, unknown>;
+  profileSamples?: Array<Record<string, unknown>>;
+  requiredExtraAntennaHeightM?: number;
+  summary?: Record<string, unknown>;
+  warnings: string[];
+}
+
 export interface SituationFeature {
   geometry: SituationGeometry;
   id?: string | number;
@@ -230,6 +312,11 @@ export interface SituationDataSource {
   fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection>;
   fetchLayers(requestNow: Date): Promise<SituationLayerDescriptor[]>;
   fetchMobileTowerViewshed?(towerId: string, query: MobileTowerViewshedQuery, requestNow: Date): Promise<MobileTowerViewshedResponse>;
+  createRadioProfile?(profile: RadioProfile, requestNow: Date): Promise<RadioProfilesResponse>;
+  fetchRadioProfiles?(requestNow: Date): Promise<RadioProfilesResponse>;
+  runRadioCoverage?(request: RadioCoverageRequest, requestNow: Date): Promise<RadioFeatureCollectionResponse>;
+  runRadioLinkCheck?(request: RadioLinkCheckRequest, requestNow: Date): Promise<RadioLinkCheckResponse>;
+  runRadioSiteSearch?(request: RadioSiteSearchRequest, requestNow: Date): Promise<RadioFeatureCollectionResponse>;
   fetchSources(requestNow: Date): Promise<SituationSourceDescriptor[]>;
   fetchTaxonomy?(requestNow: Date): Promise<ProviderTaxonomy>;
 }
@@ -472,6 +559,26 @@ export class SituationDataSourceAdapter implements SituationDataSource {
 
   async fetchMobileTowerViewshed(towerId: string, query: MobileTowerViewshedQuery, requestNow: Date): Promise<MobileTowerViewshedResponse> {
     return fetchMobileTowerViewshed(this.config, towerId, query, requestNow);
+  }
+
+  async createRadioProfile(profile: RadioProfile, requestNow: Date): Promise<RadioProfilesResponse> {
+    return createRadioProfile(this.config, profile, requestNow);
+  }
+
+  async fetchRadioProfiles(requestNow: Date): Promise<RadioProfilesResponse> {
+    return fetchRadioProfiles(this.config, requestNow);
+  }
+
+  async runRadioCoverage(request: RadioCoverageRequest, requestNow: Date): Promise<RadioFeatureCollectionResponse> {
+    return runRadioCoverage(this.config, request, requestNow);
+  }
+
+  async runRadioLinkCheck(request: RadioLinkCheckRequest, requestNow: Date): Promise<RadioLinkCheckResponse> {
+    return runRadioLinkCheck(this.config, request, requestNow);
+  }
+
+  async runRadioSiteSearch(request: RadioSiteSearchRequest, requestNow: Date): Promise<RadioFeatureCollectionResponse> {
+    return runRadioSiteSearch(this.config, request, requestNow);
   }
 
   private async fetchFeaturesUnchunked(normalizedQuery: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
@@ -1002,14 +1109,49 @@ async function fetchMobileTowerViewshed(
   return normalizeMobileTowerViewshedResponse(await fetchJson(url, config, requestNow));
 }
 
-async function fetchJson(url: URL, config: SituationDataSourceConfig, requestNow: Date): Promise<unknown> {
+async function fetchRadioProfiles(config: SituationDataSourceConfig, requestNow: Date): Promise<RadioProfilesResponse> {
+  return normalizeRadioProfilesResponse(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/profiles`), config, requestNow));
+}
+
+async function createRadioProfile(config: SituationDataSourceConfig, profile: RadioProfile, requestNow: Date): Promise<RadioProfilesResponse> {
+  return normalizeRadioProfilesResponse(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/profiles`), config, requestNow, {
+    body: JSON.stringify(profile),
+    method: "POST"
+  }));
+}
+
+async function runRadioCoverage(config: SituationDataSourceConfig, request: RadioCoverageRequest, requestNow: Date): Promise<RadioFeatureCollectionResponse> {
+  return normalizeRadioFeatureCollectionResponse(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/coverage`), config, requestNow, {
+    body: JSON.stringify(request),
+    method: "POST"
+  }));
+}
+
+async function runRadioLinkCheck(config: SituationDataSourceConfig, request: RadioLinkCheckRequest, requestNow: Date): Promise<RadioLinkCheckResponse> {
+  return normalizeRadioLinkCheckResponse(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/link-check`), config, requestNow, {
+    body: JSON.stringify(request),
+    method: "POST"
+  }));
+}
+
+async function runRadioSiteSearch(config: SituationDataSourceConfig, request: RadioSiteSearchRequest, requestNow: Date): Promise<RadioFeatureCollectionResponse> {
+  return normalizeRadioFeatureCollectionResponse(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/site-search`), config, requestNow, {
+    body: JSON.stringify(request),
+    method: "POST"
+  }));
+}
+
+async function fetchJson(url: URL, config: SituationDataSourceConfig, requestNow: Date, init: RequestInit = {}): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
     const response = await fetch(url, {
+      ...init,
       headers: {
         Accept: "application/json",
-        "X-COP-Request-At": requestNow.toISOString()
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        "X-COP-Request-At": requestNow.toISOString(),
+        ...(init.headers ?? {})
       },
       signal: controller.signal
     });
@@ -1020,6 +1162,96 @@ async function fetchJson(url: URL, config: SituationDataSourceConfig, requestNow
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function normalizeRadioProfilesResponse(value: unknown): RadioProfilesResponse {
+  if (!isRecord(value)) {
+    throw new Error("Radio profiles response is not an object.");
+  }
+  const rawProfiles = Array.isArray(value.profiles)
+    ? value.profiles
+    : Array.isArray(value.items)
+      ? value.items
+      : [];
+  return {
+    contractVersion: optionalString(value.contractVersion),
+    generatedAt: optionalString(value.generatedAt),
+    profiles: rawProfiles.flatMap(normalizeRadioProfile),
+    warnings: warningStrings(value.warnings)
+  };
+}
+
+function normalizeRadioProfile(value: unknown): RadioProfile[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const name = optionalString(value.name);
+  const frequencyMhz = numberValue(value.frequencyMhz);
+  const antennaHeightM = numberValue(value.antennaHeightM);
+  const receiverHeightM = numberValue(value.receiverHeightM);
+  const maxRadiusM = numberValue(value.maxRadiusM);
+  if (!name || frequencyMhz === undefined || antennaHeightM === undefined || receiverHeightM === undefined || maxRadiusM === undefined) {
+    return [];
+  }
+  return [{
+    antennaGainDbi: numberValue(value.antennaGainDbi),
+    antennaHeightM,
+    frequencyMhz,
+    maxRadiusM,
+    name,
+    profileId: optionalString(value.profileId),
+    receiverHeightM,
+    receiverSensitivityDbm: numberValue(value.receiverSensitivityDbm),
+    requiredFresnelClearancePct: numberValue(value.requiredFresnelClearancePct),
+    systemLossDb: numberValue(value.systemLossDb),
+    txPowerW: numberValue(value.txPowerW)
+  }];
+}
+
+function normalizeRadioFeatureCollectionResponse(value: unknown): RadioFeatureCollectionResponse {
+  if (!isRecord(value) || value.type !== "FeatureCollection") {
+    throw new Error("Radio LoS response does not contain a GeoJSON FeatureCollection.");
+  }
+  return {
+    contractVersion: optionalString(value.contractVersion),
+    features: Array.isArray(value.features) ? value.features.flatMap(normalizeMobileTowerViewshedFeature) : [],
+    generatedAt: optionalString(value.generatedAt),
+    metadata: isRecord(value.metadata) ? value.metadata : undefined,
+    providerId: optionalString(value.providerId),
+    summary: isRecord(value.summary) ? value.summary : undefined,
+    type: "FeatureCollection",
+    warnings: warningStrings(value.warnings)
+  };
+}
+
+function normalizeRadioLinkCheckResponse(value: unknown): RadioLinkCheckResponse {
+  if (!isRecord(value)) {
+    throw new Error("Radio link-check response is not an object.");
+  }
+  return {
+    azimuthDeg: numberValue(value.azimuthDeg),
+    contractVersion: optionalString(value.contractVersion),
+    distanceM: numberValue(value.distanceM),
+    fresnelClearancePct: numberValue(value.fresnelClearancePct),
+    generatedAt: optionalString(value.generatedAt),
+    linkStatus: optionalString(value.linkStatus),
+    maxObstructionM: numberValue(value.maxObstructionM),
+    metadata: isRecord(value.metadata) ? value.metadata : undefined,
+    profile: isRecord(value.profile) ? value.profile : undefined,
+    profileSamples: Array.isArray(value.profileSamples) ? value.profileSamples.filter(isRecord) : undefined,
+    requiredExtraAntennaHeightM: numberValue(value.requiredExtraAntennaHeightM),
+    summary: isRecord(value.summary) ? value.summary : undefined,
+    warnings: warningStrings(value.warnings)
+  };
+}
+
+function warningStrings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((warning): warning is string => typeof warning === "string") : [];
+}
+
+function numberValue(value: unknown): number | undefined {
+  const parsed = typeof value === "number" || typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function normalizeMobileTowerViewshedResponse(value: unknown): MobileTowerViewshedResponse {
