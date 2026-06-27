@@ -1228,21 +1228,81 @@ function normalizeRadioLinkCheckResponse(value: unknown): RadioLinkCheckResponse
   if (!isRecord(value)) {
     throw new Error("Radio link-check response is not an object.");
   }
+  const profileSamples = Array.isArray(value.profileSamples) ? value.profileSamples.filter(isRecord) : undefined;
+  const derived = deriveRadioLinkCheckMetrics(profileSamples);
   return {
-    azimuthDeg: numberValue(value.azimuthDeg),
+    azimuthDeg: numberValue(value.azimuthDeg) ?? derived.azimuthDeg,
     contractVersion: optionalString(value.contractVersion),
-    distanceM: numberValue(value.distanceM),
-    fresnelClearancePct: numberValue(value.fresnelClearancePct),
+    distanceM: numberValue(value.distanceM) ?? derived.distanceM,
+    fresnelClearancePct: numberValue(value.fresnelClearancePct) ?? derived.fresnelClearancePct,
     generatedAt: optionalString(value.generatedAt),
-    linkStatus: optionalString(value.linkStatus),
-    maxObstructionM: numberValue(value.maxObstructionM),
+    linkStatus: optionalString(value.linkStatus) ?? derived.linkStatus,
+    maxObstructionM: numberValue(value.maxObstructionM) ?? derived.maxObstructionM,
     metadata: isRecord(value.metadata) ? value.metadata : undefined,
     profile: isRecord(value.profile) ? value.profile : undefined,
-    profileSamples: Array.isArray(value.profileSamples) ? value.profileSamples.filter(isRecord) : undefined,
-    requiredExtraAntennaHeightM: numberValue(value.requiredExtraAntennaHeightM),
+    profileSamples,
+    requiredExtraAntennaHeightM: numberValue(value.requiredExtraAntennaHeightM) ?? derived.requiredExtraAntennaHeightM,
     summary: isRecord(value.summary) ? value.summary : undefined,
     warnings: warningStrings(value.warnings)
   };
+}
+
+function deriveRadioLinkCheckMetrics(samples: Array<Record<string, unknown>> | undefined): Partial<RadioLinkCheckResponse> {
+  if (!samples || samples.length === 0) {
+    return { linkStatus: "unknown" };
+  }
+  const distances = samples.flatMap((sample) => {
+    const value = numberValue(sample.distanceM);
+    return value === undefined ? [] : [value];
+  });
+  const fresnelClearances = samples.flatMap((sample) => {
+    const value = numberValue(sample.fresnelClearanceM);
+    return value === undefined ? [] : [value];
+  });
+  const terrainClearances = samples.flatMap((sample) => {
+    const value = numberValue(sample.terrainClearanceM);
+    return value === undefined ? [] : [value];
+  });
+  const minFresnelClearanceM = fresnelClearances.length > 0 ? Math.min(...fresnelClearances) : undefined;
+  const minTerrainClearanceM = terrainClearances.length > 0 ? Math.min(...terrainClearances) : undefined;
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  const firstLon = numberValue(first?.lon);
+  const firstLat = numberValue(first?.lat);
+  const lastLon = numberValue(last?.lon);
+  const lastLat = numberValue(last?.lat);
+  const hasBlockedLineOfSight = samples.some((sample) => sample.lineOfSightClear === false);
+  const requiredExtraAntennaHeightM = minFresnelClearanceM !== undefined && minFresnelClearanceM < 0 ? Math.abs(minFresnelClearanceM) : undefined;
+  const maxObstructionM = minTerrainClearanceM !== undefined && minTerrainClearanceM < 0 ? Math.abs(minTerrainClearanceM) : undefined;
+  const fresnelClearancePct = minFresnelClearanceM === undefined
+    ? undefined
+    : Math.max(0, Math.min(100, minFresnelClearanceM >= 0 ? 100 : 60 + minFresnelClearanceM * 10));
+  const linkStatus = minFresnelClearanceM === undefined
+    ? hasBlockedLineOfSight ? "obstructed" : "unknown"
+    : minFresnelClearanceM >= 0 && !hasBlockedLineOfSight
+      ? "clear"
+      : minFresnelClearanceM >= -5
+        ? "marginal"
+        : "obstructed";
+  return {
+    ...(firstLon !== undefined && firstLat !== undefined && lastLon !== undefined && lastLat !== undefined
+      ? { azimuthDeg: bearingDeg(firstLon, firstLat, lastLon, lastLat) }
+      : {}),
+    ...(distances.length > 0 ? { distanceM: Math.max(...distances) } : {}),
+    ...(fresnelClearancePct !== undefined ? { fresnelClearancePct } : {}),
+    linkStatus,
+    ...(maxObstructionM !== undefined ? { maxObstructionM } : {}),
+    ...(requiredExtraAntennaHeightM !== undefined ? { requiredExtraAntennaHeightM } : {})
+  };
+}
+
+function bearingDeg(fromLon: number, fromLat: number, toLon: number, toLat: number): number {
+  const phi1 = fromLat * Math.PI / 180;
+  const phi2 = toLat * Math.PI / 180;
+  const deltaLon = (toLon - fromLon) * Math.PI / 180;
+  const y = Math.sin(deltaLon) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
 function warningStrings(value: unknown): string[] {
