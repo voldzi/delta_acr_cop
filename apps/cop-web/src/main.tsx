@@ -6195,19 +6195,116 @@ function SelectedSituationDataCard({ authToken, feature }: { authToken: string |
   );
 }
 
+interface MobileNetworkDisplayData {
+  assumptions: Record<string, unknown>;
+  basis?: string[];
+  btsStatus?: string;
+  confidence?: number;
+  dataQuality?: string;
+  demSource?: string;
+  disclaimer?: string;
+  estimatedSignalDbm?: number;
+  generatedAt?: string;
+  metrics?: Record<string, unknown>;
+  modelVersion?: string;
+  notices?: string[];
+  operator?: string;
+  operatorStatusAvailable?: boolean;
+  quality?: string;
+  readModel?: boolean;
+  resolutionM?: number;
+  sourceRevision?: string;
+  status?: string;
+  summary?: string;
+  technology?: string;
+}
+
 function MobileCoverageSummary({ feature }: { feature: SituationFeature }) {
-  const properties = feature.properties;
+  const properties = mobileNetworkDisplayData(feature.properties);
   const quality = mobileCoverageQualityModel(properties.quality);
   return (
     <div className="mobile-status-summary">
       <DataMetric label="Kvalita" value={quality.label} tone={quality.tone} />
-      <DataMetric label="Stav" value={formatMobileNetworkStatus(properties.status)} tone="neutral" />
+      <DataMetric label="Režim" value={mobileNetworkModelLabel(properties)} tone="neutral" />
       <DataMetric label="Technologie" value={properties.technology ?? "n/a"} tone="neutral" />
-      <DataMetric label="Signál" value={formatOptionalNumber(properties.estimatedSignalDbm, " dBm")} tone={mobileMetricTone(properties.estimatedSignalDbm, -95, -110, true)} />
-      <DataMetric label="BTS" value={mobileNetworkBtsStatusLabel(properties)} tone="neutral" />
-      <DataMetric label="Model" value={properties.modelVersion ?? "n/a"} tone="neutral" />
+      <DataMetric label="Jistota" value={formatOptionalPercent(properties.confidence)} tone="neutral" />
+      <DataMetric label="Operátor" value={mobileNetworkBtsStatusLabel(properties)} tone="neutral" />
+      <DataMetric label="Rozlišení" value={formatOptionalNumber(properties.resolutionM, " m")} tone="neutral" />
     </div>
   );
+}
+
+function mobileNetworkDisplayData(properties: SituationFeature["properties"]): MobileNetworkDisplayData {
+  const provider = isRecord(properties.providerProperties) ? properties.providerProperties : {};
+  const assumptions = isRecord(properties.assumptions)
+    ? properties.assumptions
+    : isRecord(provider.assumptions)
+      ? provider.assumptions
+      : {};
+  const metrics = isRecord(properties.metrics)
+    ? properties.metrics
+    : isRecord(provider.metrics)
+      ? provider.metrics
+      : undefined;
+  return {
+    assumptions,
+    basis: mobileStringArrayField(properties, provider, "basis"),
+    btsStatus: mobileStringField(properties, provider, "btsStatus"),
+    confidence: numberProperty(properties.confidence) ?? numberProperty(provider.confidence),
+    dataQuality: mobileStringField(properties, provider, "dataQuality"),
+    demSource: mobileStringField(properties, provider, "demSource"),
+    disclaimer: mobileStringField(properties, provider, "disclaimer"),
+    estimatedSignalDbm: numberProperty(properties.estimatedSignalDbm) ?? numberProperty(provider.estimatedSignalDbm),
+    generatedAt: mobileStringField(properties, provider, "generatedAt"),
+    metrics,
+    modelVersion: mobileStringField(properties, provider, "modelVersion"),
+    notices: mobileStringArrayField(properties, provider, "notices"),
+    operator: mobileStringField(properties, provider, "operator"),
+    operatorStatusAvailable: booleanProperty(properties.operatorStatusAvailable) ?? booleanProperty(provider.operatorStatusAvailable),
+    quality: mobileStringField(properties, provider, "quality"),
+    readModel: booleanProperty(properties.readModel) ?? booleanProperty(provider.readModel),
+    resolutionM: numberProperty(properties.resolutionM) ?? numberProperty(provider.resolutionM),
+    sourceRevision: mobileStringField(properties, provider, "sourceRevision"),
+    status: mobileStringField(properties, provider, "status"),
+    summary: mobileStringField(properties, provider, "summary"),
+    technology: mobileStringField(properties, provider, "technology")
+  };
+}
+
+function mobileStringField(properties: SituationFeature["properties"], provider: Record<string, unknown>, key: keyof SituationFeature["properties"]): string | undefined {
+  return stringProperty(properties[key]) ?? stringProperty(provider[key]);
+}
+
+function mobileStringArrayField(properties: SituationFeature["properties"], provider: Record<string, unknown>, key: keyof SituationFeature["properties"]): string[] | undefined {
+  const direct = properties[key];
+  if (Array.isArray(direct)) {
+    return direct.map((item) => stringProperty(item)).filter((item): item is string => Boolean(item));
+  }
+  const provided = provider[key];
+  if (Array.isArray(provided)) {
+    return provided.map((item) => stringProperty(item)).filter((item): item is string => Boolean(item));
+  }
+  return undefined;
+}
+
+function formatMobileTerrainState(assumptions: Record<string, unknown>): string {
+  const terrainApplied = booleanProperty(assumptions.terrainApplied);
+  const terrainDataAvailable = booleanProperty(assumptions.terrainDataAvailable);
+  const model = stringProperty(assumptions.propagationModel);
+  const appliedLabel = terrainApplied === true ? "terén aplikován" : terrainApplied === false ? "terén neaplikován" : "stav terénu n/a";
+  const dataLabel = terrainDataAvailable === true ? "DEM dostupný" : terrainDataAvailable === false ? "DEM nedostupný" : "DEM n/a";
+  return [appliedLabel, dataLabel, model].filter(Boolean).join(" · ");
+}
+
+function formatMobileAntennaAssumptions(assumptions: Record<string, unknown>): string {
+  const antennaHeight = numberProperty(assumptions.antennaHeightM);
+  const receiverHeight = numberProperty(assumptions.receiverHeightM);
+  const landCoverAware = booleanProperty(assumptions.landCoverAware);
+  return [
+    antennaHeight !== undefined ? `BTS ${antennaHeight} m` : undefined,
+    receiverHeight !== undefined ? `klient ${receiverHeight} m` : undefined,
+    landCoverAware === true ? "land-cover zohledněn" : landCoverAware === false ? "bez land-cover" : undefined
+  ].filter(Boolean).join(" · ") || "n/a";
 }
 
 function MobileNetworkStatusSummary({ feature }: { feature: SituationFeature }) {
@@ -6406,8 +6503,8 @@ function CommunicationTowerSummary({ feature }: { feature: SituationFeature }) {
     <div className="mobile-status-summary">
       <DataMetric label="Typ" value={stringProperty(tags.towerType) ?? "communication"} tone="neutral" />
       <DataMetric label="OSM" value={formatOsmReference(tags)} tone="neutral" />
-      <DataMetric label="Stav" value={formatCommunicationTowerStatus(feature.properties.status)} tone="neutral" />
-      <DataMetric label="BTS" value={formatCommunicationTowerStatus(feature.properties.btsStatus)} tone="neutral" />
+      <DataMetric label="Podklad" value="OSM reference" tone="neutral" />
+      <DataMetric label="Stav BTS" value={formatCommunicationTowerStatus(feature.properties.btsStatus)} tone="neutral" />
       <DataMetric label="Jistota" value={formatOptionalPercent(feature.properties.confidence)} tone="neutral" />
     </div>
   );
@@ -10932,33 +11029,39 @@ function SituationFeatureDetail({
       {isSafetyLayerId(properties.layer) ? <SafetyRiskSummary authToken={authToken} feature={feature} /> : null}
 
       {properties.layer === "mobile_coverage" || properties.layer === "mobile_network" ? (
-        <ObjectDetailSection title={properties.layer === "mobile_network" ? "Mobilní síť" : "Mobilní pokrytí"}>
+        <ObjectDetailSection title={properties.layer === "mobile_network" ? "Mobilní síť" : "Model mobilní sítě"}>
+          {(() => {
+            const mobile = mobileNetworkDisplayData(properties);
+            return (
           <DetailGrid
             rows={[
-              ["Režim", mobileNetworkOperationalModeLabel(properties)],
-              ["Model pokrytí", mobileNetworkModelLabel(properties)],
-              ["Kvalita", mobileCoverageQualityModel(properties.quality).label],
-              ["Stav", formatMobileNetworkStatus(properties.status)],
-              ["Technologie", properties.technology ?? "n/a"],
-              ["Operátor", properties.operator ?? "n/a"],
-              ["Stav BTS", mobileNetworkBtsStatusLabel(properties)],
-              ["Operátorský feed", formatAvailability(properties.operatorStatusAvailable)],
-              ["Odhad signálu", formatOptionalNumber(properties.estimatedSignalDbm, " dBm")],
-              ["Jistota", formatOptionalPercent(properties.confidence)],
-              ["Kvalita dat", mobileNetworkDataQualityLabel(properties.dataQuality)],
-              ["Shrnutí", properties.summary ?? "n/a"],
-              ["Datové podklady", mobileNetworkBasisLabels(properties.basis)],
-              ["Upozornění", mobileNetworkBtsStatusNotice(properties.basis)],
-              ["Poznámky", formatStringList(properties.notices)],
-              ["Model", properties.modelVersion ?? "n/a"],
-              ["Revize modelu", formatMobileNetworkSourceRevision(properties.sourceRevision)],
-              ["Vygenerováno", formatShortDateTime(properties.generatedAt)],
-              ["Rozlišení", formatOptionalNumber(properties.resolutionM, " m")],
-              ["DEM", properties.demSource ?? "n/a"],
-              ["Poznámka", properties.disclaimer ?? "n/a"]
+              ["Režim", mobileNetworkOperationalModeLabel(mobile)],
+              ["Podklad", mobileNetworkModelLabel(mobile)],
+              ["Kvalita pokrytí", mobileCoverageQualityModel(mobile.quality).label],
+              ["Stav modelu", formatMobileNetworkStatus(mobile.status)],
+              ["Technologie", mobile.technology ?? "n/a"],
+              ["Operátor", mobile.operator ?? "neznámý"],
+              ["Stav BTS", mobileNetworkBtsStatusLabel(mobile)],
+              ["Operátorský feed", formatAvailability(mobile.operatorStatusAvailable)],
+              ["Jistota", formatOptionalPercent(mobile.confidence)],
+              ["Kvalita dat", mobileNetworkDataQualityLabel(mobile.dataQuality)],
+              ["Rozlišení modelu", formatOptionalNumber(mobile.resolutionM, " m")],
+              ["Model", mobile.modelVersion ?? "n/a"],
+              ["DEM", mobile.demSource ?? "n/a"],
+              ["Terénní model", formatMobileTerrainState(mobile.assumptions)],
+              ["Antény", formatMobileAntennaAssumptions(mobile.assumptions)],
+              ["Datové podklady", mobileNetworkBasisLabels(mobile.basis)],
+              ["Upozornění", mobileNetworkBtsStatusNotice(mobile.basis)],
+              ["Poznámky", formatStringList(mobile.notices)],
+              ["Shrnutí", mobile.summary ?? "n/a"],
+              ["Revize modelu", formatMobileNetworkSourceRevision(mobile.sourceRevision)],
+              ["Vygenerováno", formatShortDateTime(mobile.generatedAt)],
+              ["Poznámka", mobile.disclaimer ?? "n/a"]
             ]}
           />
-          <p className="mobile-model-explanation">{mobileNetworkModelExplanation(properties)}</p>
+            );
+          })()}
+          <p className="mobile-model-explanation">{mobileNetworkModelExplanation(mobileNetworkDisplayData(properties))}</p>
         </ObjectDetailSection>
       ) : null}
 
@@ -10972,10 +11075,11 @@ function SituationFeatureDetail({
             rows={[
               ["Typ", stringProperty(isRecord(properties.tags) ? properties.tags.towerType : undefined) ?? "communication"],
               ["OSM", formatOsmReference(isRecord(properties.tags) ? properties.tags : {})],
-              ["Stav", formatCommunicationTowerStatus(properties.status)],
+              ["Podklad", "referenční OSM infrastruktura"],
               ["Stav BTS", formatCommunicationTowerStatus(properties.btsStatus)],
               ["Operátorský stav", properties.operatorStatusAvailable ? "dostupný" : "není dostupný"],
-              ["Poznámka", "Jde o referenční OSM infrastrukturu, ne potvrzený realtime stav operátora."]
+              ["Licence", stringProperty(isRecord(properties.license) ? properties.license.attribution : undefined) ?? "OpenStreetMap contributors"],
+              ["Poznámka", properties.disclaimer ?? "Jde o referenční OSM infrastrukturu, ne potvrzený realtime stav operátora."]
             ]}
           />
         </ObjectDetailSection>
@@ -13279,7 +13383,7 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     flood: "Vodní stavy",
     ground: "Terén",
     mobile: "Mobilní síť",
-    mobile_coverage: "Technické pokrytí",
+    mobile_coverage: "Model mobilní sítě",
     mobile_network: "Mobilní síť",
     mission_arena: "Mission Arena",
     place_settlements: "Sídla",

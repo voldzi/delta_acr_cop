@@ -34,6 +34,9 @@ export function isMobileNetworkReadModel(properties: MobileNetworkProvenanceProp
 }
 
 export function mobileNetworkModelLabel(properties: MobileNetworkProvenanceProperties): string {
+  if (isMobileNetworkModelEstimate(properties) || properties.dataQuality?.trim().toLowerCase() === "modelled") {
+    return "Modelový odhad";
+  }
   return isMobileNetworkReadModel(properties) ? "Předpočítané pokrytí" : "Modelový odhad";
 }
 

@@ -17,6 +17,12 @@ describe("mobile network provenance", () => {
       readModel: false
     })).toBe("Předpočítané pokrytí");
     expect(mobileNetworkModelLabel({ readModel: false })).toBe("Modelový odhad");
+    expect(mobileNetworkModelLabel({
+      btsStatus: "operator_feed_unavailable",
+      dataQuality: "modelled",
+      operatorStatusAvailable: false,
+      readModel: true
+    })).toBe("Modelový odhad");
   });
 
   it("translates basis codes without exposing raw provider constants", () => {

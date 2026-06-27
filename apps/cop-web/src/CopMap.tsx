@@ -6822,7 +6822,7 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
   }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     return [
-      feature.properties.layer === "mobile_network" ? "Mobilní síť" : "Technické pokrytí",
+      feature.properties.layer === "mobile_network" ? "Mobilní síť" : "Model mobilní sítě",
       feature.properties.technology,
       status.label,
       typeof feature.properties.estimatedSignalDbm === "number" ? `${Math.round(feature.properties.estimatedSignalDbm)} dBm` : undefined,
@@ -6876,7 +6876,7 @@ function situationLayerDisplayName(feature: SituationFeature): string {
     flood: "Vodní stavy",
     ground: "Terén",
     mobile: "Mobilní síť",
-    mobile_coverage: "Technické pokrytí",
+    mobile_coverage: "Model mobilní sítě",
     mobile_network: "Mobilní síť",
     mission_arena: "Mission Arena",
     traffic: "Doprava",
