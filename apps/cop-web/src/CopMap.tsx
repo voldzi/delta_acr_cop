@@ -124,6 +124,9 @@ const situationTrafficSymbolLayerId = "cop-situation-traffic-symbol";
 const situationRiskPointLayerId = "cop-situation-risk-point";
 const situationRiskIconLayerId = "cop-situation-risk-icon";
 const situationFloodTrendLayerId = "cop-situation-flood-trend";
+const situationHydroReferenceIconLayerId = "cop-situation-hydro-reference-icon";
+const situationHydroReferenceTrendLayerId = "cop-situation-hydro-reference-trend";
+const situationHydroReferenceLabelLayerId = "cop-situation-hydro-reference-label";
 const situationRiskLabelLayerId = "cop-situation-risk-label";
 const situationPointLayerId = "cop-situation-point";
 const situationLabelLayerId = "cop-situation-label";
@@ -157,6 +160,9 @@ const mapFeatureClickPriorityLayerIds = [
   sketchFillLayerId,
   situationRiskIconLayerId,
   situationFloodTrendLayerId,
+  situationHydroReferenceIconLayerId,
+  situationHydroReferenceTrendLayerId,
+  situationHydroReferenceLabelLayerId,
   situationRiskPointLayerId,
   situationRiskLabelLayerId,
   situationTrafficSymbolLayerId,
@@ -203,6 +209,9 @@ const mapPointRaiseLayerIds = [
   situationRiskPointLayerId,
   situationRiskIconLayerId,
   situationFloodTrendLayerId,
+  situationHydroReferenceIconLayerId,
+  situationHydroReferenceTrendLayerId,
+  situationHydroReferenceLabelLayerId,
   situationRiskLabelLayerId,
   situationOsmSymbolLayerId,
   situationMobileSymbolLayerId,
@@ -474,6 +483,7 @@ export interface SituationContextFeatureCollection {
       floodStageLabel?: string;
       floodTrendIconKey?: string;
       floodTrendLabel?: string;
+      hydroMapPriority?: number;
       riskIconKey?: string;
       riskKind?: RiskIconId;
       riskMapLabel?: string;
@@ -1876,7 +1886,7 @@ export function CopMap({
           id: situationRiskPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true], ["any", ["!=", ["get", "riskKind"], "flood"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]]],
           paint: {
             "circle-color": ["coalesce", ["get", "situationStatusColor"], "#fb923c"],
             "circle-opacity": ["case", ["get", "stale"], 0.48, 0.78],
@@ -1891,7 +1901,7 @@ export function CopMap({
           id: situationRiskIconLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true], ["any", ["!=", ["get", "riskKind"], "flood"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]]],
           layout: {
             "icon-image": ["coalesce", ["get", "riskIconKey"], getRiskIconKey("warning")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.28, 10, 0.38, 15, 0.5],
@@ -1908,7 +1918,7 @@ export function CopMap({
           id: situationFloodTrendLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["has", "floodTrendIconKey"]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["has", "floodTrendIconKey"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
           layout: {
             "icon-image": ["get", "floodTrendIconKey"],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.2, 10, 0.28, 15, 0.38],
@@ -1923,10 +1933,75 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationHydroReferenceIconLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 10.3,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "riskIconKey"], getRiskIconKey("flood")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 10.3, 0.22, 12, 0.3, 15, 0.44],
+            "icon-anchor": "center",
+            "icon-allow-overlap": false,
+            "icon-ignore-placement": false,
+            "icon-optional": true,
+            "symbol-sort-key": ["-", ["coalesce", ["get", "hydroMapPriority"], 0]]
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.46, 0.72]
+          }
+        });
+
+        map.addLayer({
+          id: situationHydroReferenceTrendLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 12,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["has", "floodTrendIconKey"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          layout: {
+            "icon-image": ["get", "floodTrendIconKey"],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 12, 0.22, 15, 0.34],
+            "icon-anchor": "center",
+            "icon-offset": ["interpolate", ["linear"], ["zoom"], 12, ["literal", [26, -26]], 16, ["literal", [34, -34]]],
+            "icon-allow-overlap": false,
+            "icon-ignore-placement": false,
+            "icon-optional": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.46, 0.76]
+          }
+        });
+
+        map.addLayer({
+          id: situationHydroReferenceLabelLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 12.2,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          layout: {
+            "text-field": ["coalesce", ["get", "riskMapLabel"], ["get", "mapLabel"], ["get", "label"]],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 12.2, 9, 14, 11, 16, 12],
+            "text-offset": [0, 1.25],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-ignore-placement": false,
+            "text-optional": true
+          },
+          paint: {
+            "text-color": "#dff8ff",
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.5,
+            "text-halo-blur": 0.35,
+            "text-opacity": ["case", ["get", "stale"], 0.42, 0.78]
+          }
+        });
+
+        map.addLayer({
           id: situationRiskLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true], ["any", ["!=", ["get", "riskKind"], "flood"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]]],
           layout: {
             "text-field": ["coalesce", ["get", "riskMapLabel"], ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Bold"],
@@ -2738,6 +2813,15 @@ export function CopMap({
         map.on("mouseenter", situationFloodTrendLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationHydroReferenceIconLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationHydroReferenceTrendLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationHydroReferenceLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationRiskLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -2802,6 +2886,15 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationFloodTrendLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationHydroReferenceIconLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationHydroReferenceTrendLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationHydroReferenceLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationRiskLabelLayerId, () => {
@@ -4952,12 +5045,14 @@ function buildSituationRenderProperties(
     const floodStage = kind === "flood" ? floodStageValue(feature) : undefined;
     const floodTrend = kind === "flood" ? floodTrendDirection(feature.properties.trend) : undefined;
     const floodTone = kind === "flood" ? floodStageTone(floodStage) : undefined;
+    const hydroMapPriority = kind === "flood" ? hydroMapPriorityScore(feature, floodStage, floodTrend) : undefined;
     return {
       riskFeature: true,
       ...(kind === "flood" && floodTrend && floodTone ? {
         floodStageLabel: typeof floodStage === "number" && floodStage > 0 ? `${Math.round(floodStage)}. SPA` : "bez SPA",
         floodTrendIconKey: getFloodTrendIconKey(floodTrend, floodTone),
-        floodTrendLabel: floodTrendShortLabel(feature.properties.trend)
+        floodTrendLabel: floodTrendShortLabel(feature.properties.trend),
+        hydroMapPriority
       } : {}),
       riskIconKey: getRiskIconKey(kind),
       riskKind: kind,
@@ -5345,6 +5440,41 @@ function floodStageTone(value: number | undefined): FloodStageTone {
     return "warn";
   }
   return "critical";
+}
+
+function hydroMapPriorityScore(feature: SituationFeature, floodStage: number | undefined, trend: FloodTrendDirection | undefined): number {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  let priority = 35;
+  if (floodStage !== undefined) {
+    if (floodStage >= 3) {
+      priority = Math.max(priority, 100);
+    } else if (floodStage >= 2) {
+      priority = Math.max(priority, 92);
+    } else if (floodStage >= 1) {
+      priority = Math.max(priority, 82);
+    }
+  }
+  if (trend === "rising") {
+    priority = Math.max(priority, 76);
+  } else if (trend === "falling") {
+    priority = Math.max(priority, 58);
+  }
+
+  const waterLevelCm = numberProperty(feature.properties.waterLevelCm) ?? recordNumber(metrics, "waterLevelCm");
+  const spa1Cm = recordNumber(metrics, "spa1Cm");
+  const discharge = numberProperty(feature.properties.discharge) ?? recordNumber(metrics, "discharge") ?? recordNumber(metrics, "flowM3s");
+  const spa1FlowM3s = recordNumber(metrics, "spa1FlowM3s");
+  const levelRatio = spa1Cm && spa1Cm > 0 && waterLevelCm !== undefined ? waterLevelCm / spa1Cm : undefined;
+  const flowRatio = spa1FlowM3s && spa1FlowM3s > 0 && discharge !== undefined ? discharge / spa1FlowM3s : undefined;
+  const thresholdRatio = Math.max(levelRatio ?? 0, flowRatio ?? 0);
+  if (thresholdRatio >= 1) {
+    priority = Math.max(priority, 82);
+  } else if (thresholdRatio >= 0.8) {
+    priority = Math.max(priority, 72);
+  } else if (thresholdRatio >= 0.6) {
+    priority = Math.max(priority, 62);
+  }
+  return priority;
 }
 
 function floodTrendDirection(value: string | undefined): FloodTrendDirection {

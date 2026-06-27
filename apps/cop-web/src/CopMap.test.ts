@@ -1129,11 +1129,100 @@ describe("COP map data helpers", () => {
       floodStageLabel: "2. SPA",
       floodTrendIconKey: "cop-flood-trend-falling-critical",
       floodTrendLabel: "klesá",
+      hydroMapPriority: 92,
       riskKind: "flood",
       riskMapLabel: "Labe 2. SPA"
     });
     expect(collection.features[0]?.properties.riskMapLabel).not.toContain("Povodeň");
     expect(collection.features[0]?.properties.riskMapLabel).not.toContain("klesá");
+  });
+
+  it("marks routine hydrology points as low-priority map references", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [13.6, 49.75], type: "Point" },
+          properties: {
+            category: "hydrology",
+            confidence: 0.94,
+            featureId: "flood:chmi_hydro:rokycany",
+            headline: "Rokycany",
+            label: "Rokycany",
+            layer: "flood",
+            metrics: {
+              floodActivityLevel: 0,
+              spa1Cm: 100,
+              waterLevelCm: 40
+            },
+            observedAt: "2026-06-27T10:50:00Z",
+            riverName: "Klabava",
+            sourceId: "chmi_hydro",
+            stale: false,
+            status: "ok",
+            trend: "stable"
+          },
+          type: "Feature"
+        },
+        {
+          geometry: { coordinates: [14.2, 50.05], type: "Point" },
+          properties: {
+            category: "hydrology",
+            confidence: 0.94,
+            featureId: "flood:chmi_hydro:berounka",
+            headline: "Berounka",
+            label: "Berounka",
+            layer: "flood",
+            metrics: {
+              floodActivityLevel: 0,
+              spa1Cm: 120,
+              waterLevelCm: 55
+            },
+            observedAt: "2026-06-27T10:50:00Z",
+            riverName: "Berounka",
+            sourceId: "chmi_hydro",
+            stale: false,
+            status: "ok",
+            trend: "rising"
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-06-27T11:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["flood"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 2,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      floodStageLabel: "bez SPA",
+      floodTrendLabel: "stabilní",
+      hydroMapPriority: 35,
+      riskKind: "flood",
+      riskMapLabel: "Rokycany"
+    });
+    expect(collection.features[1]?.properties).toMatchObject({
+      floodStageLabel: "bez SPA",
+      floodTrendLabel: "stoupá",
+      hydroMapPriority: 76,
+      riskKind: "flood",
+      riskMapLabel: "Berounka"
+    });
   });
 
   it("renders weather grid polygons as thematic map fields", () => {
