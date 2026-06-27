@@ -65,7 +65,6 @@ import {
   createCommunityGroup,
   createMessagingConversation,
   fetchCommunityGroups,
-  fetchMessagingBootstrap,
   fetchMessagingConversations,
   fetchMessagingStatus,
   fetchUserProfile,
@@ -85,31 +84,32 @@ import type {
   UserDirectoryEntry
 } from "@cop/core/cop-data";
 import {
-  clearMatrixMessagingCryptoStateForBootstrap,
-  createMatrixMessagingSession,
-  isMatrixAccountStoreMismatchError
-} from "@cop/messaging/matrixClient";
-import {
-  getOrCreateMatrixDeviceId,
   publishChatUnreadCount
 } from "@cop/messaging/runtime";
 import {
-  decodeChatSelect,
   encodeChatCenterLocation
 } from "@cop/messaging/bridge";
 import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
-  MatrixEncryptionRecoveryStatus,
   MatrixLocationShare,
   MatrixMessagingSession,
   MatrixRoomSummary,
   MatrixTimelineMessage
 } from "@cop/messaging/types";
 import { chatText } from "./i18n";
-import { useChatSelection } from "./hooks/useChatSelection";
+import {
+  embeddedChatSelectionFromMessage,
+  readRouteSelection,
+  useChatRouting,
+  writeChatRoute
+} from "./hooks/useChatRouting";
+import { deriveChatWorkflowState } from "./hooks/chatWorkflowState";
+import { useMatrixSession } from "./hooks/useMatrixSession";
 import { useEventCallback, useModalFocus } from "./hooks/useModalFocus";
 import { useVirtualTimelineRows, type TimelineRow } from "./hooks/useVirtualTimelineRows";
+
+export { embeddedChatSelectionFromMessage, readRouteSelection, writeChatRoute } from "./hooks/useChatRouting";
 
 const EncryptionRecoveryDialog = React.lazy(() => import("./dialogs/EncryptionRecoveryDialog"));
 
@@ -278,17 +278,19 @@ export function ChatApp() {
   const [timelineCacheRevision, setTimelineCacheRevision] = React.useState(0);
   const [historyExhaustedByRoom, setHistoryExhaustedByRoom] = React.useState<Record<string, boolean>>({});
   const [historyLoading, setHistoryLoading] = React.useState(false);
-  const [matrixSession, setMatrixSession] = React.useState<MatrixMessagingSession | null>(null);
-  const [encryptionRecoveryStatus, setEncryptionRecoveryStatus] = React.useState<MatrixEncryptionRecoveryStatus | null>(null);
   const {
     clearChatSelection,
+    markRouteApplied,
+    resetRouteOpenAttempt,
+    routeOpenAttemptKey,
     selectedConversationId,
     selectedGroupId,
     selectedRoomId,
+    setRouteOpenAttempt,
     setSelectedConversationId,
     setSelectedGroupId,
     setSelectedRoomId
-  } = useChatSelection();
+  } = useChatRouting();
   const [pendingAttachment, setPendingAttachment] = React.useState<PendingChatAttachment | null>(null);
   const [conversationQuery, setConversationQuery] = React.useState("");
   const [messageSearchQuery, setMessageSearchQuery] = React.useState("");
@@ -301,13 +303,11 @@ export function ChatApp() {
   const [memberQuery, setMemberQuery] = React.useState("");
   const [memberSuggestions, setMemberSuggestions] = React.useState<UserDirectoryEntry[]>([]);
   const [loading, setLoading] = React.useState(false);
-  const [matrixLoading, setMatrixLoading] = React.useState(false);
   const [sending, setSending] = React.useState(false);
   const [searchLoading, setSearchLoading] = React.useState(false);
   const [preparingChatId, setPreparingChatId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
-  const [syncState, setSyncState] = React.useState("idle");
   const [previewItem, setPreviewItem] = React.useState<MediaPreviewItem | null>(null);
   const [chatPreferences, setChatPreferences] = React.useState<ChatPreferences>(() => readChatPreferences("anonymous"));
   const [infoPanelOpen, setInfoPanelOpen] = React.useState(false);
@@ -343,14 +343,11 @@ export function ChatApp() {
   const messageMenuRef = React.useRef<HTMLDivElement | null>(null);
   const messageCanvasRef = React.useRef<HTMLDivElement | null>(null);
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
-  const routeAppliedRef = React.useRef(false);
-  const routeOpenAttemptRef = React.useRef<string | null>(null);
   const matrixAttemptKeyRef = React.useRef<string | null>(null);
   const initialHistoryLoadAttemptsRef = React.useRef<Map<string, number>>(new Map());
   const historyLoadingRoomsRef = React.useRef<Set<string>>(new Set());
   const notifiedEventIdsRef = React.useRef<Set<string>>(new Set());
   const notificationsPrimedRef = React.useRef(false);
-  const matrixSessionRef = React.useRef<MatrixMessagingSession | null>(null);
   const selectedRoomIdRef = React.useRef<string | null>(null);
   const timelineCacheRef = React.useRef<Map<string, MatrixTimelineMessage[]>>(new Map());
   const conversationsRef = React.useRef<MessagingConversationSummary[]>(conversations);
@@ -358,10 +355,6 @@ export function ChatApp() {
   const authToken = getAuthorizationToken(authSession, labToken);
   const authenticated = Boolean(authToken);
   const authSubjectId = authSession.profile?.subjectId ?? authSession.profile?.username ?? authSession.profile?.email;
-  const ownIdentityIds = React.useMemo(
-    () => ownChatIdentityIds(authSession, matrixSession?.bootstrap.userId),
-    [authSession, matrixSession?.bootstrap.userId]
-  );
   const preferencesOwner = authSubjectId ?? authSession.profile?.username ?? "anonymous";
   const localUserPreferences = React.useMemo(
     () => readLocalUserPreferences(preferencesOwner),
@@ -371,9 +364,39 @@ export function ChatApp() {
     () => chatIdentityFor(authSession, authConfig, serverUserProfile, localUserPreferences),
     [authConfig, authSession, localUserPreferences, serverUserProfile]
   );
+  const handleMatrixRoomsChanged = React.useCallback((nextRooms: MatrixRoomSummary[], preferredSelection?: string | null) => {
+    setRooms(nextRooms);
+    setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversationsRef.current, nextRooms));
+  }, [setSelectedRoomId]);
+  const handleMatrixTimelineChanged = React.useCallback(() => setTimelineRevision((value) => value + 1), []);
+  const {
+    encryptionRecoveryStatus,
+    ensureMatrixSession,
+    matrixLoading,
+    matrixSessionLifecycle,
+    matrixSession,
+    matrixSessionRef,
+    refreshEncryptionRecoveryStatus,
+    resetMatrixSession,
+    startMatrixSession,
+    syncState
+  } = useMatrixSession({
+    apiBase,
+    authSubjectId,
+    authToken,
+    conversationsRef,
+    matrixProfile: chatIdentity.matrixProfile,
+    onError: setError,
+    onNotice: setNotice,
+    onRoomsChanged: handleMatrixRoomsChanged,
+    onTimelineChanged: handleMatrixTimelineChanged
+  });
+  const ownIdentityIds = React.useMemo(
+    () => ownChatIdentityIds(authSession, matrixSession?.bootstrap.userId),
+    [authSession, matrixSession?.bootstrap.userId]
+  );
   const chatReady = Boolean(authToken && status?.chatAvailable);
   const encryptionRecoveryReady = Boolean(!matrixSession || encryptionRecoveryStatus?.ready);
-  const composerEnabled = Boolean(selectedRoomId && matrixSession && chatReady && !preparingChatId && encryptionRecoveryReady);
   const selectedConversation = selectedConversationId
     ? conversations.find((conversation) => conversation.conversationId === selectedConversationId) ?? null
     : selectedRoomId
@@ -459,6 +482,31 @@ export function ChatApp() {
     [chatItems, forwardQuery, forwardUserSuggestions]
   );
   const selectedForwardTargets = React.useMemo(() => Object.values(forwardSelectedTargetsByKey), [forwardSelectedTargetsByKey]);
+  const workflowState = React.useMemo(() => deriveChatWorkflowState({
+    authenticated,
+    chatAvailable: Boolean(status?.chatAvailable),
+    forwardDraftCount: forwardDraftMessages.length,
+    matrixLifecycle: matrixSessionLifecycle,
+    matrixSessionActive: Boolean(matrixSession),
+    preparingChat: Boolean(preparingChatId),
+    recoveryReady: encryptionRecoveryReady,
+    selectedForwardTargetCount: selectedForwardTargets.length,
+    selectedRoomId,
+    sending,
+    surface: "desktop"
+  }), [
+    authenticated,
+    encryptionRecoveryReady,
+    forwardDraftMessages.length,
+    matrixSession,
+    matrixSessionLifecycle,
+    preparingChatId,
+    selectedForwardTargets.length,
+    selectedRoomId,
+    sending,
+    status?.chatAvailable
+  ]);
+  const composerEnabled = workflowState.composerEnabled;
   const actionMessage = messageActionPopover ? messageById.get(messageActionPopover.messageId) ?? null : null;
   const statusLabel = statusLabelFor(status, matrixSession, syncState, matrixLoading);
   const recoveryBanner = matrixSession && encryptionRecoveryStatus && !encryptionRecoveryStatus.ready
@@ -466,10 +514,6 @@ export function ChatApp() {
       ? "E2EE je aktivní. Pro bezpečné použití na více zařízeních nastavte obnovovací klíč."
       : "Toto zařízení zatím nemá odemčenou E2EE zálohu. Zadejte obnovovací klíč."
     : null;
-
-  React.useEffect(() => {
-    matrixSessionRef.current = matrixSession;
-  }, [matrixSession]);
 
   React.useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
@@ -614,10 +658,6 @@ export function ChatApp() {
     return () => window.clearTimeout(timer);
   }, [authConfig, authRefreshRetry, authSession]);
 
-  React.useEffect(() => () => {
-    matrixSessionRef.current?.stop();
-  }, []);
-
   React.useEffect(() => {
     const stopMatrixSession = () => {
       matrixSessionRef.current?.stop();
@@ -662,9 +702,7 @@ export function ChatApp() {
 
   React.useEffect(() => {
     if (!authToken) {
-      matrixSessionRef.current?.stop();
-      setMatrixSession(null);
-      setEncryptionRecoveryStatus(null);
+      resetMatrixSession();
       setRecoveryDialogOpen(false);
       setGeneratedRecoveryKey(null);
       setRecoveryKeyInput("");
@@ -677,7 +715,7 @@ export function ChatApp() {
       return;
     }
     void loadMetadata();
-  }, [authToken, refreshNonce]);
+  }, [authToken, refreshNonce, resetMatrixSession]);
 
   React.useEffect(() => {
     if (!authToken || !status?.chatAvailable || matrixSession || matrixLoading) {
@@ -785,9 +823,9 @@ export function ChatApp() {
   }, [chatItems, matrixSession, notificationPermission, rooms, selectedRoomId, timelineRevision]);
 
   React.useEffect(() => {
-    routeAppliedRef.current = applyRouteSelection(readRouteSelection());
+    markRouteApplied(applyRouteSelection(readRouteSelection()));
     const onPopState = () => {
-      routeAppliedRef.current = applyRouteSelection(readRouteSelection());
+      markRouteApplied(applyRouteSelection(readRouteSelection()));
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -802,7 +840,7 @@ export function ChatApp() {
       if (!selection) {
         return;
       }
-      routeOpenAttemptRef.current = null;
+      resetRouteOpenAttempt();
       void applyAndOpenRouteSelection(selection);
     };
     window.addEventListener("message", onMessage);
@@ -821,12 +859,12 @@ export function ChatApp() {
       return;
     }
     const attemptKey = `${routeSelection}:${activeChat.id}:${activeChat.roomId ?? "metadata"}:${chatReady ? "ready" : "offline"}`;
-    if (routeOpenAttemptRef.current === attemptKey) {
+    if (routeOpenAttemptKey === attemptKey) {
       return;
     }
-    routeOpenAttemptRef.current = attemptKey;
+    setRouteOpenAttempt(attemptKey);
     void openChat(activeChat);
-  }, [activeChat, authenticated, chatReady, preparingChatId, selectedRoomId]);
+  }, [activeChat, authenticated, chatReady, preparingChatId, routeOpenAttemptKey, selectedRoomId, setRouteOpenAttempt]);
 
   React.useEffect(() => {
     if (!selectedRoomId && !selectedConversationId && !selectedGroupId) {
@@ -1409,73 +1447,6 @@ export function ChatApp() {
     } finally {
       setLoading(false);
     }
-  }
-
-  async function startMatrixSession(preferredSelection?: string | null, allowStoreRecovery = true): Promise<MatrixMessagingSession | null> {
-    if (!authToken) {
-      return null;
-    }
-    setMatrixLoading(true);
-    setError(null);
-    try {
-      const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, getOrCreateMatrixDeviceId(authSubjectId ?? "anonymous"));
-      if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
-        setError(bootstrap.detail ?? bootstrap.warnings[0] ?? "Zabezpečený chat není připravený.");
-        return null;
-      }
-      matrixSessionRef.current?.stop();
-      const nextSession = await createMatrixMessagingSession(bootstrap, {
-        onRoomsChanged: (nextRooms) => {
-          setRooms(nextRooms);
-          setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversationsRef.current, nextRooms));
-        },
-        profile: chatIdentity.matrixProfile,
-        onSyncState: setSyncState,
-        onTimelineChanged: () => setTimelineRevision((value) => value + 1)
-      });
-      const nextRooms = nextSession.getRooms();
-      const recoveryStatus = await nextSession.getEncryptionRecoveryStatus();
-      setMatrixSession(nextSession);
-      matrixSessionRef.current = nextSession;
-      setEncryptionRecoveryStatus(recoveryStatus);
-      setRooms(nextRooms);
-      setTimelineRevision((value) => value + 1);
-      setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversationsRef.current, nextRooms));
-      setSyncState("starting");
-      return nextSession;
-    } catch (caught) {
-      if (allowStoreRecovery && isMatrixAccountStoreMismatchError(caught)) {
-        const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, getOrCreateMatrixDeviceId(authSubjectId ?? "anonymous"));
-        await clearMatrixMessagingCryptoStateForBootstrap(bootstrap);
-        setNotice("Lokální šifrovací stav byl obnoven pro aktuální přihlášení.");
-        return startMatrixSession(preferredSelection, false);
-      }
-      setError(caught instanceof Error ? caught.message : "Matrix spojení se nepodařilo spustit.");
-      return null;
-    } finally {
-      setMatrixLoading(false);
-    }
-  }
-
-  async function ensureMatrixSession(preferredSelection?: string | null): Promise<MatrixMessagingSession> {
-    if (matrixSessionRef.current) {
-      return matrixSessionRef.current;
-    }
-    const nextSession = await startMatrixSession(preferredSelection);
-    if (!nextSession) {
-      throw new Error("Chatové spojení se nepodařilo připravit.");
-    }
-    return nextSession;
-  }
-
-  async function refreshEncryptionRecoveryStatus(session = matrixSessionRef.current): Promise<MatrixEncryptionRecoveryStatus | null> {
-    if (!session) {
-      setEncryptionRecoveryStatus(null);
-      return null;
-    }
-    const nextStatus = await session.getEncryptionRecoveryStatus();
-    setEncryptionRecoveryStatus(nextStatus);
-    return nextStatus;
   }
 
   async function ensureEncryptionRecoveryReady(session = matrixSessionRef.current): Promise<void> {
@@ -5806,53 +5777,12 @@ function incomingNotificationBody(message: MatrixTimelineMessage): string {
   return sender ? `${sender}: ${preview}` : preview;
 }
 
-export function embeddedChatSelectionFromMessage(data: unknown): string | null {
-  return decodeChatSelect(data);
-}
-
 function findChatItemForSelection(selection: string, chatItems: ChatListItem[]): ChatListItem | null {
   return chatItems.find((item) => item.id === selection
     || item.conversation?.conversationId === selection
     || item.conversation?.matrix?.roomId === selection
     || item.group?.groupId === selection
     || item.room?.roomId === selection) ?? null;
-}
-
-export function readRouteSelection(): string | null {
-  const params = new URLSearchParams(window.location.search);
-  const querySelection = params.get("selection")
-    ?? params.get("groupId")
-    ?? params.get("conversationId")
-    ?? params.get("roomId");
-  if (querySelection?.trim()) {
-    return querySelection.trim();
-  }
-  const path = window.location.pathname.replace(/\/+$/u, "");
-  const prefix = "/chat";
-  if (path === prefix || !path.startsWith(`${prefix}/`)) {
-    return null;
-  }
-  const raw = path.slice(prefix.length + 1).split("/")[0];
-  if (!raw) {
-    return null;
-  }
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
-
-export function writeChatRoute(selection: string | null) {
-  const nextPath = selection ? `/chat/${encodeURIComponent(selection)}` : "/chat";
-  const params = new URLSearchParams(window.location.search);
-  params.delete("selection");
-  params.delete("groupId");
-  params.delete("conversationId");
-  params.delete("roomId");
-  const query = params.toString();
-  const nextUrl = `${nextPath}${query ? `?${query}` : ""}${window.location.hash}`;
-  window.history.pushState({}, "", nextUrl);
 }
 
 function stableStorageKey(value: string): string {
