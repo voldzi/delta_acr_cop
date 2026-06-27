@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { createPublicKey, createVerify } from "node:crypto";
+import { createPublicKey, createVerify, type JsonWebKey as NodeJsonWebKey } from "node:crypto";
 import { correlationIdFrom, sendError } from "./errors.js";
 
 type AuthMode = "lab" | "hybrid" | "oidc";
@@ -45,7 +45,7 @@ interface CachedJwks {
   keys: Jwk[];
 }
 
-type Jwk = JsonWebKey & {
+type Jwk = NodeJsonWebKey & {
   kid?: string;
 };
 
