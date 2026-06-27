@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Bell,
   BellOff,
-  Check,
   CheckCheck,
   ChevronDown,
   ChevronRight,
@@ -109,22 +108,30 @@ import { useEventCallback, useModalFocus } from "./hooks/useModalFocus";
 import { useVirtualTimelineRows, type TimelineRow } from "./hooks/useVirtualTimelineRows";
 import type { ForwardTarget } from "./dialogs/ForwardDialog";
 import type { MediaPreviewItem } from "./dialogs/MediaPreviewDialog";
+import type { MuteChoice } from "./dialogs/MuteDialog";
 import type { NewChatMode } from "./dialogs/NewChatDialog";
+import {
+  messageRetentionLabel,
+  messageRetentionShortLabel,
+  normalizeMessageRetentionSeconds,
+  type MessageRetentionSeconds
+} from "./dialogs/messageRetention";
 
 export { embeddedChatSelectionFromMessage, readRouteSelection, writeChatRoute } from "./hooks/useChatRouting";
 export { centerLocationInCop } from "./components/LocationPreview";
 
 const EncryptionRecoveryDialog = React.lazy(() => import("./dialogs/EncryptionRecoveryDialog"));
+const DeleteChatDialog = React.lazy(() => import("./dialogs/DeleteChatDialog"));
 const ForwardDialog = React.lazy(() => import("./dialogs/ForwardDialog"));
 const MediaPreviewDialog = React.lazy(() => import("./dialogs/MediaPreviewDialog"));
+const MessageRetentionDialog = React.lazy(() => import("./dialogs/MessageRetentionDialog"));
+const MuteDialog = React.lazy(() => import("./dialogs/MuteDialog"));
 const NewChatDialog = React.lazy(() => import("./dialogs/NewChatDialog"));
 
 type ChatFilter = "all" | "direct" | "group";
 type ChatConnectionState = "offline" | "online" | "syncing";
 type InfoPanelTab = "info" | "media" | "members";
 type MediaPanelTab = "media" | "documents" | "locations";
-type MuteChoice = "8h" | "1w" | "forever";
-type MessageRetentionSeconds = 86_400 | 604_800 | 7_776_000 | null;
 type BrowserNotificationPermission = NotificationPermission | "unsupported";
 
 interface PendingChatAttachment {
@@ -226,12 +233,6 @@ const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
 const copUserPreferencesStorageKey = "cop.user.preferences.v1";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const initialHistoryLoadRetryLimit = 8;
-const messageRetentionOptions: Array<{ description: string; label: string; seconds: MessageRetentionSeconds }> = [
-  { description: "Nové zprávy zmizí po jednom dni.", label: "24 hodin", seconds: 86_400 },
-  { description: "Běžná pracovní doba uchování.", label: "7 dní", seconds: 604_800 },
-  { description: "Dlouhodobější provozní historie.", label: "90 dní", seconds: 7_776_000 },
-  { description: "Zprávy se nemažou automaticky.", label: "Vypnuto", seconds: null }
-];
 const quickReactionKeys = ["👍", "❤️", "😂", "😮", "😢", "🙏", "⭐"];
 const stickerReactionKeys = ["✅", "🚨", "🔥", "💯", "👀", "🎉", "💪", "🫡", "👏", "🤝", "📍", "⚠️"];
 const emptyChatPreferences: ChatPreferences = {
@@ -2473,27 +2474,33 @@ export function ChatApp() {
         />
       ) : null}
       {muteDialogOpen && activeChat ? (
-        <MuteDialog
-          title={activeChat.title}
-          onClose={() => setMuteDialogOpen(false)}
-          onMute={applyMuteChoice}
-        />
+        <React.Suspense fallback={<DialogLoadingFallback label="Ztlumit upozornění" />}>
+          <MuteDialog
+            title={activeChat.title}
+            onClose={() => setMuteDialogOpen(false)}
+            onMute={applyMuteChoice}
+          />
+        </React.Suspense>
       ) : null}
       {deleteChatCandidate ? (
-        <DeleteChatDialog
-          title={deleteChatCandidate.title}
-          onClose={() => setDeleteChatCandidate(null)}
-          onConfirm={() => hideChatFromList(deleteChatCandidate)}
-        />
+        <React.Suspense fallback={<DialogLoadingFallback label="Smazat chat" />}>
+          <DeleteChatDialog
+            title={deleteChatCandidate.title}
+            onClose={() => setDeleteChatCandidate(null)}
+            onConfirm={() => hideChatFromList(deleteChatCandidate)}
+          />
+        </React.Suspense>
       ) : null}
       {retentionDialogOpen && activeChat ? (
-        <MessageRetentionDialog
-          currentSeconds={activeMessageRetentionSeconds}
-          saving={retentionSaving}
-          title={activeChat.title}
-          onClose={() => setRetentionDialogOpen(false)}
-          onSelect={(seconds) => void applyMessageRetention(seconds)}
-        />
+        <React.Suspense fallback={<DialogLoadingFallback label="Odstraňování zpráv" />}>
+          <MessageRetentionDialog
+            currentSeconds={activeMessageRetentionSeconds}
+            saving={retentionSaving}
+            title={activeChat.title}
+            onClose={() => setRetentionDialogOpen(false)}
+            onSelect={(seconds) => void applyMessageRetention(seconds)}
+          />
+        </React.Suspense>
       ) : null}
       {recoveryDialogOpen ? (
         <React.Suspense fallback={<DialogLoadingFallback label="Obnova E2EE" />}>
@@ -3750,119 +3757,6 @@ function InfoMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MuteDialog({ title, onClose, onMute }: { title: string; onClose: () => void; onMute: (choice: MuteChoice) => void }) {
-  const modal = useModalFocus<HTMLElement>(onClose);
-  return (
-    <div className="mute-backdrop" role="presentation" onClick={onClose}>
-      <section
-        ref={modal.dialogRef}
-        className="mute-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Ztlumit ${title}`}
-        tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={modal.onDialogKeyDown}
-      >
-        <h2>Ztlumit upozornění</h2>
-        <p>Ostatní členové neuvidí, že jste chat ztlumil/a. Upozornění stále dostanete, pokud vás někdo zmíní.</p>
-        <button onClick={() => onMute("8h")} type="button">8 hodin</button>
-        <button onClick={() => onMute("1w")} type="button">1 týden</button>
-        <button onClick={() => onMute("forever")} type="button">Vždy</button>
-        <button onClick={onClose} type="button">Zrušit</button>
-      </section>
-    </div>
-  );
-}
-
-function DeleteChatDialog({ title, onClose, onConfirm }: { title: string; onClose: () => void; onConfirm: () => void }) {
-  const modal = useModalFocus<HTMLElement>(onClose);
-  return (
-    <div className="mute-backdrop" role="presentation" onClick={onClose}>
-      <section
-        ref={modal.dialogRef}
-        className="mute-dialog delete-chat-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Smazat ${title}`}
-        tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={modal.onDialogKeyDown}
-      >
-        <h2>Smazat chat ze seznamu?</h2>
-        <p>Chat {title} se skryje z tohoto seznamu. Historie zpráv na serveru zůstane zachovaná a nová zpráva chat znovu zobrazí.</p>
-        <button className="danger" onClick={onConfirm} type="button">Smazat ze seznamu</button>
-        <button onClick={onClose} type="button">Zrušit</button>
-      </section>
-    </div>
-  );
-}
-
-function MessageRetentionDialog({
-  currentSeconds,
-  saving,
-  title,
-  onClose,
-  onSelect
-}: {
-  currentSeconds: MessageRetentionSeconds;
-  saving: boolean;
-  title: string;
-  onClose: () => void;
-  onSelect: (seconds: MessageRetentionSeconds) => void;
-}) {
-  const modal = useModalFocus<HTMLElement>(onClose);
-  return (
-    <div className="mute-backdrop" role="presentation" onClick={onClose}>
-      <section
-        ref={modal.dialogRef}
-        className="retention-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Automatické odstraňování zpráv ${title}`}
-        tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={modal.onDialogKeyDown}
-      >
-        <header>
-          <button className="round-icon small" onClick={onClose} type="button" aria-label="Zpět">
-            <ArrowLeft size={20} />
-          </button>
-          <span>
-            <h2>Automatické odstraňování zpráv</h2>
-            <small>{title}</small>
-          </span>
-        </header>
-        <div className="retention-illustration" aria-hidden="true">
-          <Clock3 size={58} />
-        </div>
-        <p>
-          Zprávy v tomto chatu se po zvolené době nebudou zobrazovat v COP Chat.
-          Nastavení se ukládá do chatové místnosti a platí pro členy používající COP Chat.
-        </p>
-        <strong className="retention-section-title">Časový interval</strong>
-        <div className="retention-options">
-          {messageRetentionOptions.map((option) => {
-            const active = normalizeMessageRetentionSeconds(currentSeconds) === option.seconds;
-            return (
-              <button disabled={saving} key={option.label} onClick={() => onSelect(option.seconds)} type="button">
-                <span>
-                  <strong>{option.label}</strong>
-                  <small>{option.description}</small>
-                </span>
-                {active ? <Check size={22} /> : null}
-              </button>
-            );
-          })}
-        </div>
-        <footer>
-          <button disabled={saving} onClick={onClose} type="button">Hotovo</button>
-        </footer>
-      </section>
-    </div>
-  );
-}
-
 function ConnectionDot({ state }: { state: ChatConnectionState }) {
   const label = state === "online"
     ? "Kontakt nebo skupina je online"
@@ -4581,21 +4475,6 @@ function communityGroupMatrixRoomId(group: CommunityGroup): string | undefined {
 
 function messageRetentionSecondsForActiveChat(room: MatrixRoomSummary | null, group: CommunityGroup | null): MessageRetentionSeconds {
   return normalizeMessageRetentionSeconds(room?.messageRetentionSeconds ?? (group ? communityGroupChatMetadata(group).disappearingMessages?.seconds : null));
-}
-
-function normalizeMessageRetentionSeconds(value: unknown): MessageRetentionSeconds {
-  if (value === 86_400 || value === 604_800 || value === 7_776_000) {
-    return value;
-  }
-  return null;
-}
-
-function messageRetentionLabel(seconds: MessageRetentionSeconds): string {
-  return messageRetentionOptions.find((option) => option.seconds === seconds)?.label ?? "Vypnuto";
-}
-
-function messageRetentionShortLabel(seconds: MessageRetentionSeconds): string {
-  return seconds === null ? "Vyp." : messageRetentionLabel(seconds);
 }
 
 export function filterTimelineByRetention(messages: MatrixTimelineMessage[], seconds: MessageRetentionSeconds): MatrixTimelineMessage[] {
