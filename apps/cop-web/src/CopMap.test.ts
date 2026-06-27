@@ -385,6 +385,65 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("does not infer cloud cover for plain ČHMÚ measurement stations", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [13.93, 50.55], type: "Point" },
+          properties: {
+            category: "weather",
+            confidence: 0.94,
+            featureId: "weather:chmi:milesovka",
+            label: "Milešovka",
+            layer: "weather",
+            metrics: {
+              pressureHpa: 1013.2,
+              relativeHumidityPercent: 72,
+              temperatureC: 27.1,
+              windDirectionDeg: 250,
+              windSpeedMps: 2.4
+            },
+            observedAt: "2026-05-28T10:00:00Z",
+            providerLayerId: "weather.chmi_station_observations",
+            sourceId: "chmi_weather_stations",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-28T10:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["weather"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      featureId: "weather:chmi:milesovka",
+      weatherConditionLabel: "měření",
+      weatherLabel: "Milešovka\n27°C · vítr 2 m/s",
+      weatherMapPriority: 55,
+      weatherObservation: true,
+      weatherStationLabel: "Milešovka",
+      weatherSymbolKey: "cop-weather-condition-measurement"
+    });
+  });
+
   it("adds mobile network tower render metadata from status and radio technology", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",
