@@ -20,6 +20,8 @@
   --canvas: #efeae2;
   --danger: #c74343;
   --shadow: 0 16px 44px rgba(17, 27, 33, 0.16);
+  --chat-mobile-header-height: 60px;
+  --chat-mobile-composer-offset: 76px;
 }
 
 @keyframes cop-menu-pop {
@@ -3043,17 +3045,40 @@ button {
   .message-action-popover {
     top: auto !important;
     right: 8px;
-    bottom: 78px;
+    bottom: calc(var(--chat-mobile-composer-offset, 76px) + env(safe-area-inset-bottom) + 8px);
     left: 8px !important;
     width: auto;
+    max-height: calc(
+      100dvh - var(--chat-mobile-header-height, 60px) - var(--chat-mobile-composer-offset, 76px) -
+        env(safe-area-inset-top) - env(safe-area-inset-bottom) - 20px
+    );
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .reaction-strip {
-    justify-content: space-between;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .reaction-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .reaction-strip button {
+    flex: 0 0 39px;
   }
 
   .sticker-tray {
     grid-template-columns: repeat(6, 1fr);
+    max-height: 136px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .pinned-chats {
@@ -3067,9 +3092,13 @@ button {
 
   .chat-action-menu {
     position: fixed;
-    top: 58px;
+    top: calc(env(safe-area-inset-top) + var(--chat-mobile-header-height, 60px) - 2px);
     right: 8px;
     width: min(260px, calc(100vw - 16px));
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 76px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .message-search-bar {

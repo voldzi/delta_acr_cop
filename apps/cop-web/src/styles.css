@@ -26,6 +26,7 @@
   --violet: #a78bfa;
   --cyan: #8cb6d8;
   --shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
+  --mobile-bottom-nav-height: 64px;
 }
 
 * {
@@ -7775,7 +7776,7 @@ dd {
     position: fixed;
     top: 54px;
     right: 0;
-    bottom: calc(64px + env(safe-area-inset-bottom));
+    bottom: calc(var(--mobile-bottom-nav-height, 64px) + env(safe-area-inset-bottom));
     left: 0;
     z-index: 83;
     display: block;
@@ -7799,7 +7800,10 @@ dd {
     left: 0;
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
-    max-height: min(78dvh, 720px);
+    max-height: min(
+      calc(100dvh - 54px - var(--mobile-bottom-nav-height, 64px) - env(safe-area-inset-bottom)),
+      720px
+    );
     min-height: min(54dvh, 520px);
     overflow: hidden;
     border: 1px solid rgba(122, 148, 172, 0.32);
@@ -7888,7 +7892,7 @@ dd {
   .mobile-sheet-content {
     min-height: 0;
     overflow: auto;
-    padding: 12px 12px calc(18px + env(safe-area-inset-bottom));
+    padding: 12px 12px 18px;
     overscroll-behavior: contain;
     pointer-events: auto;
     touch-action: pan-y;
@@ -8116,7 +8120,7 @@ dd {
   .mobile-selection-peek {
     position: absolute;
     right: 12px;
-    bottom: 82px;
+    bottom: calc(var(--mobile-bottom-nav-height, 64px) + env(safe-area-inset-bottom) + 10px);
     left: 12px;
     z-index: 50;
     display: grid;
@@ -8258,7 +8262,7 @@ dd {
 
   .shell.app-shell-v2 .messaging-panel,
   .shell.app-shell-v2 .messaging-panel.pinned {
-    inset: 0 0 calc(var(--mobile-bottom-nav-height, 76px) + env(safe-area-inset-bottom)) 0;
+    inset: 0 0 calc(var(--mobile-bottom-nav-height, 64px) + env(safe-area-inset-bottom)) 0;
     z-index: 94;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
