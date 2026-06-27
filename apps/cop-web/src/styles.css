@@ -8116,6 +8116,9 @@ dd {
     grid-column: 2;
     grid-row: 1 / span 2;
     align-self: stretch;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    align-content: start;
     width: 100%;
     height: 100%;
     max-height: none;
@@ -8128,6 +8131,19 @@ dd {
     overscroll-behavior: contain;
     pointer-events: auto;
     touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-sheet-surface .catalog-drawer-summary {
+    align-self: start;
+    min-height: 0;
+  }
+
+  .mobile-sheet-surface .catalog-layer-list {
+    min-height: 0;
+    overflow: auto;
+    align-self: stretch;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
 
