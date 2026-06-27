@@ -86,9 +86,6 @@ import type {
 import {
   publishChatUnreadCount
 } from "@cop/messaging/runtime";
-import {
-  encodeChatCenterLocation
-} from "@cop/messaging/bridge";
 import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
@@ -99,6 +96,8 @@ import type {
 } from "@cop/messaging/types";
 import { chatText } from "./i18n";
 import { Avatar } from "./components/Avatar";
+import { DocumentThumb } from "./components/DocumentThumb";
+import { StaticLocationMap, formatCoordinates } from "./components/LocationPreview";
 import {
   embeddedChatSelectionFromMessage,
   readRouteSelection,
@@ -110,11 +109,14 @@ import { useMatrixSession } from "./hooks/useMatrixSession";
 import { useEventCallback, useModalFocus } from "./hooks/useModalFocus";
 import { useVirtualTimelineRows, type TimelineRow } from "./hooks/useVirtualTimelineRows";
 import type { ForwardTarget } from "./dialogs/ForwardDialog";
+import type { MediaPreviewItem } from "./dialogs/MediaPreviewDialog";
 
 export { embeddedChatSelectionFromMessage, readRouteSelection, writeChatRoute } from "./hooks/useChatRouting";
+export { centerLocationInCop } from "./components/LocationPreview";
 
 const EncryptionRecoveryDialog = React.lazy(() => import("./dialogs/EncryptionRecoveryDialog"));
 const ForwardDialog = React.lazy(() => import("./dialogs/ForwardDialog"));
+const MediaPreviewDialog = React.lazy(() => import("./dialogs/MediaPreviewDialog"));
 
 type ChatFilter = "all" | "direct" | "group";
 type ComposeMode = "direct" | "group" | null;
@@ -144,17 +146,6 @@ interface LocalUserPreferences {
     avatarDataUrl?: string;
     displayName?: string;
   };
-}
-
-interface MediaPreviewItem {
-  byteSizeLabel?: string;
-  caption?: string;
-  contentType?: string;
-  kind: "document" | "file" | "image" | "location" | "video";
-  location?: MatrixLocationShare;
-  posterUrl?: string;
-  title: string;
-  url?: string;
 }
 
 export interface ChatListItem {
@@ -2453,7 +2444,11 @@ export function ChatApp() {
         </React.Suspense>
       ) : null}
 
-      {previewItem ? <MediaPreviewDialog item={previewItem} onClose={() => setPreviewItem(null)} /> : null}
+      {previewItem ? (
+        <React.Suspense fallback={<DialogLoadingFallback label="Náhled" />}>
+          <MediaPreviewDialog item={previewItem} onClose={() => setPreviewItem(null)} />
+        </React.Suspense>
+      ) : null}
       {infoPanelOpen && activeChat ? (
         <ChatInfoPanel
           activeChat={activeChat}
@@ -3481,19 +3476,6 @@ function LocationMessage({ message, onOpenPreview }: { message: MatrixTimelineMe
   );
 }
 
-function StaticLocationMap({ large = false, location }: { large?: boolean; location: MatrixLocationShare }) {
-  const tileUrl = osmTileUrlForLocation(location, large ? 15 : 14);
-  return (
-    <span
-      className={clsx("map-tile", large && "large")}
-      style={{ backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.04)), url("${tileUrl}")` }}
-      aria-hidden="true"
-    >
-      <span className="map-pin-dot"><MapPin size={large ? 26 : 18} /></span>
-    </span>
-  );
-}
-
 function NewChatDialog({
   canChat,
   directQuery,
@@ -3744,65 +3726,6 @@ function ChatSkeleton() {
         </div>
       ))}
     </>
-  );
-}
-
-function MediaPreviewDialog({ item, onClose }: { item: MediaPreviewItem; onClose: () => void }) {
-  const modal = useModalFocus<HTMLElement>(onClose);
-  return (
-    <div className="preview-backdrop" onClick={onClose} role="presentation">
-      <section
-        ref={modal.dialogRef}
-        className="preview-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Náhled ${item.title}`}
-        tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={modal.onDialogKeyDown}
-      >
-        <header>
-          <span>
-            <strong>{item.title}</strong>
-            <small>{mediaKindLabel(item.kind)}</small>
-          </span>
-          <button className="round-icon" onClick={onClose} type="button" aria-label="Zavřít">
-            <X size={20} />
-          </button>
-        </header>
-        <div className={clsx("preview-stage", item.kind)}>
-          {item.kind === "image" && item.url ? <img alt={item.title} src={item.url} /> : null}
-          {item.kind === "video" && item.url ? <video controls src={item.url} /> : null}
-          {item.kind === "video" && !item.url && item.posterUrl ? (
-            <div className="preview-video-poster">
-              <img alt={item.title} src={item.posterUrl} />
-              <span><Video size={22} /> Demo náhled videa</span>
-            </div>
-          ) : null}
-          {item.kind === "location" && item.location ? (
-            <div className="large-map">
-              <StaticLocationMap location={item.location} large />
-              <div className="large-map-copy">
-                <strong>{formatCoordinates(item.location)}</strong>
-                <small>{item.caption ?? "Sdílená poloha"}</small>
-              </div>
-              <button className="map-center-button" onClick={() => centerLocationInCop(item.location!)} type="button">
-                <MapPin size={17} />
-                Vycentrovat mapu
-              </button>
-            </div>
-          ) : null}
-          {((item.kind !== "image" && item.kind !== "video" && item.kind !== "location") || (!item.url && !item.posterUrl)) && item.kind !== "location" ? (
-            <div className="document-preview">
-              <DocumentThumb fileName={item.title} large />
-              <span>{item.contentType ?? "Soubor"}</span>
-              {item.byteSizeLabel ? <small>{item.byteSizeLabel}</small> : null}
-            </div>
-          ) : null}
-        </div>
-        {item.caption ? <p>{item.caption}</p> : null}
-      </section>
-    </div>
   );
 }
 
@@ -4089,16 +4012,6 @@ function MessageRetentionDialog({
         </footer>
       </section>
     </div>
-  );
-}
-
-function DocumentThumb({ fileName, large = false }: { fileName: string; large?: boolean }) {
-  const extension = fileName.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE";
-  return (
-    <span className={clsx("document-thumb", large && "large")}>
-      <FileText size={large ? 38 : 22} />
-      <small>{extension}</small>
-    </span>
   );
 }
 
@@ -5719,22 +5632,6 @@ async function getDeviceLocation(): Promise<MatrixLocationShare> {
   };
 }
 
-function mediaKindLabel(kind: MediaPreviewItem["kind"]): string {
-  if (kind === "image") {
-    return "Fotografie";
-  }
-  if (kind === "video") {
-    return "Video";
-  }
-  if (kind === "location") {
-    return "Poloha";
-  }
-  if (kind === "document") {
-    return "Dokument";
-  }
-  return "Soubor";
-}
-
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return "0 B";
@@ -5747,27 +5644,6 @@ function formatBytes(bytes: number): string {
     unitIndex += 1;
   }
   return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
-}
-
-function formatCoordinates(location: { lat: number; lon: number }): string {
-  return `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)}`;
-}
-
-function osmTileUrlForLocation(location: { lat: number; lon: number }, zoom: number): string {
-  const z = Math.max(1, Math.min(18, Math.trunc(zoom)));
-  const latRad = location.lat * Math.PI / 180;
-  const scale = 2 ** z;
-  const x = Math.floor((location.lon + 180) / 360 * scale);
-  const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * scale);
-  return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
-}
-
-export function centerLocationInCop(location: MatrixLocationShare): void {
-  if (window.parent !== window) {
-    window.parent.postMessage(encodeChatCenterLocation(location.lat, location.lon), window.location.origin);
-    return;
-  }
-  window.open(`https://www.openstreetmap.org/?mlat=${location.lat}&mlon=${location.lon}#map=16/${location.lat}/${location.lon}`, "_blank", "noopener,noreferrer");
 }
 
 function formatDate(value: string): string {
