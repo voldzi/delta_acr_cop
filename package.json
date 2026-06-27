@@ -21,18 +21,18 @@
     "check": "pnpm validate:schemas && pnpm validate:openapi && pnpm lint && pnpm test"
   },
   "devDependencies": {
-    "@redocly/cli": "^2.12.1",
+    "@redocly/cli": "^2.35.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^25.0.0",
+    "@types/node": "^24.13.2",
     "@types/pg": "^8.20.0",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
+    "@vitejs/plugin-react": "^5.2.0",
     "jsdom": "^29.1.1",
-    "tsx": "^4.21.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6",
-    "vitest": "^4.0.15"
+    "vite": "^7.3.6",
+    "vitest": "^4.1.9"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
@@ -42,9 +42,9 @@
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "fastify": "^5.6.2",
-    "lucide-react": "^0.562.0",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1",
+    "lucide-react": "^1.21.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "yaml": "^2.8.2",
     "zod": "^4.1.13"
   },
