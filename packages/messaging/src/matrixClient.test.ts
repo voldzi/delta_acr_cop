@@ -536,7 +536,7 @@ describe("Matrix client diagnostics", () => {
     const recoveryKey = await session.prepareEncryptionRecoveryForMobile();
 
     expect(recoveryKey).toBe("EsTK mobile compatible recovery key");
-    expect(bootstrapCrossSigning).toHaveBeenCalledTimes(2);
+    expect(bootstrapCrossSigning).toHaveBeenCalledTimes(1);
     expect(bootstrapCrossSigning).toHaveBeenNthCalledWith(1, expect.objectContaining({
       setupNewCrossSigning: true
     }));
@@ -591,6 +591,39 @@ describe("Matrix client diagnostics", () => {
 
     await expect(session.prepareEncryptionRecoveryForMobile()).resolves.toBe("EsTK mobile compatible recovery key");
     expect(bootstrapSecretStorage).toHaveBeenCalled();
+  });
+
+  it("does not read legacy cross-signing secrets after creating a mobile recovery set", async () => {
+    const bootstrapCrossSigning = vi.fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>(async (options) => {
+      if (!options.setupNewCrossSigning) {
+        throw new Error("getSecretStorageKey callback returned falsey");
+      }
+    });
+    const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
+      await options.createSecretStorageKey?.();
+    });
+    const crypto: MockMatrixCrypto = {
+      bootstrapCrossSigning,
+      bootstrapSecretStorage,
+      checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+      createRecoveryKeyFromPassphrase: vi.fn().mockResolvedValue({
+        encodedPrivateKey: "EsTK mobile compatible recovery key",
+        privateKey: new Uint8Array([7, 8, 9])
+      }),
+      getActiveSessionBackupVersion: vi.fn().mockResolvedValue("2"),
+      getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "2" }),
+      isCrossSigningReady: vi.fn().mockResolvedValue(true),
+      isSecretStorageReady: vi.fn().mockResolvedValue(true)
+    };
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await expect(session.prepareEncryptionRecoveryForMobile()).resolves.toBe("EsTK mobile compatible recovery key");
+    expect(bootstrapCrossSigning).toHaveBeenCalledTimes(1);
+    expect(bootstrapCrossSigning).toHaveBeenCalledWith(expect.objectContaining({
+      setupNewCrossSigning: true
+    }));
   });
 
   it("resets Matrix encryption metadata before rotating the recovery key", async () => {

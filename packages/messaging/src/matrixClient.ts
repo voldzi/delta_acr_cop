@@ -878,7 +878,13 @@ async function createUserControlledEncryptionRecovery(
       setupNewKeyBackup: !resetEncryptionApplied,
       setupNewSecretStorage: true
     });
-    await crypto.bootstrapCrossSigning({ authUploadDeviceSigningKeys });
+    // The mobile preparation path has just reset cross-signing and exported the
+    // fresh private keys to new secret storage. Calling bootstrapCrossSigning
+    // again without setupNewCrossSigning would read legacy 4S records, which can
+    // be incomplete on older web-created accounts and rejected by Matrix Rust.
+    if (!options.mobileCompatible) {
+      await crypto.bootstrapCrossSigning({ authUploadDeviceSigningKeys });
+    }
     await crypto.checkKeyBackupAndEnable?.();
     const status = await readMatrixEncryptionRecoveryStatus(client);
     if (!status.matrixRustCompatible) {
