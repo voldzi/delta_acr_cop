@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeChatCenterLocation } from "@cop/messaging/bridge";
-import { App, buildPriorityAlertSummary, buildStableSituationQueryBounds, mapBoundsContainedBy } from "./main";
+import { App, buildPriorityAlertSummary, buildStableSituationQueryBounds, formatWeatherStationAttribution, mapBoundsContainedBy } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
 
 const initialMatchMedia = window.matchMedia;
@@ -71,6 +71,14 @@ afterEach(() => {
 });
 
 describe("COP web dashboard", () => {
+  it("formats structured weather station attribution from SIM without rendering objects", () => {
+    expect(formatWeatherStationAttribution([
+      { label: "ČHMÚ měřená meteorologická stanice", role: "observation", sourceId: "chmi_weather_stations" },
+      { label: "Open-Meteo modelová předpověď", role: "forecast", sourceId: "open_meteo" },
+      { label: "ČHMÚ měřená meteorologická stanice", role: "observation", sourceId: "chmi_weather_stations" }
+    ])).toBe("Zdroj: ČHMÚ měřená meteorologická stanice / měření · Open-Meteo modelová předpověď / předpověď");
+  });
+
   it("keeps situation provider bounds stable while zooming into weather grids", () => {
     const initialBounds = { east: 16.2, north: 50.3, south: 49.4, west: 14.6 };
     const queryBounds = buildStableSituationQueryBounds(initialBounds);

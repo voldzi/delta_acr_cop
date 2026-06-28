@@ -533,22 +533,36 @@ export interface WeatherStationChartSeries {
   label?: string;
   points?: WeatherStationChartPoint[];
   role?: string;
+  seriesId?: string;
+  source?: string;
+  style?: string;
   unit?: string;
 }
 
 export interface WeatherStationChart {
+  chartId?: string;
   id?: string;
+  preferredType?: string;
   series?: WeatherStationChartSeries[];
   title?: string;
+  titleEn?: string;
   unit?: string;
+  xField?: string;
+  yUnit?: string;
   yAxis?: {
     label?: string;
     unit?: string;
   };
 }
 
+export interface WeatherStationAttribution {
+  label?: string;
+  role?: string;
+  sourceId?: string;
+}
+
 export interface WeatherStationDetailResponse {
-  attribution?: string;
+  attribution?: string | WeatherStationAttribution[];
   charts?: WeatherStationChart[];
   contractVersion?: string;
   current?: {

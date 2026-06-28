@@ -198,6 +198,7 @@ import {
   type TakLayerId,
   type TakSourceDescriptor,
   type WeatherRadarFrame,
+  type WeatherStationAttribution,
   type WeatherStationChart,
   type WeatherStationDetailResponse
 } from "./cop-data";
@@ -6755,7 +6756,7 @@ function WeatherStationDetailPanel({
       {detail ? (
         <>
           <WeatherStationCharts charts={charts} />
-          <div className="weather-station-attribution">{detail.attribution ?? "Zdroj: Český hydrometeorologický ústav"}</div>
+          <div className="weather-station-attribution">{formatWeatherStationAttribution(detail.attribution)}</div>
         </>
       ) : null}
     </div>
@@ -6789,7 +6790,7 @@ function WeatherStationCharts({ charts }: { charts: WeatherStationChart[] }) {
   return (
     <div className="weather-station-chart-grid">
       {visibleCharts.map((chart, index) => (
-        <WeatherStationChartPanel chart={chart} key={`${chart.id ?? chart.title ?? "chart"}-${index}`} />
+        <WeatherStationChartPanel chart={chart} key={`${weatherStationChartId(chart) ?? chart.title ?? "chart"}-${index}`} />
       ))}
     </div>
   );
@@ -6809,7 +6810,7 @@ function WeatherStationChartPanel({ chart }: { chart: WeatherStationChart }) {
   const chartHeight = height - padding.top - padding.bottom;
   const x = (time: string) => padding.left + ((Date.parse(time) - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
   const y = (value: number) => padding.top + chartHeight - ((value - valueDomain.min) / Math.max(1, valueDomain.max - valueDomain.min)) * chartHeight;
-  const unit = chart.unit ?? chart.yAxis?.unit ?? series.find((entry) => entry.item.unit)?.item.unit ?? "";
+  const unit = weatherStationChartUnit(chart, series);
 
   return (
     <div className="weather-station-chart-panel">
@@ -6826,9 +6827,9 @@ function WeatherStationChartPanel({ chart }: { chart: WeatherStationChart }) {
         <text className="weather-chart-axis-label" x={4} y={padding.top + chartHeight}>{formatWeatherChartAxisValue(valueDomain.min, unit)}</text>
         {series.map((entry) => (
           <polyline
-            className={`weather-chart-series ${entry.item.role === "forecast" || /předpověď/i.test(entry.item.label ?? "") ? "forecast" : "measured"}`}
+            className={`weather-chart-series ${weatherStationChartSeriesRole(entry.item)}`}
             fill="none"
-            key={`${entry.item.id ?? entry.item.label ?? "series"}-${entry.index}`}
+            key={`${weatherStationChartSeriesId(entry.item) ?? entry.item.label ?? "series"}-${entry.index}`}
             points={entry.points.map((point) => `${x(point.time)},${y(point.value)}`).join(" ")}
             stroke={entry.item.color ?? weatherChartPalette(entry.index)}
           />
@@ -6836,14 +6837,72 @@ function WeatherStationChartPanel({ chart }: { chart: WeatherStationChart }) {
       </svg>
       <div className="weather-station-chart-legend">
         {series.map((entry) => (
-          <span key={`${entry.item.id ?? entry.item.label ?? "series"}-legend-${entry.index}`}>
+          <span key={`${weatherStationChartSeriesId(entry.item) ?? entry.item.label ?? "series"}-legend-${entry.index}`}>
             <i style={{ borderColor: entry.item.color ?? weatherChartPalette(entry.index) }} />
-            {entry.item.label ?? entry.item.id ?? `řada ${entry.index + 1}`}
+            {entry.item.label ?? weatherStationChartSeriesId(entry.item) ?? `řada ${entry.index + 1}`}
           </span>
         ))}
       </div>
     </div>
   );
+}
+
+export function formatWeatherStationAttribution(attribution: WeatherStationDetailResponse["attribution"]): string {
+  if (typeof attribution === "string") {
+    const trimmed = attribution.trim();
+    return trimmed || "Zdroj: Český hydrometeorologický ústav";
+  }
+  if (Array.isArray(attribution)) {
+    const labels = attribution
+      .map(formatWeatherStationAttributionItem)
+      .filter((label) => label.length > 0);
+    return labels.length > 0 ? `Zdroj: ${Array.from(new Set(labels)).join(" · ")}` : "Zdroj: Český hydrometeorologický ústav";
+  }
+  return "Zdroj: Český hydrometeorologický ústav";
+}
+
+function formatWeatherStationAttributionItem(item: WeatherStationAttribution): string {
+  const label = stringProperty(item.label) ?? sourceDisplayName(stringProperty(item.sourceId));
+  const role = weatherStationAttributionRoleLabel(stringProperty(item.role));
+  return [label, role].filter(Boolean).join(" / ");
+}
+
+function weatherStationAttributionRoleLabel(role: string | undefined): string | undefined {
+  switch (role) {
+    case "observation":
+      return "měření";
+    case "forecast":
+      return "předpověď";
+    default:
+      return role;
+  }
+}
+
+function weatherStationChartId(chart: WeatherStationChart): string | undefined {
+  return chart.id ?? chart.chartId;
+}
+
+function weatherStationChartSeriesId(series: NonNullable<WeatherStationChart["series"]>[number]): string | undefined {
+  return series.id ?? series.seriesId;
+}
+
+function weatherStationChartSeriesRole(series: NonNullable<WeatherStationChart["series"]>[number]): "forecast" | "measured" {
+  const role = series.role ?? series.style ?? series.source;
+  if (role === "forecast" || role === "dashed" || role === "open_meteo" || /předpověď/i.test(series.label ?? "")) {
+    return "forecast";
+  }
+  return "measured";
+}
+
+function weatherStationChartUnit(
+  chart: WeatherStationChart,
+  series: Array<{ item: NonNullable<WeatherStationChart["series"]>[number] }>
+): string {
+  return chart.unit
+    ?? chart.yUnit
+    ?? chart.yAxis?.unit
+    ?? series.find((entry) => entry.item.unit)?.item.unit
+    ?? "";
 }
 
 function weatherChartSeriesPoints(series: NonNullable<WeatherStationChart["series"]>[number]): Array<{ time: string; value: number }> {
