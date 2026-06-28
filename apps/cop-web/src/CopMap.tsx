@@ -3238,19 +3238,19 @@ export function CopMap({
   }, [mapReady, predictionFeatureCollection]);
 
   React.useEffect(() => {
-    if (!mapReady || !autoFit || positionedObjects.length === 0) {
+    if (!mapReady || !autoFit) {
       return;
     }
 
-    const signature = buildFitSignature(positionedObjects);
+    const signature = buildFitSignature(positionedObjects, situationFeatureCollection);
     if (lastFitSignatureRef.current === signature) {
       return;
     }
 
-    if (fitMapToObjects(mapRef.current, positionedObjects)) {
+    if (fitMapToVisibleContent(mapRef.current, positionedObjects, situationFeatureCollection)) {
       lastFitSignatureRef.current = signature;
     }
-  }, [autoFit, mapReady, positionedObjects]);
+  }, [autoFit, mapReady, positionedObjects, situationFeatureCollection]);
 
   React.useEffect(() => {
     if (!mapFullscreen) {
@@ -3806,11 +3806,11 @@ export function CopMap({
             onClick={() => {
               const nextAutoFit = !autoFit;
               onAutoFitChange(nextAutoFit);
-              if (nextAutoFit && fitMapToObjects(mapRef.current, positionedObjects)) {
-                lastFitSignatureRef.current = buildFitSignature(positionedObjects);
+              if (nextAutoFit && fitMapToVisibleContent(mapRef.current, positionedObjects, situationFeatureCollection)) {
+                lastFitSignatureRef.current = buildFitSignature(positionedObjects, situationFeatureCollection);
               }
             }}
-            title="Zapnout nebo vypnout automatické přizpůsobení mapy objektům"
+            title="Zapnout nebo vypnout automatické přizpůsobení mapy viditelným prvkům"
             type="button"
           >
             Přiblížit
@@ -7531,19 +7531,29 @@ function isRecoverableRasterOverlayRequestError(message: string): boolean {
 }
 
 export function fitMapToObjects(map: maplibregl.Map | null, objects: CopObject[]): boolean {
-  const positionedObjects = objects.filter(hasPosition);
-  if (!map || positionedObjects.length === 0) {
+  return fitMapToVisibleContent(map, objects.filter(hasPosition), emptySituationContextFeatureCollection());
+}
+
+export function fitMapToVisibleContent(
+  map: maplibregl.Map | null,
+  objects: CopObject[],
+  situationFeatures: SituationContextFeatureCollection
+): boolean {
+  const points = [
+    ...objects.filter(hasPosition).map((object): [number, number] => [object.position.lon, object.position.lat]),
+    ...fitEligibleSituationCoordinates(situationFeatures)
+  ];
+
+  if (!map || points.length === 0) {
     return false;
   }
 
   const bounds = new maplibregl.LngLatBounds();
-  positionedObjects.forEach((object) => {
-    bounds.extend([object.position!.lon, object.position!.lat]);
-  });
+  points.forEach((point) => bounds.extend(point));
 
-  if (positionedObjects.length === 1) {
+  if (points.length === 1) {
     map.easeTo({
-      center: [positionedObjects[0]!.position!.lon, positionedObjects[0]!.position!.lat],
+      center: points[0]!,
       zoom: Math.max(map.getZoom(), 10),
       duration: 650
     });
@@ -7558,10 +7568,32 @@ export function fitMapToObjects(map: maplibregl.Map | null, objects: CopObject[]
   return true;
 }
 
-function buildFitSignature(objects: CopObject[]): string {
-  return objects
+function fitEligibleSituationCoordinates(collection: SituationContextFeatureCollection): Array<[number, number]> {
+  const points: Array<[number, number]> = [];
+  for (const feature of collection.features) {
+    if (!isFitEligibleSituationFeature(feature)) {
+      continue;
+    }
+    collectGeometryCoordinates(feature.geometry.coordinates, points);
+  }
+  return points;
+}
+
+function isFitEligibleSituationFeature(feature: SituationContextFeatureCollection["features"][number]): boolean {
+  if (feature.properties.weatherPulse || feature.properties.weatherGrid || isSituationRasterOverlayFeature(feature as SituationFeature)) {
+    return false;
+  }
+  return feature.geometry.type === "Point";
+}
+
+function buildFitSignature(objects: CopObject[], situationFeatures: SituationContextFeatureCollection): string {
+  const objectIds = objects
     .filter(hasPosition)
-    .map((object) => object.objectId)
+    .map((object) => `object:${object.objectId}`);
+  const featureIds = situationFeatures.features
+    .filter(isFitEligibleSituationFeature)
+    .map((feature) => `feature:${feature.properties.featureId}`);
+  return [...objectIds, ...featureIds]
     .sort()
     .join("|");
 }

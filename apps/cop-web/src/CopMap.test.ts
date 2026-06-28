@@ -4,6 +4,7 @@ import {
   aoiRuleToEditFeatureCollection,
   aoiRulesToFeatureCollection,
   fitMapToObjects,
+  fitMapToVisibleContent,
   formatTrackLabel,
   isRecoverableMapError,
   objectsToHistoryFeatureCollection,
@@ -11,6 +12,7 @@ import {
   objectsToTrackFeatureCollection,
   parseMapCenter,
   situationFeaturesToFeatureCollection,
+  type SituationContextFeatureCollection,
   userAlertRadiusToFeatureCollection,
   userLocationToFeatureCollection
 } from "./CopMap";
@@ -1621,6 +1623,99 @@ describe("COP map data helpers", () => {
     });
     expect(fitMapToObjects(null, objects)).toBe(false);
     expect(fitMapToObjects(multiMap as never, [{ ...objects[0]!, position: undefined }])).toBe(false);
+  });
+
+  it("fits the map to visible context points when no tracks are present", () => {
+    const map = {
+      easeTo: vi.fn(),
+      fitBounds: vi.fn(),
+      getZoom: vi.fn(() => 8)
+    };
+    const context = {
+      type: "FeatureCollection",
+      features: [
+        {
+          geometry: { coordinates: [14.42, 50.08], type: "Point" },
+          properties: {
+            category: "weather",
+            featureId: "weather:praha",
+            label: "Praha",
+            layer: "weather",
+            selected: false,
+            sourceId: "chmi_weather_stations",
+            weatherObservation: true
+          },
+          type: "Feature"
+        },
+        {
+          geometry: { coordinates: [15.12, 49.76], type: "Point" },
+          properties: {
+            category: "weather",
+            featureId: "camera:sedlcany",
+            label: "Sedlcany",
+            layer: "weather_webcams",
+            selected: false,
+            sourceId: "chmi_weather_webcams",
+            weatherCamera: true
+          },
+          type: "Feature"
+        }
+      ]
+    } satisfies SituationContextFeatureCollection;
+
+    expect(fitMapToVisibleContent(map as never, [], context)).toBe(true);
+    expect(map.fitBounds).toHaveBeenCalledWith(expect.anything(), {
+      duration: 750,
+      maxZoom: 12,
+      padding: { top: 86, right: 72, bottom: 72, left: 72 }
+    });
+  });
+
+  it("does not fit to weather pulse helper features", () => {
+    const map = {
+      easeTo: vi.fn(),
+      fitBounds: vi.fn(),
+      getZoom: vi.fn(() => 7)
+    };
+    const context = {
+      type: "FeatureCollection",
+      features: [
+        {
+          geometry: { coordinates: [14.42, 50.08], type: "Point" },
+          properties: {
+            category: "weather",
+            featureId: "weather:praha",
+            label: "Praha",
+            layer: "weather",
+            selected: false,
+            sourceId: "chmi_weather_stations",
+            weatherObservation: true
+          },
+          type: "Feature"
+        },
+        {
+          geometry: { coordinates: [18.2, 49.8], type: "Point" },
+          properties: {
+            category: "weather",
+            featureId: "weather:pulse",
+            label: "Srazky",
+            layer: "weather_precipitation_grid",
+            selected: false,
+            sourceId: "chmi_weather_stations",
+            weatherPulse: true
+          },
+          type: "Feature"
+        }
+      ]
+    } satisfies SituationContextFeatureCollection;
+
+    expect(fitMapToVisibleContent(map as never, [], context)).toBe(true);
+    expect(map.easeTo).toHaveBeenCalledWith({
+      center: [14.42, 50.08],
+      duration: 650,
+      zoom: 10
+    });
+    expect(map.fitBounds).not.toHaveBeenCalled();
   });
 
   it("builds route history and prediction line features", () => {
