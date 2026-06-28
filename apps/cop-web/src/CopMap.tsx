@@ -114,6 +114,7 @@ const situationWeatherPriorityLayerId = "cop-situation-weather-priority";
 const situationWeatherConditionLayerId = "cop-situation-weather-condition";
 const situationWeatherWindLayerId = "cop-situation-weather-wind";
 const situationWeatherLabelLayerId = "cop-situation-weather-label";
+const situationWeatherCameraSelectedLayerId = "cop-situation-weather-camera-selected";
 const situationWeatherCameraLayerId = "cop-situation-weather-camera";
 const situationAirQualityHeatLayerId = "cop-situation-air-quality-heat";
 const situationAirQualityPointLayerId = "cop-situation-air-quality-point";
@@ -172,6 +173,7 @@ const mapFeatureClickPriorityLayerIds = [
   situationWeatherWindLayerId,
   situationWeatherPriorityLayerId,
   situationWeatherConditionLayerId,
+  situationWeatherCameraSelectedLayerId,
   situationAirQualityLabelLayerId,
   situationAirQualityPointLayerId,
   situationOsmSymbolLayerId,
@@ -215,6 +217,7 @@ const mapPointRaiseLayerIds = [
   situationRiskLabelLayerId,
   situationOsmSymbolLayerId,
   situationMobileSymbolLayerId,
+  situationWeatherCameraSelectedLayerId,
   situationWeatherCameraLayerId,
   situationWeatherPriorityLayerId,
   situationWeatherConditionLayerId,
@@ -2242,19 +2245,34 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationWeatherCameraSelectedLayerId,
+          type: "circle",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherCamera"], true], ["==", ["get", "selected"], true]],
+          paint: {
+            "circle-color": "#38bdf8",
+            "circle-opacity": 0.18,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 19, 11, 27, 15, 36],
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-opacity": 0.95,
+            "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 6, 2.4, 11, 3.2, 15, 4.2]
+          }
+        });
+
+        map.addLayer({
           id: situationWeatherCameraLayerId,
           type: "symbol",
           source: situationSourceId,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherCamera"], true]],
           layout: {
             "icon-image": weatherCameraIconKey,
-            "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.32, 11, 0.42, 15, 0.55],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.4, 11, 0.54, 15, 0.7],
             "icon-anchor": "bottom",
             "icon-allow-overlap": true,
             "icon-ignore-placement": true
           },
           paint: {
-            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0, 9.5, 0, 11, ["case", ["get", "stale"], 0.62, 0.96]]
+            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 6, ["case", ["get", "stale"], 0.48, 0.78], 9.5, ["case", ["get", "stale"], 0.56, 0.9], 11, ["case", ["get", "stale"], 0.68, 0.98]]
           }
         });
 
@@ -2861,6 +2879,9 @@ export function CopMap({
         map.on("mouseenter", situationWeatherLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationWeatherCameraSelectedLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationWeatherCameraLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -2934,6 +2955,9 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationWeatherCameraSelectedLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherCameraLayerId, () => {
@@ -8286,7 +8310,7 @@ function createWeatherWindArrowImage(): ImageData {
 
 function createWeatherCameraSymbolImage(): ImageData {
   const canvas = document.createElement("canvas");
-  const size = 112;
+  const size = 128;
   canvas.width = size;
   canvas.height = size;
   const context = canvas.getContext("2d");
@@ -8298,42 +8322,86 @@ function createWeatherCameraSymbolImage(): ImageData {
   context.lineCap = "round";
   context.lineJoin = "round";
 
-  const drawCamera = (fillStyle: string, strokeStyle: string, lineWidth: number, alpha = 1) => {
-    context.save();
-    context.globalAlpha = alpha;
-    context.fillStyle = fillStyle;
-    context.strokeStyle = strokeStyle;
-    context.lineWidth = lineWidth;
-    drawRoundedRect(context, 20, 34, 72, 48, 13);
-    context.fill();
-    context.stroke();
-    context.beginPath();
-    context.moveTo(38, 34);
-    context.lineTo(45, 23);
-    context.lineTo(67, 23);
-    context.lineTo(74, 34);
-    context.closePath();
-    context.fill();
-    context.stroke();
-    context.beginPath();
-    context.arc(56, 58, 15, 0, Math.PI * 2);
-    context.stroke();
-    context.beginPath();
-    context.arc(56, 58, 6, 0, Math.PI * 2);
-    context.fill();
-    context.beginPath();
-    context.arc(78, 44, 3.6, 0, Math.PI * 2);
-    context.fill();
-    context.restore();
-  };
+  context.save();
+  context.translate(64, 60);
+  context.shadowBlur = 14;
+  context.shadowColor = "rgba(6, 16, 25, 0.42)";
+  context.fillStyle = "rgba(6, 16, 25, 0.24)";
+  context.beginPath();
+  context.ellipse(0, 54, 24, 8, 0, 0, Math.PI * 2);
+  context.fill();
+  context.restore();
 
   context.save();
+  context.translate(64, 52);
   context.shadowBlur = 12;
-  context.shadowColor = "rgba(6, 16, 25, 0.5)";
-  drawCamera("rgba(6, 16, 25, 0.94)", "rgba(6, 16, 25, 0.94)", 7);
+  context.shadowColor = "rgba(6, 16, 25, 0.48)";
+
+  context.beginPath();
+  context.arc(0, 0, 36, 0, Math.PI * 2);
+  context.fillStyle = "rgba(248, 250, 252, 0.98)";
+  context.fill();
+  context.lineWidth = 5.5;
+  context.strokeStyle = "rgba(6, 16, 25, 0.9)";
+  context.stroke();
+
+  context.beginPath();
+  context.moveTo(-12, 31);
+  context.quadraticCurveTo(0, 52, 12, 31);
+  context.lineTo(-12, 31);
+  context.closePath();
+  context.fillStyle = "rgba(248, 250, 252, 0.98)";
+  context.fill();
+  context.stroke();
+
+  const gradient = context.createLinearGradient(-24, -18, 28, 26);
+  gradient.addColorStop(0, "#67e8f9");
+  gradient.addColorStop(1, "#0ea5e9");
+  context.fillStyle = gradient;
+  context.strokeStyle = "#0369a1";
+  context.lineWidth = 3.4;
+  drawRoundedRect(context, -23, -10, 46, 34, 8);
+  context.fill();
+  context.stroke();
+
+  context.beginPath();
+  context.moveTo(-13, -10);
+  context.lineTo(-8, -20);
+  context.lineTo(9, -20);
+  context.lineTo(15, -10);
+  context.closePath();
+  context.fill();
+  context.stroke();
+
+  context.beginPath();
+  context.arc(0, 7, 11.5, 0, Math.PI * 2);
+  context.fillStyle = "#e0f2fe";
+  context.fill();
+  context.lineWidth = 3;
+  context.strokeStyle = "#075985";
+  context.stroke();
+  context.beginPath();
+  context.arc(0, 7, 4.6, 0, Math.PI * 2);
+  context.fillStyle = "#075985";
+  context.fill();
+
+  context.beginPath();
+  context.arc(17, -2, 3, 0, Math.PI * 2);
+  context.fillStyle = "#f8fafc";
+  context.fill();
+
   context.restore();
-  drawCamera("rgba(226, 246, 255, 0.96)", "#061019", 4.2);
-  drawCamera("#38bdf8", "#dff8ff", 2.2, 0.96);
+
+  context.save();
+  context.translate(64, 117);
+  context.beginPath();
+  context.arc(0, 0, 4.4, 0, Math.PI * 2);
+  context.fillStyle = "#38bdf8";
+  context.fill();
+  context.lineWidth = 2.4;
+  context.strokeStyle = "#ffffff";
+  context.stroke();
+  context.restore();
 
   return context.getImageData(0, 0, size, size);
 }

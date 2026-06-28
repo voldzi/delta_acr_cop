@@ -255,10 +255,11 @@ describe("COP map data helpers", () => {
       },
       type: "FeatureCollection",
       warnings: []
-    });
+    }, "weather:webcam:praha");
 
     expect(collection.features[0]?.properties).toMatchObject({
       mapPointSuppressed: true,
+      selected: true,
       situationStatusLabel: "KAMERA",
       situationStatusTone: "info",
       weatherCamera: true,
