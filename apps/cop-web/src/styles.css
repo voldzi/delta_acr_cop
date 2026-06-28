@@ -8292,14 +8292,20 @@ dd {
   }
 
   .mobile-sheet-surface .catalog-layer-row {
-    min-height: 68px;
+    grid-template-rows: auto auto;
+    align-content: start;
+    min-height: 0;
+    padding: 12px 10px;
+    gap: 8px;
+    overflow: visible;
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
 
   .mobile-sheet-surface .catalog-layer-toggle {
-    min-height: 46px;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    min-height: 48px;
   }
 
   .mobile-sheet-surface .catalog-layer-row input {
@@ -8307,6 +8313,22 @@ dd {
     height: 22px;
     pointer-events: auto;
     touch-action: manipulation;
+  }
+
+  .mobile-sheet-surface .catalog-layer-meta {
+    position: static;
+    align-items: center;
+    min-height: 20px;
+    padding-left: 44px;
+    row-gap: 5px;
+  }
+
+  .mobile-sheet-surface .catalog-layer-meta span,
+  .mobile-sheet-surface .catalog-status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 18px;
+    line-height: 1;
   }
 
   .settings-backdrop {
