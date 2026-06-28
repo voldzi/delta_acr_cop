@@ -4644,6 +4644,15 @@ h1 {
   font-weight: 800;
 }
 
+.radio-point-pick-active .map-canvas {
+  cursor: crosshair;
+}
+
+.radio-map-pick-hint {
+  border-color: rgba(56, 189, 248, 0.72);
+  color: #bae6fd;
+}
+
 .map-zone-create-actions {
   display: flex;
   flex-wrap: wrap;

@@ -480,6 +480,7 @@ interface AccountChangeNotice {
 }
 
 type RadioLosMode = "coverage" | "link" | "site";
+type RadioPointPickTarget = "station" | "from" | "to" | "site-target";
 type RadioLosStatus = "idle" | "loading" | "loaded" | "error";
 
 interface RadioLosMapOverlay {
@@ -596,6 +597,7 @@ export function App() {
   const [radioRadiusM, setRadioRadiusM] = React.useState(5000);
   const [radioResult, setRadioResult] = React.useState<RadioLosResult>({ mode: "coverage", status: "idle", title: "Radio LoS", warnings: [] });
   const [radioOverlay, setRadioOverlay] = React.useState<RadioLosMapOverlay | null>(null);
+  const [radioPointPickTarget, setRadioPointPickTarget] = React.useState<RadioPointPickTarget | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
   const [, setLastStreamAt] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -2230,12 +2232,24 @@ export function App() {
     () => mergeSituationSafetyFlightCommunityMissionAndTakFeatures(enrichedSituationFeatures, safetyFeatures, flightFeatures, communityFeatures, missionArenaFeatures, takFeatures),
     [communityFeatures, enrichedSituationFeatures, flightFeatures, missionArenaFeatures, safetyFeatures, takFeatures]
   );
-  const selectedSituationFeature = baseCombinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
-  const mobileTowerViewshed = useMobileTowerViewshed(apiBase, authToken, selectedSituationFeature, coverageTechnology);
+  const selectedBaseSituationFeature = baseCombinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
+  const mobileTowerViewshed = useMobileTowerViewshed(apiBase, authToken, selectedBaseSituationFeature, coverageTechnology);
+  const selectedRadioProfile = React.useMemo(
+    () => radioProfiles.find((profile) => (profile.profileId ?? profile.name) === radioProfileId) ?? radioProfiles[0] ?? fallbackRadioProfile,
+    [radioProfileId, radioProfiles]
+  );
+  const radioInputOverlay = React.useMemo(
+    () => activeWorkspace === "radio"
+      ? buildRadioInputOverlay(radioMode, radioStation, radioLinkFrom, radioLinkTo, radioSearchTargets, selectedRadioProfile)
+      : null,
+    [activeWorkspace, radioLinkFrom, radioLinkTo, radioMode, radioSearchTargets, radioStation, selectedRadioProfile]
+  );
   const combinedSituationFeatures = React.useMemo(() => {
     const withTowerViewshed = appendMobileTowerViewshedFeatures(baseCombinedSituationFeatures, mobileTowerViewshed);
-    return appendRadioLosFeatures(withTowerViewshed, radioOverlay);
-  }, [baseCombinedSituationFeatures, mobileTowerViewshed, radioOverlay]);
+    const withRadioResult = appendRadioLosFeatures(withTowerViewshed, radioOverlay);
+    return appendRadioLosFeatures(withRadioResult, radioInputOverlay);
+  }, [baseCombinedSituationFeatures, mobileTowerViewshed, radioInputOverlay, radioOverlay]);
+  const selectedSituationFeature = combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
   const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleMissionArenaLayerCount = React.useMemo(() => countVisibleMissionArenaLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
@@ -3782,10 +3796,6 @@ export function App() {
   const showRadioControls = activeWorkspace === "radio";
   const openIncidentTaskStatuses = React.useMemo<IncidentTaskStatus[]>(() => ["open", "in_progress", "blocked"], []);
 
-  const selectedRadioProfile = React.useMemo(
-    () => radioProfiles.find((profile) => (profile.profileId ?? profile.name) === radioProfileId) ?? radioProfiles[0] ?? fallbackRadioProfile,
-    [radioProfileId, radioProfiles]
-  );
   const radioRequestBase = React.useCallback(() => radioUseCustomProfile
     ? { profile: radioCustomProfile }
     : { profileId: selectedRadioProfile.profileId ?? radioProfileId },
@@ -3798,6 +3808,25 @@ export function App() {
     const center = mapView?.center ?? [(mapBounds.west + mapBounds.east) / 2, (mapBounds.south + mapBounds.north) / 2];
     return { antennaHeightM: selectedRadioProfile.antennaHeightM, lat: center[1], lon: center[0], receiverHeightM: selectedRadioProfile.receiverHeightM };
   }, [mapBounds, mapView?.center, selectedRadioProfile, userLocation]);
+
+  const resetRadioComputation = React.useCallback((mode = radioMode) => {
+    setRadioOverlay(null);
+    setRadioResult({ mode, status: "idle", title: "Radio LoS", warnings: [] });
+  }, [radioMode]);
+
+  const applyRadioPointToTarget = React.useCallback((target: RadioPointPickTarget, point: RadioPoint) => {
+    if (target === "station") {
+      setRadioStation(point);
+    } else if (target === "from") {
+      setRadioLinkFrom(point);
+    } else if (target === "to") {
+      setRadioLinkTo(point);
+    } else {
+      setRadioSearchTargets([point]);
+    }
+    resetRadioComputation();
+  }, [resetRadioComputation]);
+
   const loadRadioProfiles = React.useCallback(async () => {
     setRadioProfilesStatus("loading");
     setRadioProfilesError(null);
@@ -3821,18 +3850,54 @@ export function App() {
     void loadRadioProfiles();
   }, [loadRadioProfiles, radioProfilesStatus, showRadioControls]);
 
-  const applyRadioPointFromContext = React.useCallback((target: "station" | "from" | "to" | "site-target") => {
-    const point = radioReferencePoint();
-    if (target === "station") {
-      setRadioStation(point);
-    } else if (target === "from") {
-      setRadioLinkFrom(point);
-    } else if (target === "to") {
-      setRadioLinkTo(point);
-    } else {
-      setRadioSearchTargets([point]);
+  const applyRadioPointFromContext = React.useCallback((target: RadioPointPickTarget) => {
+    applyRadioPointToTarget(target, radioReferencePoint());
+    setRadioPointPickTarget(null);
+  }, [applyRadioPointToTarget, radioReferencePoint]);
+
+  const startRadioPointPick = React.useCallback((target: RadioPointPickTarget) => {
+    setActiveWorkspace("radio");
+    setMobileSheet(null);
+    setMobileSketchOpen(false);
+    setCommunityReportLocationPickMode(false);
+    setZoneCreationMode(false);
+    setRadioPointPickTarget((current) => current === target ? null : target);
+  }, []);
+
+  const handleRadioPointPicked = React.useCallback((center: { lat: number; lon: number }) => {
+    if (!radioPointPickTarget) {
+      return;
     }
-  }, [radioReferencePoint]);
+    const currentPoint = radioPointForTarget(radioPointPickTarget, radioStation, radioLinkFrom, radioLinkTo, radioSearchTargets);
+    applyRadioPointToTarget(radioPointPickTarget, radioPointFromMapClick(currentPoint, center));
+    setRadioPointPickTarget(null);
+  }, [applyRadioPointToTarget, radioLinkFrom, radioLinkTo, radioPointPickTarget, radioSearchTargets, radioStation]);
+
+  const updateRadioMode = React.useCallback((mode: RadioLosMode) => {
+    setRadioMode(mode);
+    setRadioPointPickTarget(null);
+    resetRadioComputation(mode);
+  }, [resetRadioComputation]);
+
+  const updateRadioStation = React.useCallback((point: RadioPoint) => {
+    setRadioStation(point);
+    resetRadioComputation();
+  }, [resetRadioComputation]);
+
+  const updateRadioLinkFrom = React.useCallback((point: RadioPoint) => {
+    setRadioLinkFrom(point);
+    resetRadioComputation();
+  }, [resetRadioComputation]);
+
+  const updateRadioLinkTo = React.useCallback((point: RadioPoint) => {
+    setRadioLinkTo(point);
+    resetRadioComputation();
+  }, [resetRadioComputation]);
+
+  const updateRadioSearchTargets = React.useCallback((targets: RadioPoint[]) => {
+    setRadioSearchTargets(targets);
+    resetRadioComputation();
+  }, [resetRadioComputation]);
 
   const saveCustomRadioProfile = React.useCallback(async () => {
     setRadioProfilesStatus("loading");
@@ -4529,22 +4594,24 @@ export function App() {
               profilesStatus={radioProfilesStatus}
               radiusM={radioRadiusM}
               result={radioResult}
+              mapPickTarget={radioPointPickTarget}
               searchTargets={radioSearchTargets}
               station={radioStation}
               useCustomProfile={radioUseCustomProfile}
               onApplyContext={applyRadioPointFromContext}
               onCustomProfileChange={setRadioCustomProfile}
               onGridStepMChange={setRadioGridStepM}
-              onLinkFromChange={setRadioLinkFrom}
-              onLinkToChange={setRadioLinkTo}
-              onModeChange={setRadioMode}
+              onLinkFromChange={updateRadioLinkFrom}
+              onLinkToChange={updateRadioLinkTo}
+              onModeChange={updateRadioMode}
               onProfileIdChange={setRadioProfileId}
               onRadiusMChange={setRadioRadiusM}
               onRefreshProfiles={() => void loadRadioProfiles()}
               onRun={() => void runRadioLos()}
               onSaveCustomProfile={() => void saveCustomRadioProfile()}
-              onSearchTargetsChange={setRadioSearchTargets}
-              onStationChange={setRadioStation}
+              onSearchTargetsChange={updateRadioSearchTargets}
+              onStartMapPick={startRadioPointPick}
+              onStationChange={updateRadioStation}
               onUseCustomProfileChange={setRadioUseCustomProfile}
             />
           ) : null}
@@ -4642,7 +4709,7 @@ export function App() {
               trackHistory={replayTrackHistory}
               publicFlightSymbolMode={publicFlightSymbolMode}
               mapBasemapMode={mapBasemapMode}
-              mapInteractionSuspended={Boolean(mobileSheet) || settingsOpen}
+              mapInteractionSuspended={(Boolean(mobileSheet) || settingsOpen) && !radioPointPickTarget}
               mapResizeSuspended={workspaceResizeActive}
               mobileSketchControlsOpen={mobileSketchOpen}
               predictionMinutes={predictionMinutes}
@@ -4690,6 +4757,7 @@ export function App() {
               onCreateZonePolygon={handleCreateAoiRuleFromPolygon}
               onUpdateZonePolygon={handleAoiRulePolygonUpdate}
               onPickReportLocation={handleCommunityReportLocationPicked}
+              onPickRadioPoint={handleRadioPointPicked}
               onCreateSketchDrawing={handleCreateSketchDrawing}
               onDeleteSketchDrawing={handleDeleteSketchDrawing}
               onSelectSketchDrawing={(drawing) => {
@@ -4708,6 +4776,8 @@ export function App() {
               onUpdateSketchDrawing={handleUpdateSketchDrawing}
               onRequestUserLocation={locateUser}
               onViewChange={setMapView}
+              radioPointPickActive={Boolean(radioPointPickTarget)}
+              radioPointPickLabel={radioPointPickTarget ? radioPointPickTargetLabel(radioPointPickTarget) : undefined}
               reportLocationPickActive={communityReportLocationPickMode}
               selectedSketchDrawingId={selectedSketchDrawingId}
               showAlertAreas={showAlertAreas}
@@ -7313,6 +7383,7 @@ function RadioLosControls({
   profilesStatus,
   radiusM,
   result,
+  mapPickTarget,
   searchTargets,
   station,
   useCustomProfile,
@@ -7328,6 +7399,7 @@ function RadioLosControls({
   onRun,
   onSaveCustomProfile,
   onSearchTargetsChange,
+  onStartMapPick,
   onStationChange,
   onUseCustomProfileChange
 }: {
@@ -7342,10 +7414,11 @@ function RadioLosControls({
   profilesStatus: "idle" | "loading" | "loaded" | "error";
   radiusM: number;
   result: RadioLosResult;
+  mapPickTarget: RadioPointPickTarget | null;
   searchTargets: RadioPoint[];
   station: RadioPoint;
   useCustomProfile: boolean;
-  onApplyContext: (target: "station" | "from" | "to" | "site-target") => void;
+  onApplyContext: (target: RadioPointPickTarget) => void;
   onCustomProfileChange: (profile: RadioProfile) => void;
   onGridStepMChange: (value: number) => void;
   onLinkFromChange: (point: RadioPoint) => void;
@@ -7357,6 +7430,7 @@ function RadioLosControls({
   onRun: () => void;
   onSaveCustomProfile: () => void;
   onSearchTargetsChange: (targets: RadioPoint[]) => void;
+  onStartMapPick: (target: RadioPointPickTarget) => void;
   onStationChange: (point: RadioPoint) => void;
   onUseCustomProfileChange: (enabled: boolean) => void;
 }) {
@@ -7413,6 +7487,10 @@ function RadioLosControls({
               <MapPin size={13} />
               Použít polohu
             </button>
+            <button className={`mini-button ${mapPickTarget === "station" ? "active" : ""}`} onClick={() => onStartMapPick("station")} type="button">
+              <Crosshair size={13} />
+              Vybrat v mapě
+            </button>
           </div>
           <RadioNumberInput label="Poloměr" suffix="m" value={radiusM} min={100} max={100000} onChange={onRadiusMChange} />
         </>
@@ -7425,10 +7503,18 @@ function RadioLosControls({
             <MapPin size={13} />
             Odkud = aktuální poloha/střed mapy
           </button>
+          <button className={`mini-button wide ${mapPickTarget === "from" ? "active" : ""}`} onClick={() => onStartMapPick("from")} type="button">
+            <Crosshair size={13} />
+            Vybrat „odkud“ v mapě
+          </button>
           <RadioPointEditor label="Kam" point={linkTo} onChange={onLinkToChange} />
           <button className="mini-button wide" onClick={() => onApplyContext("to")} type="button">
             <Crosshair size={13} />
             Kam = aktuální poloha/střed mapy
+          </button>
+          <button className={`mini-button wide ${mapPickTarget === "to" ? "active" : ""}`} onClick={() => onStartMapPick("to")} type="button">
+            <Crosshair size={13} />
+            Vybrat „kam“ v mapě
           </button>
         </>
       ) : null}
@@ -7439,6 +7525,10 @@ function RadioLosControls({
           <button className="mini-button wide" onClick={() => onApplyContext("site-target")} type="button">
             <Crosshair size={13} />
             Cíl = aktuální poloha/střed mapy
+          </button>
+          <button className={`mini-button wide ${mapPickTarget === "site-target" ? "active" : ""}`} onClick={() => onStartMapPick("site-target")} type="button">
+            <Crosshair size={13} />
+            Vybrat cíl v mapě
           </button>
           <RadioNumberInput label="Krok mřížky" suffix="m" value={gridStepM} min={50} max={5000} onChange={onGridStepMChange} />
           <p className="radio-los-hint">Prohledává se aktuálně zobrazený výřez mapy.</p>
@@ -10688,6 +10778,179 @@ function appendRadioLosFeatures(
     },
     warnings: [...collection.warnings, ...overlay.warnings]
   };
+}
+
+function buildRadioInputOverlay(
+  mode: RadioLosMode,
+  station: RadioPoint,
+  linkFrom: RadioPoint,
+  linkTo: RadioPoint,
+  searchTargets: RadioPoint[],
+  profile: RadioProfile
+): RadioLosMapOverlay {
+  const features: SituationFeature[] = [];
+  if (mode === "coverage") {
+    features.push(radioInputPointToSituationFeature("station", station, profile));
+  } else if (mode === "link") {
+    features.push(
+      radioInputPointToSituationFeature("from", linkFrom, profile),
+      radioInputPointToSituationFeature("to", linkTo, profile),
+      radioInputLineToSituationFeature(linkFrom, linkTo, profile)
+    );
+  } else {
+    const target = searchTargets[0] ?? defaultRadioPoint;
+    features.push(radioInputPointToSituationFeature("site-target", target, profile));
+  }
+  return { features, mode, title: "Vstupní body Radio LoS", warnings: [] };
+}
+
+function radioInputPointToSituationFeature(target: RadioPointPickTarget, point: RadioPoint, profile: RadioProfile): SituationFeature {
+  const label = radioPointTargetLabel(target);
+  const featureId = `radio:input:${target}`;
+  const coordinateLabel = `${formatRadioCoordinate(point.lat)}, ${formatRadioCoordinate(point.lon)}`;
+  return {
+    geometry: {
+      coordinates: [point.lon, point.lat],
+      type: "Point"
+    },
+    id: featureId,
+    properties: {
+      category: "radio_input",
+      confidence: 1,
+      dataQuality: "operator_input",
+      description: `${label}: ${coordinateLabel}`,
+      featureId,
+      label: `Radio: ${label}`,
+      layer: "mobile",
+      layerId: "analysis.radio.input",
+      metrics: {
+        antennaHeightM: point.antennaHeightM,
+        receiverHeightM: point.receiverHeightM
+      },
+      providerId: "cop-web",
+      providerLayerId: "radio.input",
+      providerProperties: {
+        point,
+        profileId: profile.profileId ?? "custom",
+        role: target
+      },
+      quality: "unknown",
+      sourceId: "radio_los_input",
+      sourceName: "COP Radio LoS",
+      status: "input",
+      summary: `${label} pro výpočet Radio LoS. ${coordinateLabel}`,
+      tags: {
+        profileId: profile.profileId ?? "custom",
+        radioInput: "true",
+        radioInputRole: target,
+        radioInputRoleLabel: `Radio: ${label}`,
+        radioOverlay: "true"
+      },
+      typeCode: "radio.input"
+    },
+    type: "Feature"
+  };
+}
+
+function radioInputLineToSituationFeature(from: RadioPoint, to: RadioPoint, profile: RadioProfile): SituationFeature {
+  return {
+    geometry: {
+      coordinates: [[from.lon, from.lat], [to.lon, to.lat]],
+      type: "LineString"
+    },
+    id: "radio:input:link",
+    properties: {
+      category: "radio_input_link",
+      confidence: 1,
+      dataQuality: "operator_input",
+      featureId: "radio:input:link",
+      label: "Radio: plánovaná trasa spojení",
+      layer: "mobile_coverage",
+      layerId: "analysis.radio.input",
+      providerId: "cop-web",
+      providerLayerId: "radio.input_link",
+      providerProperties: {
+        from,
+        profileId: profile.profileId ?? "custom",
+        to
+      },
+      quality: "unknown",
+      sourceId: "radio_los_input",
+      sourceName: "COP Radio LoS",
+      status: "input",
+      summary: "Vstupní linie pro bod-bod Radio LoS výpočet.",
+      tags: {
+        profileId: profile.profileId ?? "custom",
+        radioInput: "true",
+        radioInputRole: "link",
+        radioInputRoleLabel: "Radio: plánovaná trasa spojení",
+        radioOverlay: "true"
+      },
+      typeCode: "radio.input_link"
+    },
+    type: "Feature"
+  };
+}
+
+function radioPointForTarget(
+  target: RadioPointPickTarget,
+  station: RadioPoint,
+  linkFrom: RadioPoint,
+  linkTo: RadioPoint,
+  searchTargets: RadioPoint[]
+): RadioPoint {
+  if (target === "station") {
+    return station;
+  }
+  if (target === "from") {
+    return linkFrom;
+  }
+  if (target === "to") {
+    return linkTo;
+  }
+  return searchTargets[0] ?? defaultRadioPoint;
+}
+
+function radioPointFromMapClick(point: RadioPoint, center: { lat: number; lon: number }): RadioPoint {
+  return {
+    ...point,
+    lat: roundRadioCoordinate(center.lat),
+    lon: roundRadioCoordinate(center.lon)
+  };
+}
+
+function roundRadioCoordinate(value: number): number {
+  return Math.round(value * 100000) / 100000;
+}
+
+function formatRadioCoordinate(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(5) : "n/a";
+}
+
+function radioPointPickTargetLabel(target: RadioPointPickTarget): string {
+  switch (target) {
+    case "station":
+      return "stanici pro výpočet pokrytí";
+    case "from":
+      return "výchozí bod spojení";
+    case "to":
+      return "cílový bod spojení";
+    case "site-target":
+      return "cílový bod hledání stanoviště";
+  }
+}
+
+function radioPointTargetLabel(target: RadioPointPickTarget): string {
+  switch (target) {
+    case "station":
+      return "stanice";
+    case "from":
+      return "odkud";
+    case "to":
+      return "kam";
+    case "site-target":
+      return "cíl spojení";
+  }
 }
 
 function radioFeatureCollectionToSituationFeatures(

@@ -539,7 +539,10 @@ interface CopMapProps {
   onCreateZonePolygon?: (points: Array<{ lat: number; lon: number }>) => void;
   onUpdateZonePolygon?: (zoneId: string, points: Array<{ lat: number; lon: number }>) => void;
   onPickReportLocation?: (center: { lat: number; lon: number }) => void;
+  onPickRadioPoint?: (center: { lat: number; lon: number }) => void;
   userLocation: UserLocation | null;
+  radioPointPickActive?: boolean;
+  radioPointPickLabel?: string;
   sketchDrawings?: SketchDrawingFeature[];
   sketchMode?: SketchToolMode;
   selectedSketchDrawingId?: string | null;
@@ -730,7 +733,10 @@ export function CopMap({
   userLocation,
   onCancelZoneEditing,
   onUpdateZonePolygon,
+  onPickRadioPoint,
   zoneCreationActive = false,
+  radioPointPickActive = false,
+  radioPointPickLabel,
   sketchDrawings = [],
   sketchMode = "pan",
   selectedSketchDrawingId = null,
@@ -769,6 +775,7 @@ export function CopMap({
   const onSketchModeChangeRef = React.useRef(onSketchModeChange);
   const onUpdateSketchDrawingRef = React.useRef(onUpdateSketchDrawing);
   const onPickReportLocationRef = React.useRef(onPickReportLocation);
+  const onPickRadioPointRef = React.useRef(onPickRadioPoint);
   const onViewChangeRef = React.useRef(onViewChange);
   const aoiRulesRef = React.useRef(aoiRules);
   const sketchDrawingsRef = React.useRef(sketchDrawings);
@@ -778,6 +785,7 @@ export function CopMap({
   const draggedAoiVertexRef = React.useRef<{ index: number; zoneId: string } | null>(null);
   const draggedSketchVertexRef = React.useRef<{ drawingId: string; index: number } | null>(null);
   const reportLocationPickActiveRef = React.useRef(reportLocationPickActive);
+  const radioPointPickActiveRef = React.useRef(radioPointPickActive);
   const zoneCreationActiveRef = React.useRef(zoneCreationActive);
   const lastFitSignatureRef = React.useRef("");
   const handledFocusViewRequestRef = React.useRef(0);
@@ -927,8 +935,10 @@ export function CopMap({
   onSketchModeChangeRef.current = onSketchModeChange;
   onUpdateSketchDrawingRef.current = onUpdateSketchDrawing;
   onPickReportLocationRef.current = onPickReportLocation;
+  onPickRadioPointRef.current = onPickRadioPoint;
   onViewChangeRef.current = onViewChange;
   reportLocationPickActiveRef.current = reportLocationPickActive;
+  radioPointPickActiveRef.current = radioPointPickActive;
   zoneCreationActiveRef.current = zoneCreationActive;
   sketchDrawingsRef.current = sketchDrawings;
   sketchModeRef.current = sketchMode;
@@ -2705,6 +2715,10 @@ export function CopMap({
             onPickReportLocationRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
             return;
           }
+          if (radioPointPickActiveRef.current && onPickRadioPointRef.current) {
+            onPickRadioPointRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
+            return;
+          }
           const activeSketchMode = sketchModeRef.current;
           if (activeSketchMode === "marker" || activeSketchMode === "text") {
             const kind: SketchDrawingKind = activeSketchMode === "text" ? "text" : "marker";
@@ -3482,6 +3496,7 @@ export function CopMap({
         webKitMapRuntime ? "webkit-map-runtime" : "",
         `sketch-cursor-${sketchMode}`,
         mapFullscreen ? "fullscreen" : "",
+        radioPointPickActive ? "radio-point-pick-active" : "",
         mobileSketchControlsOpen ? "mobile-sketch-controls-open" : ""
       ].filter(Boolean).join(" ")}
     >
@@ -3517,6 +3532,12 @@ export function CopMap({
         </div>
       ) : null}
       {reportLocationPickActive ? <div className="map-zone-create-hint">Kliknutím do mapy určíte polohu hlášení</div> : null}
+      {radioPointPickActive ? (
+        <div className="map-zone-create-hint radio-map-pick-hint">
+          <strong>Výběr bodu pro rádio</strong>
+          <span>Kliknutím do mapy nastavíte {radioPointPickLabel ?? "vstupní bod výpočtu"}.</span>
+        </div>
+      ) : null}
       <div
         className={[
           "map-sketch-palette",
@@ -4994,6 +5015,19 @@ function buildSituationRenderProperties(
       situationStatusTone: referenceStatus.tone
     };
   }
+  if (isRadioInputFeature(feature)) {
+    return {
+      coverageColor: "#38bdf8",
+      coverageLabel: formatRadioInputFeatureLabel(feature),
+      coverageLineOpacity: 0.82,
+      coverageOpacity: 0.12,
+      mobileNetworkLabel: formatRadioInputFeatureLabel(feature),
+      mobileSymbolKey: getMobileNetworkIconKey("info"),
+      situationStatusColor: "#38bdf8",
+      situationStatusLabel: "VSTUP",
+      situationStatusTone: "info"
+    };
+  }
   const osmCategory = resolveOsmCategoryPresentation(feature);
   if (osmCategory) {
     return {
@@ -5539,6 +5573,16 @@ function isCommunicationTowerFeature(feature: SituationFeature): boolean {
       || stringProperty(tags.referenceOnly) === "true"
       || stringProperty(providerTags.referenceOnly) === "true"
     );
+}
+
+function isRadioInputFeature(feature: SituationFeature): boolean {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return feature.properties.sourceId === "radio_los_input" || stringProperty(tags.radioInput) === "true";
+}
+
+function formatRadioInputFeatureLabel(feature: SituationFeature): string {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return stringProperty(tags.radioInputRoleLabel) ?? feature.properties.label ?? "Radio vstup";
 }
 
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
