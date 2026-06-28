@@ -852,6 +852,84 @@ describe("CsmMessagingProvider", () => {
     await app.close();
   });
 
+  it("allows iOS to ensure a Matrix room binding without sending a roomId", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/conversations/conv_1/matrix-room");
+      expect(init?.method).toBe("POST");
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "x-csm-user-id": "lab"
+      });
+      expect(init?.body).toBe(JSON.stringify({}));
+      return new Response(JSON.stringify({
+        contractVersion: "csm-messaging-provider-v1",
+        conversation: {
+          avatarUrl: "mxc://msg.example/room-avatar",
+          conversationId: "conv_1",
+          directPeer: {
+            avatarUrl: "mxc://msg.example/user-avatar",
+            displayName: "COP Operator",
+            userId: "cop.operator"
+          },
+          encrypted: true,
+          e2eeRequired: true,
+          matrix: {
+            roomId: "!room:msg.example",
+            state: "ready"
+          },
+          members: [
+            { avatarUrl: "mxc://msg.example/lab-avatar", displayName: "Lab", userId: "lab" },
+            { avatarUrl: "mxc://msg.example/user-avatar", displayName: "COP Operator", userId: "cop.operator" }
+          ],
+          status: "ready",
+          title: "COP Operator",
+          type: "direct"
+        },
+        providerId: "csm.messaging"
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      }),
+      now: () => new Date("2026-05-22T12:00:00Z")
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      payload: {},
+      url: "/api/v1/messaging/conversations/conv_1/matrix-room"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      conversation: {
+        avatarUrl: "mxc://msg.example/room-avatar",
+        directPeer: {
+          avatarUrl: "mxc://msg.example/user-avatar",
+          userId: "cop.operator"
+        },
+        matrix: {
+          roomId: "!room:msg.example"
+        },
+        members: [
+          { avatarUrl: "mxc://msg.example/lab-avatar", userId: "lab" },
+          { avatarUrl: "mxc://msg.example/user-avatar", userId: "cop.operator" }
+        ]
+      },
+      status: "online"
+    });
+    await app.close();
+  });
+
   it("exposes browser Web Push config without leaking provider secrets", async () => {
     const provider = new CsmMessagingProvider({
       baseUrl: "http://messaging.local:4050",

@@ -659,6 +659,116 @@ describe("COP state temporal history", () => {
       }
     });
     expect(JSON.stringify(response.json())).not.toContain("apns-token-redacted-in-response");
+    await app.close();
+  });
+
+  it("pairs iOS devices through short-lived web-confirmed sessions", async () => {
+    const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
+
+    const created = await app.inject({
+      headers: {
+        authorization: "Bearer dev-lab-token",
+        host: "cop.example.test"
+      },
+      method: "POST",
+      payload: { ttlSeconds: 120 },
+      url: "/api/v1/mobile/pairing/sessions"
+    });
+
+    expect(created.statusCode).toBe(201);
+    const createdBody = created.json() as {
+      pairing: {
+        code: string;
+        links: {
+          customSchemeUrl: string;
+          universalLink: string;
+        };
+        status: string;
+      };
+      security: Record<string, boolean>;
+    };
+    expect(createdBody.pairing.status).toBe("pending");
+    expect(createdBody.pairing.links.customSchemeUrl).toContain("csm://pair?code=");
+    expect(createdBody.pairing.links.universalLink).toContain("https://cop.example.test/mobile/pair/");
+    expect(createdBody.security).toMatchObject({
+      containsAccessToken: false,
+      containsRecoveryKey: false,
+      containsRoomKeys: false
+    });
+
+    const claimed = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        appVersion: "0.1.0",
+        buildNumber: "43",
+        capabilities: ["matrix", "offlineSnapshot"],
+        deviceId: "ios-pairing-001",
+        deviceModel: "iPhone17,1",
+        osVersion: "18.5",
+        platform: "ios"
+      },
+      url: `/api/v1/mobile/pairing/sessions/${createdBody.pairing.code}/claim`
+    });
+
+    expect(claimed.statusCode).toBe(200);
+    expect(claimed.json()).toMatchObject({
+      pairing: {
+        claimedDevice: {
+          deviceId: "ios-pairing-001",
+          platform: "ios"
+        },
+        status: "claimed"
+      }
+    });
+
+    const confirmed = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: `/api/v1/mobile/pairing/sessions/${createdBody.pairing.code}/confirm`
+    });
+    expect(confirmed.statusCode).toBe(200);
+    expect(confirmed.json()).toMatchObject({
+      device: {
+        deviceId: "ios-pairing-001",
+        status: "paired"
+      },
+      pairing: {
+        status: "confirmed"
+      }
+    });
+
+    const devices = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/mobile/devices"
+    });
+    expect(devices.statusCode).toBe(200);
+    expect(devices.json()).toMatchObject({
+      devices: [
+        {
+          deviceId: "ios-pairing-001",
+          pairingCode: createdBody.pairing.code,
+          status: "paired"
+        }
+      ]
+    });
+
+    const revoked = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "DELETE",
+      url: "/api/v1/mobile/devices/ios-pairing-001"
+    });
+    expect(revoked.statusCode).toBe(202);
+    expect(revoked.json()).toMatchObject({
+      device: {
+        deviceId: "ios-pairing-001",
+        status: "revoked"
+      }
+    });
+    expect(JSON.stringify(confirmed.json())).not.toContain("accessToken");
+    expect(JSON.stringify(confirmed.json())).not.toContain("recovery");
+    await app.close();
   });
 });
 

@@ -148,6 +148,70 @@ storage records. Recovery keys shown in screenshots or otherwise exposed to a
 human support channel are treated as compromised and must be replaced through
 this reset flow before enrolling additional devices.
 
+## Native iOS/iPadOS Pairing
+
+COP exposes a metadata-only pairing flow for CSM Messenger iOS/iPadOS. The
+pairing flow is for device enrollment and COP contract discovery, not for
+transporting Matrix access tokens, recovery keys or plaintext room keys.
+
+The web client creates a short-lived pairing session:
+
+```http
+POST /api/v1/mobile/pairing/sessions
+Authorization: Bearer <COP user access token>
+Content-Type: application/json
+
+{"ttlSeconds":600}
+```
+
+The response includes `pairing.code`, a universal link
+`https://cop.../mobile/pair/{code}`, a custom scheme link `csm://pair?code=...`
+and explicit security flags showing that the payload contains no access token,
+recovery key or room keys.
+
+After the native app completes OIDC login as the same user, it claims the
+session with non-secret device metadata:
+
+```http
+POST /api/v1/mobile/pairing/sessions/{code}/claim
+Authorization: Bearer <COP user access token>
+Content-Type: application/json
+
+{
+  "deviceId": "ios-device-id",
+  "platform": "ios",
+  "appVersion": "0.1.0",
+  "buildNumber": "43",
+  "deviceModel": "iPhone17,1",
+  "osVersion": "18.5",
+  "capabilities": ["matrix", "offlineSnapshot"]
+}
+```
+
+The web client then confirms the visible claimed device:
+
+```http
+POST /api/v1/mobile/pairing/sessions/{code}/confirm
+Authorization: Bearer <COP user access token>
+```
+
+On confirmation COP stores the device in `/api/v1/mobile/devices`. The registry
+is durable when `COP_DATABASE_URL` is configured and `COP_MOBILE_DEVICE_STORE`
+is `auto` or `postgres`; otherwise it falls back to memory for local/demo use.
+Clients can list and revoke their paired devices:
+
+```http
+GET /api/v1/mobile/devices
+DELETE /api/v1/mobile/devices/{deviceId}
+```
+
+Matrix E2EE recovery remains Matrix-owned. COP may guide the user to reset or
+prepare recovery material in the web chat, but it must not store the recovery
+key or any room keys. If old legacy E2EE metadata is incompatible with the
+native Matrix Rust SDK and old history is not required, the supported clean
+path is to reset the Matrix recovery/key-backup cycle and pair the iOS app into
+the new cycle.
+
 ## Notification Intake
 
 CSM Messaging also owns device registry, APNs delivery and delivery audit. COP
@@ -225,12 +289,17 @@ POST /api/v1/messaging/conversations/{conversationId}/members
 POST /api/v1/messaging/conversations/{conversationId}/matrix-room
 ```
 
-Identity resolution returns only `userId`, `matrixUserId` and display metadata
-for inviting members into Matrix rooms. It never returns passwords or access
-tokens for other users. Member synchronization forwards only CSM user IDs,
-display names and roles from COP community groups. Matrix room binding persists
-only the `roomId`, encryption state and conversation metadata returned by
-Messaging; it does not persist messages.
+Identity resolution returns only `userId`, `matrixUserId`, avatar and display
+metadata for inviting members into Matrix rooms. It never returns passwords or
+access tokens for other users. Member synchronization forwards only CSM user
+IDs, display names, avatar hints and roles from COP community groups. Matrix
+room binding persists only the `roomId`, encryption state and conversation
+metadata returned by Messaging; it does not persist messages. Native clients
+may call `POST /api/v1/messaging/conversations/{conversationId}/matrix-room`
+with an empty JSON body as an ensure/bind request. If CSM Messaging already has
+a Matrix room or can create one server-side, it returns the canonical
+conversation metadata. If it cannot, COP returns the degraded provider result
+instead of creating any plaintext message proxy.
 
 After bootstrap, the browser sends and reads messages directly through
 Matrix client-server APIs using Matrix SDK and E2EE. COP must not add any
@@ -393,8 +462,11 @@ When `cop-chat` opens a conversation, the chat application:
 
 1. obtains a Matrix bootstrap from COP;
 2. resolves conversation member identities through COP/Messaging;
-3. creates an encrypted Matrix room directly in the browser through Matrix SDK;
-4. stores the `roomId` back through `POST /api/v1/messaging/conversations/{conversationId}/matrix-room`.
+3. creates an encrypted Matrix room directly in the browser through Matrix SDK
+   when the provider has not already bound one;
+4. stores the `roomId` back through
+   `POST /api/v1/messaging/conversations/{conversationId}/matrix-room`, or lets
+   the provider return an existing/ensured room through the same endpoint.
 
 Identity resolution and room binding are fail-closed. If identity resolution is
 degraded or omits any requested member, the Matrix room is not created. If room

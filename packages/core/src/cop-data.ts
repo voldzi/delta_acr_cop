@@ -1578,9 +1578,16 @@ export interface MessagingBootstrapResponse {
 }
 
 export interface MessagingConversationSummary {
+  avatarDataUrl?: string;
+  avatarUrl?: string;
   conversationId: string;
   createdAt?: string;
   disclaimer?: string;
+  directPeer?: {
+    avatarUrl?: string;
+    displayName?: string;
+    userId: string;
+  };
   e2eeRequired?: boolean;
   encrypted?: boolean;
   mapLinkCount?: number;
@@ -1592,6 +1599,7 @@ export interface MessagingConversationSummary {
   };
   memberCount?: number;
   members?: Array<{
+    avatarUrl?: string;
     displayName?: string;
     role?: string;
     userId: string;
@@ -1626,6 +1634,7 @@ export interface MessagingMatrixIdentityResolutionResponse {
   contractVersion: "cop-messaging-identities-v1";
   enabled: boolean;
   identities: Array<{
+    avatarUrl?: string;
     displayName?: string;
     matrixUserId: string;
     userId: string;

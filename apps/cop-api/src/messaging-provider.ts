@@ -49,6 +49,7 @@ export interface MessagingMatrixBootstrap {
 }
 
 export interface MessagingConversationMember {
+  avatarUrl?: string;
   displayName?: string;
   role?: string;
   userId: string;
@@ -62,9 +63,16 @@ export interface MessagingMapLink {
 }
 
 export interface MessagingConversationSummary {
+  avatarDataUrl?: string;
+  avatarUrl?: string;
   conversationId: string;
   createdAt?: string;
   disclaimer?: string;
+  directPeer?: {
+    avatarUrl?: string;
+    displayName?: string;
+    userId: string;
+  };
   e2eeRequired?: boolean;
   encrypted?: boolean;
   mapLinkCount?: number;
@@ -120,6 +128,7 @@ export interface MessagingConversationDetailResponse {
 }
 
 export interface MessagingMatrixIdentity {
+  avatarUrl?: string;
   displayName?: string;
   matrixUserId: string;
   userId: string;
@@ -136,7 +145,7 @@ export interface MessagingMatrixIdentityResolution {
 
 export interface MessagingMatrixRoomBindingRequest {
   encrypted?: boolean;
-  roomId: string;
+  roomId?: string;
 }
 
 export interface MessagingMatrixRoomBindingResponse {
@@ -1399,6 +1408,7 @@ function normalizeMatrixIdentity(value: unknown): MessagingMatrixIdentity[] {
     return [];
   }
   return [{
+    ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) } : {}),
     ...(optionalString(value.displayName) ? { displayName: optionalString(value.displayName) } : {}),
     matrixUserId,
     userId
@@ -1425,10 +1435,14 @@ function normalizeConversationSummary(value: unknown): MessagingConversationSumm
     ? value.members.flatMap(normalizeConversationMember)
     : undefined;
   const metadata = isRecord(value.metadata) ? normalizeSafeMetadata(value.metadata) : undefined;
+  const directPeer = normalizeDirectPeer(value.directPeer ?? value.peer ?? value.direct_peer);
   return [{
+    ...(normalizeAvatarDataUrl(value.avatarDataUrl ?? value.avatar_data_url) ? { avatarDataUrl: normalizeAvatarDataUrl(value.avatarDataUrl ?? value.avatar_data_url) } : {}),
+    ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) } : {}),
     conversationId,
     ...(optionalString(value.createdAt) ? { createdAt: optionalString(value.createdAt) } : {}),
     ...(optionalString(value.disclaimer) ? { disclaimer: optionalString(value.disclaimer) } : {}),
+    ...(directPeer ? { directPeer } : {}),
     ...(typeof value.e2eeRequired === "boolean" ? { e2eeRequired: value.e2eeRequired } : {}),
     ...(typeof value.encrypted === "boolean" ? { encrypted: value.encrypted } : {}),
     ...(typeof value.mapLinkCount === "number" ? { mapLinkCount: Math.max(0, Math.round(value.mapLinkCount)) } : {}),
@@ -1455,6 +1469,21 @@ function normalizeSafeMetadata(value: Record<string, unknown>): MessagingConvers
     }
   }
   return Object.keys(metadata).length ? metadata : undefined;
+}
+
+function normalizeDirectPeer(value: unknown): MessagingConversationSummary["directPeer"] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const userId = optionalString(value.userId) ?? optionalString(value.id) ?? optionalString(value.subjectId);
+  if (!userId) {
+    return undefined;
+  }
+  return {
+    ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) } : {}),
+    ...(optionalString(value.displayName) ? { displayName: optionalString(value.displayName) } : {}),
+    userId
+  };
 }
 
 function normalizeSafeMetadataValue(value: unknown): string | number | boolean | null | Array<string | number | boolean | null> | undefined {
@@ -1486,10 +1515,32 @@ function normalizeConversationMember(value: unknown): MessagingConversationMembe
     return [];
   }
   return [{
+    ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) } : {}),
     ...(optionalString(value.displayName) ? { displayName: optionalString(value.displayName) } : {}),
     ...(optionalString(value.role) ? { role: optionalString(value.role) } : {}),
     userId
   }];
+}
+
+function normalizeAvatarUrl(value: unknown): string | undefined {
+  const avatarUrl = optionalString(value);
+  if (!avatarUrl) {
+    return undefined;
+  }
+  if (avatarUrl.startsWith("mxc://") || avatarUrl.startsWith("data:image/")) {
+    return avatarUrl;
+  }
+  try {
+    const url = new URL(avatarUrl);
+    return url.protocol === "https:" ? avatarUrl : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeAvatarDataUrl(value: unknown): string | undefined {
+  const avatarDataUrl = optionalString(value);
+  return avatarDataUrl?.startsWith("data:image/") ? avatarDataUrl : undefined;
 }
 
 function healthCheckWarnings(health: CsmMessagingHealth | undefined): string[] {

@@ -117,6 +117,16 @@ import {
   type MessagingWebPushDeviceRegistrationRequest
 } from "./messaging-provider.js";
 import {
+  createMobileDeviceStoreFromEnv,
+  InMemoryMobileDeviceStore,
+  type MobileDeviceRecord,
+  type MobileDeviceRegistrationInput,
+  type MobileDeviceStore,
+  type MobilePairingActorRecord,
+  type MobilePairingSessionRecord,
+  type MobilePlatform
+} from "./mobile-device-store.js";
+import {
   buildCommunityReportNotificationDecision,
   buildSafetyFeatureNotificationDecision,
   type CopNotificationAudience,
@@ -214,12 +224,12 @@ export interface BuildServerOptions {
   trackLifecycle?: TrackLifecycleConfig;
   streamBus?: CopStreamBus;
   streamBroadcaster?: CopStreamBroadcaster;
+  mobileDeviceStore?: MobileDeviceStore;
   userProfileStore?: UserProfileStore;
 }
 
 type DependencyStatus = "disabled" | "degraded" | "ok";
 type CommunityReportHazardSeverity = "advisory" | "warning" | "critical";
-type MobilePlatform = "ios" | "ipados";
 const defaultRasterOverlayAllowedHosts = "docker.home.cz,sim.zeleznalady.cz";
 const rasterOverlayMaxBytes = 8 * 1024 * 1024;
 const defaultWeatherCameraAllowedHosts = defaultRasterOverlayAllowedHosts;
@@ -485,20 +495,6 @@ const floodDemoBbox = {
   west: 13.75
 };
 
-interface MobileDeviceRegistration {
-  appVersion: string;
-  buildNumber?: string;
-  capabilities: string[];
-  deviceId: string;
-  deviceModel?: string;
-  deviceSessionId: string;
-  osVersion?: string;
-  platform: MobilePlatform;
-  pushTokenRegistered: boolean;
-  registeredAt: string;
-  subjectId: string;
-}
-
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const maxCommunityAttachmentBytes = readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024);
   const app = Fastify({
@@ -530,6 +526,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     updateAttachmentMetadata: updateCommunityAttachmentMetadata
   });
   const messagingProvider = options.messagingProvider ?? createMessagingProviderFromEnv();
+  const mobileDeviceStore = options.mobileDeviceStore ?? createMobileDeviceStoreFromEnv();
+  const mobileDeviceFallbackStore = new InMemoryMobileDeviceStore("memory-fallback");
   const missionArenaSource = options.missionArenaSource ?? createMissionArenaSourceFromEnv();
   const placeGeocoder = options.placeGeocoder ?? createPlaceGeocoderFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
@@ -538,7 +536,6 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const situationDataBaseUrl = situationDataSource?.config.baseUrl ?? createSituationDataSourceConfigFromEnv().baseUrl;
   const takGatewaySource = options.takGatewaySource ?? createTakGatewaySourceFromEnv();
   const weatherRadarFramesCache = new Map<string, WeatherRadarFramesCacheEntry>();
-  const mobileDeviceRegistrations = new Map<string, MobileDeviceRegistration>();
   const edgeReplayCursors = new Map<string, EdgeReplayCursorRecord>();
   let federationRuntimeStoreStatus: DependencyStatus = federationRuntimeStore ? "degraded" : "disabled";
   let federationRuntimeStoreDetail = federationRuntimeStore ? `${federationRuntimeStore.name}: initializing` : "in-memory only";
@@ -554,6 +551,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let sketchDrawingStoreDetail = sketchDrawingStore ? `${sketchDrawingStore.name}: initializing` : "disabled";
   let mediaStorageStatus: DependencyStatus = mediaStorage ? "degraded" : "disabled";
   let mediaStorageDetail = mediaStorage ? `${mediaStorage.name}: initializing` : "disabled";
+  let mobileDeviceStoreStatus: DependencyStatus = "degraded";
+  let mobileDeviceStoreDetail = `${mobileDeviceStore.name}: initializing`;
   let streamBusStatus: DependencyStatus = streamBus.name === "memory" ? "ok" : "degraded";
   let streamBusDetail = streamBus.diagnostics();
   let restoredCurrentTrackCount = 0;
@@ -598,6 +597,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await initializeStreamBus();
     await initializeFederationRuntimeStore();
     await initializeUserProfileStore();
+    await initializeMobileDeviceStore();
     await initializeCommunityReportStore();
     await initializeIncidentStore();
     await initializeSketchDrawingStore();
@@ -641,6 +641,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await sketchDrawingFallbackStore.close();
     mediaConversionManager?.close();
     await mediaStorage?.close();
+    await mobileDeviceStore.close();
+    await mobileDeviceFallbackStore.close();
   });
 
   app.get("/health/live", async () => ({
@@ -690,6 +692,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       { name: "incident-store", status: incidentStoreStatus, detail: incidentStoreDependencyDetail() },
       { name: "sketch-drawing-store", status: sketchDrawingStoreStatus, detail: sketchDrawingStoreDependencyDetail() },
       { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
+      { name: "mobile-device-store", status: mobileDeviceStoreStatus, detail: mobileDeviceStoreDependencyDetail() },
       { name: "place-geocoder", status: placeGeocoder ? "ok" : "disabled", detail: placeGeocoder?.diagnostics?.() ?? "disabled" },
       messaging,
       ...(flightDataSource ? [flightDataDependency()] : []),
@@ -808,6 +811,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       userProfileStoreDetail = `${userProfileStore.name}: ${errorMessage(error)}`;
       await userProfileFallbackStore.init();
       app.log.error({ error }, "User profile store initialization failed; using in-memory fallback.");
+    }
+  }
+
+  async function initializeMobileDeviceStore(): Promise<void> {
+    try {
+      await mobileDeviceStore.init();
+      mobileDeviceStoreStatus = "ok";
+      mobileDeviceStoreDetail = `${mobileDeviceStore.name}: ready`;
+    } catch (error) {
+      mobileDeviceStoreStatus = "degraded";
+      mobileDeviceStoreDetail = `${mobileDeviceStore.name}: ${errorMessage(error)}`;
+      await mobileDeviceFallbackStore.init();
+      app.log.error({ error }, "Mobile device store initialization failed; using in-memory fallback.");
     }
   }
 
@@ -949,6 +965,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return diagnostics ? `${userProfileStoreDetail}; ${diagnostics}` : userProfileStoreDetail;
   }
 
+  function markMobileDeviceStoreDegraded(error: unknown): void {
+    mobileDeviceStoreStatus = "degraded";
+    mobileDeviceStoreDetail = `${mobileDeviceStore.name}: ${errorMessage(error)}`;
+    app.log.error({ error }, "Mobile device store failed; using in-memory fallback.");
+  }
+
+  function mobileDeviceStoreDependencyDetail(): string {
+    const diagnostics = mobileDeviceStore.diagnostics?.();
+    return diagnostics ? `${mobileDeviceStoreDetail}; ${diagnostics}` : mobileDeviceStoreDetail;
+  }
+
   function markCommunityReportStoreDegraded(error: unknown): void {
     if (!communityReportStore) {
       return;
@@ -1058,6 +1085,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   function activeUserProfileStore(): UserProfileStore {
     return userProfileStoreStatus === "ok" ? userProfileStore : userProfileFallbackStore;
+  }
+
+  function activeMobileDeviceStore(): MobileDeviceStore {
+    return mobileDeviceStoreStatus === "ok" ? mobileDeviceStore : mobileDeviceFallbackStore;
   }
 
   function activeCommunityReportStore(): CommunityReportStore {
@@ -2660,13 +2691,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return reply;
     }
     const params = request.params as { conversationId: string };
-    const binding = normalizeMatrixRoomBindingRequest(request.body);
+    const binding = normalizeMatrixRoomBindingRequest(request.body ?? {});
     if (!binding) {
       return sendError(
         reply,
         400,
         "VALIDATION_ERROR",
-        "Matrix room binding requires a roomId and may not contain message content.",
+        "Matrix room binding accepts an optional roomId and may not contain message content.",
         correlationIdFrom(request.headers["x-correlation-id"])
       );
     }
@@ -3368,12 +3399,165 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return buildMobileSnapshot(actor, requestNow, parseMobileSnapshotQuery(request.query as Record<string, unknown>));
   });
 
+  app.post("/api/v1/mobile/pairing/sessions", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const requestNow = now();
+    const ttlSeconds = normalizeMobilePairingTtlSeconds(request.body);
+    const expiresAt = new Date(requestNow.getTime() + ttlSeconds * 1000).toISOString();
+    try {
+      const session = await activeMobileDeviceStore().createPairingSession({
+        actor: mobilePairingActor(actor),
+        expiresAt,
+        now: requestNow.toISOString()
+      });
+      appendAudit(state, "MOBILE_PAIRING_SESSION_CREATED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        code: session.code,
+        expiresAt: session.expiresAt
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return reply.code(201).send(mobilePairingSessionResponse(session, request));
+    } catch (error) {
+      markMobileDeviceStoreDegraded(error);
+      return sendError(
+        reply,
+        503,
+        "MOBILE_DEVICE_STORE_UNAVAILABLE",
+        "Mobile pairing store is not available.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+  });
+
+  app.get("/api/v1/mobile/pairing/sessions/:code", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { code: string };
+    const code = normalizeMobilePairingCode(params.code);
+    if (!code) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Mobile pairing code is invalid.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const session = await activeMobileDeviceStore().getPairingSession(code, now().toISOString());
+    if (!session || !canViewMobilePairingSession(actor, session)) {
+      return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    return mobilePairingSessionResponse(session, request);
+  });
+
+  app.post("/api/v1/mobile/pairing/sessions/:code/claim", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { code: string };
+    const code = normalizeMobilePairingCode(params.code);
+    const requestNow = now();
+    const registration = normalizeMobileDeviceRegistration(request.body, actor, requestNow);
+    if (!code || !registration) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Mobile pairing claim requires a valid pairing code and device registration payload.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const current = await activeMobileDeviceStore().getPairingSession(code, requestNow.toISOString());
+    if (!current) {
+      return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    if (current.createdBy.subjectId !== actor.subjectId) {
+      return sendError(reply, 403, "FORBIDDEN", "Mobile pairing code belongs to another user.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const session = await activeMobileDeviceStore().claimPairingSession(code, mobilePairingActor(actor), registration, requestNow.toISOString());
+    if (!session || session.status !== "claimed") {
+      return sendError(reply, 409, "PAIRING_NOT_CLAIMABLE", "Mobile pairing session is no longer claimable.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    appendAudit(state, "MOBILE_PAIRING_SESSION_CLAIMED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      code,
+      deviceId: registration.deviceId,
+      platform: registration.platform
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return mobilePairingSessionResponse(session, request);
+  });
+
+  app.post("/api/v1/mobile/pairing/sessions/:code/confirm", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { code: string };
+    const code = normalizeMobilePairingCode(params.code);
+    if (!code) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Mobile pairing code is invalid.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const requestNow = now();
+    const current = await activeMobileDeviceStore().getPairingSession(code, requestNow.toISOString());
+    if (!current) {
+      return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    if (current.createdBy.subjectId !== actor.subjectId) {
+      return sendError(reply, 403, "FORBIDDEN", "Mobile pairing code belongs to another user.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    if (current.status !== "claimed" || !current.claimedDevice || current.claimedBy?.subjectId !== actor.subjectId) {
+      return sendError(reply, 409, "PAIRING_NOT_CONFIRMABLE", "Mobile pairing session must be claimed by the same user before confirmation.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const confirmed = await activeMobileDeviceStore().confirmPairingSession(code, requestNow.toISOString());
+    if (!confirmed || confirmed.status !== "confirmed" || !confirmed.claimedDevice) {
+      return sendError(reply, 409, "PAIRING_NOT_CONFIRMABLE", "Mobile pairing session could not be confirmed.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const device = await activeMobileDeviceStore().upsertDevice(confirmed.claimedDevice, "paired", requestNow.toISOString(), code);
+    appendAudit(state, "MOBILE_PAIRING_SESSION_CONFIRMED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      code,
+      deviceId: device.deviceId,
+      platform: device.platform
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return mobilePairingSessionResponse(confirmed, request, device);
+  });
+
+  app.get("/api/v1/mobile/devices", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const devices = await activeMobileDeviceStore().listDevices(actor.subjectId);
+    return {
+      actor,
+      contractVersion: "cop-mobile-devices-v1",
+      devices,
+      policy: mobileNativePolicy(),
+      serverTimestamp: now().toISOString()
+    };
+  });
+
   app.post("/api/v1/mobile/devices", async (request, reply) => {
     const actor = requireActor(request, reply);
     if (!actor) {
       return reply;
     }
-    const registration = normalizeMobileDeviceRegistration(request.body, actor, now());
+    const requestNow = now();
+    const registration = normalizeMobileDeviceRegistration(request.body, actor, requestNow);
     if (!registration) {
       return sendError(
         reply,
@@ -3383,7 +3567,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         correlationIdFrom(request.headers["x-correlation-id"])
       );
     }
-    mobileDeviceRegistrations.set(`${actor.subjectId}:${registration.deviceId}`, registration);
+    const device = await activeMobileDeviceStore().upsertDevice(registration, "paired", requestNow.toISOString());
     appendAudit(state, "MOBILE_DEVICE_REGISTERED", {
       actorAuthMode: actor.authMode,
       actorSubjectId: actor.subjectId,
@@ -3395,9 +3579,43 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }, correlationIdFrom(request.headers["x-correlation-id"]));
     return reply.code(202).send({
       actor,
-      device: registration,
+      contractVersion: "cop-mobile-devices-v1",
+      device,
       policy: mobileNativePolicy(),
-      serverTimestamp: registration.registeredAt
+      serverTimestamp: requestNow.toISOString()
+    });
+  });
+
+  app.delete("/api/v1/mobile/devices/:deviceId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const params = request.params as { deviceId: string };
+    const deviceId = normalizeMobileDeviceId(params.deviceId);
+    if (!deviceId) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Mobile device id is invalid.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const device = await activeMobileDeviceStore().revokeDevice(actor.subjectId, deviceId, now().toISOString());
+    if (!device) {
+      return sendError(reply, 404, "NOT_FOUND", "Mobile device was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    appendAudit(state, "MOBILE_DEVICE_REVOKED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      deviceId
+    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    return reply.code(202).send({
+      actor,
+      contractVersion: "cop-mobile-devices-v1",
+      device,
+      serverTimestamp: now().toISOString()
     });
   });
 
@@ -9154,13 +9372,13 @@ function normalizeMatrixRoomBindingRequest(value: unknown): MessagingMatrixRoomB
   if (!isRecord(value) || containsMessagingPlaintextKey(value)) {
     return null;
   }
-  const roomId = normalizeMatrixRoomId(value.roomId);
-  if (!roomId) {
+  const roomId = value.roomId === undefined ? undefined : normalizeMatrixRoomId(value.roomId);
+  if (value.roomId !== undefined && !roomId) {
     return null;
   }
   return {
     ...(typeof value.encrypted === "boolean" ? { encrypted: value.encrypted } : {}),
-    roomId
+    ...(roomId ? { roomId } : {})
   };
 }
 
@@ -9191,6 +9409,7 @@ function normalizeMessagingMembers(value: unknown): MessagingConversationCreateR
     const userId = optionalTrimmedString(item.userId ?? item.id, 128);
     return userId
       ? [{
+          ...(normalizeMessagingAvatarUrl(item.avatarUrl ?? item.avatar_url) ? { avatarUrl: normalizeMessagingAvatarUrl(item.avatarUrl ?? item.avatar_url) } : {}),
           ...(optionalTrimmedString(item.displayName, 160) ? { displayName: optionalTrimmedString(item.displayName, 160) } : {}),
           ...(optionalTrimmedString(item.role, 32) ? { role: optionalTrimmedString(item.role, 32) } : {}),
           userId
@@ -9198,6 +9417,22 @@ function normalizeMessagingMembers(value: unknown): MessagingConversationCreateR
       : [];
   });
   return members.length ? members.slice(0, 100) : undefined;
+}
+
+function normalizeMessagingAvatarUrl(value: unknown): string | undefined {
+  const avatarUrl = optionalTrimmedString(value, 4096);
+  if (!avatarUrl) {
+    return undefined;
+  }
+  if (avatarUrl.startsWith("mxc://") || avatarUrl.startsWith("data:image/")) {
+    return avatarUrl;
+  }
+  try {
+    const url = new URL(avatarUrl);
+    return url.protocol === "https:" ? avatarUrl : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeMessagingMapLinks(value: unknown): MessagingMapLink[] | undefined {
@@ -10243,11 +10478,11 @@ function normalizeMobileDeviceRegistration(
   value: unknown,
   actor: AuthenticatedActor,
   registeredAt: Date
-): MobileDeviceRegistration | null {
+): MobileDeviceRegistrationInput | null {
   if (!isRecord(value)) {
     return null;
   }
-  const deviceId = optionalTrimmedString(value.deviceId, 160);
+  const deviceId = normalizeMobileDeviceId(value.deviceId);
   const appVersion = optionalTrimmedString(value.appVersion, 40);
   const platform = isMobilePlatform(value.platform) ? value.platform : undefined;
   if (!deviceId || !appVersion || !platform) {
@@ -10269,13 +10504,103 @@ function normalizeMobileDeviceRegistration(
   };
 }
 
+function normalizeMobileDeviceId(value: unknown): string | undefined {
+  const deviceId = optionalTrimmedString(value, 160);
+  return deviceId && /^[A-Za-z0-9_.:=@-]{1,160}$/u.test(deviceId) ? deviceId : undefined;
+}
+
+function normalizeMobilePairingCode(value: unknown): string | undefined {
+  const code = optionalTrimmedString(value, 96);
+  return code && /^[A-Za-z0-9_-]{16,96}$/u.test(code) ? code : undefined;
+}
+
+function normalizeMobilePairingTtlSeconds(value: unknown): number {
+  const raw = isRecord(value) ? value.ttlSeconds : undefined;
+  const parsed = typeof raw === "number" && Number.isFinite(raw) ? Math.round(raw) : 600;
+  return Math.min(900, Math.max(60, parsed));
+}
+
+function mobilePairingActor(actor: AuthenticatedActor): MobilePairingActorRecord {
+  return {
+    displayName: actor.displayName,
+    subjectId: actor.subjectId,
+    username: actor.username
+  };
+}
+
+function canViewMobilePairingSession(actor: AuthenticatedActor, session: MobilePairingSessionRecord): boolean {
+  return session.createdBy.subjectId === actor.subjectId || session.claimedBy?.subjectId === actor.subjectId;
+}
+
+function mobilePairingSessionResponse(
+  session: MobilePairingSessionRecord,
+  request: FastifyRequest,
+  device?: MobileDeviceRecord
+) {
+  const publicBaseUrl = publicCopBaseUrl(request);
+  const scheme = mobileAuthConfig().redirectUriScheme;
+  return {
+    contractVersion: "cop-mobile-pairing-v1",
+    device: device ?? null,
+    pairing: {
+      claimedAt: session.claimedAt ?? null,
+      claimedBy: session.claimedBy ?? null,
+      claimedDevice: session.claimedDevice ? {
+        appVersion: session.claimedDevice.appVersion,
+        buildNumber: session.claimedDevice.buildNumber ?? null,
+        deviceId: session.claimedDevice.deviceId,
+        deviceModel: session.claimedDevice.deviceModel ?? null,
+        matrixDeviceId: session.claimedDevice.matrixDeviceId ?? null,
+        osVersion: session.claimedDevice.osVersion ?? null,
+        platform: session.claimedDevice.platform,
+        pushTokenRegistered: session.claimedDevice.pushTokenRegistered
+      } : null,
+      code: session.code,
+      confirmedAt: session.confirmedAt ?? null,
+      createdAt: session.createdAt,
+      createdBy: session.createdBy,
+      expiresAt: session.expiresAt,
+      links: {
+        customSchemeUrl: `${scheme}://pair?code=${encodeURIComponent(session.code)}`,
+        universalLink: `${publicBaseUrl}/mobile/pair/${encodeURIComponent(session.code)}`
+      },
+      status: session.status
+    },
+    policy: mobileNativePolicy(),
+    security: {
+      containsAccessToken: false,
+      containsRecoveryKey: false,
+      containsRoomKeys: false,
+      confirmationRequired: true
+    },
+    serverTimestamp: new Date().toISOString()
+  };
+}
+
+function publicCopBaseUrl(request: FastifyRequest): string {
+  const configured = process.env.COP_PUBLIC_URL ?? process.env.COP_PUBLIC_API_BASE_URL;
+  if (configured) {
+    return configured.replace(/\/+$/u, "");
+  }
+  const forwardedProto = Array.isArray(request.headers["x-forwarded-proto"])
+    ? request.headers["x-forwarded-proto"][0]
+    : request.headers["x-forwarded-proto"];
+  const forwardedHost = Array.isArray(request.headers["x-forwarded-host"])
+    ? request.headers["x-forwarded-host"][0]
+    : request.headers["x-forwarded-host"];
+  const hostHeader = Array.isArray(request.headers.host) ? request.headers.host[0] : request.headers.host;
+  const host = forwardedHost ?? hostHeader ?? "localhost:4310";
+  const proto = forwardedProto ?? (host.startsWith("localhost") ? "http" : "https");
+  return `${proto}://${host}`.replace(/\/+$/u, "");
+}
+
 function mobileAuthConfig(env: Record<string, string | undefined> = process.env) {
   const issuer = env.COP_OIDC_ISSUER ?? "";
   return {
     clientId: env.COP_OIDC_CLIENT_ID ?? "cop-web",
     issuer: issuer || null,
     mode: env.COP_AUTH_MODE === "oidc" || env.COP_AUTH_MODE === "hybrid" ? env.COP_AUTH_MODE : "lab",
-    redirectUriScheme: env.COP_MOBILE_REDIRECT_SCHEME ?? "cop",
+    redirectUriScheme: env.COP_MOBILE_REDIRECT_SCHEME ?? "csm",
     scope: env.COP_OIDC_SCOPE ?? "openid profile email"
   };
 }
@@ -10287,6 +10612,8 @@ function mobileCapabilities() {
     bootstrap: true,
     communityReports: true,
     communityReportUploads: true,
+    deviceManagement: true,
+    devicePairing: true,
     deviceRegistration: true,
     incidentFusionSuggestions: true,
     incidentTasks: true,
@@ -10295,6 +10622,7 @@ function mobileCapabilities() {
     pushNotifications: false,
     safetyContext: true,
     serverUserProfile: true,
+    messagingMatrixRoomEnsure: true,
     situationContext: true,
     sseStream: true,
     takGatewayContext: true,
@@ -10334,6 +10662,13 @@ function mobileEndpoints() {
     messagingMatrixIdentityResolution: "/api/v1/messaging/matrix/identities/resolve",
     messagingConversationMembers: "/api/v1/messaging/conversations/{conversationId}/members",
     messagingMatrixRoomBinding: "/api/v1/messaging/conversations/{conversationId}/matrix-room",
+    messagingMatrixRoomEnsure: "/api/v1/messaging/conversations/{conversationId}/matrix-room",
+    mobileDeviceRevoke: "/api/v1/mobile/devices/{deviceId}",
+    mobileDevices: "/api/v1/mobile/devices",
+    mobilePairingClaim: "/api/v1/mobile/pairing/sessions/{code}/claim",
+    mobilePairingConfirm: "/api/v1/mobile/pairing/sessions/{code}/confirm",
+    mobilePairingCreate: "/api/v1/mobile/pairing/sessions",
+    mobilePairingStatus: "/api/v1/mobile/pairing/sessions/{code}",
     messagingStatus: "/api/v1/messaging/status",
     sourceHealth: "/api/v1/sources/health",
     sources: "/api/v1/sources",

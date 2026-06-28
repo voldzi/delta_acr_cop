@@ -1036,6 +1036,35 @@
             "$ref": "#/components/responses/Unauthorized"
           }
         }
+      },
+      "get": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "List native mobile devices paired for the authenticated user.",
+        "operationId": "listMobileDevices",
+        "responses": {
+          "200": {
+            "description": "Paired mobile devices.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileDeviceListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/community/reports": {
@@ -3497,8 +3526,8 @@
         "tags": [
           "Messaging"
         ],
-        "summary": "Store the Matrix room binding for a Messaging conversation.",
-        "description": "Stores Matrix room metadata only. COP still does not proxy or persist plaintext chat messages and Matrix room membership is not used as media authorization.\n",
+        "summary": "Store or ensure the Matrix room binding for a Messaging conversation.",
+        "description": "Stores Matrix room metadata only. COP still does not proxy or persist plaintext chat messages. An empty JSON body is accepted as an ensure/bind request for native clients when CSM Messaging can return an existing or server-created room binding.\n",
         "operationId": "bindMessagingConversationMatrixRoom",
         "parameters": [
           {
@@ -3512,7 +3541,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -5706,6 +5735,347 @@
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/pairing/sessions": {
+      "post": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Create a short-lived native mobile pairing session.",
+        "operationId": "createMobilePairingSession",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilePairingSessionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pairing session created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilePairingSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "description": "Service unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/pairing/sessions/{code}": {
+      "get": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Read a native mobile pairing session.",
+        "operationId": "getMobilePairingSession",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pairing session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilePairingSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request or schema validation error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/pairing/sessions/{code}/claim": {
+      "post": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Claim a native mobile pairing session from iOS/iPadOS.",
+        "operationId": "claimMobilePairingSession",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileDeviceRegistrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pairing session updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilePairingSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request or schema validation error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Policy denied the operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict, typically idempotency mismatch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/pairing/sessions/{code}/confirm": {
+      "post": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Confirm a claimed native mobile pairing session from web.",
+        "operationId": "confirmMobilePairingSession",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pairing session updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilePairingSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request or schema validation error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Policy denied the operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict, typically idempotency mismatch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobile/devices/{deviceId}": {
+      "delete": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Revoke a paired native mobile device.",
+        "operationId": "revokeMobileDevice",
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Mobile device revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileDeviceRevocationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request or schema validation error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -8701,7 +9071,10 @@
           "pushNotifications",
           "serverUserProfile",
           "sseStream",
-          "trackHistory"
+          "trackHistory",
+          "deviceManagement",
+          "devicePairing",
+          "messagingMatrixRoomEnsure"
         ],
         "properties": {
           "alertAcknowledgement": {
@@ -8735,6 +9108,15 @@
             "type": "boolean"
           },
           "trackHistory": {
+            "type": "boolean"
+          },
+          "deviceManagement": {
+            "type": "boolean"
+          },
+          "devicePairing": {
+            "type": "boolean"
+          },
+          "messagingMatrixRoomEnsure": {
             "type": "boolean"
           }
         }
@@ -8990,6 +9372,7 @@
         "type": "object",
         "required": [
           "actor",
+          "contractVersion",
           "device",
           "policy",
           "serverTimestamp"
@@ -8998,62 +9381,14 @@
           "actor": {
             "$ref": "#/components/schemas/AuthenticatedActor"
           },
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-mobile-devices-v1"
+            ]
+          },
           "device": {
-            "type": "object",
-            "required": [
-              "appVersion",
-              "capabilities",
-              "deviceId",
-              "deviceSessionId",
-              "platform",
-              "pushTokenRegistered",
-              "registeredAt",
-              "subjectId"
-            ],
-            "properties": {
-              "appVersion": {
-                "type": "string"
-              },
-              "buildNumber": {
-                "type": "string"
-              },
-              "capabilities": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "deviceId": {
-                "type": "string"
-              },
-              "deviceModel": {
-                "type": "string"
-              },
-              "deviceSessionId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "osVersion": {
-                "type": "string"
-              },
-              "platform": {
-                "type": "string",
-                "enum": [
-                  "ios",
-                  "ipados"
-                ]
-              },
-              "pushTokenRegistered": {
-                "type": "boolean"
-              },
-              "registeredAt": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "subjectId": {
-                "type": "string"
-              }
-            }
+            "$ref": "#/components/schemas/MobileDevice"
           },
           "policy": {
             "$ref": "#/components/schemas/MobileNativePolicy"
@@ -12477,6 +12812,29 @@
           },
           "disclaimer": {
             "type": "string"
+          },
+          "avatarUrl": {
+            "type": "string"
+          },
+          "avatarDataUrl": {
+            "type": "string"
+          },
+          "directPeer": {
+            "type": "object",
+            "required": [
+              "userId"
+            ],
+            "properties": {
+              "avatarUrl": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "userId": {
+                "type": "string"
+              }
+            }
           }
         }
       },
@@ -12493,6 +12851,9 @@
             "type": "string"
           },
           "role": {
+            "type": "string"
+          },
+          "avatarUrl": {
             "type": "string"
           }
         }
@@ -12603,14 +12964,15 @@
           },
           "displayName": {
             "type": "string"
+          },
+          "avatarUrl": {
+            "type": "string"
           }
         }
       },
       "MessagingMatrixRoomBindingRequest": {
         "type": "object",
-        "required": [
-          "roomId"
-        ],
+        "required": [],
         "additionalProperties": false,
         "properties": {
           "roomId": {
@@ -12621,7 +12983,8 @@
           "encrypted": {
             "type": "boolean"
           }
-        }
+        },
+        "description": "Optional roomId binding. Empty object is accepted as an ensure/bind request for native clients."
       },
       "MessagingMatrixRoomBindingResponse": {
         "type": "object",
@@ -16659,6 +17022,372 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "MobileDevice": {
+        "type": "object",
+        "required": [
+          "appVersion",
+          "capabilities",
+          "deviceId",
+          "deviceSessionId",
+          "lastSeenAt",
+          "pairedAt",
+          "platform",
+          "pushTokenRegistered",
+          "registeredAt",
+          "status",
+          "subjectId"
+        ],
+        "properties": {
+          "appVersion": {
+            "type": "string"
+          },
+          "buildNumber": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "deviceModel": {
+            "type": "string"
+          },
+          "deviceSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "matrixDeviceId": {
+            "type": "string"
+          },
+          "osVersion": {
+            "type": "string"
+          },
+          "pairedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "pairingCode": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "ios",
+              "ipados"
+            ]
+          },
+          "pushTokenRegistered": {
+            "type": "boolean"
+          },
+          "registeredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "paired",
+              "revoked"
+            ]
+          },
+          "subjectId": {
+            "type": "string"
+          }
+        }
+      },
+      "MobilePairingActor": {
+        "type": "object",
+        "required": [
+          "displayName",
+          "subjectId",
+          "username"
+        ],
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "MobilePairingClaimedDevice": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "appVersion": {
+            "type": "string"
+          },
+          "buildNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "deviceModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "matrixDeviceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "osVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "ios",
+              "ipados"
+            ]
+          },
+          "pushTokenRegistered": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MobilePairingSessionResponse": {
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "device",
+          "pairing",
+          "policy",
+          "security",
+          "serverTimestamp"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-mobile-pairing-v1"
+            ]
+          },
+          "device": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MobileDevice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pairing": {
+            "type": "object",
+            "required": [
+              "claimedAt",
+              "claimedBy",
+              "claimedDevice",
+              "code",
+              "confirmedAt",
+              "createdAt",
+              "createdBy",
+              "expiresAt",
+              "links",
+              "status"
+            ],
+            "properties": {
+              "claimedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "claimedBy": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MobilePairingActor"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "claimedDevice": {
+                "$ref": "#/components/schemas/MobilePairingClaimedDevice"
+              },
+              "code": {
+                "type": "string"
+              },
+              "confirmedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "createdBy": {
+                "$ref": "#/components/schemas/MobilePairingActor"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "links": {
+                "type": "object",
+                "required": [
+                  "customSchemeUrl",
+                  "universalLink"
+                ],
+                "properties": {
+                  "customSchemeUrl": {
+                    "type": "string"
+                  },
+                  "universalLink": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                }
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "claimed",
+                  "confirmed",
+                  "expired",
+                  "revoked"
+                ]
+              }
+            }
+          },
+          "policy": {
+            "$ref": "#/components/schemas/MobileNativePolicy"
+          },
+          "security": {
+            "type": "object",
+            "required": [
+              "containsAccessToken",
+              "containsRecoveryKey",
+              "containsRoomKeys",
+              "confirmationRequired"
+            ],
+            "properties": {
+              "containsAccessToken": {
+                "type": "boolean"
+              },
+              "containsRecoveryKey": {
+                "type": "boolean"
+              },
+              "containsRoomKeys": {
+                "type": "boolean"
+              },
+              "confirmationRequired": {
+                "type": "boolean"
+              }
+            }
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MobilePairingSessionCreateRequest": {
+        "type": "object",
+        "properties": {
+          "ttlSeconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 900
+          }
+        }
+      },
+      "MobileDeviceListResponse": {
+        "type": "object",
+        "required": [
+          "actor",
+          "contractVersion",
+          "devices",
+          "policy",
+          "serverTimestamp"
+        ],
+        "properties": {
+          "actor": {
+            "$ref": "#/components/schemas/AuthenticatedActor"
+          },
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-mobile-devices-v1"
+            ]
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobileDevice"
+            }
+          },
+          "policy": {
+            "$ref": "#/components/schemas/MobileNativePolicy"
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MobileDeviceRevocationResponse": {
+        "type": "object",
+        "required": [
+          "actor",
+          "contractVersion",
+          "device",
+          "serverTimestamp"
+        ],
+        "properties": {
+          "actor": {
+            "$ref": "#/components/schemas/AuthenticatedActor"
+          },
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-mobile-devices-v1"
+            ]
+          },
+          "device": {
+            "$ref": "#/components/schemas/MobileDevice"
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }
