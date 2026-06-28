@@ -33,6 +33,7 @@ function sessionStub(): MatrixMessagingSession {
     joinInvitedRooms: vi.fn(),
     loadMoreTimeline: vi.fn(),
     markRoomRead: vi.fn(),
+    prepareEncryptionRecoveryForMobile: vi.fn(),
     restoreEncryptionRecovery: vi.fn(),
     setMessageRetentionPolicy: vi.fn(),
     sendAttachment: vi.fn(),
@@ -47,8 +48,11 @@ function sessionStub(): MatrixMessagingSession {
 
 function recoveryStatus(ready: boolean): MatrixEncryptionRecoveryStatus {
   return {
+    canPrepareForMobile: ready,
+    crossSigningReady: ready,
     keyBackupEnabled: ready,
     keyBackupExists: ready,
+    matrixRustCompatible: ready,
     needsRecovery: !ready,
     needsSetup: !ready,
     ready,

@@ -135,6 +135,7 @@ export interface MatrixMessagingSession {
   joinInvitedRooms(): Promise<void>;
   loadMoreTimeline(roomId: string, limit?: number): Promise<{ exhausted: boolean; messages: MatrixTimelineMessage[] }>;
   markRoomRead(roomId: string): Promise<void>;
+  prepareEncryptionRecoveryForMobile(): Promise<string>;
   restoreEncryptionRecovery(recoveryKey: string): Promise<void>;
   setMessageRetentionPolicy(roomId: string, seconds: number | null): Promise<void>;
   sendAttachment(roomId: string, attachment: MatrixAttachmentUpload): Promise<void>;
@@ -148,8 +149,11 @@ export interface MatrixMessagingSession {
 
 export interface MatrixEncryptionRecoveryStatus {
   activeBackupVersion?: string;
+  canPrepareForMobile: boolean;
+  crossSigningReady: boolean;
   keyBackupEnabled: boolean;
   keyBackupExists: boolean;
+  matrixRustCompatible: boolean;
   needsRecovery: boolean;
   needsSetup: boolean;
   ready: boolean;

@@ -497,7 +497,9 @@ export function ChatApp() {
   const statusLabel = statusLabelFor(status, matrixSession, syncState, matrixLoading);
   const recoveryBanner = matrixSession && encryptionRecoveryStatus && !encryptionRecoveryStatus.ready
     ? encryptionRecoveryStatus.needsSetup
-      ? "E2EE je aktivní. Pro bezpečné použití na více zařízeních nastavte obnovovací klíč."
+      ? encryptionRecoveryStatus.keyBackupEnabled
+        ? "E2EE je aktivní, ale pro iPhone/iPad je potřeba doplnit kompletní obnovu."
+        : "E2EE je aktivní. Pro bezpečné použití na více zařízeních nastavte obnovovací klíč."
       : "Toto zařízení zatím nemá odemčenou E2EE zálohu. Zadejte obnovovací klíč."
     : null;
 
@@ -1449,7 +1451,7 @@ export function ChatApp() {
   }
 
   async function createEncryptionRecovery(reset = false): Promise<void> {
-    if (reset && !window.confirm("Resetovat E2EE obnovu? Vytvoří se nový obnovovací klíč pro všechna zařízení a starší šifrovaná historie nemusí být dostupná.")) {
+    if (reset && !window.confirm("Nouzově začít znovu s E2EE? Tuto volbu použijte jen při ztraceném nebo kompromitovaném klíči. Starší šifrovaná historie nemusí být dostupná.")) {
       return;
     }
     const session = matrixSessionRef.current ?? await startMatrixSession(selectedConversationId ?? selectedGroupId ?? selectedRoomId);
@@ -1464,10 +1466,33 @@ export function ChatApp() {
       setRecoveryKeyInput("");
       await refreshEncryptionRecoveryStatus(session);
       setNotice(reset
-        ? "Nový E2EE obnovovací klíč je aktivní. Použijte ho i na iOS; starší šifrovaná historie nemusí být dostupná."
-        : "E2EE obnova je nastavena. Uložte obnovovací klíč mimo tento prohlížeč.");
+        ? "Nový nouzový E2EE obnovovací klíč je aktivní. Použijte ho i na iOS; starší šifrovaná historie nemusí být dostupná."
+        : "E2EE obnova je nastavena pro web i iPhone/iPad. Uložte obnovovací klíč mimo tento prohlížeč.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Obnovovací klíč se nepodařilo vytvořit.");
+    } finally {
+      setRecoveryWorking(false);
+    }
+  }
+
+  async function prepareEncryptionRecoveryForMobile(): Promise<void> {
+    if (!window.confirm("Připravit nový E2EE obnovovací klíč pro iPhone/iPad? Starý obnovovací klíč tím přestane být správný pro nové přihlášení.")) {
+      return;
+    }
+    const session = matrixSessionRef.current ?? await startMatrixSession(selectedConversationId ?? selectedGroupId ?? selectedRoomId);
+    if (!session) {
+      return;
+    }
+    setRecoveryWorking(true);
+    setError(null);
+    try {
+      const recoveryKey = await session.prepareEncryptionRecoveryForMobile();
+      setGeneratedRecoveryKey(recoveryKey);
+      setRecoveryKeyInput("");
+      await refreshEncryptionRecoveryStatus(session);
+      setNotice("Recovery pro iPhone/iPad je připravené. Uložte nový klíč a použijte ho v mobilní aplikaci.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Recovery pro iPhone/iPad se nepodařilo připravit.");
     } finally {
       setRecoveryWorking(false);
     }
@@ -2257,7 +2282,11 @@ export function ChatApp() {
               <StatusBanner kind="error" text={userFacingError(error)} onClose={() => setError(null)} />
             ) : recoveryBanner ? (
               <StatusBanner
-                actionLabel={encryptionRecoveryStatus?.needsSetup ? "Nastavit" : "Obnovit"}
+                actionLabel={encryptionRecoveryStatus?.needsRecovery
+                  ? "Obnovit"
+                  : encryptionRecoveryStatus?.keyBackupEnabled
+                    ? "Připravit pro iOS"
+                    : "Nastavit"}
                 text={recoveryBanner}
                 onAction={() => {
                   setGeneratedRecoveryKey(null);
@@ -2287,12 +2316,18 @@ export function ChatApp() {
               />
             ) : selectedRoomId && !encryptionRecoveryReady && !showingDemoTimeline ? (
               <ChatLockedState
-                actionLabel={encryptionRecoveryStatus?.needsSetup ? "Nastavit obnovu" : "Obnovit zařízení"}
+                actionLabel={encryptionRecoveryStatus?.needsRecovery
+                  ? "Obnovit zařízení"
+                  : encryptionRecoveryStatus?.keyBackupEnabled
+                    ? "Připravit pro iOS"
+                    : "Nastavit obnovu"}
                 icon={<KeyRound size={30} />}
                 title="Dokončete zabezpečení E2EE"
-                text={encryptionRecoveryStatus?.needsSetup
-                  ? "Před psaním zpráv nastavte obnovovací klíč. Nové zprávy pak půjde bezpečně číst i na dalších zařízeních."
-                  : "Zadejte obnovovací klíč, aby toto zařízení získalo přístup k vaší E2EE záloze."}
+                text={encryptionRecoveryStatus?.needsRecovery
+                  ? "Zadejte obnovovací klíč, aby toto zařízení získalo přístup k vaší E2EE záloze."
+                  : encryptionRecoveryStatus?.keyBackupEnabled
+                    ? "Tento web umí šifrované zprávy číst, ale účet ještě nemá kompletní recovery metadata pro iPhone/iPad."
+                    : "Před psaním zpráv nastavte obnovovací klíč. Nové zprávy pak půjde bezpečně číst i na dalších zařízeních."}
                 onAction={() => setRecoveryDialogOpen(true)}
               />
             ) : (
@@ -2515,6 +2550,7 @@ export function ChatApp() {
               setGeneratedRecoveryKey(null);
             }}
             onCreate={() => void createEncryptionRecovery(false)}
+            onPrepareMobile={() => void prepareEncryptionRecoveryForMobile()}
             onRecoveryKeyInputChange={setRecoveryKeyInput}
             onReset={() => void createEncryptionRecovery(true)}
             onRestore={() => void restoreEncryptionRecovery()}

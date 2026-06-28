@@ -18,9 +18,21 @@ describe("EncryptionRecoveryDialog", () => {
         generatedRecoveryKey="COP-RECOVERY-KEY"
         recoveryKeyInput=""
         saving={false}
-        status={{ keyBackupEnabled: true, keyBackupExists: true, needsRecovery: false, needsSetup: false, ready: true, secretStorageReady: true, supported: true }}
+        status={{
+          canPrepareForMobile: true,
+          crossSigningReady: true,
+          keyBackupEnabled: true,
+          keyBackupExists: true,
+          matrixRustCompatible: true,
+          needsRecovery: false,
+          needsSetup: false,
+          ready: true,
+          secretStorageReady: true,
+          supported: true
+        }}
         onClose={vi.fn()}
         onCreate={vi.fn()}
+        onPrepareMobile={vi.fn()}
         onRecoveryKeyInputChange={vi.fn()}
         onReset={vi.fn()}
         onRestore={vi.fn()}
@@ -41,9 +53,21 @@ describe("EncryptionRecoveryDialog", () => {
         generatedRecoveryKey={null}
         recoveryKeyInput="SECRET"
         saving={false}
-        status={{ keyBackupEnabled: true, keyBackupExists: true, needsRecovery: true, needsSetup: false, ready: false, secretStorageReady: true, supported: true }}
+        status={{
+          canPrepareForMobile: false,
+          crossSigningReady: true,
+          keyBackupEnabled: false,
+          keyBackupExists: true,
+          matrixRustCompatible: false,
+          needsRecovery: true,
+          needsSetup: false,
+          ready: false,
+          secretStorageReady: true,
+          supported: true
+        }}
         onClose={vi.fn()}
         onCreate={vi.fn()}
+        onPrepareMobile={vi.fn()}
         onRecoveryKeyInputChange={onRecoveryKeyInputChange}
         onReset={vi.fn()}
         onRestore={onRestore}

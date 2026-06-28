@@ -61,6 +61,7 @@ interface MatrixCryptoApiLike {
   disableKeyStorage?: () => Promise<void>;
   getActiveSessionBackupVersion?: () => Promise<string | null>;
   getKeyBackupInfo?: () => Promise<unknown | null>;
+  isCrossSigningReady?: () => Promise<boolean>;
   isSecretStorageReady?: () => Promise<boolean>;
   loadSessionBackupPrivateKeyFromSecretStorage?: () => Promise<void>;
   resetEncryption?: (authUploadDeviceSigningKeys: MatrixInteractiveAuthCallback) => Promise<void>;
@@ -322,7 +323,7 @@ export async function createMatrixMessagingSession(
 
   return {
     bootstrap,
-    createEncryptionRecovery: async (reset = false) => createUserControlledEncryptionRecovery(client, reset),
+    createEncryptionRecovery: async (reset = false) => createUserControlledEncryptionRecovery(client, { reset }),
     createGroupRoom: async (name, inviteUserIds = []) => {
       if (typeof client.createRoom !== "function") {
         throw new Error("Chat se nepodařilo založit.");
@@ -456,6 +457,7 @@ export async function createMatrixMessagingSession(
         // Read receipts are a best-effort UX signal. Message delivery must not fail because of them.
       }
     },
+    prepareEncryptionRecoveryForMobile: async () => createUserControlledEncryptionRecovery(client, { mobileCompatible: true }),
     restoreEncryptionRecovery: async (recoveryKey) => restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey),
     setMessageRetentionPolicy: async (roomId, seconds) => {
       if (typeof client.sendStateEvent !== "function") {
@@ -771,8 +773,11 @@ async function readMatrixEncryptionRecoveryStatus(client: MatrixClientLike): Pro
   const crypto = client.getCrypto?.();
   if (!crypto) {
     return {
+      canPrepareForMobile: false,
+      crossSigningReady: false,
       keyBackupEnabled: false,
       keyBackupExists: false,
+      matrixRustCompatible: false,
       needsRecovery: false,
       needsSetup: true,
       ready: false,
@@ -780,33 +785,48 @@ async function readMatrixEncryptionRecoveryStatus(client: MatrixClientLike): Pro
       supported: false
     };
   }
-  const [backupInfo, activeBackupVersion, secretStorageReady] = await Promise.all([
+  const [backupInfo, activeBackupVersion, secretStorageReady, crossSigningReady] = await Promise.all([
     crypto.getKeyBackupInfo ? crypto.getKeyBackupInfo().catch(() => null) : Promise.resolve(null),
     crypto.getActiveSessionBackupVersion ? crypto.getActiveSessionBackupVersion().catch(() => null) : Promise.resolve(null),
-    crypto.isSecretStorageReady ? crypto.isSecretStorageReady().catch(() => false) : Promise.resolve(false)
+    crypto.isSecretStorageReady ? crypto.isSecretStorageReady().catch(() => false) : Promise.resolve(false),
+    crypto.isCrossSigningReady ? crypto.isCrossSigningReady().catch(() => false) : Promise.resolve(false)
   ]);
   const keyBackupExists = Boolean(backupInfo);
   const keyBackupEnabled = Boolean(activeBackupVersion);
+  const supported = typeof crypto.bootstrapSecretStorage === "function"
+    && typeof crypto.bootstrapCrossSigning === "function"
+    && typeof crypto.createRecoveryKeyFromPassphrase === "function"
+    && typeof crypto.isCrossSigningReady === "function"
+    && typeof crypto.isSecretStorageReady === "function";
+  const matrixRustCompatible = Boolean(keyBackupEnabled && secretStorageReady && crossSigningReady);
   return {
     ...(activeBackupVersion ? { activeBackupVersion } : {}),
+    canPrepareForMobile: supported && keyBackupEnabled,
+    crossSigningReady,
     keyBackupEnabled,
     keyBackupExists,
+    matrixRustCompatible,
     needsRecovery: keyBackupExists && !keyBackupEnabled,
-    needsSetup: !keyBackupExists,
-    ready: keyBackupEnabled,
+    needsSetup: !keyBackupExists || (keyBackupEnabled && !matrixRustCompatible),
+    ready: matrixRustCompatible,
     secretStorageReady,
-    supported: typeof crypto.bootstrapSecretStorage === "function" && typeof crypto.createRecoveryKeyFromPassphrase === "function"
+    supported
   };
 }
 
-async function createUserControlledEncryptionRecovery(client: MatrixClientLike, reset: boolean): Promise<string> {
+async function createUserControlledEncryptionRecovery(
+  client: MatrixClientLike,
+  options: { mobileCompatible?: boolean; reset?: boolean } = {}
+): Promise<string> {
   const crypto = requireMatrixCrypto(client);
-  if (typeof crypto.bootstrapSecretStorage !== "function" || typeof crypto.createRecoveryKeyFromPassphrase !== "function") {
+  if (typeof crypto.bootstrapSecretStorage !== "function"
+    || typeof crypto.bootstrapCrossSigning !== "function"
+    || typeof crypto.createRecoveryKeyFromPassphrase !== "function") {
     throw new Error("Tento prohlížeč nepodporuje vytvoření obnovovacího klíče.");
   }
 
   let resetEncryptionApplied = false;
-  if (reset) {
+  if (options.reset) {
     resetEncryptionApplied = await resetMatrixEncryptionForRecovery(crypto);
   }
 
@@ -818,14 +838,27 @@ async function createUserControlledEncryptionRecovery(client: MatrixClientLike, 
   };
 
   try {
+    const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback();
+    if (!options.reset) {
+      await crypto.bootstrapCrossSigning({
+        authUploadDeviceSigningKeys,
+        ...(options.mobileCompatible ? { setupNewCrossSigning: true } : {})
+      });
+    }
     await crypto.bootstrapSecretStorage({
       createSecretStorageKey,
       setupNewKeyBackup: !resetEncryptionApplied,
-      ...(reset ? { setupNewSecretStorage: true } : {})
+      setupNewSecretStorage: true
     });
+    await crypto.bootstrapCrossSigning({ authUploadDeviceSigningKeys });
     await crypto.checkKeyBackupAndEnable?.();
+    const status = await readMatrixEncryptionRecoveryStatus(client);
+    if (!status.matrixRustCompatible) {
+      throw new Error("Nová E2EE obnova není kompletní pro iPhone/iPad. Zkuste akci zopakovat z tohoto důvěryhodného prohlížeče.");
+    }
   } catch (caught) {
-    throw new Error(`Obnovovací klíč se nepodařilo vytvořit: ${errorMessage(caught)}`);
+    const action = options.mobileCompatible ? "připravit pro iPhone/iPad" : "vytvořit";
+    throw new Error(`Obnovovací klíč se nepodařilo ${action}: ${errorMessage(caught)}`);
   }
   if (!encodedRecoveryKey) {
     throw new Error("Matrix nevydal obnovovací klíč. Zkuste nastavení zopakovat.");

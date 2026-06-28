@@ -11,6 +11,7 @@ export interface EncryptionRecoveryDialogProps {
   status: MatrixEncryptionRecoveryStatus | null;
   onClose: () => void;
   onCreate: () => void;
+  onPrepareMobile: () => void;
   onRecoveryKeyInputChange: (value: string) => void;
   onReset: () => void;
   onRestore: () => void;
@@ -23,12 +24,21 @@ export default function EncryptionRecoveryDialog({
   status,
   onClose,
   onCreate,
+  onPrepareMobile,
   onRecoveryKeyInputChange,
   onReset,
   onRestore
 }: EncryptionRecoveryDialogProps) {
   const hasBackup = status?.keyBackupExists === true;
-  const ready = status?.ready === true;
+  const mobileReady = status?.matrixRustCompatible === true;
+  const needsMobilePreparation = status?.keyBackupEnabled === true && !mobileReady;
+  const subtitle = mobileReady
+    ? "Připraveno pro web i iPhone/iPad"
+    : needsMobilePreparation
+      ? "Doplňte kompatibilní obnovu pro iOS"
+      : hasBackup
+        ? "Obnovte toto zařízení"
+        : "Nastavte více zařízení";
   const [copyState, setCopyState] = React.useState<"copied" | "error" | "idle">("idle");
 
   React.useEffect(() => {
@@ -70,7 +80,7 @@ export default function EncryptionRecoveryDialog({
           </button>
           <span>
             <h2>Obnova E2EE</h2>
-            <small>{ready ? "Key backup je aktivní" : hasBackup ? "Obnovte toto zařízení" : "Nastavte více zařízení"}</small>
+            <small>{subtitle}</small>
           </span>
         </header>
         <div className="recovery-illustration" aria-hidden="true">
@@ -80,8 +90,8 @@ export default function EncryptionRecoveryDialog({
         {generatedRecoveryKey ? (
           <>
             <p>
-              Uložte tento obnovovací klíč do správce hesel nebo na bezpečné místo.
-              Bez něj nepůjde obnovit E2EE na novém zařízení, pokud nebude dostupné jiné ověřené zařízení.
+              Uložte tento obnovovací klíč do správce hesel nebo na bezpečné místo. Tento klíč použijte
+              pro web i iPhone/iPad. Starší klíč považujte za neplatný, zejména pokud se objevil ve screenshotu.
             </p>
             <div className="recovery-key-box">
               <code>{generatedRecoveryKey}</code>
@@ -106,16 +116,36 @@ export default function EncryptionRecoveryDialog({
               <button className="primary-dialog-action" onClick={onClose} type="button">Mám uloženo</button>
             </footer>
           </>
-        ) : ready ? (
+        ) : mobileReady ? (
           <>
             <p>
-              Toto zařízení má přístup k E2EE key backupu. Pokud obnovovací klíč unikl nebo iOS hlásí
-              nekompatibilní E2EE metadata, resetujte obnovu a použijte nově vygenerovaný klíč.
+              E2EE obnova je kompletní: key backup, secret storage i cross-signing jsou připravené pro web
+              i nativní iPhone/iPad aplikaci. Pokud obnovovací klíč unikl, vygenerujte nový.
             </p>
             <footer>
               <button className="primary-dialog-action" onClick={onClose} type="button">Hotovo</button>
+              <button disabled={saving} className="secondary-dialog-action" onClick={onPrepareMobile} type="button">
+                Vygenerovat nový klíč
+              </button>
               <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
-                Resetovat E2EE obnovu
+                Nouzově začít znovu
+              </button>
+            </footer>
+          </>
+        ) : needsMobilePreparation ? (
+          <>
+            <p>
+              Tento prohlížeč umí pracovat se šifrovanou historií, ale účet nemá kompletní E2EE metadata,
+              která vyžaduje nativní iPhone/iPad aplikace. Připravte nový recovery cyklus a nově zobrazený
+              klíč použijte v iOS.
+            </p>
+            <footer>
+              <button disabled={saving} className="primary-dialog-action" onClick={onPrepareMobile} type="button">
+                {saving ? <Loader2 className="spin" size={18} /> : <KeyRound size={18} />}
+                Připravit pro iPhone/iPad
+              </button>
+              <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
+                Nouzově začít znovu bez staré historie
               </button>
             </footer>
           </>
@@ -141,7 +171,7 @@ export default function EncryptionRecoveryDialog({
                 Obnovit zařízení
               </button>
               <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
-                Začít znovu bez staré historie
+                Nouzově začít znovu bez staré historie
               </button>
             </footer>
           </>
@@ -154,10 +184,10 @@ export default function EncryptionRecoveryDialog({
             <footer>
               <button disabled={saving} className="primary-dialog-action" onClick={onCreate} type="button">
                 {saving ? <Loader2 className="spin" size={18} /> : <KeyRound size={18} />}
-                Vytvořit obnovovací klíč
+                Vytvořit klíč pro web+iOS
               </button>
               <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
-                Resetovat staré nastavení
+                Nouzově resetovat staré nastavení
               </button>
             </footer>
           </>
