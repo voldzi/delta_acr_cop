@@ -72,6 +72,7 @@ type MatrixInteractiveAuthCallback = (makeRequest: (authData: Record<string, unk
 
 interface MatrixRecoveryController {
   readonly cryptoCallbacks: Record<string, unknown>;
+  setGeneratedSecretStorageKey(generatedKey: unknown): void;
   setRecoveryKey(recoveryKey: string): void;
 }
 
@@ -332,7 +333,7 @@ export async function createMatrixMessagingSession(
 
   return {
     bootstrap,
-    createEncryptionRecovery: async (reset = false) => createUserControlledEncryptionRecovery(client, { reset }),
+    createEncryptionRecovery: async (reset = false) => createUserControlledEncryptionRecovery(client, recoveryController, { reset }),
     createGroupRoom: async (name, inviteUserIds = []) => {
       if (typeof client.createRoom !== "function") {
         throw new Error("Chat se nepodařilo založit.");
@@ -466,7 +467,7 @@ export async function createMatrixMessagingSession(
         // Read receipts are a best-effort UX signal. Message delivery must not fail because of them.
       }
     },
-    prepareEncryptionRecoveryForMobile: async () => createUserControlledEncryptionRecovery(client, { mobileCompatible: true }),
+    prepareEncryptionRecoveryForMobile: async () => createUserControlledEncryptionRecovery(client, recoveryController, { mobileCompatible: true }),
     restoreEncryptionRecovery: async (recoveryKey) => restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey),
     setMessageRetentionPolicy: async (roomId, seconds) => {
       if (typeof client.sendStateEvent !== "function") {
@@ -629,11 +630,13 @@ function disableMatrixPollAggregation(matrixSdk: MatrixSdkLike): void {
 
 function createUserControlledRecoveryController(): MatrixRecoveryController {
   const keyCache = new Map<string, Uint8Array>();
+  let generatedSecretStorageKey: Uint8Array | null = null;
   let recoveryKey: string | null = null;
   return {
     cryptoCallbacks: {
       cacheSecretStorageKey: (keyId: string, _keyInfo: unknown, key: Uint8Array) => {
         keyCache.set(keyId, key);
+        generatedSecretStorageKey = null;
       },
       getSecretStorageKey: async (options: { keys: Record<string, unknown> }) => {
         for (const keyId of Object.keys(options.keys)) {
@@ -642,16 +645,30 @@ function createUserControlledRecoveryController(): MatrixRecoveryController {
             return [keyId, cachedKey];
           }
         }
+        const keyId = Object.keys(options.keys)[0];
+        if (!keyId) {
+          return null;
+        }
+        if (generatedSecretStorageKey) {
+          return [keyId, generatedSecretStorageKey];
+        }
         if (!recoveryKey) {
           return null;
         }
         const decodedKey = await decodeUserRecoveryKey(recoveryKey);
-        const keyId = Object.keys(options.keys)[0];
-        return keyId ? [keyId, decodedKey] : null;
+        return [keyId, decodedKey];
       }
+    },
+    setGeneratedSecretStorageKey(generatedKey: unknown) {
+      const encodedRecoveryKey = readEncodedRecoveryKey(generatedKey);
+      if (encodedRecoveryKey) {
+        recoveryKey = encodedRecoveryKey.trim();
+      }
+      generatedSecretStorageKey = readSecretStoragePrivateKey(generatedKey);
     },
     setRecoveryKey(nextRecoveryKey: string) {
       recoveryKey = nextRecoveryKey.trim();
+      generatedSecretStorageKey = null;
     }
   };
 }
@@ -825,6 +842,7 @@ async function readMatrixEncryptionRecoveryStatus(client: MatrixClientLike): Pro
 
 async function createUserControlledEncryptionRecovery(
   client: MatrixClientLike,
+  recoveryController: MatrixRecoveryController,
   options: { mobileCompatible?: boolean; reset?: boolean } = {}
 ): Promise<string> {
   const crypto = requireMatrixCrypto(client);
@@ -843,6 +861,7 @@ async function createUserControlledEncryptionRecovery(
   const createSecretStorageKey = async () => {
     const recoveryKey = await crypto.createRecoveryKeyFromPassphrase?.();
     encodedRecoveryKey = readEncodedRecoveryKey(recoveryKey);
+    recoveryController.setGeneratedSecretStorageKey(recoveryKey);
     return recoveryKey;
   };
 
@@ -933,6 +952,11 @@ function requireMatrixCrypto(client: MatrixClientLike): MatrixCryptoApiLike {
 function readEncodedRecoveryKey(value: unknown): string {
   const encoded = asRecord(value)?.encodedPrivateKey;
   return typeof encoded === "string" ? encoded : "";
+}
+
+function readSecretStoragePrivateKey(value: unknown): Uint8Array | null {
+  const privateKey = asRecord(value)?.privateKey;
+  return privateKey instanceof Uint8Array ? privateKey : null;
 }
 
 async function loadUserSessionBackupKey(crypto: MatrixCryptoApiLike): Promise<boolean> {
