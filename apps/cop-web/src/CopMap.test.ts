@@ -443,7 +443,8 @@ describe("COP map data helpers", () => {
       weatherMapPriority: 55,
       weatherObservation: true,
       weatherStationLabel: "Milešovka",
-      weatherSymbolKey: "cop-weather-condition-measurement"
+      weatherSymbolKey: "cop-weather-condition-measurement_temperature",
+      weatherValueLabel: "27°C"
     });
   });
 
@@ -516,7 +517,8 @@ describe("COP map data helpers", () => {
       weatherObservation: true,
       weatherStationLabel: "Milešovka",
       weatherSubtitle: "měření · 27.1 °C · vítr 2.4 m/s",
-      weatherSymbolKey: "cop-weather-condition-measurement"
+      weatherSymbolKey: "cop-weather-condition-measurement_temperature",
+      weatherValueLabel: "27°C"
     });
   });
 

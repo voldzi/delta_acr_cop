@@ -113,6 +113,7 @@ const situationWeatherHeatLayerId = "cop-situation-weather-heat";
 const situationWeatherPriorityLayerId = "cop-situation-weather-priority";
 const situationWeatherConditionLayerId = "cop-situation-weather-condition";
 const situationWeatherWindLayerId = "cop-situation-weather-wind";
+const situationWeatherValueLayerId = "cop-situation-weather-value";
 const situationWeatherLabelLayerId = "cop-situation-weather-label";
 const situationWeatherCameraSelectedLayerId = "cop-situation-weather-camera-selected";
 const situationWeatherCameraLayerId = "cop-situation-weather-camera";
@@ -170,6 +171,7 @@ const mapFeatureClickPriorityLayerIds = [
   situationMobileSymbolLayerId,
   situationWeatherCameraLayerId,
   situationWeatherLabelLayerId,
+  situationWeatherValueLayerId,
   situationWeatherWindLayerId,
   situationWeatherPriorityLayerId,
   situationWeatherConditionLayerId,
@@ -222,6 +224,7 @@ const mapPointRaiseLayerIds = [
   situationWeatherPriorityLayerId,
   situationWeatherConditionLayerId,
   situationWeatherWindLayerId,
+  situationWeatherValueLayerId,
   situationWeatherLabelLayerId,
   situationAirQualityPointLayerId,
   situationAirQualityLabelLayerId,
@@ -264,7 +267,7 @@ type FloodTrendDirection = (typeof floodTrendDirections)[number];
 const floodStageTones = ["ok", "warn", "critical"] as const;
 type FloodStageTone = (typeof floodStageTones)[number];
 const weatherConditionIconPrefix = "cop-weather-condition";
-const weatherConditionIconIds = ["sun", "partly_cloudy", "cloud", "fog", "rain", "snow", "storm", "wind", "measurement", "unknown"] as const;
+const weatherConditionIconIds = ["sun", "partly_cloudy", "cloud", "fog", "rain", "snow", "storm", "wind", "measurement", "measurement_temperature", "measurement_wind", "measurement_rain", "measurement_humidity", "unknown"] as const;
 type WeatherConditionIconId = (typeof weatherConditionIconIds)[number];
 const weatherWindIconKey = "cop-weather-wind-arrow";
 const weatherCameraIconKey = "cop-weather-camera";
@@ -452,6 +455,7 @@ export interface SituationContextFeatureCollection {
       weatherStationLabel?: string;
       weatherSymbolKey?: string;
       weatherTemperatureC?: number;
+      weatherValueLabel?: string;
       weatherWindDirectionDeg?: number;
       weatherWindSpeedMps?: number;
       coverageColor?: string;
@@ -2221,10 +2225,35 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationWeatherValueLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 10.5,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["has", "weatherValueLabel"]],
+          layout: {
+            "text-field": ["get", "weatherValueLabel"],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 10.5, 10, 13, 11.5, 16, 13],
+            "text-allow-overlap": false,
+            "text-ignore-placement": false,
+            "text-optional": true,
+            "text-offset": [0, 1.18],
+            "text-anchor": "top",
+            "symbol-sort-key": ["-", ["coalesce", ["get", "weatherMapPriority"], 0]]
+          },
+          paint: {
+            "text-color": ["case", ["get", "stale"], "#facc15", "#f8fafc"],
+            "text-halo-color": "rgba(6, 16, 25, 0.94)",
+            "text-halo-width": 2,
+            "text-halo-blur": 0.25
+          }
+        });
+
+        map.addLayer({
           id: situationWeatherLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          minzoom: 11,
+          minzoom: 13,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["has", "weatherLabel"]],
           layout: {
             "text-field": ["get", "weatherLabel"],
@@ -2876,6 +2905,9 @@ export function CopMap({
         map.on("mouseenter", situationWeatherWindLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationWeatherValueLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationWeatherLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -2952,6 +2984,9 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherWindLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationWeatherValueLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherLabelLayerId, () => {
@@ -5182,12 +5217,19 @@ function buildSituationRenderProperties(
   const currentWeatherSummary = isCurrentWeatherSummaryFeature(feature);
   const color = weatherContextColor(feature, status.color);
   const weatherDisplay = weatherDisplayRecord(feature);
+  const chmiMeasuredStation = feature.properties.sourceId === "chmi_weather_stations"
+    || providerLayerId?.includes("chmi_station") === true;
   const weatherCondition = weatherDisplay
     ? {
-        iconId: weatherDisplayIconId(weatherDisplay),
+        iconId: weatherDisplayIconId(weatherDisplay, {
+          humidityPercent,
+          precipitationMm,
+          temperatureC,
+          windSpeedMps
+        }),
         label: weatherDisplayConditionLabel(weatherDisplay)
       }
-    : resolveWeatherConditionPresentation(feature, metrics, temperatureC, windSpeedMps, precipitationMm, cloudCoverPercent, humidityPercent);
+    : resolveWeatherConditionPresentation(feature, metrics, temperatureC, windSpeedMps, precipitationMm, cloudCoverPercent, humidityPercent, chmiMeasuredStation);
   const weatherStationLabel = formatWeatherStationLabel(feature, currentWeatherSummary);
   const weatherLabel = aviationCategory
     ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label)
@@ -5199,8 +5241,7 @@ function buildSituationRenderProperties(
     : weatherDisplayString(weatherDisplay, "title")
       ?? (currentWeatherSummary ? "Počasí ve středu oblasti" : formatWeatherFeatureHeadline(feature));
   const weatherObservation = !weatherGrid && (currentWeatherSummary || feature.properties.layer !== "weather"
-    || feature.properties.sourceId === "chmi_weather_stations"
-    || providerLayerId?.includes("chmi_station") === true);
+    || chmiMeasuredStation);
   const weatherMapPriority = weatherObservation
     ? weatherObservationMapPriority(temperatureC, windSpeedMps, windGustMps, precipitationMm, status.tone)
     : undefined;
@@ -5225,6 +5266,7 @@ function buildSituationRenderProperties(
     weatherStationLabel: weatherDisplayString(weatherDisplay, "title") ?? weatherStationLabel,
     weatherSymbolKey: weatherObservation ? getWeatherConditionIconKey(weatherCondition.iconId) : undefined,
     weatherTemperatureC: temperatureC,
+    weatherValueLabel: weatherObservation ? formatWeatherValueLabel(weatherDisplay, temperatureC, windSpeedMps, precipitationMm, humidityPercent) : undefined,
     weatherWindDirectionDeg: windDirectionDeg,
     weatherWindSpeedMps: windSpeedMps,
     mapPointSuppressed: weatherGrid ? true : undefined,
@@ -6010,6 +6052,18 @@ function normalizeWeatherConditionIconId(value: string | undefined): WeatherCond
   if (["wind", "windy", "vitr", "veterno"].includes(normalized)) {
     return "wind";
   }
+  if (["temperature", "temp", "teplota", "measurementtemperature", "temperaturemeasurement", "thermometer"].includes(normalized)) {
+    return "measurement_temperature";
+  }
+  if (["humidity", "vlhkost", "measurementhumidity", "humiditymeasurement"].includes(normalized)) {
+    return "measurement_humidity";
+  }
+  if (["measurementrain", "rainmeasurement", "precipitationmeasurement", "srazkomer", "srazkymereni"].includes(normalized)) {
+    return "measurement_rain";
+  }
+  if (["measurementwind", "windmeasurement", "windgauge", "anemometer"].includes(normalized)) {
+    return "measurement_wind";
+  }
   if (["measurement", "measured", "station", "observation", "observed", "mereni", "mericistanice"].includes(normalized)) {
     return "measurement";
   }
@@ -6112,7 +6166,8 @@ function resolveWeatherConditionPresentation(
   windSpeedMps: number | undefined,
   precipitationMm: number | undefined,
   cloudCoverPercent: number | undefined,
-  humidityPercent: number | undefined
+  humidityPercent: number | undefined,
+  preferMeasuredIcon = false
 ): WeatherConditionPresentation {
   const metadataRecords = weatherMetadataRecords(feature);
   const explicitIconId = firstRecordString(metadataRecords, "weatherSymbolKey", "weatherConditionKey", "conditionKey", "symbolKey", "iconKey", "icon");
@@ -6129,6 +6184,11 @@ function resolveWeatherConditionPresentation(
     return { iconId, label: explicitLabel ?? weatherConditionDefaultLabel(iconId) };
   }
 
+  if (preferMeasuredIcon) {
+    const iconId = measuredWeatherFallbackIconId(temperatureC, windSpeedMps, precipitationMm, humidityPercent);
+    return { iconId, label: explicitLabel ?? weatherConditionDefaultLabel(iconId) };
+  }
+
   const inferredIconId = inferWeatherConditionIconId(temperatureC, windSpeedMps, precipitationMm, cloudCoverPercent, humidityPercent);
   return { iconId: inferredIconId, label: explicitLabel ?? weatherConditionDefaultLabel(inferredIconId) };
 }
@@ -6142,16 +6202,152 @@ function weatherDisplayString(display: Record<string, unknown> | undefined, key:
   return display ? recordString(display, key) : undefined;
 }
 
-function weatherDisplayIconId(display: Record<string, unknown>): WeatherConditionIconId {
+function weatherDisplayIconId(
+  display: Record<string, unknown>,
+  metrics: {
+    humidityPercent?: number;
+    precipitationMm?: number;
+    temperatureC?: number;
+    windSpeedMps?: number;
+  } = {}
+): WeatherConditionIconId {
   const iconKey = recordString(display, "iconKey");
   const conditionMode = recordString(display, "conditionMode");
   if (iconKey) {
-    return normalizeWeatherConditionIconId(iconKey);
+    const normalized = normalizeWeatherConditionIconId(iconKey);
+    return normalized === "measurement"
+      ? measurementWeatherIconId(display, metrics)
+      : normalized;
   }
   if (conditionMode === "unclassified" || conditionMode === "measured") {
-    return "measurement";
+    return measurementWeatherIconId(display, metrics);
   }
   return "unknown";
+}
+
+function measurementWeatherIconId(
+  display: Record<string, unknown>,
+  metrics: {
+    humidityPercent?: number;
+    precipitationMm?: number;
+    temperatureC?: number;
+    windSpeedMps?: number;
+  }
+): WeatherConditionIconId {
+  const primaryIcon = measurementIconFromText(recordString(display, "primaryValue"));
+  if (primaryIcon) {
+    return primaryIcon;
+  }
+  const sourceText = [
+    recordString(display, "secondaryValue"),
+    recordString(display, "tertiaryValue"),
+    recordString(display, "label"),
+    recordString(display, "subtitle")
+  ].filter(Boolean).join(" ").toLowerCase();
+  if ((metrics.precipitationMm ?? 0) > 0 || sourceText.includes("sráž") || sourceText.includes("déšť") || sourceText.includes("rain")) {
+    return "measurement_rain";
+  }
+  if ((metrics.windSpeedMps ?? 0) >= 0.5 || sourceText.includes("vítr") || sourceText.includes("wind")) {
+    return "measurement_wind";
+  }
+  if (metrics.temperatureC !== undefined || /[-+]?\d+(?:[.,]\d+)?\s*°?\s*c\b/u.test(sourceText) || sourceText.includes("teplot")) {
+    return "measurement_temperature";
+  }
+  if (metrics.humidityPercent !== undefined || sourceText.includes("vlhkost") || sourceText.includes("humidity")) {
+    return "measurement_humidity";
+  }
+  return "measurement";
+}
+
+function measuredWeatherFallbackIconId(
+  temperatureC: number | undefined,
+  windSpeedMps: number | undefined,
+  precipitationMm: number | undefined,
+  humidityPercent: number | undefined
+): WeatherConditionIconId {
+  if (precipitationMm !== undefined && precipitationMm > 0) {
+    return temperatureC !== undefined && temperatureC <= 1.5 ? "snow" : "rain";
+  }
+  if (windSpeedMps !== undefined && windSpeedMps >= 7) {
+    return "wind";
+  }
+  if (temperatureC !== undefined) {
+    return "measurement_temperature";
+  }
+  if (windSpeedMps !== undefined && windSpeedMps >= 0.5) {
+    return "measurement_wind";
+  }
+  if (humidityPercent !== undefined) {
+    return "measurement_humidity";
+  }
+  return "measurement";
+}
+
+function measurementIconFromText(value: string | undefined): WeatherConditionIconId | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized.includes("sráž") || normalized.includes("déšť") || normalized.includes("rain") || normalized.includes("mm")) {
+    return "measurement_rain";
+  }
+  if (normalized.includes("vítr") || normalized.includes("wind") || /\bm\/s\b/u.test(normalized)) {
+    return "measurement_wind";
+  }
+  if (/[-+]?\d+(?:[.,]\d+)?\s*°?\s*c\b/u.test(normalized) || normalized.includes("teplot")) {
+    return "measurement_temperature";
+  }
+  if (normalized.includes("vlhkost") || normalized.includes("humidity") || normalized.includes("%")) {
+    return "measurement_humidity";
+  }
+  return undefined;
+}
+
+function formatWeatherValueLabel(
+  display: Record<string, unknown> | undefined,
+  temperatureC: number | undefined,
+  windSpeedMps: number | undefined,
+  precipitationMm: number | undefined,
+  humidityPercent: number | undefined
+): string | undefined {
+  const primaryValue = weatherDisplayString(display, "primaryValue");
+  const normalizedPrimary = primaryValue ? compactWeatherDisplayValue(primaryValue) : undefined;
+  if (normalizedPrimary) {
+    return normalizedPrimary;
+  }
+  if (temperatureC !== undefined) {
+    return `${Math.round(temperatureC)}°C`;
+  }
+  if (precipitationMm !== undefined && precipitationMm > 0) {
+    return `${formatPrecipitationAmount(precipitationMm)}`;
+  }
+  if (windSpeedMps !== undefined && windSpeedMps >= 0.5) {
+    return `${Math.round(windSpeedMps)} m/s`;
+  }
+  if (humidityPercent !== undefined) {
+    return `${Math.round(humidityPercent)}%`;
+  }
+  return undefined;
+}
+
+function compactWeatherDisplayValue(value: string): string | undefined {
+  const normalized = value.trim();
+  if (!normalized || normalized.toLowerCase() === "n/a") {
+    return undefined;
+  }
+  const temperature = normalized.match(/(-?\d+(?:[.,]\d+)?)\s*°?\s*C/i);
+  if (temperature) {
+    return `${Math.round(Number(temperature[1]!.replace(",", ".")))}°C`;
+  }
+  const wind = normalized.match(/(\d+(?:[.,]\d+)?)\s*m\/s/i);
+  if (wind) {
+    return `${Math.round(Number(wind[1]!.replace(",", ".")))} m/s`;
+  }
+  const humidity = normalized.match(/(\d+(?:[.,]\d+)?)\s*%/);
+  if (humidity) {
+    return `${Math.round(Number(humidity[1]!.replace(",", ".")))}%`;
+  }
+  return truncateMapLabel(normalized, 8);
 }
 
 function weatherDisplayConditionLabel(display: Record<string, unknown>): string {
@@ -6313,6 +6509,10 @@ function weatherConditionDefaultLabel(iconId: WeatherConditionIconId): string {
     case "wind":
       return "vítr";
     case "measurement":
+    case "measurement_temperature":
+    case "measurement_wind":
+    case "measurement_rain":
+    case "measurement_humidity":
       return "měření";
     case "unknown":
       return "počasí";
@@ -8218,7 +8418,101 @@ function createWeatherConditionSymbolImage(iconId: WeatherConditionIconId): Imag
     context.restore();
   };
 
-  const drawMeasurementStation = () => {
+  const drawThermometer = (stroke = "#061019", fill = "#ef4444") => {
+    context.save();
+    context.strokeStyle = stroke;
+    context.fillStyle = fill;
+    context.lineWidth = 5;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.beginPath();
+    context.arc(-4, 17, 13, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.beginPath();
+    context.moveTo(-4, 7);
+    context.lineTo(-4, -29);
+    context.quadraticCurveTo(-4, -38, 5, -38);
+    context.quadraticCurveTo(14, -38, 14, -29);
+    context.lineTo(14, 14);
+    context.stroke();
+    context.beginPath();
+    context.moveTo(24, -24);
+    context.lineTo(38, -24);
+    context.moveTo(24, -9);
+    context.lineTo(35, -9);
+    context.moveTo(24, 6);
+    context.lineTo(38, 6);
+    context.stroke();
+    context.restore();
+  };
+
+  const drawHumidityDrop = () => {
+    context.save();
+    context.strokeStyle = "#061019";
+    context.fillStyle = "#38bdf8";
+    context.lineWidth = 5;
+    context.beginPath();
+    context.moveTo(-6, -35);
+    context.bezierCurveTo(26, -2, 22, 35, -6, 37);
+    context.bezierCurveTo(-34, 35, -38, -2, -6, -35);
+    context.closePath();
+    context.fill();
+    context.stroke();
+    context.fillStyle = "#061019";
+    context.font = "800 24px system-ui, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText("%", 14, 2);
+    context.restore();
+  };
+
+  const drawRainGauge = () => {
+    context.save();
+    context.strokeStyle = "#061019";
+    context.lineWidth = 5;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    drawDrops(false);
+    context.beginPath();
+    context.roundRect?.(-30, 3, 60, 36, 10);
+    if (!context.roundRect) {
+      drawRoundedRect(context, -30, 3, 60, 36, 10);
+    }
+    context.fillStyle = "rgba(224, 242, 254, 0.96)";
+    context.fill();
+    context.stroke();
+    context.strokeStyle = "#0ea5e9";
+    context.lineWidth = 4;
+    context.beginPath();
+    context.moveTo(-18, 24);
+    context.lineTo(18, 24);
+    context.moveTo(-18, 13);
+    context.lineTo(18, 13);
+    context.stroke();
+    context.restore();
+  };
+
+  const drawMeasuredWind = () => {
+    drawWindSymbol();
+    context.save();
+    context.strokeStyle = "#061019";
+    context.fillStyle = "#a7f3d0";
+    context.lineWidth = 4;
+    context.beginPath();
+    context.arc(-30, 30, 11, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.beginPath();
+    context.moveTo(-30, 19);
+    context.lineTo(-30, 45);
+    context.moveTo(-42, 45);
+    context.lineTo(-18, 45);
+    context.stroke();
+    context.restore();
+  };
+
+  const drawMeasurementStation = (kind: WeatherConditionIconId = "measurement") => {
     context.save();
     context.fillStyle = "rgba(255, 255, 255, 0.96)";
     context.strokeStyle = "#061019";
@@ -8227,28 +8521,15 @@ function createWeatherConditionSymbolImage(iconId: WeatherConditionIconId): Imag
     context.arc(0, 2, 36, 0, Math.PI * 2);
     context.fill();
     context.stroke();
-    context.fillStyle = "#22c55e";
-    context.strokeStyle = "#061019";
-    context.lineWidth = 4.5;
-    context.beginPath();
-    context.arc(-9, 12, 10, 0, Math.PI * 2);
-    context.fill();
-    context.stroke();
-    context.beginPath();
-    context.moveTo(-9, 3);
-    context.lineTo(-9, -23);
-    context.quadraticCurveTo(-9, -31, -1, -31);
-    context.quadraticCurveTo(7, -31, 7, -23);
-    context.lineTo(7, 10);
-    context.stroke();
-    context.beginPath();
-    context.moveTo(21, -20);
-    context.lineTo(21, 26);
-    context.moveTo(12, -7);
-    context.lineTo(30, -7);
-    context.moveTo(12, 8);
-    context.lineTo(30, 8);
-    context.stroke();
+    if (kind === "measurement_humidity") {
+      drawHumidityDrop();
+    } else if (kind === "measurement_rain") {
+      drawRainGauge();
+    } else if (kind === "measurement_wind") {
+      drawMeasuredWind();
+    } else {
+      drawThermometer("#061019", kind === "measurement_temperature" ? "#fb923c" : "#22c55e");
+    }
     context.restore();
   };
 
@@ -8289,7 +8570,11 @@ function createWeatherConditionSymbolImage(iconId: WeatherConditionIconId): Imag
       drawWindSymbol();
       break;
     case "measurement":
-      drawMeasurementStation();
+    case "measurement_temperature":
+    case "measurement_wind":
+    case "measurement_rain":
+    case "measurement_humidity":
+      drawMeasurementStation(iconId);
       break;
     case "unknown":
       drawMeasurementStation();
