@@ -501,6 +501,80 @@ export interface WeatherRadarFramesResponse {
   warnings?: string[];
 }
 
+export interface WeatherDisplayPresentation {
+  authoritativeCondition?: boolean;
+  badgeLabel?: string;
+  badgeLabelEn?: string;
+  badgeTone?: string;
+  confidence?: number;
+  confidencePercent?: number;
+  conditionMode?: "estimated" | "measured" | "observed" | "unclassified" | string;
+  detailUrl?: string;
+  iconKey?: string;
+  iconSet?: string;
+  label?: string;
+  primaryValue?: string;
+  renderer?: string;
+  secondaryValue?: string;
+  subtitle?: string;
+  tertiaryValue?: string;
+  title?: string;
+}
+
+export interface WeatherStationChartPoint {
+  time?: string;
+  at?: string;
+  value?: number;
+}
+
+export interface WeatherStationChartSeries {
+  color?: string;
+  id?: string;
+  label?: string;
+  points?: WeatherStationChartPoint[];
+  role?: string;
+  unit?: string;
+}
+
+export interface WeatherStationChart {
+  id?: string;
+  series?: WeatherStationChartSeries[];
+  title?: string;
+  unit?: string;
+  yAxis?: {
+    label?: string;
+    unit?: string;
+  };
+}
+
+export interface WeatherStationDetailResponse {
+  attribution?: string;
+  charts?: WeatherStationChart[];
+  contractVersion?: string;
+  current?: {
+    display?: WeatherDisplayPresentation;
+    metrics?: Record<string, unknown>;
+    observedAt?: string;
+    severity?: string;
+    validUntil?: string;
+  };
+  forecast?: {
+    from?: string;
+    pointCount?: number;
+    points?: Array<Record<string, unknown>>;
+    to?: string;
+  };
+  generatedAt?: string;
+  history?: {
+    from?: string;
+    pointCount?: number;
+    points?: Array<Record<string, unknown>>;
+    to?: string;
+  };
+  station?: Record<string, unknown>;
+  warnings?: string[];
+}
+
 export type MobileCoverageTechnology = "2G" | "4G" | "5G";
 
 export interface MobileTowerViewshedFeature {
@@ -2099,6 +2173,31 @@ export async function fetchSafetyHydroStationDetail(
   );
 }
 
+export async function fetchWeatherStationDetail(
+  apiBase: string,
+  token: string | undefined,
+  detailUrl: string,
+  options: { forecastHours?: number; historyHours?: number } = {}
+): Promise<WeatherStationDetailResponse> {
+  const request = weatherStationDetailRequest(detailUrl);
+  if (!request.query.has("historyHours")) {
+    request.query.set("historyHours", String(options.historyHours ?? 48));
+  }
+  if (!request.query.has("forecastHours")) {
+    request.query.set("forecastHours", String(options.forecastHours ?? 24));
+  }
+  const suffix = request.query.toString() ? `?${request.query.toString()}` : "";
+  return fetchJson<WeatherStationDetailResponse>(
+    `${apiBase}/api/v1/weather-stations/${encodeURIComponent(request.stationId)}/detail${suffix}`,
+    {
+      headers: {
+        ...(authHeaders(token) ?? {}),
+        Accept: "application/json"
+      }
+    }
+  );
+}
+
 export async function fetchMobileTowerViewshed(
   apiBase: string,
   token: string | undefined,
@@ -2198,6 +2297,20 @@ function safetyHydroStationDetailRequest(detailUrl: string): { query: URLSearchP
   const stationId = match?.[1] ? decodeURIComponent(match[1]) : undefined;
   if (!stationId) {
     throw new Error("Neplatná adresa detailu hydrologické stanice.");
+  }
+  return {
+    query: new URLSearchParams(url.searchParams),
+    stationId
+  };
+}
+
+function weatherStationDetailRequest(detailUrl: string): { query: URLSearchParams; stationId: string } {
+  const url = new URL(detailUrl, "https://cop.local");
+  const match = /^(?:\/situation-data)?\/api\/v1\/weather-stations\/([^/]+)\/detail$/u.exec(url.pathname)
+    ?? /^\/api\/v1\/weather-stations\/([^/]+)\/detail$/u.exec(url.pathname);
+  const stationId = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+  if (!stationId) {
+    throw new Error("Neplatná adresa detailu meteorologické stanice.");
   }
   return {
     query: new URLSearchParams(url.searchParams),

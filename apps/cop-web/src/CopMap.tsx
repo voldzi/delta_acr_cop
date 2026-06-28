@@ -1251,7 +1251,7 @@ export function CopMap({
               ["literal", [2.2, 1.1]],
               ["==", ["get", "fillPattern"], "hatch"],
               ["literal", [0.8, 0.8]],
-              ["literal", [1, 0]]
+              ["literal", [1000, 0.0001]]
             ],
             "line-opacity": 0.9,
             "line-width": ["case", ["get", "selected"], ["+", ["coalesce", ["get", "lineWidth"], 2], 1.4], ["coalesce", ["get", "lineWidth"], 2]]
@@ -1519,7 +1519,7 @@ export function CopMap({
                 "#8cb6d8"
               ]
             ],
-            "line-dasharray": ["case", ["get", "stale"], ["literal", [2, 1.2]], ["literal", [1, 0]]],
+            "line-dasharray": ["case", ["get", "stale"], ["literal", [2, 1.2]], ["literal", [1000, 0.0001]]],
             "line-opacity": [
               "case",
               ["==", ["get", "layer"], "mobile_coverage"],
@@ -1599,7 +1599,7 @@ export function CopMap({
           },
           paint: {
             "line-color": ["coalesce", ["get", "weatherLineColor"], ["get", "weatherFillColor"], ["get", "situationStatusColor"], "#38bdf8"],
-            "line-dasharray": ["case", ["get", "stale"], ["literal", [2, 1.2]], ["literal", [1, 0]]],
+            "line-dasharray": ["case", ["get", "stale"], ["literal", [2, 1.2]], ["literal", [1000, 0.0001]]],
             "line-opacity": ["case", ["get", "stale"], 0.28, 0.48],
             "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.45, 9, 0.8, 13, 1.25]
           }
@@ -5123,20 +5123,30 @@ function buildSituationRenderProperties(
   const weatherGrid = isWeatherGridFeature(feature);
   const currentWeatherSummary = isCurrentWeatherSummaryFeature(feature);
   const color = weatherContextColor(feature, status.color);
-  const weatherCondition = resolveWeatherConditionPresentation(feature, metrics, temperatureC, windSpeedMps, precipitationMm, cloudCoverPercent, humidityPercent);
+  const weatherDisplay = weatherDisplayRecord(feature);
+  const weatherCondition = weatherDisplay
+    ? {
+        iconId: weatherDisplayIconId(weatherDisplay),
+        label: weatherDisplayConditionLabel(weatherDisplay)
+      }
+    : resolveWeatherConditionPresentation(feature, metrics, temperatureC, windSpeedMps, precipitationMm, cloudCoverPercent, humidityPercent);
   const weatherStationLabel = formatWeatherStationLabel(feature, currentWeatherSummary);
   const weatherLabel = aviationCategory
     ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label)
     : weatherGrid
       ? formatWeatherContextMapLabel(feature, temperatureC, windSpeedMps, precipitationMm, humidityPercent, pressureHpa)
-      : formatWeatherObservationMapLabel(weatherStationLabel, weatherCondition.label, temperatureC, windSpeedMps, precipitationMm);
-  const weatherHeadline = aviationCategory ? undefined : currentWeatherSummary ? "Počasí ve středu oblasti" : formatWeatherFeatureHeadline(feature);
+      : weatherDisplayString(weatherDisplay, "label") ?? formatWeatherObservationMapLabel(weatherStationLabel, weatherCondition.label, temperatureC, windSpeedMps, precipitationMm);
+  const weatherHeadline = aviationCategory
+    ? undefined
+    : weatherDisplayString(weatherDisplay, "title")
+      ?? (currentWeatherSummary ? "Počasí ve středu oblasti" : formatWeatherFeatureHeadline(feature));
   const weatherObservation = !weatherGrid && (currentWeatherSummary || feature.properties.layer !== "weather"
     || feature.properties.sourceId === "chmi_weather_stations"
     || providerLayerId?.includes("chmi_station") === true);
   const weatherMapPriority = weatherObservation
     ? weatherObservationMapPriority(temperatureC, windSpeedMps, windGustMps, precipitationMm, status.tone)
     : undefined;
+  const displayTone = weatherDisplayTone(weatherDisplay);
   return {
     weatherCloudCoverPercent: cloudCoverPercent,
     weatherConditionLabel: weatherCondition.label,
@@ -5151,18 +5161,18 @@ function buildSituationRenderProperties(
     weatherMapPriority,
     weatherMetricLabel: weatherGrid ? weatherLabel.replace("\n", " ") : undefined,
     weatherObservation,
-    weatherSubtitle: aviationCategory ? undefined : formatWeatherFeatureSubtitle(feature),
+    weatherSubtitle: aviationCategory ? undefined : weatherDisplayString(weatherDisplay, "subtitle") ?? formatWeatherFeatureSubtitle(feature),
     weatherPrecipitationMm: precipitationMm,
     weatherStationIcao: stationIcao,
-    weatherStationLabel,
+    weatherStationLabel: weatherDisplayString(weatherDisplay, "title") ?? weatherStationLabel,
     weatherSymbolKey: weatherObservation ? getWeatherConditionIconKey(weatherCondition.iconId) : undefined,
     weatherTemperatureC: temperatureC,
     weatherWindDirectionDeg: windDirectionDeg,
     weatherWindSpeedMps: windSpeedMps,
     mapPointSuppressed: weatherGrid ? true : undefined,
     situationStatusColor: color,
-    situationStatusLabel: weatherContextStatusLabel(feature, status.label),
-    situationStatusTone: status.tone
+    situationStatusLabel: weatherDisplayString(weatherDisplay, "badgeLabel") ?? weatherContextStatusLabel(feature, status.label),
+    situationStatusTone: displayTone ?? status.tone
   };
 }
 
@@ -6037,8 +6047,8 @@ function resolveWeatherConditionPresentation(
   humidityPercent: number | undefined
 ): WeatherConditionPresentation {
   const metadataRecords = weatherMetadataRecords(feature);
-  const explicitIconId = firstRecordString(metadataRecords, "weatherSymbolKey", "weatherConditionKey", "conditionKey", "symbolKey", "icon");
-  const explicitLabel = firstRecordString(metadataRecords, "weatherConditionLabel", "conditionLabel", "weatherLabel", "condition");
+  const explicitIconId = firstRecordString(metadataRecords, "weatherSymbolKey", "weatherConditionKey", "conditionKey", "symbolKey", "iconKey", "icon");
+  const explicitLabel = firstRecordString(metadataRecords, "weatherConditionLabel", "conditionLabel", "weatherLabel", "badgeLabel", "condition");
   if (explicitIconId) {
     const iconId = normalizeWeatherConditionIconId(explicitIconId);
     return { iconId, label: explicitLabel ?? weatherConditionDefaultLabel(iconId) };
@@ -6055,6 +6065,68 @@ function resolveWeatherConditionPresentation(
   return { iconId: inferredIconId, label: explicitLabel ?? weatherConditionDefaultLabel(inferredIconId) };
 }
 
+function weatherDisplayRecord(feature: SituationFeature): Record<string, unknown> | undefined {
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  return isRecord(providerProperties.display) ? providerProperties.display : undefined;
+}
+
+function weatherDisplayString(display: Record<string, unknown> | undefined, key: string): string | undefined {
+  return display ? recordString(display, key) : undefined;
+}
+
+function weatherDisplayIconId(display: Record<string, unknown>): WeatherConditionIconId {
+  const iconKey = recordString(display, "iconKey");
+  const conditionMode = recordString(display, "conditionMode");
+  if (iconKey) {
+    return normalizeWeatherConditionIconId(iconKey);
+  }
+  if (conditionMode === "unclassified" || conditionMode === "measured") {
+    return "measurement";
+  }
+  return "unknown";
+}
+
+function weatherDisplayConditionLabel(display: Record<string, unknown>): string {
+  const badgeLabel = recordString(display, "badgeLabel");
+  if (badgeLabel) {
+    return badgeLabel;
+  }
+  switch (recordString(display, "conditionMode")) {
+    case "observed":
+      return "autoritativní stav";
+    case "measured":
+    case "unclassified":
+      return "měření";
+    case "estimated":
+      return "odhad SIM";
+    default:
+      return weatherConditionDefaultLabel(weatherDisplayIconId(display));
+  }
+}
+
+function weatherDisplayTone(display: Record<string, unknown> | undefined): string | undefined {
+  const tone = weatherDisplayString(display, "badgeTone")?.toLowerCase();
+  switch (tone) {
+    case "critical":
+    case "danger":
+    case "error":
+      return "critical";
+    case "warning":
+    case "warn":
+    case "advisory":
+      return "warning";
+    case "ok":
+    case "success":
+    case "info":
+      return "ok";
+    case "neutral":
+    case "unknown":
+      return "info";
+    default:
+      return undefined;
+  }
+}
+
 function weatherMetadataRecords(feature: SituationFeature): Record<string, unknown>[] {
   const records: Record<string, unknown>[] = [feature.properties as unknown as Record<string, unknown>];
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : undefined;
@@ -6063,7 +6135,8 @@ function weatherMetadataRecords(feature: SituationFeature): Record<string, unkno
   const providerRendering = providerProperties && isRecord(providerProperties.rendering) ? providerProperties.rendering : undefined;
   const providerWeather = providerProperties && isRecord(providerProperties.weather) ? providerProperties.weather : undefined;
   const providerCondition = providerProperties && isRecord(providerProperties.condition) ? providerProperties.condition : undefined;
-  [tags, rendering, providerProperties, providerRendering, providerWeather, providerCondition].forEach((record) => {
+  const providerDisplay = providerProperties && isRecord(providerProperties.display) ? providerProperties.display : undefined;
+  [tags, rendering, providerProperties, providerRendering, providerWeather, providerCondition, providerDisplay].forEach((record) => {
     if (record) {
       records.push(record);
     }

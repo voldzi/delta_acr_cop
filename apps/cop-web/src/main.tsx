@@ -102,6 +102,7 @@ import {
   fetchPlaceGeocode,
   fetchRadioProfiles,
   fetchSafetyHydroStationDetail,
+  fetchWeatherStationDetail,
   fetchDemoScenarioStatus,
   fetchSketchDrawings,
   fetchUserProfile,
@@ -196,7 +197,9 @@ import {
   type TakLayer,
   type TakLayerId,
   type TakSourceDescriptor,
-  type WeatherRadarFrame
+  type WeatherRadarFrame,
+  type WeatherStationChart,
+  type WeatherStationDetailResponse
 } from "./cop-data";
 import { CopMap, formatTrackLabel, type CreateSketchDrawingRequest, type SketchToolMode, type UpdateSketchDrawingRequest } from "./CopMap";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
@@ -6525,6 +6528,35 @@ function AviationWeatherSummary({ feature }: { feature: SituationFeature }) {
 
 function WeatherContextSummary({ feature }: { feature: SituationFeature }) {
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const display = weatherDisplayRecord(feature);
+  if (display && isMeasuredWeatherStationFeature(feature)) {
+    const tone = weatherFeatureTone(feature);
+    const summaryCards = [
+      <DataMetric key="state" label="Stav" value={weatherFeatureConditionLabel(feature, metrics)} tone={tone} />,
+      weatherDisplayString(feature, "primaryValue")
+        ? <DataMetric key="primary" label="Hodnota" value={weatherDisplayString(feature, "primaryValue") as string} tone={tone} />
+        : null,
+      weatherDisplayString(feature, "secondaryValue")
+        ? <DataMetric key="secondary" label="Doplňkově" value={weatherDisplayString(feature, "secondaryValue") as string} tone="neutral" />
+        : null,
+      weatherDisplayString(feature, "tertiaryValue")
+        ? <DataMetric key="tertiary" label="Další" value={weatherDisplayString(feature, "tertiaryValue") as string} tone="neutral" />
+        : null,
+      <DataMetric
+        key="mode"
+        label="Typ závěru"
+        value={weatherConditionModeLabel(weatherDisplayString(feature, "conditionMode")) ?? "měření"}
+        tone="neutral"
+      />,
+      <DataMetric
+        key="confidence"
+        label="Jistota"
+        value={formatOptionalPercentFromWhole(weatherDisplayNumber(feature, "confidencePercent"), feature.properties.confidence)}
+        tone="neutral"
+      />
+    ].filter(Boolean);
+    return <div className="mobile-status-summary weather-context-summary">{summaryCards}</div>;
+  }
   if (isMeasuredWeatherStationFeature(feature)) {
     const temperatureC = weatherMeasuredMetric(metrics, "temperatureC");
     const windSpeedMps = weatherMeasuredMetric(metrics, "windSpeedMps");
@@ -6554,6 +6586,221 @@ function WeatherContextSummary({ feature }: { feature: SituationFeature }) {
       <DataMetric label="Zdroj" value={feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)} tone="neutral" />
     </div>
   );
+}
+
+function WeatherStationDetailPanel({
+  apiBase,
+  authToken,
+  feature
+}: {
+  apiBase: string;
+  authToken: string | undefined;
+  feature: SituationFeature;
+}) {
+  const detailUrl = React.useMemo(() => weatherStationDetailUrl(feature), [feature]);
+  const [detail, setDetail] = React.useState<WeatherStationDetailResponse | null>(null);
+  const [detailError, setDetailError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  const loadDetail = React.useCallback(async () => {
+    if (!detailUrl) {
+      return;
+    }
+    setLoading(true);
+    setDetailError(null);
+    try {
+      setDetail(await fetchWeatherStationDetail(apiBase, authToken, detailUrl, {
+        forecastHours: 24,
+        historyHours: 48
+      }));
+    } catch (error) {
+      setDetail(null);
+      setDetailError(error instanceof Error ? humanizeApiError(error.message) : "Detail meteorologické stanice se nepodařilo načíst.");
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBase, authToken, detailUrl]);
+
+  React.useEffect(() => {
+    if (!isMeasuredWeatherStationFeature(feature) || !detailUrl) {
+      setDetail(null);
+      setDetailError(null);
+      setLoading(false);
+      return;
+    }
+    void loadDetail();
+  }, [detailUrl, feature, loadDetail]);
+
+  if (!isMeasuredWeatherStationFeature(feature)) {
+    return null;
+  }
+  if (!detailUrl) {
+    return <div className="weather-station-detail-empty">Detail meteorologické stanice zatím není dostupný.</div>;
+  }
+
+  const currentDisplay = detail?.current?.display;
+  const title = currentDisplay?.title ?? weatherFeatureHeadline(feature);
+  const subtitle = currentDisplay?.subtitle ?? weatherFeatureSubtitle(feature);
+  const charts = detail?.charts ?? [];
+
+  return (
+    <div className="weather-station-detail">
+      <div className="weather-station-detail-header">
+        <div>
+          <strong>{title}</strong>
+          <span>{subtitle}</span>
+        </div>
+        <button className="mini-button" disabled={loading} onClick={() => void loadDetail()} type="button">
+          {loading ? "Načítám" : "Obnovit"}
+        </button>
+      </div>
+      {currentDisplay ? (
+        <div className="mobile-status-summary weather-context-summary">
+          <DataMetric label="Stav" value={currentDisplay.badgeLabel ?? "měření"} tone={weatherDisplayToneFromDisplay(currentDisplay.badgeTone)} />
+          <DataMetric label="Hodnota" value={currentDisplay.primaryValue ?? "n/a"} tone={weatherDisplayToneFromDisplay(currentDisplay.badgeTone)} />
+          <DataMetric label="Doplňkově" value={[currentDisplay.secondaryValue, currentDisplay.tertiaryValue].filter(Boolean).join(" · ") || "n/a"} tone="neutral" />
+          <DataMetric label="Typ závěru" value={weatherConditionModeLabel(currentDisplay.conditionMode) ?? "měření"} tone="neutral" />
+          <DataMetric label="Jistota" value={formatOptionalPercentFromWhole(currentDisplay.confidencePercent, currentDisplay.confidence)} tone="neutral" />
+        </div>
+      ) : null}
+      {detailError ? <div className="weather-station-detail-error">{detailError}</div> : null}
+      {loading && !detail ? <div className="weather-station-detail-empty">Načítám měření a grafy ČHMÚ...</div> : null}
+      {detail ? (
+        <>
+          <WeatherStationCharts charts={charts} />
+          <div className="weather-station-attribution">{detail.attribution ?? "Zdroj: Český hydrometeorologický ústav"}</div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function weatherDisplayToneFromDisplay(value: string | undefined): "neutral" | "ok" | "warn" | "critical" {
+  switch (value?.toLowerCase()) {
+    case "critical":
+    case "danger":
+    case "error":
+      return "critical";
+    case "warning":
+    case "warn":
+    case "advisory":
+      return "warn";
+    case "ok":
+    case "success":
+    case "info":
+      return "ok";
+    default:
+      return "neutral";
+  }
+}
+
+function WeatherStationCharts({ charts }: { charts: WeatherStationChart[] }) {
+  const visibleCharts = charts.filter((chart) => (chart.series ?? []).some((series) => weatherChartSeriesPoints(series).length > 0));
+  if (visibleCharts.length === 0) {
+    return <div className="weather-station-detail-empty">Grafy zatím nejsou v detailu stanice dostupné.</div>;
+  }
+  return (
+    <div className="weather-station-chart-grid">
+      {visibleCharts.map((chart, index) => (
+        <WeatherStationChartPanel chart={chart} key={`${chart.id ?? chart.title ?? "chart"}-${index}`} />
+      ))}
+    </div>
+  );
+}
+
+function WeatherStationChartPanel({ chart }: { chart: WeatherStationChart }) {
+  const series = (chart.series ?? [])
+    .map((item, index) => ({ item, index, points: weatherChartSeriesPoints(item) }))
+    .filter((entry) => entry.points.length > 0);
+  const allPoints = series.flatMap((entry) => entry.points);
+  const timeDomain = weatherChartTimeDomain(allPoints);
+  const valueDomain = weatherChartValueDomain(allPoints.map((point) => point.value));
+  const width = 640;
+  const height = 175;
+  const padding = { bottom: 24, left: 48, right: 14, top: 18 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const x = (time: string) => padding.left + ((Date.parse(time) - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
+  const y = (value: number) => padding.top + chartHeight - ((value - valueDomain.min) / Math.max(1, valueDomain.max - valueDomain.min)) * chartHeight;
+  const unit = chart.unit ?? chart.yAxis?.unit ?? series.find((entry) => entry.item.unit)?.item.unit ?? "";
+
+  return (
+    <div className="weather-station-chart-panel">
+      <div className="weather-station-chart-title">
+        <strong>{chart.title ?? chart.id ?? "Graf"}</strong>
+        <span>{unit}</span>
+      </div>
+      <svg aria-label={chart.title ?? "Graf počasí"} className="weather-station-chart-svg" role="img" viewBox={`0 0 ${width} ${height}`}>
+        <line className="weather-chart-axis" x1={padding.left} x2={padding.left + chartWidth} y1={padding.top + chartHeight} y2={padding.top + chartHeight} />
+        <line className="weather-chart-axis" x1={padding.left} x2={padding.left} y1={padding.top} y2={padding.top + chartHeight} />
+        <text className="weather-chart-axis-label" x={padding.left} y={height - 6}>{formatShortTime(timeDomain.min)}</text>
+        <text className="weather-chart-axis-label end" x={padding.left + chartWidth} y={height - 6}>{formatShortTime(timeDomain.max)}</text>
+        <text className="weather-chart-axis-label" x={4} y={padding.top + 6}>{formatWeatherChartAxisValue(valueDomain.max, unit)}</text>
+        <text className="weather-chart-axis-label" x={4} y={padding.top + chartHeight}>{formatWeatherChartAxisValue(valueDomain.min, unit)}</text>
+        {series.map((entry) => (
+          <polyline
+            className={`weather-chart-series ${entry.item.role === "forecast" || /předpověď/i.test(entry.item.label ?? "") ? "forecast" : "measured"}`}
+            fill="none"
+            key={`${entry.item.id ?? entry.item.label ?? "series"}-${entry.index}`}
+            points={entry.points.map((point) => `${x(point.time)},${y(point.value)}`).join(" ")}
+            stroke={entry.item.color ?? weatherChartPalette(entry.index)}
+          />
+        ))}
+      </svg>
+      <div className="weather-station-chart-legend">
+        {series.map((entry) => (
+          <span key={`${entry.item.id ?? entry.item.label ?? "series"}-legend-${entry.index}`}>
+            <i style={{ borderColor: entry.item.color ?? weatherChartPalette(entry.index) }} />
+            {entry.item.label ?? entry.item.id ?? `řada ${entry.index + 1}`}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function weatherChartSeriesPoints(series: NonNullable<WeatherStationChart["series"]>[number]): Array<{ time: string; value: number }> {
+  return (series.points ?? []).flatMap((point) => {
+    const time = stringProperty(point.time) ?? stringProperty(point.at);
+    const value = numberProperty(point.value);
+    return time && value !== undefined && Number.isFinite(Date.parse(time)) ? [{ time, value }] : [];
+  });
+}
+
+function weatherChartTimeDomain(points: Array<{ time: string }>): { max: number; min: number } {
+  const values = points.map((point) => Date.parse(point.time)).filter(Number.isFinite);
+  if (values.length === 0) {
+    const now = Date.now();
+    return { max: now + 60 * 60 * 1000, min: now - 60 * 60 * 1000 };
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const padding = Math.max(30 * 60 * 1000, (max - min) * 0.04);
+  return { max: max + padding, min: min - padding };
+}
+
+function weatherChartValueDomain(values: number[]): { max: number; min: number } {
+  const finite = values.filter(Number.isFinite);
+  if (finite.length === 0) {
+    return { max: 1, min: 0 };
+  }
+  const min = Math.min(...finite);
+  const max = Math.max(...finite);
+  if (min === max) {
+    const padding = Math.max(1, Math.abs(max) * 0.1);
+    return { max: max + padding, min: min - padding };
+  }
+  const padding = (max - min) * 0.12;
+  return { max: max + padding, min: min - padding };
+}
+
+function weatherChartPalette(index: number): string {
+  return ["#38bdf8", "#a7f3d0", "#fbbf24", "#c084fc", "#fb7185"][index % 5] ?? "#38bdf8";
+}
+
+function formatWeatherChartAxisValue(value: number, unit: string | undefined): string {
+  const rounded = Math.abs(value) >= 100 ? Math.round(value).toString() : value.toFixed(Math.abs(value) < 10 ? 1 : 0);
+  return unit ? `${rounded} ${unit}` : rounded;
 }
 
 function SafetyRiskSummary({ authToken, feature }: { authToken: string | undefined; feature: SituationFeature }) {
@@ -10778,6 +11025,7 @@ function mobileTowerViewshedResponseToSituationFeatures(
         quality,
         sourceId: "mobile_coverage_model",
         sourceName: "SIM model dosahu BTS",
+        stale: false,
         status: stringProperty(sourceProperties.status) ?? mobileViewshedStatusFromQuality(quality),
         summary: stringProperty(sourceProperties.summary) ?? stringProperty(summary.label) ?? `Modelovaný sektor dosahu BTS ${towerId}`,
         tags: {
@@ -11097,6 +11345,7 @@ function SituationFeatureDetail({
           <DetailGrid
             rows={weatherContextDetailRows(feature)}
           />
+          <WeatherStationDetailPanel apiBase={apiBase} authToken={authToken} feature={feature} />
         </ObjectDetailSection>
       ) : null}
       {properties.description || properties.recommendedAction ? (
@@ -13644,6 +13893,13 @@ function formatOptionalPercent(value: number | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value * 100)} %` : "n/a";
 }
 
+function formatOptionalPercentFromWhole(value: number | undefined, fallbackRatio?: number): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${Math.round(value)} %`;
+  }
+  return formatOptionalPercent(fallbackRatio);
+}
+
 function formatSituationRecord(value: Record<string, unknown> | undefined): string {
   if (!value || Object.keys(value).length === 0) {
     return "n/a";
@@ -14075,7 +14331,68 @@ function isMeasuredWeatherStationFeature(feature: SituationFeature): boolean {
     || providerLayerId?.includes("chmi_station") === true;
 }
 
+function weatherDisplayRecord(feature: SituationFeature): Record<string, unknown> | undefined {
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  return isRecord(providerProperties.display) ? providerProperties.display : undefined;
+}
+
+function weatherDisplayString(feature: SituationFeature, key: string): string | undefined {
+  const display = weatherDisplayRecord(feature);
+  return display ? stringProperty(display[key]) : undefined;
+}
+
+function weatherDisplayNumber(feature: SituationFeature, key: string): number | undefined {
+  const display = weatherDisplayRecord(feature);
+  return display ? numberProperty(display[key]) : undefined;
+}
+
+function weatherDisplayTone(feature: SituationFeature): "neutral" | "ok" | "warn" | "critical" | undefined {
+  const tone = weatherDisplayString(feature, "badgeTone")?.toLowerCase();
+  switch (tone) {
+    case "critical":
+    case "danger":
+    case "error":
+      return "critical";
+    case "warning":
+    case "warn":
+    case "advisory":
+      return "warn";
+    case "ok":
+    case "success":
+    case "info":
+      return "ok";
+    case "neutral":
+    case "unknown":
+      return "neutral";
+    default:
+      return undefined;
+  }
+}
+
+function weatherConditionModeLabel(value: string | undefined): string | undefined {
+  switch (value) {
+    case "observed":
+      return "autoritativní stav";
+    case "measured":
+      return "měřený jev";
+    case "estimated":
+      return "odhad SIM";
+    case "unclassified":
+      return "měření";
+    default:
+      return value;
+  }
+}
+
+function weatherStationDetailUrl(feature: SituationFeature): string | undefined {
+  return weatherDisplayString(feature, "detailUrl") ?? feature.properties.detailUrl;
+}
+
 function weatherFeatureHeadline(feature: SituationFeature): string {
+  const displayTitle = weatherDisplayString(feature, "title");
+  if (displayTitle) {
+    return displayTitle;
+  }
   if (isCurrentWeatherSummaryFeature(feature)) {
     return "Počasí ve středu oblasti";
   }
@@ -14115,6 +14432,10 @@ function weatherFeatureHeadline(feature: SituationFeature): string {
 }
 
 function weatherFeatureSubtitle(feature: SituationFeature): string {
+  const displaySubtitle = weatherDisplayString(feature, "subtitle");
+  if (displaySubtitle) {
+    return displaySubtitle;
+  }
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   return [
     weatherFeatureValueLabel(feature, metrics),
@@ -14156,6 +14477,10 @@ function weatherFeatureTypeLabel(feature: SituationFeature): string {
 }
 
 function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<string, unknown>): string | undefined {
+  const displayValue = weatherDisplayString(feature, "primaryValue");
+  if (displayValue) {
+    return displayValue;
+  }
   switch (feature.properties.layer) {
     case "weather_temperature_grid": {
       const value = weatherMetricValue(feature, metrics, "temperatureC");
@@ -14190,6 +14515,14 @@ function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<str
 }
 
 function weatherFeatureConditionLabel(feature: SituationFeature, metrics: Record<string, unknown>): string {
+  const displayBadge = weatherDisplayString(feature, "badgeLabel");
+  if (displayBadge) {
+    return displayBadge;
+  }
+  const displayMode = weatherConditionModeLabel(weatherDisplayString(feature, "conditionMode"));
+  if (displayMode) {
+    return displayMode;
+  }
   if (isCurrentWeatherSummaryFeature(feature)) {
     const temperature = weatherMetricValue(feature, metrics, "temperatureC");
     const wind = weatherMetricValue(feature, metrics, "windSpeedMps");
@@ -14245,6 +14578,21 @@ function weatherFeatureConditionLabel(feature: SituationFeature, metrics: Record
 
 function weatherContextDetailRows(feature: SituationFeature): Array<[string, React.ReactNode]> {
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const display = weatherDisplayRecord(feature);
+  if (display && isMeasuredWeatherStationFeature(feature)) {
+    const rows = compactDetailRows([
+      ["Stanice", weatherDisplayString(feature, "title") ?? feature.properties.label ?? feature.properties.headline],
+      ["Závěr SIM", weatherFeatureConditionLabel(feature, metrics)],
+      ["Hodnota", weatherDisplayString(feature, "primaryValue")],
+      ["Doplňkově", [weatherDisplayString(feature, "secondaryValue"), weatherDisplayString(feature, "tertiaryValue")].filter(Boolean).join(" · ")],
+      ["Typ závěru", weatherConditionModeLabel(weatherDisplayString(feature, "conditionMode"))],
+      ["Jistota závěru", formatOptionalPercentFromWhole(weatherDisplayNumber(feature, "confidencePercent"), feature.properties.confidence)],
+      ["Čas měření", formatShortDateTime(feature.properties.observedAt)],
+      ["Stáří dat", formatAge(feature.properties.observedAt)],
+      ["Zdroj", feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)]
+    ]);
+    return rows.length > 0 ? rows : [["Stav", "měření"]];
+  }
   if (!isMeasuredWeatherStationFeature(feature)) {
     return [
       ["Charakter", weatherFeatureConditionLabel(feature, metrics)],
@@ -14398,6 +14746,10 @@ function weatherFeatureTone(feature: SituationFeature): "neutral" | "ok" | "warn
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   if (feature.properties.stale) {
     return "warn";
+  }
+  const displayTone = weatherDisplayTone(feature);
+  if (displayTone) {
+    return displayTone;
   }
   if (feature.properties.layer === "weather_precipitation_grid") {
     const value = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");

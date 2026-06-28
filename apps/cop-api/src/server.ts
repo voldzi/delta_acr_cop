@@ -4003,6 +4003,34 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  app.get("/api/v1/weather-stations/:stationId/detail", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const params = request.params as { stationId: string };
+    const stationId = optionalTrimmedString(params.stationId, 220);
+    if (!stationId) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Weather station detail requires stationId.", correlationId);
+    }
+    const query = request.query as Record<string, unknown>;
+    const historyHours = boundedQueryInteger(query.historyHours, 48, 1, 168);
+    const forecastHours = boundedQueryInteger(query.forecastHours, 24, 0, 72);
+    const upstreamUrl = new URL(`weather-stations/${encodeURIComponent(stationId)}/detail`, `${trimTrailingSlash(situationDataBaseUrl)}/`);
+    upstreamUrl.searchParams.set("historyHours", String(historyHours));
+    upstreamUrl.searchParams.set("forecastHours", String(forecastHours));
+    if (optionalTrimmedString(query.nocache, 8) === "1") {
+      upstreamUrl.searchParams.set("nocache", "1");
+    }
+
+    try {
+      const body = await fetchWeatherStationDetailResource(upstreamUrl, situationDataSource?.config.timeoutMs);
+      return reply
+        .header("Cache-Control", "public, max-age=30, stale-while-revalidate=60")
+        .send(body);
+    } catch (error) {
+      app.log.warn({ error, stationId, upstreamUrl: upstreamUrl.toString() }, "Weather station detail request failed.");
+      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
   app.get("/api/v1/geocode/search", async (request, reply) => {
     if (!placeGeocoder) {
       return sendError(reply, 503, "GEOCODER_UNAVAILABLE", "Place geocoder is disabled.", correlationIdFrom(request.headers["x-correlation-id"]));
@@ -10768,6 +10796,27 @@ async function fetchWeatherRadarFrames(url: URL, timeoutMsOverride?: number): Pr
     });
     if (!response.ok) {
       throw new Error(`SIM weather radar frame catalog returned HTTP ${response.status}.`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchWeatherStationDetailResource(url: URL, timeoutMsOverride?: number): Promise<unknown> {
+  const timeoutMs = timeoutMsOverride ?? readPositiveInteger(process.env.COP_SITUATION_DATA_TIMEOUT_MS, 8000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        accept: "application/json",
+        "user-agent": "CSM-COP weather station detail proxy"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`SIM weather station detail returned HTTP ${response.status}.`);
     }
     return await response.json();
   } finally {

@@ -444,6 +444,79 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("uses SIM weather display contract without fallbacking unclassified measurements to partly cloudy", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [13.93, 50.55], type: "Point" },
+          properties: {
+            category: "weather",
+            confidence: 0.94,
+            featureId: "weather:chmi:milesovka",
+            label: "Milešovka",
+            layer: "weather",
+            layerId: "public.weather.observations",
+            metrics: {
+              cloudCoverPercent: 62,
+              temperatureC: 27.1,
+              windSpeedMps: 2.4
+            },
+            observedAt: "2026-06-28T10:00:00Z",
+            providerLayerId: "weather.chmi_station_observations",
+            providerProperties: {
+              display: {
+                badgeLabel: "měření",
+                badgeTone: "neutral",
+                conditionMode: "unclassified",
+                confidencePercent: 94,
+                iconKey: "measurement",
+                label: "Milešovka 27.1 °C · vítr 2.4 m/s",
+                primaryValue: "27.1 °C",
+                secondaryValue: "vítr 2.4 m/s",
+                subtitle: "měření · 27.1 °C · vítr 2.4 m/s",
+                title: "Milešovka"
+              }
+            },
+            sourceId: "chmi_weather_stations",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-06-28T10:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["weather"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      featureId: "weather:chmi:milesovka",
+      situationStatusLabel: "měření",
+      weatherConditionLabel: "měření",
+      weatherLabel: "Milešovka 27.1 °C · vítr 2.4 m/s",
+      weatherObservation: true,
+      weatherStationLabel: "Milešovka",
+      weatherSubtitle: "měření · 27.1 °C · vítr 2.4 m/s",
+      weatherSymbolKey: "cop-weather-condition-measurement"
+    });
+  });
+
   it("adds mobile network tower render metadata from status and radio technology", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",

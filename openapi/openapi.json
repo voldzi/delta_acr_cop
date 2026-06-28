@@ -619,6 +619,100 @@
         }
       }
     },
+    "/api/v1/weather-stations/{stationId}/detail": {
+      "get": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Return CHMI weather station detail through COP.",
+        "operationId": "getWeatherStationDetail",
+        "description": "Server-side proxy for the SIM situation-data CHMI weather station detail endpoint. Clients derive detailUrl from providerProperties.display.detailUrl and call COP API, so browsers and native clients do not need direct SIM connectivity. COP treats SIM display/charts as authoritative presentation data and does not infer weather state from raw metrics.\n",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 220
+            }
+          },
+          {
+            "name": "historyHours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 168,
+              "default": 48
+            }
+          },
+          {
+            "name": "forecastHours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 72,
+              "default": 24
+            }
+          },
+          {
+            "name": "nocache",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Diagnostic cache bypass forwarded to SIM when set to 1."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CHMI weather station detail with SIM-prepared current display, history, forecast and charts.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherStationDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "description": "SIM situation-data weather station detail is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
     "/api/v1/geocode/search": {
       "get": {
         "tags": [
@@ -11219,6 +11313,210 @@
           "H_F",
           "Q_F"
         ]
+      },
+      "WeatherDisplayPresentation": {
+        "type": "object",
+        "description": "SIM-prepared weather presentation. COP renders these fields directly and must not infer weather state from raw metrics when they are present.",
+        "additionalProperties": true,
+        "properties": {
+          "iconKey": {
+            "type": "string",
+            "description": "Presentation icon key prepared by SIM, for example measurement, rain, snow, fog or station."
+          },
+          "label": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "badgeLabel": {
+            "type": "string"
+          },
+          "badgeTone": {
+            "type": "string"
+          },
+          "primaryValue": {
+            "type": "string"
+          },
+          "secondaryValue": {
+            "type": "string"
+          },
+          "tertiaryValue": {
+            "type": "string"
+          },
+          "confidencePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "conditionMode": {
+            "type": "string",
+            "enum": [
+              "observed",
+              "measured",
+              "estimated",
+              "unclassified"
+            ],
+            "description": "observed means authoritative CHMI condition; measured means directly measured phenomenon; estimated means SIM inference; unclassified means neutral measurement display."
+          },
+          "detailUrl": {
+            "type": "string"
+          }
+        }
+      },
+      "WeatherStationChartPoint": {
+        "type": "object",
+        "required": [
+          "time",
+          "value"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "value": {
+            "type": "number"
+          }
+        }
+      },
+      "WeatherStationChartSeries": {
+        "type": "object",
+        "required": [
+          "points"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "observation",
+              "forecast",
+              "derived"
+            ]
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WeatherStationChartPoint"
+            }
+          }
+        }
+      },
+      "WeatherStationChart": {
+        "type": "object",
+        "required": [
+          "series"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "temperature",
+              "precipitation",
+              "wind",
+              "humidity_cloud"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WeatherStationChartSeries"
+            }
+          }
+        }
+      },
+      "WeatherStationDetail": {
+        "type": "object",
+        "description": "SIM weather station detail. COP renders current.display and charts[] as prepared presentation output.",
+        "additionalProperties": true,
+        "properties": {
+          "contractVersion": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "station": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "current": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "display": {
+                "$ref": "#/components/schemas/WeatherDisplayPresentation"
+              },
+              "metrics": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          },
+          "history": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "forecast": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "charts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WeatherStationChart"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "HydroStationDetailPoint": {
         "type": "object",

@@ -860,6 +860,56 @@ describe("map catalog route", () => {
     }));
   });
 
+  it("proxies CHMI weather station detail through the server-side SIM provider", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const fetchMock = vi.fn(async () => Response.json({
+      charts: [
+        {
+          id: "temperature",
+          series: [
+            {
+              label: "měření",
+              points: [{ time: "2026-06-28T08:00:00Z", value: 23.4 }]
+            }
+          ],
+          title: "Teplota"
+        }
+      ],
+      current: {
+        display: {
+          badgeLabel: "měření",
+          conditionMode: "unclassified",
+          iconKey: "measurement",
+          label: "Milešovka 23.4 °C"
+        }
+      }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      situationDataSource: new FakeSituationDataSource(),
+      now: () => new Date("2026-06-28T08:00:00Z")
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/weather-stations/0-20000-0-11406/detail?historyHours=48&forecastHours=24"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      current: {
+        display: {
+          iconKey: "measurement"
+        }
+      }
+    });
+    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather-stations/0-20000-0-11406/detail?historyHours=48&forecastHours=24", expect.objectContaining({
+      headers: expect.objectContaining({
+        accept: "application/json"
+      })
+    }));
+  });
+
   it("proxies CHMI webcam detail through an allowlisted SIM URL", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const fetchMock = vi.fn(async () => Response.json({
