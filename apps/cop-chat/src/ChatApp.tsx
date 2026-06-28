@@ -1476,7 +1476,7 @@ export function ChatApp() {
   }
 
   async function prepareEncryptionRecoveryForMobile(): Promise<void> {
-    if (!window.confirm("Připravit nový E2EE obnovovací klíč pro iPhone/iPad? Starý obnovovací klíč tím přestane být správný pro nové přihlášení.")) {
+    if (!window.confirm("Připravit iPhone/iPad čistým E2EE resetem? Starší šifrovaná historie nemusí být dostupná, ale web a iOS dostanou nový kompatibilní obnovovací klíč.")) {
       return;
     }
     const session = matrixSessionRef.current ?? await startMatrixSession(selectedConversationId ?? selectedGroupId ?? selectedRoomId);
@@ -1490,7 +1490,7 @@ export function ChatApp() {
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");
       await refreshEncryptionRecoveryStatus(session);
-      setNotice("Recovery pro iPhone/iPad je připravené. Uložte nový klíč a použijte ho v mobilní aplikaci.");
+      setNotice("Nový E2EE recovery cyklus pro web+iOS je připravený. Uložte nový klíč a použijte ho v mobilní aplikaci.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Recovery pro iPhone/iPad se nepodařilo připravit.");
     } finally {

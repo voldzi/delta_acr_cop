@@ -467,7 +467,10 @@ export async function createMatrixMessagingSession(
         // Read receipts are a best-effort UX signal. Message delivery must not fail because of them.
       }
     },
-    prepareEncryptionRecoveryForMobile: async () => createUserControlledEncryptionRecovery(client, recoveryController, { mobileCompatible: true }),
+    prepareEncryptionRecoveryForMobile: async () => createUserControlledEncryptionRecovery(client, recoveryController, {
+      mobileCompatible: true,
+      reset: true
+    }),
     restoreEncryptionRecovery: async (recoveryKey) => restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey),
     setMessageRetentionPolicy: async (roomId, seconds) => {
       if (typeof client.sendStateEvent !== "function") {

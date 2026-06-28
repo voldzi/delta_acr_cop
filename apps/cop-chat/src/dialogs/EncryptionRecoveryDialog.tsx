@@ -35,7 +35,7 @@ export default function EncryptionRecoveryDialog({
   const subtitle = mobileReady
     ? "Připraveno pro web i iPhone/iPad"
     : needsMobilePreparation
-      ? "Doplňte kompatibilní obnovu pro iOS"
+      ? "Připravte čistou obnovu pro iOS"
       : hasBackup
         ? "Obnovte toto zařízení"
         : "Nastavte více zařízení";
@@ -135,9 +135,8 @@ export default function EncryptionRecoveryDialog({
         ) : needsMobilePreparation ? (
           <>
             <p>
-              Tento prohlížeč umí pracovat se šifrovanou historií, ale účet nemá kompletní E2EE metadata,
-              která vyžaduje nativní iPhone/iPad aplikace. Připravte nový recovery cyklus a nově zobrazený
-              klíč použijte v iOS.
+              Účet má starší nebo nekompletní E2EE metadata, která nativní iPhone/iPad aplikace odmítá.
+              Připravíme čistý recovery cyklus pro web i iOS. Starší šifrovaná historie nemusí být dostupná.
             </p>
             <footer>
               <button disabled={saving} className="primary-dialog-action" onClick={onPrepareMobile} type="button">
