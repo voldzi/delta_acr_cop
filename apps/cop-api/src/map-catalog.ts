@@ -436,7 +436,7 @@ const curatedCatalogLayerLabels: Record<string, string> = {
   "public.weather.precipitation_grid": "Srážky",
   "public.weather.humidity_grid": "Vlhkost",
   "public.weather.pressure_grid": "Tlak",
-  "public.weather.webcams": "Webkamery ČHMÚ",
+  "public.weather.webcams": "Kamery",
   "public.weather.radar_precipitation": "Radar srážek"
 };
 
@@ -963,7 +963,7 @@ function buildWeatherWebcamCatalogLayer(sources: SituationSourceDescriptor[]): M
     geometryTypes: ["Point"],
     groupId: "risks.weather",
     kind: "vector_features",
-    label: "Webkamery ČHMÚ",
+    label: "Kamery",
     layerId: "public.weather.webcams",
     legal: legalFromSource(findSource(sources, "chmi_weather_webcams"), ["Český hydrometeorologický ústav"]),
     maxZoom: 18,

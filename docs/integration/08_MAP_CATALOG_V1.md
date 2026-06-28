@@ -553,7 +553,7 @@ Provider-native fields may be preserved under:
 | `public.place.settlements` | Sídla | `sim.situation-data` layer `place_settlements`, source `osm_postgis` |
 | `public.weather.current` | Počasí ve středu mapy | `sim.situation-data` layer `weather`, source `open_meteo`; non-selectable reference/fallback layer |
 | `public.weather.observations` | Počasí | `sim.situation-data` layer `weather`, source `chmi_weather_stations`; primary public weather layer |
-| `public.weather.webcams` | Webkamery ČHMÚ | `sim.situation-data` layer `weather_webcams`, source `chmi_weather_webcams`; používá `properties.providerProperties.camera.detailUrl` nebo `snapshotUrl` přes COP proxy |
+| `public.weather.webcams` | Kamery | `sim.situation-data` layer `weather_webcams`, source `chmi_weather_webcams`; samostatná kamerová vrstva používající `properties.providerProperties.camera.detailUrl` nebo `snapshotUrl` přes COP proxy |
 | `public.weather.aviation` | Letištní počasí | `sim.situation-data` layer `weather`, source `aviation_weather` |
 | `public.safety.air_quality` | Kvalita ovzduší | `sim.situation-data` layer `air_quality`, source `chmi_air_quality` |
 | `public.weather.temperature_grid` | Teplota | `sim.situation-data` layer `weather_temperature_grid`, source `chmi_weather_stations` |
@@ -567,9 +567,10 @@ Provider-native fields may be preserved under:
 | `public.safety.thunderstorm_risk` | Bouřkové riziko | `sim.situation-data` layer `weather_thunderstorm_risk`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
 | `public.safety.air_quality_grid` | Kvalita ovzduší - plocha | `sim.situation-data` layer `air_quality_grid`, source `chmi_air_quality` |
 
-ČHMÚ webkamery jsou jen vizuální kontext počasí. COP je nezapočítává jako
-výstrahy, neotevírá incident automaticky a v UI je vede jako `severity=info`
-/ stav `KAMERA`. Klienti nesmí volat upstream ČHMÚ přímo; detail a snapshot
+ČHMÚ webkamery jsou jen vizuální kontext počasí a jsou oddělené od vrstvy
+`public.weather.observations`. COP je nezapočítává jako výstrahy, neotevírá
+incident automaticky a v UI je vede jako samostatné klikací ikony kamer se
+stavem `KAMERA`. Klienti nesmí volat upstream ČHMÚ přímo; detail a snapshot
 musí jít přes URL předané v `providerProperties.camera` a v COP webu přes
 `/api/v1/weather/webcam-proxy`. Náhled musí vždy zobrazit atribuci
 `Český hydrometeorologický ústav`.

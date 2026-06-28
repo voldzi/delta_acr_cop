@@ -125,6 +125,7 @@ describe("map catalog route", () => {
     });
     expect(body.layers.find((layer) => layer.layerId === "public.weather.webcams")).toMatchObject({
       groupId: "risks.weather",
+      label: "Kamery",
       query: {
         providerLayerIds: ["weather_webcams"],
         providerSourceIds: ["chmi_weather_webcams"]
@@ -223,7 +224,7 @@ describe("map catalog route", () => {
       }),
       expect.objectContaining({
         groupId: "risks.weather",
-        label: "Webkamery ČHMÚ",
+        label: "Kamery",
         layerId: "public.weather.webcams",
         minZoom: 4,
         query: expect.objectContaining({
@@ -647,6 +648,37 @@ describe("map catalog route", () => {
     expect(body.query.layerIds).toEqual(["public.weather.temperature_grid"]);
     expect(body.situation?.query).toMatchObject({
       layers: ["weather_temperature_grid"],
+      sources: ["chmi_weather_stations"]
+    });
+  });
+
+  it("queries CHMI weather observations without mixing in webcam sources", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const situationDataSource = new FakeSituationDataSource();
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [12.0, 48.5, 18.9, 51.2],
+        layerIds: ["public.weather.observations"],
+        limit: 250
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { situation?: SituationFeatureCollection };
+    expect(situationDataSource.lastFeatureQuery).toMatchObject({
+      layers: ["weather"],
+      sources: ["chmi_weather_stations"]
+    });
+    expect(situationDataSource.lastFeatureQuery?.sources).not.toContain("chmi_weather_webcams");
+    expect(body.situation?.query).toMatchObject({
+      layers: ["weather"],
       sources: ["chmi_weather_stations"]
     });
   });
