@@ -44,7 +44,7 @@ describe("SafetyDataSourceAdapter", () => {
       bbox: { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: ["warnings", "flood"],
       limit: 20,
-      sources: ["chmi_alerts", "chmi_hydro"]
+      sources: ["chmi_alerts", "chmi_hydro", "gdacs_alerts"]
     }, new Date("2026-05-20T10:00:06Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/catalog");
@@ -54,7 +54,7 @@ describe("SafetyDataSourceAdapter", () => {
     );
     expect(String(fetchMock.mock.calls[3]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/taxonomy");
     expect(String(fetchMock.mock.calls[4]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/safety-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=warnings%2Cflood&limit=20&source=chmi_alerts%2Cchmi_hydro"
+      "https://sim.zeleznalady.cz/safety-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=warnings%2Cflood&limit=20&source=chmi_alerts%2Cchmi_hydro%2Cgdacs_alerts"
     );
     expect(layers).toMatchObject([
       {
@@ -63,8 +63,11 @@ describe("SafetyDataSourceAdapter", () => {
         layerId: "warnings"
       }
     ]);
-    expect(sources).toMatchObject([{ enabled: true, sourceId: "chmi_alerts" }]);
-    expect(config).toMatchObject({ enabledSources: ["chmi_alerts", "chmi_hydro"] });
+    expect(sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ enabled: true, sourceId: "chmi_alerts" }),
+      expect.objectContaining({ enabled: true, sourceId: "gdacs_alerts" })
+    ]));
+    expect(config).toMatchObject({ enabledSources: ["chmi_alerts", "chmi_hydro", "gdacs_alerts"] });
     expect(observability).toMatchObject({
       lastResult: {
         featureCount: 12,
@@ -126,7 +129,7 @@ describe("SafetyDataSourceAdapter", () => {
       upstreamBbox: { east: 15.75, north: 50.75, south: 49.5, west: 13.5 }
     });
     expect(features.query.bbox).toEqual({ east: 15.35, north: 50.45, south: 49.65, west: 13.85 });
-    expect(features.query.sources).toEqual(["chmi_alerts", "chmi_hydro"]);
+    expect(features.query.sources).toEqual(["chmi_alerts", "chmi_hydro", "gdacs_alerts"]);
   });
 
   it("proxies CHMI hydro station detail through the SIM safety-data contract", async () => {
@@ -417,14 +420,14 @@ function sampleCatalogResponse() {
           mode: "bbox",
           providerId: "sim.safety-data",
           providerLayerIds: ["warnings"],
-          providerSourceIds: ["chmi_alerts"],
+          providerSourceIds: ["chmi_alerts", "gdacs_alerts"],
           streamId: "features"
         },
         recommendedCatalogLayerId: "public.safety.warnings",
         refreshSeconds: 300,
         role: "overlay",
         selectable: true,
-        sourceIds: ["chmi_alerts"],
+        sourceIds: ["chmi_alerts", "gdacs_alerts"],
         styleProfile: "safety-warning-v1"
       }
     ],
@@ -437,6 +440,15 @@ function sampleCatalogResponse() {
         selectableInMap: false,
         sourceRole: "final",
         sourceId: "chmi_alerts"
+      },
+      {
+        audience: "public",
+        enabled: true,
+        label: "GDACS Alerts",
+        layers: ["warnings", "fire", "flood"],
+        selectableInMap: false,
+        sourceRole: "final",
+        sourceId: "gdacs_alerts"
       }
     ]
   };
@@ -470,7 +482,7 @@ function sampleTaxonomyResponse() {
 
 function sampleConfigResponse() {
   return {
-    enabledSources: ["chmi_alerts", "chmi_hydro"],
+    enabledSources: ["chmi_alerts", "chmi_hydro", "gdacs_alerts"],
     staleAfterSeconds: 900
   };
 }
@@ -528,6 +540,12 @@ function sampleFeatureCollection() {
         label: "CHMI Alerts",
         layers: ["warnings"],
         sourceId: "chmi_alerts"
+      },
+      {
+        enabled: true,
+        label: "GDACS Alerts",
+        layers: ["warnings", "fire", "flood"],
+        sourceId: "gdacs_alerts"
       }
     ],
     summary: {

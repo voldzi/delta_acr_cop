@@ -13,6 +13,8 @@ Za veřejné safety výstrahy COP považuje pouze SIM vrstvy:
 
 Frontend pracuje s normalizovanými interními layer id `weather_alerts`, `fire`, `flood` a `warnings`, ale pouze pokud feature pochází ze `safety-data` zdroje. Deduplikace a priorita nesmí vycházet z českého nebo anglického textu, ale ze stabilních SIM polí jako `layerId`, `sourceId`, `typeCode`, `severity`, `validFrom`, `validUntil`, `metrics`, `tags` a lokalizovaných textů.
 
+GDACS kontext ze SIM zdroje `gdacs_alerts` je veřejná safety vrstva: povodňové `FL` události patří do `public.safety.flood`, požární `WF` události do `public.safety.fire` a ostatní podporované krizové typy do `public.safety.warnings`. Technické `response.warnings` z providerů zůstávají pouze provozní diagnostika.
+
 ## Technické stavy
 
 API poskytuje `GET /api/v1/cop/alerts`. Tyto alerty jsou odvozené z tracků, evidence a Source Health a nejsou veřejnými safety výstrahami.

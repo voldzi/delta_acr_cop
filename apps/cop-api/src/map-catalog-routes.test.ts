@@ -275,7 +275,7 @@ describe("map catalog route", () => {
       query: {
         providerId: "sim.safety-data",
         providerLayerIds: ["fire"],
-        providerSourceIds: ["chmi_alerts", "nasa_firms"]
+        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms"]
       }
     });
     expect(fireLayer?.compatibilityOnly).toBeUndefined();
@@ -287,7 +287,7 @@ describe("map catalog route", () => {
         maxFeatures: 600,
         providerId: "sim.safety-data",
         providerLayerIds: ["flood"],
-        providerSourceIds: ["chmi_hydro"]
+        providerSourceIds: ["chmi_hydro", "gdacs_alerts"]
       }
     });
     expect(body.sources).not.toEqual(expect.arrayContaining([
@@ -424,7 +424,7 @@ describe("map catalog route", () => {
       technology: "4G"
     });
     expect(body.safety?.query.layers).toEqual(["warnings", "flood"]);
-    expect(body.safety?.query.sources).toEqual(["chmi_alerts", "chmi_hydro"]);
+    expect(body.safety?.query.sources).toEqual(["chmi_alerts", "gdacs_alerts", "chmi_hydro"]);
     expect(body.tak).toBeUndefined();
     expect(body.warnings.join(" ")).toContain("partner.tak.mobile");
   });
@@ -1760,7 +1760,7 @@ class FakeSafetyDataSource implements SafetyDataSource {
 
   async fetchConfig(_requestNow: Date): Promise<SafetyDataPublicConfig> {
     return {
-      enabledSources: ["chmi_alerts", "chmi_hydro"]
+      enabledSources: ["chmi_alerts", "chmi_hydro", "gdacs_alerts"]
     };
   }
 
@@ -1774,7 +1774,8 @@ class FakeSafetyDataSource implements SafetyDataSource {
   async fetchSources(_requestNow: Date): Promise<SafetySourceDescriptor[]> {
     return [
       { enabled: true, label: "CHMI Alerts", layers: ["warnings"], sourceId: "chmi_alerts", updateCadenceSeconds: 300 },
-      { enabled: true, label: "CHMI Hydro", layers: ["flood"], sourceId: "chmi_hydro", updateCadenceSeconds: 600 }
+      { enabled: true, label: "CHMI Hydro", layers: ["flood"], sourceId: "chmi_hydro", updateCadenceSeconds: 600 },
+      { enabled: true, label: "GDACS Alerts", layers: ["warnings", "fire", "flood"], sourceId: "gdacs_alerts", updateCadenceSeconds: 300 }
     ];
   }
 
@@ -1872,14 +1873,14 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
             mode: "bbox",
             providerId: "sim.safety-data",
             providerLayerIds: ["flood"],
-            providerSourceIds: ["chmi_hydro"],
+            providerSourceIds: ["chmi_hydro", "gdacs_alerts"],
             streamId: "features"
           },
           recommendedCatalogLayerId: "public.safety.flood",
           refreshSeconds: 600,
           role: "overlay",
           selectable: true,
-          sourceIds: ["chmi_hydro"],
+          sourceIds: ["chmi_hydro", "gdacs_alerts"],
           styleProfile: "water-level-v1"
         },
         {
@@ -1895,14 +1896,14 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
             mode: "bbox",
             providerId: "sim.safety-data",
             providerLayerIds: ["fire"],
-            providerSourceIds: ["chmi_alerts", "nasa_firms"],
+            providerSourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms"],
             streamId: "features"
           },
           recommendedCatalogLayerId: "public.safety.fire",
           refreshSeconds: 600,
           role: "primary",
           selectable: true,
-          sourceIds: ["chmi_alerts", "nasa_firms"],
+          sourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms"],
           styleProfile: "fire-risk-v1"
         }
       ],
@@ -1915,6 +1916,17 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
           label: "CHMI CAP alerts",
           selectableInMap: false,
           sourceId: "chmi_alerts",
+          sourceRole: "final",
+          updateCadenceSeconds: 300,
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.fire", "public.safety.flood"],
+          label: "GDACS Alerts",
+          selectableInMap: false,
+          sourceId: "gdacs_alerts",
           sourceRole: "final",
           updateCadenceSeconds: 300,
           visibleInDiagnostics: true

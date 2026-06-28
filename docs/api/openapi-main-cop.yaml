@@ -7707,6 +7707,7 @@ components:
               - chmi_hydro
               - fire_hotspots
               - fire_incidents
+              - gdacs_alerts
               - mock
               - nasa_firms
               - weather_alerts
@@ -7738,6 +7739,7 @@ components:
             - chmi_hydro
             - fire_hotspots
             - fire_incidents
+            - gdacs_alerts
             - mock
             - nasa_firms
             - weather_alerts

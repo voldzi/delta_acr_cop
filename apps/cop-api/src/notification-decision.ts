@@ -349,8 +349,11 @@ function publicSafetyLayerId(layer: string, layerId: string | undefined): string
   if (layerId?.startsWith("public.")) {
     return layerId;
   }
-  if (layer === "weather_alerts" || layer === "warnings") {
+  if (layer === "weather_alerts") {
     return "public.safety.weather_alerts";
+  }
+  if (layer === "warnings") {
+    return "public.safety.warnings";
   }
   if (layer === "fire") {
     return "public.safety.fire";

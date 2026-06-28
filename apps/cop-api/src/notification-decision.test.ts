@@ -112,6 +112,24 @@ describe("notification decision", () => {
     expect(decision.notification.metadata).not.toHaveProperty("hazardType");
   });
 
+  it("keeps general SIM warnings separate from weather alerts", () => {
+    const decision = buildSafetyFeatureNotificationDecision(safetyFeature({
+      featureId: "gdacs-warning-1",
+      layer: "warnings",
+      layerId: undefined,
+      sourceId: "gdacs_alerts",
+      sourceName: "GDACS",
+      typeCode: "crisis.earthquake"
+    }), {
+      audience: { userIds: ["user-1"] },
+      now: requestNow
+    });
+
+    expect(decision.shouldSend).toBe(true);
+    expect(decision.idempotencyKey).toBe("sim.safety-data:public.safety.warnings:gdacs-warning-1:2026-05-29T11:00:00Z:2026-05-29T18:00:00Z");
+    expect(decision.notification.source.layerId).toBe("public.safety.warnings");
+  });
+
   it("maps CHMI hydro floodStage to notification severity without promoting trend alone", () => {
     const warningDecision = buildSafetyFeatureNotificationDecision(safetyFeature({
       featureId: "hydro-2spa",

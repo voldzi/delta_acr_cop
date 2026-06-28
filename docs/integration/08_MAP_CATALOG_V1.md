@@ -140,6 +140,7 @@ Examples:
 | `ctu_nettest` | `input` | diagnostics and provenance |
 | `osm_postgis` communications towers | `reference` / `input` | neutral reference infrastructure; never final mobile status |
 | `chmi_alerts` | `final` | user layers `public.safety.weather_alerts` and `public.safety.fire` for ČHMÚ fire danger; `public.safety.warnings` remains compatibility alias |
+| `gdacs_alerts` | `final` | global GDACS crisis context; `FL` maps to `public.safety.flood`, `WF` to `public.safety.fire`, other supported crisis types to `public.safety.warnings` |
 | `nasa_firms` / `fire_hotspots` / `fire_incidents` | `final` | user layer `public.safety.fire` |
 | `weather_alerts` | `final` | user layer `public.safety.weather_alerts` |
 | `admin_boundaries` | `reference` | user layer `public.boundary.admin` |
@@ -540,9 +541,9 @@ Provider-native fields may be preserved under:
 
 | Catalog layerId | User label | Provider query |
 | --- | --- | --- |
-| `public.safety.warnings` | Veřejné výstrahy | `sim.safety-data` layer `warnings`, source `chmi_alerts` |
-| `public.safety.flood` | Povodně a voda | `sim.safety-data` layer `flood`, source `chmi_hydro` |
-| `public.safety.fire` | Požáry | `sim.safety-data` layer `fire`, sources `chmi_alerts`, `nasa_firms`, `fire_hotspots`, `fire_incidents` |
+| `public.safety.warnings` | Krizové výstrahy | `sim.safety-data` layer `warnings`, sources `chmi_alerts`, `gdacs_alerts` |
+| `public.safety.flood` | Vodní stavy a průtoky | `sim.safety-data` layer `flood`, sources `chmi_hydro`, `gdacs_alerts` |
+| `public.safety.fire` | Požáry | `sim.safety-data` layer `fire`, sources `chmi_alerts`, `gdacs_alerts`, `nasa_firms`, `fire_hotspots`, `fire_incidents` |
 | `public.safety.weather_alerts` | Meteorologické výstrahy | `sim.safety-data` layer `weather_alerts`, source `chmi_alerts` |
 | `public.boundary.admin` | Správní hranice | `sim.safety-data` layer `boundary_admin`, source `admin_boundaries` |
 | `public.boundary.country` | Stát | `sim.situation-data` layer `boundary_country`, source `osm_postgis` |
