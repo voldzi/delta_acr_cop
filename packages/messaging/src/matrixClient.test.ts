@@ -10,6 +10,7 @@ type MockMatrixClient = {
   getUserId: () => string;
   initRustCrypto: () => Promise<void>;
   isRoomEncrypted: () => boolean;
+  mxcUrlToHttp?: MatrixMxcUrlToHttp;
   off?: MatrixEventSubscription;
   on?: MatrixEventSubscription;
   redactEvent?: MatrixRedactEvent;
@@ -50,6 +51,7 @@ type MatrixSendMessage = (roomId: string, content: Record<string, unknown>) => P
 type MatrixRedactEvent = (roomId: string, eventId: string, txnId?: string, opts?: Record<string, unknown>) => Promise<unknown>;
 type MatrixScrollback = (room: unknown, limit?: number) => Promise<unknown>;
 type MatrixEventSubscription = (event: string, listener: (...args: unknown[]) => void) => void;
+type MatrixMxcUrlToHttp = (mxcUrl: string, width?: number, height?: number, resizeMethod?: string, allowDirectLinks?: boolean, allowRedirects?: boolean, useAuthentication?: boolean) => string | null;
 
 const matrixSdkMock = vi.hoisted(() => ({
   createClient: vi.fn()
@@ -128,6 +130,38 @@ describe("Matrix client diagnostics", () => {
       type: "image/png"
     })));
     expect(setAvatarUrl).toHaveBeenCalledWith("mxc://cop.local/avatar");
+  });
+
+  it("refreshes direct chat avatars from Matrix profile info when room member state has no avatar", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
+    const onRoomsChanged = vi.fn();
+    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(async (userId) => userId === "@peer:cop.local"
+      ? { avatar_url: "mxc://cop.local/peer-avatar", displayname: "Peer User" }
+      : {});
+    const mxcUrlToHttp = vi.fn<MatrixMxcUrlToHttp>((mxcUrl) => `https://msg.zeleznalady.cz/media/${encodeURIComponent(mxcUrl)}`);
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      getProfileInfo,
+      mxcUrlToHttp,
+      rooms: [createRoom({
+        members: [
+          { displayName: "COP Operator", userId: "@operator:cop.local" },
+          { displayName: "Peer User", userId: "@peer:cop.local" }
+        ],
+        roomId: "!direct:cop.local"
+      })]
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onRoomsChanged });
+
+    expect(session.getRooms()[0]?.avatarUrl).toBeUndefined();
+
+    await vi.runOnlyPendingTimersAsync();
+
+    const latestRooms = onRoomsChanged.mock.calls.at(-1)?.[0];
+    expect(getProfileInfo).toHaveBeenCalledWith("@peer:cop.local");
+    expect(latestRooms?.[0]?.avatarUrl).toBe("https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fpeer-avatar");
+    expect(latestRooms?.[0]?.directPeer?.avatarUrl).toBe("https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fpeer-avatar");
   });
 
   it("stores disappearing-message settings as Matrix room retention state", async () => {
@@ -592,6 +626,7 @@ function createMockMatrixClient({
   crypto,
   getJoinedRooms,
   getProfileInfo,
+  mxcUrlToHttp,
   redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined),
   off,
   on,
@@ -607,6 +642,7 @@ function createMockMatrixClient({
   crypto?: MockMatrixCrypto;
   getJoinedRooms?: MockMatrixClient["getJoinedRooms"];
   getProfileInfo?: MockMatrixClient["getProfileInfo"];
+  mxcUrlToHttp?: MockMatrixClient["mxcUrlToHttp"];
   off?: MockMatrixClient["off"];
   on?: MockMatrixClient["on"];
   redactEvent?: MockMatrixClient["redactEvent"];
@@ -627,6 +663,7 @@ function createMockMatrixClient({
     getUserId: () => "@operator:cop.local",
     initRustCrypto: () => Promise.resolve(),
     isRoomEncrypted: () => true,
+    ...(mxcUrlToHttp ? { mxcUrlToHttp } : {}),
     ...(off ? { off } : {}),
     ...(on ? { on } : {}),
     redactEvent,
@@ -642,10 +679,12 @@ function createMockMatrixClient({
 }
 
 function createRoom({
+  members,
   retentionSeconds,
   roomId,
   timeline = []
 }: {
+  members?: Array<{ avatarUrl?: string; displayName?: string; userId: string }>;
   retentionSeconds?: number;
   roomId: string;
   timeline?: unknown[];
@@ -659,6 +698,7 @@ function createRoom({
         }
         : null
     },
+    ...(members ? { getJoinedMembers: () => members } : {}),
     getMyMembership: () => "join",
     getUnreadNotificationCount: () => 0,
     name: "Test Chat",

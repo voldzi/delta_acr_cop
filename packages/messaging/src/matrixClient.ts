@@ -261,9 +261,18 @@ export async function createMatrixMessagingSession(
       return;
     }
     await Promise.all(staleUserIds.map(async (userId) => {
-      const presence = await fetchMatrixPresence(homeserverBaseUrl, bootstrap.accessToken, userId);
-      if (presence) {
-        roomPresenceByUserId.set(userId, { ...presence, fetchedAt: Date.now(), userId });
+      const [presence, profile] = await Promise.all([
+        fetchMatrixPresence(homeserverBaseUrl, bootstrap.accessToken, userId),
+        fetchMatrixUserProfile(client, homeserverBaseUrl, bootstrap.accessToken, userId)
+      ]);
+      if (presence || profile) {
+        roomPresenceByUserId.set(userId, {
+          ...roomPresenceByUserId.get(userId),
+          ...presence,
+          ...profile,
+          fetchedAt: Date.now(),
+          userId
+        });
       }
     }));
   };
@@ -1251,6 +1260,56 @@ async function fetchMatrixPresence(
   }
 }
 
+async function fetchMatrixUserProfile(
+  client: MatrixClientLike,
+  homeserverBaseUrl: string,
+  accessToken: string | undefined,
+  userId: string
+): Promise<MatrixUserPresenceLike | undefined> {
+  const sdkProfile = client.getProfileInfo
+    ? await client.getProfileInfo(userId).catch(() => undefined)
+    : undefined;
+  const payload = sdkProfile ?? await fetchMatrixProfile(homeserverBaseUrl, accessToken, userId);
+  if (!payload) {
+    return undefined;
+  }
+  const displayName = stringValue(payload.displayname) ?? stringValue(payload.displayName);
+  const avatarUrl = stringValue(payload.avatar_url) ?? stringValue(payload.avatarUrl);
+  if (!displayName && !avatarUrl) {
+    return undefined;
+  }
+  return {
+    ...(avatarUrl ? { avatarUrl } : {}),
+    ...(displayName ? { displayName } : {}),
+    userId
+  };
+}
+
+async function fetchMatrixProfile(
+  homeserverBaseUrl: string,
+  accessToken: string | undefined,
+  userId: string
+): Promise<Record<string, unknown> | undefined> {
+  if (typeof fetch !== "function") {
+    return undefined;
+  }
+  try {
+    const headers: Record<string, string> = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+    const response = await fetch(`${homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/profile/${encodeURIComponent(userId)}`, {
+      cache: "no-store",
+      credentials: "omit",
+      headers,
+      mode: "cors"
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+    return await response.json() as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function clearMatrixMessagingCryptoStateForBootstrap(bootstrap: MessagingBootstrapResponse): Promise<void> {
   if (typeof window === "undefined") {
     return;
@@ -1360,9 +1419,11 @@ function readRooms(client: MatrixClientLike, options: {
     .map((room) => {
       const messageRetentionSeconds = readRoomRetentionSeconds(room);
       const presence = readRoomPresence(room, client, options.ownUserId, options.presenceByUserId);
-      const avatarUrl = options.homeserverBaseUrl ? readRoomAvatarUrl(room, client, options.homeserverBaseUrl, options.ownUserId) : undefined;
+      const avatarUrl = options.homeserverBaseUrl
+        ? readRoomAvatarUrl(room, client, options.homeserverBaseUrl, options.ownUserId, options.presenceByUserId)
+        : undefined;
       const directPeer = options.homeserverBaseUrl
-        ? readRoomDirectPeer(room, client, options.homeserverBaseUrl, options.ownUserId)
+        ? readRoomDirectPeer(room, client, options.homeserverBaseUrl, options.ownUserId, options.presenceByUserId)
         : undefined;
       const latestMessage = options.homeserverBaseUrl
         ? readRoomLatestMessage(client, room, options.homeserverBaseUrl, currentUserId)
@@ -1483,7 +1544,8 @@ function readRoomAvatarUrl(
   room: MatrixRoomLike,
   client: MatrixClientLike,
   homeserverBaseUrl: string,
-  ownUserId: string | undefined
+  ownUserId: string | undefined,
+  presenceByUserId: Map<string, MatrixUserPresenceLike & { fetchedAt: number }> | undefined
 ): string | undefined {
   const roomAvatarEvent = room.currentState?.getStateEvents?.("m.room.avatar", "");
   const roomAvatarContent = Array.isArray(roomAvatarEvent)
@@ -1499,14 +1561,16 @@ function readRoomAvatarUrl(
   if (otherMembers.length !== 1) {
     return undefined;
   }
-  return readMemberAvatarUrl(otherMembers[0], client, homeserverBaseUrl);
+  const userId = otherMembers[0]?.userId;
+  return readMemberAvatarUrl(otherMembers[0], client, homeserverBaseUrl, userId ? presenceByUserId?.get(userId) : undefined);
 }
 
 function readRoomDirectPeer(
   room: MatrixRoomLike,
   client: MatrixClientLike,
   homeserverBaseUrl: string,
-  ownUserId: string | undefined
+  ownUserId: string | undefined,
+  presenceByUserId: Map<string, MatrixUserPresenceLike & { fetchedAt: number }> | undefined
 ): MatrixRoomSummary["directPeer"] {
   const otherMembers = readRoomJoinedMembers(room)
     .filter((member) => member.userId && member.userId !== ownUserId);
@@ -1518,13 +1582,15 @@ function readRoomDirectPeer(
   if (!member || !userId) {
     return undefined;
   }
+  const cached = presenceByUserId?.get(userId);
   const user = client.getUser?.(userId) ?? member.user;
   const displayName = trimmedMatrixString(member.name)
     ?? trimmedMatrixString(member.rawDisplayName)
     ?? trimmedMatrixString(member.displayName)
+    ?? trimmedMatrixString(cached?.displayName)
     ?? trimmedMatrixString(user?.displayName)
     ?? matrixLocalpart(userId);
-  const avatarUrl = readMemberAvatarUrl(member, client, homeserverBaseUrl);
+  const avatarUrl = readMemberAvatarUrl(member, client, homeserverBaseUrl, cached);
   return {
     ...(avatarUrl ? { avatarUrl } : {}),
     displayName,
@@ -1535,11 +1601,13 @@ function readRoomDirectPeer(
 function readMemberAvatarUrl(
   member: MatrixRoomMemberLike | undefined,
   client: MatrixClientLike,
-  homeserverBaseUrl: string
+  homeserverBaseUrl: string,
+  profile: MatrixUserPresenceLike | undefined = undefined
 ): string | undefined {
   const candidates = [
     member?.getMxcAvatarUrl?.() ?? undefined,
     member?.avatarUrl,
+    profile?.avatarUrl,
     member?.user?.avatarUrl
   ];
   const avatarUrl = candidates
