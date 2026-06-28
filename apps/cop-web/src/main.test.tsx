@@ -100,6 +100,7 @@ describe("COP web dashboard", () => {
             layer: "flood",
             observedAt: new Date(now - 5 * 60_000).toISOString(),
             sourceId: "chmi_hydro",
+            tags: { dataSource: "safety-data" },
             validUntil: new Date(now + 60 * 60_000).toISOString()
           },
           type: "Feature"
@@ -115,6 +116,7 @@ describe("COP web dashboard", () => {
             observedAt: new Date(now - 2 * 60_000).toISOString(),
             severity: "critical",
             sourceId: "nasa_firms",
+            tags: { dataSource: "safety-data" },
             validUntil: new Date(now + 60 * 60_000).toISOString()
           },
           type: "Feature"
@@ -163,6 +165,7 @@ describe("COP web dashboard", () => {
             },
             severity: "warning",
             sourceId: "chmi_alerts",
+            tags: { dataSource: "safety-data" },
             validUntil: new Date(now + 60 * 60_000).toISOString()
           },
           type: "Feature"
@@ -176,6 +179,68 @@ describe("COP web dashboard", () => {
 
     expect(summary.primary?.title).toBe("Vysoké teploty v okolí");
     expect(summary.primary?.id).toBe("feature:heat-near");
+  });
+
+  it("keeps technical server alerts and track lifecycle out of the public priority alert strip", () => {
+    const now = Date.now();
+    const summary = buildPriorityAlertSummary({
+      alerts: [
+        {
+          alertId: "track-lost-1",
+          detail: "Track lifecycle stop.",
+          observedAt: new Date(now - 60_000).toISOString(),
+          severity: "critical",
+          status: "ACTIVE",
+          title: "TRACK_LOST",
+          type: "TRACK_LOST",
+          updatedAt: new Date(now - 30_000).toISOString()
+        },
+        {
+          alertId: "source-degraded-1",
+          detail: "Provider degraded.",
+          observedAt: new Date(now - 60_000).toISOString(),
+          severity: "warning",
+          status: "ACTIVE",
+          title: "SOURCE_DEGRADED",
+          type: "SOURCE_DEGRADED",
+          updatedAt: new Date(now - 30_000).toISOString()
+        }
+      ],
+      features: [
+        {
+          geometry: { coordinates: [14.438, 50.076], type: "Point" },
+          properties: {
+            category: "weather",
+            featureId: "weather-context",
+            label: "Měřené počasí",
+            layer: "weather",
+            observedAt: new Date(now - 5 * 60_000).toISOString(),
+            severity: "warning",
+            sourceId: "chmi_weather_stations"
+          },
+          type: "Feature"
+        }
+      ],
+      mapView: { center: [14.4378, 50.0755], zoom: 11 },
+      objects: [
+        {
+          affiliation: "UNKNOWN",
+          confidence: 0.2,
+          domain: "LAND",
+          lastUpdatedAt: new Date(now - 10_000).toISOString(),
+          objectId: "low-confidence-track",
+          objectType: "VEHICLE",
+          position: { lat: 50.076, lon: 14.438 },
+          status: "STALE",
+          synthetic: false
+        }
+      ],
+      proximityAlerts: [],
+      userLocation: null
+    });
+
+    expect(summary.total).toBe(0);
+    expect(summary.primary).toBeNull();
   });
 
   it("renders SIM tracks returned from COP API", async () => {

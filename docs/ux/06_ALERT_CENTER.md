@@ -1,30 +1,51 @@
 # 06 Alert Center
 
-Alert Center je informační vrstva nad COP daty. Slouží k rychlé orientaci operátora v datové kvalitě, degradaci zdrojů a lokálních proximity výstrahách. Nesmí být interpretován jako doporučení zásahu, výběr cíle ani weapon workflow.
+Alert Center je veřejná/mapová vrstva pro reálné safety výstrahy ze SIM. V horním řádku aplikace a ve workspace `Výstrahy` se nesmí zobrazovat technické lifecycle nebo kvalita dat. Tyto informace patří do technického panelu `Stav zdrojů`.
 
-## Serverové alerty
+## Veřejné výstrahy
 
-API poskytuje `GET /api/v1/cop/alerts`. Alerty jsou odvozené z aktuálních tracků, serverové `conflictEvidence` a `Source Health`.
+Za veřejné safety výstrahy COP považuje pouze SIM vrstvy:
 
-Podporované typy ve v1:
+- `public.safety.weather_alerts`,
+- `public.safety.fire`,
+- `public.safety.flood`,
+- kompatibilně `public.safety.warnings`.
+
+Frontend pracuje s normalizovanými interními layer id `weather_alerts`, `fire`, `flood` a `warnings`, ale pouze pokud feature pochází ze `safety-data` zdroje. Deduplikace a priorita nesmí vycházet z českého nebo anglického textu, ale ze stabilních SIM polí jako `layerId`, `sourceId`, `typeCode`, `severity`, `validFrom`, `validUntil`, `metrics`, `tags` a lokalizovaných textů.
+
+## Technické stavy
+
+API poskytuje `GET /api/v1/cop/alerts`. Tyto alerty jsou odvozené z tracků, evidence a Source Health a nejsou veřejnými safety výstrahami.
+
+Technické typy:
 
 - `TRACK_CONFLICT`: konflikt evidence objektu,
 - `LOW_CONFIDENCE`: nízká confidence objektu,
 - `TRACK_STALE`: zastaralý track v lifecycle okně,
 - `TRACK_LOST`: ztracený objekt,
-- `SOURCE_DEGRADED`: degradovaný zdroj dat.
+- `SOURCE_DEGRADED`: degradovaný zdroj dat,
+- `AOI_ENTRY`: technická událost osobní zóny.
 
-Každý alert má deterministické `alertId`, severity, status, detail, čas pozorování a volitelnou mapovou oblast. Operátor jej může potvrdit přes `POST /api/v1/cop/alerts/{alertId}/acknowledge`; potvrzení je auditované a v pilotu držené v runtime stavu API.
+`TRACK_STALE`, `TRACK_LOST`, `LOW_CONFIDENCE` a `SOURCE_DEGRADED` se zobrazují pouze v panelu `Stav zdrojů` jako kvalita dat, stav zdrojů nebo lifecycle stop. Nezvyšují počet veřejných výstrah, nevstupují do prioritní horní lišty a nekreslí samostatnou výstražnou oblast nad mapou.
 
 ## Mapová vrstva
 
-Serverové objektové alerty s polohou se zobrazují jako velmi průsvitné kruhy nad mapou. Kritické alerty jsou červené, warning alerty žluté. Lokální výstraha k poloze operátora zůstává oddělená jako osobní perimetr.
+Mapová výstražná vrstva zobrazuje jen safety features ze SIM. Technické serverové alerty se nad mapou nevykreslují jako veřejné výstrahy; jejich detail zůstává v technickém panelu.
 
 ## UI
 
 Workspace `Výstrahy` zobrazuje:
 
-- počet serverových alertů a critical/warning souhrn,
-- seznam alertů s důvodem, objektem nebo zdrojem,
-- potvrzení alertu,
-- lokální proximity výstrahy pro vlastní polohu.
+- počet aktivních SIM safety výstrah,
+- critical/warning souhrn podle severity/SPA/SIM metadat,
+- seznam relevantních safety features s výběrem detailu v mapě.
+
+Panel `Stav zdrojů` zobrazuje:
+
+- readiness situačních a výstražných vrstev,
+- počet datových zdrojů,
+- technické události,
+- konflikty evidence,
+- lifecycle stop,
+- nízkou jistotu,
+- degradaci zdrojů.

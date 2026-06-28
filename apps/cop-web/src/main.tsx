@@ -356,6 +356,7 @@ const appLanguageOptions: Array<[AppLanguage, string]> = [
 ];
 const defaultSituationLayerIds: SituationLayerId[] = ["weather"];
 const defaultSafetyLayerIds: SafetyLayerId[] = ["warnings"];
+const publicSafetyAlertLayerIds = new Set(["warnings", "weather_alerts", "fire", "flood"]);
 const defaultTakLayerIds: TakLayerId[] = [];
 const pocDemoScenarioId = "flood-central-bohemia";
 const zoneColorOptions = ["#8cb6d8", "#c8f08d", "#facc15", "#fb923c", "#ef4444", "#a78bfa"] as const;
@@ -435,6 +436,14 @@ interface AlertSummary {
   server: number;
   total: number;
   warning: number;
+}
+
+interface TechnicalAlertSummary {
+  conflicts: number;
+  lifecycle: number;
+  lowConfidence: number;
+  sourceDegraded: number;
+  total: number;
 }
 
 type PriorityAlertTone = "critical" | "neutral" | "ok" | "warn";
@@ -2364,20 +2373,25 @@ export function App() {
         : [],
     [alertRadiusKm, baseFilteredObjects, predictionMinutes, predictionMode, proximityAlertEnabled, replayActive, replayTrackHistory, userLocation]
   );
-  const alertSummary = React.useMemo(() => summarizeAlerts(serverAlerts, proximityAlerts), [proximityAlerts, serverAlerts]);
+  const publicSafetyAlertFeatures = React.useMemo(
+    () => filterPublicSafetyAlertFeatures(combinedSituationFeatures?.features ?? []),
+    [combinedSituationFeatures]
+  );
+  const alertSummary = React.useMemo(() => summarizeSafetyAlerts(publicSafetyAlertFeatures), [publicSafetyAlertFeatures]);
+  const technicalAlertSummary = React.useMemo(() => summarizeTechnicalAlerts(serverAlerts), [serverAlerts]);
   const priorityAlertSummary = React.useMemo(
     () =>
       buildPriorityAlertSummary({
         alerts: serverAlerts,
-        features: combinedSituationFeatures?.features ?? [],
+        features: publicSafetyAlertFeatures,
         mapView,
         objects: visibleObjects,
         proximityAlerts,
         userLocation
       }),
-    [combinedSituationFeatures, mapView, proximityAlerts, serverAlerts, userLocation, visibleObjects]
+    [mapView, proximityAlerts, publicSafetyAlertFeatures, serverAlerts, userLocation, visibleObjects]
   );
-  const mapAlerts = React.useMemo(() => serverAlerts.filter((alert) => alert.status === "ACTIVE"), [serverAlerts]);
+  const mapAlerts = React.useMemo<CopAlert[]>(() => [], []);
   const aoiRules = React.useMemo(() => alertPreferences.aoiRules ?? [], [alertPreferences.aoiRules]);
   const primaryAoiRule = aoiRules[0] ?? null;
 
@@ -4545,15 +4559,14 @@ export function App() {
           {showAlertControls ? (
             <div className="workspace-module-card">
               <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
-              <ReadinessRow label="Systémové výstrahy" value={String(serverAlerts.length)} tone={serverAlerts.length > 0 ? "warn" : "ok"} />
+              <ReadinessRow label="SIM safety výstrahy" value={String(alertSummary.total)} tone={alertSummary.total > 0 ? "warn" : "ok"} />
               <ReadinessRow label="Kritické" value={String(alertSummary.critical)} tone={alertSummary.critical > 0 ? "warn" : "ok"} />
-              <ReadinessRow label="Vrstva na mapě" value={showAlertAreas || proximityAlertEnabled ? "aktivní" : "vypnuto"} tone={showAlertAreas || proximityAlertEnabled ? "ok" : "neutral"} />
-              <ReadinessRow label="Uživatelské zóny" value={String(aoiRules.filter((rule) => rule.enabled).length)} tone={aoiRules.some((rule) => rule.enabled) ? "ok" : "neutral"} />
-              <ReadinessRow label="Poloměr" value={`${alertRadiusKm} km`} tone="neutral" />
-              <ReadinessRow label="Moje poloha" value={String(proximityAlerts.length)} tone={proximityAlerts.length > 0 ? "warn" : "ok"} />
-              <button className="mini-button wide" onClick={() => void loadAlerts()} type="button">
+              <ReadinessRow label="Varování" value={String(alertSummary.warning)} tone={alertSummary.warning > 0 ? "warn" : "ok"} />
+              <ReadinessRow label="Zapnuté vrstvy" value={visibleSafetyLayerIds.length > 0 ? String(visibleSafetyLayerIds.length) : "vypnuto"} tone={visibleSafetyLayerIds.length > 0 ? "ok" : "neutral"} />
+              <ReadinessRow label="Stav zdroje" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
+              <button className="mini-button wide" onClick={() => void load()} type="button">
                 <RefreshCw size={14} />
-                Obnovit výstrahy
+                Obnovit safety data
               </button>
               <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
                 <Settings size={14} />
@@ -4848,6 +4861,11 @@ export function App() {
                 <ReadinessRow label="Situační vrstvy" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
                 <ReadinessRow label="Výstražné vrstvy" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
                 <ReadinessRow label="Datové zdroje" value={`${sources.length} zdrojů`} tone={sources.length > 0 ? "ok" : "neutral"} />
+                <ReadinessRow label="Technické události" value={String(technicalAlertSummary.total)} tone={technicalAlertSummary.total > 0 ? "warn" : "ok"} />
+                <ReadinessRow label="Konflikty evidence" value={String(technicalAlertSummary.conflicts)} tone={technicalAlertSummary.conflicts > 0 ? "warn" : "ok"} />
+                <ReadinessRow label="Lifecycle stop" value={String(technicalAlertSummary.lifecycle)} tone={technicalAlertSummary.lifecycle > 0 ? "warn" : "ok"} />
+                <ReadinessRow label="Nízká jistota" value={String(technicalAlertSummary.lowConfidence)} tone={technicalAlertSummary.lowConfidence > 0 ? "warn" : "ok"} />
+                <ReadinessRow label="Degradace zdrojů" value={String(technicalAlertSummary.sourceDegraded)} tone={technicalAlertSummary.sourceDegraded > 0 ? "warn" : "ok"} />
               </div>
               <div className="source-operations-board">
                 <div className="deck-header">
@@ -4862,14 +4880,12 @@ export function App() {
             </section>
           ) : showAlertControls ? (
             <section className="operations-deck alert-operations-deck">
-              <AlertCenterBoard
-                alerts={serverAlerts}
-                canAcknowledge={profileAccessReady}
-                onAcknowledge={(alertId) => void acknowledgeServerAlert(alertId)}
-                onSelectObject={(objectId) => {
-                  const isSelected = selectedObjectId === objectId;
-                  setSelectedObjectId(isSelected ? null : objectId);
-                  setSelectedSituationFeatureId(null);
+              <SafetyAlertBoard
+                features={publicSafetyAlertFeatures}
+                onSelectFeature={(featureId) => {
+                  const isSelected = selectedSituationFeatureId === featureId;
+                  setSelectedSituationFeatureId(isSelected ? null : featureId);
+                  setSelectedObjectId(null);
                   setMobileSheet(mobileDetailSheetForSelection(isSelected));
                 }}
               />
@@ -5883,55 +5899,56 @@ function loginPromptContent(reason: LoginPromptReason): { benefits: string[]; de
   }
 }
 
-function AlertCenterBoard({
-  alerts,
-  canAcknowledge,
-  onAcknowledge,
-  onSelectObject
+function SafetyAlertBoard({
+  features,
+  onSelectFeature
 }: {
-  alerts: CopAlert[];
-  canAcknowledge: boolean;
-  onAcknowledge: (alertId: string) => void;
-  onSelectObject: (objectId: string) => void;
+  features: SituationFeature[];
+  onSelectFeature: (featureId: string) => void;
 }) {
-  const summary = summarizeAlerts(alerts, []);
+  const summary = summarizeSafetyAlerts(features);
   return (
     <div className="alert-center-board">
       <div className="deck-header">
         <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
-        <span>{alerts.length} aktivních</span>
+        <span>{features.length} aktivních</span>
       </div>
       <div className="alert-summary-grid">
         <MetricTile label="Kritické" value={summary.critical} tone={summary.critical > 0 ? "warn" : "ok"} />
         <MetricTile label="Varování" value={summary.warning} tone={summary.warning > 0 ? "warn" : "ok"} />
       </div>
       <div className="alert-list">
-        {alerts.length === 0 ? <div className="empty-mini">Žádné aktivní výstrahy.</div> : null}
-        {alerts.map((alert) => (
-          <article className={`alert-row ${alert.severity}`} key={alert.alertId}>
-            <div className="alert-severity-mark" aria-hidden="true" />
-            <div className="alert-row-body">
-              <div className="alert-row-heading">
-                <strong>{alert.title}</strong>
-                <span>{alertSeverityLabel(alert.severity)}</span>
+        {features.length === 0 ? <div className="empty-mini">Žádné aktivní safety výstrahy ze SIM.</div> : null}
+        {features.map((feature) => {
+          const severityRank = priorityFeatureSeverityRank(feature);
+          const status = situationFeatureStatusModel(feature);
+          const rowTone = severityRank >= 3 ? "critical" : severityRank >= 2 ? "warning" : "info";
+          const observedAt = latestTimestamp([
+            feature.properties.observedAt,
+            feature.properties.effectiveAt,
+            feature.properties.validFrom,
+            feature.properties.updatedAt,
+            feature.properties.generatedAt
+          ]);
+          return (
+            <article className={`alert-row ${rowTone}`} key={feature.properties.featureId}>
+              <div className="alert-severity-mark" aria-hidden="true" />
+              <div className="alert-row-body">
+                <div className="alert-row-heading">
+                  <strong>{priorityFeatureTitle(feature)}</strong>
+                  <span>{status.label}</span>
+                </div>
+                <p>{feature.properties.description ?? feature.properties.recommendedAction ?? "Oficiální safety vrstva ze SIM."}</p>
+                <div className="alert-row-meta">
+                  <button type="button" onClick={() => onSelectFeature(feature.properties.featureId)}>{feature.properties.featureId}</button>
+                  <span>{priorityFeatureBadge(feature)}</span>
+                  <span>{sourceDisplayName(feature.properties.sourceId)}</span>
+                  <span>{formatShortDateTime(observedAt)}</span>
+                </div>
               </div>
-              <p>{alert.detail}</p>
-              <div className="alert-row-meta">
-                {alert.objectId ? <button type="button" onClick={() => onSelectObject(alert.objectId!)}>{alert.objectId}</button> : null}
-                {alert.sourceSystemId ? <span>{alert.sourceSystemId}</span> : null}
-                <span>{formatShortDateTime(alert.observedAt)}</span>
-                <span>{alertTypeLabel(alert.type)}</span>
-              </div>
-            </div>
-            {canAcknowledge ? (
-              <button className="mini-button" onClick={() => onAcknowledge(alert.alertId)} type="button">
-                Potvrdit
-              </button>
-            ) : (
-              <span className="auth-hint">Potvrzení vyžaduje účet.</span>
-            )}
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </div>
     </div>
   );
@@ -12879,14 +12896,29 @@ function buildMetrics(objects: CopObject[], sources: SourceSystem[]): DashboardM
   };
 }
 
-function summarizeAlerts(serverAlerts: CopAlert[], proximityAlerts: ProximityAlert[]): AlertSummary {
+function summarizeSafetyAlerts(features: SituationFeature[]): AlertSummary {
   return {
-    critical: serverAlerts.filter((alert) => alert.severity === "critical").length + proximityAlerts.filter((alert) => alert.type === "inside-radius").length,
-    local: proximityAlerts.length,
-    server: serverAlerts.length,
-    total: serverAlerts.length + proximityAlerts.length,
-    warning: serverAlerts.filter((alert) => alert.severity === "warning").length + proximityAlerts.filter((alert) => alert.type === "approaching").length
+    critical: features.filter((feature) => priorityFeatureSeverityRank(feature) >= 3).length,
+    local: 0,
+    server: features.length,
+    total: features.length,
+    warning: features.filter((feature) => priorityFeatureSeverityRank(feature) === 2).length
   };
+}
+
+function summarizeTechnicalAlerts(alerts: CopAlert[]): TechnicalAlertSummary {
+  const activeAlerts = alerts.filter((alert) => alert.status === "ACTIVE");
+  return {
+    conflicts: activeAlerts.filter((alert) => alert.type === "TRACK_CONFLICT" || alert.type === "AOI_ENTRY").length,
+    lifecycle: activeAlerts.filter((alert) => alert.type === "TRACK_LOST" || alert.type === "TRACK_STALE").length,
+    lowConfidence: activeAlerts.filter((alert) => alert.type === "LOW_CONFIDENCE").length,
+    sourceDegraded: activeAlerts.filter((alert) => alert.type === "SOURCE_DEGRADED").length,
+    total: activeAlerts.length
+  };
+}
+
+function filterPublicSafetyAlertFeatures(features: SituationFeature[]): SituationFeature[] {
+  return features.filter(isPublicSafetyAlertFeature);
 }
 
 interface PriorityAlertInput {
@@ -12899,21 +12931,15 @@ interface PriorityAlertInput {
 }
 
 export function buildPriorityAlertSummary({
-  alerts,
   features,
   mapView,
-  objects,
-  proximityAlerts,
   userLocation
 }: PriorityAlertInput): PriorityAlertSummary {
   const reference = priorityAlertReference(userLocation, mapView);
   const now = Date.now();
-  const candidates = [
-    ...alerts.flatMap((alert) => priorityCandidateFromServerAlert(alert, reference, now)),
-    ...proximityAlerts.flatMap((alert) => priorityCandidateFromProximityAlert(alert, now)),
-    ...features.flatMap((feature) => priorityCandidateFromSituationFeature(feature, reference, now)),
-    ...objects.flatMap((object) => priorityCandidateFromObject(object, reference, now))
-  ].sort(priorityAlertCandidateComparator);
+  const candidates = filterPublicSafetyAlertFeatures(features)
+    .flatMap((feature) => priorityCandidateFromSituationFeature(feature, reference, now))
+    .sort(priorityAlertCandidateComparator);
 
   return {
     additionalCount: Math.max(0, candidates.length - 1),
@@ -12937,56 +12963,6 @@ function priorityAlertReference(
     }
   }
   return { ...defaultAoiCenter, source: "default" };
-}
-
-function priorityCandidateFromServerAlert(
-  alert: CopAlert,
-  reference: { lat: number; lon: number },
-  now: number
-): PriorityAlertCandidate[] {
-  if (alert.status !== "ACTIVE") {
-    return [];
-  }
-  const severityRank = copAlertSeverityRank(alert.severity);
-  if (severityRank <= 0) {
-    return [];
-  }
-  const distanceKm = alert.map ? distanceBetweenKm(reference, alert.map) : undefined;
-  const candidate = createPriorityAlertCandidate({
-    badge: alert.severity === "critical" ? "Kritická výstraha" : "Výstraha",
-    confidence: 0.9,
-    detail: [
-      formatOperationStatusLabel(alert.severity),
-      alert.detail,
-      formatPriorityAlertDistance(distanceKm)
-    ].filter(Boolean).join(" · "),
-    distanceKm,
-    id: `alert:${alert.alertId}`,
-    observedAt: alert.observedAt ?? alert.updatedAt,
-    severityRank,
-    sourceKind: "alert",
-    title: alert.title,
-    tone: priorityToneFromSeverityRank(severityRank),
-    validUntil: undefined
-  }, now);
-  return candidate ? [candidate] : [];
-}
-
-function priorityCandidateFromProximityAlert(alert: ProximityAlert, now: number): PriorityAlertCandidate[] {
-  const severityRank = alert.type === "inside-radius" ? 3 : 2;
-  const candidate = createPriorityAlertCandidate({
-    badge: "Proximity",
-    confidence: alert.object.confidence ?? 0.85,
-    detail: formatProximityAlert(alert),
-    distanceKm: alert.predictedDistanceKm ?? alert.currentDistanceKm,
-    id: `proximity:${alert.type}:${alert.object.objectId}`,
-    observedAt: alert.object.lastUpdatedAt,
-    severityRank,
-    sourceKind: "proximity",
-    title: `${formatObjectListLabel(alert.object)} v okolí`,
-    tone: priorityToneFromSeverityRank(severityRank)
-  }, now);
-  return candidate ? [candidate] : [];
 }
 
 function priorityCandidateFromSituationFeature(
@@ -13029,37 +13005,6 @@ function priorityCandidateFromSituationFeature(
     title: priorityFeatureTitle(feature),
     tone: priorityToneFromSeverityRank(severityRank),
     validUntil
-  }, now);
-  return candidate ? [candidate] : [];
-}
-
-function priorityCandidateFromObject(
-  object: CopObject,
-  reference: { lat: number; lon: number },
-  now: number
-): PriorityAlertCandidate[] {
-  const statusTone = objectStatusTone(object.status);
-  const lowConfidence = (object.confidence ?? 1) < 0.5;
-  const severityRank = Math.max(priorityToneRank(statusTone), lowConfidence ? 1 : 0);
-  if (severityRank <= 0) {
-    return [];
-  }
-  const distanceKm = object.position ? distanceBetweenKm(reference, object.position) : undefined;
-  const candidate = createPriorityAlertCandidate({
-    badge: "Objekt",
-    confidence: object.confidence ?? 0.75,
-    detail: [
-      objectStatusLabel(object.status),
-      formatPriorityAlertDistance(distanceKm),
-      object.objectType
-    ].filter((value) => value && value !== "neznámá vzdálenost").join(" · "),
-    distanceKm,
-    id: `object:${object.objectId}`,
-    observedAt: object.lastUpdatedAt,
-    severityRank,
-    sourceKind: "object",
-    title: formatObjectListLabel(object),
-    tone: priorityToneFromSeverityRank(severityRank)
   }, now);
   return candidate ? [candidate] : [];
 }
@@ -13115,23 +13060,7 @@ function isPriorityAlertExpired(validUntil: string | undefined, now: number): bo
 
 function isPrioritySituationFeature(feature: SituationFeature): boolean {
   const layer = feature.properties.layer;
-  if (
-    layer === "boundary_admin"
-    || layer === "boundary_country"
-    || layer === "boundary_district"
-    || layer === "boundary_municipality"
-    || layer === "boundary_orp"
-    || layer === "boundary_region"
-    || layer === "flight_airports"
-    || layer === "flight_airspaces"
-    || layer === "mobile"
-    || layer === "mobile_coverage"
-    || layer === "mobile_network"
-    || layer === "place_settlements"
-    || isCommunicationTowerFeature(feature)
-    || isWeatherWebcamFeature(feature)
-    || isCurrentWeatherSummaryFeature(feature)
-  ) {
+  if (!isPublicSafetyAlertFeature(feature)) {
     return false;
   }
   if (layer === "warnings" || layer === "weather_alerts" || layer === "fire" || layer === "community") {
@@ -13146,6 +13075,19 @@ function isPrioritySituationFeature(feature: SituationFeature): boolean {
     return priorityFeatureSeverityRank(feature) >= 2;
   }
   return priorityFeatureSeverityRank(feature) >= 2;
+}
+
+function isPublicSafetyAlertFeature(feature: SituationFeature): boolean {
+  const layer = feature.properties.layer;
+  if (!isPublicSafetyAlertLayerId(layer)) {
+    return false;
+  }
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return stringProperty(tags.dataSource) === "safety-data";
+}
+
+function isPublicSafetyAlertLayerId(value: string | undefined): boolean {
+  return typeof value === "string" && publicSafetyAlertLayerIds.has(value);
 }
 
 function priorityFeatureSeverityRank(feature: SituationFeature): number {
@@ -13281,16 +13223,6 @@ function collectSituationGeometryPoints(geometry: SituationFeature["geometry"]):
       ring.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : [])
     )
   );
-}
-
-function copAlertSeverityRank(severity: CopAlert["severity"]): number {
-  if (severity === "critical") {
-    return 3;
-  }
-  if (severity === "warning") {
-    return 2;
-  }
-  return 1;
 }
 
 function priorityToneRank(tone: PriorityAlertTone): number {
@@ -15892,28 +15824,6 @@ function formatProximityAlert(alert: ProximityAlert): string {
     return `${current}, predikce ${alert.predictedDistanceKm.toFixed(1)} km`;
   }
   return `${current} od mé polohy`;
-}
-
-function alertSeverityLabel(severity: CopAlert["severity"]): string {
-  if (severity === "critical") {
-    return "critical";
-  }
-  if (severity === "warning") {
-    return "warning";
-  }
-  return "info";
-}
-
-function alertTypeLabel(type: CopAlert["type"]): string {
-  const labels: Record<CopAlert["type"], string> = {
-    AOI_ENTRY: "zóna",
-    LOW_CONFIDENCE: "confidence",
-    SOURCE_DEGRADED: "source",
-    TRACK_CONFLICT: "conflict",
-    TRACK_LOST: "lost",
-    TRACK_STALE: "stale"
-  };
-  return labels[type];
 }
 
 function predictionModeLabel(mode: PredictionMode): string {
