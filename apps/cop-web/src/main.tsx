@@ -17202,6 +17202,7 @@ function isSafetySourceId(value: string): value is SafetyDataSourceId {
     || value === "hzs_incidents"
     || value === "mock"
     || value === "nasa_firms"
+    || value === "road_srti_lod"
     || value === "weather_alerts";
 }
 

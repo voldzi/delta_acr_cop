@@ -11495,6 +11495,7 @@
                 "hzs_incidents",
                 "mock",
                 "nasa_firms",
+                "road_srti_lod",
                 "weather_alerts"
               ]
             }
@@ -11540,6 +11541,7 @@
               "hzs_incidents",
               "mock",
               "nasa_firms",
+              "road_srti_lod",
               "weather_alerts"
             ]
           },

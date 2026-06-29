@@ -9,7 +9,7 @@ import {
 import type { SourceHealthOverride } from "./types.js";
 
 export type SafetyLayerId = "boundary_admin" | "fire" | "flood" | "warnings" | "weather_alerts";
-export type SafetyDataSourceId = "admin_boundaries" | "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "gdacs_alerts" | "hzs_incidents" | "mock" | "nasa_firms" | "weather_alerts";
+export type SafetyDataSourceId = "admin_boundaries" | "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "gdacs_alerts" | "hzs_incidents" | "mock" | "nasa_firms" | "road_srti_lod" | "weather_alerts";
 export type SafetySeverity = "advisory" | "critical" | "info" | "warning";
 type SafetyCacheStatus = "coalesced" | "hit" | "miss" | "stale";
 
@@ -1427,6 +1427,7 @@ function isSafetyDataSourceId(value: unknown): value is SafetyDataSourceId {
     || value === "gdacs_alerts"
     || value === "hzs_incidents"
     || value === "nasa_firms"
+    || value === "road_srti_lod"
     || value === "weather_alerts";
 }
 

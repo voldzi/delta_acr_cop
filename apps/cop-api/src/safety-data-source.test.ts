@@ -44,7 +44,7 @@ describe("SafetyDataSourceAdapter", () => {
       bbox: { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: ["warnings", "flood"],
       limit: 20,
-      sources: ["chmi_alerts", "chmi_hydro", "gdacs_alerts"]
+      sources: ["chmi_alerts", "chmi_hydro", "gdacs_alerts", "road_srti_lod"]
     }, new Date("2026-05-20T10:00:06Z"));
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/catalog");
@@ -54,7 +54,7 @@ describe("SafetyDataSourceAdapter", () => {
     );
     expect(String(fetchMock.mock.calls[3]?.[0])).toBe("https://sim.zeleznalady.cz/safety-data/api/v1/taxonomy");
     expect(String(fetchMock.mock.calls[4]?.[0])).toBe(
-      "https://sim.zeleznalady.cz/safety-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=warnings%2Cflood&limit=20&source=chmi_alerts%2Cchmi_hydro%2Cgdacs_alerts"
+      "https://sim.zeleznalady.cz/safety-data/api/v1/features?bbox=13.5%2C49.5%2C15.75%2C50.75&layers=warnings%2Cflood&limit=20&source=chmi_alerts%2Cchmi_hydro%2Cgdacs_alerts%2Croad_srti_lod"
     );
     expect(layers).toMatchObject([
       {
@@ -129,7 +129,7 @@ describe("SafetyDataSourceAdapter", () => {
       upstreamBbox: { east: 15.75, north: 50.75, south: 49.5, west: 13.5 }
     });
     expect(features.query.bbox).toEqual({ east: 15.35, north: 50.45, south: 49.65, west: 13.85 });
-    expect(features.query.sources).toEqual(["chmi_alerts", "chmi_hydro", "gdacs_alerts"]);
+    expect(features.query.sources).toEqual(["chmi_alerts", "chmi_hydro", "gdacs_alerts", "road_srti_lod"]);
   });
 
   it("proxies CHMI hydro station detail through the SIM safety-data contract", async () => {

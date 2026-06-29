@@ -130,6 +130,36 @@ describe("notification decision", () => {
     expect(decision.notification.source.layerId).toBe("public.safety.warnings");
   });
 
+  it("keeps SRTI road safety events in the public safety warnings channel", () => {
+    const decision = buildSafetyFeatureNotificationDecision(safetyFeature({
+      featureId: "warnings:road_srti_lod:event-1",
+      headline: "Dopravní nehoda",
+      layer: "warnings",
+      layerId: "public.safety.warnings",
+      sourceCode: "SRTI_ACCIDENT",
+      sourceId: "road_srti_lod",
+      sourceName: "NDIC/ŘSD traffic safety events",
+      sourceSystem: "NDIC_SRTI_LOD",
+      typeCode: "road.accident"
+    }), {
+      audience: { userIds: ["user-1"] },
+      now: requestNow
+    });
+
+    expect(decision.shouldSend).toBe(true);
+    expect(decision.notification.source).toMatchObject({
+      featureId: "warnings:road_srti_lod:event-1",
+      layerId: "public.safety.warnings",
+      providerId: "sim.safety-data",
+      sourceName: "NDIC/ŘSD traffic safety events"
+    });
+    expect(decision.notification.metadata).toMatchObject({
+      sourceCode: "SRTI_ACCIDENT",
+      sourceSystem: "NDIC_SRTI_LOD",
+      typeCode: "road.accident"
+    });
+  });
+
   it("maps CHMI hydro floodStage to notification severity without promoting trend alone", () => {
     const warningDecision = buildSafetyFeatureNotificationDecision(safetyFeature({
       featureId: "hydro-2spa",

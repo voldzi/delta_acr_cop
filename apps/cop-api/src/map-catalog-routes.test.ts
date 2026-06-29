@@ -424,7 +424,7 @@ describe("map catalog route", () => {
       technology: "4G"
     });
     expect(body.safety?.query.layers).toEqual(["warnings", "flood"]);
-    expect(body.safety?.query.sources).toEqual(["chmi_alerts", "gdacs_alerts", "hzs_incidents", "chmi_hydro"]);
+    expect(body.safety?.query.sources).toEqual(["chmi_alerts", "gdacs_alerts", "hzs_incidents", "road_srti_lod", "chmi_hydro"]);
     expect(body.tak).toBeUndefined();
     expect(body.warnings.join(" ")).toContain("partner.tak.mobile");
   });

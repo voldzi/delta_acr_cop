@@ -7836,6 +7836,7 @@ components:
               - hzs_incidents
               - mock
               - nasa_firms
+              - road_srti_lod
               - weather_alerts
     SafetyRootSource:
       type: object
@@ -7869,6 +7870,7 @@ components:
             - hzs_incidents
             - mock
             - nasa_firms
+            - road_srti_lod
             - weather_alerts
         label:
           type: string

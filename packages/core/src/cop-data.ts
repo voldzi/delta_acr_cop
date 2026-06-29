@@ -197,7 +197,7 @@ export type SituationLayerId =
   | "weather_wind_field";
 export type SafetyLayerId = "boundary_admin" | "fire" | "flood" | "warnings" | "weather_alerts";
 export type TakLayerId = "ground" | "mobile" | "traffic";
-export type SafetyDataSourceId = "admin_boundaries" | "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "gdacs_alerts" | "hzs_incidents" | "mock" | "nasa_firms" | "weather_alerts";
+export type SafetyDataSourceId = "admin_boundaries" | "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "gdacs_alerts" | "hzs_incidents" | "mock" | "nasa_firms" | "road_srti_lod" | "weather_alerts";
 
 export interface MapBounds {
   east: number;

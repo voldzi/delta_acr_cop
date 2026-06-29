@@ -1,4 +1,4 @@
-import type { SafetyLayerDescriptor, SafetySourceDescriptor } from "./safety-data-source.js";
+import type { SafetyDataSourceId, SafetyLayerDescriptor, SafetySourceDescriptor } from "./safety-data-source.js";
 import type { SituationLayerDescriptor, SituationSourceDescriptor } from "./situation-data-source.js";
 import type { TakGatewayLayerDescriptor, TakGatewaySourceDescriptor } from "./tak-gateway-source.js";
 import type { MissionArenaLayerDescriptor, MissionArenaSourceDescriptor } from "./mission-arena-source.js";
@@ -591,18 +591,18 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       kind: "vector_features",
       label: "Krizové výstrahy",
       layerId: "public.safety.warnings",
-      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "gdacs_alerts") ?? findSource(sources, "hzs_incidents")),
+      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "gdacs_alerts") ?? findSource(sources, "hzs_incidents") ?? findSource(sources, "road_srti_lod")),
       maxZoom: 18,
       minZoom: 5,
       provenance: {
-        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:gdacs_alerts", "sim.safety-data:hzs_incidents"]
+        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:gdacs_alerts", "sim.safety-data:hzs_incidents", "sim.safety-data:road_srti_lod"]
       },
       query: {
         maxFeatures: 250,
         mode: "bbox",
         providerId: "sim.safety-data",
         providerLayerIds: ["warnings"],
-        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents"],
+        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "road_srti_lod"],
         streamId: "features"
       },
       refreshSeconds: warningLayer?.expectedCadenceSeconds ?? 300,
@@ -1443,21 +1443,7 @@ function buildSafetySources(sources: SafetySourceDescriptor[]): MapCatalogSource
     audience: source.sourceId === "mock" ? "diagnostic" : "public",
     cacheTtlSeconds: source.updateCadenceSeconds,
     enabled: source.enabled !== false,
-    feedsCatalogLayerIds: source.sourceId === "admin_boundaries"
-      ? ["public.boundary.admin"]
-      : source.sourceId === "chmi_alerts"
-        ? ["public.safety.fire", "public.safety.weather_alerts", "public.safety.warnings"]
-      : source.sourceId === "chmi_hydro"
-        ? ["public.safety.flood"]
-        : source.sourceId === "gdacs_alerts"
-          ? ["public.safety.warnings", "public.safety.fire", "public.safety.flood"]
-          : source.sourceId === "hzs_incidents"
-            ? ["public.safety.warnings", "public.safety.fire"]
-        : source.sourceId === "nasa_firms" || source.sourceId === "fire_hotspots" || source.sourceId === "fire_incidents"
-          ? ["public.safety.fire"]
-          : source.sourceId === "weather_alerts"
-            ? ["public.safety.weather_alerts"]
-            : undefined,
+    feedsCatalogLayerIds: safetyFeedsCatalogLayerIds(source.sourceId),
     label: source.label ?? source.sourceId,
     providerId: "sim.safety-data",
     selectableInMap: source.enabled !== false && source.sourceId !== "mock",
@@ -1466,6 +1452,34 @@ function buildSafetySources(sources: SafetySourceDescriptor[]): MapCatalogSource
     updateCadenceSeconds: source.updateCadenceSeconds,
     visibleInDiagnostics: true
   }));
+}
+
+function safetyFeedsCatalogLayerIds(sourceId: SafetyDataSourceId): string[] | undefined {
+  if (sourceId === "admin_boundaries") {
+    return ["public.boundary.admin"];
+  }
+  if (sourceId === "chmi_alerts") {
+    return ["public.safety.fire", "public.safety.weather_alerts", "public.safety.warnings"];
+  }
+  if (sourceId === "chmi_hydro") {
+    return ["public.safety.flood"];
+  }
+  if (sourceId === "gdacs_alerts") {
+    return ["public.safety.warnings", "public.safety.fire", "public.safety.flood"];
+  }
+  if (sourceId === "hzs_incidents") {
+    return ["public.safety.warnings", "public.safety.fire"];
+  }
+  if (sourceId === "road_srti_lod") {
+    return ["public.safety.warnings"];
+  }
+  if (sourceId === "nasa_firms" || sourceId === "fire_hotspots" || sourceId === "fire_incidents") {
+    return ["public.safety.fire"];
+  }
+  if (sourceId === "weather_alerts") {
+    return ["public.safety.weather_alerts"];
+  }
+  return undefined;
 }
 
 function buildSituationSources(sources: SituationSourceDescriptor[]): MapCatalogSource[] {
