@@ -15218,7 +15218,7 @@ function weatherContextDetailRows(feature: SituationFeature): Array<[string, Rea
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   const display = weatherDisplayRecord(feature);
   if (display && isMeasuredWeatherStationFeature(feature)) {
-    const rows = compactDetailRows([
+    const summaryRows = compactDetailRows([
       ["Stanice", weatherDisplayString(feature, "title") ?? feature.properties.label ?? feature.properties.headline],
       ["Závěr SIM", weatherFeatureConditionLabel(feature, metrics)],
       ["Hodnota", weatherDisplayString(feature, "primaryValue")],
@@ -15229,6 +15229,8 @@ function weatherContextDetailRows(feature: SituationFeature): Array<[string, Rea
       ["Stáří dat", formatAge(feature.properties.observedAt)],
       ["Zdroj", feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)]
     ]);
+    const measuredRows = weatherMeasuredStationDetailRows(feature, metrics, false);
+    const rows = [...summaryRows, ...measuredRows];
     return rows.length > 0 ? rows : [["Stav", "měření"]];
   }
   if (!isMeasuredWeatherStationFeature(feature)) {
@@ -15238,6 +15240,14 @@ function weatherContextDetailRows(feature: SituationFeature): Array<[string, Rea
       ["Jistota", formatOptionalPercent(feature.properties.confidence)]
     ];
   }
+  return weatherMeasuredStationDetailRows(feature, metrics, true);
+}
+
+function weatherMeasuredStationDetailRows(
+  feature: SituationFeature,
+  metrics: Record<string, unknown>,
+  includeIdentity: boolean
+): Array<[string, React.ReactNode]> {
   const temperatureC = weatherMeasuredMetric(metrics, "temperatureC");
   const temperatureMinC = weatherMeasuredMetric(metrics, "temperatureMinC", "minTemperatureC", "temperatureMinimumC", "temperatureMin24hC");
   const temperatureMaxC = weatherMeasuredMetric(metrics, "temperatureMaxC", "maxTemperatureC", "temperatureMaximumC", "temperatureMax24hC");
@@ -15251,9 +15261,9 @@ function weatherContextDetailRows(feature: SituationFeature): Array<[string, Rea
   const elevationM = weatherMeasuredMetric(metrics, "elevationM");
   const ageSeconds = weatherMeasuredMetric(metrics, "ageSeconds");
   return compactDetailRows([
-    ["Stanice", feature.properties.label ?? feature.properties.headline],
-    ["Čas měření", formatShortDateTime(feature.properties.observedAt)],
-    ["Stáří dat", ageSeconds !== undefined ? formatDurationSeconds(ageSeconds) : formatAge(feature.properties.observedAt)],
+    ["Stanice", includeIdentity ? feature.properties.label ?? feature.properties.headline : undefined],
+    ["Čas měření", includeIdentity ? formatShortDateTime(feature.properties.observedAt) : undefined],
+    ["Stáří dat", includeIdentity ? ageSeconds !== undefined ? formatDurationSeconds(ageSeconds) : formatAge(feature.properties.observedAt) : undefined],
     ["Teplota", temperatureC !== undefined ? formatOptionalNumber(temperatureC, " °C") : undefined],
     ["Teplota min/max", formatWeatherTemperatureRange(temperatureMinC, temperatureMaxC)],
     ["Vítr", formatMeasuredWeatherWind(windDirectionDeg, windSpeedMps, windGustMps)],
@@ -15264,7 +15274,7 @@ function weatherContextDetailRows(feature: SituationFeature): Array<[string, Rea
     ["Nadmořská výška", elevationM !== undefined ? formatOptionalNumber(elevationM, " m") : undefined],
     ["Kvalita dat", weatherDataQualityLabel(stringProperty(feature.properties.dataQuality))],
     ["Jistota", formatOptionalPercent(feature.properties.confidence)],
-    ["Zdroj", feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)]
+    ["Zdroj", includeIdentity ? feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId) : undefined]
   ]);
 }
 
