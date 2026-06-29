@@ -661,6 +661,82 @@ describe("Matrix client diagnostics", () => {
     }));
   });
 
+  it("completes Matrix UIA with dummy auth when the homeserver offers it", async () => {
+    const authAttempts: Array<Record<string, unknown> | null> = [];
+    const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
+      await options.createSecretStorageKey?.();
+    });
+    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(async (authUploadDeviceSigningKeys) => {
+      await authUploadDeviceSigningKeys(async (authData) => {
+        authAttempts.push(authData);
+        if (!authData) {
+          throw Object.assign(new Error("UIA required"), {
+            data: {
+              flows: [{ stages: ["m.login.dummy"] }],
+              session: "UIA_SESSION"
+            }
+          });
+        }
+        return undefined;
+      });
+    });
+    const crypto: MockMatrixCrypto = {
+      bootstrapCrossSigning: vi.fn(),
+      bootstrapSecretStorage,
+      checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+      createRecoveryKeyFromPassphrase: vi.fn().mockResolvedValue({
+        encodedPrivateKey: "EsTK dummy uia recovery key",
+        privateKey: new Uint8Array([4, 5, 6])
+      }),
+      getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
+      getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "1" }),
+      isCrossSigningReady: vi.fn().mockResolvedValue(true),
+      isSecretStorageReady: vi.fn().mockResolvedValue(true),
+      resetEncryption
+    };
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await expect(session.prepareEncryptionRecoveryForMobile()).resolves.toBe("EsTK dummy uia recovery key");
+    expect(authAttempts).toEqual([
+      null,
+      { session: "UIA_SESSION", type: "m.login.dummy" }
+    ]);
+  });
+
+  it("surfaces Matrix UIA requirements instead of masking them as COP login failures", async () => {
+    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(async (authUploadDeviceSigningKeys) => {
+      await authUploadDeviceSigningKeys(async () => {
+        throw Object.assign(new Error("UIA required"), {
+          data: {
+            flows: [{ stages: ["m.login.password"] }],
+            session: "PASSWORD_UIA"
+          }
+        });
+      });
+    });
+    const crypto: MockMatrixCrypto = {
+      bootstrapCrossSigning: vi.fn(),
+      bootstrapSecretStorage: vi.fn(),
+      checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+      createRecoveryKeyFromPassphrase: vi.fn().mockResolvedValue({
+        encodedPrivateKey: "EsTK unused",
+        privateKey: new Uint8Array([4, 5, 6])
+      }),
+      getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
+      getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "1" }),
+      isCrossSigningReady: vi.fn().mockResolvedValue(false),
+      isSecretStorageReady: vi.fn().mockResolvedValue(false),
+      resetEncryption
+    };
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await expect(session.prepareEncryptionRecoveryForMobile()).rejects.toThrow(/Matrix interactive auth.*m\.login\.password/u);
+  });
+
   it("resets Matrix encryption metadata before rotating the recovery key", async () => {
     const bootstrapCrossSigning = vi.fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>().mockResolvedValue(undefined);
     const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {

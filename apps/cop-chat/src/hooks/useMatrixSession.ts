@@ -121,7 +121,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
   matrixSessionRef: React.MutableRefObject<MatrixMessagingSession | null>;
   refreshEncryptionRecoveryStatus: (session?: MatrixMessagingSession | null) => Promise<MatrixEncryptionRecoveryStatus | null>;
   resetMatrixSession: () => void;
-  startMatrixSession: (preferredSelection?: string | null, allowStoreRecovery?: boolean) => Promise<MatrixMessagingSession | null>;
+  startMatrixSession: (preferredSelection?: string | null, allowStoreRecovery?: boolean, authTokenOverride?: string | null) => Promise<MatrixMessagingSession | null>;
   syncState: string;
 } {
   const [state, dispatch] = React.useReducer(matrixSessionReducer, initialMatrixSessionState);
@@ -143,10 +143,12 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
 
   const startMatrixSession = React.useCallback(async (
     preferredSelection?: string | null,
-    allowStoreRecovery = true
+    allowStoreRecovery = true,
+    authTokenOverride?: string | null
   ): Promise<MatrixMessagingSession | null> => {
     const currentOptions = optionsRef.current;
-    if (!currentOptions.authToken) {
+    const effectiveAuthToken = authTokenOverride ?? currentOptions.authToken;
+    if (!effectiveAuthToken) {
       return null;
     }
     dispatch({ type: "start" });
@@ -154,7 +156,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
     try {
       const bootstrap = await fetchMessagingBootstrap(
         currentOptions.apiBase,
-        currentOptions.authToken,
+        effectiveAuthToken,
         getOrCreateMatrixDeviceId(currentOptions.authSubjectId ?? "anonymous")
       );
       if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
@@ -184,12 +186,13 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
       if (allowStoreRecovery && isMatrixAccountStoreMismatchError(caught)) {
         try {
           const latestOptions = optionsRef.current;
-          if (!latestOptions.authToken) {
+          const latestAuthToken = authTokenOverride ?? latestOptions.authToken;
+          if (!latestAuthToken) {
             return null;
           }
           const bootstrap = await fetchMessagingBootstrap(
             latestOptions.apiBase,
-            latestOptions.authToken,
+            latestAuthToken,
             getOrCreateMatrixDeviceId(latestOptions.authSubjectId ?? "anonymous")
           );
           await clearMatrixMessagingCryptoStateForBootstrap(bootstrap);

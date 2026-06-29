@@ -922,7 +922,73 @@ async function resetMatrixEncryptionForRecovery(crypto: MatrixCryptoApiLike): Pr
 }
 
 function createDefaultMatrixInteractiveAuthCallback(): MatrixInteractiveAuthCallback {
-  return async (makeRequest) => makeRequest(null);
+  return async (makeRequest) => {
+    try {
+      return await makeRequest(null);
+    } catch (caught) {
+      const authData = readMatrixInteractiveAuthData(caught);
+      if (authData && matrixInteractiveAuthSupportsDummy(authData)) {
+        try {
+          return await makeRequest({
+            ...(typeof authData.session === "string" ? { session: authData.session } : {}),
+            type: "m.login.dummy"
+          });
+        } catch (dummyCaught) {
+          throw new MatrixInteractiveAuthRequiredError(dummyCaught, authData);
+        }
+      }
+      throw new MatrixInteractiveAuthRequiredError(caught, authData);
+    }
+  };
+}
+
+class MatrixInteractiveAuthRequiredError extends Error {
+  constructor(caught: unknown, authData: MatrixInteractiveAuthData | null) {
+    const flows = summarizeMatrixInteractiveAuthFlows(authData);
+    super(`Matrix interactive auth je vyžadovaný pro E2EE reset${flows ? ` (${flows})` : ""}: ${errorMessage(caught)}`);
+    this.name = "MatrixInteractiveAuthRequiredError";
+  }
+}
+
+interface MatrixInteractiveAuthData {
+  flows: Array<{ stages: string[] }>;
+  session?: string;
+}
+
+function readMatrixInteractiveAuthData(caught: unknown): MatrixInteractiveAuthData | null {
+  const data = asRecord(asRecord(caught)?.data) ?? asRecord(caught);
+  const flows = Array.isArray(data?.flows)
+    ? data.flows
+      .map((flow) => {
+        const stages = asRecord(flow)?.stages;
+        return Array.isArray(stages)
+          ? { stages: stages.filter((stage): stage is string => typeof stage === "string") }
+          : null;
+      })
+      .filter((flow): flow is { stages: string[] } => Boolean(flow && flow.stages.length > 0))
+    : [];
+  if (flows.length === 0) {
+    return null;
+  }
+  const session = stringValue(data?.session);
+  return {
+    flows,
+    ...(session ? { session } : {})
+  };
+}
+
+function matrixInteractiveAuthSupportsDummy(authData: MatrixInteractiveAuthData): boolean {
+  return authData.flows.some((flow) => flow.stages.includes("m.login.dummy"));
+}
+
+function summarizeMatrixInteractiveAuthFlows(authData: MatrixInteractiveAuthData | null): string {
+  if (!authData) {
+    return "";
+  }
+  return authData.flows
+    .map((flow) => flow.stages.join(" + "))
+    .filter(Boolean)
+    .join("; ");
 }
 
 async function restoreUserControlledEncryptionRecovery(

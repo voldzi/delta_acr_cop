@@ -9,7 +9,8 @@ import {
   filterTimelineByRetention,
   isChatMuted,
   messageMatchesQuery,
-  normalizeChatPreferences
+  normalizeChatPreferences,
+  userFacingError
 } from "./ChatApp";
 import type { ChatListItem, ChatPreferences } from "./ChatApp";
 import type { MatrixRoomSummary, MatrixTimelineMessage } from "@cop/messaging/types";
@@ -119,6 +120,16 @@ describe("messageMatchesQuery", () => {
     expect(messageMatchesQuery(subject, "povodň")).toBe(true);
     expect(messageMatchesQuery(subject, "  ")).toBe(false);
     expect(messageMatchesQuery(subject, "nepřítomné")).toBe(false);
+  });
+});
+
+describe("userFacingError", () => {
+  it("does not mask Matrix UIA failures as a missing COP login", () => {
+    expect(userFacingError("Obnovovací klíč se nepodařilo připravit pro iPhone/iPad: Matrix interactive auth je vyžadovaný pro E2EE reset (m.login.password): MatrixError: [401] Unauthorized")).toContain("Matrix vyžaduje dodatečné ověření");
+  });
+
+  it("keeps real COP auth failures as login failures", () => {
+    expect(userFacingError("HTTP 401 unauthorized")).toBe("Pro tuto akci je potřeba platné přihlášení.");
   });
 });
 

@@ -50,6 +50,7 @@ import {
   endSession,
   getAuthorizationToken,
   initializeAuth,
+  authSessionStorageKey,
   isAuthSessionActive,
   isOidcEnabled,
   plannedAuthRefreshDelayMs,
@@ -381,6 +382,48 @@ export function ChatApp() {
     () => ownChatIdentityIds(authSession, matrixSession?.bootstrap.userId),
     [authSession, matrixSession?.bootstrap.userId]
   );
+
+  React.useEffect(() => {
+    if (!isOidcEnabled(authConfig)) {
+      return undefined;
+    }
+    let cancelled = false;
+    const syncAuthFromSharedStorage = () => {
+      initializeAuth(authConfig)
+        .then((nextSession) => {
+          if (cancelled) {
+            return;
+          }
+          setAuthRefreshRetry(0);
+          setAuthSession(nextSession);
+          matrixAttemptKeyRef.current = null;
+          resetMatrixSession();
+          setRefreshNonce((value) => value + 1);
+        })
+        .catch((caught: unknown) => {
+          if (cancelled) {
+            return;
+          }
+          setAuthSession({
+            error: caught instanceof Error ? caught.message : "Přihlášení se nepodařilo ověřit.",
+            status: "error"
+          });
+          resetMatrixSession();
+        });
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== authSessionStorageKey || (event.storageArea && event.storageArea !== window.localStorage)) {
+        return;
+      }
+      syncAuthFromSharedStorage();
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [authConfig, resetMatrixSession]);
+
   const chatReady = Boolean(authToken && status?.chatAvailable);
   const encryptionRecoveryReady = Boolean(!matrixSession || encryptionRecoveryStatus?.ready);
   const selectedConversation = selectedConversationId
@@ -1450,17 +1493,48 @@ export function ChatApp() {
     }
   }
 
+  async function refreshAuthTokenForSensitiveMatrixAction(): Promise<string | null | undefined> {
+    if (!isOidcEnabled(authConfig) || authSession.status !== "authenticated" || !authSession.refreshToken) {
+      return authToken;
+    }
+    try {
+      const nextSession = await refreshAuthSession(authConfig, authSession);
+      if (!nextSession) {
+        return authToken;
+      }
+      setAuthRefreshRetry(0);
+      setAuthSession(nextSession);
+      return getAuthorizationToken(nextSession, labToken);
+    } catch {
+      return authToken;
+    }
+  }
+
+  async function startFreshMatrixSessionForRecovery(): Promise<MatrixMessagingSession> {
+    const preferredSelection = selectedConversationId ?? selectedGroupId ?? selectedRoomId;
+    const latestAuthToken = await refreshAuthTokenForSensitiveMatrixAction();
+    if (!latestAuthToken) {
+      throw new Error("Pro tuto akci je potřeba platné přihlášení do COP.");
+    }
+    matrixAttemptKeyRef.current = null;
+    resetMatrixSession();
+    const session = await startMatrixSession(preferredSelection, true, latestAuthToken);
+    if (!session) {
+      throw new Error("Chatové spojení se nepodařilo znovu připravit. Zkuste stránku obnovit a akci opakovat.");
+    }
+    return session;
+  }
+
   async function createEncryptionRecovery(reset = false): Promise<void> {
     if (reset && !window.confirm("Nouzově začít znovu s E2EE? Tuto volbu použijte jen při ztraceném nebo kompromitovaném klíči. Starší šifrovaná historie nemusí být dostupná.")) {
-      return;
-    }
-    const session = matrixSessionRef.current ?? await startMatrixSession(selectedConversationId ?? selectedGroupId ?? selectedRoomId);
-    if (!session) {
       return;
     }
     setRecoveryWorking(true);
     setError(null);
     try {
+      const session = reset
+        ? await startFreshMatrixSessionForRecovery()
+        : matrixSessionRef.current ?? await startFreshMatrixSessionForRecovery();
       const recoveryKey = await session.createEncryptionRecovery(reset);
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");
@@ -1479,13 +1553,10 @@ export function ChatApp() {
     if (!window.confirm("Připravit iPhone/iPad čistým E2EE resetem? Starší šifrovaná historie nemusí být dostupná, ale web a iOS dostanou nový kompatibilní obnovovací klíč.")) {
       return;
     }
-    const session = matrixSessionRef.current ?? await startMatrixSession(selectedConversationId ?? selectedGroupId ?? selectedRoomId);
-    if (!session) {
-      return;
-    }
     setRecoveryWorking(true);
     setError(null);
     try {
+      const session = await startFreshMatrixSessionForRecovery();
       const recoveryKey = await session.prepareEncryptionRecoveryForMobile();
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");
@@ -4889,8 +4960,14 @@ function isMatrixSyncOffline(syncState: string): boolean {
     || normalized.includes("fail");
 }
 
-function userFacingError(message: string): string {
+export function userFacingError(message: string): string {
   const normalized = message.trim();
+  if (isMatrixInteractiveAuthError(normalized)) {
+    return "Matrix vyžaduje dodatečné ověření pro reset E2EE. Zkuste nejprve znovu otevřít chat; pokud se chyba opakuje, použijte nouzové vytvoření čisté obnovy bez staré historie.";
+  }
+  if (isMatrixSessionExpiredError(normalized)) {
+    return "Platnost Matrix relace vypršela. Obnovte stránku nebo znovu otevřete chat a akci opakujte.";
+  }
   if (/\b(401|403)\b/u.test(normalized) || /unauthori[sz]ed|forbidden|přihlášen/i.test(normalized)) {
     return "Pro tuto akci je potřeba platné přihlášení.";
   }
@@ -4901,6 +4978,16 @@ function userFacingError(message: string): string {
     return "Služba zpráv není z tohoto zařízení dostupná.";
   }
   return normalized || "Akci se nepodařilo dokončit.";
+}
+
+function isMatrixInteractiveAuthError(message: string): boolean {
+  return /device_signing\/upload|cross[- ]signing|secret storage|SecretStorage|interactive auth|UIA|m\.login|M_FORBIDDEN|getSecretStorageKey callback returned falsey/i.test(message)
+    && /\b(401|403)\b|M_FORBIDDEN|M_UNAUTHORIZED|unauthori[sz]ed|forbidden|getSecretStorageKey callback returned falsey/i.test(message);
+}
+
+function isMatrixSessionExpiredError(message: string): boolean {
+  return /MatrixError|_matrix|M_UNKNOWN_TOKEN|unknown token|access token/i.test(message)
+    && /\b401\b|M_UNKNOWN_TOKEN|unknown token|expired/i.test(message);
 }
 
 function readLocalUserPreferences(ownerId: string): LocalUserPreferences {
