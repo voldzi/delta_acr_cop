@@ -30,7 +30,7 @@ Mimo v1:
 
 ## Nové mobilní API
 
-Backend doplňuje tři nativní endpointy pod `/api/v1/mobile`. Všechny používají stejný bearer token jako web.
+Backend doplňuje nativní endpointy pod `/api/v1/mobile`. Všechny používají stejný bearer token jako web, pokud není uvedeno jinak.
 
 ### `GET /api/v1/mobile/bootstrap`
 
@@ -80,6 +80,67 @@ Minimální payload:
 ```
 
 Pole `pushToken` je zachováno jen kvůli kompatibilitě staršího klienta a neslouží k produkčnímu push doručování. CSM Messenger iOS musí APNs token registrovat přímo v CSM Messaging přes `POST /api/v1/devices`.
+
+### Párování CSM Messenger iOS/iPadOS
+
+Webový COP vytváří krátkodobou pairing relaci v Nastavení -> Účet -> Mobilní
+zařízení:
+
+```http
+POST /api/v1/mobile/pairing/sessions
+```
+
+Odpověď obsahuje pouze `pairing.code`, `pairing.links.universalLink` a
+`pairing.links.customSchemeUrl`. QR kód ani deep link nesmí obsahovat access
+token, refresh token, recovery key, Matrix room keys ani plaintext zpráv.
+
+Nativní aplikace po otevření odkazu provede standardní OIDC přihlášení stejným
+uživatelem a relaci claimne:
+
+```http
+POST /api/v1/mobile/pairing/sessions/{code}/claim
+```
+
+Payload obsahuje pouze device metadata: `deviceId`, `platform`, `appVersion`,
+`buildNumber`, `deviceModel`, `osVersion`, `capabilities`. Web relaci polluje
+přes `GET /api/v1/mobile/pairing/sessions/{code}` a po zobrazení údajů zařízení
+uživatel potvrdí:
+
+```http
+POST /api/v1/mobile/pairing/sessions/{code}/confirm
+```
+
+Teprve potvrzené zařízení se objeví v:
+
+```http
+GET /api/v1/mobile/devices
+DELETE /api/v1/mobile/devices/{deviceId}
+```
+
+Universal links:
+
+- `GET /.well-known/apple-app-site-association`
+- `GET /mobile/pair/{code}`
+
+AASA používá app id `LM6W548X36.cz.zeleznalady.csm.messenger`. Fallback
+stránka `/mobile/pair/{code}` jen zobrazí kód a nabídne `csm://pair?code=...`,
+pokud universal link neotevřel aplikaci.
+
+### Mobile Mesh ACK Gateway
+
+Pro offline/mesh relay je připraven pouze serverový ACK boundary:
+
+```http
+POST /api/v1/mobile/mesh/ingest
+GET /api/v1/mobile/mesh/acks
+```
+
+COP přijímá pouze `csm-mesh-v1` encrypted/signed bundles. Obsah nedešifruje,
+neukládá plaintext a loguje jen metadata obálky: `envelopeId`, `deviceId`,
+`bundleType`, stav ACK, velikost a čas. Idempotence je podle `envelopeId`.
+Možné stavy jsou `accepted`, `duplicate`, `rejected`, `delivered`, `expired`.
+Velké soubory posílat jen jako `manifest`/deferred transfer, nikoli jako
+plaintext nebo velké binární payloady přes COP.
 
 ## Push notifikace a CSM Messenger
 

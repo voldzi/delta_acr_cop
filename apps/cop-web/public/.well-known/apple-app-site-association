@@ -1,0 +1,26 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": [
+          "LM6W548X36.cz.zeleznalady.csm.messenger"
+        ],
+        "components": [
+          {
+            "/": "/mobile/pair/*",
+            "comment": "CSM Messenger pairing links"
+          }
+        ],
+        "paths": [
+          "/mobile/pair/*"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "LM6W548X36.cz.zeleznalady.csm.messenger"
+    ]
+  }
+}

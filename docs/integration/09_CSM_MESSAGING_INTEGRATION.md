@@ -169,6 +169,25 @@ The response includes `pairing.code`, a universal link
 and explicit security flags showing that the payload contains no access token,
 recovery key or room keys.
 
+The COP web client exposes the operator workflow in **Nastavení -> Účet ->
+Mobilní zařízení**. The screen creates the session, renders a QR code for the
+universal link, offers the `csm://pair` fallback, polls the session status and
+shows the claimed device model, OS, app version, build, platform,
+capabilities and claim time before confirmation. The user must explicitly
+confirm the claimed device in the web UI before the device becomes paired.
+
+Production universal links are backed by:
+
+```http
+GET /.well-known/apple-app-site-association
+GET /mobile/pair/{code}
+```
+
+The AASA document contains app id
+`LM6W548X36.cz.zeleznalady.csm.messenger`. The `/mobile/pair/{code}` fallback
+page must not contain any token or key; it only displays the one-time code and
+offers `csm://pair?code={code}` if iOS did not open the native app directly.
+
 After the native app completes OIDC login as the same user, it claims the
 session with non-secret device metadata:
 
@@ -211,6 +230,28 @@ key or any room keys. If old legacy E2EE metadata is incompatible with the
 native Matrix Rust SDK and old history is not required, the supported clean
 path is to reset the Matrix recovery/key-backup cycle and pair the iOS app into
 the new cycle.
+
+## Mobile Mesh Gateway
+
+COP exposes a metadata-only relay acknowledgement boundary for future mobile
+mesh/offline handoff:
+
+```http
+POST /api/v1/mobile/mesh/ingest
+GET /api/v1/mobile/mesh/acks
+Authorization: Bearer <COP user access token>
+```
+
+`POST /api/v1/mobile/mesh/ingest` accepts only `csm-mesh-v1` envelopes that are
+encrypted and signed. COP records envelope id, device id, bundle type,
+timestamps and size for idempotent acknowledgement, but it must not decrypt the
+payload or log plaintext. Duplicate envelope ids return `duplicate`; malformed
+or plaintext-looking bundles return a `rejected` ack. Supported ack states are
+`accepted`, `duplicate`, `rejected`, `delivered` and `expired`.
+
+Allowed bundle types are `text`, `location`, `control`, `image` and
+`manifest`. Large files must use a manifest/deferred transfer design instead
+of embedding plaintext or large binary data in COP.
 
 ## Notification Intake
 

@@ -3911,6 +3911,131 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /.well-known/apple-app-site-association:
+    get:
+      tags:
+        - Mobile
+      operationId: getAppleAppSiteAssociation
+      summary: Apple App Site Association for CSM Messenger universal links
+      responses:
+        "200":
+          description: Apple App Site Association document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppleAppSiteAssociation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /mobile/pair/{code}:
+    get:
+      tags:
+        - Mobile
+      operationId: getMobilePairingFallbackPage
+      summary: Fallback page for CSM Messenger pairing universal link
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 16
+            maxLength: 96
+      responses:
+        "200":
+          description: HTML fallback page with csm:// pairing link
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Error response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/mobile/mesh/ingest:
+    post:
+      tags:
+        - Mobile
+      security:
+        - bearerAuth: []
+      operationId: ingestMobileMeshBundle
+      summary: Ingest an encrypted and signed CSM mesh relay bundle
+      description: COP accepts only csm-mesh-v1 encrypted/signed bundles, stores metadata for idempotent
+        acknowledgement, and never decrypts payload content.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileMeshBundleIngestRequest"
+      responses:
+        "200":
+          description: Duplicate bundle acknowledgement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileMeshAckResponse"
+        "202":
+          description: Bundle accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileMeshAckResponse"
+        "401":
+          description: Error response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Bundle rejected by contract validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileMeshAckResponse"
+        "503":
+          description: Error response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/mobile/mesh/acks:
+    get:
+      tags:
+        - Mobile
+      security:
+        - bearerAuth: []
+      operationId: listMobileMeshAcks
+      summary: List encrypted mesh bundle acknowledgements for the authenticated user
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 250
+            default: 50
+      responses:
+        "200":
+          description: Mesh acknowledgements
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileMeshAckListResponse"
+        "401":
+          description: Error response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   securitySchemes:
     bearerAuth:
@@ -11944,6 +12069,11 @@ components:
             - ipados
         pushTokenRegistered:
           type: boolean
+        capabilities:
+          type: array
+          items:
+            type: string
+          description: Client capabilities declared by the native app during pairing claim.
     MobilePairingSessionResponse:
       type: object
       required:
@@ -12089,6 +12219,171 @@ components:
             - cop-mobile-devices-v1
         device:
           $ref: "#/components/schemas/MobileDevice"
+        serverTimestamp:
+          type: string
+          format: date-time
+    AppleAppSiteAssociation:
+      type: object
+      required:
+        - applinks
+      properties:
+        applinks:
+          type: object
+          required:
+            - apps
+            - details
+          properties:
+            apps:
+              type: array
+              items:
+                type: string
+            details:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+                properties:
+                  appIDs:
+                    type: array
+                    items:
+                      type: string
+                  paths:
+                    type: array
+                    items:
+                      type: string
+        webcredentials:
+          type: object
+          properties:
+            apps:
+              type: array
+              items:
+                type: string
+    MobileMeshBundleIngestRequest:
+      type: object
+      required:
+        - contractVersion
+        - envelopeId
+      additionalProperties: true
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - csm-mesh-v1
+        envelopeId:
+          type: string
+          minLength: 8
+          maxLength: 160
+        deviceId:
+          type: string
+        type:
+          type: string
+          enum:
+            - text
+            - location
+            - control
+            - image
+            - manifest
+        encrypted:
+          type: boolean
+          description: Must be true unless ciphertext is present.
+        ciphertext:
+          type: string
+          description: Opaque encrypted payload. COP stores metadata only and never decrypts it.
+        signature:
+          type: string
+        signatures:
+          type: array
+          items:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+        payloadSizeBytes:
+          type: integer
+          minimum: 0
+          maximum: 2000000
+    MobileMeshAck:
+      type: object
+      required:
+        - envelopeId
+        - receivedAt
+        - status
+        - subjectId
+        - updatedAt
+      properties:
+        bundleType:
+          type: string
+        deviceId:
+          type: string
+        envelopeId:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        payloadSizeBytes:
+          type: integer
+        receivedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - accepted
+            - duplicate
+            - rejected
+            - delivered
+            - expired
+        subjectId:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    MobileMeshAckResponse:
+      type: object
+      required:
+        - ack
+        - contractVersion
+        - security
+        - serverTimestamp
+      properties:
+        ack:
+          $ref: "#/components/schemas/MobileMeshAck"
+        contractVersion:
+          type: string
+          enum:
+            - cop-mobile-mesh-acks-v1
+        security:
+          type: object
+          required:
+            - containsPlaintext
+            - serverDecrypted
+          properties:
+            containsPlaintext:
+              type: boolean
+              enum:
+                - false
+            serverDecrypted:
+              type: boolean
+              enum:
+                - false
+        serverTimestamp:
+          type: string
+          format: date-time
+    MobileMeshAckListResponse:
+      type: object
+      required:
+        - acks
+        - contractVersion
+        - serverTimestamp
+      properties:
+        acks:
+          type: array
+          items:
+            $ref: "#/components/schemas/MobileMeshAck"
+        contractVersion:
+          type: string
+          enum:
+            - cop-mobile-mesh-acks-v1
         serverTimestamp:
           type: string
           format: date-time

@@ -715,6 +715,7 @@ describe("COP state temporal history", () => {
     expect(claimed.json()).toMatchObject({
       pairing: {
         claimedDevice: {
+          capabilities: ["matrix", "offlineSnapshot"],
           deviceId: "ios-pairing-001",
           platform: "ios"
         },
@@ -768,6 +769,133 @@ describe("COP state temporal history", () => {
     });
     expect(JSON.stringify(confirmed.json())).not.toContain("accessToken");
     expect(JSON.stringify(confirmed.json())).not.toContain("recovery");
+    await app.close();
+  });
+
+  it("serves iOS universal-link metadata and a token-free pairing fallback page", async () => {
+    const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
+
+    const aasa = await app.inject({
+      method: "GET",
+      url: "/.well-known/apple-app-site-association"
+    });
+
+    expect(aasa.statusCode).toBe(200);
+    expect(aasa.headers["content-type"]).toContain("application/json");
+    expect(aasa.json()).toMatchObject({
+      applinks: {
+        details: [
+          {
+            appIDs: ["LM6W548X36.cz.zeleznalady.csm.messenger"],
+            paths: ["/mobile/pair/*"]
+          }
+        ]
+      }
+    });
+
+    const fallback = await app.inject({
+      method: "GET",
+      url: "/mobile/pair/pairing-code-12345"
+    });
+
+    expect(fallback.statusCode).toBe(200);
+    expect(fallback.headers["content-type"]).toContain("text/html");
+    expect(fallback.body).toContain("csm://pair?code=pairing-code-12345");
+    expect(fallback.body).not.toMatch(/access|refresh|recovery|room key/iu);
+    await app.close();
+  });
+
+  it("acks encrypted mobile mesh bundles idempotently and rejects plaintext-looking payloads", async () => {
+    const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
+
+    const accepted = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        ciphertext: "opaque-encrypted-payload",
+        contractVersion: "csm-mesh-v1",
+        deviceId: "ios-device-001",
+        envelopeId: "mesh-envelope-0001",
+        signature: "detached-signature",
+        type: "location"
+      },
+      url: "/api/v1/mobile/mesh/ingest"
+    });
+
+    expect(accepted.statusCode).toBe(202);
+    expect(accepted.json()).toMatchObject({
+      ack: {
+        deviceId: "ios-device-001",
+        envelopeId: "mesh-envelope-0001",
+        status: "accepted",
+        subjectId: "lab"
+      },
+      security: {
+        containsPlaintext: false,
+        serverDecrypted: false
+      }
+    });
+
+    const duplicate = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        ciphertext: "opaque-encrypted-payload",
+        contractVersion: "csm-mesh-v1",
+        deviceId: "ios-device-001",
+        envelopeId: "mesh-envelope-0001",
+        signature: "detached-signature",
+        type: "location"
+      },
+      url: "/api/v1/mobile/mesh/ingest"
+    });
+
+    expect(duplicate.statusCode).toBe(200);
+    expect(duplicate.json()).toMatchObject({
+      ack: {
+        envelopeId: "mesh-envelope-0001",
+        status: "duplicate"
+      }
+    });
+
+    const rejected = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        contractVersion: "csm-mesh-v1",
+        envelopeId: "mesh-envelope-0002",
+        plaintext: "nesmi projit"
+      },
+      url: "/api/v1/mobile/mesh/ingest"
+    });
+
+    expect(rejected.statusCode).toBe(422);
+    expect(rejected.json()).toMatchObject({
+      ack: {
+        envelopeId: "mesh-envelope-0002",
+        status: "rejected"
+      },
+      security: {
+        containsPlaintext: false,
+        serverDecrypted: false
+      }
+    });
+
+    const list = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/mobile/mesh/acks?limit=10"
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toMatchObject({
+      acks: [
+        {
+          envelopeId: "mesh-envelope-0001",
+          status: "duplicate"
+        }
+      ],
+      contractVersion: "cop-mobile-mesh-acks-v1"
+    });
     await app.close();
   });
 });

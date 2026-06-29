@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import clsx from "clsx";
+import * as QRCode from "qrcode";
 import {
   Activity,
   AlertTriangle,
@@ -15,8 +16,10 @@ import {
   CloudSun,
   ChevronDown,
   ClipboardList,
+  Copy,
   Crosshair,
   Database,
+  ExternalLink,
   FileText,
   Gauge,
   HelpCircle,
@@ -42,6 +45,7 @@ import {
   Plane,
   Play,
   Plus,
+  QrCode,
   RefreshCw,
   RadioTower,
   Save,
@@ -50,6 +54,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Smartphone,
   Trash2,
   UserCircle,
   X,
@@ -80,11 +85,13 @@ import {
 import {
   acknowledgeCopAlert,
   connectCopStream,
+  confirmMobilePairingSession,
   createIncident,
   createIncidentTask,
   createCommunityAttachmentUpload,
   createCommunityGroup,
   createCommunityReport,
+  createMobilePairingSession,
   createRadioProfile,
   createSketchDrawing,
   deleteCommunityGroup,
@@ -98,6 +105,8 @@ import {
   fetchMapCatalog,
   fetchMapFeatures,
   fetchMessagingBootstrap,
+  fetchMobileDevices,
+  fetchMobilePairingSession,
   fetchMobileTowerViewshed,
   fetchPlaceGeocode,
   fetchRadioProfiles,
@@ -119,6 +128,7 @@ import {
   seedDemoScenario,
   submitCommunityReport,
   resetDemoScenario,
+  revokeMobileDevice,
   runRadioCoverage,
   runRadioLinkCheck,
   runRadioSiteSearch,
@@ -165,6 +175,8 @@ import {
   type MapCatalogSource,
   type MapBounds,
   type MobileTowerViewshedResponse,
+  type MobileDeviceRecord,
+  type MobilePairingSessionResponse,
   type MissionArenaFeatureCollectionResponse,
   type ObjectProvenance,
   type PlaceGeocodeResult,
@@ -826,6 +838,7 @@ export function App() {
   const authenticatedSessionActive = isAuthSessionActive(authSession);
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken);
   const profileAccessReady = Boolean(authToken);
+  const mobilePairCodeFromPath = React.useMemo(readMobilePairCodeFromLocation, []);
   const messagingAuthenticated = authenticatedSessionActive;
   const authSubjectId = subjectIdFromAuthSession(authSession);
 
@@ -5254,10 +5267,12 @@ export function App() {
         <SettingsDrawer
           activeTab={settingsTab}
           alertRadiusKm={alertRadiusKm}
+          apiBase={apiBase}
           aoiRule={primaryAoiRule}
           authConfig={authConfig}
           authDiagnostics={authDiagnostics}
           authSession={authSession}
+          authToken={authToken}
           autoRefresh={autoRefresh}
           demoScenario={demoScenario}
           demoScenarioBusy={demoScenarioBusy}
@@ -5408,7 +5423,59 @@ export function App() {
           })}
         />
       ) : null}
+      {mobilePairCodeFromPath ? <MobilePairLandingOverlay code={mobilePairCodeFromPath} /> : null}
     </main>
+  );
+}
+
+function readMobilePairCodeFromLocation(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const match = window.location.pathname.match(/^\/mobile\/pair\/([A-Za-z0-9_-]{16,96})$/u);
+  return match?.[1] ?? null;
+}
+
+function MobilePairLandingOverlay({ code }: { code: string }) {
+  const [copied, setCopied] = React.useState(false);
+  const universalLink = `${window.location.origin}/mobile/pair/${encodeURIComponent(code)}`;
+  const customSchemeUrl = `csm://pair?code=${encodeURIComponent(code)}`;
+
+  const copyLink = async () => {
+    if (!navigator.clipboard) {
+      return;
+    }
+    await navigator.clipboard.writeText(universalLink);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  };
+
+  return (
+    <div className="mobile-pair-landing-backdrop" role="dialog" aria-modal="true" aria-label="Spárování CSM Messenger">
+      <div className="mobile-pair-landing-card">
+        <div className="mobile-pair-landing-icon">
+          <Smartphone size={42} />
+        </div>
+        <h2>Spárovat CSM Messenger</h2>
+        <p>
+          Odkaz obsahuje jen krátkodobý pairing kód. Přístupové tokeny, recovery klíče ani Matrix klíče se přes COP REST nepředávají.
+        </p>
+        <code>{code}</code>
+        <div className="settings-button-row">
+          <a className="primary-button" href={customSchemeUrl}>
+            <ExternalLink size={16} />
+            Otevřít v aplikaci
+          </a>
+          <button className="mini-button" onClick={() => void copyLink()} type="button">
+            <Copy size={14} />
+            {copied ? "Zkopírováno" : "Kopírovat link"}
+          </button>
+        </div>
+        <button className="mini-button wide" onClick={() => window.history.replaceState({}, "", "/")} type="button">
+          Pokračovat do COP
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -8345,10 +8412,12 @@ function StreamHealthPanel({ health, telemetry }: { health: CopStreamHealth | nu
 function SettingsDrawer({
   activeTab,
   alertRadiusKm,
+  apiBase,
   aoiRule,
   authConfig,
   authDiagnostics,
   authSession,
+  authToken,
   autoRefresh,
   demoScenario,
   demoScenarioBusy,
@@ -8416,10 +8485,12 @@ function SettingsDrawer({
 }: {
   activeTab: SettingsTab;
   alertRadiusKm: number;
+  apiBase: string;
   aoiRule: AoiRule | null;
   authConfig: AuthConfig;
   authDiagnostics: AuthDiagnostics;
   authSession: AuthSession;
+  authToken: string | undefined;
   autoRefresh: boolean;
   demoScenario: DemoScenarioResponse | null;
   demoScenarioBusy: "loading" | "resetting" | "seeding" | null;
@@ -8758,6 +8829,11 @@ function SettingsDrawer({
                 onDisable={onDisableWebPush}
                 onEnable={onEnableWebPush}
               />
+              <MobileDevicePairingPanel
+                apiBase={apiBase}
+                authenticated={authSession.status === "authenticated"}
+                authToken={authToken}
+              />
               <AuthDiagnosticsPanel diagnostics={authDiagnostics} session={authSession} />
             </section>
           ) : null}
@@ -8864,6 +8940,314 @@ function WebPushSettingsPanel({
       </div>
     </div>
   );
+}
+
+function MobileDevicePairingPanel({
+  apiBase,
+  authenticated,
+  authToken
+}: {
+  apiBase: string;
+  authenticated: boolean;
+  authToken: string | undefined;
+}) {
+  const [busy, setBusy] = React.useState<"confirming" | "loading" | "pairing" | "revoking" | null>(null);
+  const [copyState, setCopyState] = React.useState<"copied" | "idle">("idle");
+  const [devices, setDevices] = React.useState<MobileDeviceRecord[]>([]);
+  const [error, setError] = React.useState<string | null>(null);
+  const [qrDataUrl, setQrDataUrl] = React.useState<string | null>(null);
+  const [session, setSession] = React.useState<MobilePairingSessionResponse | null>(null);
+
+  const loadDevices = React.useCallback(async () => {
+    if (!authenticated || !authToken) {
+      setDevices([]);
+      return;
+    }
+    setBusy((current) => current ?? "loading");
+    setError(null);
+    try {
+      const response = await fetchMobileDevices(apiBase, authToken);
+      setDevices(response.devices);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Zařízení se nepodařilo načíst.");
+    } finally {
+      setBusy((current) => current === "loading" ? null : current);
+    }
+  }, [apiBase, authToken, authenticated]);
+
+  React.useEffect(() => {
+    void loadDevices();
+  }, [loadDevices]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setQrDataUrl(null);
+    const universalLink = session?.pairing.links.universalLink;
+    if (!universalLink) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    QRCode.toDataURL(universalLink, { margin: 1, scale: 6, width: 192 })
+      .then((dataUrl) => {
+        if (!cancelled) {
+          setQrDataUrl(dataUrl);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setQrDataUrl(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.pairing.links.universalLink]);
+
+  React.useEffect(() => {
+    if (!authenticated || !authToken || !session || !["pending", "claimed"].includes(session.pairing.status)) {
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const next = await fetchMobilePairingSession(apiBase, authToken, session.pairing.code);
+        if (!cancelled) {
+          setSession(next);
+          if (next.pairing.status === "confirmed") {
+            await loadDevices();
+          }
+        }
+      } catch {
+        // Polling is opportunistic; explicit actions surface errors to the user.
+      }
+    };
+    const interval = window.setInterval(() => void poll(), 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [apiBase, authToken, authenticated, loadDevices, session]);
+
+  const createSession = async () => {
+    if (!authToken) {
+      return;
+    }
+    setBusy("pairing");
+    setError(null);
+    setCopyState("idle");
+    try {
+      setSession(await createMobilePairingSession(apiBase, authToken));
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Párování se nepodařilo zahájit.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const confirmSession = async () => {
+    if (!authToken || !session) {
+      return;
+    }
+    setBusy("confirming");
+    setError(null);
+    try {
+      const confirmed = await confirmMobilePairingSession(apiBase, authToken, session.pairing.code);
+      setSession(confirmed);
+      await loadDevices();
+    } catch (confirmError) {
+      setError(confirmError instanceof Error ? confirmError.message : "Zařízení se nepodařilo potvrdit.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const copyPairingLink = async () => {
+    const link = session?.pairing.links.universalLink;
+    if (!link || !navigator.clipboard) {
+      return;
+    }
+    await navigator.clipboard.writeText(link);
+    setCopyState("copied");
+    window.setTimeout(() => setCopyState("idle"), 1800);
+  };
+
+  const revokeDevice = async (deviceId: string) => {
+    if (!authToken) {
+      return;
+    }
+    setBusy("revoking");
+    setError(null);
+    try {
+      await revokeMobileDevice(apiBase, authToken, deviceId);
+      await loadDevices();
+    } catch (revokeError) {
+      setError(revokeError instanceof Error ? revokeError.message : "Zařízení se nepodařilo odebrat.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const pairingStatus = session?.pairing.status;
+  const claimedDevice = session?.pairing.claimedDevice;
+
+  return (
+    <div className="settings-subsection mobile-device-panel">
+      <div className="settings-title-row">
+        <PanelTitle icon={<Smartphone size={17} />} title="Mobilní zařízení" />
+        <button className="mini-button" disabled={!authenticated || busy === "pairing"} onClick={() => void createSession()} type="button">
+          <QrCode size={14} />
+          {busy === "pairing" ? "Vytvářím..." : "Spárovat"}
+        </button>
+      </div>
+      <p className="settings-help">
+        Spárování CSM Messenger používá krátkodobý kód. QR ani odkaz neobsahuje přístupový token, recovery key ani Matrix room keys.
+      </p>
+      {!authenticated ? <div className="empty-mini">Párování iPhonu/iPadu vyžaduje přihlášení stejným COP účtem jako v mobilní aplikaci.</div> : null}
+      {error ? <div className="error-banner">Mobilní zařízení: {error}</div> : null}
+      {session ? (
+        <div className="mobile-pairing-card">
+          <div className="mobile-pairing-head">
+            <div>
+              <strong>{mobilePairingStatusLabel(pairingStatus)}</strong>
+              <span>Platnost do {formatMobileDate(session.pairing.expiresAt)}</span>
+            </div>
+            <span className={`mobile-device-status ${mobilePairingStatusTone(pairingStatus)}`}>{pairingStatus}</span>
+          </div>
+          <div className="mobile-pairing-layout">
+            <div className="mobile-pairing-qr">
+              {qrDataUrl ? <img alt="QR kód pro spárování CSM Messenger" src={qrDataUrl} /> : <QrCode size={56} />}
+            </div>
+            <div className="mobile-pairing-content">
+              <code className="mobile-pairing-code">{session.pairing.code}</code>
+              <div className="mobile-pairing-links">
+                <a className="mini-button" href={session.pairing.links.customSchemeUrl}>
+                  <ExternalLink size={14} />
+                  Otevřít aplikaci
+                </a>
+                <button className="mini-button" onClick={() => void copyPairingLink()} type="button">
+                  <Copy size={14} />
+                  {copyState === "copied" ? "Zkopírováno" : "Kopírovat link"}
+                </button>
+              </div>
+              {pairingStatus === "pending" ? (
+                <div className="empty-mini">Čekám, až se odkaz otevře v CSM Messengeru a mobil se přihlásí stejným účtem.</div>
+              ) : null}
+              {claimedDevice ? (
+                <div className="mobile-device-claim">
+                  <ReadinessRow label="Zařízení" value={mobileDeviceTitle(claimedDevice)} tone="ok" />
+                  <ReadinessRow label="Aplikace" value={mobileDeviceBuildLabel(claimedDevice)} tone="neutral" />
+                  <ReadinessRow label="Platforma" value={mobileDevicePlatformLabel(claimedDevice.platform)} tone="neutral" />
+                  <ReadinessRow label="Claim" value={session.pairing.claimedAt ? formatMobileDate(session.pairing.claimedAt) : "čeká"} tone="neutral" />
+                  {claimedDevice.capabilities?.length ? <ReadinessRow label="Schopnosti" value={claimedDevice.capabilities.join(", ")} tone="neutral" /> : null}
+                  {pairingStatus === "claimed" ? (
+                    <button className="primary-button" disabled={busy === "confirming"} onClick={() => void confirmSession()} type="button">
+                      <CheckCircle2 size={16} />
+                      {busy === "confirming" ? "Potvrzuji..." : "Potvrdit zařízení"}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <div className="mobile-device-list">
+        <div className="mobile-device-list-header">
+          <span>Spárovaná zařízení</span>
+          <button className="mini-button" disabled={!authenticated || busy === "loading"} onClick={() => void loadDevices()} type="button">
+            <RefreshCw size={14} />
+            Obnovit
+          </button>
+        </div>
+        {devices.length === 0 ? (
+          <div className="empty-mini">{authenticated ? "Zatím není spárované žádné mobilní zařízení." : "Seznam zařízení je dostupný po přihlášení."}</div>
+        ) : devices.map((device) => (
+          <div className="mobile-device-row" key={device.deviceId}>
+            <div>
+              <strong>{mobileDeviceTitle(device)}</strong>
+              <span>{mobileDeviceBuildLabel(device)} · posledně {formatMobileDate(device.lastSeenAt)}</span>
+              {device.capabilities.length ? <small>{device.capabilities.join(", ")}</small> : null}
+            </div>
+            <div className="mobile-device-actions">
+              <span className={`mobile-device-status ${device.status === "paired" ? "ok" : "warn"}`}>{device.status === "paired" ? "aktivní" : "odebrané"}</span>
+              <button
+                className="mini-button danger"
+                disabled={device.status !== "paired" || busy === "revoking"}
+                onClick={() => void revokeDevice(device.deviceId)}
+                type="button"
+              >
+                <Trash2 size={14} />
+                Odebrat
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+type MobileDeviceDisplay = MobileDeviceRecord | NonNullable<MobilePairingSessionResponse["pairing"]["claimedDevice"]>;
+
+function mobilePairingStatusLabel(status: MobilePairingSessionResponse["pairing"]["status"] | undefined): string {
+  switch (status) {
+    case "claimed":
+      return "Mobil čeká na potvrzení";
+    case "confirmed":
+      return "Zařízení spárováno";
+    case "expired":
+      return "Kód vypršel";
+    case "revoked":
+      return "Párování zrušeno";
+    case "pending":
+    default:
+      return "Čeká na mobil";
+  }
+}
+
+function mobilePairingStatusTone(status: MobilePairingSessionResponse["pairing"]["status"] | undefined): "neutral" | "ok" | "warn" {
+  if (status === "claimed" || status === "confirmed") {
+    return "ok";
+  }
+  if (status === "expired" || status === "revoked") {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function mobileDevicePlatformLabel(platform: MobileDeviceDisplay["platform"]): string {
+  return platform === "ipados" ? "iPadOS" : "iOS";
+}
+
+function mobileDeviceTitle(device: MobileDeviceDisplay): string {
+  return device.deviceModel
+    ? `${device.deviceModel} · ${mobileDevicePlatformLabel(device.platform)}`
+    : mobileDevicePlatformLabel(device.platform);
+}
+
+function mobileDeviceBuildLabel(device: MobileDeviceDisplay): string {
+  return [
+    `CSM ${device.appVersion}`,
+    device.buildNumber ? `build ${device.buildNumber}` : null,
+    device.osVersion ? `${mobileDevicePlatformLabel(device.platform)} ${device.osVersion}` : null
+  ].filter(Boolean).join(" · ");
+}
+
+function formatMobileDate(value: string | null | undefined): string {
+  if (!value) {
+    return "n/a";
+  }
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return "n/a";
+  }
+  return date.toLocaleString("cs-CZ", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit"
+  });
 }
 
 function AuthDiagnosticsPanel({ diagnostics, session }: { diagnostics: AuthDiagnostics; session: AuthSession }) {

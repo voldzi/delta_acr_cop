@@ -1544,6 +1544,73 @@ export interface ServerUserProfile {
   updatedAt: string | null;
 }
 
+export type MobilePairingStatus = "pending" | "claimed" | "confirmed" | "expired" | "revoked";
+export type MobileDeviceStatus = "paired" | "revoked";
+
+export interface MobilePairingDeviceSummary {
+  appVersion: string;
+  buildNumber?: string | null;
+  capabilities?: string[];
+  deviceId: string;
+  deviceModel?: string | null;
+  matrixDeviceId?: string | null;
+  osVersion?: string | null;
+  platform: "ios" | "ipados";
+  pushTokenRegistered: boolean;
+}
+
+export interface MobilePairingActorSummary {
+  displayName: string;
+  subjectId: string;
+  username: string;
+}
+
+export interface MobileDeviceRecord extends MobilePairingDeviceSummary {
+  capabilities: string[];
+  lastSeenAt: string;
+  pairedAt: string;
+  pairingCode?: string;
+  revokedAt?: string;
+  status: MobileDeviceStatus;
+  subjectId: string;
+}
+
+export interface MobilePairingSessionResponse {
+  contractVersion: "cop-mobile-pairing-v1";
+  device: MobileDeviceRecord | null;
+  pairing: {
+    claimedAt: string | null;
+    claimedBy: MobilePairingActorSummary | null;
+    claimedDevice: MobilePairingDeviceSummary | null;
+    code: string;
+    confirmedAt: string | null;
+    createdAt: string;
+    createdBy: MobilePairingActorSummary;
+    expiresAt: string;
+    links: {
+      customSchemeUrl: string;
+      universalLink: string;
+    };
+    status: MobilePairingStatus;
+  };
+  policy: Record<string, unknown>;
+  security: {
+    confirmationRequired: boolean;
+    containsAccessToken: false;
+    containsRecoveryKey: false;
+    containsRoomKeys: false;
+  };
+  serverTimestamp: string;
+}
+
+export interface MobileDevicesResponse {
+  actor: CopActor;
+  contractVersion: "cop-mobile-devices-v1";
+  devices: MobileDeviceRecord[];
+  policy: Record<string, unknown>;
+  serverTimestamp: string;
+}
+
 export interface UserDirectoryEntry {
   displayName: string;
   email?: string;
@@ -2486,6 +2553,51 @@ export async function saveUserProfile(
       "Content-Type": "application/json"
     },
     method: "PUT"
+  });
+}
+
+export async function createMobilePairingSession(apiBase: string, token: string, ttlSeconds = 600): Promise<MobilePairingSessionResponse> {
+  return fetchJson<MobilePairingSessionResponse>(`${apiBase}/api/v1/mobile/pairing/sessions`, {
+    body: JSON.stringify({ ttlSeconds }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function fetchMobilePairingSession(apiBase: string, token: string, code: string): Promise<MobilePairingSessionResponse> {
+  return fetchJson<MobilePairingSessionResponse>(`${apiBase}/api/v1/mobile/pairing/sessions/${encodeURIComponent(code)}`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+}
+
+export async function confirmMobilePairingSession(apiBase: string, token: string, code: string): Promise<MobilePairingSessionResponse> {
+  return fetchJson<MobilePairingSessionResponse>(`${apiBase}/api/v1/mobile/pairing/sessions/${encodeURIComponent(code)}/confirm`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    method: "POST"
+  });
+}
+
+export async function fetchMobileDevices(apiBase: string, token: string): Promise<MobileDevicesResponse> {
+  return fetchJson<MobileDevicesResponse>(`${apiBase}/api/v1/mobile/devices`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+}
+
+export async function revokeMobileDevice(apiBase: string, token: string, deviceId: string): Promise<MobileDevicesResponse> {
+  return fetchJson<MobileDevicesResponse>(`${apiBase}/api/v1/mobile/devices/${encodeURIComponent(deviceId)}`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    method: "DELETE"
   });
 }
 

@@ -60,6 +60,36 @@ aby endpoint neodrážel libovolný cizí origin.
 `COP_CHAT_PROXY_TARGET` používá pouze lokální Vite dev server mapové aplikace,
 aby iframe `/chat/` v COP při vývoji směroval na samostatný `cop-chat`.
 
+## Mobile Pairing / CSM Messenger
+
+COP poskytuje webové párování pro nativní CSM Messenger iOS/iPadOS aplikaci,
+device registry a serverový ACK gateway pro šifrovaný mobile mesh relay. V
+produkci nesmí být tyto runtime záznamy pouze v paměti procesu; použijte stejný
+HA PostgreSQL/Patroni endpoint jako pro ostatní COP stores.
+
+```env
+COP_PUBLIC_URL=https://cop.zeleznalady.cz
+COP_IOS_APP_ID=LM6W548X36.cz.zeleznalady.csm.messenger
+COP_MOBILE_REDIRECT_SCHEME=csm
+COP_MOBILE_DEVICE_STORE=postgres
+COP_DATABASE_URL=postgresql://cop_app:<password>@haproxy.home.cz:5000/cop
+COP_DATABASE_SSL=false
+```
+
+`COP_IOS_APP_ID` se promítá do
+`/.well-known/apple-app-site-association`. Universal link
+`https://cop.zeleznalady.cz/mobile/pair/{code}` a custom scheme
+`csm://pair?code={code}` obsahují pouze krátkodobý párovací kód, nikdy COP
+access token, refresh token, Matrix token, recovery key ani room keys.
+`COP_MOBILE_DEVICE_STORE=auto` je přípustné jen pro lokální vývoj bez
+`COP_DATABASE_URL`; produkce musí používat `postgres`.
+
+CSM Messenger APNs tokeny se ukládají pouze v CSM Messaging službě. COP do iOS
+bootstrapu ani pairing odpovědí neposílá `COP_CSM_MESSAGING_TOKEN`, APNs token,
+Matrix admin token, recovery key, room keys ani plaintext chat obsah. Mobile
+mesh endpointy `/api/v1/mobile/mesh/ingest` a `/api/v1/mobile/mesh/acks` drží
+jen auditovatelný ACK stav pro `csm-mesh-v1` encrypted/signed bundles.
+
 ## AI Provider / COP Ollama Provider
 
 COP podporuje asistivní AI přes `@cop/ai-gateway`. Produkční lokální režim

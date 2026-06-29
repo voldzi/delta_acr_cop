@@ -122,6 +122,8 @@ import {
   type MobileDeviceRecord,
   type MobileDeviceRegistrationInput,
   type MobileDeviceStore,
+  type MobileMeshAckRecord,
+  type MobileMeshBundleIngestInput,
   type MobilePairingActorRecord,
   type MobilePairingSessionRecord,
   type MobilePlatform
@@ -3399,6 +3401,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return buildMobileSnapshot(actor, requestNow, parseMobileSnapshotQuery(request.query as Record<string, unknown>));
   });
 
+  app.get("/.well-known/apple-app-site-association", async (_request, reply) => {
+    return reply
+      .header("content-type", "application/json")
+      .send(appleAppSiteAssociation());
+  });
+
+  app.get("/mobile/pair/:code", async (request, reply) => {
+    const params = request.params as { code: string };
+    const code = normalizeMobilePairingCode(params.code);
+    if (!code) {
+      return reply
+        .code(400)
+        .type("text/html; charset=utf-8")
+        .send(mobilePairFallbackHtml("", true));
+    }
+    return reply
+      .type("text/html; charset=utf-8")
+      .send(mobilePairFallbackHtml(code, false));
+  });
+
   app.post("/api/v1/mobile/pairing/sessions", async (request, reply) => {
     const actor = requireActor(request, reply);
     if (!actor) {
@@ -3617,6 +3639,66 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       device,
       serverTimestamp: now().toISOString()
     });
+  });
+
+  app.post("/api/v1/mobile/mesh/ingest", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const requestNow = now();
+    const normalized = normalizeMobileMeshBundle(request.body, actor, requestNow);
+    if (!normalized.valid) {
+      appendAudit(state, "MOBILE_MESH_BUNDLE_REJECTED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        reason: normalized.reason
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return reply.code(422).send(mobileMeshAckResponse({
+        envelopeId: normalized.envelopeId ?? "invalid",
+        receivedAt: requestNow.toISOString(),
+        status: "rejected",
+        subjectId: actor.subjectId,
+        updatedAt: requestNow.toISOString()
+      }));
+    }
+    try {
+      const result = await activeMobileDeviceStore().ingestMeshBundle(normalized.input);
+      appendAudit(state, "MOBILE_MESH_BUNDLE_INGESTED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        bundleType: normalized.input.bundleType ?? "unknown",
+        deviceId: normalized.input.deviceId ?? "unknown",
+        envelopeId: normalized.input.envelopeId,
+        status: result.record.status
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return reply.code(result.duplicate ? 200 : 202).send(mobileMeshAckResponse(result.record));
+    } catch (error) {
+      markMobileDeviceStoreDegraded(error);
+      return sendError(
+        reply,
+        503,
+        "MOBILE_DEVICE_STORE_UNAVAILABLE",
+        "Mobile mesh ack store is not available.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+  });
+
+  app.get("/api/v1/mobile/mesh/acks", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const query = request.query as Record<string, unknown>;
+    const since = optionalIsoDateString(query.since);
+    const limit = readBoundedInteger(query.limit, 50, 1, 250);
+    const acks = await activeMobileDeviceStore().listMeshAcks(actor.subjectId, since, limit);
+    return {
+      acks,
+      contractVersion: "cop-mobile-mesh-acks-v1",
+      serverTimestamp: now().toISOString()
+    };
   });
 
   app.get("/api/v1/community/reports", async (request, reply) => {
@@ -10522,6 +10604,84 @@ function normalizeMobilePairingTtlSeconds(value: unknown): number {
   return Math.min(900, Math.max(60, parsed));
 }
 
+function normalizeMobileMeshBundle(
+  value: unknown,
+  actor: AuthenticatedActor,
+  receivedAt: Date
+): { envelopeId?: string; reason: string; valid: false } | { input: MobileMeshBundleIngestInput; valid: true } {
+  if (!isRecord(value)) {
+    return { reason: "payload_not_object", valid: false };
+  }
+  const envelope = isRecord(value.envelope) ? value.envelope : value;
+  const contractVersion = optionalTrimmedString(value.contractVersion, 80) ?? optionalTrimmedString(envelope.contractVersion, 80);
+  const envelopeId = normalizeMobileMeshEnvelopeId(value.envelopeId ?? value.id ?? envelope.envelopeId ?? envelope.id);
+  const encrypted = value.encrypted === true
+    || envelope.encrypted === true
+    || optionalTrimmedString(value.ciphertext, 12000) !== undefined
+    || optionalTrimmedString(envelope.ciphertext, 12000) !== undefined
+    || (isRecord(value.payload) && value.payload.encrypted === true);
+  const signed = optionalTrimmedString(value.signature, 4096) !== undefined
+    || optionalTrimmedString(envelope.signature, 4096) !== undefined
+    || Array.isArray(value.signatures) && value.signatures.length > 0
+    || Array.isArray(envelope.signatures) && envelope.signatures.length > 0;
+  if (contractVersion !== "csm-mesh-v1") {
+    return { envelopeId, reason: "unsupported_contract_version", valid: false };
+  }
+  if (!envelopeId) {
+    return { reason: "missing_envelope_id", valid: false };
+  }
+  if (!encrypted || !signed) {
+    return { envelopeId, reason: "bundle_must_be_encrypted_and_signed", valid: false };
+  }
+  const bundleType = normalizeMobileMeshBundleType(value.type ?? value.payloadType ?? envelope.type ?? envelope.payloadType);
+  const deviceId = normalizeMobileDeviceId(value.deviceId ?? envelope.deviceId);
+  const expiresAt = optionalIsoDateString(value.expiresAt ?? envelope.expiresAt);
+  const payloadSizeBytes = mobileMeshPayloadSizeBytes(value);
+  return {
+    input: {
+      ...(bundleType ? { bundleType } : {}),
+      ...(deviceId ? { deviceId } : {}),
+      envelopeId,
+      ...(expiresAt ? { expiresAt } : {}),
+      ...(payloadSizeBytes !== undefined ? { payloadSizeBytes } : {}),
+      receivedAt: receivedAt.toISOString(),
+      subjectId: actor.subjectId
+    },
+    valid: true
+  };
+}
+
+function normalizeMobileMeshEnvelopeId(value: unknown): string | undefined {
+  const envelopeId = optionalTrimmedString(value, 160);
+  return envelopeId && /^[A-Za-z0-9_.:=@-]{8,160}$/u.test(envelopeId) ? envelopeId : undefined;
+}
+
+function normalizeMobileMeshBundleType(value: unknown): string | undefined {
+  const type = optionalTrimmedString(value, 40);
+  return type && ["text", "location", "control", "image", "manifest"].includes(type) ? type : undefined;
+}
+
+function mobileMeshPayloadSizeBytes(value: Record<string, unknown>): number | undefined {
+  const explicit = value.payloadSizeBytes;
+  if (typeof explicit === "number" && Number.isInteger(explicit) && explicit >= 0 && explicit <= 2_000_000) {
+    return explicit;
+  }
+  const ciphertext = optionalTrimmedString(value.ciphertext, 2_000_000);
+  return ciphertext ? ciphertext.length : undefined;
+}
+
+function mobileMeshAckResponse(ack: MobileMeshAckRecord) {
+  return {
+    ack,
+    contractVersion: "cop-mobile-mesh-acks-v1",
+    security: {
+      containsPlaintext: false,
+      serverDecrypted: false
+    },
+    serverTimestamp: new Date().toISOString()
+  };
+}
+
 function mobilePairingActor(actor: AuthenticatedActor): MobilePairingActorRecord {
   return {
     displayName: actor.displayName,
@@ -10550,6 +10710,7 @@ function mobilePairingSessionResponse(
       claimedDevice: session.claimedDevice ? {
         appVersion: session.claimedDevice.appVersion,
         buildNumber: session.claimedDevice.buildNumber ?? null,
+        capabilities: session.claimedDevice.capabilities,
         deviceId: session.claimedDevice.deviceId,
         deviceModel: session.claimedDevice.deviceModel ?? null,
         matrixDeviceId: session.claimedDevice.matrixDeviceId ?? null,
@@ -10577,6 +10738,69 @@ function mobilePairingSessionResponse(
     },
     serverTimestamp: new Date().toISOString()
   };
+}
+
+function appleAppSiteAssociation(env: Record<string, string | undefined> = process.env) {
+  const appId = env.COP_IOS_APP_ID ?? "LM6W548X36.cz.zeleznalady.csm.messenger";
+  return {
+    applinks: {
+      apps: [],
+      details: [
+        {
+          appIDs: [appId],
+          components: [
+            {
+              "/": "/mobile/pair/*",
+              comment: "CSM Messenger pairing links"
+            }
+          ],
+          paths: ["/mobile/pair/*"]
+        }
+      ]
+    },
+    webcredentials: {
+      apps: [appId]
+    }
+  };
+}
+
+function mobilePairFallbackHtml(code: string, invalid: boolean): string {
+  const safeCode = escapeHtml(code);
+  const deepLink = code ? `csm://pair?code=${encodeURIComponent(code)}` : "csm://";
+  const safeDeepLink = escapeHtml(deepLink);
+  return `<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSM Messenger párování</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #071016; color: #f4f7fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { width: min(520px, calc(100vw - 32px)); border: 1px solid rgba(140,182,216,.34); background: linear-gradient(180deg, rgba(17,25,31,.96), rgba(7,12,16,.96)); padding: 28px; box-shadow: 0 28px 80px rgba(0,0,0,.42); }
+    h1 { margin: 0 0 10px; font-size: 28px; }
+    p { color: #b8c4cf; line-height: 1.5; }
+    code { display: block; padding: 12px; background: rgba(255,255,255,.08); color: #c8f08d; overflow-wrap: anywhere; }
+    a { display: inline-grid; place-items: center; min-height: 44px; margin-top: 18px; padding: 0 18px; background: #c8f08d; color: #0f151b; font-weight: 900; text-decoration: none; }
+    .warning { color: #ffd3c8; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>CSM Messenger</h1>
+    ${invalid ? '<p class="warning">Pairing odkaz není platný. Vytvořte ve webovém COP nový QR kód.</p>' : `<p>Otevřete párování v aplikaci CSM Messenger. Odkaz obsahuje pouze krátkodobý kód, nikoli přístupový token ani šifrovací klíče.</p><code>${safeCode}</code><a href="${safeDeepLink}">Otevřít v aplikaci</a>`}
+    <p>Pokud se aplikace neotevře, nainstalujte aktuální build CSM Messenger a poté zkuste odkaz znovu.</p>
+  </main>
+</body>
+</html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&#39;");
 }
 
 function publicCopBaseUrl(request: FastifyRequest): string {
@@ -10667,10 +10891,13 @@ function mobileEndpoints() {
     messagingMatrixRoomEnsure: "/api/v1/messaging/conversations/{conversationId}/matrix-room",
     mobileDeviceRevoke: "/api/v1/mobile/devices/{deviceId}",
     mobileDevices: "/api/v1/mobile/devices",
+    mobileMeshAcks: "/api/v1/mobile/mesh/acks",
+    mobileMeshIngest: "/api/v1/mobile/mesh/ingest",
     mobilePairingClaim: "/api/v1/mobile/pairing/sessions/{code}/claim",
     mobilePairingConfirm: "/api/v1/mobile/pairing/sessions/{code}/confirm",
     mobilePairingCreate: "/api/v1/mobile/pairing/sessions",
     mobilePairingStatus: "/api/v1/mobile/pairing/sessions/{code}",
+    mobilePairUniversalLink: "/mobile/pair/{code}",
     messagingStatus: "/api/v1/messaging/status",
     sourceHealth: "/api/v1/sources/health",
     sources: "/api/v1/sources",
@@ -10837,6 +11064,15 @@ function optionalImageDataUrl(value: unknown): string | undefined {
   return /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/iu.test(value) && value.length <= 250_000
     ? value
     : undefined;
+}
+
+function optionalIsoDateString(value: unknown): string | undefined {
+  const raw = optionalTrimmedString(value, 80);
+  if (!raw) {
+    return undefined;
+  }
+  const timestamp = Date.parse(raw);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : undefined;
 }
 
 function normalizeAlertPreferences(value: unknown): UserAlertPreferences {

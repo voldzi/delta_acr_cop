@@ -207,6 +207,9 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
   if ((method === "GET" || method === "HEAD") && isCommunityMediaTicketRequest(request.url, path)) {
     return true;
   }
+  if ((method === "GET" || method === "HEAD") && isMobilePairingPublicRequest(path)) {
+    return true;
+  }
 
   if (!readBoolean(process.env.COP_PUBLIC_READ_ENABLED)) {
     return false;
@@ -242,6 +245,10 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
     || path === "/api/v1/sketch/palettes"
     || path === "/api/v1/sketch/drawings"
     || path.startsWith("/api/v1/sketch/drawings/");
+}
+
+function isMobilePairingPublicRequest(path: string): boolean {
+  return path === "/.well-known/apple-app-site-association" || path.startsWith("/mobile/pair/");
 }
 
 function isCommunityMediaTicketRequest(url: string, path: string): boolean {

@@ -6,6 +6,7 @@ const { Pool } = pg;
 export type MobilePlatform = "ios" | "ipados";
 export type MobileDeviceStatus = "paired" | "revoked";
 export type MobilePairingSessionStatus = "pending" | "claimed" | "confirmed" | "expired" | "revoked";
+export type MobileMeshAckStatus = "accepted" | "duplicate" | "rejected" | "delivered" | "expired";
 
 export interface MobileDeviceRegistrationInput {
   appVersion: string;
@@ -48,6 +49,28 @@ export interface MobilePairingSessionRecord {
   status: MobilePairingSessionStatus;
 }
 
+export interface MobileMeshBundleIngestInput {
+  bundleType?: string;
+  deviceId?: string;
+  envelopeId: string;
+  expiresAt?: string;
+  payloadSizeBytes?: number;
+  receivedAt: string;
+  subjectId: string;
+}
+
+export interface MobileMeshAckRecord {
+  bundleType?: string;
+  deviceId?: string;
+  envelopeId: string;
+  expiresAt?: string;
+  payloadSizeBytes?: number;
+  receivedAt: string;
+  status: MobileMeshAckStatus;
+  subjectId: string;
+  updatedAt: string;
+}
+
 export interface MobilePairingSessionCreateInput {
   actor: MobilePairingActorRecord;
   expiresAt: string;
@@ -62,8 +85,10 @@ export interface MobileDeviceStore {
   createPairingSession(input: MobilePairingSessionCreateInput): Promise<MobilePairingSessionRecord>;
   diagnostics?(): string | undefined;
   getPairingSession(code: string, now: string): Promise<MobilePairingSessionRecord | null>;
+  ingestMeshBundle(input: MobileMeshBundleIngestInput): Promise<{ duplicate: boolean; record: MobileMeshAckRecord }>;
   init(): Promise<void>;
   listDevices(subjectId: string): Promise<MobileDeviceRecord[]>;
+  listMeshAcks(subjectId: string, since: string | undefined, limit: number): Promise<MobileMeshAckRecord[]>;
   revokeDevice(subjectId: string, deviceId: string, now: string): Promise<MobileDeviceRecord | null>;
   upsertDevice(device: MobileDeviceRegistrationInput, status: MobileDeviceStatus, now: string, pairingCode?: string): Promise<MobileDeviceRecord>;
 }
@@ -94,6 +119,7 @@ export function createMobileDeviceStoreFromEnv(env: Record<string, string | unde
 export class InMemoryMobileDeviceStore implements MobileDeviceStore {
   readonly name: string;
   private readonly devices = new Map<string, MobileDeviceRecord>();
+  private readonly meshAcks = new Map<string, MobileMeshAckRecord>();
   private readonly pairingSessions = new Map<string, MobilePairingSessionRecord>();
 
   constructor(name = "memory") {
@@ -182,6 +208,41 @@ export class InMemoryMobileDeviceStore implements MobileDeviceStore {
     };
     this.devices.set(deviceKey(subjectId, deviceId), next);
     return next;
+  }
+
+  async ingestMeshBundle(input: MobileMeshBundleIngestInput): Promise<{ duplicate: boolean; record: MobileMeshAckRecord }> {
+    const key = meshAckKey(input.subjectId, input.envelopeId);
+    const current = this.meshAcks.get(key);
+    if (current) {
+      const duplicate: MobileMeshAckRecord = {
+        ...current,
+        status: "duplicate",
+        updatedAt: input.receivedAt
+      };
+      this.meshAcks.set(key, duplicate);
+      return { duplicate: true, record: duplicate };
+    }
+    const record: MobileMeshAckRecord = {
+      ...(input.bundleType ? { bundleType: input.bundleType } : {}),
+      ...(input.deviceId ? { deviceId: input.deviceId } : {}),
+      envelopeId: input.envelopeId,
+      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+      ...(typeof input.payloadSizeBytes === "number" ? { payloadSizeBytes: input.payloadSizeBytes } : {}),
+      receivedAt: input.receivedAt,
+      status: "accepted",
+      subjectId: input.subjectId,
+      updatedAt: input.receivedAt
+    };
+    this.meshAcks.set(key, record);
+    return { duplicate: false, record };
+  }
+
+  async listMeshAcks(subjectId: string, since: string | undefined, limit: number): Promise<MobileMeshAckRecord[]> {
+    const sinceMs = since ? Date.parse(since) : Number.NEGATIVE_INFINITY;
+    return Array.from(this.meshAcks.values())
+      .filter((ack) => ack.subjectId === subjectId && Date.parse(ack.updatedAt) >= sinceMs)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, limit);
   }
 
   async close(): Promise<void> {}
@@ -356,6 +417,69 @@ export class PostgresMobileDeviceStore implements MobileDeviceStore {
     return result.rows[0] ? deviceFromRow(result.rows[0]) : null;
   }
 
+  async ingestMeshBundle(input: MobileMeshBundleIngestInput): Promise<{ duplicate: boolean; record: MobileMeshAckRecord }> {
+    const inserted = await this.pool.query<MobileMeshAckRow>(
+      `INSERT INTO cop_mobile_mesh_acks (
+        subject_id,
+        envelope_id,
+        device_id,
+        bundle_type,
+        status,
+        received_at,
+        updated_at,
+        expires_at,
+        payload_size_bytes
+      )
+      VALUES ($1, $2, $3, $4, 'accepted', $5, $5, $6, $7)
+      ON CONFLICT (subject_id, envelope_id) DO NOTHING
+      RETURNING *`,
+      [
+        input.subjectId,
+        input.envelopeId,
+        input.deviceId ?? null,
+        input.bundleType ?? null,
+        input.receivedAt,
+        input.expiresAt ?? null,
+        input.payloadSizeBytes ?? null
+      ]
+    );
+    if (inserted.rows[0]) {
+      return { duplicate: false, record: meshAckFromRow(inserted.rows[0]) };
+    }
+    const duplicate = await this.pool.query<MobileMeshAckRow>(
+      `UPDATE cop_mobile_mesh_acks
+      SET status = 'duplicate',
+        updated_at = $3
+      WHERE subject_id = $1 AND envelope_id = $2
+      RETURNING *`,
+      [input.subjectId, input.envelopeId, input.receivedAt]
+    );
+    const row = duplicate.rows[0];
+    if (!row) {
+      throw new Error("Mobile mesh ack upsert did not return a row.");
+    }
+    return { duplicate: true, record: meshAckFromRow(row) };
+  }
+
+  async listMeshAcks(subjectId: string, since: string | undefined, limit: number): Promise<MobileMeshAckRecord[]> {
+    const result = since
+      ? await this.pool.query<MobileMeshAckRow>(
+        `SELECT * FROM cop_mobile_mesh_acks
+        WHERE subject_id = $1 AND updated_at >= $2
+        ORDER BY updated_at DESC
+        LIMIT $3`,
+        [subjectId, since, limit]
+      )
+      : await this.pool.query<MobileMeshAckRow>(
+        `SELECT * FROM cop_mobile_mesh_acks
+        WHERE subject_id = $1
+        ORDER BY updated_at DESC
+        LIMIT $2`,
+        [subjectId, limit]
+      );
+    return result.rows.map(meshAckFromRow);
+  }
+
   diagnostics(): string | undefined {
     return this.lastIdleClientError ? `last idle client error: ${this.lastIdleClientError}` : undefined;
   }
@@ -371,6 +495,10 @@ function createPairingCode(): string {
 
 function deviceKey(subjectId: string, deviceId: string): string {
   return `${subjectId}:${deviceId}`;
+}
+
+function meshAckKey(subjectId: string, envelopeId: string): string {
+  return `${subjectId}:${envelopeId}`;
 }
 
 function normalizePairingSessionExpiry(session: MobilePairingSessionRecord | null, now: string): MobilePairingSessionRecord | null {
@@ -426,6 +554,18 @@ interface MobilePairingSessionRow extends QueryResultRow {
   status: MobilePairingSessionStatus;
 }
 
+interface MobileMeshAckRow extends QueryResultRow {
+  bundle_type: string | null;
+  device_id: string | null;
+  envelope_id: string;
+  expires_at: Date | null;
+  payload_size_bytes: number | null;
+  received_at: Date;
+  status: MobileMeshAckStatus;
+  subject_id: string;
+  updated_at: Date;
+}
+
 function deviceFromRow(row: MobileDeviceRow): MobileDeviceRecord {
   return {
     appVersion: row.app_version,
@@ -445,6 +585,20 @@ function deviceFromRow(row: MobileDeviceRow): MobileDeviceRecord {
     status: row.status,
     subjectId: row.subject_id,
     registeredAt: row.paired_at.toISOString()
+  };
+}
+
+function meshAckFromRow(row: MobileMeshAckRow): MobileMeshAckRecord {
+  return {
+    ...(row.bundle_type ? { bundleType: row.bundle_type } : {}),
+    ...(row.device_id ? { deviceId: row.device_id } : {}),
+    envelopeId: row.envelope_id,
+    ...(row.expires_at ? { expiresAt: row.expires_at.toISOString() } : {}),
+    ...(typeof row.payload_size_bytes === "number" ? { payloadSizeBytes: row.payload_size_bytes } : {}),
+    receivedAt: row.received_at.toISOString(),
+    status: row.status,
+    subjectId: row.subject_id,
+    updatedAt: row.updated_at.toISOString()
   };
 }
 
@@ -548,6 +702,22 @@ CREATE TABLE IF NOT EXISTS cop_mobile_devices (
 
 CREATE INDEX IF NOT EXISTS cop_mobile_devices_subject_status_idx
   ON cop_mobile_devices (subject_id, status, last_seen_at DESC);
+
+CREATE TABLE IF NOT EXISTS cop_mobile_mesh_acks (
+  subject_id text NOT NULL,
+  envelope_id text NOT NULL,
+  device_id text,
+  bundle_type text,
+  status text NOT NULL CHECK (status IN ('accepted', 'duplicate', 'rejected', 'delivered', 'expired')),
+  received_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL,
+  expires_at timestamptz,
+  payload_size_bytes integer,
+  PRIMARY KEY (subject_id, envelope_id)
+);
+
+CREATE INDEX IF NOT EXISTS cop_mobile_mesh_acks_subject_updated_idx
+  ON cop_mobile_mesh_acks (subject_id, updated_at DESC);
 `;
 
 function readPositiveInteger(value: string | undefined, fallback: number): number {
