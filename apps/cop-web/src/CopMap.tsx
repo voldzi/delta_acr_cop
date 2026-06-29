@@ -1922,7 +1922,7 @@ export function CopMap({
           layout: {
             "icon-image": ["coalesce", ["get", "riskIconKey"], getRiskIconKey("warning")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.28, 10, 0.38, 15, 0.5],
-            "icon-anchor": "center",
+            "icon-anchor": "bottom",
             "icon-allow-overlap": true,
             "icon-ignore-placement": true
           },
@@ -1958,7 +1958,7 @@ export function CopMap({
           layout: {
             "icon-image": ["coalesce", ["get", "riskIconKey"], getRiskIconKey("flood")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 10.3, 0.22, 12, 0.3, 15, 0.44],
-            "icon-anchor": "center",
+            "icon-anchor": "bottom",
             "icon-allow-overlap": false,
             "icon-ignore-placement": false,
             "icon-optional": true,
@@ -2174,7 +2174,7 @@ export function CopMap({
           layout: {
             "icon-image": ["coalesce", ["get", "weatherSymbolKey"], getWeatherConditionIconKey("unknown")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.34, 8, 0.42, 12, 0.54, 16, 0.72],
-            "icon-anchor": "center",
+            "icon-anchor": "bottom",
             "icon-allow-overlap": false,
             "icon-ignore-placement": false,
             "icon-optional": false,
@@ -2214,7 +2214,7 @@ export function CopMap({
           layout: {
             "icon-image": ["coalesce", ["get", "weatherSymbolKey"], getWeatherConditionIconKey("unknown")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.38, 13, 0.52, 16, 0.66],
-            "icon-anchor": "center",
+            "icon-anchor": "bottom",
             "icon-allow-overlap": false,
             "icon-ignore-placement": false,
             "icon-optional": true
@@ -8051,6 +8051,14 @@ function createMobileNetworkSymbolImage(tone: MobileNetworkIconTone): ImageData 
   context.clearRect(0, 0, size, size);
   context.lineCap = "round";
   context.lineJoin = "round";
+  drawPictogramPlate(context, {
+    accentColor: waveColor,
+    centerX,
+    centerY: 59,
+    height: 82,
+    radius: 25,
+    width: 88
+  });
 
   const drawWaves = (strokeStyle: string, lineWidth: number, alpha = 1) => {
     context.save();
@@ -8514,13 +8522,6 @@ function createWeatherConditionSymbolImage(iconId: WeatherConditionIconId): Imag
 
   const drawMeasurementStation = (kind: WeatherConditionIconId = "measurement") => {
     context.save();
-    context.fillStyle = "rgba(255, 255, 255, 0.96)";
-    context.strokeStyle = "#061019";
-    context.lineWidth = 5.5;
-    context.beginPath();
-    context.arc(0, 2, 36, 0, Math.PI * 2);
-    context.fill();
-    context.stroke();
     if (kind === "measurement_humidity") {
       drawHumidityDrop();
     } else if (kind === "measurement_rain") {
@@ -8534,10 +8535,19 @@ function createWeatherConditionSymbolImage(iconId: WeatherConditionIconId): Imag
   };
 
   context.clearRect(0, 0, size, size);
+  drawPictogramPlate(context, {
+    accentColor: weatherConditionAccentColor(iconId),
+    centerX: 64,
+    centerY: 58,
+    height: 80,
+    radius: 26,
+    width: 88
+  });
   context.save();
-  context.translate(64, 58);
-  context.shadowBlur = 10;
-  context.shadowColor = "rgba(6, 16, 25, 0.28)";
+  context.translate(64, 54);
+  context.scale(0.82, 0.82);
+  context.shadowBlur = 4;
+  context.shadowColor = "rgba(6, 16, 25, 0.16)";
 
   switch (iconId) {
     case "sun":
@@ -8583,6 +8593,108 @@ function createWeatherConditionSymbolImage(iconId: WeatherConditionIconId): Imag
   context.restore();
 
   return context.getImageData(0, 0, size, size);
+}
+
+function drawPictogramPlate(
+  context: CanvasRenderingContext2D,
+  options: {
+    accentColor: string;
+    centerX: number;
+    centerY: number;
+    height: number;
+    radius: number;
+    width: number;
+  }
+): void {
+  const { accentColor, centerX, centerY, height, radius, width } = options;
+  const left = centerX - width / 2;
+  const top = centerY - height / 2;
+  const bottom = top + height;
+
+  context.save();
+  context.shadowColor = "rgba(6, 16, 25, 0.34)";
+  context.shadowBlur = 14;
+  context.shadowOffsetY = 8;
+  context.fillStyle = "rgba(6, 16, 25, 0.18)";
+  context.beginPath();
+  context.ellipse(centerX, bottom + 15, width * 0.31, 7, 0, 0, Math.PI * 2);
+  context.fill();
+  context.restore();
+
+  context.save();
+  context.shadowColor = "rgba(6, 16, 25, 0.28)";
+  context.shadowBlur = 10;
+  context.shadowOffsetY = 5;
+  const gradient = context.createLinearGradient(left, top, left, bottom + 18);
+  gradient.addColorStop(0, "rgba(255, 255, 255, 0.99)");
+  gradient.addColorStop(0.62, "rgba(238, 246, 255, 0.98)");
+  gradient.addColorStop(1, "rgba(213, 229, 243, 0.98)");
+  context.fillStyle = gradient;
+  drawRoundedRect(context, left, top, width, height, radius);
+  context.fill();
+
+  context.beginPath();
+  context.moveTo(centerX - 13, bottom - 4);
+  context.quadraticCurveTo(centerX, bottom + 21, centerX + 13, bottom - 4);
+  context.closePath();
+  context.fill();
+
+  context.shadowBlur = 0;
+  context.lineWidth = 4.5;
+  context.strokeStyle = "rgba(6, 16, 25, 0.82)";
+  drawRoundedRect(context, left, top, width, height, radius);
+  context.stroke();
+  context.beginPath();
+  context.moveTo(centerX - 13, bottom - 4);
+  context.quadraticCurveTo(centerX, bottom + 21, centerX + 13, bottom - 4);
+  context.stroke();
+
+  context.strokeStyle = "rgba(255, 255, 255, 0.92)";
+  context.lineWidth = 2.2;
+  drawRoundedRect(context, left + 3, top + 3, width - 6, height - 6, Math.max(8, radius - 4));
+  context.stroke();
+
+  context.fillStyle = accentColor;
+  drawRoundedRect(context, centerX - 22, top + 8, 44, 6, 3);
+  context.fill();
+
+  context.beginPath();
+  context.arc(centerX, bottom + 22, 4.4, 0, Math.PI * 2);
+  context.fillStyle = accentColor;
+  context.fill();
+  context.lineWidth = 2.2;
+  context.strokeStyle = "rgba(255, 255, 255, 0.92)";
+  context.stroke();
+  context.restore();
+}
+
+function weatherConditionAccentColor(iconId: WeatherConditionIconId): string {
+  switch (iconId) {
+    case "sun":
+    case "partly_cloudy":
+      return "#facc15";
+    case "rain":
+    case "measurement_rain":
+      return "#38bdf8";
+    case "snow":
+      return "#bfdbfe";
+    case "storm":
+      return "#f59e0b";
+    case "wind":
+    case "measurement_wind":
+      return "#67e8f9";
+    case "fog":
+    case "cloud":
+      return "#94a3b8";
+    case "measurement_temperature":
+      return "#fb923c";
+    case "measurement_humidity":
+      return "#0ea5e9";
+    case "measurement":
+      return "#22c55e";
+    case "unknown":
+      return "#a78bfa";
+  }
 }
 
 function createWeatherWindArrowImage(): ImageData {
@@ -8809,6 +8921,14 @@ function createRiskSymbolImage(iconId: RiskIconId): ImageData {
   context.strokeStyle = "#061019";
   context.fillStyle = "#f8fafc";
   context.lineWidth = 10;
+  drawPictogramPlate(context, {
+    accentColor: riskIconAccentColor(iconId),
+    centerX: 56,
+    centerY: 54,
+    height: 74,
+    radius: 24,
+    width: 80
+  });
 
   const strokePath = (draw: () => void) => {
     context.save();
@@ -8923,6 +9043,21 @@ function createRiskSymbolImage(iconId: RiskIconId): ImageData {
   }
 
   return context.getImageData(0, 0, size, size);
+}
+
+function riskIconAccentColor(iconId: RiskIconId): string {
+  switch (iconId) {
+    case "fire":
+      return "#fb923c";
+    case "flood":
+      return "#38bdf8";
+    case "weather":
+      return "#facc15";
+    case "warning":
+      return "#ef4444";
+    case "unknown":
+      return "#a78bfa";
+  }
 }
 
 function createOsmCategorySymbolImage(iconId: OsmCategoryIconId): ImageData {
