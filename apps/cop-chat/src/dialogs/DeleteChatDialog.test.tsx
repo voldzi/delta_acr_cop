@@ -6,24 +6,65 @@ import { describe, expect, it, vi } from "vitest";
 import DeleteChatDialog from "./DeleteChatDialog";
 
 describe("DeleteChatDialog", () => {
-  it("confirms hiding a chat from the list", () => {
-    const onConfirm = vi.fn();
-    render(<DeleteChatDialog title="Krizový tým" onClose={vi.fn()} onConfirm={onConfirm} />);
+  it("offers local hiding for a direct chat", () => {
+    const onHide = vi.fn();
+    const onLeaveGroup = vi.fn();
+    render(
+      <DeleteChatDialog
+        canLeaveGroup={false}
+        chatKind="direct"
+        title="Krizový tým"
+        onClose={vi.fn()}
+        onHide={onHide}
+        onLeaveGroup={onLeaveGroup}
+      />
+    );
 
-    expect(screen.getByRole("dialog", { name: "Smazat Krizový tým" })).toBeTruthy();
-    expect(screen.getByText(/Historie zpráv na serveru zůstane zachovaná/u)).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Správa chatu Krizový tým" })).toBeTruthy();
+    expect(screen.getByText(/Historie na serveru zůstane zachovaná/u)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Smazat ze seznamu" }));
-    expect(onConfirm).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Skrýt chat" }));
+    expect(onHide).toHaveBeenCalled();
+    expect(onLeaveGroup).not.toHaveBeenCalled();
+  });
+
+  it("offers leaving a Matrix-backed group", () => {
+    const onHide = vi.fn();
+    const onLeaveGroup = vi.fn();
+    render(
+      <DeleteChatDialog
+        canLeaveGroup
+        chatKind="group"
+        title="Povodňový tým"
+        onClose={vi.fn()}
+        onHide={onHide}
+        onLeaveGroup={onLeaveGroup}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Opustit skupinu" }));
+    expect(onLeaveGroup).toHaveBeenCalled();
+    expect(onHide).not.toHaveBeenCalled();
   });
 
   it("closes without confirming", () => {
     const onClose = vi.fn();
-    const onConfirm = vi.fn();
-    render(<DeleteChatDialog title="Krizový tým" onClose={onClose} onConfirm={onConfirm} />);
+    const onHide = vi.fn();
+    const onLeaveGroup = vi.fn();
+    render(
+      <DeleteChatDialog
+        canLeaveGroup={false}
+        chatKind="direct"
+        title="Krizový tým"
+        onClose={onClose}
+        onHide={onHide}
+        onLeaveGroup={onLeaveGroup}
+      />
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Zrušit" }));
     expect(onClose).toHaveBeenCalled();
-    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onHide).not.toHaveBeenCalled();
+    expect(onLeaveGroup).not.toHaveBeenCalled();
   });
 });

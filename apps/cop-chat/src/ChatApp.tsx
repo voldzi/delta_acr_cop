@@ -315,6 +315,7 @@ export function ChatApp() {
   const [recoveryKeyInput, setRecoveryKeyInput] = React.useState("");
   const [generatedRecoveryKey, setGeneratedRecoveryKey] = React.useState<string | null>(null);
   const [recoveryWorking, setRecoveryWorking] = React.useState(false);
+  const [chatRemovalWorking, setChatRemovalWorking] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
   const [deleteChatCandidate, setDeleteChatCandidate] = React.useState<ChatListItem | null>(null);
   const [retentionDialogOpen, setRetentionDialogOpen] = React.useState(false);
@@ -1110,7 +1111,24 @@ export function ChatApp() {
     });
   }
 
+  function removeChatLocalCaches(item: ChatListItem) {
+    if (!item.roomId) {
+      return;
+    }
+    timelineCacheRef.current.delete(item.roomId);
+    setHistoryExhaustedByRoom((current) => {
+      if (!(item.roomId && current[item.roomId])) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[item.roomId];
+      return next;
+    });
+    setTimelineCacheRevision((value) => value + 1);
+  }
+
   function hideChatFromList(item: ChatListItem) {
+    removeChatLocalCaches(item);
     updateChatPreferences((current) => {
       const nextHidden = {
         ...current.hiddenByKey,
@@ -1133,7 +1151,31 @@ export function ChatApp() {
       clearMobileSelection();
     }
     setDeleteChatCandidate(null);
-    setNotice(`Chat ${item.title} byl skryt ze seznamu. Nová zpráva ho znovu zobrazí.`);
+    setNotice(`Chat ${item.title} byl skryt v tomto zařízení. Nová zpráva ho znovu zobrazí.`);
+  }
+
+  async function leaveGroupChat(item: ChatListItem): Promise<void> {
+    if (!item.roomId) {
+      setError("Tuto skupinu zatím nelze opustit, protože nemá aktivní Matrix místnost.");
+      return;
+    }
+    const session = matrixSessionRef.current;
+    if (!session) {
+      setError("Chatové spojení není připravené. Zkuste akci zopakovat po synchronizaci.");
+      return;
+    }
+    setChatRemovalWorking(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await session.leaveRoom(item.roomId);
+      hideChatFromList(item);
+      setNotice(`Skupinu ${item.title} jste opustil/a. V tomto zařízení je skrytá ze seznamu.`);
+    } catch (caught) {
+      setError(userFacingError(caught instanceof Error ? caught.message : String(caught)));
+    } finally {
+      setChatRemovalWorking(false);
+    }
   }
 
   function openChatInfo() {
@@ -2592,9 +2634,13 @@ export function ChatApp() {
       {deleteChatCandidate ? (
         <React.Suspense fallback={<DialogLoadingFallback label="Smazat chat" />}>
           <DeleteChatDialog
+            canLeaveGroup={Boolean(deleteChatCandidate.roomId && deleteChatCandidate.type !== "direct")}
+            chatKind={deleteChatCandidate.type === "direct" ? "direct" : "group"}
+            working={chatRemovalWorking}
             title={deleteChatCandidate.title}
             onClose={() => setDeleteChatCandidate(null)}
-            onConfirm={() => hideChatFromList(deleteChatCandidate)}
+            onHide={() => hideChatFromList(deleteChatCandidate)}
+            onLeaveGroup={() => void leaveGroupChat(deleteChatCandidate)}
           />
         </React.Suspense>
       ) : null}
@@ -2802,7 +2848,7 @@ function ChatRow({
         </button>
         <button className="danger" onClick={() => runSwipeAction(() => onDeleteRequest(item))} tabIndex={openActions === "trailing" ? 0 : -1} type="button">
           <Trash2 size={19} />
-          <span>Smazat</span>
+          <span>{item.type === "direct" ? "Skrýt" : "Správa"}</span>
         </button>
       </div>
       <div

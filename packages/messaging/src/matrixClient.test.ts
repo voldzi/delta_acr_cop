@@ -10,6 +10,7 @@ type MockMatrixClient = {
   getUserId: () => string;
   initRustCrypto: () => Promise<void>;
   isRoomEncrypted: () => boolean;
+  leave?: MatrixLeaveRoom;
   mxcUrlToHttp?: MatrixMxcUrlToHttp;
   off?: MatrixEventSubscription;
   on?: MatrixEventSubscription;
@@ -49,6 +50,7 @@ type MatrixSendStateEvent = (roomId: string, eventType: string, content: Record<
 type MatrixSendEvent = (roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string) => Promise<unknown>;
 type MatrixSendMessage = (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
 type MatrixRedactEvent = (roomId: string, eventId: string, txnId?: string, opts?: Record<string, unknown>) => Promise<unknown>;
+type MatrixLeaveRoom = (roomId: string) => Promise<unknown>;
 type MatrixScrollback = (room: unknown, limit?: number) => Promise<unknown>;
 type MatrixEventSubscription = (event: string, listener: (...args: unknown[]) => void) => void;
 type MatrixMxcUrlToHttp = (mxcUrl: string, width?: number, height?: number, resizeMethod?: string, allowDirectLinks?: boolean, allowRedirects?: boolean, useAuthentication?: boolean) => string | null;
@@ -409,6 +411,20 @@ describe("Matrix client diagnostics", () => {
     expect(redactEvent).toHaveBeenCalledWith("!chat:cop.local", "$message", undefined, {
       reason: "Odstraněno uživatelem"
     });
+  });
+
+  it("leaves a Matrix room when leaving a group", async () => {
+    const leave = vi.fn<MatrixLeaveRoom>().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      leave,
+      rooms: [createRoom({ roomId: "!group:cop.local" })]
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await session.leaveRoom("!group:cop.local");
+
+    expect(leave).toHaveBeenCalledWith("!group:cop.local");
   });
 
   it("reads grouped Matrix reactions from timeline relation events", async () => {
@@ -813,6 +829,7 @@ function createMockMatrixClient({
   crypto,
   getJoinedRooms,
   getProfileInfo,
+  leave,
   mxcUrlToHttp,
   redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined),
   off,
@@ -829,6 +846,7 @@ function createMockMatrixClient({
   crypto?: MockMatrixCrypto;
   getJoinedRooms?: MockMatrixClient["getJoinedRooms"];
   getProfileInfo?: MockMatrixClient["getProfileInfo"];
+  leave?: MockMatrixClient["leave"];
   mxcUrlToHttp?: MockMatrixClient["mxcUrlToHttp"];
   off?: MockMatrixClient["off"];
   on?: MockMatrixClient["on"];
@@ -850,6 +868,7 @@ function createMockMatrixClient({
     getUserId: () => "@operator:cop.local",
     initRustCrypto: () => Promise.resolve(),
     isRoomEncrypted: () => true,
+    ...(leave ? { leave } : {}),
     ...(mxcUrlToHttp ? { mxcUrlToHttp } : {}),
     ...(off ? { off } : {}),
     ...(on ? { on } : {}),

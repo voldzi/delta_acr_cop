@@ -133,6 +133,7 @@ export interface MatrixMessagingSession {
   getTimeline(roomId: string): MatrixTimelineMessage[];
   inviteUsersToRoom(roomId: string, userIds: string[]): Promise<void>;
   joinInvitedRooms(): Promise<void>;
+  leaveRoom(roomId: string): Promise<void>;
   loadMoreTimeline(roomId: string, limit?: number): Promise<{ exhausted: boolean; messages: MatrixTimelineMessage[] }>;
   markRoomRead(roomId: string): Promise<void>;
   prepareEncryptionRecoveryForMobile(): Promise<string>;

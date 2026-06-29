@@ -2317,6 +2317,21 @@ button {
   background: #d92f27;
 }
 
+.mute-dialog button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.delete-chat-dialog__actions {
+  display: grid;
+  gap: 10px;
+}
+
+.delete-chat-dialog__note {
+  color: #667781;
+  font-size: 0.88rem;
+}
+
 .retention-dialog {
   display: grid;
   width: min(640px, 100%);

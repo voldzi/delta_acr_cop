@@ -31,6 +31,7 @@ function sessionStub(): MatrixMessagingSession {
     getTimeline: vi.fn(),
     inviteUsersToRoom: vi.fn(),
     joinInvitedRooms: vi.fn(),
+    leaveRoom: vi.fn(),
     loadMoreTimeline: vi.fn(),
     markRoomRead: vi.fn(),
     prepareEncryptionRecoveryForMobile: vi.fn(),

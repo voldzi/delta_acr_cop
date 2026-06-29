@@ -27,6 +27,7 @@ interface MatrixClientLike {
   invite?: (roomId: string, userId: string) => Promise<unknown>;
   isRoomEncrypted?: (roomId: string) => boolean;
   joinRoom?: (roomIdOrAlias: string) => Promise<{ room_id?: string; roomId?: string }>;
+  leave?: (roomId: string) => Promise<unknown>;
   mxcUrlToHttp?: (mxcUrl: string, width?: number, height?: number, resizeMethod?: string, allowDirectLinks?: boolean, allowRedirects?: boolean, useAuthentication?: boolean) => string | null;
   off?: (event: string, listener: (...args: unknown[]) => void) => void;
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
@@ -404,6 +405,18 @@ export async function createMatrixMessagingSession(
       }
     },
     joinInvitedRooms,
+    leaveRoom: async (roomId) => {
+      if (typeof client.leave !== "function") {
+        throw new Error("Opuštění skupiny služba zpráv nepodporuje.");
+      }
+      try {
+        await client.leave(roomId);
+        joinedRoomIds?.delete(roomId);
+        publishRooms();
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "opustit skupinu");
+      }
+    },
     loadMoreTimeline: async (roomId, limit = 80) => {
       if (exhaustedTimelineRooms.has(roomId)) {
         return {
