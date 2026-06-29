@@ -591,18 +591,18 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       kind: "vector_features",
       label: "Krizové výstrahy",
       layerId: "public.safety.warnings",
-      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "gdacs_alerts")),
+      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "gdacs_alerts") ?? findSource(sources, "hzs_incidents")),
       maxZoom: 18,
       minZoom: 5,
       provenance: {
-        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:gdacs_alerts"]
+        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:gdacs_alerts", "sim.safety-data:hzs_incidents"]
       },
       query: {
         maxFeatures: 250,
         mode: "bbox",
         providerId: "sim.safety-data",
         providerLayerIds: ["warnings"],
-        providerSourceIds: ["chmi_alerts", "gdacs_alerts"],
+        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents"],
         streamId: "features"
       },
       refreshSeconds: warningLayer?.expectedCadenceSeconds ?? 300,
@@ -649,18 +649,18 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       kind: "vector_features",
       label: "Požáry",
       layerId: "public.safety.fire",
-      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "gdacs_alerts") ?? findSource(sources, "nasa_firms") ?? findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
+      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "gdacs_alerts") ?? findSource(sources, "hzs_incidents") ?? findSource(sources, "nasa_firms") ?? findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
       maxZoom: 18,
       minZoom: 5,
       provenance: {
-        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:gdacs_alerts", "sim.safety-data:nasa_firms", "sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
+        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:gdacs_alerts", "sim.safety-data:hzs_incidents", "sim.safety-data:nasa_firms", "sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
       },
       query: {
         maxFeatures: 250,
         mode: "bbox",
         providerId: "sim.safety-data",
         providerLayerIds: ["fire"],
-        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms", "fire_hotspots", "fire_incidents"],
+        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "nasa_firms", "fire_hotspots", "fire_incidents"],
         streamId: "features"
       },
       refreshSeconds: fireLayer?.expectedCadenceSeconds ?? 600,
@@ -1449,6 +1449,10 @@ function buildSafetySources(sources: SafetySourceDescriptor[]): MapCatalogSource
         ? ["public.safety.fire", "public.safety.weather_alerts", "public.safety.warnings"]
       : source.sourceId === "chmi_hydro"
         ? ["public.safety.flood"]
+        : source.sourceId === "gdacs_alerts"
+          ? ["public.safety.warnings", "public.safety.fire", "public.safety.flood"]
+          : source.sourceId === "hzs_incidents"
+            ? ["public.safety.warnings", "public.safety.fire"]
         : source.sourceId === "nasa_firms" || source.sourceId === "fire_hotspots" || source.sourceId === "fire_incidents"
           ? ["public.safety.fire"]
           : source.sourceId === "weather_alerts"

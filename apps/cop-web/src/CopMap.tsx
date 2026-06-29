@@ -112,6 +112,7 @@ const situationWeatherPulseLayerId = "cop-situation-weather-pulse";
 const situationWeatherHeatLayerId = "cop-situation-weather-heat";
 const situationWeatherPriorityLayerId = "cop-situation-weather-priority";
 const situationWeatherConditionLayerId = "cop-situation-weather-condition";
+const situationWeatherDetailLayerId = "cop-situation-weather-detail";
 const situationWeatherWindLayerId = "cop-situation-weather-wind";
 const situationWeatherValueLayerId = "cop-situation-weather-value";
 const situationWeatherLabelLayerId = "cop-situation-weather-label";
@@ -121,6 +122,7 @@ const situationAirQualityHeatLayerId = "cop-situation-air-quality-heat";
 const situationAirQualityPointLayerId = "cop-situation-air-quality-point";
 const situationAirQualityLabelLayerId = "cop-situation-air-quality-label";
 const situationOsmSymbolLayerId = "cop-situation-osm-symbol";
+const situationOsmDetailSymbolLayerId = "cop-situation-osm-detail-symbol";
 const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
 const situationTrafficSymbolLayerId = "cop-situation-traffic-symbol";
 const situationRiskPointLayerId = "cop-situation-risk-point";
@@ -128,6 +130,8 @@ const situationRiskIconLayerId = "cop-situation-risk-icon";
 const situationFloodTrendLayerId = "cop-situation-flood-trend";
 const situationHydroReferenceIconLayerId = "cop-situation-hydro-reference-icon";
 const situationHydroReferenceTrendLayerId = "cop-situation-hydro-reference-trend";
+const situationHydroReferenceDetailIconLayerId = "cop-situation-hydro-reference-detail-icon";
+const situationHydroReferenceDetailTrendLayerId = "cop-situation-hydro-reference-detail-trend";
 const situationHydroReferenceLabelLayerId = "cop-situation-hydro-reference-label";
 const situationRiskLabelLayerId = "cop-situation-risk-label";
 const situationPointLayerId = "cop-situation-point";
@@ -162,6 +166,8 @@ const mapFeatureClickPriorityLayerIds = [
   sketchFillLayerId,
   situationRiskIconLayerId,
   situationFloodTrendLayerId,
+  situationHydroReferenceDetailTrendLayerId,
+  situationHydroReferenceDetailIconLayerId,
   situationHydroReferenceIconLayerId,
   situationHydroReferenceTrendLayerId,
   situationHydroReferenceLabelLayerId,
@@ -173,11 +179,13 @@ const mapFeatureClickPriorityLayerIds = [
   situationWeatherLabelLayerId,
   situationWeatherValueLayerId,
   situationWeatherWindLayerId,
+  situationWeatherDetailLayerId,
   situationWeatherPriorityLayerId,
   situationWeatherConditionLayerId,
   situationWeatherCameraSelectedLayerId,
   situationAirQualityLabelLayerId,
   situationAirQualityPointLayerId,
+  situationOsmDetailSymbolLayerId,
   situationOsmSymbolLayerId,
   situationPointSelectedLayerId,
   situationPointLayerId,
@@ -213,16 +221,20 @@ const mapPointRaiseLayerIds = [
   situationRiskPointLayerId,
   situationRiskIconLayerId,
   situationFloodTrendLayerId,
+  situationHydroReferenceDetailIconLayerId,
+  situationHydroReferenceDetailTrendLayerId,
   situationHydroReferenceIconLayerId,
   situationHydroReferenceTrendLayerId,
   situationHydroReferenceLabelLayerId,
   situationRiskLabelLayerId,
   situationOsmSymbolLayerId,
+  situationOsmDetailSymbolLayerId,
   situationMobileSymbolLayerId,
   situationWeatherCameraSelectedLayerId,
   situationWeatherCameraLayerId,
   situationWeatherPriorityLayerId,
   situationWeatherConditionLayerId,
+  situationWeatherDetailLayerId,
   situationWeatherWindLayerId,
   situationWeatherValueLayerId,
   situationWeatherLabelLayerId,
@@ -1954,6 +1966,7 @@ export function CopMap({
           type: "symbol",
           source: situationSourceId,
           minzoom: 10.3,
+          maxzoom: 13,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
           layout: {
             "icon-image": ["coalesce", ["get", "riskIconKey"], getRiskIconKey("flood")],
@@ -1970,10 +1983,30 @@ export function CopMap({
         });
 
         map.addLayer({
+          id: situationHydroReferenceDetailIconLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 13,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "riskIconKey"], getRiskIconKey("flood")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 13, 0.36, 15, 0.44, 17, 0.52],
+            "icon-anchor": "bottom",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+            "symbol-sort-key": ["-", ["coalesce", ["get", "hydroMapPriority"], 0]]
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.5, 0.86]
+          }
+        });
+
+        map.addLayer({
           id: situationHydroReferenceTrendLayerId,
           type: "symbol",
           source: situationSourceId,
           minzoom: 12,
+          maxzoom: 13,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["has", "floodTrendIconKey"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
           layout: {
             "icon-image": ["get", "floodTrendIconKey"],
@@ -1986,6 +2019,25 @@ export function CopMap({
           },
           paint: {
             "icon-opacity": ["case", ["get", "stale"], 0.46, 0.76]
+          }
+        });
+
+        map.addLayer({
+          id: situationHydroReferenceDetailTrendLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 13,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["has", "floodTrendIconKey"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          layout: {
+            "icon-image": ["get", "floodTrendIconKey"],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 13, 0.28, 15, 0.34, 17, 0.4],
+            "icon-anchor": "center",
+            "icon-offset": ["interpolate", ["linear"], ["zoom"], 13, ["literal", [30, -30]], 16, ["literal", [36, -36]]],
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.52, 0.88]
           }
         });
 
@@ -2040,6 +2092,7 @@ export function CopMap({
           id: situationOsmSymbolLayerId,
           type: "symbol",
           source: situationSourceId,
+          maxzoom: 14,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "osmPoi"], true]],
           layout: {
             "icon-image": ["coalesce", ["get", "osmSymbolKey"], getOsmCategoryIconKey("other")],
@@ -2061,6 +2114,24 @@ export function CopMap({
             "text-halo-color": "#061019",
             "text-halo-width": 1.5,
             "text-halo-blur": 0.4
+          }
+        });
+
+        map.addLayer({
+          id: situationOsmDetailSymbolLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 14,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "osmPoi"], true]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "osmSymbolKey"], getOsmCategoryIconKey("other")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.42, 16, 0.5, 18, 0.58],
+            "icon-anchor": "center",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.68, 0.96]
           }
         });
 
@@ -2170,6 +2241,7 @@ export function CopMap({
           id: situationWeatherPriorityLayerId,
           type: "symbol",
           source: situationSourceId,
+          maxzoom: 13,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], [">=", ["coalesce", ["get", "weatherMapPriority"], 0], 50]],
           layout: {
             "icon-image": ["coalesce", ["get", "weatherSymbolKey"], getWeatherConditionIconKey("unknown")],
@@ -2210,6 +2282,7 @@ export function CopMap({
           type: "symbol",
           source: situationSourceId,
           minzoom: 10,
+          maxzoom: 13,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["<", ["coalesce", ["get", "weatherMapPriority"], 0], 50]],
           layout: {
             "icon-image": ["coalesce", ["get", "weatherSymbolKey"], getWeatherConditionIconKey("unknown")],
@@ -2221,6 +2294,25 @@ export function CopMap({
           },
           paint: {
             "icon-opacity": ["case", ["get", "stale"], 0.62, 0.98]
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherDetailLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 13,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "weatherSymbolKey"], getWeatherConditionIconKey("unknown")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 13, 0.56, 16, 0.72, 18, 0.82],
+            "icon-anchor": "bottom",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+            "symbol-sort-key": ["-", ["coalesce", ["get", "weatherMapPriority"], 0]]
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.66, 0.98]
           }
         });
 
@@ -2869,6 +2961,9 @@ export function CopMap({
         map.on("mouseenter", situationOsmSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationOsmDetailSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationMobileSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -2890,6 +2985,12 @@ export function CopMap({
         map.on("mouseenter", situationHydroReferenceTrendLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationHydroReferenceDetailIconLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationHydroReferenceDetailTrendLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationHydroReferenceLabelLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -2900,6 +3001,9 @@ export function CopMap({
           map.getCanvas().style.cursor = "pointer";
         });
         map.on("mouseenter", situationWeatherConditionLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationWeatherDetailLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
         map.on("mouseenter", situationWeatherWindLayerId, () => {
@@ -2950,6 +3054,9 @@ export function CopMap({
         map.on("mouseleave", situationOsmSymbolLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
+        map.on("mouseleave", situationOsmDetailSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
         map.on("mouseleave", situationMobileSymbolLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
@@ -2971,6 +3078,12 @@ export function CopMap({
         map.on("mouseleave", situationHydroReferenceTrendLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
+        map.on("mouseleave", situationHydroReferenceDetailIconLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationHydroReferenceDetailTrendLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
         map.on("mouseleave", situationHydroReferenceLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
@@ -2981,6 +3094,9 @@ export function CopMap({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherConditionLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationWeatherDetailLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherWindLayerId, () => {

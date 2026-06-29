@@ -11290,6 +11290,7 @@
                 "fire_hotspots",
                 "fire_incidents",
                 "gdacs_alerts",
+                "hzs_incidents",
                 "mock",
                 "nasa_firms",
                 "weather_alerts"
@@ -11334,6 +11335,7 @@
               "fire_hotspots",
               "fire_incidents",
               "gdacs_alerts",
+              "hzs_incidents",
               "mock",
               "nasa_firms",
               "weather_alerts"
