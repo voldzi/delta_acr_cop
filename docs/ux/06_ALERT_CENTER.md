@@ -15,6 +15,8 @@ Frontend pracuje s normalizovanými interními layer id `weather_alerts`, `fire`
 
 GDACS kontext ze SIM zdroje `gdacs_alerts` je veřejná safety vrstva: povodňové `FL` události patří do `public.safety.flood`, požární `WF` události do `public.safety.fire` a ostatní podporované krizové typy do `public.safety.warnings`. Technické `response.warnings` z providerů zůstávají pouze provozní diagnostika.
 
+ČHMÚ CAP výstrahy ze zdroje `chmi_alerts` patří do `public.safety.weather_alerts`; obecná vrstva `public.safety.warnings` smí obsahovat pouze obecné krizové zdroje jako `gdacs_alerts`, `hzs_incidents` a `road_srti_lod`. Při současném zobrazení více polygonových výstražných vrstev se meteorologické výstrahy kreslí oddělenou žluto/oranžovou škálou a obecné krizové výstrahy samostatnou krizovou škálou, aby se vizuálně neslévaly.
+
 ## Technické stavy
 
 API poskytuje `GET /api/v1/cop/alerts`. Tyto alerty jsou odvozené z tracků, evidence a Source Health a nejsou veřejnými safety výstrahami.

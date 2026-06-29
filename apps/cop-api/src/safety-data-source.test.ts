@@ -420,14 +420,14 @@ function sampleCatalogResponse() {
           mode: "bbox",
           providerId: "sim.safety-data",
           providerLayerIds: ["warnings"],
-          providerSourceIds: ["chmi_alerts", "gdacs_alerts"],
+          providerSourceIds: ["gdacs_alerts"],
           streamId: "features"
         },
         recommendedCatalogLayerId: "public.safety.warnings",
         refreshSeconds: 300,
         role: "overlay",
         selectable: true,
-        sourceIds: ["chmi_alerts", "gdacs_alerts"],
+        sourceIds: ["gdacs_alerts"],
         styleProfile: "safety-warning-v1"
       }
     ],
@@ -436,7 +436,7 @@ function sampleCatalogResponse() {
         audience: "public",
         enabled: true,
         label: "CHMI Alerts",
-        layers: ["warnings"],
+        layers: ["weather_alerts", "fire"],
         selectableInMap: false,
         sourceRole: "final",
         sourceId: "chmi_alerts"
@@ -467,7 +467,7 @@ function sampleTaxonomyResponse() {
           {
             category: "warning.wind",
             hazardType: "wind",
-            layerId: "warnings",
+            layerId: "weather_alerts",
             severity: "warning",
             sourceCode: "I.2",
             sourceId: "chmi_alerts",

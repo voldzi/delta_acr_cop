@@ -1090,13 +1090,13 @@ describe("COP map data helpers", () => {
           properties: {
             category: "weather_warning",
             confidence: 0.45,
-            featureId: "warnings:chmi_alerts:6bmq06",
+            featureId: "warnings:road_srti_lod:6bmq06",
             headline: "Dotok",
             label: "Dotok",
             layer: "warnings",
             observedAt: "2026-05-21T08:11:11Z",
             severity: "advisory",
-            sourceId: "chmi_alerts",
+            sourceId: "road_srti_lod",
             stale: false
           },
           type: "Feature"
@@ -1115,13 +1115,13 @@ describe("COP map data helpers", () => {
           properties: {
             category: "weather_warning",
             confidence: 0.7,
-            featureId: "warnings:chmi_alerts:polygon",
+            featureId: "warnings:road_srti_lod:polygon",
             headline: "Výstražná oblast",
             label: "Výstražná oblast",
             layer: "warnings",
             observedAt: "2026-05-21T08:11:11Z",
             severity: "warning",
-            sourceId: "chmi_alerts",
+            sourceId: "road_srti_lod",
             stale: false
           },
           type: "Feature"
@@ -1149,11 +1149,100 @@ describe("COP map data helpers", () => {
     });
 
     expect(collection.features[0]?.properties).toMatchObject({
-      featureId: "warnings:chmi_alerts:6bmq06",
+      featureId: "warnings:road_srti_lod:6bmq06",
       mapPointSuppressed: true,
       situationStatusLabel: "UPOZORNĚNÍ"
     });
     expect(collection.features[1]?.properties.mapPointSuppressed).toBeUndefined();
+  });
+
+  it("keeps weather alert polygons visually separate from generic crisis warnings", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [14.0, 50.0],
+              [14.2, 50.0],
+              [14.2, 50.2],
+              [14.0, 50.2],
+              [14.0, 50.0]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            category: "weather_warning",
+            confidence: 0.81,
+            featureId: "weather_alerts:chmi_alerts:area",
+            headline: "Silný vítr",
+            label: "Silný vítr",
+            layer: "weather_alerts",
+            layerId: "public.safety.weather_alerts",
+            observedAt: "2026-05-21T08:11:11Z",
+            severity: "warning",
+            sourceId: "chmi_alerts",
+            stale: false
+          },
+          type: "Feature"
+        },
+        {
+          geometry: {
+            coordinates: [[
+              [14.3, 50.0],
+              [14.5, 50.0],
+              [14.5, 50.2],
+              [14.3, 50.2],
+              [14.3, 50.0]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            category: "road.accident",
+            confidence: 0.73,
+            featureId: "warnings:road_srti_lod:area",
+            headline: "Dopravní nehoda",
+            label: "Dopravní nehoda",
+            layer: "warnings",
+            layerId: "public.safety.warnings",
+            observedAt: "2026-05-21T08:12:11Z",
+            severity: "advisory",
+            sourceId: "road_srti_lod",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-21T10:00:00Z",
+      query: {
+        bbox: { east: 14.6, north: 50.3, south: 49.9, west: 13.9 },
+        layers: ["weather_alerts", "warnings"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 2,
+        sourceCount: 2,
+        staleFeatureCount: 0,
+        warningCount: 2
+      },
+      type: "FeatureCollection",
+      warnings: []
+    }, "weather_alerts:chmi_alerts:area");
+
+    expect(collection.features.map((feature) => feature.properties.safetyAlertLayer)).toEqual(["weather_alerts", "warnings"]);
+    expect(collection.features[0]?.properties).toMatchObject({
+      safetyAlertDimmed: false,
+      selected: true
+    });
+    expect(collection.features[1]?.properties).toMatchObject({
+      safetyAlertDimmed: true,
+      selected: false
+    });
   });
 
   it("does not prefix hydrology points with a flood incident label", () => {

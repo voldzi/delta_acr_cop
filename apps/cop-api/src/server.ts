@@ -135,7 +135,9 @@ import {
   type CopNotificationDecision
 } from "./notification-decision.js";
 import { createPlaceGeocoderFromEnv, type PlaceGeocoder } from "./place-geocoder.js";
+import { buildCopPrometheusMetrics } from "./prometheus-metrics.js";
 import { withEventProvenance } from "./provenance.js";
+import { registerHealthRoutes } from "./routes/health-routes.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems, type SourceHealthItem } from "./source-health.js";
 import {
@@ -647,128 +649,81 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await mobileDeviceFallbackStore.close();
   });
 
-  app.get("/health/live", async () => ({
-    status: "ok",
-    timestamp: new Date().toISOString()
-  }));
-
-  app.get("/health/ready", async () => ({
-    status: "ok",
-    timestamp: new Date().toISOString()
-  }));
-
-  app.get("/health/dependencies", async () => {
-    const messaging = await withDependencyTimeout(
-      "csm-messaging-provider",
-      messagingDependency(),
-      {
-        detail: `Messaging provider dependency check timed out after ${healthDependencyTimeoutMs()} ms.`,
-        name: "csm-messaging-provider",
-        status: "degraded"
-      }
-    );
-    const aiGatewayDependency = await withDependencyTimeout(
-      "ai-gateway",
-      aiGateway.health().then((status) => ({
-        name: "ai-gateway",
-        status: status.status,
-        detail: status.detail
-      })),
-      {
-        name: "ai-gateway",
-        status: "degraded",
-        detail: `AI gateway dependency check timed out after ${aiHealthDependencyTimeoutMs()} ms.`
-      },
-      aiHealthDependencyTimeoutMs()
-    );
-    return {
+  registerHealthRoutes(app, {
+    live: async () => ({
       status: "ok",
-      dependencies: [
-      { name: "source-registry", status: "ok" },
-      { name: "in-memory-cop-state", status: "ok" },
-      { name: "cop-stream-bus", status: streamBusDependencyStatus(), detail: streamBusDependencyDetail() },
-      { name: "federation-runtime-store", status: federationRuntimeStoreStatus, detail: federationRuntimeStoreDependencyDetail() },
-      { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
-      { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
-      { name: "community-report-store", status: communityReportStoreStatus, detail: communityReportStoreDependencyDetail() },
-      { name: "incident-store", status: incidentStoreStatus, detail: incidentStoreDependencyDetail() },
-      { name: "sketch-drawing-store", status: sketchDrawingStoreStatus, detail: sketchDrawingStoreDependencyDetail() },
-      { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
-      { name: "mobile-device-store", status: mobileDeviceStoreStatus, detail: mobileDeviceStoreDependencyDetail() },
-      { name: "place-geocoder", status: placeGeocoder ? "ok" : "disabled", detail: placeGeocoder?.diagnostics?.() ?? "disabled" },
-      messaging,
-      ...(flightDataSource ? [flightDataDependency()] : []),
-      ...(situationDataSource ? [situationDataDependency()] : []),
-      ...(safetyDataSource ? [safetyDataDependency()] : []),
-      ...(missionArenaSource ? [missionArenaDependency()] : []),
-      ...(takGatewaySource ? [takGatewayDependency()] : []),
-      aiGatewayDependency
-    ]
-    };
-  });
-
-  app.get("/metrics", async (_request, reply) => {
-    const currentObjects = selectCurrentTracks(state.objects.values(), now(), trackLifecycle);
-    const trackHistoryPointCount = await countTrackHistoryPoints();
-    const persistedCurrentTrackCount = await countPersistedCurrentTracks();
-    const streamMetrics = streamBroadcaster.metrics;
-    const streamBusMetrics = streamBus.metrics;
-    const streamBusMode = escapePrometheusLabel(streamBusMetrics.mode);
-    const lines = [
-      "# HELP cop_sources_total Registered COP source systems.",
-      "# TYPE cop_sources_total gauge",
-      `cop_sources_total ${state.sources.size}`,
-      "# HELP cop_events_total Accepted ingest events.",
-      "# TYPE cop_events_total counter",
-      `cop_events_total ${state.events.size}`,
-      "# HELP cop_objects_total Current non-expired COP objects.",
-      "# TYPE cop_objects_total gauge",
-      `cop_objects_total ${currentObjects.length}`,
-      "# HELP cop_current_tracks_persisted_total Persisted current COP track snapshots.",
-      "# TYPE cop_current_tracks_persisted_total gauge",
-      `cop_current_tracks_persisted_total ${persistedCurrentTrackCount}`,
-      "# HELP cop_track_history_points_total Retained temporal track history points.",
-      "# TYPE cop_track_history_points_total gauge",
-      `cop_track_history_points_total ${trackHistoryPointCount}`,
-      "# HELP cop_stream_clients_total Connected COP live stream clients.",
-      "# TYPE cop_stream_clients_total gauge",
-      `cop_stream_clients_total ${streamMetrics.clientCount}`,
-      "# HELP cop_stream_messages_total COP live stream messages created by type.",
-      "# TYPE cop_stream_messages_total counter",
-      `cop_stream_messages_total{type="snapshot"} ${streamMetrics.snapshotMessagesTotal}`,
-      `cop_stream_messages_total{type="delta"} ${streamMetrics.deltaMessagesTotal}`,
-      `cop_stream_messages_total{type="heartbeat"} ${streamMetrics.heartbeatMessagesTotal}`,
-      `cop_stream_messages_total{type="backpressure"} ${streamMetrics.backpressureMessagesTotal}`,
-      `cop_stream_messages_total{type="reconnect_required"} ${streamMetrics.reconnectRequiredMessagesTotal}`,
-      "# HELP cop_stream_write_errors_total COP live stream write errors.",
-      "# TYPE cop_stream_write_errors_total counter",
-      `cop_stream_write_errors_total ${streamMetrics.writeErrorsTotal}`,
-      "# HELP cop_stream_bus_ready Whether COP stream fan-out bus is ready.",
-      "# TYPE cop_stream_bus_ready gauge",
-      `cop_stream_bus_ready{mode="${streamBusMode}"} ${streamBusMetrics.ready ? 1 : 0}`,
-      "# HELP cop_stream_bus_messages_total COP stream fan-out bus messages.",
-      "# TYPE cop_stream_bus_messages_total counter",
-      `cop_stream_bus_messages_total{mode="${streamBusMode}",direction="published"} ${streamBusMetrics.publishedMessagesTotal}`,
-      `cop_stream_bus_messages_total{mode="${streamBusMode}",direction="received"} ${streamBusMetrics.receivedMessagesTotal}`,
-      `cop_stream_bus_messages_total{mode="${streamBusMode}",direction="local_delivery"} ${streamBusMetrics.localDeliveriesTotal}`,
-      "# HELP cop_stream_backpressure_active Whether COP stream backpressure is currently active.",
-      "# TYPE cop_stream_backpressure_active gauge",
-      `cop_stream_backpressure_active ${streamMetrics.backpressureActive ? 1 : 0}`,
-      "# HELP cop_stream_backpressure_client_threshold Client threshold for stream backpressure.",
-      "# TYPE cop_stream_backpressure_client_threshold gauge",
-      `cop_stream_backpressure_client_threshold ${streamMetrics.backpressureClientThreshold}`,
-      "# HELP cop_stream_last_message_timestamp_seconds Last COP stream message timestamp by type.",
-      "# TYPE cop_stream_last_message_timestamp_seconds gauge",
-      `cop_stream_last_message_timestamp_seconds{type="snapshot"} ${timestampSeconds(streamMetrics.lastSnapshotAt)}`,
-      `cop_stream_last_message_timestamp_seconds{type="delta"} ${timestampSeconds(streamMetrics.lastDeltaAt)}`,
-      `cop_stream_last_message_timestamp_seconds{type="heartbeat"} ${timestampSeconds(streamMetrics.lastHeartbeatAt)}`,
-      `cop_stream_last_message_timestamp_seconds{type="backpressure"} ${timestampSeconds(streamMetrics.lastBackpressureAt)}`,
-      `cop_stream_last_message_timestamp_seconds{type="write_error"} ${timestampSeconds(streamMetrics.lastWriteErrorAt)}`,
-      ...situationDataCacheMetricLines(),
-      ...safetyDataCacheMetricLines(),
-      ...takGatewayCacheMetricLines()
-    ];
-    return reply.type("text/plain").send(`${lines.join("\n")}\n`);
+      timestamp: new Date().toISOString()
+    }),
+    ready: async () => ({
+      status: "ok",
+      timestamp: new Date().toISOString()
+    }),
+    dependencies: async () => {
+      const messaging = await withDependencyTimeout(
+        "csm-messaging-provider",
+        messagingDependency(),
+        {
+          detail: `Messaging provider dependency check timed out after ${healthDependencyTimeoutMs()} ms.`,
+          name: "csm-messaging-provider",
+          status: "degraded"
+        }
+      );
+      const aiGatewayDependency = await withDependencyTimeout(
+        "ai-gateway",
+        aiGateway.health().then((status) => ({
+          name: "ai-gateway",
+          status: status.status,
+          detail: status.detail
+        })),
+        {
+          name: "ai-gateway",
+          status: "degraded",
+          detail: `AI gateway dependency check timed out after ${aiHealthDependencyTimeoutMs()} ms.`
+        },
+        aiHealthDependencyTimeoutMs()
+      );
+      return {
+        status: "ok",
+        dependencies: [
+        { name: "source-registry", status: "ok" },
+        { name: "in-memory-cop-state", status: "ok" },
+        { name: "cop-stream-bus", status: streamBusDependencyStatus(), detail: streamBusDependencyDetail() },
+        { name: "federation-runtime-store", status: federationRuntimeStoreStatus, detail: federationRuntimeStoreDependencyDetail() },
+        { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
+        { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
+        { name: "community-report-store", status: communityReportStoreStatus, detail: communityReportStoreDependencyDetail() },
+        { name: "incident-store", status: incidentStoreStatus, detail: incidentStoreDependencyDetail() },
+        { name: "sketch-drawing-store", status: sketchDrawingStoreStatus, detail: sketchDrawingStoreDependencyDetail() },
+        { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
+        { name: "mobile-device-store", status: mobileDeviceStoreStatus, detail: mobileDeviceStoreDependencyDetail() },
+        { name: "place-geocoder", status: placeGeocoder ? "ok" : "disabled", detail: placeGeocoder?.diagnostics?.() ?? "disabled" },
+        messaging,
+        ...(flightDataSource ? [flightDataDependency()] : []),
+        ...(situationDataSource ? [situationDataDependency()] : []),
+        ...(safetyDataSource ? [safetyDataDependency()] : []),
+        ...(missionArenaSource ? [missionArenaDependency()] : []),
+        ...(takGatewaySource ? [takGatewayDependency()] : []),
+        aiGatewayDependency
+      ]
+      };
+    },
+    metrics: async (_request, reply) => {
+      const currentObjects = selectCurrentTracks(state.objects.values(), now(), trackLifecycle);
+      const trackHistoryPointCount = await countTrackHistoryPoints();
+      const persistedCurrentTrackCount = await countPersistedCurrentTracks();
+      return reply.type("text/plain").send(buildCopPrometheusMetrics({
+        currentObjectCount: currentObjects.length,
+        eventCount: state.events.size,
+        persistedCurrentTrackCount,
+        safetyCache: safetyDataSource?.cacheStats?.(),
+        situationCache: situationDataSource?.cacheStats?.(),
+        sourceCount: state.sources.size,
+        streamBusMetrics: streamBus.metrics,
+        streamMetrics: streamBroadcaster.metrics,
+        takGatewayCache: takGatewaySource?.cacheStats?.(),
+        trackHistoryPointCount
+      }));
+    }
   });
 
   async function initializeStreamBus(): Promise<void> {
@@ -1193,36 +1148,6 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   }
 
-  function situationDataCacheMetricLines(): string[] {
-    const cache = situationDataSource?.cacheStats?.();
-    if (!cache) {
-      return [];
-    }
-    return [
-      "# HELP cop_situation_cache_entries Cached situation-data canonical viewport entries.",
-      "# TYPE cop_situation_cache_entries gauge",
-      `cop_situation_cache_entries ${cache.entries}`,
-      "# HELP cop_situation_cache_inflight In-flight situation-data cache refreshes.",
-      "# TYPE cop_situation_cache_inflight gauge",
-      `cop_situation_cache_inflight ${cache.inflight}`,
-      "# HELP cop_situation_cache_requests_total Situation-data cache requests by result.",
-      "# TYPE cop_situation_cache_requests_total counter",
-      `cop_situation_cache_requests_total{result="hit"} ${cache.hits}`,
-      `cop_situation_cache_requests_total{result="miss"} ${cache.misses}`,
-      `cop_situation_cache_requests_total{result="coalesced"} ${cache.coalescedHits}`,
-      `cop_situation_cache_requests_total{result="stale"} ${cache.staleHits}`,
-      "# HELP cop_situation_cache_refreshes_total Situation-data upstream refreshes completed by COP.",
-      "# TYPE cop_situation_cache_refreshes_total counter",
-      `cop_situation_cache_refreshes_total ${cache.refreshes}`,
-      "# HELP cop_situation_cache_errors_total Situation-data upstream refresh errors observed by COP.",
-      "# TYPE cop_situation_cache_errors_total counter",
-      `cop_situation_cache_errors_total ${cache.errors}`,
-      "# HELP cop_situation_cache_evictions_total Situation-data cache evictions.",
-      "# TYPE cop_situation_cache_evictions_total counter",
-      `cop_situation_cache_evictions_total ${cache.evictions}`
-    ];
-  }
-
   function activeSituationDataSourceSystem(): SourceSystem {
     if (!situationDataSource) {
       throw new Error("Situation data source is not enabled.");
@@ -1245,36 +1170,6 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   }
 
-  function safetyDataCacheMetricLines(): string[] {
-    const cache = safetyDataSource?.cacheStats?.();
-    if (!cache) {
-      return [];
-    }
-    return [
-      "# HELP cop_safety_cache_entries Cached safety-data canonical viewport entries.",
-      "# TYPE cop_safety_cache_entries gauge",
-      `cop_safety_cache_entries ${cache.entries}`,
-      "# HELP cop_safety_cache_inflight In-flight safety-data cache refreshes.",
-      "# TYPE cop_safety_cache_inflight gauge",
-      `cop_safety_cache_inflight ${cache.inflight}`,
-      "# HELP cop_safety_cache_requests_total Safety-data cache requests by result.",
-      "# TYPE cop_safety_cache_requests_total counter",
-      `cop_safety_cache_requests_total{result="hit"} ${cache.hits}`,
-      `cop_safety_cache_requests_total{result="miss"} ${cache.misses}`,
-      `cop_safety_cache_requests_total{result="coalesced"} ${cache.coalescedHits}`,
-      `cop_safety_cache_requests_total{result="stale"} ${cache.staleHits}`,
-      "# HELP cop_safety_cache_refreshes_total Safety-data upstream refreshes completed by COP.",
-      "# TYPE cop_safety_cache_refreshes_total counter",
-      `cop_safety_cache_refreshes_total ${cache.refreshes}`,
-      "# HELP cop_safety_cache_errors_total Safety-data upstream refresh errors observed by COP.",
-      "# TYPE cop_safety_cache_errors_total counter",
-      `cop_safety_cache_errors_total ${cache.errors}`,
-      "# HELP cop_safety_cache_evictions_total Safety-data cache evictions.",
-      "# TYPE cop_safety_cache_evictions_total counter",
-      `cop_safety_cache_evictions_total ${cache.evictions}`
-    ];
-  }
-
   function activeSafetyDataSourceSystem(): SourceSystem {
     if (!safetyDataSource) {
       throw new Error("Safety data source is not enabled.");
@@ -1295,36 +1190,6 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       name: "tak-gateway-source",
       status: health.health === "ONLINE" ? "ok" : "degraded"
     };
-  }
-
-  function takGatewayCacheMetricLines(): string[] {
-    const cache = takGatewaySource?.cacheStats?.();
-    if (!cache) {
-      return [];
-    }
-    return [
-      "# HELP cop_tak_gateway_cache_entries Cached TAK Gateway viewport entries.",
-      "# TYPE cop_tak_gateway_cache_entries gauge",
-      `cop_tak_gateway_cache_entries ${cache.entries}`,
-      "# HELP cop_tak_gateway_cache_inflight In-flight TAK Gateway cache refreshes.",
-      "# TYPE cop_tak_gateway_cache_inflight gauge",
-      `cop_tak_gateway_cache_inflight ${cache.inflight}`,
-      "# HELP cop_tak_gateway_cache_requests_total TAK Gateway cache requests by result.",
-      "# TYPE cop_tak_gateway_cache_requests_total counter",
-      `cop_tak_gateway_cache_requests_total{result="hit"} ${cache.hits}`,
-      `cop_tak_gateway_cache_requests_total{result="miss"} ${cache.misses}`,
-      `cop_tak_gateway_cache_requests_total{result="coalesced"} ${cache.coalescedHits}`,
-      `cop_tak_gateway_cache_requests_total{result="stale"} ${cache.staleHits}`,
-      "# HELP cop_tak_gateway_cache_refreshes_total TAK Gateway upstream refreshes completed by COP.",
-      "# TYPE cop_tak_gateway_cache_refreshes_total counter",
-      `cop_tak_gateway_cache_refreshes_total ${cache.refreshes}`,
-      "# HELP cop_tak_gateway_cache_errors_total TAK Gateway upstream refresh errors observed by COP.",
-      "# TYPE cop_tak_gateway_cache_errors_total counter",
-      `cop_tak_gateway_cache_errors_total ${cache.errors}`,
-      "# HELP cop_tak_gateway_cache_evictions_total TAK Gateway cache evictions.",
-      "# TYPE cop_tak_gateway_cache_evictions_total counter",
-      `cop_tak_gateway_cache_evictions_total ${cache.evictions}`
-    ];
   }
 
   function activeTakGatewaySourceSystem(): SourceSystem {
@@ -11719,18 +11584,6 @@ function parseBooleanQuery(value: unknown): boolean {
     return false;
   }
   return value === "true" || value === "1" || value === "yes" || value === "on";
-}
-
-function timestampSeconds(value: string | undefined): number {
-  if (!value) {
-    return 0;
-  }
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? Math.floor(timestamp / 1000) : 0;
-}
-
-function escapePrometheusLabel(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"").replaceAll("\n", "\\n");
 }
 
 function streamHealthStatus(metrics: CopStreamBroadcaster["metrics"], now: Date): "degraded" | "ok" {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeTimelineMessages } from "./ChatApp";
+import { mergeTimelineMessages } from "./chat-model";
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
 describe("mergeTimelineMessages", () => {

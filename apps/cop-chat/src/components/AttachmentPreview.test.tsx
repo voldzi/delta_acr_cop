@@ -29,6 +29,22 @@ describe("AttachmentPreview descriptor extraction", () => {
     });
   });
 
+  it("keeps the local PDF blob for in-browser rendering", async () => {
+    const blob = new Blob(["%PDF-1.7"], { type: "application/pdf" });
+    const descriptor = await createChatAttachmentPreviewDescriptor({
+      blob,
+      contentType: "application/pdf",
+      fileName: "manual.pdf",
+      sourceUrl: "blob:https://cop.zeleznalady.cz/manual"
+    });
+
+    expect(descriptor).toMatchObject({
+      kind: "pdf",
+      sourceBlob: blob,
+      sourceUrl: "blob:https://cop.zeleznalady.cz/manual"
+    });
+  });
+
   it("extracts Word paragraphs from DOCX", async () => {
     const blob = await zipBlob({
       "word/document.xml": `

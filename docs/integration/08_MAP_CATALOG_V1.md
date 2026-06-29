@@ -139,7 +139,7 @@ Examples:
 | `mobile_coverage_model` | `input` / `diagnostic` | diagnostics, optional technical overlay |
 | `ctu_nettest` | `input` | diagnostics and provenance |
 | `osm_postgis` communications towers | `reference` / `input` | neutral reference infrastructure; never final mobile status |
-| `chmi_alerts` | `final` | user layers `public.safety.weather_alerts` and `public.safety.fire` for ČHMÚ fire danger; `public.safety.warnings` remains compatibility alias |
+| `chmi_alerts` | `final` | user layers `public.safety.weather_alerts` and `public.safety.fire` for ČHMÚ fire danger; must not feed `public.safety.warnings` |
 | `gdacs_alerts` | `final` | global GDACS crisis context; `FL` maps to `public.safety.flood`, `WF` to `public.safety.fire`, other supported crisis types to `public.safety.warnings` |
 | `hzs_incidents` | `final` | current HZS incidents; fires also feed `public.safety.fire`, other incident types feed `public.safety.warnings` |
 | `road_srti_lod` | `final` | NDIC/ŘSD SRTI road safety events in `public.safety.warnings` with canonical `road.*` type codes |
@@ -543,7 +543,7 @@ Provider-native fields may be preserved under:
 
 | Catalog layerId | User label | Provider query |
 | --- | --- | --- |
-| `public.safety.warnings` | Krizové výstrahy | `sim.safety-data` layer `warnings`, sources `chmi_alerts`, `gdacs_alerts`, `hzs_incidents`, `road_srti_lod` |
+| `public.safety.warnings` | Krizové výstrahy | `sim.safety-data` layer `warnings`, sources `gdacs_alerts`, `hzs_incidents`, `road_srti_lod` |
 | `public.safety.flood` | Vodní stavy a průtoky | `sim.safety-data` layer `flood`, sources `chmi_hydro`, `gdacs_alerts` |
 | `public.safety.fire` | Požáry | `sim.safety-data` layer `fire`, sources `chmi_alerts`, `gdacs_alerts`, `hzs_incidents`, `nasa_firms`, `fire_hotspots`, `fire_incidents` |
 | `public.safety.weather_alerts` | Meteorologické výstrahy | `sim.safety-data` layer `weather_alerts`, source `chmi_alerts` |

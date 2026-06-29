@@ -16,6 +16,7 @@ import {
   Table2
 } from "lucide-react";
 import type { MatrixLocationShare } from "@cop/messaging/types";
+import { ChatPdfViewer } from "./ChatPdfViewer";
 
 export type ChatAttachmentPreviewKind =
   | "archi"
@@ -44,7 +45,7 @@ type PreviewBase = {
 };
 
 export type ChatAttachmentPreviewDescriptor =
-  | (PreviewBase & { kind: "pdf"; sourceUrl: string })
+  | (PreviewBase & { kind: "pdf"; sourceBlob?: Blob; sourceUrl: string })
   | (PreviewBase & { kind: "image"; sourceUrl: string })
   | (PreviewBase & { kind: "video"; sourceUrl: string })
   | (PreviewBase & { kind: "audio"; sourceUrl: string })
@@ -175,7 +176,12 @@ export async function createChatAttachmentPreviewDescriptor({
   }
 
   if ((kind === "pdf" || kind === "image" || kind === "video" || kind === "audio") && sourceUrl) {
-    return { ...base, kind, sourceUrl };
+    return {
+      ...base,
+      kind,
+      ...(kind === "pdf" && blob ? { sourceBlob: blob } : {}),
+      sourceUrl
+    };
   }
 
   if (!blob) {
@@ -292,7 +298,7 @@ function PdfPreview({ descriptor, onDownload }: { descriptor: Extract<ChatAttach
   return (
     <section className="chat-doc-preview is-pdf">
       <PreviewHeader descriptor={descriptor} onDownload={onDownload} />
-      <iframe className="chat-doc-preview__pdf-frame" src={descriptor.sourceUrl} title={descriptor.title} />
+      <ChatPdfViewer fileName={descriptor.title} onDownload={onDownload} sourceBlob={descriptor.sourceBlob} sourceUrl={descriptor.sourceUrl} />
     </section>
   );
 }

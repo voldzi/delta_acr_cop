@@ -268,7 +268,7 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
       layers: Array<{ compatibilityOnly?: boolean; layerId: string; preferredProviderId?: string; query: { maxFeatures?: number; providerId: string; providerLayerIds?: string[]; providerSourceIds?: string[] } }>;
-      sources: Array<{ compatibilityOnly?: boolean; providerId: string; sourceId: string }>;
+      sources: Array<{ compatibilityOnly?: boolean; feedsCatalogLayerIds?: string[]; providerId: string; sourceId: string }>;
     };
     const fireLayer = body.layers.find((layer) => layer.layerId === "public.safety.fire");
     expect(fireLayer).toMatchObject({
@@ -290,6 +290,16 @@ describe("map catalog route", () => {
         providerSourceIds: ["chmi_hydro", "gdacs_alerts"]
       }
     });
+    const warningLayer = body.layers.find((layer) => layer.layerId === "public.safety.warnings");
+    expect(warningLayer).toMatchObject({
+      query: {
+        providerId: "sim.safety-data",
+        providerLayerIds: ["warnings"],
+        providerSourceIds: ["gdacs_alerts", "hzs_incidents", "road_srti_lod"]
+      }
+    });
+    const chmiSource = body.sources.find((source) => source.providerId === "sim.safety-data" && source.sourceId === "chmi_alerts");
+    expect(chmiSource?.feedsCatalogLayerIds).toEqual(["public.safety.weather_alerts", "public.safety.fire"]);
     expect(body.sources).not.toEqual(expect.arrayContaining([
       expect.objectContaining({
         compatibilityOnly: true,
@@ -424,7 +434,7 @@ describe("map catalog route", () => {
       technology: "4G"
     });
     expect(body.safety?.query.layers).toEqual(["warnings", "flood"]);
-    expect(body.safety?.query.sources).toEqual(["chmi_alerts", "gdacs_alerts", "hzs_incidents", "road_srti_lod", "chmi_hydro"]);
+    expect(body.safety?.query.sources).toEqual(["gdacs_alerts", "hzs_incidents", "road_srti_lod", "chmi_hydro"]);
     expect(body.tak).toBeUndefined();
     expect(body.warnings.join(" ")).toContain("partner.tak.mobile");
   });
@@ -1773,7 +1783,7 @@ class FakeSafetyDataSource implements SafetyDataSource {
 
   async fetchSources(_requestNow: Date): Promise<SafetySourceDescriptor[]> {
     return [
-      { enabled: true, label: "CHMI Alerts", layers: ["warnings"], sourceId: "chmi_alerts", updateCadenceSeconds: 300 },
+      { enabled: true, label: "CHMI Alerts", layers: ["weather_alerts", "fire"], sourceId: "chmi_alerts", updateCadenceSeconds: 300 },
       { enabled: true, label: "CHMI Hydro", layers: ["flood"], sourceId: "chmi_hydro", updateCadenceSeconds: 600 },
       { enabled: true, label: "GDACS Alerts", layers: ["warnings", "fire", "flood"], sourceId: "gdacs_alerts", updateCadenceSeconds: 300 }
     ];
@@ -1905,6 +1915,29 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
           selectable: true,
           sourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms"],
           styleProfile: "fire-risk-v1"
+        },
+        {
+          audience: "public",
+          cacheTtlSeconds: 300,
+          defaultVisible: true,
+          geometryTypes: ["Point", "Polygon", "MultiPolygon"],
+          kind: "vector_features",
+          label: "Krizové výstrahy",
+          providerLayerId: "warnings",
+          query: {
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.safety-data",
+            providerLayerIds: ["warnings"],
+            providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "road_srti_lod"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "public.safety.warnings",
+          refreshSeconds: 300,
+          role: "primary",
+          selectable: true,
+          sourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "road_srti_lod"],
+          styleProfile: "public-warning-v1"
         }
       ],
       providerId: "sim.safety-data",
@@ -1912,7 +1945,7 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
         {
           audience: "public",
           enabled: true,
-          feedsCatalogLayerIds: ["public.safety.fire"],
+          feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.weather_alerts", "public.safety.fire"],
           label: "CHMI CAP alerts",
           selectableInMap: false,
           sourceId: "chmi_alerts",

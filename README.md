@@ -51,6 +51,7 @@ pnpm validate:openapi
 pnpm lint
 pnpm test
 pnpm build
+pnpm check:bundles
 ```
 
 ## Bezpečnostní hranice

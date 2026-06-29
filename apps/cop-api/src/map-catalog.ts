@@ -267,7 +267,13 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
   const audience = normalizeAudience(layer.audience);
   const kind = normalizeLayerKind(layer.kind);
   const providerLayerIds = layer.query?.providerLayerIds?.filter(Boolean) ?? [];
-  const providerSourceIds = layer.query?.providerSourceIds?.filter(Boolean) ?? layer.sourceIds?.filter(Boolean) ?? [];
+  const rawProviderSourceIds = layer.query?.providerSourceIds?.filter(Boolean) ?? layer.sourceIds?.filter(Boolean) ?? [];
+  const providerSourceIds = sanitizeProviderCatalogLayerSourceIds(providerId, layer.recommendedCatalogLayerId, rawProviderSourceIds);
+  const provenanceSourceIds = sanitizeProviderCatalogLayerSourceIds(
+    providerId,
+    layer.recommendedCatalogLayerId,
+    layer.sourceIds?.filter(Boolean) ?? providerSourceIds
+  );
   const categoryIds = uniqueStrings([
     ...(layer.query?.categoryIds ?? []),
     ...(layer.query?.categoryFilter ?? [])
@@ -290,7 +296,7 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
       minZoom: minZoomForCatalogLayer(layer),
       preferredProviderId: layer.preferredProviderId,
       provenance: {
-        sourceIds: uniqueStrings((layer.sourceIds ?? providerSourceIds).map((sourceId) => `${providerId}:${sourceId}`)),
+        sourceIds: uniqueStrings(provenanceSourceIds.map((sourceId) => `${providerId}:${sourceId}`)),
         ...(layer.technicalInputs && layer.technicalInputs.length > 0 ? { technicalInputs: layer.technicalInputs.map((sourceId) => `${providerId}:${sourceId}`) } : {})
       },
       query: {
@@ -308,6 +314,13 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
       styleProfile: layer.styleProfile ?? styleProfileForCatalogLayer(layer)
     }
   ];
+}
+
+function sanitizeProviderCatalogLayerSourceIds(providerId: string, layerId: string, sourceIds: string[]): string[] {
+  if (providerId !== "sim.safety-data" || layerId !== "public.safety.warnings") {
+    return uniqueStrings(sourceIds);
+  }
+  return uniqueStrings(sourceIds.filter((sourceId) => sourceId !== "chmi_alerts" && sourceId !== "weather_alerts"));
 }
 
 function maxFeaturesForCatalogLayer(layer: ProviderCatalogLayer): number | undefined {
@@ -376,13 +389,18 @@ function buildProviderCatalogSources(catalog: ProviderMapCatalog, includeDiagnos
 }
 
 function providerCatalogSourceToMapSource(providerId: string, source: ProviderCatalogSource): MapCatalogSource[] {
+  const feedsCatalogLayerIds = sanitizeProviderCatalogSourceFeedLayerIds(
+    providerId,
+    source.sourceId,
+    nonEmpty(source.feedsCatalogLayerIds) ?? nonEmpty(source.feedsLayerIds)
+  );
   return [
     {
       audience: normalizeAudience(source.audience),
       cacheTtlSeconds: source.cacheTtlSeconds,
       ...(source.compatibilityOnly === true || (normalizeSourceRole(source.sourceRole) === "projection" && Boolean(source.preferredProviderId)) ? { compatibilityOnly: true } : {}),
       enabled: source.enabled === true,
-      feedsCatalogLayerIds: nonEmpty(source.feedsCatalogLayerIds) ?? nonEmpty(source.feedsLayerIds),
+      feedsCatalogLayerIds,
       label: source.label ?? source.sourceId,
       preferredProviderId: source.preferredProviderId,
       providerId,
@@ -394,6 +412,16 @@ function providerCatalogSourceToMapSource(providerId: string, source: ProviderCa
       visibleInDiagnostics: source.visibleInDiagnostics === true || normalizeAudience(source.audience) === "diagnostic"
     }
   ];
+}
+
+function sanitizeProviderCatalogSourceFeedLayerIds(providerId: string, sourceId: string, layerIds: string[] | undefined): string[] | undefined {
+  if (providerId !== "sim.safety-data") {
+    return layerIds;
+  }
+  if (sourceId === "chmi_alerts") {
+    return ["public.safety.weather_alerts", "public.safety.fire"];
+  }
+  return layerIds;
 }
 
 function normalizeProviderFilters(filters: ProviderCatalogLayer["filters"]): MapCatalogFilter[] | undefined {
@@ -591,18 +619,18 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       kind: "vector_features",
       label: "Krizové výstrahy",
       layerId: "public.safety.warnings",
-      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "gdacs_alerts") ?? findSource(sources, "hzs_incidents") ?? findSource(sources, "road_srti_lod")),
+      legal: legalFromSource(findSource(sources, "gdacs_alerts") ?? findSource(sources, "hzs_incidents") ?? findSource(sources, "road_srti_lod")),
       maxZoom: 18,
       minZoom: 5,
       provenance: {
-        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:gdacs_alerts", "sim.safety-data:hzs_incidents", "sim.safety-data:road_srti_lod"]
+        sourceIds: ["sim.safety-data:gdacs_alerts", "sim.safety-data:hzs_incidents", "sim.safety-data:road_srti_lod"]
       },
       query: {
         maxFeatures: 250,
         mode: "bbox",
         providerId: "sim.safety-data",
         providerLayerIds: ["warnings"],
-        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "road_srti_lod"],
+        providerSourceIds: ["gdacs_alerts", "hzs_incidents", "road_srti_lod"],
         streamId: "features"
       },
       refreshSeconds: warningLayer?.expectedCadenceSeconds ?? 300,
@@ -1459,7 +1487,7 @@ function safetyFeedsCatalogLayerIds(sourceId: SafetyDataSourceId): string[] | un
     return ["public.boundary.admin"];
   }
   if (sourceId === "chmi_alerts") {
-    return ["public.safety.fire", "public.safety.weather_alerts", "public.safety.warnings"];
+    return ["public.safety.fire", "public.safety.weather_alerts"];
   }
   if (sourceId === "chmi_hydro") {
     return ["public.safety.flood"];

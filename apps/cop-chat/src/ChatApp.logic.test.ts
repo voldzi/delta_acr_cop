@@ -3,16 +3,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyChatPreferences,
   buildChatItems,
-  buildTimelineRows,
   chatPreferenceSnapshot,
   dedupeChatItems,
+  userFacingError
+} from "./ChatApp";
+import {
+  buildTimelineRows,
   filterTimelineByRetention,
   isChatMuted,
   messageMatchesQuery,
   normalizeChatPreferences,
-  userFacingError
-} from "./ChatApp";
-import type { ChatListItem, ChatPreferences } from "./ChatApp";
+  type ChatPreferences
+} from "./chat-model";
+import type { ChatListItem } from "./ChatApp";
 import type { MatrixRoomSummary, MatrixTimelineMessage } from "@cop/messaging/types";
 import type { MessagingConversationSummary } from "@cop/core/cop-data";
 
