@@ -472,7 +472,7 @@ describe("Matrix client diagnostics", () => {
     });
   });
 
-  it("does not report iOS-compatible recovery until backup, secret storage and cross-signing are all ready", async () => {
+  it("treats active key backup as web-ready even when iOS metadata are incomplete", async () => {
     matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
       crypto: {
         getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
@@ -491,8 +491,8 @@ describe("Matrix client diagnostics", () => {
       keyBackupEnabled: true,
       keyBackupExists: true,
       matrixRustCompatible: false,
-      needsSetup: true,
-      ready: false,
+      needsSetup: false,
+      ready: true,
       secretStorageReady: true
     });
   });

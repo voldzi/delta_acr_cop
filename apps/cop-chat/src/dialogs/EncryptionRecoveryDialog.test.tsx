@@ -80,4 +80,39 @@ describe("EncryptionRecoveryDialog", () => {
     expect(onRecoveryKeyInputChange).toHaveBeenCalledWith("NEW");
     expect(onRestore).toHaveBeenCalled();
   });
+
+  it("does not force a web reset when key backup is active but iOS metadata are incomplete", () => {
+    const onClose = vi.fn();
+    const onPrepareMobile = vi.fn();
+    render(
+      <EncryptionRecoveryDialog
+        generatedRecoveryKey={null}
+        recoveryKeyInput=""
+        saving={false}
+        status={{
+          canPrepareForMobile: true,
+          crossSigningReady: false,
+          keyBackupEnabled: true,
+          keyBackupExists: true,
+          matrixRustCompatible: false,
+          needsRecovery: false,
+          needsSetup: false,
+          ready: true,
+          secretStorageReady: true,
+          supported: true
+        }}
+        onClose={onClose}
+        onCreate={vi.fn()}
+        onPrepareMobile={onPrepareMobile}
+        onRecoveryKeyInputChange={vi.fn()}
+        onReset={vi.fn()}
+        onRestore={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Web má aktivní E2EE key backup/u)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Hotovo" }));
+    expect(onClose).toHaveBeenCalled();
+    expect(onPrepareMobile).not.toHaveBeenCalled();
+  });
 });

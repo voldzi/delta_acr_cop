@@ -30,12 +30,13 @@ export default function EncryptionRecoveryDialog({
   onRestore
 }: EncryptionRecoveryDialogProps) {
   const hasBackup = status?.keyBackupExists === true;
+  const webReady = status?.ready === true;
   const mobileReady = status?.matrixRustCompatible === true;
-  const needsMobilePreparation = status?.keyBackupEnabled === true && !mobileReady;
+  const needsMobilePreparation = webReady && !mobileReady;
   const subtitle = mobileReady
     ? "Připraveno pro web i iPhone/iPad"
     : needsMobilePreparation
-      ? "Připravte čistou obnovu pro iOS"
+      ? "Web je obnovený, iOS metadata nejsou kompletní"
       : hasBackup
         ? "Obnovte toto zařízení"
         : "Nastavte více zařízení";
@@ -134,14 +135,21 @@ export default function EncryptionRecoveryDialog({
           </>
         ) : needsMobilePreparation ? (
           <>
+            <div className="recovery-status-panel positive" role="status">
+              <Check size={18} />
+              <span>Web má aktivní E2EE key backup a může šifrované zprávy používat.</span>
+            </div>
             <p>
-              Účet má starší nebo nekompletní E2EE metadata, která nativní iPhone/iPad aplikace odmítá.
-              Připravíme čistý recovery cyklus pro web i iOS. Starší šifrovaná historie nemusí být dostupná.
+              Účet ale nemá kompletní cross-signing/secret-storage metadata, která vyžaduje nativní
+              iPhone/iPad aplikace. Pokud jste recovery reset provedli v iOS, web už nemusí vytvářet nový
+              klíč. Webový reset používejte jen jako pokročilou opravu, protože Matrix může vyžádat
+              dodatečné ověření účtu, které prohlížeč nemusí umět dokončit.
             </p>
             <footer>
-              <button disabled={saving} className="primary-dialog-action" onClick={onPrepareMobile} type="button">
+              <button className="primary-dialog-action" onClick={onClose} type="button">Hotovo</button>
+              <button disabled={saving} className="secondary-dialog-action" onClick={onPrepareMobile} type="button">
                 {saving ? <Loader2 className="spin" size={18} /> : <KeyRound size={18} />}
-                Připravit pro iPhone/iPad
+                Pokusit se vytvořit nový klíč pro iOS
               </button>
               <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
                 Nouzově začít znovu bez staré historie

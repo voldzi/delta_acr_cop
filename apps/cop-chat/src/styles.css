@@ -2514,6 +2514,27 @@ button {
   color: var(--accent-dark);
 }
 
+.recovery-status-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 720;
+  line-height: 1.35;
+  padding: 12px 14px;
+}
+
+.recovery-status-panel svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.recovery-status-panel.positive {
+  background: #e1f4ee;
+  color: var(--accent-dark);
+}
+
 .recovery-key-box {
   display: grid;
   gap: 10px;

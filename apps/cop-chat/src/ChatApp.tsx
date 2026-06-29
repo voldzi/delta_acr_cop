@@ -5009,7 +5009,7 @@ function isMatrixSyncOffline(syncState: string): boolean {
 export function userFacingError(message: string): string {
   const normalized = message.trim();
   if (isMatrixInteractiveAuthError(normalized)) {
-    return "Matrix vyžaduje dodatečné ověření pro reset E2EE. Zkuste nejprve znovu otevřít chat; pokud se chyba opakuje, použijte nouzové vytvoření čisté obnovy bez staré historie.";
+    return "Matrix vyžaduje dodatečné ověření pro reset E2EE, které web neumí bezpečně dokončit. Pokud už jste zadali platný recovery klíč, chat může dál fungovat; nový iPhone/iPad připravte resetem v iOS aplikaci nebo požádejte správce o vyčištění starých E2EE metadat.";
   }
   if (isMatrixSessionExpiredError(normalized)) {
     return "Platnost Matrix relace vypršela. Obnovte stránku nebo znovu otevřete chat a akci opakujte.";

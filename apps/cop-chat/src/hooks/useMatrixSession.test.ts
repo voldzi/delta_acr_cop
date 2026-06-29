@@ -62,6 +62,21 @@ function recoveryStatus(ready: boolean): MatrixEncryptionRecoveryStatus {
   };
 }
 
+function webReadyIosIncompleteStatus(): MatrixEncryptionRecoveryStatus {
+  return {
+    canPrepareForMobile: true,
+    crossSigningReady: false,
+    keyBackupEnabled: true,
+    keyBackupExists: true,
+    matrixRustCompatible: false,
+    needsRecovery: false,
+    needsSetup: false,
+    ready: true,
+    secretStorageReady: true,
+    supported: true
+  };
+}
+
 describe("matrixSessionReducer", () => {
   it("models start, ready, recovery-needed and reset lifecycle states", () => {
     let state: MatrixSessionState = initialMatrixSessionState;
@@ -119,5 +134,9 @@ describe("matrixSessionLifecycleFor", () => {
 
   it("returns idle without an active session", () => {
     expect(matrixSessionLifecycleFor(null, recoveryStatus(true))).toBe("idle");
+  });
+
+  it("treats a web-usable key backup as ready even when iOS metadata need repair", () => {
+    expect(matrixSessionLifecycleFor(sessionStub(), webReadyIosIncompleteStatus())).toBe("ready");
   });
 });

@@ -849,8 +849,8 @@ async function readMatrixEncryptionRecoveryStatus(client: MatrixClientLike): Pro
     keyBackupExists,
     matrixRustCompatible,
     needsRecovery: keyBackupExists && !keyBackupEnabled,
-    needsSetup: !keyBackupExists || (keyBackupEnabled && !matrixRustCompatible),
-    ready: matrixRustCompatible,
+    needsSetup: !keyBackupExists,
+    ready: keyBackupEnabled,
     secretStorageReady,
     supported
   };
