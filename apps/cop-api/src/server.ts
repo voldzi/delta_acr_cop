@@ -138,6 +138,7 @@ import { createPlaceGeocoderFromEnv, type PlaceGeocoder } from "./place-geocoder
 import { buildCopPrometheusMetrics } from "./prometheus-metrics.js";
 import { withEventProvenance } from "./provenance.js";
 import { registerHealthRoutes } from "./routes/health-routes.js";
+import { registerMessagingRoutes } from "./routes/messaging-routes.js";
 import { registerMobileRoutes } from "./routes/mobile-routes.js";
 import { registerRadioRoutes } from "./routes/radio-routes.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
@@ -2373,205 +2374,192 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/messaging/status", async () => {
-    return messagingProvider.fetchStatus(now());
-  });
+  registerMessagingRoutes(app, {
+    addConversationMembers: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { conversationId: string };
+      const members = normalizeMessagingConversationMembersRequest(request.body);
+      if (!members) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Messaging conversation member sync requires members[] and may not contain plaintext message fields.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const result = await messagingProvider.addConversationMembers(actor, now(), params.conversationId, members);
+      return reply.code(result.conversation ? 200 : 502).send(result);
+    },
+    bindMatrixRoom: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { conversationId: string };
+      const binding = normalizeMatrixRoomBindingRequest(request.body ?? {});
+      if (!binding) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Matrix room binding accepts an optional roomId and may not contain message content.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const result = await messagingProvider.bindMatrixRoom(actor, now(), params.conversationId, binding);
+      return reply.code(result.conversation ? 200 : 502).send(result);
+    },
+    bootstrap: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
 
-  app.get("/api/v1/push/web/config", async () => {
-    return messagingProvider.fetchWebPushConfig(now());
-  });
+      const body = isRecord(request.body) ? request.body : {};
+      const deviceId = normalizeMatrixDeviceId(body.deviceId);
+      if (body.deviceId !== undefined && !deviceId) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Matrix deviceId may contain only A-Z, a-z, 0-9, dot, underscore, equals and dash, with max length 64.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      return messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId);
+    },
+    conversationDetail: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { conversationId: string };
+      const conversationId = normalizeMessagingConversationId(params.conversationId);
+      if (!conversationId) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Messaging conversation detail requires a valid conversationId.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const result = await messagingProvider.fetchConversation(actor, now(), conversationId);
+      return reply.code(result.conversation ? 200 : result.status === "online" ? 404 : 502).send(result);
+    },
+    conversations: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
 
-  app.post("/api/v1/push/web/devices", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
+      return messagingProvider.fetchConversations(actor, now());
+    },
+    createConversation: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
 
-    const registration = normalizeWebPushDeviceRegistrationRequest(request.body);
-    if (!registration) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Web push registration requires deviceId, endpoint and browser subscription keys.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const result = await messagingProvider.registerWebPushDevice(actor, now(), registration);
-    return reply.code(result.registered ? 202 : result.status === "disabled" ? 503 : 502).send(result);
-  });
+      const conversationRequest = normalizeMessagingConversationCreateRequest(request.body);
+      if (!conversationRequest) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Messaging conversation requires a title and may not contain plaintext message fields.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const result = await messagingProvider.createConversation(actor, now(), conversationRequest);
+      return reply.code(result.conversation ? 201 : 502).send(result);
+    },
+    deleteWebPushDevice: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { deviceId: string };
+      const deviceId = normalizeWebPushDeviceId(params.deviceId);
+      if (!deviceId) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Web push device id may contain only A-Z, a-z, 0-9, dot, underscore, equals and dash, with max length 96.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const result = await messagingProvider.deleteWebPushDevice(actor, now(), deviceId);
+      return reply.code(result.deleted ? 202 : result.status === "disabled" ? 503 : 502).send(result);
+    },
+    registerWebPushDevice: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
 
-  app.delete("/api/v1/push/web/devices/:deviceId", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { deviceId: string };
-    const deviceId = normalizeWebPushDeviceId(params.deviceId);
-    if (!deviceId) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Web push device id may contain only A-Z, a-z, 0-9, dot, underscore, equals and dash, with max length 96.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const result = await messagingProvider.deleteWebPushDevice(actor, now(), deviceId);
-    return reply.code(result.deleted ? 202 : result.status === "disabled" ? 503 : 502).send(result);
-  });
-
-  app.post("/api/v1/messaging/bootstrap", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-
-    const body = isRecord(request.body) ? request.body : {};
-    const deviceId = normalizeMatrixDeviceId(body.deviceId);
-    if (body.deviceId !== undefined && !deviceId) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Matrix deviceId may contain only A-Z, a-z, 0-9, dot, underscore, equals and dash, with max length 64.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    return messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId);
-  });
-
-  app.get("/api/v1/messaging/conversations", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-
-    return messagingProvider.fetchConversations(actor, now());
-  });
-
-  app.get("/api/v1/messaging/conversations/resolve", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const query = isRecord(request.query) ? request.query : {};
-    const conversationId = normalizeMessagingConversationId(query.conversationId);
-    const roomId = normalizeMatrixRoomId(query.roomId);
-    const messageId = optionalTrimmedString(query.messageId, 512);
-    if (!conversationId && !roomId) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        messageId
-          ? "Message-only conversation resolution is not supported by COP. Deep links must include conversationId or roomId."
-          : "Conversation resolution requires conversationId or Matrix roomId.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const result = conversationId
-      ? await messagingProvider.fetchConversation(actor, now(), conversationId)
-      : await messagingProvider.fetchConversationByRoomId(actor, now(), roomId as string);
-    return reply.code(result.conversation ? 200 : result.status === "online" ? 404 : 502).send(result);
-  });
-
-  app.get("/api/v1/messaging/conversations/:conversationId", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { conversationId: string };
-    const conversationId = normalizeMessagingConversationId(params.conversationId);
-    if (!conversationId) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Messaging conversation detail requires a valid conversationId.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const result = await messagingProvider.fetchConversation(actor, now(), conversationId);
-    return reply.code(result.conversation ? 200 : result.status === "online" ? 404 : 502).send(result);
-  });
-
-  app.post("/api/v1/messaging/conversations", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-
-    const conversationRequest = normalizeMessagingConversationCreateRequest(request.body);
-    if (!conversationRequest) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Messaging conversation requires a title and may not contain plaintext message fields.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const result = await messagingProvider.createConversation(actor, now(), conversationRequest);
-    return reply.code(result.conversation ? 201 : 502).send(result);
-  });
-
-  app.post("/api/v1/messaging/matrix/identities/resolve", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const userIds = normalizeMatrixIdentityResolutionRequest(request.body);
-    if (!userIds) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Identity resolution requires userIds as a non-empty array of CSM user identifiers.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    return messagingProvider.resolveMatrixIdentities(actor, now(), userIds);
-  });
-
-  app.post("/api/v1/messaging/conversations/:conversationId/members", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { conversationId: string };
-    const members = normalizeMessagingConversationMembersRequest(request.body);
-    if (!members) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Messaging conversation member sync requires members[] and may not contain plaintext message fields.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const result = await messagingProvider.addConversationMembers(actor, now(), params.conversationId, members);
-    return reply.code(result.conversation ? 200 : 502).send(result);
-  });
-
-  app.post("/api/v1/messaging/conversations/:conversationId/matrix-room", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { conversationId: string };
-    const binding = normalizeMatrixRoomBindingRequest(request.body ?? {});
-    if (!binding) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Matrix room binding accepts an optional roomId and may not contain message content.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const result = await messagingProvider.bindMatrixRoom(actor, now(), params.conversationId, binding);
-    return reply.code(result.conversation ? 200 : 502).send(result);
+      const registration = normalizeWebPushDeviceRegistrationRequest(request.body);
+      if (!registration) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Web push registration requires deviceId, endpoint and browser subscription keys.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const result = await messagingProvider.registerWebPushDevice(actor, now(), registration);
+      return reply.code(result.registered ? 202 : result.status === "disabled" ? 503 : 502).send(result);
+    },
+    resolveConversation: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const query = isRecord(request.query) ? request.query : {};
+      const conversationId = normalizeMessagingConversationId(query.conversationId);
+      const roomId = normalizeMatrixRoomId(query.roomId);
+      const messageId = optionalTrimmedString(query.messageId, 512);
+      if (!conversationId && !roomId) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          messageId
+            ? "Message-only conversation resolution is not supported by COP. Deep links must include conversationId or roomId."
+            : "Conversation resolution requires conversationId or Matrix roomId.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const result = conversationId
+        ? await messagingProvider.fetchConversation(actor, now(), conversationId)
+        : await messagingProvider.fetchConversationByRoomId(actor, now(), roomId as string);
+      return reply.code(result.conversation ? 200 : result.status === "online" ? 404 : 502).send(result);
+    },
+    resolveMatrixIdentities: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const userIds = normalizeMatrixIdentityResolutionRequest(request.body);
+      if (!userIds) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Identity resolution requires userIds as a non-empty array of CSM user identifiers.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      return messagingProvider.resolveMatrixIdentities(actor, now(), userIds);
+    },
+    status: async () => messagingProvider.fetchStatus(now()),
+    webPushConfig: async () => messagingProvider.fetchWebPushConfig(now())
   });
 
   app.post("/api/v1/notifications/safety/evaluate", async (request, reply) => {
