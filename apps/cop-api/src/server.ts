@@ -138,6 +138,8 @@ import { createPlaceGeocoderFromEnv, type PlaceGeocoder } from "./place-geocoder
 import { buildCopPrometheusMetrics } from "./prometheus-metrics.js";
 import { withEventProvenance } from "./provenance.js";
 import { registerHealthRoutes } from "./routes/health-routes.js";
+import { registerMobileRoutes } from "./routes/mobile-routes.js";
+import { registerRadioRoutes } from "./routes/radio-routes.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems, type SourceHealthItem } from "./source-health.js";
 import {
@@ -3248,322 +3250,310 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/mobile/bootstrap", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const requestNow = now();
-    return buildMobileBootstrap(actor, requestNow, parseMobileSnapshotQuery(request.query as Record<string, unknown>));
-  });
-
-  app.get("/api/v1/mobile/offline-snapshot", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const requestNow = now();
-    return buildMobileSnapshot(actor, requestNow, parseMobileSnapshotQuery(request.query as Record<string, unknown>));
-  });
-
-  app.get("/.well-known/apple-app-site-association", async (_request, reply) => {
-    return reply
+  registerMobileRoutes(app, {
+    appleAppSiteAssociation: async (_request, reply) => reply
       .header("content-type", "application/json")
-      .send(appleAppSiteAssociation());
-  });
-
-  app.get("/mobile/pair/:code", async (request, reply) => {
-    const params = request.params as { code: string };
-    const code = normalizeMobilePairingCode(params.code);
-    if (!code) {
-      return reply
-        .code(400)
-        .type("text/html; charset=utf-8")
-        .send(mobilePairFallbackHtml("", true));
-    }
-    return reply
-      .type("text/html; charset=utf-8")
-      .send(mobilePairFallbackHtml(code, false));
-  });
-
-  app.post("/api/v1/mobile/pairing/sessions", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const requestNow = now();
-    const ttlSeconds = normalizeMobilePairingTtlSeconds(request.body);
-    const expiresAt = new Date(requestNow.getTime() + ttlSeconds * 1000).toISOString();
-    try {
-      const session = await activeMobileDeviceStore().createPairingSession({
-        actor: mobilePairingActor(actor),
-        expiresAt,
-        now: requestNow.toISOString()
+      .send(appleAppSiteAssociation()),
+    bootstrap: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const requestNow = now();
+      return buildMobileBootstrap(actor, requestNow, parseMobileSnapshotQuery(request.query as Record<string, unknown>));
+    },
+    deviceRegister: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const requestNow = now();
+      const registration = normalizeMobileDeviceRegistration(request.body, actor, requestNow);
+      if (!registration) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Mobile device registration payload does not match contract.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const device = await activeMobileDeviceStore().upsertDevice(registration, "paired", requestNow.toISOString());
+      appendAudit(state, "MOBILE_DEVICE_REGISTERED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        appVersion: registration.appVersion,
+        capabilities: registration.capabilities,
+        deviceId: registration.deviceId,
+        platform: registration.platform,
+        pushTokenRegistered: registration.pushTokenRegistered
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return reply.code(202).send({
+        actor,
+        contractVersion: "cop-mobile-devices-v1",
+        device,
+        policy: mobileNativePolicy(),
+        serverTimestamp: requestNow.toISOString()
       });
-      appendAudit(state, "MOBILE_PAIRING_SESSION_CREATED", {
+    },
+    deviceRevoke: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { deviceId: string };
+      const deviceId = normalizeMobileDeviceId(params.deviceId);
+      if (!deviceId) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Mobile device id is invalid.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const device = await activeMobileDeviceStore().revokeDevice(actor.subjectId, deviceId, now().toISOString());
+      if (!device) {
+        return sendError(reply, 404, "NOT_FOUND", "Mobile device was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      appendAudit(state, "MOBILE_DEVICE_REVOKED", {
         actorAuthMode: actor.authMode,
         actorSubjectId: actor.subjectId,
-        code: session.code,
-        expiresAt: session.expiresAt
+        deviceId
       }, correlationIdFrom(request.headers["x-correlation-id"]));
-      return reply.code(201).send(mobilePairingSessionResponse(session, request));
-    } catch (error) {
-      markMobileDeviceStoreDegraded(error);
-      return sendError(
-        reply,
-        503,
-        "MOBILE_DEVICE_STORE_UNAVAILABLE",
-        "Mobile pairing store is not available.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-  });
-
-  app.get("/api/v1/mobile/pairing/sessions/:code", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { code: string };
-    const code = normalizeMobilePairingCode(params.code);
-    if (!code) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Mobile pairing code is invalid.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const session = await activeMobileDeviceStore().getPairingSession(code, now().toISOString());
-    if (!session || !canViewMobilePairingSession(actor, session)) {
-      return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    return mobilePairingSessionResponse(session, request);
-  });
-
-  app.post("/api/v1/mobile/pairing/sessions/:code/claim", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { code: string };
-    const code = normalizeMobilePairingCode(params.code);
-    const requestNow = now();
-    const registration = normalizeMobileDeviceRegistration(request.body, actor, requestNow);
-    if (!code || !registration) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Mobile pairing claim requires a valid pairing code and device registration payload.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const current = await activeMobileDeviceStore().getPairingSession(code, requestNow.toISOString());
-    if (!current) {
-      return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    if (current.createdBy.subjectId !== actor.subjectId) {
-      return sendError(reply, 403, "FORBIDDEN", "Mobile pairing code belongs to another user.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    const session = await activeMobileDeviceStore().claimPairingSession(code, mobilePairingActor(actor), registration, requestNow.toISOString());
-    if (!session || session.status !== "claimed") {
-      return sendError(reply, 409, "PAIRING_NOT_CLAIMABLE", "Mobile pairing session is no longer claimable.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    appendAudit(state, "MOBILE_PAIRING_SESSION_CLAIMED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      code,
-      deviceId: registration.deviceId,
-      platform: registration.platform
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return mobilePairingSessionResponse(session, request);
-  });
-
-  app.post("/api/v1/mobile/pairing/sessions/:code/confirm", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { code: string };
-    const code = normalizeMobilePairingCode(params.code);
-    if (!code) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Mobile pairing code is invalid.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const requestNow = now();
-    const current = await activeMobileDeviceStore().getPairingSession(code, requestNow.toISOString());
-    if (!current) {
-      return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    if (current.createdBy.subjectId !== actor.subjectId) {
-      return sendError(reply, 403, "FORBIDDEN", "Mobile pairing code belongs to another user.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    if (current.status !== "claimed" || !current.claimedDevice || current.claimedBy?.subjectId !== actor.subjectId) {
-      return sendError(reply, 409, "PAIRING_NOT_CONFIRMABLE", "Mobile pairing session must be claimed by the same user before confirmation.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    const confirmed = await activeMobileDeviceStore().confirmPairingSession(code, requestNow.toISOString());
-    if (!confirmed || confirmed.status !== "confirmed" || !confirmed.claimedDevice) {
-      return sendError(reply, 409, "PAIRING_NOT_CONFIRMABLE", "Mobile pairing session could not be confirmed.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    const device = await activeMobileDeviceStore().upsertDevice(confirmed.claimedDevice, "paired", requestNow.toISOString(), code);
-    appendAudit(state, "MOBILE_PAIRING_SESSION_CONFIRMED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      code,
-      deviceId: device.deviceId,
-      platform: device.platform
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return mobilePairingSessionResponse(confirmed, request, device);
-  });
-
-  app.get("/api/v1/mobile/devices", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const devices = await activeMobileDeviceStore().listDevices(actor.subjectId);
-    return {
-      actor,
-      contractVersion: "cop-mobile-devices-v1",
-      devices,
-      policy: mobileNativePolicy(),
-      serverTimestamp: now().toISOString()
-    };
-  });
-
-  app.post("/api/v1/mobile/devices", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const requestNow = now();
-    const registration = normalizeMobileDeviceRegistration(request.body, actor, requestNow);
-    if (!registration) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Mobile device registration payload does not match contract.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const device = await activeMobileDeviceStore().upsertDevice(registration, "paired", requestNow.toISOString());
-    appendAudit(state, "MOBILE_DEVICE_REGISTERED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      appVersion: registration.appVersion,
-      capabilities: registration.capabilities,
-      deviceId: registration.deviceId,
-      platform: registration.platform,
-      pushTokenRegistered: registration.pushTokenRegistered
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return reply.code(202).send({
-      actor,
-      contractVersion: "cop-mobile-devices-v1",
-      device,
-      policy: mobileNativePolicy(),
-      serverTimestamp: requestNow.toISOString()
-    });
-  });
-
-  app.delete("/api/v1/mobile/devices/:deviceId", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { deviceId: string };
-    const deviceId = normalizeMobileDeviceId(params.deviceId);
-    if (!deviceId) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Mobile device id is invalid.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const device = await activeMobileDeviceStore().revokeDevice(actor.subjectId, deviceId, now().toISOString());
-    if (!device) {
-      return sendError(reply, 404, "NOT_FOUND", "Mobile device was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    appendAudit(state, "MOBILE_DEVICE_REVOKED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      deviceId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return reply.code(202).send({
-      actor,
-      contractVersion: "cop-mobile-devices-v1",
-      device,
-      serverTimestamp: now().toISOString()
-    });
-  });
-
-  app.post("/api/v1/mobile/mesh/ingest", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const requestNow = now();
-    const normalized = normalizeMobileMeshBundle(request.body, actor, requestNow);
-    if (!normalized.valid) {
-      appendAudit(state, "MOBILE_MESH_BUNDLE_REJECTED", {
+      return reply.code(202).send({
+        actor,
+        contractVersion: "cop-mobile-devices-v1",
+        device,
+        serverTimestamp: now().toISOString()
+      });
+    },
+    devices: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const devices = await activeMobileDeviceStore().listDevices(actor.subjectId);
+      return {
+        actor,
+        contractVersion: "cop-mobile-devices-v1",
+        devices,
+        policy: mobileNativePolicy(),
+        serverTimestamp: now().toISOString()
+      };
+    },
+    meshAcks: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const query = request.query as Record<string, unknown>;
+      const since = optionalIsoDateString(query.since);
+      const limit = readBoundedInteger(query.limit, 50, 1, 250);
+      const acks = await activeMobileDeviceStore().listMeshAcks(actor.subjectId, since, limit);
+      return {
+        acks,
+        contractVersion: "cop-mobile-mesh-acks-v1",
+        serverTimestamp: now().toISOString()
+      };
+    },
+    meshIngest: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const requestNow = now();
+      const normalized = normalizeMobileMeshBundle(request.body, actor, requestNow);
+      if (!normalized.valid) {
+        appendAudit(state, "MOBILE_MESH_BUNDLE_REJECTED", {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          reason: normalized.reason
+        }, correlationIdFrom(request.headers["x-correlation-id"]));
+        return reply.code(422).send(mobileMeshAckResponse({
+          envelopeId: normalized.envelopeId ?? "invalid",
+          receivedAt: requestNow.toISOString(),
+          status: "rejected",
+          subjectId: actor.subjectId,
+          updatedAt: requestNow.toISOString()
+        }));
+      }
+      try {
+        const result = await activeMobileDeviceStore().ingestMeshBundle(normalized.input);
+        appendAudit(state, "MOBILE_MESH_BUNDLE_INGESTED", {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          bundleType: normalized.input.bundleType ?? "unknown",
+          deviceId: normalized.input.deviceId ?? "unknown",
+          envelopeId: normalized.input.envelopeId,
+          status: result.record.status
+        }, correlationIdFrom(request.headers["x-correlation-id"]));
+        return reply.code(result.duplicate ? 200 : 202).send(mobileMeshAckResponse(result.record));
+      } catch (error) {
+        markMobileDeviceStoreDegraded(error);
+        return sendError(
+          reply,
+          503,
+          "MOBILE_DEVICE_STORE_UNAVAILABLE",
+          "Mobile mesh ack store is not available.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+    },
+    offlineSnapshot: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const requestNow = now();
+      return buildMobileSnapshot(actor, requestNow, parseMobileSnapshotQuery(request.query as Record<string, unknown>));
+    },
+    pairFallback: async (request, reply) => {
+      const params = request.params as { code: string };
+      const code = normalizeMobilePairingCode(params.code);
+      if (!code) {
+        return reply
+          .code(400)
+          .type("text/html; charset=utf-8")
+          .send(mobilePairFallbackHtml("", true));
+      }
+      return reply
+        .type("text/html; charset=utf-8")
+        .send(mobilePairFallbackHtml(code, false));
+    },
+    pairingClaim: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { code: string };
+      const code = normalizeMobilePairingCode(params.code);
+      const requestNow = now();
+      const registration = normalizeMobileDeviceRegistration(request.body, actor, requestNow);
+      if (!code || !registration) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Mobile pairing claim requires a valid pairing code and device registration payload.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const current = await activeMobileDeviceStore().getPairingSession(code, requestNow.toISOString());
+      if (!current) {
+        return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      if (current.createdBy.subjectId !== actor.subjectId) {
+        return sendError(reply, 403, "FORBIDDEN", "Mobile pairing code belongs to another user.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      const session = await activeMobileDeviceStore().claimPairingSession(code, mobilePairingActor(actor), registration, requestNow.toISOString());
+      if (!session || session.status !== "claimed") {
+        return sendError(reply, 409, "PAIRING_NOT_CLAIMABLE", "Mobile pairing session is no longer claimable.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      appendAudit(state, "MOBILE_PAIRING_SESSION_CLAIMED", {
         actorAuthMode: actor.authMode,
         actorSubjectId: actor.subjectId,
-        reason: normalized.reason
+        code,
+        deviceId: registration.deviceId,
+        platform: registration.platform
       }, correlationIdFrom(request.headers["x-correlation-id"]));
-      return reply.code(422).send(mobileMeshAckResponse({
-        envelopeId: normalized.envelopeId ?? "invalid",
-        receivedAt: requestNow.toISOString(),
-        status: "rejected",
-        subjectId: actor.subjectId,
-        updatedAt: requestNow.toISOString()
-      }));
-    }
-    try {
-      const result = await activeMobileDeviceStore().ingestMeshBundle(normalized.input);
-      appendAudit(state, "MOBILE_MESH_BUNDLE_INGESTED", {
+      return mobilePairingSessionResponse(session, request);
+    },
+    pairingConfirm: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { code: string };
+      const code = normalizeMobilePairingCode(params.code);
+      if (!code) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Mobile pairing code is invalid.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const requestNow = now();
+      const current = await activeMobileDeviceStore().getPairingSession(code, requestNow.toISOString());
+      if (!current) {
+        return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      if (current.createdBy.subjectId !== actor.subjectId) {
+        return sendError(reply, 403, "FORBIDDEN", "Mobile pairing code belongs to another user.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      if (current.status !== "claimed" || !current.claimedDevice || current.claimedBy?.subjectId !== actor.subjectId) {
+        return sendError(reply, 409, "PAIRING_NOT_CONFIRMABLE", "Mobile pairing session must be claimed by the same user before confirmation.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      const confirmed = await activeMobileDeviceStore().confirmPairingSession(code, requestNow.toISOString());
+      if (!confirmed || confirmed.status !== "confirmed" || !confirmed.claimedDevice) {
+        return sendError(reply, 409, "PAIRING_NOT_CONFIRMABLE", "Mobile pairing session could not be confirmed.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      const device = await activeMobileDeviceStore().upsertDevice(confirmed.claimedDevice, "paired", requestNow.toISOString(), code);
+      appendAudit(state, "MOBILE_PAIRING_SESSION_CONFIRMED", {
         actorAuthMode: actor.authMode,
         actorSubjectId: actor.subjectId,
-        bundleType: normalized.input.bundleType ?? "unknown",
-        deviceId: normalized.input.deviceId ?? "unknown",
-        envelopeId: normalized.input.envelopeId,
-        status: result.record.status
+        code,
+        deviceId: device.deviceId,
+        platform: device.platform
       }, correlationIdFrom(request.headers["x-correlation-id"]));
-      return reply.code(result.duplicate ? 200 : 202).send(mobileMeshAckResponse(result.record));
-    } catch (error) {
-      markMobileDeviceStoreDegraded(error);
-      return sendError(
-        reply,
-        503,
-        "MOBILE_DEVICE_STORE_UNAVAILABLE",
-        "Mobile mesh ack store is not available.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
+      return mobilePairingSessionResponse(confirmed, request, device);
+    },
+    pairingCreate: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const requestNow = now();
+      const ttlSeconds = normalizeMobilePairingTtlSeconds(request.body);
+      const expiresAt = new Date(requestNow.getTime() + ttlSeconds * 1000).toISOString();
+      try {
+        const session = await activeMobileDeviceStore().createPairingSession({
+          actor: mobilePairingActor(actor),
+          expiresAt,
+          now: requestNow.toISOString()
+        });
+        appendAudit(state, "MOBILE_PAIRING_SESSION_CREATED", {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          code: session.code,
+          expiresAt: session.expiresAt
+        }, correlationIdFrom(request.headers["x-correlation-id"]));
+        return reply.code(201).send(mobilePairingSessionResponse(session, request));
+      } catch (error) {
+        markMobileDeviceStoreDegraded(error);
+        return sendError(
+          reply,
+          503,
+          "MOBILE_DEVICE_STORE_UNAVAILABLE",
+          "Mobile pairing store is not available.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+    },
+    pairingStatus: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { code: string };
+      const code = normalizeMobilePairingCode(params.code);
+      if (!code) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Mobile pairing code is invalid.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const session = await activeMobileDeviceStore().getPairingSession(code, now().toISOString());
+      if (!session || !canViewMobilePairingSession(actor, session)) {
+        return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      return mobilePairingSessionResponse(session, request);
     }
-  });
-
-  app.get("/api/v1/mobile/mesh/acks", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const query = request.query as Record<string, unknown>;
-    const since = optionalIsoDateString(query.since);
-    const limit = readBoundedInteger(query.limit, 50, 1, 250);
-    const acks = await activeMobileDeviceStore().listMeshAcks(actor.subjectId, since, limit);
-    return {
-      acks,
-      contractVersion: "cop-mobile-mesh-acks-v1",
-      serverTimestamp: now().toISOString()
-    };
   });
 
   app.get("/api/v1/community/reports", async (request, reply) => {
@@ -4308,112 +4298,109 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
-  app.get("/api/v1/mobile-coverage/towers/:towerId/viewshed", async (request, reply) => {
-    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const requestNow = now();
-    const params = request.params as { towerId: string };
-    const towerId = parseMobileTowerId(params.towerId);
-    if (!towerId) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Mobile tower viewshed requires a valid towerId.", correlationId);
-    }
-    if (!situationDataSource?.fetchMobileTowerViewshed) {
-      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Mobile tower viewshed source is disabled.", correlationId);
-    }
-    const query = parseMobileTowerViewshedQuery(request.query as Record<string, unknown>);
-    if (!query) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Mobile tower viewshed supports technology=2G|4G|5G, radiusM, azimuthStepDeg and distanceStepM.", correlationId);
-    }
-    try {
-      return await situationDataSource.fetchMobileTowerViewshed(towerId, query, requestNow);
-    } catch (error) {
-      app.log.warn({ error, towerId }, "Mobile tower viewshed failed.");
-      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
-    }
-  });
-
-  app.get("/api/v1/radio/profiles", async (request, reply) => {
-    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const requestNow = now();
-    if (!situationDataSource?.fetchRadioProfiles) {
-      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio profile source is disabled.", correlationId);
-    }
-    try {
-      return await situationDataSource.fetchRadioProfiles(requestNow);
-    } catch (error) {
-      app.log.warn({ error }, "Radio profile catalog failed.");
-      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
-    }
-  });
-
-  app.post("/api/v1/radio/profiles", async (request, reply) => {
-    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const requestNow = now();
-    if (!situationDataSource?.createRadioProfile) {
-      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio profile source is disabled.", correlationId);
-    }
-    const profile = parseRadioProfile(request.body);
-    if (!profile) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Radio profile requires name, frequencyMhz, antennaHeightM, receiverHeightM and maxRadiusM with non-sensitive fields only.", correlationId);
-    }
-    try {
-      return await situationDataSource.createRadioProfile(profile, requestNow);
-    } catch (error) {
-      app.log.warn({ error }, "Radio profile creation failed.");
-      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
-    }
-  });
-
-  app.post("/api/v1/radio/coverage", async (request, reply) => {
-    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const requestNow = now();
-    if (!situationDataSource?.runRadioCoverage) {
-      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio coverage source is disabled.", correlationId);
-    }
-    const body = parseRadioCoverageRequest(request.body);
-    if (!body) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Radio coverage requires station coordinates and a profileId or valid custom profile.", correlationId);
-    }
-    try {
-      return await situationDataSource.runRadioCoverage(body, requestNow);
-    } catch (error) {
-      app.log.warn({ error }, "Radio coverage failed.");
-      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
-    }
-  });
-
-  app.post("/api/v1/radio/link-check", async (request, reply) => {
-    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const requestNow = now();
-    if (!situationDataSource?.runRadioLinkCheck) {
-      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio link-check source is disabled.", correlationId);
-    }
-    const body = parseRadioLinkCheckRequest(request.body);
-    if (!body) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Radio link-check requires from/to coordinates and a profileId or valid custom profile.", correlationId);
-    }
-    try {
-      return await situationDataSource.runRadioLinkCheck(body, requestNow);
-    } catch (error) {
-      app.log.warn({ error }, "Radio link-check failed.");
-      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
-    }
-  });
-
-  app.post("/api/v1/radio/site-search", async (request, reply) => {
-    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const requestNow = now();
-    if (!situationDataSource?.runRadioSiteSearch) {
-      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio site-search source is disabled.", correlationId);
-    }
-    const body = parseRadioSiteSearchRequest(request.body);
-    if (!body) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Radio site-search requires a bbox, at least one target and a profileId or valid custom profile.", correlationId);
-    }
-    try {
-      return await situationDataSource.runRadioSiteSearch(body, requestNow);
-    } catch (error) {
-      app.log.warn({ error }, "Radio site-search failed.");
-      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+  registerRadioRoutes(app, {
+    createProfile: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      if (!situationDataSource?.createRadioProfile) {
+        return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio profile source is disabled.", correlationId);
+      }
+      const profile = parseRadioProfile(request.body);
+      if (!profile) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Radio profile requires name, frequencyMhz, antennaHeightM, receiverHeightM and maxRadiusM with non-sensitive fields only.", correlationId);
+      }
+      try {
+        return await situationDataSource.createRadioProfile(profile, requestNow);
+      } catch (error) {
+        app.log.warn({ error }, "Radio profile creation failed.");
+        return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+      }
+    },
+    linkCheck: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      if (!situationDataSource?.runRadioLinkCheck) {
+        return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio link-check source is disabled.", correlationId);
+      }
+      const body = parseRadioLinkCheckRequest(request.body);
+      if (!body) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Radio link-check requires from/to coordinates and a profileId or valid custom profile.", correlationId);
+      }
+      try {
+        return await situationDataSource.runRadioLinkCheck(body, requestNow);
+      } catch (error) {
+        app.log.warn({ error }, "Radio link-check failed.");
+        return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+      }
+    },
+    listProfiles: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      if (!situationDataSource?.fetchRadioProfiles) {
+        return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio profile source is disabled.", correlationId);
+      }
+      try {
+        return await situationDataSource.fetchRadioProfiles(requestNow);
+      } catch (error) {
+        app.log.warn({ error }, "Radio profile catalog failed.");
+        return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+      }
+    },
+    mobileTowerViewshed: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      const params = request.params as { towerId: string };
+      const towerId = parseMobileTowerId(params.towerId);
+      if (!towerId) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Mobile tower viewshed requires a valid towerId.", correlationId);
+      }
+      if (!situationDataSource?.fetchMobileTowerViewshed) {
+        return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Mobile tower viewshed source is disabled.", correlationId);
+      }
+      const query = parseMobileTowerViewshedQuery(request.query as Record<string, unknown>);
+      if (!query) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Mobile tower viewshed supports technology=2G|4G|5G, radiusM, azimuthStepDeg and distanceStepM.", correlationId);
+      }
+      try {
+        return await situationDataSource.fetchMobileTowerViewshed(towerId, query, requestNow);
+      } catch (error) {
+        app.log.warn({ error, towerId }, "Mobile tower viewshed failed.");
+        return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+      }
+    },
+    radioCoverage: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      if (!situationDataSource?.runRadioCoverage) {
+        return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio coverage source is disabled.", correlationId);
+      }
+      const body = parseRadioCoverageRequest(request.body);
+      if (!body) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Radio coverage requires station coordinates and a profileId or valid custom profile.", correlationId);
+      }
+      try {
+        return await situationDataSource.runRadioCoverage(body, requestNow);
+      } catch (error) {
+        app.log.warn({ error }, "Radio coverage failed.");
+        return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+      }
+    },
+    siteSearch: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      if (!situationDataSource?.runRadioSiteSearch) {
+        return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Radio site-search source is disabled.", correlationId);
+      }
+      const body = parseRadioSiteSearchRequest(request.body);
+      if (!body) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Radio site-search requires a bbox, at least one target and a profileId or valid custom profile.", correlationId);
+      }
+      try {
+        return await situationDataSource.runRadioSiteSearch(body, requestNow);
+      } catch (error) {
+        app.log.warn({ error }, "Radio site-search failed.");
+        return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+      }
     }
   });
 
