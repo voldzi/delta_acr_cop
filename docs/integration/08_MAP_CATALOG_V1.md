@@ -618,6 +618,12 @@ Vehicle point features use the normalized fields from SIM:
 | `destination`, `currentStatus`, `speedMps`, `vehicleId`, `tripId`, `operator` | Detail panel values. |
 | `providerProperties.transit.detailUrl` | SIM detail endpoint for current stop list, trip context and service alerts. COP proxies it through `/api/v1/transit/vehicles/{featureId}/detail`. |
 
+The detail response follows `sim-transit-vehicle-detail-v1`. COP reads the
+normalized `vehicle`, `trip`, `stopTimes`, `routeShape`, `quality.warnings` and
+`serviceAlerts` fields and keeps city-provider raw payloads out of the UI. The
+route shape and stop-time table are loaded only after selecting a vehicle; bbox
+map polling must stay limited to live vehicle points.
+
 At low zoom COP may reduce the number of rendered transit vehicles for map
 legibility, but it must not move vehicle coordinates. At detailed zoom the exact
 SIM point geometry is authoritative.

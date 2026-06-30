@@ -6547,6 +6547,11 @@ function TrafficDetailSection({
 
   const detailDisplay = transitDetailDisplay(detail);
   const stops = transitDetailStops(detail);
+  const vehicle = detail?.vehicle;
+  const vehiclePosition = vehicle?.position;
+  const trip = detail?.trip;
+  const route = detail?.route;
+  const warnings = transitDetailWarnings(detail);
   return (
     <ObjectDetailSection title={presentation.kind === "road_event" ? "Dopravní událost" : "Veřejná doprava"}>
       {isTransitVehicle ? (
@@ -6563,24 +6568,26 @@ function TrafficDetailSection({
       <DetailGrid
         rows={[
           ["Typ", presentation.label],
-          ["Linka", detail?.route?.routeShortName ?? presentation.routeShortName ?? "n/a"],
-          ["Směr", detail?.route?.destination ?? detail?.route?.direction ?? detail?.trip?.headsign ?? presentation.destination ?? "n/a"],
-          ["Stav", detailDisplay.badgeLabel ?? formatTransportCurrentStatus(detail?.current?.status ?? presentation.currentStatus)],
-          ["Zpoždění", formatTransportDelay(detail?.current?.delaySeconds ?? presentation.delaySeconds)],
-          ["Rychlost", formatTransportSpeed(detail?.current?.speedMps ?? presentation.speedMps)],
-          ["Směr pohybu", formatTransportHeading(detail?.current?.headingDeg ?? presentation.headingDeg)],
-          ["Poslední zpráva", formatShortDateTime(detail?.current?.observedAt ?? feature.properties.observedAt)],
-          ["Obsazenost", formatTransportOccupancy(presentation.occupancyStatus, presentation.occupancyPercent)],
-          ["Sekvence zastávky", formatOptionalInteger(presentation.stopSequence)],
-          ["Vozidlo", detail?.vehicle?.label ?? detail?.vehicle?.id ?? detail?.trip?.vehicleId ?? presentation.vehicleId ?? "n/a"],
-          ["Spoj", detail?.trip?.tripId ?? presentation.tripId ?? "n/a"],
-          ["Dopravce", detail?.vehicle?.operator ?? presentation.operator ?? "n/a"]
+          ["Linka", route?.routeShortName ?? trip?.routeShortName ?? vehicle?.routeShortName ?? presentation.routeShortName ?? "n/a"],
+          ["Směr", route?.destination ?? route?.direction ?? trip?.destination ?? trip?.headsign ?? vehicle?.destination ?? presentation.destination ?? "n/a"],
+          ["Stav", detailDisplay.badgeLabel ?? formatTransportCurrentStatus(detail?.current?.status ?? vehicle?.currentStatus ?? vehicle?.status ?? trip?.status ?? presentation.currentStatus)],
+          ["Zpoždění", formatTransportDelay(detail?.current?.delaySeconds ?? vehicle?.delaySeconds ?? presentation.delaySeconds)],
+          ["Rychlost", formatTransportSpeed(detail?.current?.speedMps ?? vehiclePosition?.speedMps ?? presentation.speedMps)],
+          ["Směr pohybu", formatTransportHeading(detail?.current?.headingDeg ?? vehiclePosition?.headingDeg ?? presentation.headingDeg)],
+          ["Poslední zpráva", formatShortDateTime(detail?.current?.observedAt ?? vehiclePosition?.observedAt ?? vehicle?.observedAt ?? feature.properties.observedAt)],
+          ["Obsazenost", formatTransportOccupancy(vehicle?.occupancyStatus ?? presentation.occupancyStatus, vehicle?.occupancyPercent ?? presentation.occupancyPercent)],
+          ["Sekvence zastávky", formatOptionalInteger(vehicle?.currentStopSequence ?? presentation.stopSequence)],
+          ["Vozidlo", vehicle?.label ?? vehicle?.id ?? vehicle?.vehicleId ?? trip?.vehicleId ?? presentation.vehicleId ?? "n/a"],
+          ["Spoj", trip?.tripId ?? presentation.tripId ?? "n/a"],
+          ["Dopravce", vehicle?.operator ?? presentation.operator ?? "n/a"],
+          ["Detail dat", formatTransitQuality(detail)],
+          ["Trasa", formatTransitRouteShape(detail)]
         ]}
       />
       {detailError ? <div className="situation-warning">{detailError}</div> : null}
       {loading && !detail ? <div className="empty-mini">Načítám detail vozidla a zastávky ze SIM...</div> : null}
       {isTransitVehicle && stops.length > 0 ? <TransitStopList stops={stops} /> : null}
-      {isTransitVehicle && (detail?.warnings ?? []).map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
+      {isTransitVehicle && warnings.map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
     </ObjectDetailSection>
   );
 }
@@ -6590,8 +6597,8 @@ function TransitStopList({ stops }: { stops: TransitStopTime[] }) {
     <div className="traffic-stop-list">
       <h3>Zastávky</h3>
       {stops.slice(0, 8).map((stop, index) => (
-        <div className="traffic-stop-row" key={`${stop.stopId ?? stop.stopName ?? stop.name ?? "stop"}-${stop.sequence ?? index}`}>
-          <span>{stop.sequence ?? index + 1}</span>
+        <div className="traffic-stop-row" key={`${stop.stopId ?? stop.stopName ?? stop.name ?? "stop"}-${stop.sequence ?? stop.stopSequence ?? index}`}>
+          <span>{stop.sequence ?? stop.stopSequence ?? index + 1}</span>
           <strong>{stop.stopName ?? stop.name ?? stop.stopId ?? "Zastávka"}</strong>
           <em>{formatTransitStopTime(stop)}</em>
         </div>
@@ -6602,10 +6609,12 @@ function TransitStopList({ stops }: { stops: TransitStopTime[] }) {
 
 function transitDetailDisplay(detail: TransitVehicleDetailResponse | null): { badgeLabel?: string; subtitle?: string; title?: string } {
   const display = detail?.current?.display;
+  const routeName = detail?.route?.routeShortName ?? detail?.trip?.routeShortName ?? detail?.vehicle?.routeShortName;
+  const mode = detail?.vehicle?.transportMode ?? detail?.route?.transportMode;
   return {
-    badgeLabel: display?.badgeLabel ?? display?.primaryValue,
-    subtitle: display?.subtitle ?? display?.secondaryValue,
-    title: display?.title ?? display?.label
+    badgeLabel: display?.badgeLabel ?? display?.primaryValue ?? formatTransportCurrentStatus(detail?.current?.status ?? detail?.vehicle?.currentStatus ?? detail?.vehicle?.status ?? detail?.trip?.status),
+    subtitle: display?.subtitle ?? display?.secondaryValue ?? detail?.trip?.destination ?? detail?.trip?.headsign ?? detail?.vehicle?.destination ?? detail?.route?.destination,
+    title: display?.title ?? display?.label ?? ([mode ? formatTransitMode(mode) : undefined, routeName].filter(Boolean).join(" ") || undefined)
   };
 }
 
@@ -6614,7 +6623,9 @@ function transitDetailStops(detail: TransitVehicleDetailResponse | null): Transi
     return [];
   }
   const fallback = detail.summary;
-  const stops = Array.isArray(detail.stops)
+  const stops = Array.isArray(detail.stopTimes)
+    ? detail.stopTimes
+    : Array.isArray(detail.stops)
     ? detail.stops
     : isRecord(fallback) && Array.isArray(fallback.stops)
       ? fallback.stops as TransitStopTime[]
@@ -6623,11 +6634,72 @@ function transitDetailStops(detail: TransitVehicleDetailResponse | null): Transi
 }
 
 function formatTransitStopTime(stop: TransitStopTime): string {
-  const arrival = stop.realtimeArrival ?? stop.plannedArrival;
-  const departure = stop.realtimeDeparture ?? stop.plannedDeparture;
+  const arrival = stop.realtimeArrival ?? stop.scheduledArrival ?? stop.plannedArrival;
+  const departure = stop.realtimeDeparture ?? stop.scheduledDeparture ?? stop.plannedDeparture;
   const time = formatShortDateTime(arrival ?? departure);
   const delay = typeof stop.delaySeconds === "number" && Number.isFinite(stop.delaySeconds) ? formatTransportDelay(stop.delaySeconds) : undefined;
-  return [time !== "n/a" ? time : undefined, delay].filter(Boolean).join(" · ") || "n/a";
+  const status = stop.status ? stop.status.replace(/_/g, " ") : undefined;
+  return [time !== "n/a" ? time : undefined, delay, status].filter(Boolean).join(" · ") || "n/a";
+}
+
+function formatTransitMode(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  const labels: Record<string, string> = {
+    bus: "Bus",
+    ferry: "Přívoz",
+    funicular: "Lanovka",
+    metro: "Metro",
+    train: "Vlak",
+    tram: "Tram",
+    trolleybus: "Trolejbus"
+  };
+  return labels[normalized] ?? value.replace(/_/g, " ");
+}
+
+function formatTransitQuality(detail: TransitVehicleDetailResponse | null): string {
+  const quality = detail?.quality;
+  if (!quality) {
+    return "n/a";
+  }
+  const parts = [
+    formatAvailabilityFlag("model", quality.staticModelAvailable),
+    formatAvailabilityFlag("poloha", quality.vehiclePositionAvailable),
+    formatAvailabilityFlag("jízdní řád", quality.tripScheduleAvailable ?? quality.tripUpdateAvailable),
+    formatAvailabilityFlag("trasa", quality.routeShapeAvailable ?? quality.shapeAvailable)
+  ].filter(Boolean);
+  return parts.join(" · ") || "n/a";
+}
+
+function formatAvailabilityFlag(label: string, value: boolean | undefined): string | undefined {
+  if (typeof value !== "boolean") {
+    return undefined;
+  }
+  return `${label} ${value ? "ok" : "chybí"}`;
+}
+
+function formatTransitRouteShape(detail: TransitVehicleDetailResponse | null): string {
+  const shape = detail?.routeShape;
+  const coordinates = Array.isArray(shape?.coordinates) ? shape.coordinates : [];
+  if (coordinates.length > 0) {
+    return `${coordinates.length} bodů${shape?.truncated ? " · zkráceno" : ""}`;
+  }
+  if (detail?.quality?.routeShapeAvailable || detail?.quality?.shapeAvailable) {
+    return "dostupná";
+  }
+  return "n/a";
+}
+
+function transitDetailWarnings(detail: TransitVehicleDetailResponse | null): string[] {
+  if (!detail) {
+    return [];
+  }
+  const serviceAlerts = (detail.serviceAlerts ?? [])
+    .map((alert) => isRecord(alert) ? recordString(alert, "headline") ?? recordString(alert, "description") ?? recordString(alert, "summary") : undefined);
+  return Array.from(new Set([
+    ...(detail.warnings ?? []),
+    ...(detail.quality?.warnings ?? []),
+    ...serviceAlerts
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0)));
 }
 
 function WeatherWebcamSummary({ feature }: { feature: SituationFeature }) {

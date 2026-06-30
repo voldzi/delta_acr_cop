@@ -595,11 +595,20 @@ export interface TransitStopTime {
   name?: string;
   plannedArrival?: string;
   plannedDeparture?: string;
+  position?: {
+    lat?: number;
+    lon?: number;
+  };
   realtimeArrival?: string;
   realtimeDeparture?: string;
+  relationToVehicle?: string;
+  scheduledArrival?: string;
+  scheduledDeparture?: string;
   sequence?: number;
+  status?: string;
   stopId?: string;
   stopName?: string;
+  stopSequence?: number;
 }
 
 export interface TransitVehicleDetailResponse {
@@ -622,6 +631,18 @@ export interface TransitVehicleDetailResponse {
     status?: string;
   };
   featureId?: string;
+  providerId?: string;
+  quality?: {
+    generatedFrom?: string[];
+    routeShapeAvailable?: boolean;
+    shapeAvailable?: boolean;
+    stale?: boolean;
+    staticModelAvailable?: boolean;
+    tripScheduleAvailable?: boolean;
+    tripUpdateAvailable?: boolean;
+    vehiclePositionAvailable?: boolean;
+    warnings?: string[];
+  };
   route?: {
     color?: string;
     destination?: string;
@@ -632,21 +653,65 @@ export interface TransitVehicleDetailResponse {
     shape?: unknown;
     transportMode?: string;
   };
+  routeShape?: {
+    coordinates?: unknown;
+    shapeId?: string;
+    truncated?: boolean;
+    type?: string;
+  };
+  sourceId?: string;
   serviceAlerts?: Array<Record<string, unknown>>;
   stops?: TransitStopTime[];
+  stopTimes?: TransitStopTime[];
   summary?: Record<string, unknown>;
+  systemId?: string;
+  alerts?: Array<Record<string, unknown>>;
   trip?: {
+    destination?: string;
+    destinationStop?: TransitStopTime;
+    directionId?: string;
     headsign?: string;
+    nextStop?: TransitStopTime;
+    originStop?: TransitStopTime;
+    previousStop?: TransitStopTime;
+    routeId?: string;
+    routeLongName?: string;
+    routeShortName?: string;
+    serviceDate?: string;
+    startDate?: string;
+    startTime?: string;
+    status?: string;
     tripId?: string;
     vehicleId?: string;
   };
   vehicle?: {
+    confidence?: number;
+    currentStatus?: string;
+    currentStopSequence?: number;
+    dataAgeSeconds?: number;
+    delaySeconds?: number;
+    destination?: string;
     id?: string;
     label?: string;
     licensePlate?: string;
+    mode?: string;
     operator?: string;
+    occupancyPercent?: number;
+    occupancyStatus?: string;
+    observedAt?: string;
+    position?: {
+      headingDeg?: number;
+      lat?: number;
+      lon?: number;
+      observedAt?: string;
+      speedMps?: number;
+    };
+    routeShortName?: string;
+    status?: string;
+    systemId?: string;
     transportMode?: string;
     type?: string;
+    vehicleId?: string;
   };
   warnings?: string[];
 }
