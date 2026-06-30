@@ -4895,14 +4895,14 @@ h1 {
   padding: 10px 12px 11px;
   pointer-events: auto;
   touch-action: manipulation;
-  transform: translate(-50%, calc(-100% - 18px));
+  transform: translate(-50%, calc(-100% - 26px));
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
 }
 
 .map-object-popover::after {
   position: absolute;
   bottom: -8px;
-  left: 50%;
+  left: var(--popover-arrow-x, 50%);
   width: 15px;
   height: 15px;
   border-right: 1px solid var(--border);
@@ -4913,7 +4913,7 @@ h1 {
 }
 
 .map-object-popover.below {
-  transform: translate(-50%, 18px);
+  transform: translate(-50%, 24px);
 }
 
 .map-object-popover.below::after {

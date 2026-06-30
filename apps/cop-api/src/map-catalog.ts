@@ -328,7 +328,7 @@ function maxFeaturesForCatalogLayer(layer: ProviderCatalogLayer): number | undef
     return Math.max(layer.query?.maxFeatures ?? 0, 600);
   }
   if (layer.recommendedCatalogLayerId === "public.traffic.transit") {
-    return Math.max(layer.query?.maxFeatures ?? 0, 1000);
+    return Math.max(layer.query?.maxFeatures ?? 0, 2500);
   }
   return layer.query?.maxFeatures;
 }
@@ -954,7 +954,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         sourceIds: trafficSourceIds.map((sourceId) => `sim.situation-data:${sourceId}`)
       },
       query: {
-        maxFeatures: 1000,
+        maxFeatures: 2500,
         mode: "bbox",
         providerId: "sim.situation-data",
         providerLayerIds: ["traffic"],

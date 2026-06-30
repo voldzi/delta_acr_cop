@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Circle as CircleIcon,
+  Compass,
   Droplets,
   HelpCircle,
   MapPin,
@@ -17,6 +18,7 @@ import {
   Palette,
   Pentagon,
   PenLine,
+  Plus,
   Ruler,
   Shield,
   Square as SquareIcon,
@@ -555,6 +557,7 @@ interface CopMapProps {
   hasProximityAlerts: boolean;
   initialView?: MapViewState;
   situationFeatures: SituationFeatureCollectionResponse | null;
+  selectedTransitRouteShape?: unknown;
   onBoundsChange: (bounds: MapBounds) => void;
   onSelectObject: (object: CopObject) => void;
   onSelectSituationFeature: (feature: SituationFeature) => void;
@@ -749,6 +752,7 @@ function CopMapComponent({
   hasProximityAlerts,
   initialView,
   situationFeatures,
+  selectedTransitRouteShape,
   onBoundsChange,
   onSelectObject,
   onSelectSituationFeature,
@@ -840,7 +844,12 @@ function CopMapComponent({
   const [mapControlsCollapsed, setMapControlsCollapsed] = React.useState(false);
   const [mapControlsPosition, setMapControlsPosition] = React.useState<{ x: number; y: number } | null>(null);
   const [mapControlsDragging, setMapControlsDragging] = React.useState(false);
-  const [selectionPopupPoint, setSelectionPopupPoint] = React.useState<{ x: number; y: number } | null>(null);
+  const [selectionPopupPoint, setSelectionPopupPoint] = React.useState<{
+    arrowX: number;
+    placement: "above" | "below";
+    x: number;
+    y: number;
+  } | null>(null);
   const [hoveredObjectId, setHoveredObjectId] = React.useState<string | undefined>();
   const [zoneDraftPoints, setZoneDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
   const [sketchDraftPoints, setSketchDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
@@ -909,8 +918,10 @@ function CopMapComponent({
     [selectedObject, selectedSituationFeature, selectedSketchDrawing]
   );
   const selectedRouteFeatureCollection = React.useMemo(
-    () => selectedSituationFeature ? selectedTransitRouteToFeatureCollection(selectedSituationFeature) : emptySelectedRouteFeatureCollection(),
-    [selectedSituationFeature]
+    () => selectedSituationFeature
+      ? selectedTransitRouteToFeatureCollection(selectedSituationFeature, selectedTransitRouteShape)
+      : emptySelectedRouteFeatureCollection(),
+    [selectedSituationFeature, selectedTransitRouteShape]
   );
   const positionedObjects = React.useMemo(() => objects.filter(hasPosition), [objects]);
   const featureCollection = React.useMemo(
@@ -1063,7 +1074,6 @@ function CopMapComponent({
     mapCanvas.addEventListener("webglcontextlost", handleWebGlContextLost);
     mapCanvas.addEventListener("webglcontextrestored", handleWebGlContextRestored);
     enableMapInteractions(map);
-    map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
     const selectRenderedFeature = (renderedFeature: NonNullable<MapLayerMouseEvent["features"]>[number] | undefined) => {
@@ -3960,10 +3970,21 @@ function CopMapComponent({
         return;
       }
       const point = map.project({ lng: selectedAnchorCoordinate[0], lat: selectedAnchorCoordinate[1] });
-      const popupHalfWidth = Math.min(180, Math.max(122, containerRect.width * 0.42));
+      const popupWidth = Math.min(360, Math.max(244, containerRect.width - 28));
+      const popupHalfWidth = popupWidth / 2;
+      const horizontalPadding = 14;
+      const x = clampValue(
+        point.x,
+        popupHalfWidth + horizontalPadding,
+        Math.max(popupHalfWidth + horizontalPadding, containerRect.width - popupHalfWidth - horizontalPadding)
+      );
+      const placement: "above" | "below" = point.y < 150 ? "below" : "above";
+      const arrowX = clampValue(point.x - x + popupHalfWidth, 18, Math.max(18, popupWidth - 18));
       setSelectionPopupPoint({
-        x: clampValue(point.x, popupHalfWidth, Math.max(popupHalfWidth, containerRect.width - popupHalfWidth)),
-        y: clampValue(point.y, 18, Math.max(18, containerRect.height - 18))
+        arrowX,
+        placement,
+        x,
+        y: clampValue(point.y, 20, Math.max(20, containerRect.height - 20))
       });
     };
     updatePosition();
@@ -4306,6 +4327,33 @@ function CopMapComponent({
               <span>Přiblížit</span>
             </button>
             <button
+              aria-label="Přiblížit mapu"
+              className="map-control-button icon-only"
+              onClick={() => mapRef.current?.zoomIn({ duration: 160 })}
+              title="Přiblížit mapu"
+              type="button"
+            >
+              <Plus size={16} strokeWidth={2.3} />
+            </button>
+            <button
+              aria-label="Oddálit mapu"
+              className="map-control-button icon-only"
+              onClick={() => mapRef.current?.zoomOut({ duration: 160 })}
+              title="Oddálit mapu"
+              type="button"
+            >
+              <Minus size={16} strokeWidth={2.3} />
+            </button>
+            <button
+              aria-label="Srovnat sever"
+              className="map-control-button icon-only"
+              onClick={() => mapRef.current?.easeTo({ bearing: 0, duration: 180, pitch: 0 })}
+              title="Srovnat sever"
+              type="button"
+            >
+              <Compass size={16} strokeWidth={2.2} />
+            </button>
+            <button
               className="map-control-button"
               onClick={onRequestUserLocation}
               title="Přejít na moji polohu"
@@ -4338,15 +4386,16 @@ function CopMapComponent({
       </div>
       {selectionCard && selectionPopupPoint ? (
         <div
-          className={`map-object-popover ${selectionPopupPoint.y < 160 ? "below" : ""}`}
+          className={`map-object-popover ${selectionPopupPoint.placement === "below" ? "below" : ""}`}
           onClick={stopMapToolbarEvent}
           onDoubleClick={stopMapToolbarEvent}
           onPointerDown={stopMapToolbarEvent}
           onWheel={stopMapToolbarEvent}
           style={{
+            "--popover-arrow-x": `${selectionPopupPoint.arrowX}px`,
             left: `${selectionPopupPoint.x}px`,
             top: `${selectionPopupPoint.y}px`
-          }}
+          } as React.CSSProperties}
         >
           <div className="map-object-popover-header">
             <span>{selectionCard.eyebrow}</span>
@@ -5512,11 +5561,11 @@ function selectionAnchorCoordinate(
   return null;
 }
 
-function selectedTransitRouteToFeatureCollection(feature: SituationFeature): SelectedRouteFeatureCollection {
+function selectedTransitRouteToFeatureCollection(feature: SituationFeature, detailRouteShape?: unknown): SelectedRouteFeatureCollection {
   if (feature.properties.layer !== "traffic" || !resolveTransportPresentation(feature)) {
     return emptySelectedRouteFeatureCollection();
   }
-  const coordinates = extractTransitRouteCoordinates(feature);
+  const coordinates = extractTransitRouteCoordinates(feature, detailRouteShape);
   if (!coordinates || coordinates.length < 2) {
     return emptySelectedRouteFeatureCollection();
   }
@@ -5538,7 +5587,11 @@ function selectedTransitRouteToFeatureCollection(feature: SituationFeature): Sel
   };
 }
 
-function extractTransitRouteCoordinates(feature: SituationFeature): Array<[number, number]> | null {
+function extractTransitRouteCoordinates(feature: SituationFeature, detailRouteShape?: unknown): Array<[number, number]> | null {
+  const detailCoordinates = lineCoordinatesFromUnknown(detailRouteShape);
+  if (detailCoordinates && detailCoordinates.length >= 2) {
+    return detailCoordinates;
+  }
   if (feature.geometry.type === "LineString" && feature.geometry.coordinates.length >= 2) {
     return feature.geometry.coordinates;
   }
@@ -5578,6 +5631,14 @@ function lineCoordinatesFromUnknown(value: unknown, depth = 0): Array<[number, n
       return coordinates;
     }
   }
+  if (stringProperty(value.type) === "MultiLineString" && Array.isArray(value.coordinates)) {
+    const candidates = value.coordinates
+      .map((candidate) => lineCoordinatesFromUnknown(candidate, depth + 1))
+      .filter((candidate): candidate is Array<[number, number]> => Boolean(candidate && candidate.length >= 2));
+    if (candidates.length > 0) {
+      return candidates.sort((a, b) => b.length - a.length)[0] ?? null;
+    }
+  }
   const directKeys = ["coordinates", "geometry", "routeShape", "routeGeometry", "shape", "route", "lineString", "path", "points"];
   for (const key of directKeys) {
     const coordinates = lineCoordinatesFromUnknown(value[key], depth + 1);
@@ -5591,11 +5652,17 @@ function lineCoordinatesFromUnknown(value: unknown, depth = 0): Array<[number, n
 function normalizeLineCoordinates(value: unknown[]): Array<[number, number]> {
   const coordinates: Array<[number, number]> = [];
   for (const item of value) {
-    if (!Array.isArray(item) || item.length < 2) {
+    let lon: number;
+    let lat: number;
+    if (Array.isArray(item) && item.length >= 2) {
+      lon = Number(item[0]);
+      lat = Number(item[1]);
+    } else if (isRecord(item)) {
+      lon = recordNumber(item, "lon") ?? recordNumber(item, "lng") ?? recordNumber(item, "longitude") ?? Number.NaN;
+      lat = recordNumber(item, "lat") ?? recordNumber(item, "latitude") ?? Number.NaN;
+    } else {
       return [];
     }
-    const lon = Number(item[0]);
-    const lat = Number(item[1]);
     if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
       return [];
     }

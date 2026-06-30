@@ -1779,7 +1779,8 @@ export function App() {
       return;
     }
     const filters = buildCatalogFeatureFilters(catalogLayerIds, hasMobileCatalogSelection(catalogLayerIds) ? coverageTechnology : undefined);
-    const requestKey = stableSituationRequestKey(catalogLayerIds, filters);
+    const featureLimit = mapFeatureQueryLimit(catalogLayerIds, mapView?.zoom);
+    const requestKey = stableSituationRequestKey(catalogLayerIds, filters, featureLimit);
     const previousRequest = situationFeatureRequestRef.current;
     if (previousRequest?.key === requestKey && mapBoundsContainedBy(previousRequest.bounds, mapBounds)) {
       return;
@@ -1793,7 +1794,7 @@ export function App() {
         bbox: queryBounds,
         filters,
         layerIds: catalogLayerIds,
-        limit: 500,
+        limit: featureLimit,
       })
         .then((response) => {
           if (cancelled) {
@@ -2286,6 +2287,41 @@ export function App() {
     return appendRadioLosFeatures(withRadioResult, radioInputOverlay);
   }, [baseCombinedSituationFeatures, mobileTowerViewshed, radioInputOverlay, radioOverlay]);
   const selectedSituationFeature = combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
+  const [selectedTransitRouteDetail, setSelectedTransitRouteDetail] = React.useState<TransitVehicleDetailResponse | null>(null);
+  React.useEffect(() => {
+    const presentation = selectedSituationFeature?.properties.layer === "traffic"
+      ? resolveTransportPresentation(selectedSituationFeature)
+      : null;
+    if (!selectedSituationFeature || !presentation || presentation.kind === "road_event") {
+      setSelectedTransitRouteDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setSelectedTransitRouteDetail(null);
+    fetchTransitVehicleDetail(apiBase, authToken, presentation.detailUrl, {
+      featureId: selectedSituationFeature.properties.featureId,
+      sourceId: selectedSituationFeature.properties.sourceId
+    })
+      .then((detail) => {
+        if (!cancelled) {
+          setSelectedTransitRouteDetail(detail);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSelectedTransitRouteDetail(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    apiBase,
+    authToken,
+    selectedSituationFeature?.properties.featureId,
+    selectedSituationFeature?.properties.layer,
+    selectedSituationFeature?.properties.sourceId
+  ]);
   const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleMissionArenaLayerCount = React.useMemo(() => countVisibleMissionArenaLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
@@ -4765,6 +4801,7 @@ export function App() {
               mapLayerDetailLabel={mapLayerDetailLabel}
               mapLayerLabel={mapLayerLabel}
               situationFeatures={combinedSituationFeatures}
+              selectedTransitRouteShape={selectedTransitRouteDetail?.routeShape ?? selectedTransitRouteDetail?.route?.shape ?? null}
               onBoundsChange={setMapBounds}
               onSelectObject={(object) => {
                 const isSelected = selectedObjectId === object.objectId;
@@ -16449,11 +16486,26 @@ function roundBoundsCoordinate(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
 
-function stableSituationRequestKey(layerIds: string[], filters: Record<string, Record<string, unknown>>): string {
+function stableSituationRequestKey(layerIds: string[], filters: Record<string, Record<string, unknown>>, limit: number): string {
   return JSON.stringify({
     filters,
-    layerIds: [...layerIds].sort()
+    layerIds: [...layerIds].sort(),
+    limit
   });
+}
+
+function mapFeatureQueryLimit(layerIds: string[], zoom: number | undefined): number {
+  if (!layerIds.includes("public.traffic.transit")) {
+    return 500;
+  }
+  const safeZoom = typeof zoom === "number" && Number.isFinite(zoom) ? zoom : 0;
+  if (safeZoom >= 13) {
+    return 2500;
+  }
+  if (safeZoom >= 11) {
+    return 1800;
+  }
+  return 1200;
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {
