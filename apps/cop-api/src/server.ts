@@ -137,6 +137,7 @@ import {
 import { createPlaceGeocoderFromEnv, type PlaceGeocoder } from "./place-geocoder.js";
 import { buildCopPrometheusMetrics } from "./prometheus-metrics.js";
 import { withEventProvenance } from "./provenance.js";
+import { registerCommunityGroupRoutes, registerCommunityReportRoutes } from "./routes/community-routes.js";
 import { registerHealthRoutes } from "./routes/health-routes.js";
 import { registerMessagingRoutes } from "./routes/messaging-routes.js";
 import { registerMobileRoutes } from "./routes/mobile-routes.js";
@@ -2680,192 +2681,194 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return resetFloodDemoScenario(actor, now());
   });
 
-  app.get("/api/v1/community/groups", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const requestNow = now();
-    const groups = await listCommunityGroups({
-      includePublic: true,
-      subjectId: actor.subjectId
-    });
-    return {
-      items: groups,
-      serverTimestamp: requestNow.toISOString()
-    };
-  });
+  registerCommunityGroupRoutes(app, {
+    listGroups: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const requestNow = now();
+      const groups = await listCommunityGroups({
+        includePublic: true,
+        subjectId: actor.subjectId
+      });
+      return {
+        items: groups,
+        serverTimestamp: requestNow.toISOString()
+      };
+    },
 
-  app.post("/api/v1/community/groups", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const groupRequest = normalizeCommunityGroupRequest(request.body);
-    if (!groupRequest) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Community group requires a name.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const requestNow = now();
-    const group = await createCommunityGroup({
-      anchorLocation: groupRequest.anchorLocation,
-      createdBy: actorToCommunityActor(actor),
-      description: groupRequest.description,
-      metadata: groupRequest.metadata,
-      name: groupRequest.name,
-      visibility: groupRequest.visibility
-    }, requestNow);
-    appendAudit(state, "COMMUNITY_GROUP_CREATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      groupId: group.groupId,
-      visibility: group.visibility
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return reply.code(201).send(group);
-  });
+    createGroup: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const groupRequest = normalizeCommunityGroupRequest(request.body);
+      if (!groupRequest) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Community group requires a name.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const requestNow = now();
+      const group = await createCommunityGroup({
+        anchorLocation: groupRequest.anchorLocation,
+        createdBy: actorToCommunityActor(actor),
+        description: groupRequest.description,
+        metadata: groupRequest.metadata,
+        name: groupRequest.name,
+        visibility: groupRequest.visibility
+      }, requestNow);
+      appendAudit(state, "COMMUNITY_GROUP_CREATED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        groupId: group.groupId,
+        visibility: group.visibility
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return reply.code(201).send(group);
+    },
 
-  app.get("/api/v1/community/groups/:groupId", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { groupId: string };
-    const group = await readCommunityGroup(params.groupId);
-    if (!group || !canReadCommunityGroup(group, actor)) {
-      return sendError(reply, 404, "NOT_FOUND", "Community group was not found.", crypto.randomUUID());
-    }
-    return group;
-  });
+    getGroup: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { groupId: string; };
+      const group = await readCommunityGroup(params.groupId);
+      if (!group || !canReadCommunityGroup(group, actor)) {
+        return sendError(reply, 404, "NOT_FOUND", "Community group was not found.", crypto.randomUUID());
+      }
+      return group;
+    },
 
-  app.patch("/api/v1/community/groups/:groupId/metadata", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { groupId: string };
-    const metadata = normalizeCommunityGroupMetadataRequest(request.body);
-    if (!metadata) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Community group metadata update requires metadata.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const requestNow = now();
-    const group = await updateCommunityGroupMetadata({
-      actor: actorToCommunityActor(actor),
-      groupId: params.groupId,
-      metadata
-    }, requestNow);
-    if (!group) {
-      return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be updated by current user.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    appendAudit(state, "COMMUNITY_GROUP_METADATA_UPDATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      groupId: group.groupId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return group;
-  });
+    updateGroupMetadata: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { groupId: string; };
+      const metadata = normalizeCommunityGroupMetadataRequest(request.body);
+      if (!metadata) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Community group metadata update requires metadata.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const requestNow = now();
+      const group = await updateCommunityGroupMetadata({
+        actor: actorToCommunityActor(actor),
+        groupId: params.groupId,
+        metadata
+      }, requestNow);
+      if (!group) {
+        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be updated by current user.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      appendAudit(state, "COMMUNITY_GROUP_METADATA_UPDATED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        groupId: group.groupId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return group;
+    },
 
-  app.delete("/api/v1/community/groups/:groupId", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { groupId: string };
-    const requestNow = now();
-    if (!await deleteCommunityGroup(params.groupId, actor, requestNow)) {
-      return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be managed by current user.", correlationIdFrom(request.headers["x-correlation-id"]));
-    }
-    appendAudit(state, "COMMUNITY_GROUP_DELETED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      groupId: params.groupId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return reply.code(204).send();
-  });
+    deleteGroup: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { groupId: string; };
+      const requestNow = now();
+      if (!await deleteCommunityGroup(params.groupId, actor, requestNow)) {
+        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be managed by current user.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      appendAudit(state, "COMMUNITY_GROUP_DELETED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        groupId: params.groupId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return reply.code(204).send();
+    },
 
-  app.post("/api/v1/community/groups/:groupId/join-request", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { groupId: string };
-    const requestNow = now();
-    const group = await requestCommunityGroupMembership(params.groupId, actor, requestNow);
-    if (!group) {
-      return sendError(reply, 404, "NOT_FOUND", "Community group was not found.", crypto.randomUUID());
-    }
-    appendAudit(state, "COMMUNITY_GROUP_JOIN_REQUESTED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      groupId: group.groupId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return group;
-  });
+    joinGroup: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { groupId: string; };
+      const requestNow = now();
+      const group = await requestCommunityGroupMembership(params.groupId, actor, requestNow);
+      if (!group) {
+        return sendError(reply, 404, "NOT_FOUND", "Community group was not found.", crypto.randomUUID());
+      }
+      appendAudit(state, "COMMUNITY_GROUP_JOIN_REQUESTED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        groupId: group.groupId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return group;
+    },
 
-  app.post("/api/v1/community/groups/:groupId/members", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { groupId: string };
-    const memberRequest = normalizeCommunityGroupMemberRequest(request.body);
-    if (!memberRequest) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Community group member requires subjectId.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const resolvedMember = await resolveCommunityGroupMemberIdentity(memberRequest, {
-      readProfile: readUserProfileBySubject,
-      searchProfiles: searchUserProfiles
-    });
-    if ("error" in resolvedMember) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        resolvedMember.error,
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
+    upsertGroupMember: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { groupId: string; };
+      const memberRequest = normalizeCommunityGroupMemberRequest(request.body);
+      if (!memberRequest) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Community group member requires subjectId.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const resolvedMember = await resolveCommunityGroupMemberIdentity(memberRequest, {
+        readProfile: readUserProfileBySubject,
+        searchProfiles: searchUserProfiles
+      });
+      if ("error" in resolvedMember) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          resolvedMember.error,
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
 
-    const requestNow = now();
-    const group = await upsertCommunityGroupMember({
-      actor: actorToCommunityActor(actor),
-      groupId: params.groupId,
-      member: {
-        displayName: resolvedMember.member.displayName,
-        subjectId: resolvedMember.member.subjectId,
-        username: resolvedMember.member.username
-      },
-      role: resolvedMember.member.role,
-      status: resolvedMember.member.status
-    }, requestNow);
-    if (!group) {
-      return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be managed by current user.", crypto.randomUUID());
+      const requestNow = now();
+      const group = await upsertCommunityGroupMember({
+        actor: actorToCommunityActor(actor),
+        groupId: params.groupId,
+        member: {
+          displayName: resolvedMember.member.displayName,
+          subjectId: resolvedMember.member.subjectId,
+          username: resolvedMember.member.username
+        },
+        role: resolvedMember.member.role,
+        status: resolvedMember.member.status
+      }, requestNow);
+      if (!group) {
+        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be managed by current user.", crypto.randomUUID());
+      }
+      appendAudit(state, "COMMUNITY_GROUP_MEMBER_UPSERTED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        groupId: group.groupId,
+        memberResolution: resolvedMember.resolution,
+        memberSubjectId: resolvedMember.member.subjectId,
+        status: resolvedMember.member.status
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return group;
     }
-    appendAudit(state, "COMMUNITY_GROUP_MEMBER_UPSERTED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      groupId: group.groupId,
-      memberResolution: resolvedMember.resolution,
-      memberSubjectId: resolvedMember.member.subjectId,
-      status: resolvedMember.member.status
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return group;
   });
 
   app.get("/api/v1/sketch/palettes", async (request) => {
@@ -3544,424 +3547,426 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
-  app.get("/api/v1/community/reports", async (request, reply) => {
-    const actor = actorFromRequest(request);
-    const requestNow = now();
-    const query = parseCommunityReportQuery(request.query as Record<string, unknown>, actor);
-    const items = (await listCommunityReports(query)).filter((report) => canReadCommunityReport(report, actor));
-    const actorGroupIds = await readCommunityActorGroupIds(actor);
-    const responseItems = communityReportResponseItems(items, requestNow, actor, actorGroupIds);
-    return {
-      featureCollection: communityReportsFeatureCollection(responseItems, requestNow, actor, actorGroupIds),
-      items: responseItems,
-      nextCursor: null,
-      serverTimestamp: requestNow.toISOString()
-    };
-  });
+  registerCommunityReportRoutes(app, {
+    listReports: async (request, reply) => {
+      const actor = actorFromRequest(request);
+      const requestNow = now();
+      const query = parseCommunityReportQuery(request.query as Record<string, unknown>, actor);
+      const items = (await listCommunityReports(query)).filter((report) => canReadCommunityReport(report, actor));
+      const actorGroupIds = await readCommunityActorGroupIds(actor);
+      const responseItems = communityReportResponseItems(items, requestNow, actor, actorGroupIds);
+      return {
+        featureCollection: communityReportsFeatureCollection(responseItems, requestNow, actor, actorGroupIds),
+        items: responseItems,
+        nextCursor: null,
+        serverTimestamp: requestNow.toISOString()
+      };
+    },
 
-  app.post("/api/v1/community/reports", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const requestNow = now();
-    const input = normalizeCreateCommunityReport(request.body, actor, requestNow);
-    if (!input) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Community report requires category and location {lat, lon}.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const requestedGroupId = communityReportGroupId(input);
-    if (requestedGroupId) {
-      const group = await readCommunityGroup(requestedGroupId);
-      if (!group || !canUseCommunityGroupForReport(group, actor)) {
-        return sendError(reply, 403, "FORBIDDEN", "Current user cannot publish into the selected community group.", crypto.randomUUID());
+    createReport: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
       }
-    }
-    const report = await createCommunityReport(input, requestNow);
-    appendAudit(state, "COMMUNITY_REPORT_CREATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      category: report.category,
-      reportId: report.reportId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return reply.code(201).send(communityReportResponseItem(report, requestNow, actor, new Set()));
-  });
-
-  app.patch("/api/v1/community/reports/:reportId", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { reportId: string };
-    const update = normalizeCommunityReportUpdate(request.body);
-    if (!update) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Community report update requires at least one editable field.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const requestedGroupId = communityReportGroupId({ properties: update.properties ?? {} });
-    if (requestedGroupId) {
-      const group = await readCommunityGroup(requestedGroupId);
-      if (!group || !canUseCommunityGroupForReport(group, actor)) {
-        return sendError(reply, 403, "FORBIDDEN", "Current user cannot publish into the selected community group.", crypto.randomUUID());
+      const requestNow = now();
+      const input = normalizeCreateCommunityReport(request.body, actor, requestNow);
+      if (!input) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Community report requires category and location {lat, lon}.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
-    }
-    const requestNow = now();
-    const report = await updateCommunityReport(params.reportId, actor, update, requestNow);
-    if (!report) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
-    }
-    appendAudit(state, "COMMUNITY_REPORT_UPDATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      reportId: report.reportId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return communityReportResponseItem(report, requestNow, actor, await readCommunityActorGroupIds(actor));
-  });
-
-  app.get("/api/v1/community/reports/:reportId", async (request, reply) => {
-    const actor = actorFromRequest(request);
-    const params = request.params as { reportId: string };
-    const report = await readCommunityReport(params.reportId);
-    if (!report || !canReadCommunityReport(report, actor)) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
-    }
-    return communityReportResponseItem(report, now(), actor, await readCommunityActorGroupIds(actor));
-  });
-
-  app.delete("/api/v1/community/reports/:reportId", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { reportId: string };
-    const deleted = await deleteCommunityReport(params.reportId, actor, now());
-    if (!deleted) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
-    }
-    appendAudit(state, "COMMUNITY_REPORT_DELETED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      reportId: params.reportId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return reply.code(204).send();
-  });
-
-  app.post("/api/v1/community/reports/:reportId/submit", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { reportId: string };
-    const requestNow = now();
-    const report = await submitCommunityReport(params.reportId, actor, requestNow);
-    if (!report) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
-    }
-    appendAudit(state, "COMMUNITY_REPORT_SUBMITTED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      attachmentCount: report.attachments.length,
-      category: report.category,
-      reportId: report.reportId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    try {
-      await dispatchCommunityReportNotification(actor, report, requestNow, correlationIdFrom(request.headers["x-correlation-id"]));
-    } catch (error) {
-      appendAudit(state, "COMMUNITY_REPORT_NOTIFICATION_FAILED", {
+      const requestedGroupId = communityReportGroupId(input);
+      if (requestedGroupId) {
+        const group = await readCommunityGroup(requestedGroupId);
+        if (!group || !canUseCommunityGroupForReport(group, actor)) {
+          return sendError(reply, 403, "FORBIDDEN", "Current user cannot publish into the selected community group.", crypto.randomUUID());
+        }
+      }
+      const report = await createCommunityReport(input, requestNow);
+      appendAudit(state, "COMMUNITY_REPORT_CREATED", {
         actorAuthMode: actor.authMode,
         actorSubjectId: actor.subjectId,
-        error: errorMessage(error),
+        category: report.category,
         reportId: report.reportId
       }, correlationIdFrom(request.headers["x-correlation-id"]));
-      app.log.warn({ error, reportId: report.reportId }, "Community report notification dispatch failed.");
-    }
-    return communityReportResponseItem(report, requestNow, actor, new Set());
-  });
+      return reply.code(201).send(communityReportResponseItem(report, requestNow, actor, new Set()));
+    },
 
-  app.post("/api/v1/community/reports/:reportId/attachments", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    if (!mediaStorage || mediaStorageStatus !== "ok") {
-      return sendError(
-        reply,
-        503,
-        "MEDIA_STORAGE_UNAVAILABLE",
-        "Community media storage is not configured.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const params = request.params as { reportId: string };
-    const report = await readCommunityReport(params.reportId);
-    if (!report || report.createdBy.subjectId !== actor.subjectId) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
-    }
-    const attachmentRequest = normalizeCommunityAttachmentRequest(request.body);
-    if (!attachmentRequest) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Attachment requires kind, contentType and byteSize.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const requestNow = now();
-    const attachmentId = crypto.randomUUID();
-    const upload = await mediaStorage.createUploadSlot({
-      attachmentId,
-      byteSize: attachmentRequest.byteSize,
-      contentType: attachmentRequest.contentType,
-      fileName: attachmentRequest.fileName,
-      reportId: report.reportId
-    }, requestNow);
-    const attachment = await createCommunityAttachment({
-      attachmentId,
-      bucket: upload.bucket,
-      byteSize: attachmentRequest.byteSize,
-      capturedAt: attachmentRequest.capturedAt,
-      captureLocation: attachmentRequest.captureLocation,
-      checksumSha256: attachmentRequest.checksumSha256,
-      contentType: attachmentRequest.contentType,
-      fileName: attachmentRequest.fileName,
-      kind: attachmentRequest.kind,
-      metadata: attachmentRequest.metadata,
-      objectKey: upload.objectKey,
-      reportId: report.reportId,
-      subjectId: actor.subjectId,
-      uploadExpiresAt: upload.expiresAt
-    });
-    appendAudit(state, "COMMUNITY_ATTACHMENT_UPLOAD_CREATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      attachmentId,
-      byteSize: attachment.byteSize,
-      contentType: attachment.contentType,
-      kind: attachment.kind,
-      reportId: report.reportId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    return reply.code(201).send({
-      attachment,
-      upload
-    });
-  });
+    updateReport: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { reportId: string; };
+      const update = normalizeCommunityReportUpdate(request.body);
+      if (!update) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Community report update requires at least one editable field.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const requestedGroupId = communityReportGroupId({ properties: update.properties ?? {} });
+      if (requestedGroupId) {
+        const group = await readCommunityGroup(requestedGroupId);
+        if (!group || !canUseCommunityGroupForReport(group, actor)) {
+          return sendError(reply, 403, "FORBIDDEN", "Current user cannot publish into the selected community group.", crypto.randomUUID());
+        }
+      }
+      const requestNow = now();
+      const report = await updateCommunityReport(params.reportId, actor, update, requestNow);
+      if (!report) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+      }
+      appendAudit(state, "COMMUNITY_REPORT_UPDATED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        reportId: report.reportId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return communityReportResponseItem(report, requestNow, actor, await readCommunityActorGroupIds(actor));
+    },
 
-  app.post("/api/v1/community/reports/:reportId/attachments/:attachmentId/complete", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    const params = request.params as { attachmentId: string; reportId: string };
-    const body = isRecord(request.body) ? request.body : {};
-    const requestNow = now();
-    const attachment = await completeCommunityAttachment({
-      attachmentId: params.attachmentId,
-      byteSize: optionalFiniteNumber(body.byteSize, 1, readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024)),
-      checksumSha256: optionalChecksumSha256(body.checksumSha256),
-      completedAt: requestNow.toISOString(),
-      reportId: params.reportId,
-      subjectId: actor.subjectId
-    });
-    if (!attachment) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
-    }
-    appendAudit(state, "COMMUNITY_ATTACHMENT_UPLOAD_COMPLETED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      attachmentId: attachment.attachmentId,
-      reportId: attachment.reportId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    const convertedAttachment = await enqueueSpatialVideoConversion(params.reportId, attachment, requestNow);
-    return communityAttachmentResponseItem(convertedAttachment, params.reportId, true, actor, requestNow);
-  });
+    getReport: async (request, reply) => {
+      const actor = actorFromRequest(request);
+      const params = request.params as { reportId: string; };
+      const report = await readCommunityReport(params.reportId);
+      if (!report || !canReadCommunityReport(report, actor)) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+      }
+      return communityReportResponseItem(report, now(), actor, await readCommunityActorGroupIds(actor));
+    },
 
-  app.post("/api/v1/community/reports/:reportId/attachments/:attachmentId/upload", async (request, reply) => {
-    const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
-    if (!mediaStorage || mediaStorageStatus !== "ok") {
-      return sendError(
-        reply,
-        503,
-        "MEDIA_STORAGE_UNAVAILABLE",
-        "Community media storage is not configured.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const params = request.params as { attachmentId: string; reportId: string };
-    const report = await readCommunityReport(params.reportId);
-    const attachment = report?.attachments.find((item) => item.attachmentId === params.attachmentId);
-    if (!report || report.createdBy.subjectId !== actor.subjectId || !attachment) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
-    }
-    const uploadBody = normalizeCommunityAttachmentUploadBody(request.body, attachment.byteSize, maxCommunityAttachmentBytes);
-    if (!uploadBody) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Attachment upload requires binary data or base64 data matching the declared attachment size.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const checksumSha256 = createHash("sha256").update(uploadBody.body).digest("hex");
-    const requestNow = now();
-    await mediaStorage.putObject({
-      body: uploadBody.body,
-      contentType: attachment.contentType,
-      objectKey: attachment.objectKey
-    }, requestNow);
-    const completed = await completeCommunityAttachment({
-      attachmentId: attachment.attachmentId,
-      byteSize: uploadBody.body.length,
-      checksumSha256,
-      completedAt: requestNow.toISOString(),
-      reportId: report.reportId,
-      subjectId: actor.subjectId
-    });
-    if (!completed) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
-    }
-    appendAudit(state, "COMMUNITY_ATTACHMENT_PROXY_UPLOADED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      attachmentId: attachment.attachmentId,
-      byteSize: uploadBody.body.length,
-      contentType: attachment.contentType,
-      reportId: report.reportId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
-    const convertedAttachment = await enqueueSpatialVideoConversion(report.reportId, completed, requestNow);
-    return communityAttachmentResponseItem(convertedAttachment, report.reportId, true, actor, requestNow);
-  });
+    deleteReport: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { reportId: string; };
+      const deleted = await deleteCommunityReport(params.reportId, actor, now());
+      if (!deleted) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+      }
+      appendAudit(state, "COMMUNITY_REPORT_DELETED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        reportId: params.reportId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return reply.code(204).send();
+    },
 
-  app.get("/api/v1/community/reports/:reportId/attachments/:attachmentId/content", async (request, reply) => {
-    if (!mediaStorage || mediaStorageStatus !== "ok") {
-      return sendError(
-        reply,
-        503,
-        "MEDIA_STORAGE_UNAVAILABLE",
-        "Community media storage is not configured.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
-    }
-    const actor = actorFromRequest(request);
-    const params = request.params as { attachmentId: string; reportId: string };
-    const report = await readCommunityReport(params.reportId);
-    if (!report) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
-    }
-    const attachment = report.attachments.find((item) => item.attachmentId === params.attachmentId && item.status === "uploaded");
-    if (!attachment) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
-    }
-    const requestNow = now();
-    const hasValidTicket = hasValidCommunityMediaTicket(request.query, {
-      attachmentId: params.attachmentId,
-      reportId: params.reportId
-    }, requestNow);
-    if (!hasValidTicket && (!canReadCommunityReport(report, actor) || !canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor)))) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
-    }
-    const readUrl = await mediaStorage.createReadUrl({ objectKey: attachment.objectKey }, requestNow);
-    const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
-    const mediaResponse = await fetch(readUrl, {
-      headers: range ? { range } : undefined
-    });
-    if (!mediaResponse.ok && mediaResponse.status !== 206) {
-      return sendError(reply, 502, "MEDIA_STORAGE_ERROR", `Media storage returned HTTP ${mediaResponse.status}.`, crypto.randomUUID());
-    }
-    const contentLength = mediaResponse.headers.get("content-length");
-    const contentRange = mediaResponse.headers.get("content-range");
-    const acceptRanges = mediaResponse.headers.get("accept-ranges");
-    reply
-      .code(mediaResponse.status)
-      .header("Cache-Control", "private, max-age=300")
-      .header("Content-Disposition", contentDispositionHeader(attachment.fileName ?? attachment.attachmentId))
-      .header("Content-Type", attachment.contentType);
-    if (contentLength) {
-      reply.header("Content-Length", contentLength);
-    }
-    if (contentRange) {
-      reply.header("Content-Range", contentRange);
-    }
-    if (acceptRanges) {
-      reply.header("Accept-Ranges", acceptRanges);
-    }
-    return reply.send(Buffer.from(await mediaResponse.arrayBuffer()));
-  });
+    submitReport: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { reportId: string; };
+      const requestNow = now();
+      const report = await submitCommunityReport(params.reportId, actor, requestNow);
+      if (!report) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+      }
+      appendAudit(state, "COMMUNITY_REPORT_SUBMITTED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        attachmentCount: report.attachments.length,
+        category: report.category,
+        reportId: report.reportId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      try {
+        await dispatchCommunityReportNotification(actor, report, requestNow, correlationIdFrom(request.headers["x-correlation-id"]));
+      } catch (error) {
+        appendAudit(state, "COMMUNITY_REPORT_NOTIFICATION_FAILED", {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          error: errorMessage(error),
+          reportId: report.reportId
+        }, correlationIdFrom(request.headers["x-correlation-id"]));
+        app.log.warn({ error, reportId: report.reportId }, "Community report notification dispatch failed.");
+      }
+      return communityReportResponseItem(report, requestNow, actor, new Set());
+    },
 
-  app.get("/api/v1/community/reports/:reportId/attachments/:attachmentId/derivatives/:derivativeId/content", async (request, reply) => {
-    if (!mediaStorage || mediaStorageStatus !== "ok") {
-      return sendError(
-        reply,
-        503,
-        "MEDIA_STORAGE_UNAVAILABLE",
-        "Community media storage is not configured.",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
+    createReportAttachment: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      if (!mediaStorage || mediaStorageStatus !== "ok") {
+        return sendError(
+          reply,
+          503,
+          "MEDIA_STORAGE_UNAVAILABLE",
+          "Community media storage is not configured.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const params = request.params as { reportId: string; };
+      const report = await readCommunityReport(params.reportId);
+      if (!report || report.createdBy.subjectId !== actor.subjectId) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+      }
+      const attachmentRequest = normalizeCommunityAttachmentRequest(request.body);
+      if (!attachmentRequest) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Attachment requires kind, contentType and byteSize.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const requestNow = now();
+      const attachmentId = crypto.randomUUID();
+      const upload = await mediaStorage.createUploadSlot({
+        attachmentId,
+        byteSize: attachmentRequest.byteSize,
+        contentType: attachmentRequest.contentType,
+        fileName: attachmentRequest.fileName,
+        reportId: report.reportId
+      }, requestNow);
+      const attachment = await createCommunityAttachment({
+        attachmentId,
+        bucket: upload.bucket,
+        byteSize: attachmentRequest.byteSize,
+        capturedAt: attachmentRequest.capturedAt,
+        captureLocation: attachmentRequest.captureLocation,
+        checksumSha256: attachmentRequest.checksumSha256,
+        contentType: attachmentRequest.contentType,
+        fileName: attachmentRequest.fileName,
+        kind: attachmentRequest.kind,
+        metadata: attachmentRequest.metadata,
+        objectKey: upload.objectKey,
+        reportId: report.reportId,
+        subjectId: actor.subjectId,
+        uploadExpiresAt: upload.expiresAt
+      });
+      appendAudit(state, "COMMUNITY_ATTACHMENT_UPLOAD_CREATED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        attachmentId,
+        byteSize: attachment.byteSize,
+        contentType: attachment.contentType,
+        kind: attachment.kind,
+        reportId: report.reportId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return reply.code(201).send({
+        attachment,
+        upload
+      });
+    },
+
+    completeReportAttachment: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { attachmentId: string; reportId: string; };
+      const body = isRecord(request.body) ? request.body : {};
+      const requestNow = now();
+      const attachment = await completeCommunityAttachment({
+        attachmentId: params.attachmentId,
+        byteSize: optionalFiniteNumber(body.byteSize, 1, readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024)),
+        checksumSha256: optionalChecksumSha256(body.checksumSha256),
+        completedAt: requestNow.toISOString(),
+        reportId: params.reportId,
+        subjectId: actor.subjectId
+      });
+      if (!attachment) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
+      }
+      appendAudit(state, "COMMUNITY_ATTACHMENT_UPLOAD_COMPLETED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        attachmentId: attachment.attachmentId,
+        reportId: attachment.reportId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      const convertedAttachment = await enqueueSpatialVideoConversion(params.reportId, attachment, requestNow);
+      return communityAttachmentResponseItem(convertedAttachment, params.reportId, true, actor, requestNow);
+    },
+
+    uploadReportAttachment: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      if (!mediaStorage || mediaStorageStatus !== "ok") {
+        return sendError(
+          reply,
+          503,
+          "MEDIA_STORAGE_UNAVAILABLE",
+          "Community media storage is not configured.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const params = request.params as { attachmentId: string; reportId: string; };
+      const report = await readCommunityReport(params.reportId);
+      const attachment = report?.attachments.find((item) => item.attachmentId === params.attachmentId);
+      if (!report || report.createdBy.subjectId !== actor.subjectId || !attachment) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
+      }
+      const uploadBody = normalizeCommunityAttachmentUploadBody(request.body, attachment.byteSize, maxCommunityAttachmentBytes);
+      if (!uploadBody) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Attachment upload requires binary data or base64 data matching the declared attachment size.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const checksumSha256 = createHash("sha256").update(uploadBody.body).digest("hex");
+      const requestNow = now();
+      await mediaStorage.putObject({
+        body: uploadBody.body,
+        contentType: attachment.contentType,
+        objectKey: attachment.objectKey
+      }, requestNow);
+      const completed = await completeCommunityAttachment({
+        attachmentId: attachment.attachmentId,
+        byteSize: uploadBody.body.length,
+        checksumSha256,
+        completedAt: requestNow.toISOString(),
+        reportId: report.reportId,
+        subjectId: actor.subjectId
+      });
+      if (!completed) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
+      }
+      appendAudit(state, "COMMUNITY_ATTACHMENT_PROXY_UPLOADED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        attachmentId: attachment.attachmentId,
+        byteSize: uploadBody.body.length,
+        contentType: attachment.contentType,
+        reportId: report.reportId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      const convertedAttachment = await enqueueSpatialVideoConversion(report.reportId, completed, requestNow);
+      return communityAttachmentResponseItem(convertedAttachment, report.reportId, true, actor, requestNow);
+    },
+
+    getReportAttachmentContent: async (request, reply) => {
+      if (!mediaStorage || mediaStorageStatus !== "ok") {
+        return sendError(
+          reply,
+          503,
+          "MEDIA_STORAGE_UNAVAILABLE",
+          "Community media storage is not configured.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const actor = actorFromRequest(request);
+      const params = request.params as { attachmentId: string; reportId: string; };
+      const report = await readCommunityReport(params.reportId);
+      if (!report) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
+      }
+      const attachment = report.attachments.find((item) => item.attachmentId === params.attachmentId && item.status === "uploaded");
+      if (!attachment) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
+      }
+      const requestNow = now();
+      const hasValidTicket = hasValidCommunityMediaTicket(request.query, {
+        attachmentId: params.attachmentId,
+        reportId: params.reportId
+      }, requestNow);
+      if (!hasValidTicket && (!canReadCommunityReport(report, actor) || !canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor)))) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
+      }
+      const readUrl = await mediaStorage.createReadUrl({ objectKey: attachment.objectKey }, requestNow);
+      const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
+      const mediaResponse = await fetch(readUrl, {
+        headers: range ? { range } : undefined
+      });
+      if (!mediaResponse.ok && mediaResponse.status !== 206) {
+        return sendError(reply, 502, "MEDIA_STORAGE_ERROR", `Media storage returned HTTP ${mediaResponse.status}.`, crypto.randomUUID());
+      }
+      const contentLength = mediaResponse.headers.get("content-length");
+      const contentRange = mediaResponse.headers.get("content-range");
+      const acceptRanges = mediaResponse.headers.get("accept-ranges");
+      reply
+        .code(mediaResponse.status)
+        .header("Cache-Control", "private, max-age=300")
+        .header("Content-Disposition", contentDispositionHeader(attachment.fileName ?? attachment.attachmentId))
+        .header("Content-Type", attachment.contentType);
+      if (contentLength) {
+        reply.header("Content-Length", contentLength);
+      }
+      if (contentRange) {
+        reply.header("Content-Range", contentRange);
+      }
+      if (acceptRanges) {
+        reply.header("Accept-Ranges", acceptRanges);
+      }
+      return reply.send(Buffer.from(await mediaResponse.arrayBuffer()));
+    },
+
+    getReportAttachmentDerivativeContent: async (request, reply) => {
+      if (!mediaStorage || mediaStorageStatus !== "ok") {
+        return sendError(
+          reply,
+          503,
+          "MEDIA_STORAGE_UNAVAILABLE",
+          "Community media storage is not configured.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const actor = actorFromRequest(request);
+      const params = request.params as { attachmentId: string; derivativeId: string; reportId: string; };
+      const report = await readCommunityReport(params.reportId);
+      if (!report || params.derivativeId !== "xr-sbs") {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+      }
+      const attachment = report.attachments.find((item) => item.attachmentId === params.attachmentId && item.status === "uploaded");
+      if (!attachment) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+      }
+      const requestNow = now();
+      const hasValidTicket = hasValidCommunityMediaTicket(request.query, {
+        attachmentId: params.attachmentId,
+        derivativeId: params.derivativeId,
+        reportId: params.reportId
+      }, requestNow);
+      if (!hasValidTicket && (!canReadCommunityReport(report, actor) || !canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor)))) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+      }
+      const derivative = readSpatialDerivative(attachment);
+      if (!derivative || derivative.status !== "ready" || !derivative.objectKey) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+      }
+      const readUrl = await mediaStorage.createReadUrl({ objectKey: derivative.objectKey }, requestNow);
+      const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
+      const mediaResponse = await fetch(readUrl, {
+        headers: range ? { range } : undefined
+      });
+      if (!mediaResponse.ok && mediaResponse.status !== 206) {
+        return sendError(reply, 502, "MEDIA_STORAGE_ERROR", `Media storage returned HTTP ${mediaResponse.status}.`, crypto.randomUUID());
+      }
+      const contentLength = mediaResponse.headers.get("content-length");
+      const contentRange = mediaResponse.headers.get("content-range");
+      const acceptRanges = mediaResponse.headers.get("accept-ranges");
+      const baseName = stripFileExtension(attachment.fileName ?? attachment.attachmentId);
+      reply
+        .code(mediaResponse.status)
+        .header("Cache-Control", "private, max-age=300")
+        .header("Content-Disposition", contentDispositionHeader(`${baseName}-xr-sbs.mp4`))
+        .header("Content-Type", derivative.contentType ?? "video/mp4");
+      if (contentLength) {
+        reply.header("Content-Length", contentLength);
+      }
+      if (contentRange) {
+        reply.header("Content-Range", contentRange);
+      }
+      if (acceptRanges) {
+        reply.header("Accept-Ranges", acceptRanges);
+      }
+      return reply.send(Buffer.from(await mediaResponse.arrayBuffer()));
     }
-    const actor = actorFromRequest(request);
-    const params = request.params as { attachmentId: string; derivativeId: string; reportId: string };
-    const report = await readCommunityReport(params.reportId);
-    if (!report || params.derivativeId !== "xr-sbs") {
-      return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
-    }
-    const attachment = report.attachments.find((item) => item.attachmentId === params.attachmentId && item.status === "uploaded");
-    if (!attachment) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
-    }
-    const requestNow = now();
-    const hasValidTicket = hasValidCommunityMediaTicket(request.query, {
-      attachmentId: params.attachmentId,
-      derivativeId: params.derivativeId,
-      reportId: params.reportId
-    }, requestNow);
-    if (!hasValidTicket && (!canReadCommunityReport(report, actor) || !canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor)))) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
-    }
-    const derivative = readSpatialDerivative(attachment);
-    if (!derivative || derivative.status !== "ready" || !derivative.objectKey) {
-      return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
-    }
-    const readUrl = await mediaStorage.createReadUrl({ objectKey: derivative.objectKey }, requestNow);
-    const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
-    const mediaResponse = await fetch(readUrl, {
-      headers: range ? { range } : undefined
-    });
-    if (!mediaResponse.ok && mediaResponse.status !== 206) {
-      return sendError(reply, 502, "MEDIA_STORAGE_ERROR", `Media storage returned HTTP ${mediaResponse.status}.`, crypto.randomUUID());
-    }
-    const contentLength = mediaResponse.headers.get("content-length");
-    const contentRange = mediaResponse.headers.get("content-range");
-    const acceptRanges = mediaResponse.headers.get("accept-ranges");
-    const baseName = stripFileExtension(attachment.fileName ?? attachment.attachmentId);
-    reply
-      .code(mediaResponse.status)
-      .header("Cache-Control", "private, max-age=300")
-      .header("Content-Disposition", contentDispositionHeader(`${baseName}-xr-sbs.mp4`))
-      .header("Content-Type", derivative.contentType ?? "video/mp4");
-    if (contentLength) {
-      reply.header("Content-Length", contentLength);
-    }
-    if (contentRange) {
-      reply.header("Content-Range", contentRange);
-    }
-    if (acceptRanges) {
-      reply.header("Accept-Ranges", acceptRanges);
-    }
-    return reply.send(Buffer.from(await mediaResponse.arrayBuffer()));
   });
 
   app.get("/api/v1/sources", async () => ({
