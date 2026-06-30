@@ -16495,6 +16495,9 @@ function stableSituationRequestKey(layerIds: string[], filters: Record<string, R
 }
 
 function mapFeatureQueryLimit(layerIds: string[], zoom: number | undefined): number {
+  if (layerIds.includes("public.traffic.transit_stops") && !layerIds.includes("public.traffic.transit")) {
+    return 250;
+  }
   if (!layerIds.includes("public.traffic.transit")) {
     return 500;
   }

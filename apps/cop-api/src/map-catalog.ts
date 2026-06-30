@@ -262,58 +262,83 @@ function buildProviderCatalogLayers(catalog: ProviderMapCatalog, includeDiagnost
 }
 
 function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatalogLayer): MapCatalogLayer[] {
-  const mode = normalizeQueryMode(layer.query?.mode);
-  const role = roleForCatalogLayer(layer);
-  const audience = normalizeAudience(layer.audience);
-  const kind = normalizeLayerKind(layer.kind);
   const providerLayerIds = layer.query?.providerLayerIds?.filter(Boolean) ?? [];
   const rawProviderSourceIds = layer.query?.providerSourceIds?.filter(Boolean) ?? layer.sourceIds?.filter(Boolean) ?? [];
   const providerSourceIds = sanitizeProviderCatalogLayerSourceIds(providerId, layer.recommendedCatalogLayerId, rawProviderSourceIds);
+  const variants = layer.recommendedCatalogLayerId === "public.traffic.transit" && providerSourceIds.some(isPublicTransitStaticSourceId)
+    ? [
+        { layerId: "public.traffic.transit", sourceIds: providerSourceIds.filter((sourceId) => !isPublicTransitStaticSourceId(sourceId)) },
+        { layerId: "public.traffic.transit_stops", sourceIds: providerSourceIds.filter(isPublicTransitStaticSourceId) }
+      ].filter((variant) => variant.sourceIds.length > 0)
+    : [{ layerId: layer.recommendedCatalogLayerId, sourceIds: providerSourceIds }];
+  return variants.map((variant) => providerCatalogLayerVariantToMapLayer(providerId, layer, providerLayerIds, variant.layerId, variant.sourceIds));
+}
+
+function providerCatalogLayerVariantToMapLayer(
+  providerId: string,
+  layer: ProviderCatalogLayer,
+  providerLayerIds: string[],
+  catalogLayerId: string,
+  providerSourceIds: string[]
+): MapCatalogLayer {
+  const variantLayer: ProviderCatalogLayer = {
+    ...layer,
+    recommendedCatalogLayerId: catalogLayerId,
+    query: {
+      ...layer.query,
+      maxFeatures: catalogLayerId === "public.traffic.transit_stops" ? 250 : layer.query?.maxFeatures,
+      providerSourceIds
+    },
+    sourceIds: providerSourceIds,
+    styleProfile: catalogLayerId === "public.traffic.transit_stops" ? "traffic-public-transit-stops-v1" : layer.styleProfile
+  };
+  const mode = normalizeQueryMode(layer.query?.mode);
+  const role = roleForCatalogLayer(variantLayer);
+  const audience = normalizeAudience(layer.audience);
+  const kind = normalizeLayerKind(layer.kind);
   const provenanceSourceIds = sanitizeProviderCatalogLayerSourceIds(
     providerId,
-    layer.recommendedCatalogLayerId,
-    layer.sourceIds?.filter(Boolean) ?? providerSourceIds
+    catalogLayerId,
+    variantLayer.sourceIds?.filter(Boolean) ?? providerSourceIds
   );
   const categoryIds = uniqueStrings([
     ...(layer.query?.categoryIds ?? []),
     ...(layer.query?.categoryFilter ?? [])
   ]);
-  return [
-    {
-      audience,
-      cacheTtlSeconds: layer.cacheTtlSeconds,
-      ...(layer.compatibilityOnly === true ? { compatibilityOnly: true } : {}),
-      defaultVisible: defaultVisibleForCatalogLayer(layer),
-      description: descriptionForCatalogLayer(layer),
-      filters: normalizeProviderFilters(layer.filters),
-      geometryTypes: geometryTypesForCatalogLayer(layer),
-      groupId: groupIdForCatalogLayer(layer),
-      kind,
-      label: labelForCatalogLayer(layer),
-      layerId: layer.recommendedCatalogLayerId,
-      legal: layer.legal,
-      maxZoom: layer.maxZoom,
-      minZoom: minZoomForCatalogLayer(layer),
-      preferredProviderId: layer.preferredProviderId,
-      provenance: {
-        sourceIds: uniqueStrings(provenanceSourceIds.map((sourceId) => `${providerId}:${sourceId}`)),
-        ...(layer.technicalInputs && layer.technicalInputs.length > 0 ? { technicalInputs: layer.technicalInputs.map((sourceId) => `${providerId}:${sourceId}`) } : {})
-      },
-      query: {
-        ...(categoryIds.length > 0 ? { categoryIds } : {}),
-        maxFeatures: maxFeaturesForCatalogLayer(layer),
-        mode,
-        providerId: layer.query?.providerId ?? providerId,
-        ...(providerLayerIds.length > 0 ? { providerLayerIds } : {}),
-        ...(providerSourceIds.length > 0 ? { providerSourceIds } : {}),
-        streamId: streamIdForCatalogLayer(layer.query?.streamId)
-      },
-      refreshSeconds: layer.refreshSeconds,
-      role,
-      selectable: selectableForCatalogLayer(layer),
-      styleProfile: layer.styleProfile ?? styleProfileForCatalogLayer(layer)
-    }
-  ];
+  return {
+    audience,
+    cacheTtlSeconds: layer.cacheTtlSeconds,
+    ...(layer.compatibilityOnly === true ? { compatibilityOnly: true } : {}),
+    defaultVisible: defaultVisibleForCatalogLayer(variantLayer),
+    description: descriptionForCatalogLayer(variantLayer),
+    filters: normalizeProviderFilters(layer.filters),
+    geometryTypes: geometryTypesForCatalogLayer(variantLayer),
+    groupId: groupIdForCatalogLayer(variantLayer),
+    kind,
+    label: labelForCatalogLayer(variantLayer),
+    layerId: catalogLayerId,
+    legal: layer.legal,
+    maxZoom: layer.maxZoom,
+    minZoom: minZoomForCatalogLayer(variantLayer),
+    preferredProviderId: layer.preferredProviderId,
+    provenance: {
+      sourceIds: uniqueStrings(provenanceSourceIds.map((sourceId) => `${providerId}:${sourceId}`)),
+      ...(layer.technicalInputs && layer.technicalInputs.length > 0 ? { technicalInputs: layer.technicalInputs.map((sourceId) => `${providerId}:${sourceId}`) } : {})
+    },
+    query: {
+      ...(categoryIds.length > 0 ? { categoryIds } : {}),
+      maxFeatures: maxFeaturesForCatalogLayer(variantLayer),
+      mode,
+      providerId: layer.query?.providerId ?? providerId,
+      ...(providerLayerIds.length > 0 ? { providerLayerIds } : {}),
+      ...(providerSourceIds.length > 0 ? { providerSourceIds } : {}),
+      streamId: streamIdForCatalogLayer(layer.query?.streamId)
+    },
+    refreshSeconds: layer.refreshSeconds,
+    role,
+    selectable: selectableForCatalogLayer(variantLayer),
+    styleProfile: variantLayer.styleProfile ?? styleProfileForCatalogLayer(variantLayer)
+  };
 }
 
 function sanitizeProviderCatalogLayerSourceIds(providerId: string, layerId: string, sourceIds: string[]): string[] {
@@ -326,6 +351,9 @@ function sanitizeProviderCatalogLayerSourceIds(providerId: string, layerId: stri
 function maxFeaturesForCatalogLayer(layer: ProviderCatalogLayer): number | undefined {
   if (layer.recommendedCatalogLayerId === "public.safety.flood") {
     return Math.max(layer.query?.maxFeatures ?? 0, 600);
+  }
+  if (layer.recommendedCatalogLayerId === "public.traffic.transit_stops") {
+    return Math.min(Math.max(layer.query?.maxFeatures ?? 0, 250), 250);
   }
   if (layer.recommendedCatalogLayerId === "public.traffic.transit") {
     return Math.max(layer.query?.maxFeatures ?? 0, 2500);
@@ -385,6 +413,9 @@ function minZoomForCatalogLayer(layer: ProviderCatalogLayer): number | undefined
   if (layerId === "public.traffic.transit") {
     return Math.min(layer.minZoom ?? 7, 7);
   }
+  if (layerId === "public.traffic.transit_stops") {
+    return Math.max(layer.minZoom ?? 11, 11);
+  }
   return layer.minZoom;
 }
 
@@ -414,13 +445,16 @@ function providerCatalogSourceToMapSource(providerId: string, source: ProviderCa
       sourceId: source.sourceId,
       sourceRole: normalizeSourceRole(source.sourceRole),
       updateCadenceSeconds: source.updateCadenceSeconds,
-      usedByCatalogLayerIds: nonEmpty(source.usedByCatalogLayerIds),
+      usedByCatalogLayerIds: nonEmpty(providerId === "sim.situation-data" && isPublicTransitStaticSourceId(source.sourceId) ? ["public.traffic.transit_stops"] : source.usedByCatalogLayerIds),
       visibleInDiagnostics: source.visibleInDiagnostics === true || normalizeAudience(source.audience) === "diagnostic"
     }
   ];
 }
 
 function sanitizeProviderCatalogSourceFeedLayerIds(providerId: string, sourceId: string, layerIds: string[] | undefined): string[] | undefined {
+  if (providerId === "sim.situation-data" && isPublicTransitStaticSourceId(sourceId)) {
+    return ["public.traffic.transit_stops"];
+  }
   if (providerId !== "sim.safety-data") {
     return layerIds;
   }
@@ -462,6 +496,7 @@ function shouldIncludeCatalogAudience(value: string | undefined, includeDiagnost
 
 const curatedCatalogLayerLabels: Record<string, string> = {
   "public.traffic.transit": "Veřejná doprava",
+  "public.traffic.transit_stops": "Zastávky veřejné dopravy",
   "public.safety.air_quality": "Kvalita ovzduší",
   "public.safety.flood": "Vodní stavy a průtoky",
   "public.weather.current": "Počasí ve středu mapy",
@@ -477,6 +512,7 @@ const curatedCatalogLayerLabels: Record<string, string> = {
 
 const curatedCatalogLayerDescriptions: Record<string, string> = {
   "public.traffic.transit": "Živá poloha vozidel veřejné dopravy ze SIM.",
+  "public.traffic.transit_stops": "Statické zastávky veřejné dopravy ze SIM katalogu.",
   "public.safety.flood": "Hydrologické stanice, vodní stavy, průtoky a stupně povodňové aktivity."
 };
 
@@ -929,7 +965,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       styleProfile: "mobile-network-quality-v1"
     },
     (() => {
-      const trafficSources = publicTransitSources(sources);
+      const trafficSources = publicTransitVehicleSources(sources);
       const trafficSourceIds = trafficSources.length > 0 ? trafficSources.map((source) => source.sourceId) : ["pid_gtfs_rt"];
       const trafficRefreshSeconds = Math.min(
         ...trafficSources
@@ -967,8 +1003,49 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       styleProfile: "traffic-public-transit-v1"
       };
     })(),
+    (() => {
+      const stopSources = publicTransitStaticSources(sources);
+      if (stopSources.length === 0) {
+        return undefined;
+      }
+      const refreshSeconds = Math.min(
+        ...stopSources
+          .map((source) => source.updateCadenceSeconds)
+          .filter((seconds): seconds is number => typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0),
+        3600
+      );
+      return {
+        audience: "public",
+        cacheTtlSeconds: refreshSeconds,
+        defaultVisible: false,
+        description: "Statické zastávky veřejné dopravy ze SIM katalogu.",
+        geometryTypes: ["Point"],
+        groupId: "transport",
+        kind: "vector_features",
+        label: "Zastávky veřejné dopravy",
+        layerId: "public.traffic.transit_stops",
+        legal: legalFromSource(stopSources[0]),
+        maxZoom: 18,
+        minZoom: 11,
+        provenance: {
+          sourceIds: stopSources.map((source) => `sim.situation-data:${source.sourceId}`)
+        },
+        query: {
+          maxFeatures: 250,
+          mode: "bbox",
+          providerId: "sim.situation-data",
+          providerLayerIds: ["traffic"],
+          providerSourceIds: stopSources.map((source) => source.sourceId),
+          streamId: "features"
+        },
+        refreshSeconds,
+        role: "reference",
+        selectable: true,
+        styleProfile: "traffic-public-transit-stops-v1"
+      } satisfies MapCatalogLayer;
+    })(),
     ...buildInfrastructureLayers(groundLayer, sources)
-  ];
+  ].filter((layer): layer is MapCatalogLayer => Boolean(layer));
 }
 
 function buildSituationCatalogCompatibilityLayers(catalog: ProviderMapCatalog, sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
@@ -1578,6 +1655,8 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
       return { audience: "diagnostic", feedsCatalogLayerIds: ["diagnostic.osm.overpass"], selectableInMap: false, sourceRole: "diagnostic" };
     case "pid_gtfs_rt":
       return { audience: "public", feedsCatalogLayerIds: ["public.traffic.transit"], selectableInMap: true, sourceRole: "final" };
+    case "public_transit_static":
+      return { audience: "public", feedsCatalogLayerIds: ["public.traffic.transit_stops"], selectableInMap: true, sourceRole: "reference" };
     case "ids_jmk_gtfs_rt":
     case "idsjmk_gtfs_rt":
     case "ids_jmk_vehicle_positions":
@@ -1645,8 +1724,15 @@ function findLayer<T extends { layerId: string }>(layers: T[], layerId: string):
   return layers.find((layer) => layer.layerId === layerId);
 }
 
-function publicTransitSources(sources: SituationSourceDescriptor[]): SituationSourceDescriptor[] {
+function publicTransitStaticSources(sources: SituationSourceDescriptor[]): SituationSourceDescriptor[] {
+  return sources.filter((source) => isPublicTransitStaticSourceId(source.sourceId));
+}
+
+function publicTransitVehicleSources(sources: SituationSourceDescriptor[]): SituationSourceDescriptor[] {
   return sources.filter((source) => {
+    if (isPublicTransitStaticSourceId(source.sourceId)) {
+      return false;
+    }
     if (source.layers?.includes("traffic")) {
       return true;
     }
@@ -1658,6 +1744,13 @@ function publicTransitSources(sources: SituationSourceDescriptor[]): SituationSo
       || sourceId.includes("ids_jmk")
       || sourceId.includes("idsjmk");
   });
+}
+
+function isPublicTransitStaticSourceId(sourceId: string): boolean {
+  const normalized = sourceId.toLowerCase();
+  return normalized === "public_transit_static"
+    || normalized.includes("transit_static")
+    || normalized.includes("gtfs_static");
 }
 
 function findSource<T extends { sourceId: string }>(sources: T[], sourceId: string): T | undefined {

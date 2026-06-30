@@ -148,6 +148,7 @@ const situationOsmSymbolLayerId = "cop-situation-osm-symbol";
 const situationOsmDetailSymbolLayerId = "cop-situation-osm-detail-symbol";
 const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
 const situationTrafficSymbolLayerId = "cop-situation-traffic-symbol";
+const situationTrafficStopLayerId = "cop-situation-traffic-stop";
 const selectedTransitRouteSourceId = "cop-selected-transit-route";
 const selectedTransitRouteLineLayerId = "cop-selected-transit-route-line";
 const selectedTransitRouteStopLayerId = "cop-selected-transit-route-stop";
@@ -200,6 +201,7 @@ const mapFeatureClickPriorityLayerIds = [
   situationRiskPointLayerId,
   situationRiskLabelLayerId,
   situationTrafficSymbolLayerId,
+  situationTrafficStopLayerId,
   situationMobileSymbolLayerId,
   situationWeatherCameraLayerId,
   situationWeatherLabelLayerId,
@@ -246,6 +248,7 @@ const mapPointRaiseLayerIds = [
   situationPointSelectedLayerId,
   situationPointLayerId,
   situationTrafficSymbolLayerId,
+  situationTrafficStopLayerId,
   situationRiskPointLayerId,
   situationRiskIconLayerId,
   situationFloodTrendLayerId,
@@ -507,6 +510,8 @@ export interface SituationContextFeatureCollection {
       trafficRouteShortName?: string;
       trafficRouteType?: string;
       trafficSymbolKey?: string;
+      trafficStaticStop?: boolean;
+      trafficStopName?: string;
       trafficTransit?: boolean;
       mobileNetworkLabel?: string;
       mobileSymbolKey?: string;
@@ -2011,7 +2016,7 @@ function CopMapComponent({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "weatherObservation"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "weatherObservation"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["!=", ["get", "trafficStaticStop"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           paint: {
             "circle-color": [
               "case",
@@ -2110,6 +2115,35 @@ function CopMapComponent({
             "text-color": ["case", ["get", "stale"], "#facc15", ["coalesce", ["get", "situationStatusColor"], "#dff8ff"]],
             "text-halo-color": "#061019",
             "text-halo-width": 1.7,
+            "text-halo-blur": 0.35
+          }
+        });
+
+        map.addLayer({
+          id: situationTrafficStopLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 11,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "trafficStaticStop"], true]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "trafficSymbolKey"], getTransitIconKey("stop")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.2, 14, 0.3, 17, 0.42],
+            "icon-anchor": "center",
+            "icon-allow-overlap": false,
+            "icon-ignore-placement": false,
+            "text-field": ["step", ["zoom"], "", 14, ["coalesce", ["get", "trafficStopName"], ["get", "mapLabel"], ["get", "label"]]],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 14, 10, 17, 12],
+            "text-offset": [0, 1.05],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.52, 0.92],
+            "text-color": "#e8f7ff",
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.6,
             "text-halo-blur": 0.35
           }
         });
@@ -2342,7 +2376,7 @@ function CopMapComponent({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "weatherObservation"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "weatherObservation"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["!=", ["get", "trafficStaticStop"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
           layout: {
             "text-field": ["coalesce", ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Regular"],
@@ -3173,6 +3207,9 @@ function CopMapComponent({
         map.on("mouseenter", situationTrafficSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationTrafficStopLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationRiskPointLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -3270,6 +3307,9 @@ function CopMapComponent({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationTrafficSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationTrafficStopLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationRiskPointLayerId, () => {
@@ -6637,6 +6677,18 @@ function buildTrafficRenderProperties(
     };
   }
   const color = feature.properties.stale ? status.color : presentation.color;
+  if (presentation.kind === "stop") {
+    return {
+      mapLabel: presentation.stopName ?? presentation.mapLabel,
+      situationStatusColor: color,
+      situationStatusLabel: "ZASTÁVKA",
+      situationStatusTone: status.tone,
+      trafficRouteType: presentation.kind,
+      trafficStaticStop: true,
+      trafficStopName: presentation.stopName ?? presentation.mapLabel,
+      trafficSymbolKey: getTransitIconKey("stop")
+    };
+  }
   return {
     mapLabel: presentation.mapLabel,
     situationStatusColor: color,
@@ -7766,6 +7818,9 @@ function formatSituationFeatureTitle(feature: SituationFeature): string {
   if (feature.properties.layer === "traffic") {
     const presentation = resolveTransportPresentation(feature);
     if (presentation) {
+      if (presentation.kind === "stop") {
+        return presentation.stopName ?? presentation.mapLabel;
+      }
       return [presentation.label, presentation.routeShortName].filter(Boolean).join(" ");
     }
   }
@@ -7811,6 +7866,14 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
   if (feature.properties.layer === "traffic") {
     const presentation = resolveTransportPresentation(feature);
     if (presentation) {
+      if (presentation.kind === "stop") {
+        return [
+          "Zastávka veřejné dopravy",
+          presentation.stopId,
+          presentation.operator,
+          feature.properties.sourceId
+        ].filter(Boolean).join(" · ");
+      }
       return [
         situationLayerDisplayName(feature),
         presentation.currentStatus,

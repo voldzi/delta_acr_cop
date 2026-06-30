@@ -125,7 +125,7 @@ describe("map catalog route", () => {
       label: "Veřejná doprava",
       minZoom: 7,
       query: {
-        maxFeatures: 1000,
+        maxFeatures: 2500,
         providerLayerIds: ["traffic"],
         providerSourceIds: ["pid_gtfs_rt"]
       },

@@ -728,6 +728,65 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("renders static public transit stops separately from live vehicles", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.42, 50.08], type: "Point" },
+          properties: {
+            category: "public_transport_stop",
+            confidence: 0.96,
+            featureId: "traffic:public_transit_static:pid-stop-U123",
+            label: "Na Fabiance",
+            layer: "traffic",
+            layerId: "public.traffic.transit_stops",
+            observedAt: "2026-06-30T07:44:08Z",
+            providerProperties: {
+              transit: {
+                staticOnly: true,
+                stopId: "U123",
+                stopName: "Na Fabiance",
+                systemId: "pid"
+              }
+            },
+            sourceId: "public_transit_static",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-06-30T07:44:08Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["traffic"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    }, undefined, "civil");
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      mapLabel: "Na Fabiance",
+      trafficRouteType: "stop",
+      trafficStaticStop: true,
+      trafficStopName: "Na Fabiance",
+      trafficSymbolKey: "cop-transit-stop"
+    });
+    expect(collection.features[0]?.properties.trafficTransit).toBeUndefined();
+  });
+
   it("renders OSM communication towers with the mobile tower symbol", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",

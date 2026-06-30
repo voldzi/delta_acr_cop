@@ -1,6 +1,6 @@
 import type { SituationFeature } from "./cop-data";
 
-export const transportIconKinds = ["metro", "tram", "bus", "train", "trolleybus", "ferry", "funicular", "road_event", "traffic", "unknown"] as const;
+export const transportIconKinds = ["metro", "tram", "bus", "train", "trolleybus", "ferry", "funicular", "stop", "road_event", "traffic", "unknown"] as const;
 
 export type TransportIconKind = (typeof transportIconKinds)[number];
 
@@ -19,6 +19,8 @@ export interface TransportPresentation {
   operator?: string;
   routeShortName?: string;
   speedMps?: number;
+  stopId?: string;
+  stopName?: string;
   stopSequence?: number;
   tripId?: string;
   vehicleId?: string;
@@ -32,6 +34,27 @@ export function resolveTransportPresentation(feature: SituationFeature): Transpo
   const transitProperties = isRecord(providerProperties.transit) ? providerProperties.transit : {};
   const providerMetrics = isRecord(providerProperties.metrics) ? providerProperties.metrics : {};
   const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
+  const staticStop = recordBoolean(transitProperties, "staticOnly")
+    || recordString(properties, "sourceId") === "public_transit_static"
+    || recordString(properties, "layerId") === "public.traffic.transit_stops";
+  if (staticStop) {
+    const stopName = recordString(transitProperties, "stopName")
+      ?? recordString(properties, "stopName")
+      ?? recordString(properties, "label")
+      ?? feature.properties.label
+      ?? "Zastávka";
+    return {
+      color: transportIconColor("stop"),
+      currentStatus: "static",
+      detailUrl: recordString(transitProperties, "detailUrl") ?? recordString(providerProperties, "detailUrl") ?? recordString(properties, "detailUrl"),
+      kind: "stop",
+      label: "Zastávka",
+      mapLabel: stopName,
+      operator: recordString(transitProperties, "systemId") ?? recordString(properties, "systemId"),
+      stopId: recordString(transitProperties, "stopId") ?? recordString(properties, "stopId"),
+      stopName
+    };
+  }
   const vehicleId = recordString(properties, "vehicleId") ?? recordString(tags, "vehicleId") ?? recordString(providerTags, "vehicleId") ?? recordString(transitProperties, "vehicleId");
   const rawKind = recordString(properties, "transportMode")
     ?? recordString(properties, "routeType")
@@ -101,6 +124,7 @@ export function transportIconColor(kind: TransportIconKind): string {
     funicular: "#8d6e63",
     metro: "#0072bc",
     road_event: "#fb923c",
+    stop: "#0ea5e9",
     traffic: "#facc15",
     train: "#2e7d32",
     tram: "#d71920",
@@ -117,6 +141,7 @@ export function transportKindLabel(kind: TransportIconKind): string {
     funicular: "Lanovka",
     metro: "Metro",
     road_event: "Silniční událost",
+    stop: "Zastávka",
     traffic: "Doprava",
     train: "Vlak",
     tram: "Tram",
@@ -187,6 +212,9 @@ function normalizeTransportIconKind(value: unknown, feature: SituationFeature): 
   }
   const normalizedCategory = normalizeCompactAscii(feature.properties.category);
   const normalizedLayerId = normalizeCompactAscii(feature.properties.layerId ?? "");
+  if (normalizedLayerId.includes("traffictransitstops") || normalizedCategory.includes("stop") || normalizedCategory.includes("zastav")) {
+    return "stop";
+  }
   if (normalizedCategory.includes("roadtraffic") || normalizedLayerId.includes("roadevent")) {
     return "road_event";
   }
@@ -302,4 +330,15 @@ function recordNumber(record: Record<string, unknown>, key: string): number | un
 function recordString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function recordBoolean(record: Record<string, unknown>, key: string): boolean {
+  const value = record[key];
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    return value.trim().toLowerCase() === "true";
+  }
+  return false;
 }

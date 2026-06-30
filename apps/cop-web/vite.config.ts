@@ -63,6 +63,8 @@ export default defineConfig({
   plugins: [react(), appleAppSiteAssociationPreviewPlugin()],
   build: {
     chunkSizeWarningLimit: 1200,
+    target: ["es2020", "safari16"],
+    minify: false,
     rollupOptions: {
       output: {
         manualChunks(id) {

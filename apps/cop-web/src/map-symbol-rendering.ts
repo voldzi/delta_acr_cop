@@ -535,6 +535,20 @@ export function createTransitSymbolImage(kind: TransportIconKind): ImageData {
       context.lineTo(35, -36);
       context.stroke();
       break;
+    case "stop":
+      context.beginPath();
+      context.arc(0, -4, 21, 0, Math.PI * 2);
+      context.stroke();
+      context.beginPath();
+      context.arc(0, -4, 8, 0, Math.PI * 2);
+      context.fill();
+      context.beginPath();
+      context.moveTo(0, 18);
+      context.lineTo(0, 42);
+      context.moveTo(-17, 42);
+      context.lineTo(17, 42);
+      context.stroke();
+      break;
     case "road_event":
       context.beginPath();
       context.moveTo(0, -32);
