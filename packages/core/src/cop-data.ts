@@ -634,6 +634,7 @@ export interface TransitVehicleDetailResponse {
   providerId?: string;
   quality?: {
     generatedFrom?: string[];
+    realtimeVehicleAvailable?: boolean;
     routeShapeAvailable?: boolean;
     shapeAvailable?: boolean;
     stale?: boolean;

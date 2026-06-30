@@ -6663,7 +6663,7 @@ function formatTransitQuality(detail: TransitVehicleDetailResponse | null): stri
   }
   const parts = [
     formatAvailabilityFlag("model", quality.staticModelAvailable),
-    formatAvailabilityFlag("poloha", quality.vehiclePositionAvailable),
+    formatAvailabilityFlag("poloha", quality.vehiclePositionAvailable ?? quality.realtimeVehicleAvailable),
     formatAvailabilityFlag("jízdní řád", quality.tripScheduleAvailable ?? quality.tripUpdateAvailable),
     formatAvailabilityFlag("trasa", quality.routeShapeAvailable ?? quality.shapeAvailable)
   ].filter(Boolean);
