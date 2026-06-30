@@ -192,7 +192,7 @@ describe("map catalog route", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      layers: Array<{ groupId: string; kind?: string; label: string; layerId: string; minZoom?: number; query?: { categoryIds?: string[]; mode?: string; providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
+      layers: Array<{ groupId: string; kind?: string; label: string; layerId: string; minZoom?: number; query?: { categoryIds?: string[]; maxFeatures?: number; mode?: string; providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
       sources: Array<{ feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
     };
     expect(body.layers).toEqual(expect.arrayContaining([
@@ -238,6 +238,18 @@ describe("map catalog route", () => {
         query: expect.objectContaining({
           providerLayerIds: ["weather_webcams"],
           providerSourceIds: ["chmi_weather_webcams"]
+        }),
+        selectable: true
+      }),
+      expect.objectContaining({
+        groupId: "transport",
+        label: "Veřejná doprava",
+        layerId: "public.traffic.transit",
+        minZoom: 6,
+        query: expect.objectContaining({
+          maxFeatures: 1000,
+          providerLayerIds: ["traffic"],
+          providerSourceIds: ["pid_gtfs_rt"]
         }),
         selectable: true
       })
@@ -1391,6 +1403,30 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
         },
         {
           audience: "public",
+          cacheTtlSeconds: 20,
+          defaultVisible: false,
+          geometryTypes: ["Point", "LineString"],
+          kind: "vector_features",
+          label: "Doprava",
+          minZoom: 6,
+          providerLayerId: "traffic.pid_gtfs_rt",
+          query: {
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.situation-data",
+            providerLayerIds: ["traffic"],
+            providerSourceIds: ["pid_gtfs_rt"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "public.traffic.transit",
+          refreshSeconds: 20,
+          role: "reference",
+          selectable: true,
+          sourceIds: ["pid_gtfs_rt"],
+          styleProfile: "transit-vehicle-position-v1"
+        },
+        {
+          audience: "public",
           cacheTtlSeconds: 21600,
           categoryPath: ["reference", "infrastructure", "communications"],
           defaultVisible: false,
@@ -1443,6 +1479,17 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
       ],
       providerId: "sim.situation-data",
       sources: [
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.traffic.transit"],
+          label: "PID GTFS-RT",
+          selectableInMap: true,
+          sourceId: "pid_gtfs_rt",
+          sourceRole: "final",
+          updateCadenceSeconds: 20,
+          usedByCatalogLayerIds: ["public.traffic.transit"]
+        },
         {
           audience: "public",
           enabled: true,

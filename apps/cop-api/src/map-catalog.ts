@@ -327,6 +327,9 @@ function maxFeaturesForCatalogLayer(layer: ProviderCatalogLayer): number | undef
   if (layer.recommendedCatalogLayerId === "public.safety.flood") {
     return Math.max(layer.query?.maxFeatures ?? 0, 600);
   }
+  if (layer.recommendedCatalogLayerId === "public.traffic.transit") {
+    return Math.max(layer.query?.maxFeatures ?? 0, 1000);
+  }
   return layer.query?.maxFeatures;
 }
 
@@ -378,6 +381,9 @@ function minZoomForCatalogLayer(layer: ProviderCatalogLayer): number | undefined
     || layerId === "public.safety.flood"
   ) {
     return Math.min(layer.minZoom ?? 4, 4);
+  }
+  if (layerId === "public.traffic.transit") {
+    return Math.min(layer.minZoom ?? 7, 7);
   }
   return layer.minZoom;
 }
@@ -455,6 +461,7 @@ function shouldIncludeCatalogAudience(value: string | undefined, includeDiagnost
 }
 
 const curatedCatalogLayerLabels: Record<string, string> = {
+  "public.traffic.transit": "Veřejná doprava",
   "public.safety.air_quality": "Kvalita ovzduší",
   "public.safety.flood": "Vodní stavy a průtoky",
   "public.weather.current": "Počasí ve středu mapy",
@@ -469,6 +476,7 @@ const curatedCatalogLayerLabels: Record<string, string> = {
 };
 
 const curatedCatalogLayerDescriptions: Record<string, string> = {
+  "public.traffic.transit": "Živá poloha vozidel veřejné dopravy ze SIM.",
   "public.safety.flood": "Hydrologické stanice, vodní stavy, průtoky a stupně povodňové aktivity."
 };
 
