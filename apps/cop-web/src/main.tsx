@@ -322,10 +322,10 @@ import {
   weatherFeatureTone
 } from "./weather-presentation";
 import { DataMetric, DetailGrid, ObjectDetailSection, StatusBadge } from "./detail-ui";
-import { SafetyRiskSummary as HydrologySafetyRiskSummary } from "./hydrology-detail";
+import { SafetyRiskSummary } from "./hydrology-detail";
 import {
-  WeatherContextSummary as WeatherDetailContextSummary,
-  WeatherStationDetailPanel as WeatherDetailStationDetailPanel
+  WeatherContextSummary,
+  WeatherStationDetailPanel
 } from "./weather-detail";
 import {
   disableWebPushNotifications,
@@ -6346,10 +6346,10 @@ function SelectedSituationDataCard({ authToken, feature }: { authToken: string |
       {isCommunicationTowerFeature(feature) ? <CommunicationTowerSummary feature={feature} /> : null}
       {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {feature.properties.layer === "traffic" ? <TrafficSummary feature={feature} /> : null}
-      {isSafetyLayerId(feature.properties.layer) ? <HydrologySafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
+      {isSafetyLayerId(feature.properties.layer) ? <SafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherCamera ? <WeatherWebcamSummary feature={feature} /> : null}
-      {weatherContext ? <WeatherDetailContextSummary feature={feature} /> : null}
+      {weatherContext ? <WeatherContextSummary feature={feature} /> : null}
     </ObjectDetailSection>
   );
 }
@@ -11336,7 +11336,7 @@ function SituationFeatureDetail({
       </ObjectDetailSection>
 
       {isMissionArenaFeature(feature) ? <MissionArenaSummary feature={feature} /> : null}
-      {isSafetyLayerId(properties.layer) ? <HydrologySafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
+      {isSafetyLayerId(properties.layer) ? <SafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
 
       {properties.layer === "mobile_coverage" || properties.layer === "mobile_network" ? (
         <ObjectDetailSection title={properties.layer === "mobile_network" ? "Mobilní síť" : "Model mobilní sítě"}>
@@ -11403,11 +11403,11 @@ function SituationFeatureDetail({
       {weatherCamera ? <WeatherWebcamPreview authToken={authToken} feature={feature} /> : null}
       {weatherContext ? (
         <ObjectDetailSection title="Počasí">
-          <WeatherDetailContextSummary feature={feature} />
+          <WeatherContextSummary feature={feature} />
           <DetailGrid
             rows={weatherContextDetailRows(feature)}
           />
-          <WeatherDetailStationDetailPanel apiBase={apiBase} authToken={authToken} feature={feature} />
+          <WeatherStationDetailPanel apiBase={apiBase} authToken={authToken} feature={feature} />
         </ObjectDetailSection>
       ) : null}
       {properties.description || properties.recommendedAction ? (
