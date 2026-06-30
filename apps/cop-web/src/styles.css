@@ -1577,6 +1577,58 @@ h1 {
   color: #ff8f86;
 }
 
+.app-fatal-fallback {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(31, 111, 235, 0.22), transparent 32%),
+    linear-gradient(135deg, #05090d 0%, #0a121a 52%, #05090d 100%);
+  color: var(--text);
+}
+
+.app-fatal-card {
+  display: grid;
+  width: min(560px, 100%);
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(8, 13, 18, 0.94);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+}
+
+.app-fatal-card strong {
+  color: #f8fafc;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.app-fatal-card span {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.app-fatal-card code {
+  padding: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  background: rgba(127, 29, 29, 0.18);
+  color: #fecaca;
+  white-space: pre-wrap;
+}
+
+.app-fatal-card button {
+  justify-self: start;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(190, 242, 100, 0.5);
+  background: rgba(63, 98, 18, 0.34);
+  color: var(--lime);
+  font-weight: 900;
+  cursor: pointer;
+}
+
 /* Reference AppShell aligns the web shell with the target command-center layout. */
 .shell.app-shell-v2 {
   padding: 0;
@@ -1870,8 +1922,8 @@ h1 {
 .shell.app-shell-v2.webkit-runtime .map-container,
 .shell.app-shell-v2.webkit-runtime .map-canvas,
 .shell.app-shell-v2.webkit-runtime .map-canvas canvas {
-  transform: translateZ(0);
-  backface-visibility: hidden;
+  transform: none;
+  backface-visibility: visible;
 }
 
 .shell.app-shell-v2 .map-action {

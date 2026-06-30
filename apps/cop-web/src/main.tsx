@@ -16517,18 +16517,55 @@ function sourceQualityWarningText(warning: string): string {
 
 registerCopServiceWorker();
 
+interface RootErrorBoundaryState {
+  error: Error | null;
+}
+
+class RootErrorBoundary extends React.Component<React.PropsWithChildren, RootErrorBoundaryState> {
+  state: RootErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): RootErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo): void {
+    console.error("[cop-web] Root render failed", error, info.componentStack);
+  }
+
+  render(): React.ReactNode {
+    if (!this.state.error) {
+      return this.props.children;
+    }
+    return (
+      <main className="app-fatal-fallback">
+        <div className="app-fatal-card">
+          <strong>Aplikaci se nepodařilo vykreslit</strong>
+          <span>
+            Prohlížeč narazil na chybu při vykreslení mapy. Obnovte stránku; pokud se stav opakuje,
+            odešlete správci název prohlížeče a čas výskytu.
+          </span>
+          <code>{this.state.error.message || "Neznámá chyba"}</code>
+          <button onClick={() => window.location.reload()} type="button">Obnovit aplikaci</button>
+        </div>
+      </main>
+    );
+  }
+}
+
 const rootElement = document.getElementById("root");
 if (rootElement) {
   const isXrRoute = window.location.pathname === "/xr" || window.location.pathname.startsWith("/xr/");
   createRoot(rootElement).render(
     <React.StrictMode>
-      {isXrRoute ? (
-        <React.Suspense fallback={<main className="xr-shell"><div className="xr-loading">Načítám prostorový režim...</div></main>}>
-          <XrWorkspace />
-        </React.Suspense>
-      ) : (
-        <App />
-      )}
+      <RootErrorBoundary>
+        {isXrRoute ? (
+          <React.Suspense fallback={<main className="xr-shell"><div className="xr-loading">Načítám prostorový režim...</div></main>}>
+            <XrWorkspace />
+          </React.Suspense>
+        ) : (
+          <App />
+        )}
+      </RootErrorBoundary>
     </React.StrictMode>
   );
 }
