@@ -63,4 +63,7 @@ Při dalších úpravách platí:
   knihovny nenačítat do hlavního mapového shellu, pokud nejsou potřeba ihned,
 - po větších změnách kontrolovat výpis `pnpm --filter @cop/cop-web build` a
   sledovat hlavně první `index-*.js` bundle,
+- před release spouštět `pnpm check:release`, které sestaví všechny aplikace a
+  zkontroluje rozpočty pro web shell, mapové runtime chunky, chat shell, Matrix
+  runtime, PDF viewer/worker a Office/archive parser,
 - veřejný build nesmí obsahovat serverové tokeny ani interní provider URL.

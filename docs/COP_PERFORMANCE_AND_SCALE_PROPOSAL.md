@@ -187,7 +187,7 @@ Redis/NATS dřív, než bude skutečně nutný samostatný message broker.
 
 | # | Úkol | Kde | Jak | DoD / ověření |
 |---|---|---|---|---|
-| 1.1 | Memoizovat `CopMap` | [main.tsx:4341](apps/cop-web/src/main.tsx:4341), `CopMap.tsx` | `React.memo(CopMap)`; všech ~58 propsů stabilizovat: handlery → `useEventCallback`, hodnoty → seskupit do `useMemo` objektů | React Profiler: změna nesouvisejícího stavu (např. `mobileSheet`) → **0 commitů** `CopMap` |
+| 1.1 | Memoizovat `CopMap` | [main.tsx:4341](apps/cop-web/src/main.tsx:4341), `CopMap.tsx` | **První krok hotov:** `CopMap` je exportovaný přes `React.memo`. Navazující práce: všech ~58 propsů stabilizovat: handlery → `useEventCallback`, hodnoty → seskupit do `useMemo` objektů | React Profiler: změna nesouvisejícího stavu (např. `mobileSheet`) → **0 commitů** `CopMap` |
 | 1.2 | Memoizace karet/boardů | `SelectedSituationDataCard`, `*Board`, `*Summary` | `React.memo` + stabilní propsy | Profiler: výběr prvku nepřekresluje ostatní karty |
 | 1.3 | Datová vrstva karet | situation karty | TanStack Query (4.5) | žádný request při unmountnuté kartě; abort při přepnutí prvku |
 | 1.4 | Code-split per workspace/feature | `App()` render | `React.lazy` + `Suspense` na map/data/alerts/replay/settings | kritický bundle < 250 kB gzip (CI budget) |

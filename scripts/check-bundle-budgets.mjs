@@ -26,6 +26,9 @@ const budgets = [
       { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 410 * KiB },
       { label: "matrix sdk", pattern: /^matrix-[\w-]+\.js$/, maxBytes: 1_340 * KiB },
       { label: "matrix crypto wasm", pattern: /^matrix_sdk_crypto_wasm_bg-[\w-]+\.wasm$/, maxBytes: 5_700 * KiB },
+      { label: "pdf viewer", pattern: /^pdf-[\w-]+\.js$/, maxBytes: 460 * KiB },
+      { label: "pdf worker", pattern: /^pdf\.worker-[\w-]+\.mjs$/, maxBytes: 2_300 * KiB },
+      { label: "office/archive parser", pattern: /^jszip\.min-[\w-]+\.js$/, maxBytes: 110 * KiB },
       { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 70 * KiB }
     ]
   }

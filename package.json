@@ -16,6 +16,7 @@
     "test:contracts": "vitest run tests/contract packages/nato-symbol-renderer/test",
     "lint": "tsc -b --pretty false",
     "check:bundles": "node scripts/check-bundle-budgets.mjs",
+    "check:release": "pnpm build && pnpm check:bundles",
     "openapi:sync-yaml": "node scripts/sync-openapi-yaml.mjs",
     "validate:openapi": "redocly lint openapi/openapi.json",
     "validate:schemas": "tsx scripts/validate-schemas.ts",

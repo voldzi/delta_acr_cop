@@ -705,7 +705,7 @@ interface ClusterInfo {
   zoom: number;
 }
 
-export function CopMap({
+function CopMapComponent({
   alerts,
   aoiRules,
   clusterTracks,
@@ -8026,6 +8026,9 @@ function LineLegendItem({ dashed = false, label }: { dashed?: boolean; label: st
     </div>
   );
 }
+
+export const CopMap = React.memo(CopMapComponent);
+CopMap.displayName = "CopMap";
 
 function RadiusLegendItem({ active, label }: { active: boolean; label: string }) {
   return (
