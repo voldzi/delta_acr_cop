@@ -920,35 +920,45 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       selectable: true,
       styleProfile: "mobile-network-quality-v1"
     },
-    {
+    (() => {
+      const trafficSources = publicTransitSources(sources);
+      const trafficSourceIds = trafficSources.length > 0 ? trafficSources.map((source) => source.sourceId) : ["pid_gtfs_rt"];
+      const trafficRefreshSeconds = Math.min(
+        ...trafficSources
+          .map((source) => source.updateCadenceSeconds)
+          .filter((seconds): seconds is number => typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0),
+        trafficLayer?.expectedCadenceSeconds ?? 60
+      );
+      return {
       audience: "public",
-      cacheTtlSeconds: 60,
+      cacheTtlSeconds: trafficRefreshSeconds,
       defaultVisible: trafficLayer?.defaultVisible ?? false,
-      description: trafficLayer?.description ?? "Veřejná doprava a dopravní kontext.",
+      description: trafficLayer?.description ?? "Živá poloha vozidel veřejné dopravy ze SIM.",
       geometryTypes: trafficLayer?.geometryTypes ?? ["Point", "LineString"],
       groupId: "transport",
       kind: "vector_features",
-      label: "Doprava",
+      label: "Veřejná doprava",
       layerId: "public.traffic.transit",
-      legal: legalFromSource(findSource(sources, "pid_gtfs_rt")),
+      legal: legalFromSource(trafficSources[0]),
       maxZoom: 18,
-      minZoom: 8,
+      minZoom: 7,
       provenance: {
-        sourceIds: ["sim.situation-data:pid_gtfs_rt"]
+        sourceIds: trafficSourceIds.map((sourceId) => `sim.situation-data:${sourceId}`)
       },
       query: {
-        maxFeatures: 250,
+        maxFeatures: 1000,
         mode: "bbox",
         providerId: "sim.situation-data",
         providerLayerIds: ["traffic"],
-        providerSourceIds: ["pid_gtfs_rt"],
+        providerSourceIds: trafficSourceIds,
         streamId: "features"
       },
-      refreshSeconds: findSource(sources, "pid_gtfs_rt")?.updateCadenceSeconds ?? trafficLayer?.expectedCadenceSeconds ?? 60,
+      refreshSeconds: trafficRefreshSeconds,
       role: "reference",
       selectable: true,
       styleProfile: "traffic-public-transit-v1"
-    },
+      };
+    })(),
     ...buildInfrastructureLayers(groundLayer, sources)
   ];
 }
@@ -1560,6 +1570,13 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
       return { audience: "diagnostic", feedsCatalogLayerIds: ["diagnostic.osm.overpass"], selectableInMap: false, sourceRole: "diagnostic" };
     case "pid_gtfs_rt":
       return { audience: "public", feedsCatalogLayerIds: ["public.traffic.transit"], selectableInMap: true, sourceRole: "final" };
+    case "ids_jmk_gtfs_rt":
+    case "idsjmk_gtfs_rt":
+    case "ids_jmk_vehicle_positions":
+    case "idsjmk_vehicle_positions":
+    case "transit_vehicle_positions":
+    case "transit_gtfs_rt":
+      return { audience: "public", feedsCatalogLayerIds: ["public.traffic.transit"], selectableInMap: true, sourceRole: "final" };
     case "safety_data":
       return { audience: "public", feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.flood", "public.safety.fire", "public.safety.weather_alerts"], selectableInMap: false, sourceRole: "projection" };
     case "ardos_partner":
@@ -1618,6 +1635,21 @@ function legalFromSource(source: { license?: Record<string, unknown> } | undefin
 
 function findLayer<T extends { layerId: string }>(layers: T[], layerId: string): T | undefined {
   return layers.find((layer) => layer.layerId === layerId);
+}
+
+function publicTransitSources(sources: SituationSourceDescriptor[]): SituationSourceDescriptor[] {
+  return sources.filter((source) => {
+    if (source.layers?.includes("traffic")) {
+      return true;
+    }
+    const sourceId = source.sourceId.toLowerCase();
+    return sourceId.includes("gtfs")
+      || sourceId.includes("transit")
+      || sourceId.includes("vehicle_position")
+      || sourceId.includes("pid_")
+      || sourceId.includes("ids_jmk")
+      || sourceId.includes("idsjmk");
+  });
 }
 
 function findSource<T extends { sourceId: string }>(sources: T[], sourceId: string): T | undefined {

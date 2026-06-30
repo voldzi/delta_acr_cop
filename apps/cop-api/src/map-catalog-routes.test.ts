@@ -69,7 +69,7 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
       catalogVersion: string;
-      layers: Array<{ defaultVisible?: boolean; groupId?: string; label?: string; layerId: string; minZoom?: number; query?: { providerLayerIds?: string[]; providerSourceIds?: string[] }; role?: string; selectable?: boolean }>;
+      layers: Array<{ defaultVisible?: boolean; groupId?: string; label?: string; layerId: string; minZoom?: number; query?: { maxFeatures?: number; providerLayerIds?: string[]; providerSourceIds?: string[] }; role?: string; selectable?: boolean }>;
       providers: Array<{ providerId: string; status: string }>;
       sources: Array<{ feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
     };
@@ -121,7 +121,15 @@ describe("map catalog route", () => {
       selectable: true
     });
     expect(body.layers.find((layer) => layer.layerId === "public.traffic.transit")).toMatchObject({
-      groupId: "transport"
+      groupId: "transport",
+      label: "Veřejná doprava",
+      minZoom: 7,
+      query: {
+        maxFeatures: 1000,
+        providerLayerIds: ["traffic"],
+        providerSourceIds: ["pid_gtfs_rt"]
+      },
+      selectable: true
     });
     expect(body.layers.find((layer) => layer.layerId === "public.weather.webcams")).toMatchObject({
       groupId: "risks.weather",
@@ -946,6 +954,74 @@ describe("map catalog route", () => {
       }
     });
     expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather-stations/0-20000-0-11406/detail?historyHours=48&forecastHours=24", expect.objectContaining({
+      headers: expect.objectContaining({
+        accept: "application/json"
+      })
+    }));
+  });
+
+  it("proxies public transit vehicle detail through the server-side SIM provider", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const fetchMock = vi.fn(async () => Response.json({
+      contractVersion: "sim-public-transit-vehicle-detail-v1",
+      current: {
+        delaySeconds: 0,
+        display: {
+          badgeLabel: "včas",
+          label: "103 → Březiněves",
+          subtitle: "poslední zpráva před 33 s"
+        },
+        headingDeg: 12,
+        observedAt: "2026-06-30T15:17:49Z"
+      },
+      featureId: "traffic:pid_gtfs_rt:vehicle-8096",
+      route: {
+        destination: "Březiněves",
+        routeShortName: "103",
+        transportMode: "bus"
+      },
+      stops: [
+        {
+          delaySeconds: 0,
+          plannedDeparture: "2026-06-30T15:19:49Z",
+          sequence: 1,
+          stopId: "U123",
+          stopName: "Štěpničná"
+        }
+      ],
+      vehicle: {
+        id: "8096",
+        operator: "ČSAD Střední Čechy"
+      }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      situationDataSource: new FakeSituationDataSource(),
+      now: () => new Date("2026-06-30T15:18:00Z")
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/transit/vehicles/traffic%3Apid_gtfs_rt%3Avehicle-8096/detail?source=pid_gtfs_rt"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      current: {
+        display: {
+          badgeLabel: "včas"
+        }
+      },
+      route: {
+        routeShortName: "103"
+      },
+      stops: [
+        {
+          stopName: "Štěpničná"
+        }
+      ]
+    });
+    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/transit/vehicles/traffic%3Apid_gtfs_rt%3Avehicle-8096?source=pid_gtfs_rt", expect.objectContaining({
       headers: expect.objectContaining({
         accept: "application/json"
       })

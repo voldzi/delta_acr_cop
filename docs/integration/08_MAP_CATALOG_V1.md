@@ -578,7 +578,7 @@ musí jít přes URL předané v `providerProperties.camera` a v COP webu přes
 `/api/v1/weather/webcam-proxy`. Náhled musí vždy zobrazit atribuci
 `Český hydrometeorologický ústav`.
 | `public.mobile.network` | Mobilní síť | `sim.situation-data` layer `mobile_network`, source `mobile_network_model` |
-| `public.traffic.transit` | Doprava | `sim.situation-data` layer `traffic`, source `pid_gtfs_rt` |
+| `public.traffic.transit` | Veřejná doprava | `sim.situation-data` layer `traffic`, sources `pid_gtfs_rt`, `ids_jmk*` a další SIM transit adaptéry z katalogu |
 | `reference.infrastructure.healthcare` | Zdravotnictví | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `hospital`, `clinic`, `doctors`, `pharmacy` |
 | `reference.infrastructure.emergency` | Záchranná infrastruktura | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `fire_station`, `police`, `ambulance_station`, `shelter` |
 | `reference.infrastructure.communications` | BTS / komunikační stožáry | `sim.situation-data` layer `mobile`, source `osm_postgis`, category `communications_tower` |
@@ -598,6 +598,29 @@ musí jít přes URL předané v `providerProperties.camera` a v COP webu přes
 For `grid_field` weather/environment layers, clients must color the geometry from the numeric value, not from generic severity. Prefer `properties.rendering.valueMetric`; otherwise use `properties.metrics.value`, then the layer-specific fallback metric. Use the catalog `legend` for labels, stops and units. For `public.weather.precipitation_grid`, the unit is `mm/10min`.
 
 For `raster_overlay` weather layers, provider GeoJSON geometry is only the raster extent. Clients must not render that geometry as a filled polygon. They render the image from `providerProperties.raster.url` with `providerProperties.raster.boundsWgs84`, opacity and attribution. If a client cannot render image overlays, it hides the layer from the normal picker.
+
+## Public Transit Read Model
+
+COP consumes public transit only through the normalized SIM layer
+`public.traffic.transit`. Browser and native clients must not call Golemio, IDS
+JMK or other city upstreams directly. Map queries use the server-side COP map API
+with provider `sim.situation-data`, provider layer `traffic` and the transit
+source ids returned by SIM catalog.
+
+Vehicle point features use the normalized fields from SIM:
+
+| Field | Meaning in COP |
+| --- | --- |
+| `transportMode` | Icon family such as bus, tram, metro, train, trolleybus, ferry or funicular. |
+| `routeShortName` | Compact line label rendered inside the vehicle marker. |
+| `headingDeg` | Vehicle heading used to rotate the marker arrow. |
+| `delaySeconds` | Delay badge and detail status. |
+| `destination`, `currentStatus`, `speedMps`, `vehicleId`, `tripId`, `operator` | Detail panel values. |
+| `providerProperties.transit.detailUrl` | SIM detail endpoint for current stop list, trip context and service alerts. COP proxies it through `/api/v1/transit/vehicles/{featureId}/detail`. |
+
+At low zoom COP may reduce the number of rendered transit vehicles for map
+legibility, but it must not move vehicle coordinates. At detailed zoom the exact
+SIM point geometry is authoritative.
 
 ## Safety Read Model Fields
 

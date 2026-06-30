@@ -8,6 +8,7 @@ export interface TransportPresentation {
   color: string;
   currentStatus?: string;
   delaySeconds?: number;
+  detailUrl?: string;
   destination?: string;
   headingDeg?: number;
   kind: TransportIconKind;
@@ -24,16 +25,23 @@ export interface TransportPresentation {
 }
 
 export function resolveTransportPresentation(feature: SituationFeature): TransportPresentation | null {
+  const properties = feature.properties as unknown as Record<string, unknown>;
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
   const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const transitProperties = isRecord(providerProperties.transit) ? providerProperties.transit : {};
   const providerMetrics = isRecord(providerProperties.metrics) ? providerProperties.metrics : {};
   const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
-  const vehicleId = recordString(tags, "vehicleId") ?? recordString(providerTags, "vehicleId");
-  const rawKind = recordNumber(metrics, "routeTypeCode")
+  const vehicleId = recordString(properties, "vehicleId") ?? recordString(tags, "vehicleId") ?? recordString(providerTags, "vehicleId") ?? recordString(transitProperties, "vehicleId");
+  const rawKind = recordString(properties, "transportMode")
+    ?? recordString(properties, "routeType")
+    ?? recordString(properties, "vehicleType")
+    ?? recordNumber(properties, "routeTypeCode")
+    ?? recordNumber(metrics, "routeTypeCode")
     ?? recordNumber(providerMetrics, "routeTypeCode")
     ?? recordString(tags, "transportMode")
     ?? recordString(providerTags, "transportMode")
+    ?? recordString(transitProperties, "transportMode")
     ?? recordString(tags, "routeType")
     ?? recordString(providerTags, "routeType")
     ?? recordString(tags, "vehicleType")
@@ -45,12 +53,14 @@ export function resolveTransportPresentation(feature: SituationFeature): Transpo
     return null;
   }
 
-  const routeShortName = resolveRouteShortName(kind, tags, providerTags, vehicleId);
+  const routeShortName = resolveRouteShortName(kind, properties, tags, providerTags, transitProperties, vehicleId);
   const headingDeg = normalizeHeadingDeg(
-    recordNumber(metrics, "headingDeg")
+    recordNumber(properties, "headingDeg")
+      ?? recordNumber(metrics, "headingDeg")
       ?? recordNumber(providerMetrics, "headingDeg")
       ?? recordNumber(metrics, "bearing")
       ?? recordNumber(providerMetrics, "bearing")
+      ?? recordNumber(transitProperties, "headingDeg")
   );
   const label = transportKindLabel(kind);
   const trafficEventType = kind === "road_event"
@@ -59,20 +69,27 @@ export function resolveTransportPresentation(feature: SituationFeature): Transpo
 
   return {
     color: transportIconColor(kind),
-    currentStatus: recordString(tags, "currentStatus") ?? recordString(providerTags, "currentStatus"),
-    delaySeconds: recordNumber(metrics, "delaySeconds") ?? recordNumber(providerMetrics, "delaySeconds"),
-    destination: recordString(tags, "destination") ?? recordString(providerTags, "destination") ?? recordString(tags, "headsign") ?? recordString(providerTags, "headsign"),
+    currentStatus: recordString(properties, "currentStatus") ?? recordString(tags, "currentStatus") ?? recordString(providerTags, "currentStatus") ?? recordString(transitProperties, "currentStatus"),
+    delaySeconds: recordNumber(properties, "delaySeconds") ?? recordNumber(metrics, "delaySeconds") ?? recordNumber(providerMetrics, "delaySeconds") ?? recordNumber(transitProperties, "delaySeconds"),
+    detailUrl: recordString(transitProperties, "detailUrl") ?? recordString(providerProperties, "detailUrl") ?? recordString(properties, "detailUrl"),
+    destination: recordString(properties, "destination")
+      ?? recordString(properties, "headsign")
+      ?? recordString(tags, "destination")
+      ?? recordString(providerTags, "destination")
+      ?? recordString(transitProperties, "destination")
+      ?? recordString(tags, "headsign")
+      ?? recordString(providerTags, "headsign"),
     headingDeg,
     kind,
     label: trafficEventType ?? label,
     mapLabel: routeShortName ?? trafficEventType ?? label,
-    occupancyPercent: recordNumber(metrics, "occupancyPercent") ?? recordNumber(providerMetrics, "occupancyPercent"),
-    occupancyStatus: recordString(tags, "occupancyStatus") ?? recordString(providerTags, "occupancyStatus"),
-    operator: recordString(tags, "operator") ?? recordString(providerTags, "operator") ?? recordString(tags, "agency") ?? recordString(providerTags, "agency"),
+    occupancyPercent: recordNumber(properties, "occupancyPercent") ?? recordNumber(metrics, "occupancyPercent") ?? recordNumber(providerMetrics, "occupancyPercent") ?? recordNumber(transitProperties, "occupancyPercent"),
+    occupancyStatus: recordString(properties, "occupancyStatus") ?? recordString(tags, "occupancyStatus") ?? recordString(providerTags, "occupancyStatus") ?? recordString(transitProperties, "occupancyStatus"),
+    operator: recordString(properties, "operator") ?? recordString(tags, "operator") ?? recordString(providerTags, "operator") ?? recordString(transitProperties, "operator") ?? recordString(tags, "agency") ?? recordString(providerTags, "agency"),
     routeShortName,
-    speedMps: recordNumber(metrics, "speedMps") ?? recordNumber(providerMetrics, "speedMps"),
-    stopSequence: recordNumber(metrics, "currentStopSequence") ?? recordNumber(providerMetrics, "currentStopSequence"),
-    tripId: recordString(tags, "tripId") ?? recordString(providerTags, "tripId"),
+    speedMps: recordNumber(properties, "speedMps") ?? recordNumber(metrics, "speedMps") ?? recordNumber(providerMetrics, "speedMps") ?? recordNumber(transitProperties, "speedMps"),
+    stopSequence: recordNumber(properties, "currentStopSequence") ?? recordNumber(metrics, "currentStopSequence") ?? recordNumber(providerMetrics, "currentStopSequence") ?? recordNumber(transitProperties, "currentStopSequence"),
+    tripId: recordString(properties, "tripId") ?? recordString(tags, "tripId") ?? recordString(providerTags, "tripId") ?? recordString(transitProperties, "tripId"),
     vehicleId
   };
 }
@@ -192,16 +209,30 @@ function normalizeTransportIconKind(value: unknown, feature: SituationFeature): 
   return undefined;
 }
 
-function resolveRouteShortName(kind: TransportIconKind, tags: Record<string, unknown>, providerTags: Record<string, unknown>, vehicleId: string | undefined): string | undefined {
+function resolveRouteShortName(
+  kind: TransportIconKind,
+  properties: Record<string, unknown>,
+  tags: Record<string, unknown>,
+  providerTags: Record<string, unknown>,
+  transitProperties: Record<string, unknown>,
+  vehicleId: string | undefined
+): string | undefined {
   const route = compactTransportRouteLabel(
-    recordString(tags, "routeShortName")
+    recordString(properties, "routeShortName")
+      ?? recordString(transitProperties, "routeShortName")
+      ?? recordString(properties, "route")
       ?? recordString(providerTags, "routeShortName")
       ?? recordString(tags, "route")
       ?? recordString(providerTags, "route")
+      ?? recordString(transitProperties, "route")
+      ?? recordString(properties, "line")
       ?? recordString(tags, "line")
       ?? recordString(providerTags, "line")
+      ?? recordString(transitProperties, "line")
+      ?? recordString(properties, "routeId")
       ?? recordString(tags, "routeId")
       ?? recordString(providerTags, "routeId")
+      ?? recordString(transitProperties, "routeId")
   );
   if (kind === "metro") {
     const inferred = inferMetroLineFromVehicleId(vehicleId);

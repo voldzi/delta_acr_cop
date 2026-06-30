@@ -4179,6 +4179,34 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  app.get("/api/v1/transit/vehicles/:featureId/detail", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const params = request.params as { featureId: string };
+    const featureId = optionalTrimmedString(params.featureId, 260);
+    if (!featureId) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Transit vehicle detail requires featureId.", correlationId);
+    }
+    const query = request.query as Record<string, unknown>;
+    const source = optionalTransitSourceId(query.source);
+    const upstreamUrl = new URL(`transit/vehicles/${encodeURIComponent(featureId)}`, `${trimTrailingSlash(situationDataBaseUrl)}/`);
+    if (source) {
+      upstreamUrl.searchParams.set("source", source);
+    }
+    if (optionalTrimmedString(query.nocache, 8) === "1") {
+      upstreamUrl.searchParams.set("nocache", "1");
+    }
+
+    try {
+      const body = await fetchTransitVehicleDetailResource(upstreamUrl, situationDataSource?.config.timeoutMs);
+      return reply
+        .header("Cache-Control", "public, max-age=5, stale-while-revalidate=15")
+        .send(body);
+    } catch (error) {
+      app.log.warn({ error, featureId, upstreamUrl: upstreamUrl.toString() }, "Transit vehicle detail request failed.");
+      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
   app.get("/api/v1/geocode/search", async (request, reply) => {
     if (!placeGeocoder) {
       return sendError(reply, 503, "GEOCODER_UNAVAILABLE", "Place geocoder is disabled.", correlationIdFrom(request.headers["x-correlation-id"]));
@@ -11241,6 +11269,35 @@ async function fetchWeatherStationDetailResource(url: URL, timeoutMsOverride?: n
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchTransitVehicleDetailResource(url: URL, timeoutMsOverride?: number): Promise<unknown> {
+  const timeoutMs = timeoutMsOverride ?? readPositiveInteger(process.env.COP_SITUATION_DATA_TIMEOUT_MS, 8000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        accept: "application/json",
+        "user-agent": "CSM-COP transit vehicle detail proxy"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`SIM transit vehicle detail returned HTTP ${response.status}.`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function optionalTransitSourceId(value: unknown): string | undefined {
+  const source = optionalTrimmedString(value, 80);
+  if (!source) {
+    return undefined;
+  }
+  return /^[a-z0-9_.:-]+$/iu.test(source) ? source : undefined;
 }
 
 function optionalRadarProduct(value: unknown): string | undefined {

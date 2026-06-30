@@ -486,6 +486,63 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/transit/vehicles/{featureId}/detail:
+    get:
+      tags:
+        - Map Catalog
+      summary: Return public transit vehicle detail through COP.
+      operationId: getTransitVehicleDetail
+      description: >
+        Server-side proxy for the SIM situation-data public transit vehicle detail endpoint. Clients
+        derive detailUrl from providerProperties.transit.detailUrl and call COP API, so browsers and
+        native clients do not need direct SIM or city-provider connectivity.
+      parameters:
+        - name: featureId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 260
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 80
+          description: Optional SIM transit source id such as pid_gtfs_rt or a future city adapter.
+        - name: nocache
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - "1"
+          description: Diagnostic cache bypass forwarded to SIM when set to 1.
+      responses:
+        "200":
+          description: Public transit vehicle detail with SIM-prepared route, stop list, realtime status and
+            service alerts.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitVehicleDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: SIM situation-data transit vehicle detail is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/geocode/search:
     get:
       tags:
@@ -8229,6 +8286,45 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WeatherStationChart"
+        warnings:
+          type: array
+          items:
+            type: string
+    TransitVehicleDetail:
+      type: object
+      description: SIM public transit vehicle detail. COP renders route, current status, stop list and
+        service alerts as prepared transit context without calling city upstreams directly.
+      additionalProperties: true
+      properties:
+        contractVersion:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        featureId:
+          type: string
+        vehicle:
+          type: object
+          additionalProperties: true
+        route:
+          type: object
+          additionalProperties: true
+        trip:
+          type: object
+          additionalProperties: true
+        current:
+          type: object
+          additionalProperties: true
+        stops:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        serviceAlerts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
         warnings:
           type: array
           items:

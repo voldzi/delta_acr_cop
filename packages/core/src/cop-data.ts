@@ -589,6 +589,68 @@ export interface WeatherStationDetailResponse {
   warnings?: string[];
 }
 
+export interface TransitStopTime {
+  delaySeconds?: number;
+  distanceMeters?: number;
+  name?: string;
+  plannedArrival?: string;
+  plannedDeparture?: string;
+  realtimeArrival?: string;
+  realtimeDeparture?: string;
+  sequence?: number;
+  stopId?: string;
+  stopName?: string;
+}
+
+export interface TransitVehicleDetailResponse {
+  contractVersion?: string;
+  generatedAt?: string;
+  current?: {
+    delaySeconds?: number;
+    display?: {
+      badgeLabel?: string;
+      badgeTone?: string;
+      label?: string;
+      primaryValue?: string;
+      secondaryValue?: string;
+      subtitle?: string;
+      title?: string;
+    };
+    headingDeg?: number;
+    observedAt?: string;
+    speedMps?: number;
+    status?: string;
+  };
+  featureId?: string;
+  route?: {
+    color?: string;
+    destination?: string;
+    direction?: string;
+    routeId?: string;
+    routeLongName?: string;
+    routeShortName?: string;
+    shape?: unknown;
+    transportMode?: string;
+  };
+  serviceAlerts?: Array<Record<string, unknown>>;
+  stops?: TransitStopTime[];
+  summary?: Record<string, unknown>;
+  trip?: {
+    headsign?: string;
+    tripId?: string;
+    vehicleId?: string;
+  };
+  vehicle?: {
+    id?: string;
+    label?: string;
+    licensePlate?: string;
+    operator?: string;
+    transportMode?: string;
+    type?: string;
+  };
+  warnings?: string[];
+}
+
 export type MobileCoverageTechnology = "2G" | "4G" | "5G";
 
 export interface MobileTowerViewshedFeature {
@@ -2288,6 +2350,25 @@ export async function fetchWeatherStationDetail(
   );
 }
 
+export async function fetchTransitVehicleDetail(
+  apiBase: string,
+  token: string | undefined,
+  detailUrl: string | undefined,
+  fallback: { featureId: string; sourceId?: string }
+): Promise<TransitVehicleDetailResponse> {
+  const request = transitVehicleDetailRequest(detailUrl, fallback);
+  const suffix = request.query.toString() ? `?${request.query.toString()}` : "";
+  return fetchJson<TransitVehicleDetailResponse>(
+    `${apiBase}/api/v1/transit/vehicles/${encodeURIComponent(request.featureId)}/detail${suffix}`,
+    {
+      headers: {
+        ...(authHeaders(token) ?? {}),
+        Accept: "application/json"
+      }
+    }
+  );
+}
+
 export async function fetchMobileTowerViewshed(
   apiBase: string,
   token: string | undefined,
@@ -2406,6 +2487,28 @@ function weatherStationDetailRequest(detailUrl: string): { query: URLSearchParam
     query: new URLSearchParams(url.searchParams),
     stationId
   };
+}
+
+function transitVehicleDetailRequest(detailUrl: string | undefined, fallback: { featureId: string; sourceId?: string }): { featureId: string; query: URLSearchParams } {
+  const query = new URLSearchParams();
+  if (!detailUrl) {
+    if (fallback.sourceId) {
+      query.set("source", fallback.sourceId);
+    }
+    return { featureId: fallback.featureId, query };
+  }
+  const url = new URL(detailUrl, "https://cop.local");
+  const match = /^(?:\/situation-data)?\/api\/v1\/transit\/vehicles\/([^/]+)$/u.exec(url.pathname)
+    ?? /^\/api\/v1\/transit\/vehicles\/([^/]+)\/detail$/u.exec(url.pathname);
+  const featureId = match?.[1] ? decodeURIComponent(match[1]) : fallback.featureId;
+  if (!featureId) {
+    throw new Error("Neplatná adresa detailu vozidla veřejné dopravy.");
+  }
+  url.searchParams.forEach((value, key) => query.set(key, value));
+  if (!query.has("source") && fallback.sourceId) {
+    query.set("source", fallback.sourceId);
+  }
+  return { featureId, query };
 }
 
 export async function fetchWeatherRadarFrames(

@@ -112,6 +112,7 @@ import {
   fetchRadioProfiles,
   fetchDemoScenarioStatus,
   fetchSketchDrawings,
+  fetchTransitVehicleDetail,
   fetchUserProfile,
   fetchWeatherRadarFrames,
   filterObjectsByLayers,
@@ -205,6 +206,8 @@ import {
   type TakLayer,
   type TakLayerId,
   type TakSourceDescriptor,
+  type TransitStopTime,
+  type TransitVehicleDetailResponse,
   type WeatherRadarFrame
 } from "./cop-data";
 import { CopMap, formatTrackLabel, type CreateSketchDrawingRequest, type SketchToolMode, type UpdateSketchDrawingRequest } from "./CopMap";
@@ -6494,31 +6497,137 @@ function TrafficSummary({ feature }: { feature: SituationFeature }) {
   );
 }
 
-function TrafficDetailSection({ feature }: { feature: SituationFeature }) {
+function TrafficDetailSection({
+  apiBase,
+  authToken,
+  feature
+}: {
+  apiBase: string;
+  authToken: string | undefined;
+  feature: SituationFeature;
+}) {
   const presentation = resolveTransportPresentation(feature);
+  const isTransitVehicle = Boolean(presentation && presentation.kind !== "road_event");
+  const [detail, setDetail] = React.useState<TransitVehicleDetailResponse | null>(null);
+  const [detailError, setDetailError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  const loadDetail = React.useCallback(async () => {
+    if (!isTransitVehicle) {
+      return;
+    }
+    setLoading(true);
+    setDetailError(null);
+    try {
+      setDetail(await fetchTransitVehicleDetail(apiBase, authToken, presentation?.detailUrl, {
+        featureId: feature.properties.featureId,
+        sourceId: feature.properties.sourceId
+      }));
+    } catch (error) {
+      setDetail(null);
+      setDetailError(error instanceof Error ? humanizeApiError(error.message) : "Detail vozidla veřejné dopravy se nepodařilo načíst.");
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBase, authToken, feature.properties.featureId, feature.properties.sourceId, isTransitVehicle, presentation?.detailUrl]);
+
+  React.useEffect(() => {
+    setDetail(null);
+    setDetailError(null);
+    if (!isTransitVehicle) {
+      setLoading(false);
+      return;
+    }
+    void loadDetail();
+  }, [feature.properties.featureId, isTransitVehicle, loadDetail]);
+
   if (!presentation) {
     return null;
   }
+
+  const detailDisplay = transitDetailDisplay(detail);
+  const stops = transitDetailStops(detail);
   return (
     <ObjectDetailSection title={presentation.kind === "road_event" ? "Dopravní událost" : "Veřejná doprava"}>
+      {isTransitVehicle ? (
+        <div className="traffic-detail-header">
+          <div>
+            <strong>{detailDisplay.title ?? [presentation.label, presentation.routeShortName].filter(Boolean).join(" ")}</strong>
+            <span>{detailDisplay.subtitle ?? presentation.destination ?? "Živá poloha vozidla ze SIM"}</span>
+          </div>
+          <button className="mini-button" disabled={loading} onClick={() => void loadDetail()} type="button">
+            {loading ? "Načítám" : "Obnovit"}
+          </button>
+        </div>
+      ) : null}
       <DetailGrid
         rows={[
           ["Typ", presentation.label],
-          ["Linka", presentation.routeShortName ?? "n/a"],
-          ["Směr", presentation.destination ?? "n/a"],
-          ["Stav", formatTransportCurrentStatus(presentation.currentStatus)],
-          ["Zpoždění", formatTransportDelay(presentation.delaySeconds)],
-          ["Rychlost", formatTransportSpeed(presentation.speedMps)],
-          ["Směr pohybu", formatTransportHeading(presentation.headingDeg)],
+          ["Linka", detail?.route?.routeShortName ?? presentation.routeShortName ?? "n/a"],
+          ["Směr", detail?.route?.destination ?? detail?.route?.direction ?? detail?.trip?.headsign ?? presentation.destination ?? "n/a"],
+          ["Stav", detailDisplay.badgeLabel ?? formatTransportCurrentStatus(detail?.current?.status ?? presentation.currentStatus)],
+          ["Zpoždění", formatTransportDelay(detail?.current?.delaySeconds ?? presentation.delaySeconds)],
+          ["Rychlost", formatTransportSpeed(detail?.current?.speedMps ?? presentation.speedMps)],
+          ["Směr pohybu", formatTransportHeading(detail?.current?.headingDeg ?? presentation.headingDeg)],
+          ["Poslední zpráva", formatShortDateTime(detail?.current?.observedAt ?? feature.properties.observedAt)],
           ["Obsazenost", formatTransportOccupancy(presentation.occupancyStatus, presentation.occupancyPercent)],
           ["Sekvence zastávky", formatOptionalInteger(presentation.stopSequence)],
-          ["Vozidlo", presentation.vehicleId ?? "n/a"],
-          ["Spoj", presentation.tripId ?? "n/a"],
-          ["Dopravce", presentation.operator ?? "n/a"]
+          ["Vozidlo", detail?.vehicle?.label ?? detail?.vehicle?.id ?? detail?.trip?.vehicleId ?? presentation.vehicleId ?? "n/a"],
+          ["Spoj", detail?.trip?.tripId ?? presentation.tripId ?? "n/a"],
+          ["Dopravce", detail?.vehicle?.operator ?? presentation.operator ?? "n/a"]
         ]}
       />
+      {detailError ? <div className="situation-warning">{detailError}</div> : null}
+      {loading && !detail ? <div className="empty-mini">Načítám detail vozidla a zastávky ze SIM...</div> : null}
+      {isTransitVehicle && stops.length > 0 ? <TransitStopList stops={stops} /> : null}
+      {isTransitVehicle && (detail?.warnings ?? []).map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
     </ObjectDetailSection>
   );
+}
+
+function TransitStopList({ stops }: { stops: TransitStopTime[] }) {
+  return (
+    <div className="traffic-stop-list">
+      <h3>Zastávky</h3>
+      {stops.slice(0, 8).map((stop, index) => (
+        <div className="traffic-stop-row" key={`${stop.stopId ?? stop.stopName ?? stop.name ?? "stop"}-${stop.sequence ?? index}`}>
+          <span>{stop.sequence ?? index + 1}</span>
+          <strong>{stop.stopName ?? stop.name ?? stop.stopId ?? "Zastávka"}</strong>
+          <em>{formatTransitStopTime(stop)}</em>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function transitDetailDisplay(detail: TransitVehicleDetailResponse | null): { badgeLabel?: string; subtitle?: string; title?: string } {
+  const display = detail?.current?.display;
+  return {
+    badgeLabel: display?.badgeLabel ?? display?.primaryValue,
+    subtitle: display?.subtitle ?? display?.secondaryValue,
+    title: display?.title ?? display?.label
+  };
+}
+
+function transitDetailStops(detail: TransitVehicleDetailResponse | null): TransitStopTime[] {
+  if (!detail) {
+    return [];
+  }
+  const fallback = detail.summary;
+  const stops = Array.isArray(detail.stops)
+    ? detail.stops
+    : isRecord(fallback) && Array.isArray(fallback.stops)
+      ? fallback.stops as TransitStopTime[]
+      : [];
+  return stops.filter((stop): stop is TransitStopTime => isRecord(stop));
+}
+
+function formatTransitStopTime(stop: TransitStopTime): string {
+  const arrival = stop.realtimeArrival ?? stop.plannedArrival;
+  const departure = stop.realtimeDeparture ?? stop.plannedDeparture;
+  const time = formatShortDateTime(arrival ?? departure);
+  const delay = typeof stop.delaySeconds === "number" && Number.isFinite(stop.delaySeconds) ? formatTransportDelay(stop.delaySeconds) : undefined;
+  return [time !== "n/a" ? time : undefined, delay].filter(Boolean).join(" · ") || "n/a";
 }
 
 function WeatherWebcamSummary({ feature }: { feature: SituationFeature }) {
@@ -11398,7 +11507,7 @@ function SituationFeatureDetail({
         <MobileTowerViewshedSection state={mobileTowerViewshed} />
       ) : null}
       {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
-      {properties.layer === "traffic" ? <TrafficDetailSection feature={feature} /> : null}
+      {properties.layer === "traffic" ? <TrafficDetailSection apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherCamera ? <WeatherWebcamPreview authToken={authToken} feature={feature} /> : null}
       {weatherContext ? (
