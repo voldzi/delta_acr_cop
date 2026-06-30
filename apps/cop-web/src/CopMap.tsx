@@ -146,6 +146,9 @@ const situationOsmSymbolLayerId = "cop-situation-osm-symbol";
 const situationOsmDetailSymbolLayerId = "cop-situation-osm-detail-symbol";
 const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
 const situationTrafficSymbolLayerId = "cop-situation-traffic-symbol";
+const selectedTransitRouteSourceId = "cop-selected-transit-route";
+const selectedTransitRouteLineLayerId = "cop-selected-transit-route-line";
+const selectedTransitRouteStopLayerId = "cop-selected-transit-route-stop";
 const situationRiskPointLayerId = "cop-situation-risk-point";
 const situationRiskIconLayerId = "cop-situation-risk-icon";
 const situationFloodTrendLayerId = "cop-situation-flood-trend";
@@ -334,6 +337,17 @@ export interface TrackLineFeature {
 export interface TrackLineFeatureCollection {
   type: "FeatureCollection";
   features: TrackLineFeature[];
+}
+
+export interface SelectedRouteFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry:
+      | { type: "LineString"; coordinates: Array<[number, number]> }
+      | { type: "Point"; coordinates: [number, number] };
+    properties: { featureId: string; kind: "route-line" | "route-waypoint"; label: string };
+  }>;
 }
 
 export interface AlertAreaFeatureCollection {
@@ -776,6 +790,15 @@ function CopMapComponent({
     startY: number;
     width: number;
   } | null>(null);
+  const mapControlsRef = React.useRef<HTMLDivElement | null>(null);
+  const mapControlsDragRef = React.useRef<{
+    height: number;
+    originX: number;
+    originY: number;
+    startX: number;
+    startY: number;
+    width: number;
+  } | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const situationRasterOverlayIdsRef = React.useRef<Set<string>>(new Set());
   const objectsRef = React.useRef(objects);
@@ -814,6 +837,10 @@ function CopMapComponent({
   const [mapError, setMapError] = React.useState<string | null>(null);
   const [clusterInfo, setClusterInfo] = React.useState<ClusterInfo | null>(null);
   const [mapFullscreen, setMapFullscreen] = React.useState(false);
+  const [mapControlsCollapsed, setMapControlsCollapsed] = React.useState(false);
+  const [mapControlsPosition, setMapControlsPosition] = React.useState<{ x: number; y: number } | null>(null);
+  const [mapControlsDragging, setMapControlsDragging] = React.useState(false);
+  const [selectionPopupPoint, setSelectionPopupPoint] = React.useState<{ x: number; y: number } | null>(null);
   const [hoveredObjectId, setHoveredObjectId] = React.useState<string | undefined>();
   const [zoneDraftPoints, setZoneDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
   const [sketchDraftPoints, setSketchDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
@@ -876,6 +903,14 @@ function CopMapComponent({
             }
           : null,
     [selectedObject, selectedSituationFeature, selectedSketchDrawing]
+  );
+  const selectedAnchorCoordinate = React.useMemo(
+    () => selectionAnchorCoordinate(selectedObject, selectedSituationFeature, selectedSketchDrawing),
+    [selectedObject, selectedSituationFeature, selectedSketchDrawing]
+  );
+  const selectedRouteFeatureCollection = React.useMemo(
+    () => selectedSituationFeature ? selectedTransitRouteToFeatureCollection(selectedSituationFeature) : emptySelectedRouteFeatureCollection(),
+    [selectedSituationFeature]
   );
   const positionedObjects = React.useMemo(() => objects.filter(hasPosition), [objects]);
   const featureCollection = React.useMemo(
@@ -1114,6 +1149,10 @@ function CopMapComponent({
         map.addSource(situationSourceId, {
           type: "geojson",
           data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(selectedTransitRouteSourceId, {
+          type: "geojson",
+          data: emptySelectedRouteFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
         });
         await registerNatoSymbolImages(map);
         await registerCivilAircraftSymbolImages(map);
@@ -1661,6 +1700,37 @@ function CopMapComponent({
                 2.6
               ]
             ]
+          }
+        });
+
+        map.addLayer({
+          id: selectedTransitRouteLineLayerId,
+          type: "line",
+          source: selectedTransitRouteSourceId,
+          filter: ["==", ["geometry-type"], "LineString"],
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": "#0f7fa7",
+            "line-opacity": 0.88,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 9, 4.5, 13, 7.5, 17, 10.5],
+            "line-blur": 0.2
+          }
+        });
+
+        map.addLayer({
+          id: selectedTransitRouteStopLayerId,
+          type: "circle",
+          source: selectedTransitRouteSourceId,
+          filter: ["==", ["geometry-type"], "Point"],
+          paint: {
+            "circle-color": "#ffffff",
+            "circle-opacity": 0.92,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 2.6, 13, 4.5, 17, 6.5],
+            "circle-stroke-color": "#0f7fa7",
+            "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 9, 1.4, 13, 2.2, 17, 3]
           }
         });
 
@@ -3419,6 +3489,13 @@ function CopMapComponent({
   }, [mapReady, situationFeatureCollection]);
 
   React.useEffect(() => {
+    const source = mapRef.current?.getSource(selectedTransitRouteSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(selectedRouteFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [mapReady, selectedRouteFeatureCollection]);
+
+  React.useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) {
       return;
@@ -3796,6 +3873,110 @@ function CopMapComponent({
     };
   }, [mobileSketchControlsOpen, sketchPalettePosition, sketchToolsExpanded]);
 
+  const beginMapControlsDrag = React.useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (mapControlsCollapsed) {
+        return;
+      }
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      const controlsRect = mapControlsRef.current?.getBoundingClientRect();
+      if (!containerRect || !controlsRect) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const currentPosition = mapControlsPosition ?? {
+        x: controlsRect.left - containerRect.left,
+        y: controlsRect.top - containerRect.top
+      };
+      mapControlsDragRef.current = {
+        height: controlsRect.height,
+        originX: currentPosition.x,
+        originY: currentPosition.y,
+        startX: event.clientX,
+        startY: event.clientY,
+        width: controlsRect.width
+      };
+      setMapControlsDragging(true);
+    },
+    [mapControlsCollapsed, mapControlsPosition]
+  );
+
+  React.useEffect(() => {
+    if (!mapControlsDragging) {
+      return undefined;
+    }
+    const handlePointerMove = (event: PointerEvent) => {
+      const drag = mapControlsDragRef.current;
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      if (!drag || !containerRect) {
+        return;
+      }
+      const controlsRect = mapControlsRef.current?.getBoundingClientRect();
+      const controlsWidth = controlsRect?.width ?? drag.width;
+      const controlsHeight = controlsRect?.height ?? drag.height;
+      const nextX = drag.originX + event.clientX - drag.startX;
+      const nextY = drag.originY + event.clientY - drag.startY;
+      setMapControlsPosition({
+        x: clampValue(nextX, 8, Math.max(8, containerRect.width - controlsWidth - 8)),
+        y: clampValue(nextY, 8, Math.max(8, containerRect.height - controlsHeight - 8))
+      });
+    };
+    const handlePointerUp = () => {
+      mapControlsDragRef.current = null;
+      setMapControlsDragging(false);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [mapControlsDragging]);
+
+  const mapControlsStyle = React.useMemo<React.CSSProperties | undefined>(() => {
+    if (!mapControlsPosition) {
+      return undefined;
+    }
+    return {
+      left: `${mapControlsPosition.x}px`,
+      right: "auto",
+      top: `${mapControlsPosition.y}px`
+    };
+  }, [mapControlsPosition]);
+
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !selectedAnchorCoordinate) {
+      setSelectionPopupPoint(null);
+      return undefined;
+    }
+    const updatePosition = () => {
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      if (!containerRect) {
+        setSelectionPopupPoint(null);
+        return;
+      }
+      const point = map.project({ lng: selectedAnchorCoordinate[0], lat: selectedAnchorCoordinate[1] });
+      const popupHalfWidth = Math.min(180, Math.max(122, containerRect.width * 0.42));
+      setSelectionPopupPoint({
+        x: clampValue(point.x, popupHalfWidth, Math.max(popupHalfWidth, containerRect.width - popupHalfWidth)),
+        y: clampValue(point.y, 18, Math.max(18, containerRect.height - 18))
+      });
+    };
+    updatePosition();
+    map.on("move", updatePosition);
+    map.on("zoom", updatePosition);
+    map.on("resize", updatePosition);
+    return () => {
+      map.off("move", updatePosition);
+      map.off("zoom", updatePosition);
+      map.off("resize", updatePosition);
+    };
+  }, [mapReady, selectedAnchorCoordinate]);
+
   const missingPositionCount = objects.length - positionedObjects.length;
 
   return (
@@ -4073,67 +4254,116 @@ function CopMapComponent({
           </div>
         </div>
       ) : null}
-      <div className="map-overlay-stack">
+      <div
+        className={[
+          "map-control-palette",
+          mapControlsCollapsed ? "collapsed" : "expanded",
+          mapControlsDragging ? "dragging" : "",
+          mapControlsPosition ? "moved" : ""
+        ].filter(Boolean).join(" ")}
+        onClick={stopMapToolbarEvent}
+        onDoubleClick={stopMapToolbarEvent}
+        onPointerDown={stopMapToolbarEvent}
+        onWheel={stopMapToolbarEvent}
+        ref={mapControlsRef}
+        style={mapControlsStyle}
+      >
+        {mapControlsCollapsed ? (
+          <button
+            aria-label="Zobrazit ovládání mapy"
+            className="map-control-main"
+            onClick={() => setMapControlsCollapsed(false)}
+            title="Zobrazit ovládání mapy"
+            type="button"
+          >
+            <Maximize2 size={17} strokeWidth={2.2} />
+          </button>
+        ) : (
+          <>
+            <button
+              aria-label="Přesunout ovládání mapy"
+              className="map-control-drag"
+              onPointerDown={beginMapControlsDrag}
+              title="Přesunout ovládání mapy"
+              type="button"
+            >
+              <Move size={15} strokeWidth={2.2} />
+            </button>
+            <button
+              aria-pressed={autoFit}
+              className={`map-control-button ${autoFit ? "active" : ""}`}
+              onClick={() => {
+                const nextAutoFit = !autoFit;
+                onAutoFitChange(nextAutoFit);
+                if (nextAutoFit && fitMapToVisibleContent(mapRef.current, positionedObjects, situationFeatureCollection)) {
+                  lastFitSignatureRef.current = buildFitSignature(positionedObjects, situationFeatureCollection);
+                }
+              }}
+              title="Přizpůsobit mapu viditelným prvkům"
+              type="button"
+            >
+              <MousePointer2 size={16} strokeWidth={2.2} />
+              <span>Přiblížit</span>
+            </button>
+            <button
+              className="map-control-button"
+              onClick={onRequestUserLocation}
+              title="Přejít na moji polohu"
+              type="button"
+            >
+              <MapPin size={16} strokeWidth={2.2} />
+              <span>Poloha</span>
+            </button>
+            <button
+              aria-pressed={mapFullscreen}
+              className={`map-control-button ${mapFullscreen ? "active" : ""}`}
+              onClick={() => setMapFullscreen((current) => !current)}
+              title={mapFullscreen ? "Ukončit celou obrazovku" : "Zobrazit mapu přes celou obrazovku"}
+              type="button"
+            >
+              {mapFullscreen ? <Minimize2 size={16} strokeWidth={2.2} /> : <Maximize2 size={16} strokeWidth={2.2} />}
+              <span>{mapFullscreen ? "Zmenšit" : "Mapa"}</span>
+            </button>
+            <button
+              aria-label="Skrýt ovládání mapy"
+              className="map-control-button icon-only"
+              onClick={() => setMapControlsCollapsed(true)}
+              title="Skrýt ovládání mapy"
+              type="button"
+            >
+              <ChevronUp size={16} strokeWidth={2.2} />
+            </button>
+          </>
+        )}
+      </div>
+      {selectionCard && selectionPopupPoint ? (
         <div
-          className="map-toolbar"
+          className={`map-object-popover ${selectionPopupPoint.y < 160 ? "below" : ""}`}
           onClick={stopMapToolbarEvent}
           onDoubleClick={stopMapToolbarEvent}
           onPointerDown={stopMapToolbarEvent}
           onWheel={stopMapToolbarEvent}
+          style={{
+            left: `${selectionPopupPoint.x}px`,
+            top: `${selectionPopupPoint.y}px`
+          }}
         >
-          <div>
-            <span>Vrstvy</span>
-            <strong>{mapLayerLabel}</strong>
-            <small>{mapLayerDetailLabel}</small>
-          </div>
-          <button
-            className={`map-action ${autoFit ? "active" : ""}`}
-            aria-pressed={autoFit}
-            onClick={() => {
-              const nextAutoFit = !autoFit;
-              onAutoFitChange(nextAutoFit);
-              if (nextAutoFit && fitMapToVisibleContent(mapRef.current, positionedObjects, situationFeatureCollection)) {
-                lastFitSignatureRef.current = buildFitSignature(positionedObjects, situationFeatureCollection);
-              }
-            }}
-            title="Zapnout nebo vypnout automatické přizpůsobení mapy viditelným prvkům"
-            type="button"
-          >
-            Přiblížit
-          </button>
-          <button className="map-action" onClick={onRequestUserLocation} type="button">
-            Poloha
-          </button>
-          <button
-            aria-pressed={mapFullscreen}
-            className={`map-action icon-map-action ${mapFullscreen ? "active" : ""}`}
-            onClick={() => setMapFullscreen((current) => !current)}
-            title={mapFullscreen ? "Ukončit celou obrazovku" : "Zobrazit mapu přes celou obrazovku"}
-            type="button"
-          >
-            {mapFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-            <span>{mapFullscreen ? "Zmenšit" : "Mapa"}</span>
-          </button>
-        </div>
-        {selectionCard ? (
-          <div
-            className="map-selection-card"
-            onClick={stopMapToolbarEvent}
-            onDoubleClick={stopMapToolbarEvent}
-            onPointerDown={stopMapToolbarEvent}
-            onWheel={stopMapToolbarEvent}
-          >
-            <div>
-              <span>{selectionCard.eyebrow}</span>
-              <strong>{selectionCard.title}</strong>
-              <small>{selectionCard.subtitle}</small>
-            </div>
+          <div className="map-object-popover-header">
+            <span>{selectionCard.eyebrow}</span>
             <button aria-label="Zrušit výběr" onClick={onClearSelection} title="Zrušit výběr" type="button">
-              <X size={15} />
+              <X size={14} />
             </button>
           </div>
-        ) : null}
-      </div>
+          <strong>{selectionCard.title}</strong>
+          <small>{selectionCard.subtitle}</small>
+          {selectedRouteFeatureCollection.features.length > 0 ? (
+            <div className="map-object-popover-route">
+              <ArrowRight size={14} strokeWidth={2.2} />
+              <span>Trasa je zvýrazněná v mapě</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {onStartReport ? (
         <button
           className="map-report-button"
@@ -5263,6 +5493,144 @@ function buildWeatherPulseFeature(
     },
     type: "Feature"
   };
+}
+
+function selectionAnchorCoordinate(
+  object: CopObject | null,
+  situationFeature: SituationFeature | null,
+  sketchDrawing: SketchDrawingFeature | null
+): [number, number] | null {
+  if (object && hasPosition(object)) {
+    return [object.position.lon, object.position.lat];
+  }
+  if (situationFeature) {
+    return geometryVisualCentroid(situationFeature.geometry);
+  }
+  if (sketchDrawing) {
+    return sketchGeometryVisualCentroid(sketchDrawing.geometry);
+  }
+  return null;
+}
+
+function selectedTransitRouteToFeatureCollection(feature: SituationFeature): SelectedRouteFeatureCollection {
+  if (feature.properties.layer !== "traffic" || !resolveTransportPresentation(feature)) {
+    return emptySelectedRouteFeatureCollection();
+  }
+  const coordinates = extractTransitRouteCoordinates(feature);
+  if (!coordinates || coordinates.length < 2) {
+    return emptySelectedRouteFeatureCollection();
+  }
+  const label = formatSituationFeatureTitle(feature);
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        geometry: { type: "LineString", coordinates },
+        properties: { featureId: feature.properties.featureId, kind: "route-line", label },
+        type: "Feature"
+      },
+      ...routeWaypointCoordinates(coordinates).map((coordinate) => ({
+        geometry: { type: "Point" as const, coordinates: coordinate },
+        properties: { featureId: feature.properties.featureId, kind: "route-waypoint" as const, label },
+        type: "Feature" as const
+      }))
+    ]
+  };
+}
+
+function extractTransitRouteCoordinates(feature: SituationFeature): Array<[number, number]> | null {
+  if (feature.geometry.type === "LineString" && feature.geometry.coordinates.length >= 2) {
+    return feature.geometry.coordinates;
+  }
+  const properties = feature.properties as unknown as Record<string, unknown>;
+  const candidates = [
+    properties.routeShape,
+    properties.routeGeometry,
+    properties.shape,
+    properties.route,
+    properties.providerProperties,
+    properties.metrics,
+    properties.tags
+  ];
+  for (const candidate of candidates) {
+    const coordinates = lineCoordinatesFromUnknown(candidate);
+    if (coordinates && coordinates.length >= 2) {
+      return coordinates;
+    }
+  }
+  return null;
+}
+
+function lineCoordinatesFromUnknown(value: unknown, depth = 0): Array<[number, number]> | null {
+  if (depth > 5) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    const coordinates = normalizeLineCoordinates(value);
+    return coordinates.length >= 2 ? coordinates : null;
+  }
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (stringProperty(value.type) === "LineString") {
+    const coordinates = lineCoordinatesFromUnknown(value.coordinates, depth + 1);
+    if (coordinates) {
+      return coordinates;
+    }
+  }
+  const directKeys = ["coordinates", "geometry", "routeShape", "routeGeometry", "shape", "route", "lineString", "path", "points"];
+  for (const key of directKeys) {
+    const coordinates = lineCoordinatesFromUnknown(value[key], depth + 1);
+    if (coordinates) {
+      return coordinates;
+    }
+  }
+  return null;
+}
+
+function normalizeLineCoordinates(value: unknown[]): Array<[number, number]> {
+  const coordinates: Array<[number, number]> = [];
+  for (const item of value) {
+    if (!Array.isArray(item) || item.length < 2) {
+      return [];
+    }
+    const lon = Number(item[0]);
+    const lat = Number(item[1]);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+      return [];
+    }
+    coordinates.push([lon, lat]);
+  }
+  return coordinates;
+}
+
+function routeWaypointCoordinates(coordinates: Array<[number, number]>): Array<[number, number]> {
+  if (coordinates.length < 2) {
+    return [];
+  }
+  const indexes = new Set<number>([0, coordinates.length - 1]);
+  if (coordinates.length > 6) {
+    indexes.add(Math.floor(coordinates.length / 2));
+  }
+  return [...indexes].sort((a, b) => a - b).map((index) => coordinates[index]!).filter(Boolean);
+}
+
+function sketchGeometryVisualCentroid(geometry: SketchGeometry): [number, number] | null {
+  const points: Array<[number, number]> = [];
+  collectGeometryCoordinates(geometry.coordinates, points);
+  if (points.length === 0) {
+    return null;
+  }
+  const bounds = points.reduce(
+    (acc, point) => ({
+      east: Math.max(acc.east, point[0]),
+      north: Math.max(acc.north, point[1]),
+      south: Math.min(acc.south, point[1]),
+      west: Math.min(acc.west, point[0])
+    }),
+    { east: -Infinity, north: -Infinity, south: Infinity, west: Infinity }
+  );
+  return [(bounds.west + bounds.east) / 2, (bounds.south + bounds.north) / 2];
 }
 
 function geometryVisualCentroid(geometry: SituationFeature["geometry"]): [number, number] | null {
@@ -7727,6 +8095,13 @@ export function userAlertRadiusToFeatureCollection(
 }
 
 function emptyLineFeatureCollection(): TrackLineFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: []
+  };
+}
+
+function emptySelectedRouteFeatureCollection(): SelectedRouteFeatureCollection {
   return {
     type: "FeatureCollection",
     features: []
