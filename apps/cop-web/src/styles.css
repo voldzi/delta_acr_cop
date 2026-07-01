@@ -4895,7 +4895,7 @@ h1 {
   padding: 10px 12px 11px;
   pointer-events: auto;
   touch-action: manipulation;
-  transform: translate(-50%, calc(-100% - 34px));
+  transform: translate(-50%, calc(-100% - 20px));
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
 }
 
@@ -4912,14 +4912,15 @@ h1 {
 }
 
 .map-object-popover.collapsed {
-  width: auto;
-  min-width: 128px;
-  max-width: 192px;
-  padding: 6px 7px;
+  width: min(166px, calc(100% - 28px));
+  min-width: 0;
+  max-width: 166px;
+  padding: 5px 6px;
+  gap: 3px;
 }
 
 .map-object-popover.collapsed .map-object-popover-header {
-  gap: 5px;
+  gap: 4px;
 }
 
 .map-object-popover.collapsed .map-object-popover-header span {
@@ -4927,8 +4928,8 @@ h1 {
 }
 
 .map-object-popover.collapsed .map-object-popover-header button {
-  width: 23px;
-  height: 23px;
+  width: 21px;
+  height: 21px;
 }
 
 .map-object-popover::after {
@@ -4945,7 +4946,7 @@ h1 {
 }
 
 .map-object-popover.below {
-  transform: translate(-50%, 24px);
+  transform: translate(-50%, 20px);
 }
 
 .map-object-popover.below::after {
@@ -5027,12 +5028,12 @@ h1 {
 }
 
 .map-object-popover-compact strong {
-  max-width: 156px;
-  font-size: 12px;
+  max-width: 138px;
+  font-size: 11px;
 }
 
 .map-object-popover-compact small {
-  max-width: 156px;
+  max-width: 138px;
   font-size: 9px;
   -webkit-line-clamp: 1;
 }

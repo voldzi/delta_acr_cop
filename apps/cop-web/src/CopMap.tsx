@@ -4129,7 +4129,7 @@ function CopMapComponent({
       }
       const point = map.project({ lng: selectedAnchorCoordinate[0], lat: selectedAnchorCoordinate[1] });
       const popupWidth = selectionPopoverCollapsed
-        ? Math.min(230, Math.max(170, containerRect.width - 28))
+        ? Math.min(166, Math.max(120, containerRect.width - 28))
         : Math.min(360, Math.max(244, containerRect.width - 28));
       const popupHalfWidth = popupWidth / 2;
       const horizontalPadding = 14;
