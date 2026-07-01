@@ -39,7 +39,7 @@ POST /api/chat
 
 Ollama request obsahuje:
 
-- `model`, výchozí `gemma4:12b`,
+- `model`, výchozí `gemma4:12b-mlx`,
 - `messages` se systémovým promptem COP a uživatelským dotazem,
 - `options.num_predict`, výchozí `512`,
 - `think=false`, aby thinking-capable Ollama model nevracel prázdný
@@ -59,7 +59,7 @@ COP_AI_DEFAULT_PROVIDER=ollama
 COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS=10000
 COP_AI_OLLAMA_BASE_URLS=http://192.168.200.2:11434,http://host.docker.internal:11434,http://192.168.1.176:11434
 COP_AI_OLLAMA_TOKEN=<service-token-pokud-je-vyžadován>
-COP_AI_OLLAMA_MODEL=gemma4:12b
+COP_AI_OLLAMA_MODEL=gemma4:12b-mlx
 COP_AI_OLLAMA_MAX_TOKENS=512
 COP_AI_OLLAMA_TIMEOUT_MS=30000
 COP_AI_OLLAMA_RETRY_ATTEMPTS=2
@@ -78,7 +78,7 @@ Volitelný compatibility fallback přes AI KnowledgeBase LLM Gateway:
 ```env
 COP_AI_LOCAL_GATEWAY_URL=http://docker.home.cz:3220/llm-gateway
 COP_AI_LOCAL_GATEWAY_TOKEN=<service-token-pokud-ho-AKB-vyžaduje>
-COP_AI_LOCAL_MODEL=gemma4:12b
+COP_AI_LOCAL_MODEL=gemma4:12b-mlx
 COP_AI_LOCAL_MAX_TOKENS=512
 COP_AI_LOCAL_TIMEOUT_MS=30000
 COP_AI_LOCAL_RETRY_ATTEMPTS=2

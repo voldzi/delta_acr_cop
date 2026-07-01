@@ -20,7 +20,7 @@ describe("AiGateway", () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(
         JSON.stringify({
-          model: "gemma4:12b",
+          model: "gemma4:12b-mlx",
           message: {
             role: "assistant",
             content: "Ollama odpověděla přes COP server-side provider."
@@ -39,7 +39,7 @@ describe("AiGateway", () => {
       COP_AI_DEFAULT_PROVIDER: "auto",
       COP_AI_OLLAMA_BASE_URLS: "http://ollama-primary:11434,http://ollama-secondary:11434",
       COP_AI_LOCAL_GATEWAY_URL: "http://llm-gateway:8080",
-      COP_AI_OLLAMA_MODEL: "gemma4:12b",
+      COP_AI_OLLAMA_MODEL: "gemma4:12b-mlx",
       COP_AI_OLLAMA_MAX_TOKENS: "384",
       COP_AI_OLLAMA_THINK: "false"
     });
@@ -48,7 +48,7 @@ describe("AiGateway", () => {
 
     expect(response.status).toBe("COMPLETED");
     expect(response.provider).toBe("ollama");
-    expect(response.model).toBe("gemma4:12b");
+    expect(response.model).toBe("gemma4:12b-mlx");
     expect(response.result.summary).toBe("Ollama odpověděla přes COP server-side provider.");
     expect(fetchMock).toHaveBeenCalledWith(
       "http://ollama-primary:11434/api/chat",
@@ -71,7 +71,7 @@ describe("AiGateway", () => {
       new Response(
         JSON.stringify({
           id: "chatcmpl_test",
-          model: "gemma4:12b",
+          model: "gemma4:12b-mlx",
           content: "Datový obraz je čerstvý a bez kritických konfliktů.",
           finish_reason: "stop",
           provider: "ollama",
@@ -86,7 +86,7 @@ describe("AiGateway", () => {
       COP_EXTERNAL_AI_ENABLED: "true",
       COP_AI_DEFAULT_PROVIDER: "local",
       COP_AI_LOCAL_GATEWAY_URL: "http://llm-gateway:8080",
-      COP_AI_LOCAL_MODEL: "gemma4:12b",
+      COP_AI_LOCAL_MODEL: "gemma4:12b-mlx",
       COP_AI_LOCAL_MAX_TOKENS: "512",
       COP_AI_LOCAL_THINK: "false"
     });
@@ -95,7 +95,7 @@ describe("AiGateway", () => {
 
     expect(response.status).toBe("COMPLETED");
     expect(response.provider).toBe("local");
-    expect(response.model).toBe("gemma4:12b");
+    expect(response.model).toBe("gemma4:12b-mlx");
     expect(response.result.summary).toBe("Datový obraz je čerstvý a bez kritických konfliktů.");
     expect(fetchMock).toHaveBeenCalledWith(
       "http://llm-gateway:8080/api/v1/chat/completions",
@@ -151,7 +151,7 @@ describe("AiGateway", () => {
     const provider = new LocalLlmGatewayProvider({
       baseUrl: "http://llm-gateway:8080/",
       token: "service-secret",
-      model: "gemma4:12b",
+      model: "gemma4:12b-mlx",
       maxTokens: 512,
       timeoutMs: 30000,
       retryAttempts: 0,
@@ -161,7 +161,7 @@ describe("AiGateway", () => {
     const health = await provider.health();
 
     expect(health.status).toBe("ok");
-    expect(health.detail).toContain("gemma4:12b");
+    expect(health.detail).toContain("gemma4:12b-mlx");
     expect(health.detail).not.toContain("service-secret");
     expect(fetchMock).toHaveBeenCalledWith(
       "http://llm-gateway:8080/ready",
@@ -179,7 +179,7 @@ describe("AiGateway", () => {
     const provider = new OllamaAiProvider({
       baseUrls: ["http://ollama:11434/"],
       token: "ollama-secret",
-      model: "gemma4:12b",
+      model: "gemma4:12b-mlx",
       maxTokens: 512,
       timeoutMs: 30000,
       retryAttempts: 0,
@@ -189,7 +189,7 @@ describe("AiGateway", () => {
     const health = await provider.health();
 
     expect(health.status).toBe("ok");
-    expect(health.detail).toContain("gemma4:12b");
+    expect(health.detail).toContain("gemma4:12b-mlx");
     expect(health.detail).not.toContain("ollama-secret");
     expect(fetchMock).toHaveBeenCalledWith(
       "http://ollama:11434/api/tags",

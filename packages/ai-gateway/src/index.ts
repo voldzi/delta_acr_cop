@@ -417,7 +417,7 @@ export function createProviderRegistry(env: AiGatewayEnv = process.env): Map<AiP
       ? new OllamaAiProvider({
           baseUrls: ollamaBaseUrls,
           token: env.COP_AI_OLLAMA_TOKEN?.trim() || undefined,
-          model: env.COP_AI_OLLAMA_MODEL?.trim() || env.COP_AI_LOCAL_MODEL?.trim() || "gemma4:12b",
+          model: env.COP_AI_OLLAMA_MODEL?.trim() || env.COP_AI_LOCAL_MODEL?.trim() || "gemma4:12b-mlx",
           maxTokens: parsePositiveInteger(env.COP_AI_OLLAMA_MAX_TOKENS ?? env.COP_AI_LOCAL_MAX_TOKENS, 512),
           timeoutMs: parsePositiveInteger(env.COP_AI_OLLAMA_TIMEOUT_MS ?? env.COP_AI_LOCAL_TIMEOUT_MS, 30000),
           retryAttempts: parseNonNegativeInteger(env.COP_AI_OLLAMA_RETRY_ATTEMPTS ?? env.COP_AI_LOCAL_RETRY_ATTEMPTS, 2),
@@ -430,7 +430,7 @@ export function createProviderRegistry(env: AiGatewayEnv = process.env): Map<AiP
       ? new LocalLlmGatewayProvider({
           baseUrl: localGatewayUrl,
           token: env.COP_AI_LOCAL_GATEWAY_TOKEN?.trim() || undefined,
-          model: env.COP_AI_LOCAL_MODEL?.trim() || "gemma4:12b",
+          model: env.COP_AI_LOCAL_MODEL?.trim() || "gemma4:12b-mlx",
           maxTokens: parsePositiveInteger(env.COP_AI_LOCAL_MAX_TOKENS, 512),
           timeoutMs: parsePositiveInteger(env.COP_AI_LOCAL_TIMEOUT_MS, 30000),
           retryAttempts: parseNonNegativeInteger(env.COP_AI_LOCAL_RETRY_ATTEMPTS, 2),
