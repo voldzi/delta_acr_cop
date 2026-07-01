@@ -1543,10 +1543,13 @@ export interface MapCatalogQuery {
 
 export interface MapCatalogLayer {
   audience: MapCatalogAudience;
+  availability?: string;
   cacheTtlSeconds?: number;
   compatibilityOnly?: boolean;
   defaultVisible: boolean;
   description?: string;
+  disabledReason?: string;
+  enabled?: boolean;
   filters?: MapCatalogFilter[];
   geometryTypes?: string[];
   groupId: string;
@@ -1573,8 +1576,10 @@ export interface MapCatalogLayer {
 
 export interface MapCatalogSource {
   audience: MapCatalogAudience;
+  availability?: string;
   cacheTtlSeconds?: number;
   compatibilityOnly?: boolean;
+  disabledReason?: string;
   enabled: boolean;
   feedsCatalogLayerIds?: string[];
   label: string;

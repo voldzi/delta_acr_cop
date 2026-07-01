@@ -10,12 +10,15 @@ export interface ProviderMapCatalog {
 
 export interface ProviderCatalogLayer {
   audience?: string;
+  availability?: string;
   cacheTtlSeconds?: number;
   compatibilityOnly?: boolean;
   categories?: string[];
   categoryPath?: string[];
   defaultVisible?: boolean;
   description?: string;
+  disabledReason?: string;
+  enabled?: boolean;
   filters?: ProviderCatalogFilter[];
   geometryTypes?: string[];
   kind?: string;
@@ -59,8 +62,10 @@ export interface ProviderCatalogQuery {
 
 export interface ProviderCatalogSource {
   audience?: string;
+  availability?: string;
   cacheTtlSeconds?: number;
   compatibilityOnly?: boolean;
+  disabledReason?: string;
   enabled?: boolean;
   feedsCatalogLayerIds?: string[];
   feedsLayerIds?: string[];
@@ -142,12 +147,15 @@ function normalizeProviderCatalogLayer(value: unknown): ProviderCatalogLayer[] {
   return [
     {
       audience: optionalString(value.audience),
+      availability: optionalString(value.availability),
       cacheTtlSeconds: optionalNumber(value.cacheTtlSeconds),
       compatibilityOnly: value.compatibilityOnly === true,
       categories: stringList(value.categories),
       categoryPath: stringList(value.categoryPath),
       defaultVisible: value.defaultVisible === true,
       description: optionalString(value.description),
+      disabledReason: optionalString(value.disabledReason),
+      enabled: typeof value.enabled === "boolean" ? value.enabled : undefined,
       filters: Array.isArray(value.filters) ? value.filters.flatMap(normalizeProviderCatalogFilter) : undefined,
       geometryTypes: stringList(value.geometryTypes),
       kind: optionalString(value.kind),
@@ -217,8 +225,10 @@ function normalizeProviderCatalogSource(value: unknown): ProviderCatalogSource[]
   return [
     {
       audience: optionalString(value.audience),
+      availability: optionalString(value.availability),
       cacheTtlSeconds: optionalNumber(value.cacheTtlSeconds),
       compatibilityOnly: value.compatibilityOnly === true,
+      disabledReason: optionalString(value.disabledReason),
       enabled: value.enabled === true,
       feedsCatalogLayerIds: stringList(value.feedsCatalogLayerIds),
       feedsLayerIds: stringList(value.feedsLayerIds),

@@ -43,10 +43,13 @@ export interface MapCatalogQuery {
 
 export interface MapCatalogLayer {
   audience: MapCatalogAudience;
+  availability?: string;
   cacheTtlSeconds?: number;
   compatibilityOnly?: boolean;
   defaultVisible: boolean;
   description?: string;
+  disabledReason?: string;
+  enabled?: boolean;
   filters?: MapCatalogFilter[];
   geometryTypes?: string[];
   groupId: string;
@@ -73,8 +76,10 @@ export interface MapCatalogLayer {
 
 export interface MapCatalogSource {
   audience: MapCatalogAudience;
+  availability?: string;
   cacheTtlSeconds?: number;
   compatibilityOnly?: boolean;
+  disabledReason?: string;
   enabled: boolean;
   feedsCatalogLayerIds?: string[];
   label: string;
@@ -296,6 +301,7 @@ function providerCatalogLayerVariantToMapLayer(
   const role = roleForCatalogLayer(variantLayer);
   const audience = normalizeAudience(layer.audience);
   const kind = normalizeLayerKind(layer.kind);
+  const enabled = providerCatalogLayerEnabled(layer);
   const provenanceSourceIds = sanitizeProviderCatalogLayerSourceIds(
     providerId,
     catalogLayerId,
@@ -307,10 +313,13 @@ function providerCatalogLayerVariantToMapLayer(
   ]);
   return {
     audience,
+    ...(layer.availability ? { availability: layer.availability } : {}),
     cacheTtlSeconds: layer.cacheTtlSeconds,
     ...(layer.compatibilityOnly === true ? { compatibilityOnly: true } : {}),
-    defaultVisible: defaultVisibleForCatalogLayer(variantLayer),
+    defaultVisible: enabled && defaultVisibleForCatalogLayer(variantLayer),
     description: descriptionForCatalogLayer(variantLayer),
+    ...(layer.disabledReason ? { disabledReason: layer.disabledReason } : {}),
+    enabled,
     filters: normalizeProviderFilters(layer.filters),
     geometryTypes: geometryTypesForCatalogLayer(variantLayer),
     groupId: groupIdForCatalogLayer(variantLayer),
@@ -336,9 +345,13 @@ function providerCatalogLayerVariantToMapLayer(
     },
     refreshSeconds: layer.refreshSeconds,
     role,
-    selectable: selectableForCatalogLayer(variantLayer),
+    selectable: enabled && selectableForCatalogLayer(variantLayer),
     styleProfile: variantLayer.styleProfile ?? styleProfileForCatalogLayer(variantLayer)
   };
+}
+
+function providerCatalogLayerEnabled(layer: ProviderCatalogLayer): boolean {
+  return layer.enabled !== false && layer.availability !== "disabled";
 }
 
 function sanitizeProviderCatalogLayerSourceIds(providerId: string, layerId: string, sourceIds: string[]): string[] {
@@ -431,17 +444,20 @@ function providerCatalogSourceToMapSource(providerId: string, source: ProviderCa
     source.sourceId,
     nonEmpty(source.feedsCatalogLayerIds) ?? nonEmpty(source.feedsLayerIds)
   );
+  const enabled = source.enabled === true && source.availability !== "disabled";
   return [
     {
       audience: normalizeAudience(source.audience),
+      ...(source.availability ? { availability: source.availability } : {}),
       cacheTtlSeconds: source.cacheTtlSeconds,
       ...(source.compatibilityOnly === true || (normalizeSourceRole(source.sourceRole) === "projection" && Boolean(source.preferredProviderId)) ? { compatibilityOnly: true } : {}),
-      enabled: source.enabled === true,
+      ...(source.disabledReason ? { disabledReason: source.disabledReason } : {}),
+      enabled,
       feedsCatalogLayerIds,
       label: source.label ?? source.sourceId,
       preferredProviderId: source.preferredProviderId,
       providerId,
-      selectableInMap: source.selectableInMap === true,
+      selectableInMap: enabled && source.selectableInMap === true,
       sourceId: source.sourceId,
       sourceRole: normalizeSourceRole(source.sourceRole),
       updateCadenceSeconds: source.updateCadenceSeconds,

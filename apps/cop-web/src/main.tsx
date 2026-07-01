@@ -16080,12 +16080,17 @@ function buildCatalogGroupViews(catalog: MapCatalogResponse | null): CatalogGrou
 function selectableCatalogLayers(catalog: MapCatalogResponse): MapCatalogLayer[] {
   return catalog.layers.filter((layer) =>
     layer.selectable
+    && catalogLayerAvailableForMap(layer)
     && layer.audience !== "diagnostic"
     && layer.role !== "diagnostic"
     && layer.kind !== "mvt_tiles"
     && layer.kind !== "raster_tiles"
     && isImplementedCatalogLayer(layer)
   );
+}
+
+function catalogLayerAvailableForMap(layer: MapCatalogLayer): boolean {
+  return layer.enabled !== false && layer.availability !== "disabled";
 }
 
 function catalogLayerSortKey(layer: MapCatalogLayer): number {
@@ -16139,7 +16144,7 @@ function toggleCatalogLayerId(current: string[], layerId: string, enabled: boole
 function catalogLayerIdsForProviderSelection(catalog: MapCatalogResponse, providerId: CatalogProviderId, selectedLayerIds: string[]): string[] {
   const selected = new Set(selectedLayerIds);
   return catalog.layers
-    .filter((layer) => selected.has(layer.layerId) && isImplementedCatalogLayer(layer))
+    .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
     .filter((layer) => (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === providerId)
     .map((layer) => layer.layerId);
 }
@@ -16150,7 +16155,7 @@ function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | nul
   }
   const selected = new Set(selectedLayerIds);
   const refreshSeconds = catalog.layers
-    .filter((layer) => selected.has(layer.layerId))
+    .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer))
     .filter((layer) => layer.query.providerId === "sim.situation-data" && layer.kind === "raster_overlay")
     .map((layer) => layer.refreshSeconds)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
@@ -16164,7 +16169,7 @@ function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | nul
 function selectedTrafficCatalogLayerIds(catalog: MapCatalogResponse, selectedLayerIds: string[]): string[] {
   const selected = new Set(selectedLayerIds);
   return catalog.layers
-    .filter((layer) => selected.has(layer.layerId) && isImplementedCatalogLayer(layer))
+    .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
     .filter((layer) => layer.query.providerId === "sim.situation-data" && isTrafficCatalogLayerId(layer.layerId))
     .map((layer) => layer.layerId);
 }

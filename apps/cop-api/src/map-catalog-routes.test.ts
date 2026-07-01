@@ -192,8 +192,8 @@ describe("map catalog route", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      layers: Array<{ groupId: string; kind?: string; label: string; layerId: string; minZoom?: number; query?: { categoryIds?: string[]; maxFeatures?: number; mode?: string; providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
-      sources: Array<{ feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
+      layers: Array<{ availability?: string; defaultVisible?: boolean; disabledReason?: string; enabled?: boolean; groupId: string; kind?: string; label: string; layerId: string; minZoom?: number; query?: { categoryIds?: string[]; maxFeatures?: number; mode?: string; providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
+      sources: Array<{ availability?: string; disabledReason?: string; enabled?: boolean; feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
     };
     expect(body.layers).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -254,6 +254,20 @@ describe("map catalog route", () => {
         selectable: true
       })
     ]));
+    expect(body.layers.find((layer) => layer.layerId === "public.weather.wind_field")).toMatchObject({
+      availability: "disabled",
+      defaultVisible: false,
+      disabledReason: "SIM dočasně nevystavuje větrné pole pro veřejnou mapu.",
+      enabled: false,
+      label: "Vítr",
+      selectable: false
+    });
+    expect(body.sources.find((source) => source.sourceId === "chmi_weather_wind_field")).toMatchObject({
+      availability: "disabled",
+      disabledReason: "SIM dočasně nevystavuje větrné pole pro veřejnou mapu.",
+      enabled: false,
+      selectableInMap: false
+    });
     expect(body.layers.map((layer) => layer.layerId)).not.toContain("diagnostic.mobile.coverage");
     expect(body.sources).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -680,6 +694,30 @@ describe("map catalog route", () => {
       layers: ["weather_temperature_grid"],
       sources: ["chmi_weather_stations"]
     });
+  });
+
+  it("does not query provider catalog layers marked disabled", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource: new FakeProviderCatalogSituationDataSource()
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [13.85, 49.65, 15.35, 50.45],
+        layerIds: ["public.weather.wind_field"],
+        limit: 20
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { query: { layerIds: string[] }; situation?: SituationFeatureCollection; warnings: string[] };
+    expect(body.query.layerIds).toEqual([]);
+    expect(body.situation).toBeUndefined();
+    expect(body.warnings.join(" ")).toContain("Disabled map layers ignored: public.weather.wind_field.");
   });
 
   it("queries CHMI weather observations without mixing in webcam sources", async () => {
@@ -1439,6 +1477,32 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           styleProfile: "weather-temperature-grid-v1"
         },
         {
+          audience: "public",
+          availability: "disabled",
+          cacheTtlSeconds: 600,
+          defaultVisible: true,
+          disabledReason: "SIM dočasně nevystavuje větrné pole pro veřejnou mapu.",
+          enabled: false,
+          geometryTypes: ["Point"],
+          kind: "vector_field",
+          label: "Vítr",
+          providerLayerId: "weather.wind_field",
+          query: {
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.situation-data",
+            providerLayerIds: ["weather.wind_field"],
+            providerSourceIds: ["chmi_weather_wind_field"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "public.weather.wind_field",
+          refreshSeconds: 600,
+          role: "overlay",
+          selectable: true,
+          sourceIds: ["chmi_weather_wind_field"],
+          styleProfile: "weather-wind-field-v1"
+        },
+        {
           audience: "diagnostic",
           cacheTtlSeconds: 21600,
           defaultVisible: false,
@@ -1581,6 +1645,19 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           label: "CHMI weather station read model",
           selectableInMap: false,
           sourceId: "chmi_weather_stations",
+          sourceRole: "final",
+          updateCadenceSeconds: 600,
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          availability: "disabled",
+          disabledReason: "SIM dočasně nevystavuje větrné pole pro veřejnou mapu.",
+          enabled: false,
+          feedsCatalogLayerIds: ["public.weather.wind_field"],
+          label: "CHMI wind field",
+          selectableInMap: true,
+          sourceId: "chmi_weather_wind_field",
           sourceRole: "final",
           updateCadenceSeconds: 600,
           visibleInDiagnostics: true

@@ -8942,6 +8942,10 @@
               "public"
             ]
           },
+          "availability": {
+            "type": "string",
+            "description": "Provider-reported availability. The value 'disabled' means the layer is not offered as a normal map choice."
+          },
           "cacheTtlSeconds": {
             "type": "integer",
             "minimum": 0
@@ -8955,6 +8959,13 @@
           },
           "description": {
             "type": "string"
+          },
+          "disabledReason": {
+            "type": "string",
+            "description": "Human-readable reason why a disabled layer is not offered in the normal map catalog."
+          },
+          "enabled": {
+            "type": "boolean"
           },
           "filters": {
             "type": "array",
@@ -9161,6 +9172,9 @@
               "public"
             ]
           },
+          "availability": {
+            "type": "string"
+          },
           "cacheTtlSeconds": {
             "type": "integer",
             "minimum": 0
@@ -9168,6 +9182,9 @@
           "compatibilityOnly": {
             "type": "boolean",
             "description": "True when the source is only a fallback/compatibility projection for a preferred provider."
+          },
+          "disabledReason": {
+            "type": "string"
           },
           "enabled": {
             "type": "boolean"

@@ -4281,11 +4281,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       situation: providers.situation,
       tak: providers.tak
     });
-    const selectedLayers = catalog.layers.filter((layer) => query.layerIds.includes(layer.layerId));
-    const unknownLayerIds = query.layerIds.filter((layerId) => !catalog.layers.some((layer) => layer.layerId === layerId));
+    const selectedLayers = catalog.layers.filter((layer) => query.layerIds.includes(layer.layerId) && catalogLayerAvailableForMapQuery(layer));
+    const knownLayerIds = new Set(catalog.layers.map((layer) => layer.layerId));
+    const disabledLayerIds = query.layerIds.filter((layerId) => catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer)));
+    const unknownLayerIds = query.layerIds.filter((layerId) => !knownLayerIds.has(layerId));
     const providerQueries = buildProviderFeatureQueries(selectedLayers, query);
     const warnings = [
       ...catalog.warnings,
+      ...(disabledLayerIds.length > 0 ? [`Disabled map layers ignored: ${disabledLayerIds.join(", ")}.`] : []),
       ...(unknownLayerIds.length > 0 ? [`Unknown or unauthorized map layers ignored: ${unknownLayerIds.join(", ")}.`] : [])
     ];
 
@@ -5789,11 +5792,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       situation: providers.situation,
       tak: providers.tak
     });
-    const selectedLayers = catalog.layers.filter((layer) => query.layerIds.includes(layer.layerId));
-    const unknownLayerIds = query.layerIds.filter((layerId) => !catalog.layers.some((layer) => layer.layerId === layerId));
+    const selectedLayers = catalog.layers.filter((layer) => query.layerIds.includes(layer.layerId) && catalogLayerAvailableForMapQuery(layer));
+    const knownLayerIds = new Set(catalog.layers.map((layer) => layer.layerId));
+    const disabledLayerIds = query.layerIds.filter((layerId) => catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer)));
+    const unknownLayerIds = query.layerIds.filter((layerId) => !knownLayerIds.has(layerId));
     const providerQueries = buildProviderFeatureQueries(selectedLayers, query);
     const warnings = [
       ...catalog.warnings,
+      ...(disabledLayerIds.length > 0 ? [`Disabled map layers ignored: ${disabledLayerIds.join(", ")}.`] : []),
       ...(unknownLayerIds.length > 0 ? [`Unknown or unauthorized map layers ignored: ${unknownLayerIds.join(", ")}.`] : [])
     ];
 
@@ -8088,6 +8094,10 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
         }
       : {})
   };
+}
+
+function catalogLayerAvailableForMapQuery(layer: MapCatalogLayer): boolean {
+  return layer.enabled !== false && layer.availability !== "disabled";
 }
 
 function readMapQueryTechnology(value: Record<string, unknown> | undefined): string | undefined {
