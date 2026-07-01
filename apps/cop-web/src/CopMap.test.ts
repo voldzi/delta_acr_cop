@@ -641,6 +641,77 @@ describe("COP map data helpers", () => {
     expect(situationFeaturesToFeatureCollection(trafficFeature, undefined, "standard").features[0]?.properties.trafficTransit).toBeUndefined();
   });
 
+  it("keeps a refreshed transport vehicle selected by its stable transit identity", () => {
+    const refreshedTrafficFeature: SituationFeatureCollectionResponse = {
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: { coordinates: [14.481, 50.091], type: "Point" },
+          properties: {
+            category: "public_transport_bus",
+            confidence: 0.88,
+            featureId: "traffic:pid_gtfs_rt:service-3-4069-refreshed",
+            label: "PID bus 141",
+            layer: "traffic",
+            layerId: "public.traffic.transit",
+            metrics: {
+              headingDeg: 346,
+              routeTypeCode: 3
+            },
+            observedAt: "2026-05-28T07:44:18Z",
+            providerProperties: {
+              transit: {
+                positionKind: "vehicle_live",
+                refreshSeconds: 10,
+                vehicleId: "bus-4069"
+              }
+            },
+            sourceId: "pid_gtfs_rt",
+            stale: false,
+            tags: {
+              route: "141",
+              transportMode: "bus"
+            }
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-05-28T07:44:18Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["traffic"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    };
+
+    const collection = situationFeaturesToFeatureCollection(
+      refreshedTrafficFeature,
+      "traffic:pid_gtfs_rt:service-3-4069-old",
+      "civil",
+      "traffic:vehicle:pid_gtfs_rt:bus-4069:bus"
+    );
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      featureId: "traffic:pid_gtfs_rt:service-3-4069-refreshed",
+      selected: true,
+      trafficRouteType: "bus",
+      trafficTransit: true
+    });
+  });
+
   it("uses civil transport presentation for metro lines and road events", () => {
     const collection: SituationFeatureCollectionResponse = {
       contractVersion: "cop-situation-source-v1",

@@ -80,7 +80,11 @@ import {
   type WeatherConditionIconId
 } from "./map-symbol-rendering";
 import {
+  formatTransportCurrentStatus,
+  formatTransportDelay,
+  formatTransportSpeed,
   resolveTransportPresentation,
+  transportSelectionKey,
   type TransportIconKind
 } from "./transport-presentation";
 
@@ -545,6 +549,7 @@ interface CopMapProps {
   mapResizeSuspended?: boolean;
   mobileSketchControlsOpen?: boolean;
   selectedSituationFeatureId?: string;
+  selectedSituationFeatureStableKey?: string;
   selectedObjectId?: string;
   showHistory: boolean;
   showPrediction: boolean;
@@ -727,6 +732,15 @@ interface ClusterInfo {
   zoom: number;
 }
 
+interface MapSelectionCard {
+  compactSubtitle: string;
+  eyebrow: string;
+  key: string;
+  metaItems: string[];
+  subtitle: string;
+  title: string;
+}
+
 function CopMapComponent({
   alerts,
   aoiRules,
@@ -740,6 +754,7 @@ function CopMapComponent({
   mapResizeSuspended = false,
   mobileSketchControlsOpen = false,
   selectedSituationFeatureId,
+  selectedSituationFeatureStableKey,
   selectedObjectId,
   showHistory,
   showPrediction,
@@ -886,38 +901,53 @@ function CopMapComponent({
     [objects, selectedObjectId]
   );
   const selectedSituationFeature = React.useMemo(
-    () =>
-      selectedSituationFeatureId
-        ? (situationFeatures?.features ?? []).find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null
-        : null,
-    [selectedSituationFeatureId, situationFeatures]
+    () => {
+      const features = situationFeatures?.features ?? [];
+      if (selectedSituationFeatureId) {
+        const direct = features.find((feature) => feature.properties.featureId === selectedSituationFeatureId);
+        if (direct) {
+          return direct;
+        }
+      }
+      if (selectedSituationFeatureStableKey) {
+        return features.find((feature) => transportSelectionKey(feature) === selectedSituationFeatureStableKey) ?? null;
+      }
+      return null;
+    },
+    [selectedSituationFeatureId, selectedSituationFeatureStableKey, situationFeatures]
   );
   const selectedSketchDrawing = React.useMemo(
     () => selectedSketchDrawingId ? sketchDrawings.find((drawing) => drawing.id === selectedSketchDrawingId) ?? null : null,
     [selectedSketchDrawingId, sketchDrawings]
   );
+  const [selectionPopoverCollapsed, setSelectionPopoverCollapsed] = React.useState(false);
   const selectionCard = React.useMemo(
     () => selectedObject
       ? {
+          compactSubtitle: formatTrackSelectionSubtitle(selectedObject),
           eyebrow: "Vybraný objekt",
+          key: `object:${selectedObject.objectId}`,
+          metaItems: [],
           subtitle: formatTrackSelectionSubtitle(selectedObject),
           title: formatTrackLabel(selectedObject)
-        }
+        } satisfies MapSelectionCard
       : selectedSituationFeature
-        ? {
-            eyebrow: "Vybraný prvek",
-            subtitle: formatSituationFeatureSubtitle(selectedSituationFeature),
-            title: formatSituationFeatureTitle(selectedSituationFeature)
-          }
+        ? formatSituationFeatureSelectionCard(selectedSituationFeature)
         : selectedSketchDrawing
           ? {
+              compactSubtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
               eyebrow: "Vybraný zákres",
+              key: `sketch:${selectedSketchDrawing.id}`,
+              metaItems: [],
               subtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
               title: selectedSketchDrawing.properties.label
-            }
+            } satisfies MapSelectionCard
           : null,
     [selectedObject, selectedSituationFeature, selectedSketchDrawing]
   );
+  React.useEffect(() => {
+    setSelectionPopoverCollapsed(false);
+  }, [selectionCard?.key]);
   const selectedAnchorCoordinate = React.useMemo(
     () => selectionAnchorCoordinate(selectedObject, selectedSituationFeature, selectedSketchDrawing),
     [selectedObject, selectedSituationFeature, selectedSketchDrawing]
@@ -979,8 +1009,13 @@ function CopMapComponent({
     [alerts, showAlertAreas]
   );
   const situationFeatureCollection = React.useMemo(
-    () => situationFeaturesToFeatureCollection(situationFeatures, selectedSituationFeatureId, publicFlightSymbolMode),
-    [publicFlightSymbolMode, selectedSituationFeatureId, situationFeatures]
+    () => situationFeaturesToFeatureCollection(
+      situationFeatures,
+      selectedSituationFeatureId,
+      publicFlightSymbolMode,
+      selectedSituationFeatureStableKey
+    ),
+    [publicFlightSymbolMode, selectedSituationFeatureId, selectedSituationFeatureStableKey, situationFeatures]
   );
   const hasMobileCoverageFeatures = React.useMemo(
     () => situationFeatureCollection.features.some((feature) => feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network"),
@@ -4426,7 +4461,7 @@ function CopMapComponent({
       </div>
       {selectionCard && selectionPopupPoint ? (
         <div
-          className={`map-object-popover ${selectionPopupPoint.placement === "below" ? "below" : ""}`}
+          className={`map-object-popover ${selectionPopupPoint.placement === "below" ? "below" : ""} ${selectionPopoverCollapsed ? "collapsed" : ""}`}
           onClick={stopMapToolbarEvent}
           onDoubleClick={stopMapToolbarEvent}
           onPointerDown={stopMapToolbarEvent}
@@ -4439,18 +4474,44 @@ function CopMapComponent({
         >
           <div className="map-object-popover-header">
             <span>{selectionCard.eyebrow}</span>
-            <button aria-label="Zrušit výběr" onClick={onClearSelection} title="Zrušit výběr" type="button">
-              <X size={14} />
-            </button>
-          </div>
-          <strong>{selectionCard.title}</strong>
-          <small>{selectionCard.subtitle}</small>
-          {selectedRouteFeatureCollection.features.length > 0 ? (
-            <div className="map-object-popover-route">
-              <ArrowRight size={14} strokeWidth={2.2} />
-              <span>Trasa je zvýrazněná v mapě</span>
+            <div className="map-object-popover-actions">
+              <button
+                aria-label={selectionPopoverCollapsed ? "Rozbalit popis" : "Minimalizovat popis"}
+                onClick={() => setSelectionPopoverCollapsed((current) => !current)}
+                title={selectionPopoverCollapsed ? "Rozbalit popis" : "Minimalizovat popis"}
+                type="button"
+              >
+                {selectionPopoverCollapsed ? <ChevronDown size={14} /> : <Minimize2 size={14} />}
+              </button>
+              <button aria-label="Zrušit výběr" onClick={onClearSelection} title="Zrušit výběr" type="button">
+                <X size={14} />
+              </button>
             </div>
-          ) : null}
+          </div>
+          {selectionPopoverCollapsed ? (
+            <div className="map-object-popover-compact">
+              <strong>{selectionCard.title}</strong>
+              <small>{selectionCard.compactSubtitle}</small>
+            </div>
+          ) : (
+            <>
+              <strong>{selectionCard.title}</strong>
+              <small>{selectionCard.subtitle}</small>
+              {selectionCard.metaItems.length > 0 ? (
+                <div className="map-object-popover-meta">
+                  {selectionCard.metaItems.map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+                </div>
+              ) : null}
+              {selectedRouteFeatureCollection.features.length > 0 ? (
+                <div className="map-object-popover-route">
+                  <ArrowRight size={14} strokeWidth={2.2} />
+                  <span>Trasa je zvýrazněná v mapě</span>
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
       {onStartReport ? (
@@ -5248,13 +5309,14 @@ function normalizeZoneOpacity(value: number | undefined): number {
 export function situationFeaturesToFeatureCollection(
   collection: SituationFeatureCollectionResponse | null,
   selectedFeatureId?: string,
-  mapSymbolMode: PublicFlightSymbolMode = "civil"
+  mapSymbolMode: PublicFlightSymbolMode = "civil",
+  selectedStableKey?: string
 ): SituationContextFeatureCollection {
   const features: SituationContextFeatureCollection["features"] = [];
   const requestedMobileTechnology = normalizeMobileNetworkTechnology(collection?.query.technology);
   const hasSelectedSafetyAlert = Boolean(
-    selectedFeatureId
-      && (collection?.features ?? []).some((feature) => feature.properties.featureId === selectedFeatureId && isSafetyAlertPolygonFeature(feature))
+    (selectedFeatureId || selectedStableKey)
+      && (collection?.features ?? []).some((feature) => isSituationFeatureSelected(feature, selectedFeatureId, selectedStableKey) && isSafetyAlertPolygonFeature(feature))
   );
   for (const feature of collection?.features ?? []) {
     if (isSituationRasterOverlayFeature(feature)) {
@@ -5263,7 +5325,7 @@ export function situationFeaturesToFeatureCollection(
     if (isUnsafeMobileNetworkFeature(feature, requestedMobileTechnology)) {
       continue;
     }
-    const renderedFeature = renderSituationFeature(feature, selectedFeatureId, mapSymbolMode, hasSelectedSafetyAlert);
+    const renderedFeature = renderSituationFeature(feature, selectedFeatureId, mapSymbolMode, hasSelectedSafetyAlert, selectedStableKey);
     features.push(renderedFeature);
     const pulseFeature = buildWeatherPulseFeature(feature, renderedFeature.properties);
     if (pulseFeature) {
@@ -5508,9 +5570,10 @@ function renderSituationFeature(
   feature: SituationFeature,
   selectedFeatureId: string | undefined,
   mapSymbolMode: PublicFlightSymbolMode,
-  hasSelectedSafetyAlert = false
+  hasSelectedSafetyAlert = false,
+  selectedStableKey?: string
 ): SituationContextFeatureCollection["features"][number] {
-  const selected = feature.properties.featureId === selectedFeatureId;
+  const selected = isSituationFeatureSelected(feature, selectedFeatureId, selectedStableKey);
   const safetyAlertLayer = safetyAlertLayerKind(feature);
   return {
     geometry: feature.geometry,
@@ -5525,6 +5588,16 @@ function renderSituationFeature(
     },
     type: "Feature"
   };
+}
+
+function isSituationFeatureSelected(feature: SituationFeature, selectedFeatureId?: string, selectedStableKey?: string): boolean {
+  if (selectedFeatureId && feature.properties.featureId === selectedFeatureId) {
+    return true;
+  }
+  if (!selectedStableKey) {
+    return false;
+  }
+  return transportSelectionKey(feature) === selectedStableKey;
 }
 
 function isSafetyAlertPolygonFeature(feature: SituationFeature): boolean {
@@ -7808,6 +7881,89 @@ function formatTrackSelectionSubtitle(object: CopObject): string {
   ].filter(Boolean).join(" · ");
 }
 
+function formatSituationFeatureSelectionCard(feature: SituationFeature): MapSelectionCard {
+  if (feature.properties.layer === "traffic") {
+    const presentation = resolveTransportPresentation(feature);
+    if (presentation) {
+      return formatTransportFeatureSelectionCard(feature, presentation);
+    }
+  }
+  const subtitle = formatSituationFeatureSubtitle(feature);
+  return {
+    compactSubtitle: subtitle,
+    eyebrow: "Vybraný prvek",
+    key: `feature:${feature.properties.featureId}`,
+    metaItems: [],
+    subtitle,
+    title: formatSituationFeatureTitle(feature)
+  };
+}
+
+function formatTransportFeatureSelectionCard(
+  feature: SituationFeature,
+  presentation: NonNullable<ReturnType<typeof resolveTransportPresentation>>
+): MapSelectionCard {
+  if (presentation.kind === "stop") {
+    const title = presentation.stopName ?? presentation.mapLabel;
+    const subtitle = [
+      "Zastávka",
+      presentation.systemId ? `systém ${presentation.systemId}` : undefined,
+      presentation.zoneId ? `zóna ${presentation.zoneId}` : undefined
+    ].filter(Boolean).join(" · ");
+    return {
+      compactSubtitle: subtitle,
+      eyebrow: "Zastávka",
+      key: transportSelectionKey(feature) ?? `feature:${feature.properties.featureId}`,
+      metaItems: [
+        presentation.systemId ? `Systém ${presentation.systemId}` : undefined,
+        presentation.zoneId ? `Zóna ${presentation.zoneId}` : undefined
+      ].filter(Boolean) as string[],
+      subtitle,
+      title
+    };
+  }
+  const title = [presentation.label, presentation.routeShortName].filter(Boolean).join(" ") || presentation.mapLabel;
+  const status = formatTransportCurrentStatus(presentation.currentStatus);
+  const delay = formatTransportDelay(presentation.delaySeconds);
+  const speed = formatTransportSpeed(presentation.speedMps);
+  const position = formatTransportPositionKind(presentation.positionKind);
+  const subtitle = [
+    presentation.destination ? `směr ${presentation.destination}` : undefined,
+    status !== "n/a" ? status : undefined,
+    delay !== "n/a" ? delay : undefined
+  ].filter(Boolean).join(" · ") || "Živá dopravní poloha";
+  const compactSubtitle = [
+    presentation.destination ? `směr ${presentation.destination}` : undefined,
+    delay !== "n/a" ? delay : undefined
+  ].filter(Boolean).join(" · ") || subtitle;
+  return {
+    compactSubtitle,
+    eyebrow: "Dopravní spoj",
+    key: transportSelectionKey(feature) ?? `feature:${feature.properties.featureId}`,
+    metaItems: [
+      delay !== "n/a" ? delay : undefined,
+      speed !== "n/a" ? speed : undefined,
+      position,
+      presentation.operator
+    ].filter(Boolean) as string[],
+    subtitle,
+    title
+  };
+}
+
+function formatTransportPositionKind(value: string | undefined): string {
+  switch (value) {
+    case "vehicle_live":
+      return "živá poloha";
+    case "vehicle_live_cached":
+      return "kroková obnova";
+    case "static_stop":
+      return "statická zastávka";
+    default:
+      return "dopravní data";
+  }
+}
+
 function formatSituationFeatureTitle(feature: SituationFeature): string {
   if (isMissionArenaFeature(feature)) {
     return missionArenaDetailTitle(feature);
@@ -7844,6 +8000,24 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
   }
   if (isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature)) {
     return formatWeatherFeatureSubtitle(feature);
+  }
+  if (feature.properties.layer === "traffic") {
+    const presentation = resolveTransportPresentation(feature);
+    if (presentation) {
+      if (presentation.kind === "stop") {
+        return [
+          "Zastávka",
+          presentation.systemId ? `systém ${presentation.systemId}` : undefined,
+          presentation.zoneId ? `zóna ${presentation.zoneId}` : undefined
+        ].filter(Boolean).join(" · ");
+      }
+      return [
+        presentation.destination ? `směr ${presentation.destination}` : undefined,
+        formatTransportCurrentStatus(presentation.currentStatus),
+        formatTransportDelay(presentation.delaySeconds),
+        formatTransportSpeed(presentation.speedMps)
+      ].filter((item) => item && item !== "n/a").join(" · ") || "Dopravní spoj";
+    }
   }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     return [

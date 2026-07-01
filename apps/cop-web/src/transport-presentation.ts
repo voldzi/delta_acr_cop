@@ -17,8 +17,11 @@ export interface TransportPresentation {
   occupancyPercent?: number;
   occupancyStatus?: string;
   operator?: string;
+  positionKind?: "static_stop" | "vehicle_live" | "vehicle_live_cached" | string;
+  refreshSeconds?: number;
   routeShortName?: string;
   speedMps?: number;
+  stableKey: string;
   stopId?: string;
   stopName?: string;
   stopSequence?: number;
@@ -53,6 +56,9 @@ export function resolveTransportPresentation(feature: SituationFeature): Transpo
       label: "Zastávka",
       mapLabel: stopName,
       operator: recordString(transitProperties, "systemId") ?? recordString(properties, "systemId"),
+      positionKind: "static_stop",
+      refreshSeconds: recordNumber(transitProperties, "refreshSeconds"),
+      stableKey: stableTransportStopKey(feature, transitProperties, properties, stopName),
       stopId: recordString(transitProperties, "stopId") ?? recordString(properties, "stopId"),
       stopName,
       systemId: recordString(transitProperties, "systemId") ?? recordString(properties, "systemId"),
@@ -113,12 +119,23 @@ export function resolveTransportPresentation(feature: SituationFeature): Transpo
     occupancyPercent: recordNumber(properties, "occupancyPercent") ?? recordNumber(metrics, "occupancyPercent") ?? recordNumber(providerMetrics, "occupancyPercent") ?? recordNumber(transitProperties, "occupancyPercent"),
     occupancyStatus: recordString(properties, "occupancyStatus") ?? recordString(tags, "occupancyStatus") ?? recordString(providerTags, "occupancyStatus") ?? recordString(transitProperties, "occupancyStatus"),
     operator: recordString(properties, "operator") ?? recordString(tags, "operator") ?? recordString(providerTags, "operator") ?? recordString(transitProperties, "operator") ?? recordString(tags, "agency") ?? recordString(providerTags, "agency"),
+    positionKind: recordString(transitProperties, "positionKind") ?? recordString(properties, "positionKind"),
+    refreshSeconds: recordNumber(transitProperties, "refreshSeconds") ?? recordNumber(properties, "refreshSeconds"),
     routeShortName,
     speedMps: recordNumber(properties, "speedMps") ?? recordNumber(metrics, "speedMps") ?? recordNumber(providerMetrics, "speedMps") ?? recordNumber(transitProperties, "speedMps"),
+    stableKey: stableTransportVehicleKey(feature, kind, routeShortName, vehicleId, transitProperties, properties, tags, providerTags),
     stopSequence: recordNumber(properties, "currentStopSequence") ?? recordNumber(metrics, "currentStopSequence") ?? recordNumber(providerMetrics, "currentStopSequence") ?? recordNumber(transitProperties, "currentStopSequence"),
     tripId: recordString(properties, "tripId") ?? recordString(tags, "tripId") ?? recordString(providerTags, "tripId") ?? recordString(transitProperties, "tripId"),
     vehicleId
   };
+}
+
+export function transportSelectionKey(feature: SituationFeature): string | undefined {
+  const presentation = resolveTransportPresentation(feature);
+  if (!presentation) {
+    return undefined;
+  }
+  return `traffic:${presentation.stableKey}`;
 }
 
 export function transportIconColor(kind: TransportIconKind): string {
@@ -273,6 +290,41 @@ function resolveRouteShortName(
     }
   }
   return route;
+}
+
+function stableTransportStopKey(
+  feature: SituationFeature,
+  transitProperties: Record<string, unknown>,
+  properties: Record<string, unknown>,
+  stopName: string
+): string {
+  const source = recordString(properties, "sourceId") ?? feature.properties.sourceId ?? "unknown-source";
+  const systemId = recordString(transitProperties, "systemId") ?? recordString(properties, "systemId") ?? "unknown-system";
+  const stopId = recordString(transitProperties, "stopId") ?? recordString(properties, "stopId");
+  return ["stop", source, systemId, stopId ?? stopName].join(":");
+}
+
+function stableTransportVehicleKey(
+  feature: SituationFeature,
+  kind: TransportIconKind,
+  routeShortName: string | undefined,
+  vehicleId: string | undefined,
+  transitProperties: Record<string, unknown>,
+  properties: Record<string, unknown>,
+  tags: Record<string, unknown>,
+  providerTags: Record<string, unknown>
+): string {
+  const source = recordString(properties, "sourceId") ?? feature.properties.sourceId ?? "unknown-source";
+  const tripId = recordString(properties, "tripId")
+    ?? recordString(tags, "tripId")
+    ?? recordString(providerTags, "tripId")
+    ?? recordString(transitProperties, "tripId");
+  const routeId = recordString(properties, "routeId")
+    ?? recordString(tags, "routeId")
+    ?? recordString(providerTags, "routeId")
+    ?? recordString(transitProperties, "routeId")
+    ?? routeShortName;
+  return ["vehicle", source, vehicleId ?? tripId ?? routeId ?? feature.properties.featureId, kind].join(":");
 }
 
 function inferMetroLineFromVehicleId(vehicleId: string | undefined): string | undefined {

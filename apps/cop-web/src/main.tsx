@@ -318,7 +318,8 @@ import {
   formatTransportHeading,
   formatTransportOccupancy,
   formatTransportSpeed,
-  resolveTransportPresentation
+  resolveTransportPresentation,
+  transportSelectionKey
 } from "./transport-presentation";
 import {
   isCurrentWeatherSummaryFeature,
@@ -753,6 +754,7 @@ export function App() {
   const [takWarnings, setTakWarnings] = React.useState<string[]>([]);
   const [takSources, setTakSources] = React.useState<TakSourceDescriptor[]>([]);
   const [selectedSituationFeatureId, setSelectedSituationFeatureId] = React.useState<string | null>(null);
+  const [selectedSituationFeatureStableKey, setSelectedSituationFeatureStableKey] = React.useState<string | null>(null);
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
   const [locationStatus, setLocationStatus] = React.useState("Poloha není zaměřená.");
@@ -1608,6 +1610,10 @@ export function App() {
     () => selectedSituationRasterRefreshSeconds(mapCatalog, effectiveVisibleCatalogLayerIds),
     [effectiveVisibleCatalogLayerKey, mapCatalog]
   );
+  const trafficRefreshSeconds = React.useMemo(
+    () => selectedTrafficRefreshSeconds(mapCatalog, effectiveVisibleCatalogLayerIds, situationFeatures),
+    [effectiveVisibleCatalogLayerKey, mapCatalog, situationFeatures]
+  );
   const weatherRadarSelected = React.useMemo(
     () => effectiveVisibleCatalogLayerIds.some(isWeatherRadarCatalogLayerId),
     [effectiveVisibleCatalogLayerKey]
@@ -1833,6 +1839,64 @@ export function App() {
       window.clearTimeout(timer);
     };
   }, [apiBase, authToken, coverageTechnology, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom, situationRasterRefreshTick]);
+
+  React.useEffect(() => {
+    if (!autoRefresh || !dataAccessReady || !mapBounds || !mapCatalog || trafficRefreshSeconds === undefined) {
+      return;
+    }
+    if (shouldSkipSituationFeatureLoad(mapBounds, mapView?.zoom)) {
+      return;
+    }
+    const trafficLayerIds = selectedTrafficCatalogLayerIds(mapCatalog, effectiveVisibleCatalogLayerIds);
+    if (trafficLayerIds.length === 0) {
+      return;
+    }
+    const queryBounds = buildStableSituationQueryBounds(mapBounds);
+    const requestGroups = buildSituationMapRequestGroups(
+      trafficLayerIds,
+      mapView?.zoom,
+      hasMobileCatalogSelection(trafficLayerIds) ? coverageTechnology : undefined
+    );
+    const refreshTrafficLayers = () => {
+      void Promise.all(requestGroups.map((group) => fetchMapFeatures(apiBase, authToken, {
+        bbox: queryBounds,
+        filters: group.filters,
+        layerIds: group.layerIds,
+        limit: group.limit,
+      })))
+        .then((responses) => {
+          const collection = mergeSituationMapFeatureResponses(responses);
+          setSituationFeatures((current) => replaceTrafficFeaturesInSituationCollection(current, collection, trafficLayerIds));
+          const responseWarnings = uniqueStrings(responses.flatMap((response) => response.warnings));
+          setSituationWarnings((current) => sourceQualityWarnings(uniqueStrings([
+            ...current,
+            ...responseWarnings,
+            ...(collection?.warnings ?? []),
+            ...(collection?.sourceHealth?.warnings ?? [])
+          ])));
+        })
+        .catch((error: unknown) => {
+          setSituationWarnings((current) => sourceQualityWarnings(uniqueStrings([
+            ...current,
+            error instanceof Error ? error.message : "Dopravní vrstva není dostupná."
+          ])));
+        });
+    };
+    const timer = window.setInterval(refreshTrafficLayers, trafficRefreshSeconds * 1000);
+    return () => window.clearInterval(timer);
+  }, [
+    apiBase,
+    authToken,
+    autoRefresh,
+    coverageTechnology,
+    dataAccessReady,
+    effectiveVisibleCatalogLayerIds,
+    effectiveVisibleCatalogLayerKey,
+    mapBounds,
+    mapCatalog,
+    mapView?.zoom,
+    trafficRefreshSeconds
+  ]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -2277,7 +2341,11 @@ export function App() {
     () => mergeSituationSafetyFlightCommunityMissionAndTakFeatures(enrichedSituationFeatures, safetyFeatures, flightFeatures, communityFeatures, missionArenaFeatures, takFeatures),
     [communityFeatures, enrichedSituationFeatures, flightFeatures, missionArenaFeatures, safetyFeatures, takFeatures]
   );
-  const selectedBaseSituationFeature = baseCombinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
+  const selectedBaseSituationFeature = findSelectedSituationFeature(
+    baseCombinedSituationFeatures,
+    selectedSituationFeatureId,
+    selectedSituationFeatureStableKey
+  );
   const mobileTowerViewshed = useMobileTowerViewshed(apiBase, authToken, selectedBaseSituationFeature, coverageTechnology);
   const selectedRadioProfile = React.useMemo(
     () => radioProfiles.find((profile) => (profile.profileId ?? profile.name) === radioProfileId) ?? radioProfiles[0] ?? fallbackRadioProfile,
@@ -2294,21 +2362,36 @@ export function App() {
     const withRadioResult = appendRadioLosFeatures(withTowerViewshed, radioOverlay);
     return appendRadioLosFeatures(withRadioResult, radioInputOverlay);
   }, [baseCombinedSituationFeatures, mobileTowerViewshed, radioInputOverlay, radioOverlay]);
-  const selectedSituationFeature = combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ?? null;
-  const [selectedTransitRouteDetail, setSelectedTransitRouteDetail] = React.useState<TransitVehicleDetailResponse | null>(null);
-  React.useEffect(() => {
+  const selectedSituationFeature = findSelectedSituationFeature(
+    combinedSituationFeatures,
+    selectedSituationFeatureId,
+    selectedSituationFeatureStableKey
+  );
+  const selectedTransitRouteRequest = React.useMemo(() => {
     const presentation = selectedSituationFeature?.properties.layer === "traffic"
       ? resolveTransportPresentation(selectedSituationFeature)
       : null;
     if (!selectedSituationFeature || !presentation || presentation.kind === "road_event" || presentation.kind === "stop") {
+      return null;
+    }
+    return {
+      detailUrl: presentation.detailUrl,
+      featureId: selectedSituationFeature.properties.featureId,
+      sourceId: selectedSituationFeature.properties.sourceId,
+      stableKey: transportSelectionKey(selectedSituationFeature) ?? selectedSituationFeature.properties.featureId
+    };
+  }, [selectedSituationFeature]);
+  const [selectedTransitRouteDetail, setSelectedTransitRouteDetail] = React.useState<TransitVehicleDetailResponse | null>(null);
+  React.useEffect(() => {
+    if (!selectedTransitRouteRequest) {
       setSelectedTransitRouteDetail(null);
       return;
     }
     let cancelled = false;
     setSelectedTransitRouteDetail(null);
-    fetchTransitVehicleDetail(apiBase, authToken, presentation.detailUrl, {
-      featureId: selectedSituationFeature.properties.featureId,
-      sourceId: selectedSituationFeature.properties.sourceId
+    fetchTransitVehicleDetail(apiBase, authToken, selectedTransitRouteRequest.detailUrl, {
+      featureId: selectedTransitRouteRequest.featureId,
+      sourceId: selectedTransitRouteRequest.sourceId
     })
       .then((detail) => {
         if (!cancelled) {
@@ -2326,9 +2409,9 @@ export function App() {
   }, [
     apiBase,
     authToken,
-    selectedSituationFeature?.properties.featureId,
-    selectedSituationFeature?.properties.layer,
-    selectedSituationFeature?.properties.sourceId
+    selectedTransitRouteRequest?.detailUrl,
+    selectedTransitRouteRequest?.sourceId,
+    selectedTransitRouteRequest?.stableKey
   ]);
   const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
   const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
@@ -2828,10 +2911,24 @@ export function App() {
   }, [selectedObjectId, visibleObjects]);
 
   React.useEffect(() => {
-    if (selectedSituationFeatureId && !combinedSituationFeatures?.features.some((feature) => feature.properties.featureId === selectedSituationFeatureId)) {
-      setSelectedSituationFeatureId(null);
+    if (!selectedSituationFeatureId) {
+      return;
     }
-  }, [combinedSituationFeatures, selectedSituationFeatureId]);
+    if (findSelectedSituationFeature(combinedSituationFeatures, selectedSituationFeatureId, selectedSituationFeatureStableKey)) {
+      return;
+    }
+    if (selectedSituationFeatureStableKey) {
+      const replacement = findSituationFeatureByStableKey(combinedSituationFeatures, selectedSituationFeatureStableKey);
+      if (replacement) {
+        setSelectedSituationFeatureId(replacement.properties.featureId);
+        return;
+      }
+    }
+    if (selectedSituationFeatureId) {
+      setSelectedSituationFeatureId(null);
+      setSelectedSituationFeatureStableKey(null);
+    }
+  }, [combinedSituationFeatures, selectedSituationFeatureId, selectedSituationFeatureStableKey]);
 
   React.useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -3380,12 +3477,17 @@ export function App() {
     if (result.kind === "track" && result.objectId) {
       setSelectedObjectId(result.objectId);
       setSelectedSituationFeatureId(null);
+      setSelectedSituationFeatureStableKey(null);
     } else if (result.kind === "feature" && result.featureId) {
       setSelectedSituationFeatureId(result.featureId);
+      setSelectedSituationFeatureStableKey(stableSituationFeatureSelectionKey(
+        combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === result.featureId) ?? null
+      ));
       setSelectedObjectId(null);
     } else if (result.kind === "place") {
       setSelectedObjectId(null);
       setSelectedSituationFeatureId(null);
+      setSelectedSituationFeatureStableKey(null);
     }
     setMapView({
       bearing: mapView?.bearing ?? 0,
@@ -3667,6 +3769,7 @@ export function App() {
       setCommunityReportLocationPickMode(false);
       setCommunityRefreshNonce((current) => current + 1);
       setSelectedSituationFeatureId(`community:${submitted.reportId}`);
+      setSelectedSituationFeatureStableKey(null);
       setSelectedObjectId(null);
       if (linkedGroup) {
         requestEmbeddedChatSelection(linkedGroup.groupId);
@@ -3794,6 +3897,7 @@ export function App() {
     try {
       await deleteCommunityReport(apiBase, authToken, reportId);
       setSelectedSituationFeatureId(null);
+      setSelectedSituationFeatureStableKey(null);
       setCommunityRefreshNonce((current) => current + 1);
       setLocationStatus("Hlášení bylo smazáno.");
     } catch (error) {
@@ -4794,6 +4898,7 @@ export function App() {
               objects={visibleObjects}
               emptyMessage={mapEmptyMessage}
               selectedSituationFeatureId={selectedSituationFeatureId ?? undefined}
+              selectedSituationFeatureStableKey={selectedSituationFeatureStableKey ?? undefined}
               selectedObjectId={explicitlySelectedObject?.objectId}
               showHistory={showHistory}
               showPrediction={showPrediction}
@@ -4823,6 +4928,7 @@ export function App() {
                 const isSelected = selectedObjectId === object.objectId;
                 setSelectedObjectId(isSelected ? null : object.objectId);
                 setSelectedSituationFeatureId(null);
+                setSelectedSituationFeatureStableKey(null);
                 setSelectedSketchDrawingId(null);
                 setMobileSketchOpen(false);
                 setMobileSheet(mobileDetailSheetForSelection(isSelected));
@@ -4833,6 +4939,7 @@ export function App() {
                 }
                 const isSelected = selectedSituationFeatureId === feature.properties.featureId;
                 setSelectedSituationFeatureId(isSelected ? null : feature.properties.featureId);
+                setSelectedSituationFeatureStableKey(isSelected ? null : stableSituationFeatureSelectionKey(feature));
                 setSelectedObjectId(null);
                 setSelectedSketchDrawingId(null);
                 setMobileSketchOpen(false);
@@ -4842,6 +4949,7 @@ export function App() {
               onClearSelection={() => {
                 setSelectedObjectId(null);
                 setSelectedSituationFeatureId(null);
+                setSelectedSituationFeatureStableKey(null);
                 setMobileSketchOpen(false);
                 setMobileSheet(null);
               }}
@@ -4858,6 +4966,7 @@ export function App() {
                 if (drawing) {
                   setSelectedObjectId(null);
                   setSelectedSituationFeatureId(null);
+                  setSelectedSituationFeatureStableKey(null);
                 }
               }}
               onSketchModeChange={(mode) => {
@@ -4904,6 +5013,7 @@ export function App() {
                       const isSelected = selectedObjectId === objectId;
                       setSelectedObjectId(isSelected ? null : objectId);
                       setSelectedSituationFeatureId(null);
+                      setSelectedSituationFeatureStableKey(null);
                       setMobileSheet(mobileDetailSheetForSelection(isSelected));
                     }}
                   />
@@ -4965,6 +5075,9 @@ export function App() {
                 onSelectFeature={(featureId) => {
                   const isSelected = selectedSituationFeatureId === featureId;
                   setSelectedSituationFeatureId(isSelected ? null : featureId);
+                  setSelectedSituationFeatureStableKey(isSelected
+                    ? null
+                    : stableSituationFeatureSelectionKey(combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === featureId) ?? null));
                   setSelectedObjectId(null);
                   setMobileSheet(mobileDetailSheetForSelection(isSelected));
                 }}
@@ -5016,6 +5129,7 @@ export function App() {
                       const isSelected = selectedObjectId === objectId;
                       setSelectedObjectId(isSelected ? null : objectId);
                       setSelectedSituationFeatureId(null);
+                      setSelectedSituationFeatureStableKey(null);
                       setMobileSheet(mobileDetailSheetForSelection(isSelected));
                     }}
                   />
@@ -16047,6 +16161,53 @@ function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | nul
   return Math.max(60, Math.min(seconds, 900));
 }
 
+function selectedTrafficCatalogLayerIds(catalog: MapCatalogResponse, selectedLayerIds: string[]): string[] {
+  const selected = new Set(selectedLayerIds);
+  return catalog.layers
+    .filter((layer) => selected.has(layer.layerId) && isImplementedCatalogLayer(layer))
+    .filter((layer) => layer.query.providerId === "sim.situation-data" && isTrafficCatalogLayerId(layer.layerId))
+    .map((layer) => layer.layerId);
+}
+
+function selectedTrafficRefreshSeconds(
+  catalog: MapCatalogResponse | null,
+  selectedLayerIds: string[],
+  collection: SituationFeatureCollectionResponse | null
+): number | undefined {
+  const liveFeatureCadences = (collection?.features ?? [])
+    .map((feature) => {
+      const presentation = feature.properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
+      if (!presentation || presentation.kind === "stop" || presentation.positionKind === "static_stop") {
+        return undefined;
+      }
+      const kind = presentation.positionKind ?? "vehicle_live_cached";
+      if (kind !== "vehicle_live" && kind !== "vehicle_live_cached") {
+        return undefined;
+      }
+      return presentation.refreshSeconds;
+    })
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  if (liveFeatureCadences.length > 0) {
+    return Math.max(3, Math.min(Math.min(...liveFeatureCadences), 120));
+  }
+  if (!catalog) {
+    return undefined;
+  }
+  const selected = new Set(selectedLayerIds);
+  const catalogCadences = catalog.layers
+    .filter((layer) => selected.has(layer.layerId) && layer.layerId === "public.traffic.transit")
+    .map((layer) => layer.refreshSeconds)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  if (catalogCadences.length === 0) {
+    return undefined;
+  }
+  return Math.max(5, Math.min(Math.min(...catalogCadences), 120));
+}
+
+function isTrafficCatalogLayerId(layerId: string): boolean {
+  return layerId === "public.traffic.transit" || layerId === "public.traffic.transit_stops";
+}
+
 function isWeatherRadarCatalogLayerId(layerId: string): boolean {
   return layerId === "public.weather.radar_reflectivity"
     || layerId === "public.weather.radar_precipitation"
@@ -16823,6 +16984,102 @@ function mergeSituationMapFeatureResponses(responses: MapFeatureQueryResponse[])
     },
     warnings
   };
+}
+
+function replaceTrafficFeaturesInSituationCollection(
+  current: SituationFeatureCollectionResponse | null,
+  traffic: SituationFeatureCollectionResponse | null,
+  refreshedLayerIds: string[]
+): SituationFeatureCollectionResponse | null {
+  if (!traffic) {
+    return current;
+  }
+  if (!current) {
+    return traffic;
+  }
+  const keptFeatures = current.features.filter((feature) => !trafficFeatureBelongsToCatalogLayers(feature, refreshedLayerIds));
+  const featureMap = new Map<string, SituationFeature>();
+  [...keptFeatures, ...traffic.features].forEach((feature) => {
+    featureMap.set(situationFeatureMergeKey(feature), feature);
+  });
+  const sourceMap = new Map<string, SituationSourceDescriptor>();
+  [...current.sources, ...traffic.sources].forEach((source) => {
+    sourceMap.set(source.sourceId, source);
+  });
+  const features = Array.from(featureMap.values());
+  const warnings = uniqueStrings([...current.warnings, ...traffic.warnings]);
+  return {
+    ...current,
+    features,
+    query: {
+      ...current.query,
+      layers: uniqueStrings([...current.query.layers, ...traffic.query.layers]) as SituationLayerId[],
+      limit: Math.max(current.query.limit, traffic.query.limit),
+      sources: uniqueStrings([...(current.query.sources ?? []), ...(traffic.query.sources ?? [])])
+    },
+    sources: Array.from(sourceMap.values()),
+    summary: {
+      featureCount: features.length,
+      sourceCount: sourceMap.size,
+      staleFeatureCount: features.filter((feature) => feature.properties.status === "STALE" || feature.properties.status === "TRACK_STALE").length,
+      warningCount: warnings.length
+    },
+    warnings
+  };
+}
+
+function situationFeatureMergeKey(feature: SituationFeature): string {
+  return String(feature.properties.featureId ?? feature.id ?? `${feature.properties.layer}:${JSON.stringify(feature.geometry)}`);
+}
+
+function trafficFeatureBelongsToCatalogLayers(feature: SituationFeature, layerIds: string[]): boolean {
+  if (feature.properties.layer !== "traffic") {
+    return false;
+  }
+  const selected = new Set(layerIds);
+  const providerLayerId = feature.properties.layerId ?? feature.properties.providerLayerId;
+  if (typeof providerLayerId === "string" && selected.has(providerLayerId)) {
+    return true;
+  }
+  const presentation = resolveTransportPresentation(feature);
+  if (!presentation) {
+    return selected.has("public.traffic.transit");
+  }
+  if (presentation.kind === "stop" || presentation.positionKind === "static_stop") {
+    return selected.has("public.traffic.transit_stops");
+  }
+  return selected.has("public.traffic.transit");
+}
+
+function stableSituationFeatureSelectionKey(feature: SituationFeature | null | undefined): string | null {
+  if (!feature) {
+    return null;
+  }
+  return transportSelectionKey(feature) ?? null;
+}
+
+function findSelectedSituationFeature(
+  collection: SituationFeatureCollectionResponse | null,
+  featureId: string | null,
+  stableKey: string | null
+): SituationFeature | null {
+  if (!collection) {
+    return null;
+  }
+  if (featureId) {
+    const direct = collection.features.find((feature) => feature.properties.featureId === featureId);
+    if (direct) {
+      return direct;
+    }
+  }
+  return stableKey ? findSituationFeatureByStableKey(collection, stableKey) : null;
+}
+
+function findSituationFeatureByStableKey(
+  collection: SituationFeatureCollectionResponse | null,
+  stableKey: string
+): SituationFeature | null {
+  return collection?.features.find((feature) => transportSelectionKey(feature) === stableKey) ?? null;
 }
 
 function uniqueStrings(values: readonly string[]): string[] {
