@@ -215,7 +215,7 @@ import {
   type TransitVehicleDetailResponse,
   type WeatherRadarFrame
 } from "./cop-data";
-import { CopMap, formatTrackLabel, type CreateSketchDrawingRequest, type SketchToolMode, type UpdateSketchDrawingRequest } from "./CopMap";
+import type { CreateSketchDrawingRequest, SketchToolMode, UpdateSketchDrawingRequest } from "./CopMap";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
 import {
@@ -344,6 +344,7 @@ import {
   readWebPushPermissionState,
   type WebPushUiState
 } from "./web-push";
+import { formatTrackLabel } from "./track-label";
 import "./styles.css";
 
 export { formatWeatherStationAttribution } from "./weather-detail";
@@ -351,6 +352,7 @@ export { formatWeatherStationAttribution } from "./weather-detail";
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? (import.meta.env.DEV ? "dev-lab-token" : "");
 const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_COP_REFRESH_MS ?? "5000");
+const CopMap = React.lazy(() => import("./CopMap").then((module) => ({ default: module.CopMap })));
 const TrackTable = React.lazy(() => import("./TrackTable"));
 const XrWorkspace = React.lazy(() => import("./XrWorkspace"));
 
@@ -4445,6 +4447,53 @@ export function App() {
   const mobileDetailSheetForSelection = React.useCallback((isSelected: boolean): MobileSheet =>
     isSelected || !mobileSheetViewport ? null : "detail", [mobileSheetViewport]);
 
+  const handleMapSelectObject = React.useCallback((object: CopObject) => {
+    const isSelected = selectedObjectId === object.objectId;
+    setSelectedObjectId(isSelected ? null : object.objectId);
+    setSelectedSituationFeatureId(null);
+    setSelectedSituationFeatureStableKey(null);
+    setSelectedSketchDrawingId(null);
+    setMobileSketchOpen(false);
+    setMobileSheet(mobileDetailSheetForSelection(isSelected));
+  }, [mobileDetailSheetForSelection, selectedObjectId]);
+
+  const handleMapSelectSituationFeature = React.useCallback((feature: SituationFeature) => {
+    if (isMobileTowerViewshedOverlayFeature(feature)) {
+      return;
+    }
+    const isSelected = selectedSituationFeatureId === feature.properties.featureId;
+    setSelectedSituationFeatureId(isSelected ? null : feature.properties.featureId);
+    setSelectedSituationFeatureStableKey(isSelected ? null : stableSituationFeatureSelectionKey(feature));
+    setSelectedObjectId(null);
+    setSelectedSketchDrawingId(null);
+    setMobileSketchOpen(false);
+    setMobileSheet(mobileDetailSheetForSelection(isSelected));
+  }, [mobileDetailSheetForSelection, selectedSituationFeatureId]);
+
+  const handleMapClearSelection = React.useCallback(() => {
+    setSelectedObjectId(null);
+    setSelectedSituationFeatureId(null);
+    setSelectedSituationFeatureStableKey(null);
+    setMobileSketchOpen(false);
+    setMobileSheet(null);
+  }, []);
+
+  const handleMapSelectSketchDrawing = React.useCallback((drawing: SketchDrawingFeature | null) => {
+    setSelectedSketchDrawingId(drawing?.id ?? null);
+    if (drawing) {
+      setSelectedObjectId(null);
+      setSelectedSituationFeatureId(null);
+      setSelectedSituationFeatureStableKey(null);
+    }
+  }, []);
+
+  const handleMapSketchModeChange = React.useCallback((mode: SketchToolMode) => {
+    setSketchMode(mode);
+    if (mode !== "select") {
+      setSelectedSketchDrawingId(null);
+    }
+  }, []);
+
   const updateWorkspaceLayout = React.useCallback((patch: Partial<WorkspaceLayoutPreferences>) => {
     setWorkspaceLayout((current) => normalizeWorkspaceLayout({ ...current, ...patch }));
   }, []);
@@ -4926,106 +4975,71 @@ export function App() {
                 </button>
               </div>
             ) : null}
-            <CopMap
-              alerts={mapAlerts}
-              aoiRules={aoiRules}
-              editingZoneId={editingZoneId}
-              clusterTracks={mapClusterEnabled}
-              objects={visibleObjects}
-              emptyMessage={mapEmptyMessage}
-              selectedSituationFeatureId={selectedSituationFeatureId ?? undefined}
-              selectedSituationFeatureStableKey={selectedSituationFeatureStableKey ?? undefined}
-              selectedObjectId={explicitlySelectedObject?.objectId}
-              showHistory={showHistory}
-              showPrediction={showPrediction}
-              trackHistoryDisplayMode={trackHistoryDisplayMode}
-              trackHistory={replayTrackHistory}
-              publicFlightSymbolMode={publicFlightSymbolMode}
-              mapBasemapMode={mapBasemapMode}
-              mapInteractionSuspended={(Boolean(mobileSheet) || settingsOpen) && !radioPointPickTarget}
-              mapResizeSuspended={workspaceResizeActive}
-              mobileSketchControlsOpen={mobileSketchOpen}
-              predictionMinutes={predictionMinutes}
-              predictionMode={predictionMode}
-              autoFit={autoFit}
-              alertRadiusKm={alertRadiusKm}
-              focusView={mapView}
-              focusViewRequest={focusViewRequest}
-              focusUserLocationRequest={focusUserLocationRequest}
-              hasProximityAlerts={proximityAlerts.length > 0}
-              hasSituationContextEnabled={visibleSituationContextEnabled}
-              initialView={mapView}
-              mapLayerDetailLabel={mapLayerDetailLabel}
-              mapLayerLabel={mapLayerLabel}
-              situationFeatures={combinedSituationFeatures}
-              selectedTransitRouteDetail={selectedTransitRouteDetail}
-              selectedTransitRouteShape={selectedTransitRouteDetail?.routeShape ?? selectedTransitRouteDetail?.route?.shape ?? null}
-              onBoundsChange={setMapBounds}
-              onSelectObject={(object) => {
-                const isSelected = selectedObjectId === object.objectId;
-                setSelectedObjectId(isSelected ? null : object.objectId);
-                setSelectedSituationFeatureId(null);
-                setSelectedSituationFeatureStableKey(null);
-                setSelectedSketchDrawingId(null);
-                setMobileSketchOpen(false);
-                setMobileSheet(mobileDetailSheetForSelection(isSelected));
-              }}
-              onSelectSituationFeature={(feature) => {
-                if (isMobileTowerViewshedOverlayFeature(feature)) {
-                  return;
-                }
-                const isSelected = selectedSituationFeatureId === feature.properties.featureId;
-                setSelectedSituationFeatureId(isSelected ? null : feature.properties.featureId);
-                setSelectedSituationFeatureStableKey(isSelected ? null : stableSituationFeatureSelectionKey(feature));
-                setSelectedObjectId(null);
-                setSelectedSketchDrawingId(null);
-                setMobileSketchOpen(false);
-                setMobileSheet(mobileDetailSheetForSelection(isSelected));
-              }}
-              onAutoFitChange={setAutoFit}
-              onClearSelection={() => {
-                setSelectedObjectId(null);
-                setSelectedSituationFeatureId(null);
-                setSelectedSituationFeatureStableKey(null);
-                setMobileSketchOpen(false);
-                setMobileSheet(null);
-              }}
-              onCancelZoneCreation={() => setZoneCreationMode(false)}
-              onCancelZoneEditing={() => setEditingZoneId(null)}
-              onCreateZonePolygon={handleCreateAoiRuleFromPolygon}
-              onUpdateZonePolygon={handleAoiRulePolygonUpdate}
-              onPickReportLocation={handleCommunityReportLocationPicked}
-              onPickRadioPoint={handleRadioPointPicked}
-              onCreateSketchDrawing={handleCreateSketchDrawing}
-              onDeleteSketchDrawing={handleDeleteSketchDrawing}
-              onSelectSketchDrawing={(drawing) => {
-                setSelectedSketchDrawingId(drawing?.id ?? null);
-                if (drawing) {
-                  setSelectedObjectId(null);
-                  setSelectedSituationFeatureId(null);
-                  setSelectedSituationFeatureStableKey(null);
-                }
-              }}
-              onSketchModeChange={(mode) => {
-                setSketchMode(mode);
-                if (mode !== "select") {
-                  setSelectedSketchDrawingId(null);
-                }
-              }}
-              onUpdateSketchDrawing={handleUpdateSketchDrawing}
-              onRequestUserLocation={locateUser}
-              onViewChange={setMapView}
-              radioPointPickActive={Boolean(radioPointPickTarget)}
-              radioPointPickLabel={radioPointPickTarget ? radioPointPickTargetLabel(radioPointPickTarget) : undefined}
-              reportLocationPickActive={communityReportLocationPickMode}
-              selectedSketchDrawingId={selectedSketchDrawingId}
-              showAlertAreas={showAlertAreas}
-              showProximityAlertRadius={proximityAlertEnabled}
-              sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : []}
-              sketchMode={sketchMode}
-              userLocation={userLocation}
-              zoneCreationActive={zoneCreationMode}
-            />
+            <React.Suspense fallback={<div className="empty-state compact">Načítám mapu...</div>}>
+              <CopMap
+                alerts={mapAlerts}
+                aoiRules={aoiRules}
+                editingZoneId={editingZoneId}
+                clusterTracks={mapClusterEnabled}
+                objects={visibleObjects}
+                emptyMessage={mapEmptyMessage}
+                selectedSituationFeatureId={selectedSituationFeatureId ?? undefined}
+                selectedSituationFeatureStableKey={selectedSituationFeatureStableKey ?? undefined}
+                selectedObjectId={explicitlySelectedObject?.objectId}
+                showHistory={showHistory}
+                showPrediction={showPrediction}
+                trackHistoryDisplayMode={trackHistoryDisplayMode}
+                trackHistory={replayTrackHistory}
+                publicFlightSymbolMode={publicFlightSymbolMode}
+                mapBasemapMode={mapBasemapMode}
+                mapInteractionSuspended={(Boolean(mobileSheet) || settingsOpen) && !radioPointPickTarget}
+                mapResizeSuspended={workspaceResizeActive}
+                mobileSketchControlsOpen={mobileSketchOpen}
+                predictionMinutes={predictionMinutes}
+                predictionMode={predictionMode}
+                autoFit={autoFit}
+                alertRadiusKm={alertRadiusKm}
+                focusView={mapView}
+                focusViewRequest={focusViewRequest}
+                focusUserLocationRequest={focusUserLocationRequest}
+                hasProximityAlerts={proximityAlerts.length > 0}
+                hasSituationContextEnabled={visibleSituationContextEnabled}
+                initialView={mapView}
+                mapLayerDetailLabel={mapLayerDetailLabel}
+                mapLayerLabel={mapLayerLabel}
+                situationFeatures={combinedSituationFeatures}
+                selectedTransitRouteDetail={selectedTransitRouteDetail}
+                selectedTransitRouteShape={selectedTransitRouteDetail?.routeShape ?? selectedTransitRouteDetail?.route?.shape ?? null}
+                onBoundsChange={setMapBounds}
+                onSelectObject={handleMapSelectObject}
+                onSelectSituationFeature={handleMapSelectSituationFeature}
+                onAutoFitChange={setAutoFit}
+                onClearSelection={handleMapClearSelection}
+                onCancelZoneCreation={() => setZoneCreationMode(false)}
+                onCancelZoneEditing={() => setEditingZoneId(null)}
+                onCreateZonePolygon={handleCreateAoiRuleFromPolygon}
+                onUpdateZonePolygon={handleAoiRulePolygonUpdate}
+                onPickReportLocation={handleCommunityReportLocationPicked}
+                onPickRadioPoint={handleRadioPointPicked}
+                onCreateSketchDrawing={handleCreateSketchDrawing}
+                onDeleteSketchDrawing={handleDeleteSketchDrawing}
+                onSelectSketchDrawing={handleMapSelectSketchDrawing}
+                onSketchModeChange={handleMapSketchModeChange}
+                onUpdateSketchDrawing={handleUpdateSketchDrawing}
+                onRequestUserLocation={locateUser}
+                onViewChange={setMapView}
+                radioPointPickActive={Boolean(radioPointPickTarget)}
+                radioPointPickLabel={radioPointPickTarget ? radioPointPickTargetLabel(radioPointPickTarget) : undefined}
+                reportLocationPickActive={communityReportLocationPickMode}
+                selectedSketchDrawingId={selectedSketchDrawingId}
+                showAlertAreas={showAlertAreas}
+                showProximityAlertRadius={proximityAlertEnabled}
+                sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : []}
+                sketchMode={sketchMode}
+                userLocation={userLocation}
+                zoneCreationActive={zoneCreationMode}
+              />
+            </React.Suspense>
           </section>
 
           {activeWorkspace === "map" ? null : activeWorkspace === "data" ? (

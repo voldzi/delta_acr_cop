@@ -5,7 +5,6 @@ import {
   aoiRulesToFeatureCollection,
   fitMapToObjects,
   fitMapToVisibleContent,
-  formatTrackLabel,
   isRecoverableMapError,
   objectsToHistoryFeatureCollection,
   objectsToPredictionFeatureCollection,
@@ -17,6 +16,7 @@ import {
   userLocationToFeatureCollection
 } from "./CopMap";
 import type { CopObject, SituationFeatureCollectionResponse } from "./cop-data";
+import { formatTrackLabel } from "./track-label";
 import { isTransitVehicleSelectionKey } from "./transport-presentation";
 
 describe("COP map data helpers", () => {

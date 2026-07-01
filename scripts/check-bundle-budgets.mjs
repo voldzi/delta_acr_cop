@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 
 const KiB = 1024;
 const repoRoot = process.cwd();
@@ -11,11 +12,11 @@ const budgets = [
     dir: "apps/cop-web/dist/assets",
     required: true,
     entries: [
-      { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 940 * KiB },
-      { label: "maplibre", pattern: /^maplibre-[\w-]+\.js$/, maxBytes: 1_120 * KiB },
-      { label: "milsymbol", pattern: /^milsymbol-[\w-]+\.js$/, maxBytes: 930 * KiB },
-      { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 170 * KiB },
-      { label: "maplibre styles", pattern: /^maplibre-[\w-]+\.css$/, maxBytes: 80 * KiB }
+      { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 340 * KiB },
+      { label: "maplibre", pattern: /^maplibre-[\w-]+\.js$/, maxBytes: 330 * KiB },
+      { label: "milsymbol", pattern: /^milsymbol-[\w-]+\.js$/, maxBytes: 230 * KiB },
+      { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 35 * KiB },
+      { label: "maplibre styles", pattern: /^maplibre-[\w-]+\.css$/, maxBytes: 15 * KiB }
     ]
   },
   {
@@ -23,13 +24,13 @@ const budgets = [
     dir: "apps/cop-chat/dist/assets",
     required: true,
     entries: [
-      { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 410 * KiB },
-      { label: "matrix sdk", pattern: /^matrix-[\w-]+\.js$/, maxBytes: 1_340 * KiB },
-      { label: "matrix crypto wasm", pattern: /^matrix_sdk_crypto_wasm_bg-[\w-]+\.wasm$/, maxBytes: 5_700 * KiB },
-      { label: "pdf viewer", pattern: /^pdf-[\w-]+\.js$/, maxBytes: 460 * KiB },
-      { label: "pdf worker", pattern: /^pdf\.worker-[\w-]+\.mjs$/, maxBytes: 2_300 * KiB },
-      { label: "office/archive parser", pattern: /^jszip\.min-[\w-]+\.js$/, maxBytes: 110 * KiB },
-      { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 70 * KiB }
+      { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 130 * KiB },
+      { label: "matrix sdk", pattern: /^matrix-[\w-]+\.js$/, maxBytes: 380 * KiB },
+      { label: "matrix crypto wasm", pattern: /^matrix_sdk_crypto_wasm_bg-[\w-]+\.wasm$/, maxBytes: 1_950 * KiB },
+      { label: "pdf viewer", pattern: /^pdf-[\w-]+\.js$/, maxBytes: 145 * KiB },
+      { label: "pdf worker", pattern: /^pdf\.worker-[\w-]+\.mjs$/, maxBytes: 500 * KiB },
+      { label: "office/archive parser", pattern: /^jszip\.min-[\w-]+\.js$/, maxBytes: 35 * KiB },
+      { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 15 * KiB }
     ]
   }
 ];
@@ -49,7 +50,7 @@ function readAssets(dir) {
     return readdirSync(absoluteDir).map((name) => ({
       name,
       path: join(absoluteDir, name),
-      size: statSync(join(absoluteDir, name)).size
+      size: gzipSync(readFileSync(join(absoluteDir, name))).length
     }));
   } catch (error) {
     hasFailure = true;
@@ -68,7 +69,7 @@ function checkEntry(app, assets, entry) {
   matches.forEach((asset) => {
     const ok = asset.size <= entry.maxBytes;
     const marker = ok ? "✓" : "✗";
-    const line = `${marker} ${app}: ${entry.label} ${asset.name} ${formatBytes(asset.size)} / ${formatBytes(entry.maxBytes)}`;
+    const line = `${marker} ${app}: ${entry.label} ${asset.name} ${formatBytes(asset.size)} gzip / ${formatBytes(entry.maxBytes)} gzip`;
     if (ok) {
       console.log(line);
     } else {

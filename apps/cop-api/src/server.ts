@@ -1,5 +1,9 @@
-import cors from "@fastify/cors";
+import compress from "@fastify/compress";
+import cors, { type FastifyCorsOptions } from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
 import sensible from "@fastify/sensible";
+import underPressure from "@fastify/under-pressure";
 import websocket from "@fastify/websocket";
 import { AiGateway, type AiCopQuery, type AiCopResponse } from "@cop/ai-gateway";
 import { createCopObjectFromEvent, type CanonicalEventEnvelope, type ObservedObject, type SourceSystem } from "@cop/canonical-model";
@@ -242,6 +246,19 @@ const defaultRasterOverlayAllowedHosts = "docker.home.cz,sim.zeleznalady.cz";
 const rasterOverlayMaxBytes = 8 * 1024 * 1024;
 const defaultWeatherCameraAllowedHosts = defaultRasterOverlayAllowedHosts;
 const weatherCameraMaxBytes = 12 * 1024 * 1024;
+const defaultApiAllowedOrigins = [
+  "http://localhost:4311",
+  "http://localhost:4314",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:4311",
+  "http://127.0.0.1:4314",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "http://docker.home.cz:4311",
+  "http://docker.home.cz:4314",
+  "https://cop.zeleznalady.cz"
+];
 
 interface WeatherRadarFramesCacheEntry {
   body: unknown;
@@ -590,7 +607,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   if (missionArenaSource) {
     state.sources.set(missionArenaSource.sourceSystem.sourceSystemId, missionArenaSource.sourceSystem);
   }
-  void app.register(cors, { origin: true });
+  void app.register(helmet, {
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false
+  });
+  void app.register(compress, {
+    global: true,
+    threshold: readPositiveInteger(process.env.COP_API_COMPRESS_THRESHOLD_BYTES, 1024)
+  });
+  void app.register(cors, {
+    origin: buildCorsOriginResolver(process.env.COP_API_ALLOWED_ORIGINS ?? process.env.COP_ALLOWED_ORIGINS)
+  });
+  void app.register(rateLimit, {
+    global: true,
+    max: readPositiveInteger(process.env.COP_API_RATE_LIMIT_MAX, 2400),
+    timeWindow: process.env.COP_API_RATE_LIMIT_WINDOW ?? "1 minute"
+  });
+  void app.register(underPressure, {
+    exposeStatusRoute: false,
+    maxEventLoopDelay: readPositiveInteger(process.env.COP_API_MAX_EVENT_LOOP_DELAY_MS, 1000)
+  });
   void app.register(sensible);
   void app.register(websocket);
   app.addContentTypeParser(
@@ -11657,6 +11693,29 @@ function createStreamBroadcasterFromEnv(env: Record<string, string | undefined> 
 function readPositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
+
+function buildCorsOriginResolver(value: string | undefined): FastifyCorsOptions["origin"] {
+  const configuredOrigins = parseCsv(value);
+  const allowedOrigins = configuredOrigins.length > 0 ? configuredOrigins : defaultApiAllowedOrigins;
+  const allowedOriginSet = new Set(allowedOrigins);
+  return (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    callback(null, allowedOriginSet.has(origin));
+  };
+}
+
+function parseCsv(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function readPositiveNumber(value: string | undefined, fallback: number): number {

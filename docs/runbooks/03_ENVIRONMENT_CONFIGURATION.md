@@ -46,6 +46,11 @@ COP_WEB_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
 COP_CHAT_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
 COP_CHAT_BASE_PATH=/chat/
 COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
+COP_API_ALLOWED_ORIGINS=https://cop.zeleznalady.cz,http://docker.home.cz:4311,http://docker.home.cz:4314
+COP_API_RATE_LIMIT_MAX=2400
+COP_API_RATE_LIMIT_WINDOW=1 minute
+COP_API_COMPRESS_THRESHOLD_BYTES=1024
+COP_API_MAX_EVENT_LOOP_DELAY_MS=1000
 ```
 
 `COP_PUBLIC_API_BASE_URL` má být při publikaci pod `cop.zeleznalady.cz`
@@ -59,6 +64,12 @@ rezolvuje na privátní adresu.
 aby endpoint neodrážel libovolný cizí origin.
 `COP_CHAT_PROXY_TARGET` používá pouze lokální Vite dev server mapové aplikace,
 aby iframe `/chat/` v COP při vývoji směroval na samostatný `cop-chat`.
+
+COP API registruje produkční ochranné hlavičky, kompresi odpovědí, rate-limit a
+kontrolu event-loop tlaku. `COP_API_ALLOWED_ORIGINS` je browser CORS allow-list;
+požadavky bez `Origin` hlavičky zůstávají povolené kvůli server-to-server,
+mobilním klientům, health checkům a diagnostice. Do produkčního allow-listu
+nepatří obecné wildcard hodnoty.
 
 ## Mobile Pairing / CSM Messenger
 
