@@ -543,6 +543,81 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/transit/stops/{systemId}/{stopId}/detail:
+    get:
+      tags:
+        - Map Catalog
+      summary: Return public transit stop detail through COP.
+      operationId: getTransitStopDetail
+      description: >
+        Server-side proxy for the SIM situation-data public transit static stop detail endpoint. Clients
+        derive detailUrl from providerProperties.transit.detailUrl and call COP API, so browsers and
+        native clients do not need direct SIM, GTFS, or city-provider connectivity.
+      parameters:
+        - name: systemId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+          description: Normalized transit system id from providerProperties.transit.systemId.
+        - name: stopId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 180
+          description: Normalized transit stop id from providerProperties.transit.stopId.
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 80
+          description: Optional SIM transit source id, typically public_transit_static.
+        - name: departuresLimit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 8
+          description: Maximum number of nearest departures requested from SIM.
+        - name: nocache
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - "1"
+          description: Diagnostic cache bypass forwarded to SIM when set to 1.
+      responses:
+        "200":
+          description: Public transit stop detail with SIM-prepared served routes, nearest departures, data
+            quality and warnings.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitStopDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: SIM situation-data transit stop detail is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/geocode/search:
     get:
       tags:
@@ -8320,6 +8395,47 @@ components:
           items:
             type: object
             additionalProperties: true
+        serviceAlerts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        warnings:
+          type: array
+          items:
+            type: string
+    TransitStopDetail:
+      type: object
+      description: SIM public transit stop detail. COP renders stop metadata, served routes, nearest
+        departures, data quality and warnings as prepared transit context without parsing GTFS or
+        calling city upstreams directly.
+      additionalProperties: true
+      properties:
+        contractVersion:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        systemId:
+          type: string
+        stopId:
+          type: string
+        stop:
+          type: object
+          additionalProperties: true
+        routes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        departures:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        quality:
+          type: object
+          additionalProperties: true
         serviceAlerts:
           type: array
           items:

@@ -112,6 +112,7 @@ import {
   fetchRadioProfiles,
   fetchDemoScenarioStatus,
   fetchSketchDrawings,
+  fetchTransitStopDetail,
   fetchTransitVehicleDetail,
   fetchUserProfile,
   fetchWeatherRadarFrames,
@@ -208,6 +209,9 @@ import {
   type TakLayerId,
   type TakSourceDescriptor,
   type TransitStopTime,
+  type TransitStopDeparture,
+  type TransitStopDetailResponse,
+  type TransitStopRoute,
   type TransitVehicleDetailResponse,
   type WeatherRadarFrame
 } from "./cop-data";
@@ -758,6 +762,7 @@ export function App() {
   const [viewProfiles, setViewProfiles] = React.useState<ViewProfile[]>(() => readViewProfiles(userStorageScope));
   const [lastProfileName, setLastProfileName] = React.useState<string | null>(null);
   const [alertPreferences, setAlertPreferences] = React.useState<AlertPreferences>(() => initialAlertPreferences.alertPreferences);
+  const aoiRules = React.useMemo(() => alertPreferences.aoiRules ?? [], [alertPreferences.aoiRules]);
   const [, setLocalAlertPreferencesUpdatedAt] = React.useState<string | null>(() => initialAlertPreferences.updatedAt);
   const [profileSyncStatus, setProfileSyncStatus] = React.useState<ProfileSyncStatus>("loading");
   const [profileSyncError, setProfileSyncError] = React.useState<string | null>(null);
@@ -2458,7 +2463,6 @@ export function App() {
     [mapView, proximityAlerts, publicSafetyAlertFeatures, serverAlerts, userLocation, visibleObjects]
   );
   const mapAlerts = React.useMemo<CopAlert[]>(() => [], []);
-  const aoiRules = React.useMemo(() => alertPreferences.aoiRules ?? [], [alertPreferences.aoiRules]);
   const primaryAoiRule = aoiRules[0] ?? null;
 
   const applyPreferenceSettings = React.useCallback((settings: PreferenceSettings, options: { focusMap?: boolean } = {}) => {
@@ -6543,6 +6547,17 @@ function TrafficSummary({ feature }: { feature: SituationFeature }) {
   if (!presentation) {
     return null;
   }
+  if (presentation.kind === "stop") {
+    return (
+      <div className="mobile-status-summary traffic-status-summary">
+        <DataMetric label="Typ" value="Zastávka" tone="neutral" />
+        <DataMetric label="Název" value={presentation.stopName ?? presentation.mapLabel} tone="neutral" />
+        <DataMetric label="Systém" value={presentation.systemId ?? presentation.operator ?? "n/a"} tone="neutral" />
+        <DataMetric label="Zóna" value={presentation.zoneId ?? "n/a"} tone="neutral" />
+        <DataMetric label="Detail" value={presentation.detailUrl ? "dostupný" : "n/a"} tone={presentation.detailUrl ? "ok" : "neutral"} />
+      </div>
+    );
+  }
   return (
     <div className="mobile-status-summary traffic-status-summary">
       <DataMetric label="Typ" value={presentation.label} tone="neutral" />
@@ -6567,7 +6582,9 @@ function TrafficDetailSection({
 }) {
   const presentation = resolveTransportPresentation(feature);
   const isTransitVehicle = Boolean(presentation && presentation.kind !== "road_event" && presentation.kind !== "stop");
+  const isTransitStop = presentation?.kind === "stop";
   const [detail, setDetail] = React.useState<TransitVehicleDetailResponse | null>(null);
+  const [stopDetail, setStopDetail] = React.useState<TransitStopDetailResponse | null>(null);
   const [detailError, setDetailError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
@@ -6590,15 +6607,40 @@ function TrafficDetailSection({
     }
   }, [apiBase, authToken, feature.properties.featureId, feature.properties.sourceId, isTransitVehicle, presentation?.detailUrl]);
 
+  const loadStopDetail = React.useCallback(async () => {
+    if (!isTransitStop) {
+      return;
+    }
+    setLoading(true);
+    setDetailError(null);
+    try {
+      setStopDetail(await fetchTransitStopDetail(apiBase, authToken, presentation?.detailUrl, {
+        sourceId: feature.properties.sourceId,
+        stopId: presentation?.stopId,
+        systemId: presentation?.systemId ?? presentation?.operator
+      }));
+    } catch (error) {
+      setStopDetail(null);
+      setDetailError(error instanceof Error ? humanizeApiError(error.message) : "Detail zastávky veřejné dopravy se nepodařilo načíst.");
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBase, authToken, feature.properties.sourceId, isTransitStop, presentation?.detailUrl, presentation?.operator, presentation?.stopId, presentation?.systemId]);
+
   React.useEffect(() => {
     setDetail(null);
+    setStopDetail(null);
     setDetailError(null);
-    if (!isTransitVehicle) {
+    if (!isTransitVehicle && !isTransitStop) {
       setLoading(false);
       return;
     }
+    if (isTransitStop) {
+      void loadStopDetail();
+      return;
+    }
     void loadDetail();
-  }, [feature.properties.featureId, isTransitVehicle, loadDetail]);
+  }, [feature.properties.featureId, isTransitStop, isTransitVehicle, loadDetail, loadStopDetail]);
 
   if (!presentation) {
     return null;
@@ -6610,20 +6652,23 @@ function TrafficDetailSection({
   const vehiclePosition = vehicle?.position;
   const trip = detail?.trip;
   const route = detail?.route;
-  const warnings = transitDetailWarnings(detail);
+  const stopDisplay = transitStopDetailDisplay(stopDetail, presentation);
+  const stopDepartures = transitStopDepartures(stopDetail);
+  const stopRoutes = transitStopRoutes(stopDetail);
+  const warnings = isTransitStop ? transitStopDetailWarnings(stopDetail) : transitDetailWarnings(detail);
   return (
     <ObjectDetailSection title={presentation.kind === "road_event" ? "Dopravní událost" : "Veřejná doprava"}>
-      {isTransitVehicle ? (
+      {isTransitVehicle || isTransitStop ? (
         <div className="traffic-detail-header">
           <div>
-            <strong>{detailDisplay.title ?? [presentation.label, presentation.routeShortName].filter(Boolean).join(" ")}</strong>
-            <span>{detailDisplay.subtitle ?? presentation.destination ?? "Živá poloha vozidla ze SIM"}</span>
+            <strong>{isTransitStop ? stopDisplay.title : detailDisplay.title ?? [presentation.label, presentation.routeShortName].filter(Boolean).join(" ")}</strong>
+            <span>{isTransitStop ? stopDisplay.subtitle : detailDisplay.subtitle ?? presentation.destination ?? "Živá poloha vozidla ze SIM"}</span>
           </div>
           <div className="traffic-detail-actions">
-            <button className="mini-button" disabled={loading} onClick={() => void loadDetail()} type="button">
+            <button className="mini-button" disabled={loading} onClick={() => void (isTransitStop ? loadStopDetail() : loadDetail())} type="button">
               {loading ? "Načítám" : "Obnovit"}
             </button>
-            {onShareTransit ? (
+            {isTransitVehicle && onShareTransit ? (
               <button className="mini-button primary" onClick={() => onShareTransit(buildTransitSharePayload(feature, presentation, detail))} type="button">
                 Sdílet do chatu
               </button>
@@ -6632,7 +6677,15 @@ function TrafficDetailSection({
         </div>
       ) : null}
       <DetailGrid
-        rows={[
+        rows={isTransitStop ? [
+          ["Typ", "Zastávka"],
+          ["Název", stopDetail?.stop?.stopName ?? stopDetail?.stop?.name ?? presentation.stopName ?? presentation.mapLabel],
+          ["Systém", stopDetail?.stop?.systemId ?? stopDetail?.systemId ?? presentation.systemId ?? presentation.operator ?? "n/a"],
+          ["Zóna", stopDetail?.stop?.zoneId ?? presentation.zoneId ?? "n/a"],
+          ["Linky", formatTransitStopRoutes(stopRoutes)],
+          ["Nejbližší odjezd", formatTransitStopDeparture(stopDepartures[0])],
+          ["Detail dat", formatTransitStopQuality(stopDetail)]
+        ] : [
           ["Typ", presentation.label],
           ["Linka", route?.routeShortName ?? trip?.routeShortName ?? vehicle?.routeShortName ?? presentation.routeShortName ?? "n/a"],
           ["Směr", route?.destination ?? route?.direction ?? trip?.destination ?? trip?.headsign ?? vehicle?.destination ?? presentation.destination ?? "n/a"],
@@ -6651,9 +6704,11 @@ function TrafficDetailSection({
         ]}
       />
       {detailError ? <div className="situation-warning">{detailError}</div> : null}
-      {loading && !detail ? <div className="empty-mini">Načítám detail vozidla a zastávky ze SIM...</div> : null}
+      {loading && !detail && !stopDetail ? <div className="empty-mini">Načítám detail veřejné dopravy ze SIM...</div> : null}
+      {isTransitStop && stopRoutes.length > 0 ? <TransitStopRouteList routes={stopRoutes} /> : null}
+      {isTransitStop && stopDepartures.length > 0 ? <TransitStopDepartureList departures={stopDepartures} /> : null}
       {isTransitVehicle && stops.length > 0 ? <TransitStopList stops={stops} /> : null}
-      {isTransitVehicle && warnings.map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
+      {(isTransitVehicle || isTransitStop) && warnings.map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
     </ObjectDetailSection>
   );
 }
@@ -6667,6 +6722,36 @@ function TransitStopList({ stops }: { stops: TransitStopTime[] }) {
           <span>{stop.sequence ?? stop.stopSequence ?? index + 1}</span>
           <strong>{stop.stopName ?? stop.name ?? stop.stopId ?? "Zastávka"}</strong>
           <em>{formatTransitStopTime(stop)}</em>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TransitStopRouteList({ routes }: { routes: TransitStopRoute[] }) {
+  return (
+    <div className="traffic-stop-list">
+      <h3>Linky</h3>
+      {routes.slice(0, 10).map((route, index) => (
+        <div className="traffic-stop-row" key={`${route.routeId ?? route.routeShortName ?? "route"}-${index}`}>
+          <span>{formatTransitMode(route.transportMode ?? "route")}</span>
+          <strong>{route.routeShortName ?? route.routeLongName ?? route.routeId ?? "Linka"}</strong>
+          <em>{route.destination ?? route.headsign ?? "směr n/a"}</em>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TransitStopDepartureList({ departures }: { departures: TransitStopDeparture[] }) {
+  return (
+    <div className="traffic-stop-list">
+      <h3>Nejbližší odjezdy</h3>
+      {departures.slice(0, 8).map((departure, index) => (
+        <div className="traffic-stop-row" key={`${departure.tripId ?? departure.routeShortName ?? "departure"}-${departure.plannedDeparture ?? departure.realtimeDeparture ?? index}`}>
+          <span>{departure.routeShortName ?? formatTransitMode(departure.transportMode ?? "route")}</span>
+          <strong>{departure.destination ?? departure.headsign ?? "směr n/a"}</strong>
+          <em>{formatTransitStopDeparture(departure)}</em>
         </div>
       ))}
     </div>
@@ -6703,6 +6788,18 @@ function buildTransitSharePayload(
   };
 }
 
+function transitStopDetailDisplay(detail: TransitStopDetailResponse | null, presentation: NonNullable<ReturnType<typeof resolveTransportPresentation>>): { subtitle: string; title: string } {
+  const display = detail?.stop?.display;
+  const stopName = detail?.stop?.stopName ?? detail?.stop?.name ?? presentation.stopName ?? presentation.mapLabel;
+  const system = detail?.stop?.systemId ?? detail?.systemId ?? presentation.systemId ?? presentation.operator;
+  const zone = detail?.stop?.zoneId ?? presentation.zoneId;
+  const fallbackSubtitle = [system, zone ? `zóna ${zone}` : undefined].filter(Boolean).join(" · ") || "Statická zastávka ze SIM";
+  return {
+    subtitle: display?.subtitle ?? fallbackSubtitle,
+    title: display?.title ?? display?.label ?? stopName
+  };
+}
+
 function transitNextStopName(detail: TransitVehicleDetailResponse | null): string | undefined {
   const stops = transitDetailStops(detail);
   if (stops.length === 0) {
@@ -6713,6 +6810,63 @@ function transitNextStopName(detail: TransitVehicleDetailResponse | null): strin
     return status.includes("upcoming") || status.includes("next");
   });
   return upcoming?.stopName ?? upcoming?.name ?? upcoming?.stopId ?? stops[0]?.stopName ?? stops[0]?.name ?? stops[0]?.stopId;
+}
+
+function transitStopDepartures(detail: TransitStopDetailResponse | null): TransitStopDeparture[] {
+  if (!detail || !Array.isArray(detail.departures)) {
+    return [];
+  }
+  return detail.departures.filter((departure): departure is TransitStopDeparture => isRecord(departure));
+}
+
+function transitStopRoutes(detail: TransitStopDetailResponse | null): TransitStopRoute[] {
+  if (!detail || !Array.isArray(detail.routes)) {
+    return [];
+  }
+  return detail.routes.filter((route): route is TransitStopRoute => isRecord(route));
+}
+
+function transitStopDetailWarnings(detail: TransitStopDetailResponse | null): string[] {
+  if (!detail) {
+    return [];
+  }
+  const qualityWarnings = Array.isArray(detail.quality?.warnings) ? detail.quality.warnings : [];
+  const warnings = Array.isArray(detail.warnings) ? detail.warnings : [];
+  return [...qualityWarnings, ...warnings].filter((warning): warning is string => typeof warning === "string" && warning.trim().length > 0);
+}
+
+function formatTransitStopRoutes(routes: TransitStopRoute[]): string {
+  if (routes.length === 0) {
+    return "n/a";
+  }
+  return routes
+    .slice(0, 6)
+    .map((route) => route.routeShortName ?? route.routeLongName ?? route.routeId)
+    .filter(Boolean)
+    .join(", ") || "n/a";
+}
+
+function formatTransitStopDeparture(departure: TransitStopDeparture | undefined): string {
+  if (!departure) {
+    return "n/a";
+  }
+  const time = formatShortDateTime(departure.realtimeDeparture ?? departure.plannedDeparture);
+  const delay = typeof departure.delaySeconds === "number" && Number.isFinite(departure.delaySeconds) ? formatTransportDelay(departure.delaySeconds) : undefined;
+  const status = departure.status ? formatTransportCurrentStatus(departure.status) : undefined;
+  return [time !== "n/a" ? time : undefined, delay, status].filter(Boolean).join(" · ") || "n/a";
+}
+
+function formatTransitStopQuality(detail: TransitStopDetailResponse | null): string {
+  if (!detail?.quality) {
+    return detail ? "dostupný detail" : "n/a";
+  }
+  const parts = [
+    detail.quality.staticModelAvailable === true ? "statický model" : undefined,
+    detail.quality.departuresAvailable === true ? "odjezdy" : undefined,
+    detail.quality.realtimeAvailable === true ? "realtime" : undefined,
+    detail.quality.stale === true ? "stará data" : undefined
+  ];
+  return parts.filter(Boolean).join(" · ") || "dostupný detail";
 }
 
 function pointCoordinates(feature: SituationFeature): { lat: number; lon: number } | null {

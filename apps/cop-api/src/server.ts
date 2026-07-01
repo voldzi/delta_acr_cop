@@ -4207,6 +4207,37 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  app.get("/api/v1/transit/stops/:systemId/:stopId/detail", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const params = request.params as { stopId: string; systemId: string };
+    const systemId = optionalTransitPathId(params.systemId, 120);
+    const stopId = optionalTransitPathId(params.stopId, 180);
+    if (!systemId || !stopId) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Transit stop detail requires systemId and stopId.", correlationId);
+    }
+    const query = request.query as Record<string, unknown>;
+    const source = optionalTransitSourceId(query.source);
+    const departuresLimit = boundedQueryInteger(query.departuresLimit, 8, 1, 50);
+    const upstreamUrl = new URL(`transit/stops/${encodeURIComponent(systemId)}/${encodeURIComponent(stopId)}`, `${trimTrailingSlash(situationDataBaseUrl)}/`);
+    if (source) {
+      upstreamUrl.searchParams.set("source", source);
+    }
+    upstreamUrl.searchParams.set("departuresLimit", String(departuresLimit));
+    if (optionalTrimmedString(query.nocache, 8) === "1") {
+      upstreamUrl.searchParams.set("nocache", "1");
+    }
+
+    try {
+      const body = await fetchTransitStopDetailResource(upstreamUrl, situationDataSource?.config.timeoutMs);
+      return reply
+        .header("Cache-Control", "public, max-age=15, stale-while-revalidate=30")
+        .send(body);
+    } catch (error) {
+      app.log.warn({ error, stopId, systemId, upstreamUrl: upstreamUrl.toString() }, "Transit stop detail request failed.");
+      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
   app.get("/api/v1/geocode/search", async (request, reply) => {
     if (!placeGeocoder) {
       return sendError(reply, 503, "GEOCODER_UNAVAILABLE", "Place geocoder is disabled.", correlationIdFrom(request.headers["x-correlation-id"]));
@@ -11292,12 +11323,41 @@ async function fetchTransitVehicleDetailResource(url: URL, timeoutMsOverride?: n
   }
 }
 
+async function fetchTransitStopDetailResource(url: URL, timeoutMsOverride?: number): Promise<unknown> {
+  const timeoutMs = timeoutMsOverride ?? readPositiveInteger(process.env.COP_SITUATION_DATA_TIMEOUT_MS, 8000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        accept: "application/json",
+        "user-agent": "CSM-COP transit stop detail proxy"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`SIM transit stop detail returned HTTP ${response.status}.`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function optionalTransitSourceId(value: unknown): string | undefined {
   const source = optionalTrimmedString(value, 80);
   if (!source) {
     return undefined;
   }
   return /^[a-z0-9_.:-]+$/iu.test(source) ? source : undefined;
+}
+
+function optionalTransitPathId(value: unknown, maxLength: number): string | undefined {
+  const id = optionalTrimmedString(value, maxLength);
+  if (!id) {
+    return undefined;
+  }
+  return /^[a-z0-9_.:-]+$/iu.test(id) ? id : undefined;
 }
 
 function optionalRadarProduct(value: unknown): string | undefined {

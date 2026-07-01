@@ -22,8 +22,10 @@ export interface TransportPresentation {
   stopId?: string;
   stopName?: string;
   stopSequence?: number;
+  systemId?: string;
   tripId?: string;
   vehicleId?: string;
+  zoneId?: string;
 }
 
 export function resolveTransportPresentation(feature: SituationFeature): TransportPresentation | null {
@@ -52,7 +54,9 @@ export function resolveTransportPresentation(feature: SituationFeature): Transpo
       mapLabel: stopName,
       operator: recordString(transitProperties, "systemId") ?? recordString(properties, "systemId"),
       stopId: recordString(transitProperties, "stopId") ?? recordString(properties, "stopId"),
-      stopName
+      stopName,
+      systemId: recordString(transitProperties, "systemId") ?? recordString(properties, "systemId"),
+      zoneId: recordString(transitProperties, "zoneId") ?? recordString(properties, "zoneId")
     };
   }
   const vehicleId = recordString(properties, "vehicleId") ?? recordString(tags, "vehicleId") ?? recordString(providerTags, "vehicleId") ?? recordString(transitProperties, "vehicleId");

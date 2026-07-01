@@ -247,7 +247,7 @@ describe("map catalog route", () => {
         layerId: "public.traffic.transit",
         minZoom: 6,
         query: expect.objectContaining({
-          maxFeatures: 1000,
+          maxFeatures: 2500,
           providerLayerIds: ["traffic"],
           providerSourceIds: ["pid_gtfs_rt"]
         }),
@@ -1034,6 +1034,66 @@ describe("map catalog route", () => {
       ]
     });
     expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/transit/vehicles/traffic%3Apid_gtfs_rt%3Avehicle-8096?source=pid_gtfs_rt", expect.objectContaining({
+      headers: expect.objectContaining({
+        accept: "application/json"
+      })
+    }));
+  });
+
+  it("proxies public transit stop detail through the server-side SIM provider", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const fetchMock = vi.fn(async () => Response.json({
+      contractVersion: "sim-public-transit-stop-detail-v1",
+      departures: [
+        {
+          delaySeconds: 0,
+          destination: "Březiněves",
+          plannedDeparture: "2026-07-01T08:15:00Z",
+          routeShortName: "103",
+          status: "on_time",
+          transportMode: "bus"
+        }
+      ],
+      routes: [
+        {
+          destination: "Březiněves",
+          routeId: "pid-route-103",
+          routeShortName: "103",
+          transportMode: "bus"
+        }
+      ],
+      stop: {
+        stopId: "U123",
+        stopName: "Na Fabiance",
+        systemId: "pid",
+        zoneId: "P"
+      },
+      systemId: "pid",
+      warnings: []
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      situationDataSource: new FakeSituationDataSource(),
+      now: () => new Date("2026-07-01T08:00:00Z")
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/transit/stops/pid/U123/detail?source=public_transit_static&departuresLimit=8"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      departures: [
+        {
+          routeShortName: "103"
+        }
+      ],
+      stop: {
+        stopName: "Na Fabiance"
+      }
+    });
+    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/transit/stops/pid/U123?source=public_transit_static&departuresLimit=8", expect.objectContaining({
       headers: expect.objectContaining({
         accept: "application/json"
       })

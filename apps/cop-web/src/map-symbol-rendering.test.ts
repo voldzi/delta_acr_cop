@@ -249,6 +249,7 @@ describe("map symbol rendering contract", () => {
           "funicular": "128x128:b0feb6a1",
           "metro": "128x128:ecae5a58",
           "road_event": "128x128:7b8040fd",
+          "stop": "128x128:521c30f9",
           "traffic": "128x128:d29cf671",
           "train": "128x128:623f36cb",
           "tram": "128x128:bf5d2a7a",

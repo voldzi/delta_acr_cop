@@ -717,6 +717,70 @@ export interface TransitVehicleDetailResponse {
   warnings?: string[];
 }
 
+export interface TransitStopDeparture {
+  delaySeconds?: number;
+  destination?: string;
+  headsign?: string;
+  platform?: string;
+  plannedDeparture?: string;
+  realtimeDeparture?: string;
+  routeId?: string;
+  routeShortName?: string;
+  status?: string;
+  tripId?: string;
+  transportMode?: string;
+}
+
+export interface TransitStopRoute {
+  destination?: string;
+  headsign?: string;
+  routeId?: string;
+  routeLongName?: string;
+  routeShortName?: string;
+  transportMode?: string;
+}
+
+export interface TransitStopDetailResponse {
+  contractVersion?: string;
+  departures?: TransitStopDeparture[];
+  generatedAt?: string;
+  providerId?: string;
+  quality?: {
+    departuresAvailable?: boolean;
+    generatedFrom?: string[];
+    realtimeAvailable?: boolean;
+    stale?: boolean;
+    staticModelAvailable?: boolean;
+    warnings?: string[];
+  };
+  routes?: TransitStopRoute[];
+  serviceAlerts?: Array<Record<string, unknown>>;
+  sourceId?: string;
+  stop?: {
+    detailAvailable?: boolean;
+    display?: {
+      badgeLabel?: string;
+      label?: string;
+      primaryValue?: string;
+      secondaryValue?: string;
+      subtitle?: string;
+      title?: string;
+    };
+    lat?: number;
+    lon?: number;
+    name?: string;
+    platform?: string;
+    stopId?: string;
+    stopName?: string;
+    systemId?: string;
+    zoneId?: string;
+  };
+  stopId?: string;
+  summary?: Record<string, unknown>;
+  systemId?: string;
+  warnings?: string[];
+}
+
 export type MobileCoverageTechnology = "2G" | "4G" | "5G";
 
 export interface MobileTowerViewshedFeature {
@@ -2435,6 +2499,25 @@ export async function fetchTransitVehicleDetail(
   );
 }
 
+export async function fetchTransitStopDetail(
+  apiBase: string,
+  token: string | undefined,
+  detailUrl: string | undefined,
+  fallback: { sourceId?: string; stopId?: string; systemId?: string }
+): Promise<TransitStopDetailResponse> {
+  const request = transitStopDetailRequest(detailUrl, fallback);
+  const suffix = request.query.toString() ? `?${request.query.toString()}` : "";
+  return fetchJson<TransitStopDetailResponse>(
+    `${apiBase}/api/v1/transit/stops/${encodeURIComponent(request.systemId)}/${encodeURIComponent(request.stopId)}/detail${suffix}`,
+    {
+      headers: {
+        ...(authHeaders(token) ?? {}),
+        Accept: "application/json"
+      }
+    }
+  );
+}
+
 export async function fetchMobileTowerViewshed(
   apiBase: string,
   token: string | undefined,
@@ -2575,6 +2658,32 @@ function transitVehicleDetailRequest(detailUrl: string | undefined, fallback: { 
     query.set("source", fallback.sourceId);
   }
   return { featureId, query };
+}
+
+function transitStopDetailRequest(detailUrl: string | undefined, fallback: { sourceId?: string; stopId?: string; systemId?: string }): { query: URLSearchParams; stopId: string; systemId: string } {
+  const query = new URLSearchParams();
+  if (!detailUrl) {
+    if (fallback.sourceId) {
+      query.set("source", fallback.sourceId);
+    }
+    if (!fallback.systemId || !fallback.stopId) {
+      throw new Error("Detail zastávky vyžaduje systemId a stopId.");
+    }
+    return { query, stopId: fallback.stopId, systemId: fallback.systemId };
+  }
+  const url = new URL(detailUrl, "https://cop.local");
+  const match = /^(?:\/situation-data)?\/api\/v1\/transit\/stops\/([^/]+)\/([^/]+)$/u.exec(url.pathname)
+    ?? /^\/api\/v1\/transit\/stops\/([^/]+)\/([^/]+)\/detail$/u.exec(url.pathname);
+  const systemId = match?.[1] ? decodeURIComponent(match[1]) : fallback.systemId;
+  const stopId = match?.[2] ? decodeURIComponent(match[2]) : fallback.stopId;
+  if (!systemId || !stopId) {
+    throw new Error("Neplatná adresa detailu zastávky veřejné dopravy.");
+  }
+  url.searchParams.forEach((value, key) => query.set(key, value));
+  if (!query.has("source") && fallback.sourceId) {
+    query.set("source", fallback.sourceId);
+  }
+  return { query, stopId, systemId };
 }
 
 export async function fetchWeatherRadarFrames(
