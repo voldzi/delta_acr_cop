@@ -944,6 +944,32 @@ function CopMapComponent({
     [selectedSketchDrawingId, sketchDrawings]
   );
   const [selectionPopoverCollapsed, setSelectionPopoverCollapsed] = React.useState(false);
+  const selectedTransitSelectionKey = React.useMemo(
+    () => selectedSituationFeature ? transportSelectionKey(selectedSituationFeature) ?? selectedSituationFeature.properties.featureId : null,
+    [selectedSituationFeature]
+  );
+  const retainedSelectedTransitRouteDetailRef = React.useRef<{
+    detail: TransitVehicleDetailResponse;
+    key: string;
+  } | null>(null);
+  React.useEffect(() => {
+    if (selectedTransitSelectionKey && selectedTransitRouteDetail) {
+      retainedSelectedTransitRouteDetailRef.current = {
+        detail: selectedTransitRouteDetail,
+        key: selectedTransitSelectionKey
+      };
+      return;
+    }
+    if (!selectedTransitSelectionKey) {
+      retainedSelectedTransitRouteDetailRef.current = null;
+    }
+  }, [selectedTransitRouteDetail, selectedTransitSelectionKey]);
+  const effectiveSelectedTransitRouteDetail = selectedTransitRouteDetail
+    ?? (
+      selectedTransitSelectionKey && retainedSelectedTransitRouteDetailRef.current?.key === selectedTransitSelectionKey
+        ? retainedSelectedTransitRouteDetailRef.current.detail
+        : null
+    );
   const selectionCard = React.useMemo(
     () => selectedObject
       ? {
@@ -955,7 +981,7 @@ function CopMapComponent({
           title: formatTrackLabel(selectedObject)
         } satisfies MapSelectionCard
       : selectedSituationFeature
-        ? formatSituationFeatureSelectionCard(selectedSituationFeature, selectedTransitRouteDetail)
+        ? formatSituationFeatureSelectionCard(selectedSituationFeature, effectiveSelectedTransitRouteDetail)
         : selectedSketchDrawing
           ? {
               compactSubtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
@@ -964,9 +990,9 @@ function CopMapComponent({
               metaItems: [],
               subtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
               title: selectedSketchDrawing.properties.label
-            } satisfies MapSelectionCard
+          } satisfies MapSelectionCard
           : null,
-    [selectedObject, selectedSituationFeature, selectedSketchDrawing, selectedTransitRouteDetail]
+    [effectiveSelectedTransitRouteDetail, selectedObject, selectedSituationFeature, selectedSketchDrawing]
   );
   React.useEffect(() => {
     setSelectionPopoverCollapsed(false);
@@ -977,9 +1003,16 @@ function CopMapComponent({
   );
   const selectedRouteFeatureCollection = React.useMemo(
     () => selectedSituationFeature
-      ? selectedTransitRouteToFeatureCollection(selectedSituationFeature, selectedTransitRouteShape, selectedTransitRouteDetail)
+      ? selectedTransitRouteToFeatureCollection(
+          selectedSituationFeature,
+          selectedTransitRouteShape
+            ?? effectiveSelectedTransitRouteDetail?.routeShape
+            ?? effectiveSelectedTransitRouteDetail?.route?.shape
+            ?? null,
+          effectiveSelectedTransitRouteDetail
+        )
       : emptySelectedRouteFeatureCollection(),
-    [selectedSituationFeature, selectedTransitRouteDetail, selectedTransitRouteShape]
+    [effectiveSelectedTransitRouteDetail, selectedSituationFeature, selectedTransitRouteShape]
   );
   const positionedObjects = React.useMemo(() => objects.filter(hasPosition), [objects]);
   const featureCollection = React.useMemo(
@@ -8188,8 +8221,46 @@ function transitStopTimestamp(stop: TransitStopTime | null | undefined): number 
   if (typeof value !== "string" || value.trim().length === 0) {
     return null;
   }
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  return parseTransitTimestamp(value);
+}
+
+function parseTransitTimestamp(value: string): number | null {
+  const trimmed = value.trim();
+  const parsed = Date.parse(trimmed);
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+  const timeOnly = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+  if (!timeOnly) {
+    return null;
+  }
+  const hours = Number(timeOnly[1]);
+  const minutes = Number(timeOnly[2]);
+  const seconds = Number(timeOnly[3] ?? 0);
+  if (
+    !Number.isInteger(hours)
+    || !Number.isInteger(minutes)
+    || !Number.isInteger(seconds)
+    || hours < 0
+    || hours > 23
+    || minutes < 0
+    || minutes > 59
+    || seconds < 0
+    || seconds > 59
+  ) {
+    return null;
+  }
+  const now = new Date();
+  const candidate = new Date(now);
+  candidate.setHours(hours, minutes, seconds, 0);
+  let timestamp = candidate.getTime();
+  const current = now.getTime();
+  if (timestamp < current - 12 * 60 * 60 * 1000) {
+    timestamp += 24 * 60 * 60 * 1000;
+  } else if (timestamp > current + 12 * 60 * 60 * 1000) {
+    timestamp -= 24 * 60 * 60 * 1000;
+  }
+  return timestamp;
 }
 
 function formatTransportPositionKind(value: string | undefined): string {

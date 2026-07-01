@@ -4913,9 +4913,9 @@ h1 {
 
 .map-object-popover.collapsed {
   width: auto;
-  min-width: 170px;
-  max-width: 230px;
-  padding: 7px 8px;
+  min-width: 128px;
+  max-width: 192px;
+  padding: 6px 7px;
 }
 
 .map-object-popover.collapsed .map-object-popover-header {
@@ -5027,13 +5027,13 @@ h1 {
 }
 
 .map-object-popover-compact strong {
-  max-width: 190px;
-  font-size: 13px;
+  max-width: 156px;
+  font-size: 12px;
 }
 
 .map-object-popover-compact small {
-  max-width: 190px;
-  font-size: 10px;
+  max-width: 156px;
+  font-size: 9px;
   -webkit-line-clamp: 1;
 }
 

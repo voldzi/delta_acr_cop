@@ -15656,10 +15656,30 @@ function formatShortDateTime(value: string | undefined): string {
     return "n/a";
   }
   const timestamp = new Date(value);
-  if (Number.isNaN(timestamp.getTime())) {
+  if (!Number.isNaN(timestamp.getTime())) {
+    return timestamp.toLocaleTimeString("cs-CZ");
+  }
+  const timeOnly = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim());
+  if (!timeOnly) {
     return "n/a";
   }
-  return timestamp.toLocaleTimeString("cs-CZ");
+  const hours = Number(timeOnly[1]);
+  const minutes = Number(timeOnly[2]);
+  const seconds = Number(timeOnly[3] ?? 0);
+  if (
+    !Number.isInteger(hours)
+    || !Number.isInteger(minutes)
+    || !Number.isInteger(seconds)
+    || hours < 0
+    || hours > 23
+    || minutes < 0
+    || minutes > 59
+    || seconds < 0
+    || seconds > 59
+  ) {
+    return "n/a";
+  }
+  return new Date(2000, 0, 1, hours, minutes, seconds).toLocaleTimeString("cs-CZ");
 }
 
 function formatLatency(value: number | undefined): string {
