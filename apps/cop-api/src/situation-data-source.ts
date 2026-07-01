@@ -441,7 +441,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       weather_thunderstorm_risk: readInteger(env.COP_SITUATION_DATA_WEATHER_THUNDERSTORM_RISK_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_wind_field: readInteger(env.COP_SITUATION_DATA_WEATHER_WIND_FIELD_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
     },
-    maxLimit: readInteger(env.COP_SITUATION_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 1000),
+    maxLimit: readInteger(env.COP_SITUATION_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 5000),
     sourceCacheTtlMs: {
       ardos_partner: readInteger(env.COP_SITUATION_DATA_ARDOS_CACHE_TTL_MS, 10 * 1000, 1000, 5 * 60 * 1000),
       aviation_weather: readInteger(env.COP_SITUATION_DATA_AVIATION_WEATHER_CACHE_TTL_MS, 120 * 1000, 1000, 24 * 60 * 60 * 1000),

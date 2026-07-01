@@ -2358,28 +2358,42 @@ export function App() {
       : null,
     [activeWorkspace, radioLinkFrom, radioLinkTo, radioMode, radioSearchTargets, radioStation, selectedRadioProfile]
   );
-  const combinedSituationFeatures = React.useMemo(() => {
+  const baseMapSituationFeatures = React.useMemo(() => {
     const withTowerViewshed = appendMobileTowerViewshedFeatures(baseCombinedSituationFeatures, mobileTowerViewshed);
     const withRadioResult = appendRadioLosFeatures(withTowerViewshed, radioOverlay);
     return appendRadioLosFeatures(withRadioResult, radioInputOverlay);
   }, [baseCombinedSituationFeatures, mobileTowerViewshed, radioInputOverlay, radioOverlay]);
+  const mapSelectedSituationFeature = findSelectedSituationFeature(
+    baseMapSituationFeatures,
+    selectedSituationFeatureId,
+    selectedSituationFeatureStableKey
+  );
+  const [retainedSelectedTransitFeature, setRetainedSelectedTransitFeature] = React.useState<SituationFeature | null>(null);
+  React.useEffect(() => {
+    if (mapSelectedSituationFeature && isTransitVehicleSelectionKey(selectedSituationFeatureStableKey)) {
+      setRetainedSelectedTransitFeature(mapSelectedSituationFeature);
+      return;
+    }
+    if (!isTransitVehicleSelectionKey(selectedSituationFeatureStableKey)) {
+      setRetainedSelectedTransitFeature(null);
+    }
+  }, [mapSelectedSituationFeature, selectedSituationFeatureStableKey]);
+  const combinedSituationFeatures = React.useMemo(
+    () => appendRetainedSelectedTransitFeature(
+      baseMapSituationFeatures,
+      retainedSelectedTransitFeature,
+      selectedSituationFeatureId,
+      selectedSituationFeatureStableKey
+    ),
+    [baseMapSituationFeatures, retainedSelectedTransitFeature, selectedSituationFeatureId, selectedSituationFeatureStableKey]
+  );
   const liveSelectedSituationFeature = findSelectedSituationFeature(
     combinedSituationFeatures,
     selectedSituationFeatureId,
     selectedSituationFeatureStableKey
   );
-  const retainedSelectedSituationFeatureRef = React.useRef<SituationFeature | null>(null);
   const selectedSituationFeature = liveSelectedSituationFeature
-    ?? (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey) ? retainedSelectedSituationFeatureRef.current : null);
-  React.useEffect(() => {
-    if (liveSelectedSituationFeature) {
-      retainedSelectedSituationFeatureRef.current = liveSelectedSituationFeature;
-      return;
-    }
-    if (!isTransitVehicleSelectionKey(selectedSituationFeatureStableKey)) {
-      retainedSelectedSituationFeatureRef.current = null;
-    }
-  }, [liveSelectedSituationFeature, selectedSituationFeatureStableKey]);
+    ?? (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey) ? retainedSelectedTransitFeature : null);
   const selectedTransitRouteRequest = React.useMemo(() => {
     const presentation = selectedSituationFeature?.properties.layer === "traffic"
       ? resolveTransportPresentation(selectedSituationFeature)
@@ -4944,6 +4958,7 @@ export function App() {
               mapLayerDetailLabel={mapLayerDetailLabel}
               mapLayerLabel={mapLayerLabel}
               situationFeatures={combinedSituationFeatures}
+              selectedTransitRouteDetail={selectedTransitRouteDetail}
               selectedTransitRouteShape={selectedTransitRouteDetail?.routeShape ?? selectedTransitRouteDetail?.route?.shape ?? null}
               onBoundsChange={setMapBounds}
               onSelectObject={(object) => {
@@ -17055,6 +17070,35 @@ function replaceTrafficFeaturesInSituationCollection(
   };
 }
 
+function appendRetainedSelectedTransitFeature(
+  collection: SituationFeatureCollectionResponse | null,
+  retainedFeature: SituationFeature | null,
+  selectedFeatureId: string | null,
+  selectedStableKey: string | null
+): SituationFeatureCollectionResponse | null {
+  if (!collection || !retainedFeature || !isTransitVehicleSelectionKey(selectedStableKey)) {
+    return collection;
+  }
+  if (findSelectedSituationFeature(collection, selectedFeatureId, selectedStableKey)) {
+    return collection;
+  }
+  const featureMap = new Map<string, SituationFeature>();
+  for (const feature of collection.features) {
+    featureMap.set(situationFeatureMergeKey(feature), feature);
+  }
+  featureMap.set(situationFeatureMergeKey(retainedFeature), retainedFeature);
+  const features = Array.from(featureMap.values());
+  return {
+    ...collection,
+    features,
+    summary: {
+      ...collection.summary,
+      featureCount: features.length,
+      staleFeatureCount: features.filter((feature) => feature.properties.status === "STALE" || feature.properties.status === "TRACK_STALE").length
+    }
+  };
+}
+
 function situationFeatureMergeKey(feature: SituationFeature): string {
   return String(feature.properties.featureId ?? feature.id ?? `${feature.properties.layer}:${JSON.stringify(feature.geometry)}`);
 }
@@ -17115,19 +17159,13 @@ function uniqueStrings(values: readonly string[]): string[] {
 
 function mapFeatureQueryLimit(layerIds: string[], zoom: number | undefined): number {
   if (layerIds.includes("public.traffic.transit_stops") && !layerIds.includes("public.traffic.transit")) {
-    return 250;
+    return 5000;
   }
   if (!layerIds.includes("public.traffic.transit")) {
     return 500;
   }
-  const safeZoom = typeof zoom === "number" && Number.isFinite(zoom) ? zoom : 0;
-  if (safeZoom >= 13) {
-    return 5000;
-  }
-  if (safeZoom >= 11) {
-    return 3500;
-  }
-  return 2500;
+  void zoom;
+  return 5000;
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {

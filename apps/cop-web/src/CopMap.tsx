@@ -46,7 +46,9 @@ import {
   type SketchDrawingFeature,
   type SketchDrawingKind,
   type SketchDrawingVisibility,
-  type SketchGeometry
+  type SketchGeometry,
+  type TransitStopTime,
+  type TransitVehicleDetailResponse
 } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
@@ -157,6 +159,7 @@ const situationTrafficStopLayerId = "cop-situation-traffic-stop";
 const selectedTransitRouteSourceId = "cop-selected-transit-route";
 const selectedTransitRouteLineLayerId = "cop-selected-transit-route-line";
 const selectedTransitRouteStopLayerId = "cop-selected-transit-route-stop";
+const selectedTransitRouteStopLabelLayerId = "cop-selected-transit-route-stop-label";
 const situationRiskPointLayerId = "cop-situation-risk-point";
 const situationRiskIconLayerId = "cop-situation-risk-icon";
 const situationFloodTrendLayerId = "cop-situation-flood-trend";
@@ -356,7 +359,7 @@ export interface SelectedRouteFeatureCollection {
     geometry:
       | { type: "LineString"; coordinates: Array<[number, number]> }
       | { type: "Point"; coordinates: [number, number] };
-    properties: { featureId: string; kind: "route-line" | "route-waypoint"; label: string };
+    properties: { featureId: string; kind: "route-line" | "route-stop" | "route-waypoint"; label: string };
   }>;
 }
 
@@ -568,6 +571,7 @@ interface CopMapProps {
   hasProximityAlerts: boolean;
   initialView?: MapViewState;
   situationFeatures: SituationFeatureCollectionResponse | null;
+  selectedTransitRouteDetail?: TransitVehicleDetailResponse | null;
   selectedTransitRouteShape?: unknown;
   onBoundsChange: (bounds: MapBounds) => void;
   onSelectObject: (object: CopObject) => void;
@@ -735,9 +739,14 @@ interface ClusterInfo {
 
 interface MapSelectionCard {
   compactSubtitle: string;
+  detailRows?: Array<{
+    label: string;
+    value: string;
+  }>;
   eyebrow: string;
   key: string;
   metaItems: string[];
+  statusTone?: "bad" | "ok" | "warn";
   subtitle: string;
   title: string;
 }
@@ -773,6 +782,7 @@ function CopMapComponent({
   hasProximityAlerts,
   initialView,
   situationFeatures,
+  selectedTransitRouteDetail,
   selectedTransitRouteShape,
   onBoundsChange,
   onSelectObject,
@@ -945,7 +955,7 @@ function CopMapComponent({
           title: formatTrackLabel(selectedObject)
         } satisfies MapSelectionCard
       : selectedSituationFeature
-        ? formatSituationFeatureSelectionCard(selectedSituationFeature)
+        ? formatSituationFeatureSelectionCard(selectedSituationFeature, selectedTransitRouteDetail)
         : selectedSketchDrawing
           ? {
               compactSubtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
@@ -956,7 +966,7 @@ function CopMapComponent({
               title: selectedSketchDrawing.properties.label
             } satisfies MapSelectionCard
           : null,
-    [selectedObject, selectedSituationFeature, selectedSketchDrawing]
+    [selectedObject, selectedSituationFeature, selectedSketchDrawing, selectedTransitRouteDetail]
   );
   React.useEffect(() => {
     setSelectionPopoverCollapsed(false);
@@ -967,9 +977,9 @@ function CopMapComponent({
   );
   const selectedRouteFeatureCollection = React.useMemo(
     () => selectedSituationFeature
-      ? selectedTransitRouteToFeatureCollection(selectedSituationFeature, selectedTransitRouteShape)
+      ? selectedTransitRouteToFeatureCollection(selectedSituationFeature, selectedTransitRouteShape, selectedTransitRouteDetail)
       : emptySelectedRouteFeatureCollection(),
-    [selectedSituationFeature, selectedTransitRouteShape]
+    [selectedSituationFeature, selectedTransitRouteDetail, selectedTransitRouteShape]
   );
   const positionedObjects = React.useMemo(() => objects.filter(hasPosition), [objects]);
   const featureCollection = React.useMemo(
@@ -1794,6 +1804,33 @@ function CopMapComponent({
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 2.6, 13, 4.5, 17, 6.5],
             "circle-stroke-color": "#0f7fa7",
             "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 9, 1.4, 13, 2.2, 17, 3]
+          }
+        });
+
+        map.addLayer({
+          id: selectedTransitRouteStopLabelLayerId,
+          type: "symbol",
+          source: selectedTransitRouteSourceId,
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "kind"], "route-stop"],
+            ["has", "label"]
+          ],
+          layout: {
+            "text-allow-overlap": false,
+            "text-anchor": "top",
+            "text-field": ["get", "label"],
+            "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+            "text-ignore-placement": false,
+            "text-offset": [0, 1.08],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 11, 9, 14, 11, 17, 12]
+          },
+          paint: {
+            "text-color": "#07111a",
+            "text-halo-blur": 0.6,
+            "text-halo-color": "rgba(255, 255, 255, 0.94)",
+            "text-halo-width": 2.2
           }
         });
 
@@ -4058,7 +4095,9 @@ function CopMapComponent({
         return;
       }
       const point = map.project({ lng: selectedAnchorCoordinate[0], lat: selectedAnchorCoordinate[1] });
-      const popupWidth = Math.min(360, Math.max(244, containerRect.width - 28));
+      const popupWidth = selectionPopoverCollapsed
+        ? Math.min(230, Math.max(170, containerRect.width - 28))
+        : Math.min(360, Math.max(244, containerRect.width - 28));
       const popupHalfWidth = popupWidth / 2;
       const horizontalPadding = 14;
       const x = clampValue(
@@ -4084,7 +4123,7 @@ function CopMapComponent({
       map.off("zoom", updatePosition);
       map.off("resize", updatePosition);
     };
-  }, [mapReady, selectedAnchorCoordinate]);
+  }, [mapReady, selectedAnchorCoordinate, selectionPopoverCollapsed]);
 
   const missingPositionCount = objects.length - positionedObjects.length;
 
@@ -4474,7 +4513,7 @@ function CopMapComponent({
       </div>
       {selectionCard && selectionPopupPoint ? (
         <div
-          className={`map-object-popover ${selectionPopupPoint.placement === "below" ? "below" : ""} ${selectionPopoverCollapsed ? "collapsed" : ""}`}
+          className={`map-object-popover ${selectionPopupPoint.placement === "below" ? "below" : ""} ${selectionPopoverCollapsed ? "collapsed" : ""} ${selectionCard.statusTone ? `tone-${selectionCard.statusTone}` : ""}`}
           onClick={stopMapToolbarEvent}
           onDoubleClick={stopMapToolbarEvent}
           onPointerDown={stopMapToolbarEvent}
@@ -4514,6 +4553,16 @@ function CopMapComponent({
                 <div className="map-object-popover-meta">
                   {selectionCard.metaItems.map((item) => (
                     <span key={item}>{item}</span>
+                  ))}
+                </div>
+              ) : null}
+              {selectionCard.detailRows?.length ? (
+                <div className="map-object-popover-details">
+                  {selectionCard.detailRows.map((row) => (
+                    <div key={`${row.label}:${row.value}`}>
+                      <span>{row.label}</span>
+                      <strong>{row.value}</strong>
+                    </div>
                   ))}
                 </div>
               ) : null}
@@ -5687,7 +5736,11 @@ function selectionAnchorCoordinate(
   return null;
 }
 
-function selectedTransitRouteToFeatureCollection(feature: SituationFeature, detailRouteShape?: unknown): SelectedRouteFeatureCollection {
+function selectedTransitRouteToFeatureCollection(
+  feature: SituationFeature,
+  detailRouteShape?: unknown,
+  detail?: TransitVehicleDetailResponse | null
+): SelectedRouteFeatureCollection {
   if (feature.properties.layer !== "traffic" || !resolveTransportPresentation(feature)) {
     return emptySelectedRouteFeatureCollection();
   }
@@ -5696,6 +5749,18 @@ function selectedTransitRouteToFeatureCollection(feature: SituationFeature, deta
     return emptySelectedRouteFeatureCollection();
   }
   const label = formatSituationFeatureTitle(feature);
+  const stopPoints = transitRouteStopPoints(detail);
+  const pointFeatures = stopPoints.length > 0
+    ? stopPoints.map((stop) => ({
+        geometry: { type: "Point" as const, coordinates: stop.coordinate },
+        properties: { featureId: feature.properties.featureId, kind: "route-stop" as const, label: stop.label },
+        type: "Feature" as const
+      }))
+    : routeWaypointCoordinates(coordinates).map((coordinate) => ({
+        geometry: { type: "Point" as const, coordinates: coordinate },
+        properties: { featureId: feature.properties.featureId, kind: "route-waypoint" as const, label },
+        type: "Feature" as const
+      }));
   return {
     type: "FeatureCollection",
     features: [
@@ -5704,13 +5769,51 @@ function selectedTransitRouteToFeatureCollection(feature: SituationFeature, deta
         properties: { featureId: feature.properties.featureId, kind: "route-line", label },
         type: "Feature"
       },
-      ...routeWaypointCoordinates(coordinates).map((coordinate) => ({
-        geometry: { type: "Point" as const, coordinates: coordinate },
-        properties: { featureId: feature.properties.featureId, kind: "route-waypoint" as const, label },
-        type: "Feature" as const
-      }))
+      ...pointFeatures
     ]
   };
+}
+
+function transitRouteStopPoints(detail: TransitVehicleDetailResponse | null | undefined): Array<{ coordinate: [number, number]; label: string }> {
+  return transitDetailStops(detail)
+    .map((stop, index) => ({
+      coordinate: transitStopCoordinate(stop),
+      label: transitStopLabel(stop) ?? `Zastávka ${index + 1}`,
+      sequence: stop.stopSequence ?? stop.sequence ?? index
+    }))
+    .filter((stop): stop is { coordinate: [number, number]; label: string; sequence: number } => Boolean(stop.coordinate))
+    .sort((left, right) => left.sequence - right.sequence)
+    .map(({ coordinate, label }) => ({ coordinate, label }));
+}
+
+function transitDetailStops(detail: TransitVehicleDetailResponse | null | undefined): TransitStopTime[] {
+  const stops = Array.isArray(detail?.stops) ? detail.stops : [];
+  const stopTimes = Array.isArray(detail?.stopTimes) ? detail.stopTimes : [];
+  const merged = [...stops, ...stopTimes];
+  const seen = new Set<string>();
+  return merged.filter((stop, index) => {
+    const key = stop.stopId
+      ?? `${transitStopLabel(stop) ?? "stop"}:${stop.stopSequence ?? stop.sequence ?? index}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function transitStopCoordinate(stop: TransitStopTime): [number, number] | null {
+  const lon = Number(stop.position?.lon);
+  const lat = Number(stop.position?.lat);
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    return null;
+  }
+  return [lon, lat];
+}
+
+function transitStopLabel(stop: TransitStopTime | null | undefined): string | null {
+  const label = stop?.stopName ?? stop?.name;
+  return typeof label === "string" && label.trim().length > 0 ? label.trim() : null;
 }
 
 function extractTransitRouteCoordinates(feature: SituationFeature, detailRouteShape?: unknown): Array<[number, number]> | null {
@@ -7894,11 +7997,14 @@ function formatTrackSelectionSubtitle(object: CopObject): string {
   ].filter(Boolean).join(" · ");
 }
 
-function formatSituationFeatureSelectionCard(feature: SituationFeature): MapSelectionCard {
+function formatSituationFeatureSelectionCard(
+  feature: SituationFeature,
+  transitDetail?: TransitVehicleDetailResponse | null
+): MapSelectionCard {
   if (feature.properties.layer === "traffic") {
     const presentation = resolveTransportPresentation(feature);
     if (presentation) {
-      return formatTransportFeatureSelectionCard(feature, presentation);
+      return formatTransportFeatureSelectionCard(feature, presentation, transitDetail);
     }
   }
   const subtitle = formatSituationFeatureSubtitle(feature);
@@ -7914,7 +8020,8 @@ function formatSituationFeatureSelectionCard(feature: SituationFeature): MapSele
 
 function formatTransportFeatureSelectionCard(
   feature: SituationFeature,
-  presentation: NonNullable<ReturnType<typeof resolveTransportPresentation>>
+  presentation: NonNullable<ReturnType<typeof resolveTransportPresentation>>,
+  detail?: TransitVehicleDetailResponse | null
 ): MapSelectionCard {
   if (presentation.kind === "stop") {
     const title = presentation.stopName ?? presentation.mapLabel;
@@ -7935,33 +8042,154 @@ function formatTransportFeatureSelectionCard(
       title
     };
   }
-  const title = [presentation.label, presentation.routeShortName].filter(Boolean).join(" ") || presentation.mapLabel;
+  const routeShortName = detail?.route?.routeShortName
+    ?? detail?.trip?.routeShortName
+    ?? detail?.vehicle?.routeShortName
+    ?? presentation.routeShortName;
+  const title = [presentation.label, routeShortName].filter(Boolean).join(" ") || presentation.mapLabel;
   const status = formatTransportCurrentStatus(presentation.currentStatus);
-  const delay = formatTransportDelay(presentation.delaySeconds);
-  const speed = formatTransportSpeed(presentation.speedMps);
+  const delaySeconds = detail?.current?.delaySeconds ?? detail?.vehicle?.delaySeconds ?? presentation.delaySeconds;
+  const delay = formatTransportDelay(delaySeconds);
+  const speed = formatTransportSpeed(detail?.current?.speedMps ?? detail?.vehicle?.position?.speedMps ?? presentation.speedMps);
   const position = formatTransportPositionKind(presentation.positionKind);
+  const destination = transitDestination(detail) ?? presentation.destination;
+  const nextStop = transitNextStop(detail);
+  const previousStop = transitPreviousStop(detail);
+  const nextStopName = transitStopLabel(nextStop);
+  const nextStopEta = formatTransitStopEta(nextStop);
+  const compactNextStop = nextStopName
+    ? [nextStopEta, nextStopName].filter(Boolean).join(" ")
+    : undefined;
   const subtitle = [
-    presentation.destination ? `směr ${presentation.destination}` : undefined,
+    destination ? `směr ${destination}` : undefined,
+    nextStopName ? `příští ${nextStopName}` : undefined,
     status !== "n/a" ? status : undefined,
     delay !== "n/a" ? delay : undefined
   ].filter(Boolean).join(" · ") || "Živá dopravní poloha";
   const compactSubtitle = [
-    presentation.destination ? `směr ${presentation.destination}` : undefined,
+    compactNextStop,
     delay !== "n/a" ? delay : undefined
   ].filter(Boolean).join(" · ") || subtitle;
+  const detailRows = [
+    rowValue("Příští", formatTransitStopDetail(nextStop)),
+    rowValue("Poslední", formatTransitStopDetail(previousStop)),
+    rowValue("Směr", destination),
+    rowValue("Dopravce", detail?.vehicle?.operator ?? presentation.operator),
+    rowValue("Vůz", detail?.vehicle?.label ?? detail?.vehicle?.id ?? detail?.vehicle?.vehicleId)
+  ].filter((row): row is { label: string; value: string } => Boolean(row));
   return {
     compactSubtitle,
+    detailRows,
     eyebrow: "Dopravní spoj",
     key: transportSelectionKey(feature) ?? `feature:${feature.properties.featureId}`,
     metaItems: [
       delay !== "n/a" ? delay : undefined,
       speed !== "n/a" ? speed : undefined,
       position,
-      presentation.operator
+      detail?.vehicle?.operator ?? presentation.operator
     ].filter(Boolean) as string[],
+    statusTone: transitDelayTone(delaySeconds),
     subtitle,
     title
   };
+}
+
+function rowValue(label: string, value: string | null | undefined): { label: string; value: string } | null {
+  return value ? { label, value } : null;
+}
+
+function transitDelayTone(delaySeconds: number | null | undefined): "bad" | "ok" | "warn" {
+  const delay = Number(delaySeconds);
+  if (!Number.isFinite(delay)) {
+    return "ok";
+  }
+  if (delay >= 300) {
+    return "bad";
+  }
+  if (delay >= 60) {
+    return "warn";
+  }
+  return "ok";
+}
+
+function transitDestination(detail: TransitVehicleDetailResponse | null | undefined): string | undefined {
+  return [
+    detail?.trip?.destination,
+    detail?.trip?.headsign,
+    detail?.route?.destination,
+    detail?.vehicle?.destination
+  ].find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim();
+}
+
+function transitNextStop(detail: TransitVehicleDetailResponse | null | undefined): TransitStopTime | null {
+  if (detail?.trip?.nextStop) {
+    return detail.trip.nextStop;
+  }
+  const now = Date.now();
+  return transitDetailStops(detail).find((stop) => {
+    const relation = typeof stop.relationToVehicle === "string" ? stop.relationToVehicle.toLowerCase() : "";
+    if (["next", "upcoming", "future"].includes(relation)) {
+      return true;
+    }
+    const time = transitStopTimestamp(stop);
+    return typeof time === "number" && time >= now - 30_000;
+  }) ?? null;
+}
+
+function transitPreviousStop(detail: TransitVehicleDetailResponse | null | undefined): TransitStopTime | null {
+  if (detail?.trip?.previousStop) {
+    return detail.trip.previousStop;
+  }
+  const stops = transitDetailStops(detail);
+  const now = Date.now();
+  for (let index = stops.length - 1; index >= 0; index -= 1) {
+    const stop = stops[index]!;
+    const relation = typeof stop.relationToVehicle === "string" ? stop.relationToVehicle.toLowerCase() : "";
+    if (["previous", "passed", "past"].includes(relation)) {
+      return stop;
+    }
+    const time = transitStopTimestamp(stop);
+    if (typeof time === "number" && time < now) {
+      return stop;
+    }
+  }
+  return null;
+}
+
+function formatTransitStopDetail(stop: TransitStopTime | null): string | null {
+  const label = transitStopLabel(stop);
+  if (!label) {
+    return null;
+  }
+  return [label, formatTransitStopEta(stop), formatTransportDelay(stop?.delaySeconds)]
+    .filter((value) => value && value !== "n/a")
+    .join(" · ");
+}
+
+function formatTransitStopEta(stop: TransitStopTime | null): string | null {
+  const timestamp = transitStopTimestamp(stop);
+  if (typeof timestamp !== "number") {
+    return null;
+  }
+  const deltaMinutes = Math.round((timestamp - Date.now()) / 60_000);
+  if (deltaMinutes >= 0 && deltaMinutes <= 90) {
+    return `za ${deltaMinutes} min`;
+  }
+  return new Date(timestamp).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
+}
+
+function transitStopTimestamp(stop: TransitStopTime | null | undefined): number | null {
+  const value = stop?.realtimeArrival
+    ?? stop?.realtimeDeparture
+    ?? stop?.plannedArrival
+    ?? stop?.plannedDeparture
+    ?? stop?.scheduledArrival
+    ?? stop?.scheduledDeparture;
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function formatTransportPositionKind(value: string | undefined): string {
