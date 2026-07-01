@@ -196,6 +196,7 @@ import {
   type SafetySourceDescriptor,
   type SketchDrawingFeature,
   type SketchDrawingPayload,
+  type MapFeatureQueryResponse,
   type SituationFeature,
   type SituationFeatureCollectionResponse,
   type SituationLayer,
@@ -237,7 +238,7 @@ import {
   publishChatUnreadCount,
   readStoredChatUnreadCount
 } from "@cop/messaging/runtime";
-import { decodeChatCenterLocation, encodeChatSelect } from "@cop/messaging/bridge";
+import { decodeChatCenterLocation, encodeChatSelect, encodeChatShareTransit, type ChatTransitSharePayload } from "@cop/messaging/bridge";
 import {
   countHistoryPoints,
   getReplayTimestamp,
@@ -765,8 +766,10 @@ export function App() {
   const [messagingPinned, setMessagingPinned] = React.useState(false);
   const [messagingDockWidth, setMessagingDockWidth] = React.useState(() => readMessagingDockWidth());
   const [messagingSelection, setMessagingSelection] = React.useState<MessagingSelectionCommand | null>(null);
+  const [messagingTransitShare, setMessagingTransitShare] = React.useState<MessagingTransitShareCommand | null>(null);
   const [messagingUnreadCount, setMessagingUnreadCount] = React.useState(0);
   const messagingSelectionNonceRef = React.useRef(0);
+  const messagingTransitShareNonceRef = React.useRef(0);
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [webPushBusy, setWebPushBusy] = React.useState(false);
   const [incidentSuggestions, setIncidentSuggestions] = React.useState<IncidentFusionSuggestion[]>([]);
@@ -1778,9 +1781,8 @@ export function App() {
       setSituationWarnings([]);
       return;
     }
-    const filters = buildCatalogFeatureFilters(catalogLayerIds, hasMobileCatalogSelection(catalogLayerIds) ? coverageTechnology : undefined);
-    const featureLimit = mapFeatureQueryLimit(catalogLayerIds, mapView?.zoom);
-    const requestKey = stableSituationRequestKey(catalogLayerIds, filters, featureLimit);
+    const requestGroups = buildSituationMapRequestGroups(catalogLayerIds, mapView?.zoom, hasMobileCatalogSelection(catalogLayerIds) ? coverageTechnology : undefined);
+    const requestKey = stableSituationRequestKey(requestGroups);
     const previousRequest = situationFeatureRequestRef.current;
     if (previousRequest?.key === requestKey && mapBoundsContainedBy(previousRequest.bounds, mapBounds)) {
       return;
@@ -1790,21 +1792,22 @@ export function App() {
     let cancelled = false;
     const timer = window.setTimeout(() => {
       setSituationStatus((current) => current === "online" ? "online" : "loading");
-      fetchMapFeatures(apiBase, authToken, {
+      Promise.all(requestGroups.map((group) => fetchMapFeatures(apiBase, authToken, {
         bbox: queryBounds,
-        filters,
-        layerIds: catalogLayerIds,
-        limit: featureLimit,
-      })
-        .then((response) => {
+        filters: group.filters,
+        layerIds: group.layerIds,
+        limit: group.limit,
+      })))
+        .then((responses) => {
           if (cancelled) {
             return;
           }
-          const collection = response.situation ?? null;
+          const collection = mergeSituationMapFeatureResponses(responses);
           setSituationFeatures(collection);
           situationFeatureRequestRef.current = collection ? { bounds: queryBounds, key: requestKey } : null;
+          const responseWarnings = uniqueStrings(responses.flatMap((response) => response.warnings));
           setSituationWarnings(sourceQualityWarnings([
-            ...response.warnings,
+            ...responseWarnings,
             ...(collection?.warnings ?? []),
             ...(collection?.sourceHealth?.warnings ?? [])
           ]));
@@ -2292,7 +2295,7 @@ export function App() {
     const presentation = selectedSituationFeature?.properties.layer === "traffic"
       ? resolveTransportPresentation(selectedSituationFeature)
       : null;
-    if (!selectedSituationFeature || !presentation || presentation.kind === "road_event") {
+    if (!selectedSituationFeature || !presentation || presentation.kind === "road_event" || presentation.kind === "stop") {
       setSelectedTransitRouteDetail(null);
       return;
     }
@@ -3691,6 +3694,15 @@ export function App() {
     });
   }
 
+  function shareTransitToEmbeddedChat(transit: ChatTransitSharePayload) {
+    messagingTransitShareNonceRef.current += 1;
+    setMessagingTransitShare({
+      nonce: messagingTransitShareNonceRef.current,
+      transit
+    });
+    setMessagingOpen(true);
+  }
+
   async function createCommunityReportChatGroup(token: string, draft: CommunityReportDraft): Promise<CommunityGroup> {
     const groupName = communityReportChatGroupName(draft.title);
     return createCommunityGroup(apiBase, token, {
@@ -5080,6 +5092,7 @@ export function App() {
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
               onOpenChat={(feature) => openCommunityReportChat(feature)}
+              onShareTransit={shareTransitToEmbeddedChat}
               onOpenGallery={(attachments, index, title, subtitle) => {
                 const galleryAttachments = buildCommunityGalleryAttachments(communityFeatures, selectedSituationFeature, attachments);
                 const selectedAttachmentId = attachments[index]?.attachmentId;
@@ -5203,6 +5216,7 @@ export function App() {
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
               onOpenChat={(feature) => openCommunityReportChat(feature)}
+              onShareTransit={shareTransitToEmbeddedChat}
               onOpenGallery={(attachments, index, title, subtitle) => {
                 const galleryAttachments = buildCommunityGalleryAttachments(communityFeatures, selectedSituationFeature, attachments);
                 const selectedAttachmentId = attachments[index]?.attachmentId;
@@ -5405,6 +5419,7 @@ export function App() {
           dockWidth={messagingDockWidth}
           pinned={messagingPinned}
           selection={messagingSelection}
+          transitShare={messagingTransitShare}
           onClose={() => setMessagingOpen(false)}
           onDockWidthChange={(width) => {
             const nextWidth = clamp(width, messagingDockWidthRange.min, messagingDockWidthRange.max);
@@ -5549,6 +5564,11 @@ interface CommunityReportDraft {
 interface MessagingSelectionCommand {
   id: string;
   nonce: number;
+}
+
+interface MessagingTransitShareCommand {
+  nonce: number;
+  transit: ChatTransitSharePayload;
 }
 
 interface CommunityGalleryState {
@@ -6537,14 +6557,16 @@ function TrafficSummary({ feature }: { feature: SituationFeature }) {
 function TrafficDetailSection({
   apiBase,
   authToken,
-  feature
+  feature,
+  onShareTransit
 }: {
   apiBase: string;
   authToken: string | undefined;
   feature: SituationFeature;
+  onShareTransit?: (transit: ChatTransitSharePayload) => void;
 }) {
   const presentation = resolveTransportPresentation(feature);
-  const isTransitVehicle = Boolean(presentation && presentation.kind !== "road_event");
+  const isTransitVehicle = Boolean(presentation && presentation.kind !== "road_event" && presentation.kind !== "stop");
   const [detail, setDetail] = React.useState<TransitVehicleDetailResponse | null>(null);
   const [detailError, setDetailError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -6597,9 +6619,16 @@ function TrafficDetailSection({
             <strong>{detailDisplay.title ?? [presentation.label, presentation.routeShortName].filter(Boolean).join(" ")}</strong>
             <span>{detailDisplay.subtitle ?? presentation.destination ?? "Živá poloha vozidla ze SIM"}</span>
           </div>
-          <button className="mini-button" disabled={loading} onClick={() => void loadDetail()} type="button">
-            {loading ? "Načítám" : "Obnovit"}
-          </button>
+          <div className="traffic-detail-actions">
+            <button className="mini-button" disabled={loading} onClick={() => void loadDetail()} type="button">
+              {loading ? "Načítám" : "Obnovit"}
+            </button>
+            {onShareTransit ? (
+              <button className="mini-button primary" onClick={() => onShareTransit(buildTransitSharePayload(feature, presentation, detail))} type="button">
+                Sdílet do chatu
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
       <DetailGrid
@@ -6642,6 +6671,56 @@ function TransitStopList({ stops }: { stops: TransitStopTime[] }) {
       ))}
     </div>
   );
+}
+
+function buildTransitSharePayload(
+  feature: SituationFeature,
+  presentation: NonNullable<ReturnType<typeof resolveTransportPresentation>>,
+  detail: TransitVehicleDetailResponse | null
+): ChatTransitSharePayload {
+  const coordinates = pointCoordinates(feature);
+  const vehicle = detail?.vehicle;
+  const trip = detail?.trip;
+  const route = detail?.route;
+  const current = detail?.current;
+  const nextStop = transitNextStopName(detail);
+  const observedAt = current?.observedAt ?? vehicle?.position?.observedAt ?? vehicle?.observedAt ?? feature.properties.observedAt;
+  return {
+    ...(presentation.detailUrl ? { detailUrl: presentation.detailUrl } : {}),
+    destination: route?.destination ?? route?.direction ?? trip?.destination ?? trip?.headsign ?? vehicle?.destination ?? presentation.destination,
+    featureId: feature.properties.featureId,
+    label: [presentation.label, presentation.routeShortName].filter(Boolean).join(" "),
+    ...(coordinates ? { lat: coordinates.lat, lon: coordinates.lon } : {}),
+    ...(nextStop ? { nextStopName: nextStop } : {}),
+    ...(observedAt ? { observedAt } : {}),
+    operator: vehicle?.operator ?? presentation.operator,
+    routeShortName: route?.routeShortName ?? trip?.routeShortName ?? vehicle?.routeShortName ?? presentation.routeShortName,
+    sourceId: feature.properties.sourceId,
+    status: current?.status ?? vehicle?.currentStatus ?? vehicle?.status ?? trip?.status ?? presentation.currentStatus,
+    transportMode: vehicle?.transportMode ?? route?.transportMode ?? presentation.kind,
+    vehicleId: vehicle?.id ?? vehicle?.vehicleId ?? presentation.vehicleId,
+    warnings: transitDetailWarnings(detail)
+  };
+}
+
+function transitNextStopName(detail: TransitVehicleDetailResponse | null): string | undefined {
+  const stops = transitDetailStops(detail);
+  if (stops.length === 0) {
+    return undefined;
+  }
+  const upcoming = stops.find((stop) => {
+    const status = String(stop.status ?? stop.relationToVehicle ?? "").toLocaleLowerCase("cs-CZ");
+    return status.includes("upcoming") || status.includes("next");
+  });
+  return upcoming?.stopName ?? upcoming?.name ?? upcoming?.stopId ?? stops[0]?.stopName ?? stops[0]?.name ?? stops[0]?.stopId;
+}
+
+function pointCoordinates(feature: SituationFeature): { lat: number; lon: number } | null {
+  if (feature.geometry.type !== "Point") {
+    return null;
+  }
+  const [lon, lat] = feature.geometry.coordinates;
+  return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
 }
 
 function transitDetailDisplay(detail: TransitVehicleDetailResponse | null): { badgeLabel?: string; subtitle?: string; title?: string } {
@@ -6911,12 +6990,14 @@ function EmbeddedCopChatPanel({
   dockWidth,
   pinned,
   selection,
+  transitShare,
   onClose,
   onDockWidthChange
 }: {
   dockWidth: number;
   pinned: boolean;
   selection: MessagingSelectionCommand | null;
+  transitShare: MessagingTransitShareCommand | null;
   onClose: () => void;
   onDockWidthChange: (width: number) => void;
 }) {
@@ -6932,6 +7013,16 @@ function EmbeddedCopChatPanel({
       window.location.origin
     );
   }, [selection?.id, selection?.nonce]);
+
+  React.useEffect(() => {
+    if (!transitShare || !iframeRef.current?.contentWindow) {
+      return;
+    }
+    iframeRef.current.contentWindow.postMessage(
+      encodeChatShareTransit(transitShare.transit),
+      window.location.origin
+    );
+  }, [transitShare?.nonce]);
 
   function beginDockResize(event: React.PointerEvent<HTMLDivElement>) {
     if (!pinned) {
@@ -6975,6 +7066,19 @@ function EmbeddedCopChatPanel({
   const chatPath = selectedChatId ? `/chat/?selection=${encodeURIComponent(selectedChatId)}` : "/chat/";
   const chatFrameSrc = `/chat/?embedded=1${chatSelectionQuery}`;
 
+  function postPendingChatCommands() {
+    const target = iframeRef.current?.contentWindow;
+    if (!target) {
+      return;
+    }
+    if (selection?.id) {
+      target.postMessage(encodeChatSelect(selection.id), window.location.origin);
+    }
+    if (transitShare) {
+      target.postMessage(encodeChatShareTransit(transitShare.transit), window.location.origin);
+    }
+  }
+
   return (
     <aside
       aria-label="COP Chat"
@@ -7010,6 +7114,7 @@ function EmbeddedCopChatPanel({
         <iframe
           allow="clipboard-read; clipboard-write; geolocation; microphone; camera"
           className="embedded-chat-frame"
+          onLoad={postPendingChatCommands}
           ref={iframeRef}
           referrerPolicy="same-origin"
           src={chatFrameSrc}
@@ -11464,7 +11569,8 @@ function SituationFeatureDetail({
   onDeleteReport,
   onEditReport,
   onOpenChat,
-  onOpenGallery
+  onOpenGallery,
+  onShareTransit
 }: {
   apiBase: string;
   authToken: string | undefined;
@@ -11479,6 +11585,7 @@ function SituationFeatureDetail({
     title: string,
     subtitle?: string
   ) => void;
+  onShareTransit?: (transit: ChatTransitSharePayload) => void;
 }) {
   const properties = feature.properties;
   const technicalCoverage = useMobileNetworkTechnicalCoverage(apiBase, authToken, feature);
@@ -11616,7 +11723,7 @@ function SituationFeatureDetail({
         <MobileTowerViewshedSection state={mobileTowerViewshed} />
       ) : null}
       {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
-      {properties.layer === "traffic" ? <TrafficDetailSection apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
+      {properties.layer === "traffic" ? <TrafficDetailSection apiBase={apiBase} authToken={authToken} feature={feature} onShareTransit={onShareTransit} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherCamera ? <WeatherWebcamPreview authToken={authToken} feature={feature} /> : null}
       {weatherContext ? (
@@ -16486,12 +16593,86 @@ function roundBoundsCoordinate(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
 
-function stableSituationRequestKey(layerIds: string[], filters: Record<string, Record<string, unknown>>, limit: number): string {
-  return JSON.stringify({
-    filters,
-    layerIds: [...layerIds].sort(),
-    limit
-  });
+interface SituationMapRequestGroup {
+  filters: Record<string, Record<string, unknown>>;
+  layerIds: string[];
+  limit: number;
+}
+
+function buildSituationMapRequestGroups(
+  layerIds: string[],
+  zoom: number | undefined,
+  technology: CoverageTechnology | undefined
+): SituationMapRequestGroup[] {
+  const groups: string[][] = [];
+  const regularLayerIds = layerIds.filter((layerId) => layerId !== "public.traffic.transit" && layerId !== "public.traffic.transit_stops");
+  if (regularLayerIds.length > 0) {
+    groups.push(regularLayerIds);
+  }
+  if (layerIds.includes("public.traffic.transit")) {
+    groups.push(["public.traffic.transit"]);
+  }
+  if (layerIds.includes("public.traffic.transit_stops")) {
+    groups.push(["public.traffic.transit_stops"]);
+  }
+  return groups.map((groupLayerIds) => ({
+    filters: buildCatalogFeatureFilters(groupLayerIds, technology),
+    layerIds: groupLayerIds,
+    limit: mapFeatureQueryLimit(groupLayerIds, zoom)
+  }));
+}
+
+function stableSituationRequestKey(groups: SituationMapRequestGroup[]): string {
+  return JSON.stringify(groups.map((group) => ({
+    filters: group.filters,
+    layerIds: [...group.layerIds].sort(),
+    limit: group.limit
+  })));
+}
+
+function mergeSituationMapFeatureResponses(responses: MapFeatureQueryResponse[]): SituationFeatureCollectionResponse | null {
+  const collections = responses.map((response) => response.situation).filter((collection): collection is SituationFeatureCollectionResponse => Boolean(collection));
+  if (collections.length === 0) {
+    return null;
+  }
+  const featureMap = new Map<string, SituationFeature>();
+  for (const collection of collections) {
+    for (const feature of collection.features) {
+      const key = String(feature.properties.featureId ?? feature.id ?? `${feature.properties.layer}:${JSON.stringify(feature.geometry)}`);
+      featureMap.set(key, feature);
+    }
+  }
+  const sourceMap = new Map<string, SituationSourceDescriptor>();
+  for (const collection of collections) {
+    for (const source of collection.sources) {
+      sourceMap.set(source.sourceId, source);
+    }
+  }
+  const base = collections[0]!;
+  const features = Array.from(featureMap.values());
+  const warnings = uniqueStrings(collections.flatMap((collection) => collection.warnings));
+  return {
+    ...base,
+    features,
+    query: {
+      ...base.query,
+      layers: uniqueStrings(collections.flatMap((collection) => collection.query.layers)) as SituationLayerId[],
+      limit: collections.reduce((sum, collection) => sum + collection.query.limit, 0),
+      sources: uniqueStrings(collections.flatMap((collection) => collection.query.sources ?? []))
+    },
+    sources: Array.from(sourceMap.values()),
+    summary: {
+      featureCount: features.length,
+      sourceCount: sourceMap.size,
+      staleFeatureCount: features.filter((feature) => feature.properties.status === "STALE" || feature.properties.status === "TRACK_STALE").length,
+      warningCount: warnings.length
+    },
+    warnings
+  };
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return Array.from(new Set(values.filter((value) => typeof value === "string" && value.trim().length > 0)));
 }
 
 function mapFeatureQueryLimit(layerIds: string[], zoom: number | undefined): number {
@@ -16503,12 +16684,12 @@ function mapFeatureQueryLimit(layerIds: string[], zoom: number | undefined): num
   }
   const safeZoom = typeof zoom === "number" && Number.isFinite(zoom) ? zoom : 0;
   if (safeZoom >= 13) {
-    return 2500;
+    return 5000;
   }
   if (safeZoom >= 11) {
-    return 1800;
+    return 3500;
   }
-  return 1200;
+  return 2500;
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {

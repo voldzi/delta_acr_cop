@@ -65,9 +65,10 @@ export interface MatrixTimelineMessage {
   sender: string;
   senderDisplayName?: string;
   timestamp: string;
+  transit?: MatrixTransitShare;
 }
 
-export type MatrixMessageKind = "file" | "image" | "location" | "text" | "video";
+export type MatrixMessageKind = "file" | "image" | "location" | "text" | "transit" | "video";
 
 export type MatrixAttachmentKind = "file" | "image" | "video";
 
@@ -97,6 +98,24 @@ export interface MatrixLocationShare {
   lat: number;
   lon: number;
   source: "device" | "map";
+}
+
+export interface MatrixTransitShare {
+  detailUrl?: string;
+  destination?: string;
+  featureId: string;
+  label?: string;
+  lat?: number;
+  lon?: number;
+  nextStopName?: string;
+  observedAt?: string;
+  operator?: string;
+  routeShortName?: string;
+  sourceId?: string;
+  status?: string;
+  transportMode?: string;
+  vehicleId?: string;
+  warnings?: string[];
 }
 
 export interface MatrixTimelineAttachment {
@@ -143,6 +162,7 @@ export interface MatrixMessagingSession {
   sendLocation(roomId: string, location: MatrixLocationShare): Promise<void>;
   sendMessage(roomId: string, body: string, options?: { replyTo?: MatrixMessageReplyTarget }): Promise<void>;
   sendReaction(roomId: string, eventId: string, key: string): Promise<void>;
+  sendTransitShare(roomId: string, transit: MatrixTransitShare): Promise<void>;
   setReaction(roomId: string, eventId: string, key: string): Promise<void>;
   syncUserProfile(profile: MatrixUserProfileSyncInput | undefined): Promise<void>;
   stop(): void;

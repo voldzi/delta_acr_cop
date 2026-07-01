@@ -41,6 +41,7 @@ function sessionStub(): MatrixMessagingSession {
     sendLocation: vi.fn(),
     sendMessage: vi.fn(),
     sendReaction: vi.fn(),
+    sendTransitShare: vi.fn(),
     setReaction: vi.fn(),
     stop: vi.fn(),
     syncUserProfile: vi.fn()

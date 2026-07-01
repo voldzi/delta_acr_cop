@@ -1704,6 +1704,48 @@ button {
   font-size: 0.78rem;
 }
 
+.transit-card {
+  display: flex;
+  min-width: min(300px, 68vw);
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.transit-card-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(14, 116, 144, 0.12);
+  color: #0e7490;
+}
+
+.transit-card strong,
+.transit-card small,
+.transit-card em {
+  display: block;
+}
+
+.transit-card small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.32;
+}
+
+.transit-card em {
+  width: fit-content;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.16);
+  color: #047857;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+  padding: 2px 8px;
+}
+
 .composer {
   position: relative;
   z-index: 2;

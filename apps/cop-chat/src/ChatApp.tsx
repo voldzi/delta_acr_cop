@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Bell,
   BellOff,
+  Bus,
   CheckCheck,
   ChevronDown,
   ChevronRight,
@@ -91,8 +92,10 @@ import type {
   MatrixLocationShare,
   MatrixMessagingSession,
   MatrixRoomSummary,
-  MatrixTimelineMessage
+  MatrixTimelineMessage,
+  MatrixTransitShare
 } from "@cop/messaging/types";
+import { decodeChatShareTransit } from "@cop/messaging/bridge";
 import { chatText } from "./i18n";
 import { Avatar } from "./components/Avatar";
 import { ChatActionMenu, MessageSearchBar, SelectionToolbar } from "./components/ConversationControls";
@@ -878,6 +881,11 @@ export function ChatApp() {
       if (event.origin !== window.location.origin) {
         return;
       }
+      const transit = decodeChatShareTransit(event.data);
+      if (transit) {
+        void shareTransitFromHost(transit);
+        return;
+      }
       const selection = embeddedChatSelectionFromMessage(event.data);
       if (!selection) {
         return;
@@ -887,7 +895,7 @@ export function ChatApp() {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [authenticated, chatItems, chatReady, preparingChatId, selectedRoomId]);
+  }, [authenticated, chatItems, chatReady, matrixSession, preparingChatId, selectedRoomId]);
 
   React.useEffect(() => {
     const routeSelection = readRouteSelection();
@@ -2138,6 +2146,23 @@ export function ChatApp() {
     }
   }
 
+  async function shareTransitFromHost(transit: MatrixTransitShare) {
+    if (!matrixSession || !selectedRoomId) {
+      setError("Nejdřív otevřete chat, do kterého chcete spoj poslat.");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      await matrixSession.sendTransitShare(selectedRoomId, transit);
+      setTimeline(rememberRoomTimeline(selectedRoomId, matrixSession.getTimeline(selectedRoomId)));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Informaci o spoji se nepodařilo odeslat.");
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function downloadAttachment(message: MatrixTimelineMessage) {
     if (!matrixSession || !message.attachment) {
       return;
@@ -3308,6 +3333,8 @@ function MessageRow({
         {replyToMessage ? <ReplyPreview message={replyToMessage} /> : null}
         {message.kind === "location" && message.location ? (
           <LocationMessage message={message} onOpenPreview={onOpenPreview} />
+        ) : message.kind === "transit" && message.transit ? (
+          <TransitMessage message={message} />
         ) : message.attachment ? (
           <AttachmentMessage
             matrixSession={matrixSession}
@@ -3535,6 +3562,25 @@ function LocationMessage({ message, onOpenPreview }: { message: MatrixTimelineMe
         <small>{formatCoordinates(location)}</small>
       </span>
     </button>
+  );
+}
+
+function TransitMessage({ message }: { message: MatrixTimelineMessage }) {
+  const transit = message.transit;
+  if (!transit) {
+    return null;
+  }
+  const title = [transit.transportMode ? formatTransitModeLabel(transit.transportMode) : "Spoj", transit.routeShortName].filter(Boolean).join(" ");
+  return (
+    <div className="transit-card">
+      <span className="transit-card-icon"><Bus size={22} /></span>
+      <span>
+        <strong>{title}</strong>
+        <small>{transit.destination ? `směr ${transit.destination}` : transit.label ?? "Sdílený spoj"}</small>
+        {transit.nextStopName ? <small>Příští zastávka: {transit.nextStopName}</small> : null}
+        {transit.status ? <em>{formatTransitStatusLabel(transit.status)}</em> : null}
+      </span>
+    </div>
   );
 }
 
@@ -4618,6 +4664,9 @@ function messageSenderLabel(message: MatrixTimelineMessage, conversation: Messag
 }
 
 function latestMessagePreview(message: MatrixTimelineMessage): string {
+  if (message.kind === "transit") {
+    return transitMessageLabel(message.transit);
+  }
   if (message.kind === "location") {
     return message.location?.label ?? "Sdílená poloha";
   }
@@ -4639,6 +4688,9 @@ function attachmentIndicator(message: MatrixTimelineMessage): React.ReactNode {
   }
   if (message.kind === "location") {
     return <MapPin size={15} />;
+  }
+  if (message.kind === "transit") {
+    return <Bus size={15} />;
   }
   if (message.own) {
     return <CheckCheck size={15} />;
@@ -5016,7 +5068,10 @@ function messageSearchText(message: MatrixTimelineMessage): string {
     message.body,
     message.attachment?.fileName,
     message.location ? formatCoordinates(message.location) : "",
-    message.location?.label ?? ""
+    message.location?.label ?? "",
+    message.transit ? transitMessageLabel(message.transit) : "",
+    message.transit?.destination ?? "",
+    message.transit?.nextStopName ?? ""
   ].filter(Boolean).join(" ");
 }
 
@@ -5045,6 +5100,33 @@ function formatMessageForClipboard(message: MatrixTimelineMessage): string {
 function formatMessageForForward(message: MatrixTimelineMessage): string {
   const prefix = message.own ? "Přeposláno od vás" : `Přeposláno od ${message.senderDisplayName ?? "člena"}`;
   return `${prefix}:\n${messageSearchText(message) || message.body}`;
+}
+
+function transitMessageLabel(transit: MatrixTransitShare | undefined): string {
+  if (!transit) {
+    return "Sdílený spoj";
+  }
+  const route = transit.routeShortName ? ` ${transit.routeShortName}` : "";
+  const destination = transit.destination ? ` → ${transit.destination}` : "";
+  return `Jsem ve spoji${route}${destination}`;
+}
+
+function formatTransitModeLabel(mode: string): string {
+  const normalized = mode.toLocaleLowerCase("cs-CZ");
+  if (normalized.includes("tram")) return "Tramvaj";
+  if (normalized.includes("metro") || normalized.includes("subway")) return "Metro";
+  if (normalized.includes("train") || normalized.includes("rail")) return "Vlak";
+  if (normalized.includes("trolley")) return "Trolejbus";
+  if (normalized.includes("bus")) return "Autobus";
+  return "Spoj";
+}
+
+function formatTransitStatusLabel(status: string): string {
+  const normalized = status.toLocaleLowerCase("cs-CZ");
+  if (normalized === "on_time" || normalized === "ok") return "jede včas";
+  if (normalized === "delayed" || normalized.includes("delay")) return "zpoždění";
+  if (normalized.includes("cancel")) return "zrušeno";
+  return status.replaceAll("_", " ");
 }
 
 function applyLocalReaction(messages: MatrixTimelineMessage[], messageId: string, key: string, senderLabel: string): MatrixTimelineMessage[] {

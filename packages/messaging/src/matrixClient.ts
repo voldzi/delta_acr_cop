@@ -8,6 +8,7 @@ import type {
   MatrixMessageReaction,
   MatrixMessageReplyTarget,
   MatrixMessagingSession,
+  MatrixTransitShare,
   MatrixUserProfileSyncInput,
   MatrixPresenceState,
   MatrixRoomSummary,
@@ -529,6 +530,18 @@ export async function createMatrixMessagingSession(
         await client.sendMessage(roomId, createLocationMessage(location));
       } catch (caught) {
         throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat polohu");
+      }
+    },
+    sendTransitShare: async (roomId, transit) => {
+      if (typeof client.sendMessage !== "function") {
+        throw new Error("Spoj se nepodařilo odeslat.");
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        await client.sendMessage(roomId, createTransitShareMessage(transit));
+      } catch (caught) {
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat informaci o spoji");
       }
     },
     sendMessage: async (roomId, body, options) => {
@@ -1254,6 +1267,18 @@ function createLocationMessage(location: MatrixLocationShare): Record<string, un
   };
 }
 
+function createTransitShareMessage(transit: MatrixTransitShare): Record<string, unknown> {
+  const sanitized = sanitizeTransitShare(transit);
+  const body = formatTransitShareBody(sanitized);
+  return {
+    "cz.cop.transit": sanitized,
+    "m.text": body,
+    "m.ts": Date.now(),
+    body,
+    msgtype: "m.text"
+  };
+}
+
 export class MatrixAccountStoreMismatchError extends Error {
   constructor(readonly cause: unknown) {
     super("Lokální šifrovací úložiště patří jinému účtu. Chat se bezpečně obnoví pro aktuálně přihlášeného uživatele.");
@@ -1804,7 +1829,8 @@ function mapMatrixMessageEvent(
   const attachment = matrixAttachmentFromContent(client, homeserverBaseUrl, content);
   const geoUri = readLocationUri(content);
   const location = geoUri ? matrixLocationFromGeoUri(geoUri, content) : undefined;
-  if (!body && !attachment && !location) {
+  const transit = matrixTransitShareFromContent(content);
+  if (!body && !attachment && !location && !transit) {
     return null;
   }
   const sender = event.getSender?.() ?? "";
@@ -1821,7 +1847,8 @@ function mapMatrixMessageEvent(
     ...(readReplyToEventId(content) ? { replyToEventId: readReplyToEventId(content) } : {}),
     sender,
     ...(senderDisplayName ? { senderDisplayName } : {}),
-    timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString()
+    timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString(),
+    ...(transit ? { transit } : {})
   };
 }
 
@@ -2090,6 +2117,9 @@ function looksLikeMatrixUserId(value: string): boolean {
 }
 
 function matrixMessageKind(content: Record<string, unknown>): MatrixTimelineMessage["kind"] {
+  if (asRecord(content["cz.cop.transit"])) {
+    return "transit";
+  }
   if (content.msgtype === "m.image") {
     return "image";
   }
@@ -2103,6 +2133,60 @@ function matrixMessageKind(content: Record<string, unknown>): MatrixTimelineMess
     return "location";
   }
   return "text";
+}
+
+function sanitizeTransitShare(transit: MatrixTransitShare): MatrixTransitShare {
+  return {
+    ...(stringValue(transit.detailUrl) ? { detailUrl: stringValue(transit.detailUrl) } : {}),
+    ...(stringValue(transit.destination) ? { destination: stringValue(transit.destination) } : {}),
+    featureId: stringValue(transit.featureId) ?? "transit",
+    ...(stringValue(transit.label) ? { label: stringValue(transit.label) } : {}),
+    ...(typeof transit.lat === "number" && Number.isFinite(transit.lat) ? { lat: Number(transit.lat.toFixed(6)) } : {}),
+    ...(typeof transit.lon === "number" && Number.isFinite(transit.lon) ? { lon: Number(transit.lon.toFixed(6)) } : {}),
+    ...(stringValue(transit.nextStopName) ? { nextStopName: stringValue(transit.nextStopName) } : {}),
+    ...(stringValue(transit.observedAt) ? { observedAt: stringValue(transit.observedAt) } : {}),
+    ...(stringValue(transit.operator) ? { operator: stringValue(transit.operator) } : {}),
+    ...(stringValue(transit.routeShortName) ? { routeShortName: stringValue(transit.routeShortName) } : {}),
+    ...(stringValue(transit.sourceId) ? { sourceId: stringValue(transit.sourceId) } : {}),
+    ...(stringValue(transit.status) ? { status: stringValue(transit.status) } : {}),
+    ...(stringValue(transit.transportMode) ? { transportMode: stringValue(transit.transportMode) } : {}),
+    ...(stringValue(transit.vehicleId) ? { vehicleId: stringValue(transit.vehicleId) } : {}),
+    ...(Array.isArray(transit.warnings) ? { warnings: transit.warnings.filter((item) => stringValue(item)).map((item) => item.trim()).slice(0, 5) } : {})
+  };
+}
+
+function matrixTransitShareFromContent(content: Record<string, unknown>): MatrixTransitShare | undefined {
+  const data = asRecord(content["cz.cop.transit"]);
+  const featureId = stringValue(data?.featureId);
+  if (!data || !featureId) {
+    return undefined;
+  }
+  return sanitizeTransitShare({
+    detailUrl: stringValue(data.detailUrl),
+    destination: stringValue(data.destination),
+    featureId,
+    label: stringValue(data.label),
+    lat: typeof data.lat === "number" ? data.lat : undefined,
+    lon: typeof data.lon === "number" ? data.lon : undefined,
+    nextStopName: stringValue(data.nextStopName),
+    observedAt: stringValue(data.observedAt),
+    operator: stringValue(data.operator),
+    routeShortName: stringValue(data.routeShortName),
+    sourceId: stringValue(data.sourceId),
+    status: stringValue(data.status),
+    transportMode: stringValue(data.transportMode),
+    vehicleId: stringValue(data.vehicleId),
+    warnings: Array.isArray(data.warnings) ? data.warnings.filter((item): item is string => typeof item === "string") : undefined
+  });
+}
+
+function formatTransitShareBody(transit: MatrixTransitShare): string {
+  const route = transit.routeShortName ? ` ${transit.routeShortName}` : "";
+  const destination = transit.destination ? ` → ${transit.destination}` : "";
+  const status = transit.status ? ` (${transit.status})` : "";
+  const nextStop = transit.nextStopName ? `\nPříští zastávka: ${transit.nextStopName}` : "";
+  const observed = transit.observedAt ? `\nPozorováno: ${transit.observedAt}` : "";
+  return `Jsem ve spoji${route}${destination}${status}.${nextStop}${observed}`.trim();
 }
 
 function matrixAttachmentFromContent(

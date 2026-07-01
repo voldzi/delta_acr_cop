@@ -6,9 +6,11 @@ import {
   chatUnreadStorageKey,
   decodeChatCenterLocation,
   decodeChatSelect,
+  decodeChatShareTransit,
   decodeChatUnread,
   encodeChatCenterLocation,
   encodeChatSelect,
+  encodeChatShareTransit,
   encodeChatUnread
 } from "./bridge.js";
 
@@ -20,10 +22,45 @@ describe("contract constants", () => {
     expect(chatBridgeMessageTypes).toEqual({
       centerLocation: "cop-chat:center-location",
       select: "cop-chat:select",
+      shareTransit: "cop-chat:share-transit",
       unread: "cop-chat:unread"
     });
     expect(chatBridgeChannelName).toBe("cop-chat");
     expect(chatUnreadStorageKey).toBe("cop.chat.unread.v1");
+  });
+});
+
+describe("share-transit (web -> chat)", () => {
+  it("encodes and decodes a sanitized transit share payload", () => {
+    const payload = encodeChatShareTransit({
+      destination: "BŘEZINĚVES",
+      featureId: "transit:pid:103:8096",
+      label: "Autobus 103",
+      lat: 50.166,
+      lon: 14.476,
+      nextStopName: "Štěpničná",
+      routeShortName: "103",
+      status: "on_time",
+      warnings: ["  data jsou modelová  ", ""]
+    });
+    expect(payload.type).toBe("cop-chat:share-transit");
+    expect(decodeChatShareTransit(payload)).toEqual({
+      destination: "BŘEZINĚVES",
+      featureId: "transit:pid:103:8096",
+      label: "Autobus 103",
+      lat: 50.166,
+      lon: 14.476,
+      nextStopName: "Štěpničná",
+      routeShortName: "103",
+      status: "on_time",
+      warnings: ["data jsou modelová"]
+    });
+  });
+
+  it("rejects malformed or foreign transit payloads", () => {
+    expect(() => encodeChatShareTransit({ featureId: "" })).toThrow("Transit share requires featureId.");
+    expect(decodeChatShareTransit({ transit: { featureId: "x" }, type: "other" })).toBeNull();
+    expect(decodeChatShareTransit({ transit: {}, type: "cop-chat:share-transit" })).toBeNull();
   });
 });
 

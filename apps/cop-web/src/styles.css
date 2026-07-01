@@ -5918,6 +5918,14 @@ h1 {
   min-width: 0;
 }
 
+.traffic-detail-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .traffic-detail-header strong {
   color: #edf3f8;
   font-size: 15px;
