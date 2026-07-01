@@ -83,6 +83,7 @@ import {
   formatTransportCurrentStatus,
   formatTransportDelay,
   formatTransportSpeed,
+  isTransitVehicleSelectionKey,
   resolveTransportPresentation,
   transportSelectionKey,
   type TransportIconKind
@@ -900,7 +901,7 @@ function CopMapComponent({
     () => selectedObjectId ? objects.find((object) => object.objectId === selectedObjectId) ?? null : null,
     [objects, selectedObjectId]
   );
-  const selectedSituationFeature = React.useMemo(
+  const liveSelectedSituationFeature = React.useMemo(
     () => {
       const features = situationFeatures?.features ?? [];
       if (selectedSituationFeatureId) {
@@ -916,6 +917,18 @@ function CopMapComponent({
     },
     [selectedSituationFeatureId, selectedSituationFeatureStableKey, situationFeatures]
   );
+  const retainedSelectedSituationFeatureRef = React.useRef<SituationFeature | null>(null);
+  const selectedSituationFeature = liveSelectedSituationFeature
+    ?? (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey) ? retainedSelectedSituationFeatureRef.current : null);
+  React.useEffect(() => {
+    if (liveSelectedSituationFeature) {
+      retainedSelectedSituationFeatureRef.current = liveSelectedSituationFeature;
+      return;
+    }
+    if (!isTransitVehicleSelectionKey(selectedSituationFeatureStableKey)) {
+      retainedSelectedSituationFeatureRef.current = null;
+    }
+  }, [liveSelectedSituationFeature, selectedSituationFeatureStableKey]);
   const selectedSketchDrawing = React.useMemo(
     () => selectedSketchDrawingId ? sketchDrawings.find((drawing) => drawing.id === selectedSketchDrawingId) ?? null : null,
     [selectedSketchDrawingId, sketchDrawings]

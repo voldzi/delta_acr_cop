@@ -17,6 +17,7 @@ import {
   userLocationToFeatureCollection
 } from "./CopMap";
 import type { CopObject, SituationFeatureCollectionResponse } from "./cop-data";
+import { isTransitVehicleSelectionKey } from "./transport-presentation";
 
 describe("COP map data helpers", () => {
   it("treats transient raster overlay tile failures as recoverable", () => {
@@ -642,6 +643,9 @@ describe("COP map data helpers", () => {
   });
 
   it("keeps a refreshed transport vehicle selected by its stable transit identity", () => {
+    expect(isTransitVehicleSelectionKey("traffic:vehicle:pid_gtfs_rt:bus-4069:bus")).toBe(true);
+    expect(isTransitVehicleSelectionKey("traffic:stop:pid:cz:1234")).toBe(false);
+
     const refreshedTrafficFeature: SituationFeatureCollectionResponse = {
       contractVersion: "cop-situation-source-v1",
       features: [

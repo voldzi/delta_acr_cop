@@ -318,6 +318,7 @@ import {
   formatTransportHeading,
   formatTransportOccupancy,
   formatTransportSpeed,
+  isTransitVehicleSelectionKey,
   resolveTransportPresentation,
   transportSelectionKey
 } from "./transport-presentation";
@@ -2362,11 +2363,23 @@ export function App() {
     const withRadioResult = appendRadioLosFeatures(withTowerViewshed, radioOverlay);
     return appendRadioLosFeatures(withRadioResult, radioInputOverlay);
   }, [baseCombinedSituationFeatures, mobileTowerViewshed, radioInputOverlay, radioOverlay]);
-  const selectedSituationFeature = findSelectedSituationFeature(
+  const liveSelectedSituationFeature = findSelectedSituationFeature(
     combinedSituationFeatures,
     selectedSituationFeatureId,
     selectedSituationFeatureStableKey
   );
+  const retainedSelectedSituationFeatureRef = React.useRef<SituationFeature | null>(null);
+  const selectedSituationFeature = liveSelectedSituationFeature
+    ?? (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey) ? retainedSelectedSituationFeatureRef.current : null);
+  React.useEffect(() => {
+    if (liveSelectedSituationFeature) {
+      retainedSelectedSituationFeatureRef.current = liveSelectedSituationFeature;
+      return;
+    }
+    if (!isTransitVehicleSelectionKey(selectedSituationFeatureStableKey)) {
+      retainedSelectedSituationFeatureRef.current = null;
+    }
+  }, [liveSelectedSituationFeature, selectedSituationFeatureStableKey]);
   const selectedTransitRouteRequest = React.useMemo(() => {
     const presentation = selectedSituationFeature?.properties.layer === "traffic"
       ? resolveTransportPresentation(selectedSituationFeature)
@@ -2382,24 +2395,30 @@ export function App() {
     };
   }, [selectedSituationFeature]);
   const [selectedTransitRouteDetail, setSelectedTransitRouteDetail] = React.useState<TransitVehicleDetailResponse | null>(null);
+  const selectedTransitRouteDetailKeyRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (!selectedTransitRouteRequest) {
+      selectedTransitRouteDetailKeyRef.current = null;
       setSelectedTransitRouteDetail(null);
       return;
     }
     let cancelled = false;
-    setSelectedTransitRouteDetail(null);
+    const requestKey = selectedTransitRouteRequest.stableKey;
+    if (selectedTransitRouteDetailKeyRef.current !== requestKey) {
+      setSelectedTransitRouteDetail(null);
+    }
     fetchTransitVehicleDetail(apiBase, authToken, selectedTransitRouteRequest.detailUrl, {
       featureId: selectedTransitRouteRequest.featureId,
       sourceId: selectedTransitRouteRequest.sourceId
     })
       .then((detail) => {
         if (!cancelled) {
+          selectedTransitRouteDetailKeyRef.current = requestKey;
           setSelectedTransitRouteDetail(detail);
         }
       })
       .catch(() => {
-        if (!cancelled) {
+        if (!cancelled && selectedTransitRouteDetailKeyRef.current !== requestKey) {
           setSelectedTransitRouteDetail(null);
         }
       });
@@ -2923,6 +2942,9 @@ export function App() {
         setSelectedSituationFeatureId(replacement.properties.featureId);
         return;
       }
+    }
+    if (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey)) {
+      return;
     }
     if (selectedSituationFeatureId) {
       setSelectedSituationFeatureId(null);

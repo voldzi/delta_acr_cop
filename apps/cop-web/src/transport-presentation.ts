@@ -138,6 +138,10 @@ export function transportSelectionKey(feature: SituationFeature): string | undef
   return `traffic:${presentation.stableKey}`;
 }
 
+export function isTransitVehicleSelectionKey(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.startsWith("traffic:vehicle:");
+}
+
 export function transportIconColor(kind: TransportIconKind): string {
   const colors: Record<TransportIconKind, string> = {
     bus: "#1f6feb",
