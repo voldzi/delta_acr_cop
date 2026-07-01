@@ -155,6 +155,7 @@ const situationOsmSymbolLayerId = "cop-situation-osm-symbol";
 const situationOsmDetailSymbolLayerId = "cop-situation-osm-detail-symbol";
 const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
 const situationTrafficSymbolLayerId = "cop-situation-traffic-symbol";
+const situationTrafficStopHaloLayerId = "cop-situation-traffic-stop-halo";
 const situationTrafficStopLayerId = "cop-situation-traffic-stop";
 const selectedTransitRouteSourceId = "cop-selected-transit-route";
 const selectedTransitRouteLineLayerId = "cop-selected-transit-route-line";
@@ -2234,6 +2235,22 @@ function CopMapComponent({
             "text-halo-color": "#061019",
             "text-halo-width": 1.7,
             "text-halo-blur": 0.35
+          }
+        });
+
+        map.addLayer({
+          id: situationTrafficStopHaloLayerId,
+          type: "circle",
+          source: situationSourceId,
+          minzoom: 11,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "trafficStaticStop"], true]],
+          paint: {
+            "circle-color": "#e0f2fe",
+            "circle-opacity": ["case", ["get", "stale"], 0.38, 0.82],
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 5.2, 14, 6.4, 17, 8.4],
+            "circle-stroke-color": "#082f49",
+            "circle-stroke-opacity": 0.95,
+            "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 1.1, 15, 1.7]
           }
         });
 
@@ -6891,13 +6908,14 @@ function buildTrafficRenderProperties(
   status: { color: string; label: string; tone: string }
 ): Partial<SituationContextFeatureCollection["features"][number]["properties"]> {
   const presentation = resolveTransportPresentation(feature);
-  if (mapSymbolMode === "standard" || !presentation) {
+  if (!presentation) {
     return {
       situationStatusColor: status.color,
       situationStatusLabel: status.label,
       situationStatusTone: status.tone
     };
   }
+  void mapSymbolMode;
   const color = feature.properties.stale ? status.color : presentation.color;
   if (presentation.kind === "stop") {
     return {

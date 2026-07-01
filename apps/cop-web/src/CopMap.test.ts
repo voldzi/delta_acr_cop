@@ -639,7 +639,12 @@ describe("COP map data helpers", () => {
       trafficSymbolKey: "cop-transit-bus",
       trafficTransit: true
     });
-    expect(situationFeaturesToFeatureCollection(trafficFeature, undefined, "standard").features[0]?.properties.trafficTransit).toBeUndefined();
+    expect(situationFeaturesToFeatureCollection(trafficFeature, undefined, "standard").features[0]?.properties).toMatchObject({
+      trafficRouteShortName: "141",
+      trafficRouteType: "bus",
+      trafficSymbolKey: "cop-transit-bus",
+      trafficTransit: true
+    });
   });
 
   it("keeps a refreshed transport vehicle selected by its stable transit identity", () => {
