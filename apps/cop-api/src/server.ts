@@ -7623,7 +7623,7 @@ function parseMapQueryRequest(body: unknown): MapFeatureQueryRequest | null {
     includeDiagnostics: parseBooleanQuery(body.includeDiagnostics),
     includePartner: parseBooleanQuery(body.includePartner),
     layerIds,
-    limit: optionalFiniteNumber(body.limit, 1, 1000) ?? 250
+    limit: optionalFiniteNumber(body.limit, 1, 5000) ?? 250
   };
 }
 

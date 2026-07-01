@@ -291,7 +291,7 @@ function providerCatalogLayerVariantToMapLayer(
     recommendedCatalogLayerId: catalogLayerId,
     query: {
       ...layer.query,
-      maxFeatures: catalogLayerId === "public.traffic.transit_stops" ? 250 : layer.query?.maxFeatures,
+      maxFeatures: catalogLayerId === "public.traffic.transit_stops" ? 5000 : layer.query?.maxFeatures,
       providerSourceIds
     },
     sourceIds: providerSourceIds,
@@ -366,10 +366,10 @@ function maxFeaturesForCatalogLayer(layer: ProviderCatalogLayer): number | undef
     return Math.max(layer.query?.maxFeatures ?? 0, 600);
   }
   if (layer.recommendedCatalogLayerId === "public.traffic.transit_stops") {
-    return Math.min(Math.max(layer.query?.maxFeatures ?? 0, 250), 250);
+    return Math.max(layer.query?.maxFeatures ?? 0, 5000);
   }
   if (layer.recommendedCatalogLayerId === "public.traffic.transit") {
-    return Math.max(layer.query?.maxFeatures ?? 0, 2500);
+    return Math.max(layer.query?.maxFeatures ?? 0, 5000);
   }
   return layer.query?.maxFeatures;
 }
@@ -1006,7 +1006,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         sourceIds: trafficSourceIds.map((sourceId) => `sim.situation-data:${sourceId}`)
       },
       query: {
-        maxFeatures: 2500,
+        maxFeatures: 5000,
         mode: "bbox",
         providerId: "sim.situation-data",
         providerLayerIds: ["traffic"],
@@ -1047,7 +1047,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
           sourceIds: stopSources.map((source) => `sim.situation-data:${source.sourceId}`)
         },
         query: {
-          maxFeatures: 250,
+          maxFeatures: 5000,
           mode: "bbox",
           providerId: "sim.situation-data",
           providerLayerIds: ["traffic"],
@@ -1818,11 +1818,75 @@ function providerIsOnline(providers: MapCatalogProvider[], providerId: string): 
 function dedupeLayers(layers: MapCatalogLayer[]): MapCatalogLayer[] {
   const byId = new Map<string, MapCatalogLayer>();
   layers.forEach((layer) => {
-    if (!byId.has(layer.layerId)) {
+    const existing = byId.get(layer.layerId);
+    if (!existing) {
       byId.set(layer.layerId, layer);
+    } else {
+      byId.set(layer.layerId, mergeCatalogLayers(existing, layer));
     }
   });
   return Array.from(byId.values());
+}
+
+function mergeCatalogLayers(existing: MapCatalogLayer, next: MapCatalogLayer): MapCatalogLayer {
+  const existingAvailable = existing.enabled !== false && existing.availability !== "disabled";
+  const nextAvailable = next.enabled !== false && next.availability !== "disabled";
+  const base = existingAvailable || !nextAvailable ? existing : next;
+  const mergeFrom = [existing, next].filter((layer) => {
+    if (existingAvailable || nextAvailable) {
+      return layer.enabled !== false && layer.availability !== "disabled";
+    }
+    return true;
+  });
+  const providerLayerIds = uniqueStrings(mergeFrom.flatMap((layer) => layer.query.providerLayerIds ?? []));
+  const providerSourceIds = uniqueStrings(mergeFrom.flatMap((layer) => layer.query.providerSourceIds ?? []));
+  const categoryIds = uniqueStrings(mergeFrom.flatMap((layer) => layer.query.categoryIds ?? []));
+  const provenanceSourceIds = uniqueStrings(mergeFrom.flatMap((layer) => layer.provenance?.sourceIds ?? []));
+  const technicalInputs = uniqueStrings(mergeFrom.flatMap((layer) => layer.provenance?.technicalInputs ?? []));
+  const maxFeatures = Math.max(...mergeFrom.map((layer) => layer.query.maxFeatures ?? 0));
+  const minRefreshSeconds = minPositiveNumber(mergeFrom.map((layer) => layer.refreshSeconds));
+  const minCacheTtlSeconds = minPositiveNumber(mergeFrom.map((layer) => layer.cacheTtlSeconds));
+  const hasAvailableLayer = existingAvailable || nextAvailable;
+  return {
+    ...base,
+    ...(hasAvailableLayer ? { availability: "available" } : {}),
+    ...(minCacheTtlSeconds !== undefined ? { cacheTtlSeconds: minCacheTtlSeconds } : {}),
+    defaultVisible: existing.defaultVisible || next.defaultVisible,
+    ...(hasAvailableLayer ? { disabledReason: undefined } : {}),
+    ...(hasAvailableLayer ? { enabled: true } : {}),
+    geometryTypes: uniqueStrings([...(existing.geometryTypes ?? []), ...(next.geometryTypes ?? [])]),
+    legal: base.legal ?? existing.legal ?? next.legal,
+    maxZoom: maxOptionalNumber([existing.maxZoom, next.maxZoom]),
+    minZoom: minOptionalNumber([existing.minZoom, next.minZoom]),
+    provenance: {
+      sourceIds: provenanceSourceIds,
+      ...(technicalInputs.length > 0 ? { technicalInputs } : {})
+    },
+    query: {
+      ...base.query,
+      ...(categoryIds.length > 0 ? { categoryIds } : {}),
+      ...(maxFeatures > 0 ? { maxFeatures } : {}),
+      ...(providerLayerIds.length > 0 ? { providerLayerIds } : {}),
+      ...(providerSourceIds.length > 0 ? { providerSourceIds } : {})
+    },
+    ...(minRefreshSeconds !== undefined ? { refreshSeconds: minRefreshSeconds } : {}),
+    selectable: hasAvailableLayer && (existing.selectable || next.selectable)
+  };
+}
+
+function minPositiveNumber(values: Array<number | undefined>): number | undefined {
+  const finiteValues = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  return finiteValues.length > 0 ? Math.min(...finiteValues) : undefined;
+}
+
+function minOptionalNumber(values: Array<number | undefined>): number | undefined {
+  const finiteValues = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return finiteValues.length > 0 ? Math.min(...finiteValues) : undefined;
+}
+
+function maxOptionalNumber(values: Array<number | undefined>): number | undefined {
+  const finiteValues = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return finiteValues.length > 0 ? Math.max(...finiteValues) : undefined;
 }
 
 function dedupeSources(sources: MapCatalogSource[]): MapCatalogSource[] {

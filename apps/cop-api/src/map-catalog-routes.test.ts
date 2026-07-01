@@ -125,7 +125,7 @@ describe("map catalog route", () => {
       label: "Veřejná doprava",
       minZoom: 7,
       query: {
-        maxFeatures: 2500,
+        maxFeatures: 5000,
         providerLayerIds: ["traffic"],
         providerSourceIds: ["pid_gtfs_rt"]
       },
@@ -247,7 +247,7 @@ describe("map catalog route", () => {
         layerId: "public.traffic.transit",
         minZoom: 6,
         query: expect.objectContaining({
-          maxFeatures: 2500,
+          maxFeatures: 5000,
           providerLayerIds: ["traffic"],
           providerSourceIds: ["pid_gtfs_rt"]
         }),
