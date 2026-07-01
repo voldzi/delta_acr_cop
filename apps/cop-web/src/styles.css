@@ -5199,8 +5199,10 @@ h1 {
   font-weight: 800;
 }
 
-.radio-point-pick-active .map-canvas {
-  cursor: crosshair;
+.radio-point-pick-active .map-canvas,
+.radio-point-pick-active .map-canvas canvas,
+.radio-point-pick-active .map-canvas .maplibregl-canvas-container {
+  cursor: crosshair !important;
 }
 
 .radio-map-pick-hint {

@@ -1062,6 +1062,133 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("renders radio input points as explicit map overlays", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [14.31185, 50.0711],
+            type: "Point"
+          },
+          properties: {
+            category: "radio_input",
+            confidence: 1,
+            featureId: "radio-input:station",
+            label: "Stanice",
+            layer: "mobile",
+            layerId: "analysis.radio.input",
+            observedAt: "2026-07-01T12:00:00Z",
+            sourceId: "radio_los_input",
+            stale: false,
+            tags: {
+              radioInput: "true",
+              radioInputRole: "station",
+              radioInputRoleLabel: "Stanice",
+              radioOverlay: "true"
+            }
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-07-01T12:00:00Z",
+      query: {
+        bbox: { east: 14.4, north: 50.1, south: 50, west: 14.2 },
+        layers: ["mobile_coverage"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      featureId: "radio-input:station",
+      mapPointSuppressed: true,
+      radioLabel: "Stanice",
+      radioOverlay: true,
+      radioOverlayKind: "input",
+      radioPointColor: "#38bdf8",
+      situationStatusLabel: "VSTUP"
+    });
+  });
+
+  it("renders radio coverage polygons as explicit map overlays", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [14.2, 49.95],
+              [14.3, 49.95],
+              [14.3, 50.05],
+              [14.2, 50.05],
+              [14.2, 49.95]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            category: "radio_coverage",
+            confidence: 0.8,
+            featureId: "radio-coverage:sector:1",
+            label: "Dobrý signál",
+            layer: "mobile_coverage",
+            layerId: "analysis.radio.coverage",
+            observedAt: "2026-07-01T12:00:00Z",
+            quality: "good",
+            sourceId: "radio_los_model",
+            stale: false,
+            tags: {
+              radioOverlay: "true",
+              radioOverlayMode: "coverage"
+            }
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-07-01T12:00:00Z",
+      query: {
+        bbox: { east: 14.4, north: 50.1, south: 50, west: 14.2 },
+        layers: ["mobile_coverage"],
+        limit: 250
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      featureId: "radio-coverage:sector:1",
+      radioFillColor: "#22c55e",
+      radioLineColor: "#22c55e",
+      radioOverlay: true,
+      radioOverlayKind: "coverage",
+      situationStatusLabel: "DOBRÉ"
+    });
+    expect(collection.features[0]?.properties.radioFillOpacity).toBeCloseTo(0.24);
+  });
+
   it("adds unified mobile network polygon render metadata from SIM quality", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",

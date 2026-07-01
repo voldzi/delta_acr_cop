@@ -132,6 +132,11 @@ const situationSafetyAlertFillLayerId = "cop-situation-safety-alert-fill";
 const situationSafetyAlertLineLayerId = "cop-situation-safety-alert-line";
 const situationFillLayerId = "cop-situation-fill";
 const situationLineLayerId = "cop-situation-line";
+const situationRadioFillLayerId = "cop-situation-radio-fill";
+const situationRadioLineLayerId = "cop-situation-radio-line";
+const situationRadioPointHaloLayerId = "cop-situation-radio-point-halo";
+const situationRadioPointLayerId = "cop-situation-radio-point";
+const situationRadioLabelLayerId = "cop-situation-radio-label";
 const situationRasterOverlayLayerPrefix = "cop-situation-raster-overlay-layer";
 const situationRasterOverlaySourcePrefix = "cop-situation-raster-overlay-source";
 const situationPointSelectedLayerId = "cop-situation-point-selected";
@@ -201,6 +206,10 @@ const mapFeatureClickPriorityLayerIds = [
   sketchLineLayerId,
   sketchFillLayerId,
   situationRiskIconLayerId,
+  situationRadioPointLayerId,
+  situationRadioLabelLayerId,
+  situationRadioLineLayerId,
+  situationRadioFillLayerId,
   situationFloodTrendLayerId,
   situationHydroReferenceDetailTrendLayerId,
   situationHydroReferenceDetailIconLayerId,
@@ -269,6 +278,9 @@ const mapPointRaiseLayerIds = [
   situationRiskLabelLayerId,
   situationOsmSymbolLayerId,
   situationOsmDetailSymbolLayerId,
+  situationRadioPointHaloLayerId,
+  situationRadioPointLayerId,
+  situationRadioLabelLayerId,
   situationMobileSymbolLayerId,
   situationWeatherCameraSelectedLayerId,
   situationWeatherCameraLayerId,
@@ -503,6 +515,15 @@ export interface SituationContextFeatureCollection {
       coverageOpacity?: number;
       coverageQuality?: string;
       coverageTechnology?: string;
+      radioFillColor?: string;
+      radioFillOpacity?: number;
+      radioLabel?: string;
+      radioLineColor?: string;
+      radioLineOpacity?: number;
+      radioOverlay?: boolean;
+      radioOverlayKind?: string;
+      radioPointColor?: string;
+      radioPointHaloColor?: string;
       boundaryLabel?: string;
       boundaryReference?: boolean;
       communicationTower?: boolean;
@@ -1651,6 +1672,7 @@ function CopMapComponent({
             "all",
             ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
             ["!=", ["get", "weatherGrid"], true],
+            ["!=", ["get", "radioOverlay"], true],
             ["!", ["in", ["get", "safetyAlertLayer"], ["literal", ["warnings", "weather_alerts"]]]]
           ],
           paint: {
@@ -1717,6 +1739,7 @@ function CopMapComponent({
             "all",
             ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]],
             ["!=", ["get", "weatherGrid"], true],
+            ["!=", ["get", "radioOverlay"], true],
             ["!", ["in", ["get", "safetyAlertLayer"], ["literal", ["warnings", "weather_alerts"]]]]
           ],
           layout: {
@@ -1806,6 +1829,67 @@ function CopMapComponent({
                 1.45,
                 2.6
               ]
+            ]
+          }
+        });
+
+        map.addLayer({
+          id: situationRadioFillLayerId,
+          type: "fill",
+          source: situationSourceId,
+          filter: [
+            "all",
+            ["==", ["get", "radioOverlay"], true],
+            ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]]
+          ],
+          paint: {
+            "fill-color": ["coalesce", ["get", "radioFillColor"], ["get", "situationStatusColor"], "#38bdf8"],
+            "fill-opacity": [
+              "case",
+              ["get", "selected"],
+              ["min", 0.42, ["*", ["coalesce", ["get", "radioFillOpacity"], 0.18], 1.55]],
+              ["coalesce", ["get", "radioFillOpacity"], 0.18]
+            ]
+          }
+        });
+
+        map.addLayer({
+          id: situationRadioLineLayerId,
+          type: "line",
+          source: situationSourceId,
+          filter: [
+            "all",
+            ["==", ["get", "radioOverlay"], true],
+            ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]]
+          ],
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": ["coalesce", ["get", "radioLineColor"], ["get", "situationStatusColor"], "#38bdf8"],
+            "line-dasharray": [
+              "case",
+              ["==", ["get", "radioOverlayKind"], "input"],
+              ["literal", [2.2, 1.2]],
+              ["literal", [1000, 0.0001]]
+            ],
+            "line-opacity": [
+              "case",
+              ["get", "selected"],
+              0.96,
+              ["coalesce", ["get", "radioLineOpacity"], 0.78]
+            ],
+            "line-width": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              7,
+              ["case", ["==", ["get", "radioOverlayKind"], "input"], 2.6, 1.2],
+              12,
+              ["case", ["==", ["get", "radioOverlayKind"], "input"], 3.8, 2.2],
+              16,
+              ["case", ["==", ["get", "radioOverlayKind"], "input"], 5.2, 3.4]
             ]
           }
         });
@@ -2211,6 +2295,85 @@ function CopMapComponent({
         });
 
         map.addLayer({
+          id: situationRadioPointHaloLayerId,
+          type: "circle",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "radioOverlay"], true]],
+          paint: {
+            "circle-color": ["coalesce", ["get", "radioPointHaloColor"], ["get", "radioPointColor"], "#38bdf8"],
+            "circle-opacity": [
+              "case",
+              ["get", "selected"],
+              0.3,
+              ["==", ["get", "radioOverlayKind"], "input"],
+              0.24,
+              0.18
+            ],
+            "circle-radius": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              7,
+              ["case", ["get", "selected"], 16, 12],
+              12,
+              ["case", ["get", "selected"], 23, 17],
+              16,
+              ["case", ["get", "selected"], 31, 22]
+            ],
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-opacity": ["case", ["get", "selected"], 0.95, 0.62],
+            "circle-stroke-width": ["case", ["get", "selected"], 2.2, 1.4]
+          }
+        });
+
+        map.addLayer({
+          id: situationRadioPointLayerId,
+          type: "circle",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "radioOverlay"], true]],
+          paint: {
+            "circle-color": ["coalesce", ["get", "radioPointColor"], ["get", "situationStatusColor"], "#38bdf8"],
+            "circle-opacity": 0.96,
+            "circle-radius": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              7,
+              ["case", ["==", ["get", "radioOverlayKind"], "input"], 6, 5],
+              12,
+              ["case", ["==", ["get", "radioOverlayKind"], "input"], 8, 6.5],
+              16,
+              ["case", ["==", ["get", "radioOverlayKind"], "input"], 10, 8]
+            ],
+            "circle-stroke-color": "#061019",
+            "circle-stroke-opacity": 0.96,
+            "circle-stroke-width": 2
+          }
+        });
+
+        map.addLayer({
+          id: situationRadioLabelLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "radioOverlay"], true], ["has", "radioLabel"]],
+          layout: {
+            "text-field": ["get", "radioLabel"],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 7, 10, 12, 11.5, 16, 13],
+            "text-offset": [0, 1.35],
+            "text-anchor": "top",
+            "text-allow-overlap": true,
+            "text-ignore-placement": true
+          },
+          paint: {
+            "text-color": ["coalesce", ["get", "radioPointColor"], "#dff8ff"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.8,
+            "text-halo-blur": 0.35
+          }
+        });
+
+        map.addLayer({
           id: situationTrafficSymbolLayerId,
           type: "symbol",
           source: situationSourceId,
@@ -2575,7 +2738,7 @@ function CopMapComponent({
           id: situationMobileSymbolLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "mobile"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "takGateway"], true]],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "mobile"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "takGateway"], true], ["!=", ["get", "radioOverlay"], true]],
           layout: {
             "icon-image": ["coalesce", ["get", "mobileSymbolKey"], getMobileNetworkIconKey("unknown")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.26, 11, 0.34, 15, 0.48],
@@ -3339,6 +3502,18 @@ function CopMapComponent({
         map.on("mouseenter", situationMobileSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationRadioPointLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationRadioLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationRadioLineLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationRadioFillLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationTrafficSymbolLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -3439,6 +3614,18 @@ function CopMapComponent({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationMobileSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationRadioPointLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationRadioLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationRadioLineLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationRadioFillLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationTrafficSymbolLayerId, () => {
@@ -6070,18 +6257,8 @@ function buildSituationRenderProperties(
       situationStatusTone: referenceStatus.tone
     };
   }
-  if (isRadioInputFeature(feature)) {
-    return {
-      coverageColor: "#38bdf8",
-      coverageLabel: formatRadioInputFeatureLabel(feature),
-      coverageLineOpacity: 0.82,
-      coverageOpacity: 0.12,
-      mobileNetworkLabel: formatRadioInputFeatureLabel(feature),
-      mobileSymbolKey: getMobileNetworkIconKey("info"),
-      situationStatusColor: "#38bdf8",
-      situationStatusLabel: "VSTUP",
-      situationStatusTone: "info"
-    };
+  if (isRadioOverlayFeature(feature)) {
+    return buildRadioOverlayRenderProperties(feature);
   }
   const osmCategory = resolveOsmCategoryPresentation(feature);
   if (osmCategory) {
@@ -6638,9 +6815,59 @@ function isRadioInputFeature(feature: SituationFeature): boolean {
   return feature.properties.sourceId === "radio_los_input" || stringProperty(tags.radioInput) === "true";
 }
 
+function isRadioOverlayFeature(feature: SituationFeature): boolean {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return isRadioInputFeature(feature)
+    || feature.properties.sourceId === "radio_los_model"
+    || feature.properties.layerId?.startsWith("analysis.radio.") === true
+    || stringProperty(tags.radioOverlay) === "true";
+}
+
 function formatRadioInputFeatureLabel(feature: SituationFeature): string {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
   return stringProperty(tags.radioInputRoleLabel) ?? feature.properties.label ?? "Radio vstup";
+}
+
+function buildRadioOverlayRenderProperties(
+  feature: SituationFeature
+): Partial<SituationContextFeatureCollection["features"][number]["properties"]> {
+  const input = isRadioInputFeature(feature);
+  const quality = normalizeCoverageQuality(feature.properties.quality);
+  const status = input ? { color: "#38bdf8", label: "VSTUP", tone: "info" } : mobileCoverageStatus(quality);
+  const confidence = clampUnit(numberProperty(feature.properties.confidence) ?? (input ? 1 : 0.55));
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  const mode = stringProperty(tags.radioOverlayMode)
+    ?? feature.properties.layerId?.replace(/^analysis\.radio\./u, "")
+    ?? (input ? "input" : "coverage");
+  const kind = input ? "input" : mode;
+  const label = input
+    ? formatRadioInputFeatureLabel(feature)
+    : feature.properties.label
+      ?? feature.properties.summary
+      ?? status.label;
+  const fillOpacity = input ? 0.06 : 0.08 + confidence * 0.2;
+  const lineOpacity = input ? 0.86 : 0.48 + confidence * 0.34;
+  return {
+    coverageColor: status.color,
+    coverageLabel: label,
+    coverageLineOpacity: lineOpacity,
+    coverageOpacity: fillOpacity,
+    coverageQuality: quality,
+    mapLabel: label,
+    mapPointSuppressed: feature.geometry.type === "Point" ? true : undefined,
+    radioFillColor: status.color,
+    radioFillOpacity: fillOpacity,
+    radioLabel: feature.geometry.type === "Point" ? label : undefined,
+    radioLineColor: input ? "#38bdf8" : status.color,
+    radioLineOpacity: lineOpacity,
+    radioOverlay: true,
+    radioOverlayKind: kind,
+    radioPointColor: input ? "#38bdf8" : status.color,
+    radioPointHaloColor: input ? "#e0f2fe" : status.color,
+    situationStatusColor: status.color,
+    situationStatusLabel: status.label,
+    situationStatusTone: status.tone
+  };
 }
 
 function situationFeatureStatus(feature: SituationFeature): { color: string; label: string; tone: string } {
