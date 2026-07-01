@@ -16199,11 +16199,22 @@ function toggleCatalogLayerId(current: string[], layerId: string, enabled: boole
 }
 
 function catalogLayerIdsForProviderSelection(catalog: MapCatalogResponse, providerId: CatalogProviderId, selectedLayerIds: string[]): string[] {
-  const selected = new Set(selectedLayerIds);
+  const selected = new Set(expandImplicitCatalogLayerIds(catalog, selectedLayerIds));
   return catalog.layers
     .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
     .filter((layer) => (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === providerId)
     .map((layer) => layer.layerId);
+}
+
+function expandImplicitCatalogLayerIds(catalog: MapCatalogResponse, selectedLayerIds: string[]): string[] {
+  const selected = new Set(selectedLayerIds);
+  if (selected.has("public.traffic.transit")) {
+    const transitStopsLayer = catalog.layers.find((layer) => layer.layerId === "public.traffic.transit_stops");
+    if (transitStopsLayer && catalogLayerAvailableForMap(transitStopsLayer) && isImplementedCatalogLayer(transitStopsLayer)) {
+      selected.add("public.traffic.transit_stops");
+    }
+  }
+  return Array.from(selected);
 }
 
 function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | null, selectedLayerIds: string[]): number | undefined {
@@ -16224,7 +16235,7 @@ function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | nul
 }
 
 function selectedTrafficCatalogLayerIds(catalog: MapCatalogResponse, selectedLayerIds: string[]): string[] {
-  const selected = new Set(selectedLayerIds);
+  const selected = new Set(expandImplicitCatalogLayerIds(catalog, selectedLayerIds));
   return catalog.layers
     .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
     .filter((layer) => layer.query.providerId === "sim.situation-data" && isTrafficCatalogLayerId(layer.layerId))
