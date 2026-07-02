@@ -84,7 +84,8 @@ import type {
   UserDirectoryEntry
 } from "@cop/core/cop-data";
 import {
-  publishChatUnreadCount
+  publishChatUnreadCount,
+  rotateMatrixDeviceId
 } from "@cop/messaging/runtime";
 import type {
   MatrixAttachmentKind,
@@ -1578,7 +1579,8 @@ export function ChatApp() {
     }
     matrixAttemptKeyRef.current = null;
     resetMatrixSession();
-    const session = await startMatrixSession(preferredSelection, true, latestAuthToken);
+    const freshMatrixDeviceId = rotateMatrixDeviceId(authSubjectId ?? "anonymous");
+    const session = await startMatrixSession(preferredSelection, true, latestAuthToken, freshMatrixDeviceId);
     if (!session) {
       throw new Error("Chatové spojení se nepodařilo znovu připravit. Zkuste stránku obnovit a akci opakovat.");
     }
@@ -1603,7 +1605,7 @@ export function ChatApp() {
         ? "Nový nouzový E2EE obnovovací klíč je aktivní. Použijte ho i na iOS; starší šifrovaná historie nemusí být dostupná."
         : "E2EE obnova je nastavena pro web i iPhone/iPad. Uložte obnovovací klíč mimo tento prohlížeč.");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Obnovovací klíč se nepodařilo vytvořit.");
+      setError(userFacingError(caught instanceof Error ? caught.message : "Obnovovací klíč se nepodařilo vytvořit."));
     } finally {
       setRecoveryWorking(false);
     }
@@ -1623,7 +1625,7 @@ export function ChatApp() {
       await refreshEncryptionRecoveryStatus(session);
       setNotice("Nový E2EE recovery cyklus pro web+iOS je připravený. Uložte nový klíč a použijte ho v mobilní aplikaci.");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Recovery pro iPhone/iPad se nepodařilo připravit.");
+      setError(userFacingError(caught instanceof Error ? caught.message : "Recovery pro iPhone/iPad se nepodařilo připravit."));
     } finally {
       setRecoveryWorking(false);
     }
@@ -4984,6 +4986,12 @@ export function userFacingError(message: string): string {
   if (isMatrixSessionExpiredError(normalized)) {
     return "Platnost Matrix relace vypršela. Obnovte stránku nebo znovu otevřete chat a akci opakujte.";
   }
+  if (isMatrixDuplicateOneTimeKeyUploadError(normalized)) {
+    return "Matrix už pro původní webové zařízení evidoval část šifrovacích klíčů. Chat teď používá nové bezpečné webové zařízení; otevřete dialog znovu a vytvořte nový obnovovací klíč.";
+  }
+  if (isSensitiveMatrixKeyMaterialError(normalized)) {
+    return "Matrix odmítl obnovu E2EE kvůli nekonzistentnímu stavu šifrovacích klíčů. Použijte nouzový reset a vytvořte nový obnovovací klíč.";
+  }
   if (/\b(401|403)\b/u.test(normalized) || /unauthori[sz]ed|forbidden|přihlášen/i.test(normalized)) {
     return "Pro tuto akci je potřeba platné přihlášení.";
   }
@@ -5004,6 +5012,17 @@ function isMatrixInteractiveAuthError(message: string): boolean {
 function isMatrixSessionExpiredError(message: string): boolean {
   return /MatrixError|_matrix|M_UNKNOWN_TOKEN|unknown token|access token/i.test(message)
     && /\b401\b|M_UNKNOWN_TOKEN|unknown token|expired/i.test(message);
+}
+
+function isMatrixDuplicateOneTimeKeyUploadError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes("one time key")
+    && normalized.includes("already exists")
+    && (normalized.includes("signed_curve25519") || normalized.includes("keys/upload") || normalized.includes("/keys/upload"));
+}
+
+function isSensitiveMatrixKeyMaterialError(message: string): boolean {
+  return /signed_curve25519|ed25519|curve25519|old key|new key|signatures|\/keys\/upload|_matrix\/client\/v3\/keys/iu.test(message);
 }
 
 function readLocalUserPreferences(ownerId: string): LocalUserPreferences {

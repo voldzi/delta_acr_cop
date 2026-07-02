@@ -21,6 +21,17 @@ export function getOrCreateMatrixDeviceId(ownerId: string): string {
   }
 }
 
+export function rotateMatrixDeviceId(ownerId: string): string {
+  const storageKey = `${matrixDeviceIdStoragePrefix}.${stableStorageKey(ownerId)}`;
+  const next = createMatrixDeviceId();
+  try {
+    window.localStorage.setItem(storageKey, next);
+  } catch {
+    fallbackMatrixDeviceIds.set(storageKey, next);
+  }
+  return next;
+}
+
 export function publishChatUnreadCount(count: number): void {
   const payload = encodeChatUnread(count);
   if (window.parent !== window) {

@@ -8,7 +8,7 @@ import {
   createMatrixMessagingSession,
   isMatrixAccountStoreMismatchError
 } from "@cop/messaging/matrixClient";
-import { getOrCreateMatrixDeviceId } from "@cop/messaging/runtime";
+import { getOrCreateMatrixDeviceId, rotateMatrixDeviceId } from "@cop/messaging/runtime";
 import type {
   MatrixEncryptionRecoveryStatus,
   MatrixMessagingSession,
@@ -121,7 +121,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
   matrixSessionRef: React.MutableRefObject<MatrixMessagingSession | null>;
   refreshEncryptionRecoveryStatus: (session?: MatrixMessagingSession | null) => Promise<MatrixEncryptionRecoveryStatus | null>;
   resetMatrixSession: () => void;
-  startMatrixSession: (preferredSelection?: string | null, allowStoreRecovery?: boolean, authTokenOverride?: string | null) => Promise<MatrixMessagingSession | null>;
+  startMatrixSession: (preferredSelection?: string | null, allowStoreRecovery?: boolean, authTokenOverride?: string | null, matrixDeviceIdOverride?: string | null) => Promise<MatrixMessagingSession | null>;
   syncState: string;
 } {
   const [state, dispatch] = React.useReducer(matrixSessionReducer, initialMatrixSessionState);
@@ -144,7 +144,8 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
   const startMatrixSession = React.useCallback(async (
     preferredSelection?: string | null,
     allowStoreRecovery = true,
-    authTokenOverride?: string | null
+    authTokenOverride?: string | null,
+    matrixDeviceIdOverride?: string | null
   ): Promise<MatrixMessagingSession | null> => {
     const currentOptions = optionsRef.current;
     const effectiveAuthToken = authTokenOverride ?? currentOptions.authToken;
@@ -157,7 +158,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
       const bootstrap = await fetchMessagingBootstrap(
         currentOptions.apiBase,
         effectiveAuthToken,
-        getOrCreateMatrixDeviceId(currentOptions.authSubjectId ?? "anonymous")
+        matrixDeviceIdOverride ?? getOrCreateMatrixDeviceId(currentOptions.authSubjectId ?? "anonymous")
       );
       if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
         const message = bootstrap.detail ?? bootstrap.warnings[0] ?? "Zabezpečený chat není připravený.";
@@ -190,14 +191,15 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
           if (!latestAuthToken) {
             return null;
           }
+          const replacementDeviceId = rotateMatrixDeviceId(latestOptions.authSubjectId ?? "anonymous");
           const bootstrap = await fetchMessagingBootstrap(
             latestOptions.apiBase,
             latestAuthToken,
-            getOrCreateMatrixDeviceId(latestOptions.authSubjectId ?? "anonymous")
+            replacementDeviceId
           );
           await clearMatrixMessagingCryptoStateForBootstrap(bootstrap);
-          latestOptions.onNotice("Lokální šifrovací stav byl obnoven pro aktuální přihlášení.");
-          return startMatrixSession(preferredSelection, false);
+          latestOptions.onNotice("Lokální šifrovací stav byl obnoven na novém webovém zařízení.");
+          return startMatrixSession(preferredSelection, false, latestAuthToken, replacementDeviceId);
         } catch (recoveryCaught) {
           const message = recoveryCaught instanceof Error ? recoveryCaught.message : "Lokální šifrovací stav se nepodařilo obnovit.";
           optionsRef.current.onError(message);

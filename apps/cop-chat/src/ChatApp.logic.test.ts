@@ -134,6 +134,15 @@ describe("userFacingError", () => {
   it("keeps real COP auth failures as login failures", () => {
     expect(userFacingError("HTTP 401 unauthorized")).toBe("Pro tuto akci je potřeba platné přihlášení.");
   });
+
+  it("does not expose Matrix key material from duplicate one-time key upload errors", () => {
+    const message = userFacingError(
+      "Obnovovací klíč se nepodařilo vytvořit: MatrixError: [400] One time key signed_curve25519:AAAAAAAAAGO already exists. Old key: {\"key\":\"old-secret\",\"signatures\":{\"@user:server\":{\"ed25519:DEVICE\":\"old-signature\"}}}; new key: {\"key\":\"new-secret\"} (https://msg.zeleznalady.cz/_matrix/client/v3/keys/upload)"
+    );
+
+    expect(message).toContain("původní webové zařízení");
+    expect(message).not.toMatch(/signed_curve25519|old-secret|new-secret|old-signature|\/keys\/upload/iu);
+  });
 });
 
 describe("normalizeChatPreferences", () => {

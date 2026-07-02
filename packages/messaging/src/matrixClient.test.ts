@@ -568,6 +568,73 @@ describe("Matrix client diagnostics", () => {
     });
   });
 
+  it("accepts a completed recovery when Matrix reports a duplicate one-time key upload", async () => {
+    const duplicateUploadError = new Error(
+      "MatrixError: [400] One time key signed_curve25519:AAAAAAAAAGO already exists. Old key: {\"key\":\"old-secret\",\"signatures\":{\"@user:server\":{\"ed25519:DEVICE\":\"old-signature\"}}}; new key: {\"key\":\"new-secret\"} (https://msg.zeleznalady.cz/_matrix/client/v3/keys/upload)"
+    );
+    const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
+      await options.createSecretStorageKey?.();
+      throw duplicateUploadError;
+    });
+    const crypto: MockMatrixCrypto = {
+      bootstrapCrossSigning: vi.fn(),
+      bootstrapSecretStorage,
+      checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+      createRecoveryKeyFromPassphrase: vi.fn().mockResolvedValue({
+        encodedPrivateKey: "EsTK duplicate upload recovery key",
+        privateKey: new Uint8Array([7, 8, 9])
+      }),
+      getActiveSessionBackupVersion: vi.fn().mockResolvedValue("2"),
+      getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "2" }),
+      isCrossSigningReady: vi.fn().mockResolvedValue(true),
+      isSecretStorageReady: vi.fn().mockResolvedValue(true),
+      resetEncryption: vi.fn().mockResolvedValue(undefined)
+    };
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await expect(session.prepareEncryptionRecoveryForMobile()).resolves.toBe("EsTK duplicate upload recovery key");
+    expect(crypto.checkKeyBackupAndEnable).toHaveBeenCalled();
+  });
+
+  it("sanitizes duplicate one-time key upload failures when recovery cannot be confirmed", async () => {
+    const duplicateUploadError = new Error(
+      "MatrixError: [400] One time key signed_curve25519:AAAAAAAAAGO already exists. Old key: {\"key\":\"old-secret\",\"signatures\":{\"@user:server\":{\"ed25519:DEVICE\":\"old-signature\"}}}; new key: {\"key\":\"new-secret\"} (https://msg.zeleznalady.cz/_matrix/client/v3/keys/upload)"
+    );
+    const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
+      await options.createSecretStorageKey?.();
+      throw duplicateUploadError;
+    });
+    const crypto: MockMatrixCrypto = {
+      bootstrapCrossSigning: vi.fn(),
+      bootstrapSecretStorage,
+      checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+      createRecoveryKeyFromPassphrase: vi.fn().mockResolvedValue({
+        encodedPrivateKey: "EsTK duplicate upload recovery key",
+        privateKey: new Uint8Array([7, 8, 9])
+      }),
+      getActiveSessionBackupVersion: vi.fn().mockResolvedValue(null),
+      getKeyBackupInfo: vi.fn().mockResolvedValue(null),
+      isCrossSigningReady: vi.fn().mockResolvedValue(false),
+      isSecretStorageReady: vi.fn().mockResolvedValue(false),
+      resetEncryption: vi.fn().mockResolvedValue(undefined)
+    };
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    let caught: unknown;
+    try {
+      await session.prepareEncryptionRecoveryForMobile();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("původní webové zařízení");
+    expect((caught as Error).message).not.toMatch(/signed_curve25519|old-secret|new-secret|old-signature|\/keys\/upload/iu);
+  });
+
   it("keeps the generated secret-storage key available during iOS recovery preparation", async () => {
     let createClientOptions: Record<string, unknown> | undefined;
     const bootstrapCrossSigning = vi.fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>().mockResolvedValue(undefined);

@@ -920,13 +920,40 @@ async function createUserControlledEncryptionRecovery(
       throw new Error("Nová E2EE obnova není kompletní pro iPhone/iPad. Zkuste akci zopakovat z tohoto důvěryhodného prohlížeče.");
     }
   } catch (caught) {
+    if (isMatrixDuplicateOneTimeKeyUploadError(caught)
+      && await acceptCompletedRecoveryAfterDuplicateOneTimeKeyUpload(client, crypto, encodedRecoveryKey)) {
+      return encodedRecoveryKey;
+    }
     const action = options.mobileCompatible ? "připravit pro iPhone/iPad" : "vytvořit";
-    throw new Error(`Obnovovací klíč se nepodařilo ${action}: ${errorMessage(caught)}`);
+    throw new Error(`Obnovovací klíč se nepodařilo ${action}: ${recoveryErrorMessage(caught)}`);
   }
   if (!encodedRecoveryKey) {
     throw new Error("Matrix nevydal obnovovací klíč. Zkuste nastavení zopakovat.");
   }
   return encodedRecoveryKey;
+}
+
+async function acceptCompletedRecoveryAfterDuplicateOneTimeKeyUpload(
+  client: MatrixClientLike,
+  crypto: MatrixCryptoApiLike,
+  encodedRecoveryKey: string
+): Promise<boolean> {
+  if (!encodedRecoveryKey) {
+    return false;
+  }
+  try {
+    await crypto.checkKeyBackupAndEnable?.();
+  } catch (caught) {
+    if (!isMatrixDuplicateOneTimeKeyUploadError(caught)) {
+      return false;
+    }
+  }
+  try {
+    const status = await readMatrixEncryptionRecoveryStatus(client);
+    return status.ready && status.matrixRustCompatible;
+  } catch {
+    return false;
+  }
 }
 
 async function resetMatrixEncryptionForRecovery(crypto: MatrixCryptoApiLike): Promise<boolean> {
@@ -1529,6 +1556,51 @@ function isLikelyBrowserNetworkError(caught: unknown): boolean {
 
 function errorMessage(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught);
+}
+
+function recoveryErrorMessage(caught: unknown): string {
+  if (isMatrixDuplicateOneTimeKeyUploadError(caught)) {
+    return "Matrix už pro původní webové zařízení evidoval část šifrovacích klíčů. Chat vytvořil nové bezpečné webové zařízení; otevřete dialog znovu a vytvořte nový obnovovací klíč.";
+  }
+  if (isSensitiveMatrixCryptoError(caught)) {
+    return "Matrix odmítl obnovu E2EE kvůli nekonzistentnímu stavu šifrovacích klíčů. Použijte nouzový reset a vytvořte nový obnovovací klíč.";
+  }
+  return errorMessage(caught);
+}
+
+function isMatrixDuplicateOneTimeKeyUploadError(caught: unknown): boolean {
+  const text = matrixErrorDiagnosticText(caught).toLowerCase();
+  return text.includes("one time key")
+    && text.includes("already exists")
+    && (text.includes("signed_curve25519") || text.includes("keys/upload") || text.includes("/keys/upload"));
+}
+
+function isSensitiveMatrixCryptoError(caught: unknown): boolean {
+  const text = matrixErrorDiagnosticText(caught);
+  return /signed_curve25519|ed25519|curve25519|one time key|old key|new key|signatures|\/keys\/upload|_matrix\/client\/v3\/keys/iu.test(text);
+}
+
+function matrixErrorDiagnosticText(caught: unknown): string {
+  const record = asRecord(caught);
+  const fragments = [
+    errorMessage(caught),
+    safeJsonFragment(record?.data),
+    safeJsonFragment(record?.body),
+    safeJsonFragment(record?.response),
+    record?.cause === undefined ? "" : errorMessage(record.cause)
+  ];
+  return fragments.filter(Boolean).join(" ");
+}
+
+function safeJsonFragment(value: unknown): string {
+  if (value === undefined) {
+    return "";
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function isLikelyMatrixForbiddenError(caught: unknown): boolean {
