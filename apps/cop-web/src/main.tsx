@@ -1,7 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import clsx from "clsx";
-import * as QRCode from "qrcode";
 import {
   Activity,
   AlertTriangle,
@@ -360,6 +359,11 @@ const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_
 const CopMap = React.lazy(() => import("./CopMap").then((module) => ({ default: module.CopMap })));
 const TrackTable = React.lazy(() => import("./TrackTable"));
 const XrWorkspace = React.lazy(() => import("./XrWorkspace"));
+
+async function createPairingQrDataUrl(universalLink: string): Promise<string> {
+  const QRCode = await import("qrcode");
+  return QRCode.toDataURL(universalLink, { margin: 1, scale: 6, width: 192 });
+}
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
 type DomainScope = "all" | "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
@@ -8976,7 +8980,7 @@ function MobileDevicePairingPanel({
         cancelled = true;
       };
     }
-    QRCode.toDataURL(universalLink, { margin: 1, scale: 6, width: 192 })
+    createPairingQrDataUrl(universalLink)
       .then((dataUrl) => {
         if (!cancelled) {
           setQrDataUrl(dataUrl);

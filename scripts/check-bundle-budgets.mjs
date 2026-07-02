@@ -15,6 +15,7 @@ const budgets = [
       { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 340 * KiB },
       { label: "maplibre", pattern: /^maplibre-[\w-]+\.js$/, maxBytes: 330 * KiB },
       { label: "milsymbol", pattern: /^milsymbol-[\w-]+\.js$/, maxBytes: 230 * KiB },
+      { label: "pairing QR generator", pattern: /^qrcode-[\w-]+\.js$/, maxBytes: 30 * KiB },
       { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 35 * KiB },
       { label: "maplibre styles", pattern: /^maplibre-[\w-]+\.css$/, maxBytes: 15 * KiB }
     ]

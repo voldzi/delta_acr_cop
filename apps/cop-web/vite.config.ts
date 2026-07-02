@@ -68,7 +68,13 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          return id.includes("/node_modules/maplibre-gl/") ? "maplibre" : undefined;
+          if (id.includes("/node_modules/maplibre-gl/")) {
+            return "maplibre";
+          }
+          if (id.includes("/node_modules/qrcode/")) {
+            return "qrcode";
+          }
+          return undefined;
         }
       }
     }
