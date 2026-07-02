@@ -306,10 +306,13 @@ const mapPointRaiseLayerIds = [
   trackLabelLayerId
 ] as const;
 
-const mapStyleUrl = import.meta.env.VITE_COP_MAP_STYLE_URL ?? "";
-const tileUrl = import.meta.env.VITE_COP_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const tileGlyphsUrl = import.meta.env.VITE_COP_TILE_GLYPHS_URL ?? "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf";
-const tileAttribution = import.meta.env.VITE_COP_TILE_ATTRIBUTION ?? "&copy; OpenStreetMap contributors";
+const defaultTileUrl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const defaultTileGlyphsUrl = "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf";
+const defaultTileAttribution = "&copy; OpenStreetMap contributors";
+const mapStyleUrl = normalizeOptionalMapUrl(import.meta.env.VITE_COP_MAP_STYLE_URL);
+const tileUrl = normalizeMapTileTemplate(import.meta.env.VITE_COP_TILE_URL, defaultTileUrl);
+const tileGlyphsUrl = normalizeMapGlyphsTemplate(import.meta.env.VITE_COP_TILE_GLYPHS_URL, defaultTileGlyphsUrl);
+const tileAttribution = normalizeOptionalMapText(import.meta.env.VITE_COP_TILE_ATTRIBUTION, defaultTileAttribution);
 const defaultCenter = parseMapCenter(import.meta.env.VITE_COP_MAP_CENTER);
 const defaultZoom = parseFiniteNumber(import.meta.env.VITE_COP_MAP_ZOOM, 8);
 const earthRadiusKm = 6371.0088;
@@ -1188,13 +1191,17 @@ function CopMapComponent({
     };
     const handleWebGlContextRestored = () => {
       setMapError(null);
-      map.resize();
-      map.triggerRepaint();
+      requestMapResize(map);
     };
+    const handleMapViewportResume = () => requestMapResize(map);
     mapCanvas.addEventListener("webglcontextlost", handleWebGlContextLost);
     mapCanvas.addEventListener("webglcontextrestored", handleWebGlContextRestored);
+    window.addEventListener("resize", handleMapViewportResume);
+    window.addEventListener("focus", handleMapViewportResume);
+    document.addEventListener("visibilitychange", handleMapViewportResume);
     enableMapInteractions(map);
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    requestMapResize(map);
 
     const selectRenderedFeature = (renderedFeature: NonNullable<MapLayerMouseEvent["features"]>[number] | undefined) => {
       const properties = isRecord(renderedFeature?.properties) ? renderedFeature.properties : {};
@@ -3706,7 +3713,7 @@ function CopMapComponent({
           map.getCanvas().style.cursor = "";
         });
         setMapReady(true);
-        map.resize();
+        requestMapResize(map);
         emitMapViewport(map, onViewChangeRef, onBoundsChangeRef);
       })().catch((error: unknown) => {
         setMapError(error instanceof Error ? error.message : "NATO symboly nejsou dostupné.");
@@ -3723,6 +3730,9 @@ function CopMapComponent({
     return () => {
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
+      window.removeEventListener("resize", handleMapViewportResume);
+      window.removeEventListener("focus", handleMapViewportResume);
+      document.removeEventListener("visibilitychange", handleMapViewportResume);
       mapCanvas.removeEventListener("webglcontextlost", handleWebGlContextLost);
       mapCanvas.removeEventListener("webglcontextrestored", handleWebGlContextRestored);
       map.remove();
@@ -3736,10 +3746,14 @@ function CopMapComponent({
     }
     resizeObserverRef.current?.disconnect();
     resizeObserverRef.current = new ResizeObserver(() => {
-      mapRef.current?.resize();
+      if (mapRef.current) {
+        requestMapResize(mapRef.current);
+      }
     });
     resizeObserverRef.current.observe(containerRef.current);
-    mapRef.current?.resize();
+    if (mapRef.current) {
+      requestMapResize(mapRef.current);
+    }
     return () => {
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
@@ -4891,6 +4905,24 @@ function enableMapInteractions(map: maplibregl.Map): void {
   canvas.style.touchAction = "none";
   canvasContainer.style.pointerEvents = "auto";
   canvasContainer.style.touchAction = "none";
+}
+
+function requestMapResize(map: maplibregl.Map): void {
+  const run = () => {
+    if (!map.getContainer().isConnected) {
+      return;
+    }
+    map.resize();
+    map.triggerRepaint();
+  };
+
+  run();
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(run);
+    requestAnimationFrame(() => requestAnimationFrame(run));
+  }
+  window.setTimeout(run, 120);
+  window.setTimeout(run, 420);
 }
 
 function setMapInteractionSuspended(map: maplibregl.Map, suspended: boolean): void {
@@ -9085,6 +9117,33 @@ function radiansToDegrees(value: number) {
 
 function normalizeLongitude(value: number) {
   return ((((value + 180) % 360) + 360) % 360) - 180;
+}
+
+function normalizeOptionalMapUrl(value: string | undefined): string {
+  return (value ?? "").trim();
+}
+
+function normalizeOptionalMapText(value: string | undefined, fallback: string): string {
+  const normalized = (value ?? "").trim();
+  return normalized || fallback;
+}
+
+export function normalizeMapTileTemplate(value: string | undefined, fallback = defaultTileUrl): string {
+  const normalized = normalizeOptionalMapUrl(value);
+  if (!normalized) {
+    return fallback;
+  }
+  const hasTileTokens = normalized.includes("{z}") && normalized.includes("{x}") && normalized.includes("{y}");
+  return hasTileTokens ? normalized : fallback;
+}
+
+export function normalizeMapGlyphsTemplate(value: string | undefined, fallback = defaultTileGlyphsUrl): string {
+  const normalized = normalizeOptionalMapUrl(value);
+  if (!normalized) {
+    return fallback;
+  }
+  const hasGlyphTokens = normalized.includes("{fontstack}") && normalized.includes("{range}");
+  return hasGlyphTokens ? normalized : fallback;
 }
 
 export function parseMapCenter(value: string | undefined): [number, number] {

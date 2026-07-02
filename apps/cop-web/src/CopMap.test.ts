@@ -6,6 +6,8 @@ import {
   fitMapToObjects,
   fitMapToVisibleContent,
   isRecoverableMapError,
+  normalizeMapGlyphsTemplate,
+  normalizeMapTileTemplate,
   objectsToHistoryFeatureCollection,
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
@@ -1929,6 +1931,14 @@ describe("COP map data helpers", () => {
   it("parses map center from longitude and latitude env value", () => {
     expect(parseMapCenter("15.1,50.2")).toEqual([15.1, 50.2]);
     expect(parseMapCenter("invalid")).toEqual([14.42, 50.08]);
+  });
+
+  it("falls back from empty or invalid map tile configuration", () => {
+    expect(normalizeMapTileTemplate("")).toBe("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
+    expect(normalizeMapTileTemplate("https://tiles.example.test/{z}/{x}.png")).toBe("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
+    expect(normalizeMapTileTemplate(" https://tiles.example.test/{z}/{x}/{y}.png ")).toBe("https://tiles.example.test/{z}/{x}/{y}.png");
+    expect(normalizeMapGlyphsTemplate("")).toBe("https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf");
+    expect(normalizeMapGlyphsTemplate("https://tiles.example.test/fonts/{range}.pbf")).toBe("https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf");
   });
 
   it("fits the map to one or more positioned tracks", () => {
