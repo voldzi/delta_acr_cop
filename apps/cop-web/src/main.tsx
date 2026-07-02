@@ -11671,14 +11671,72 @@ function mobileTowerViewshedId(feature: SituationFeature): string | undefined {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
   const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
   const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
+  const mobileCoverage = isRecord(providerProperties.mobileCoverage) ? providerProperties.mobileCoverage : {};
+  const explicitTowerId = cleanMobileTowerViewshedId(
+    stringProperty(providerTags.viewshedTowerId)
+    ?? stringProperty(tags.viewshedTowerId)
+    ?? stringProperty(providerProperties.viewshedTowerId)
+    ?? stringProperty(providerTags.towerId)
+    ?? stringProperty(tags.towerId)
+    ?? stringProperty(providerProperties.towerId)
+  );
+  if (explicitTowerId) {
+    return explicitTowerId;
+  }
+  const viewshedUrlTowerId = mobileTowerIdFromViewshedUrl(
+    stringProperty(providerProperties.viewshedUrl)
+    ?? stringProperty(providerTags.viewshedUrl)
+    ?? stringProperty(tags.viewshedUrl)
+    ?? stringProperty(mobileCoverage.viewshedUrl)
+    ?? stringProperty(mobileCoverage.detailUrl)
+  );
+  if (viewshedUrlTowerId) {
+    return viewshedUrlTowerId;
+  }
+  const nearestTowerId = cleanMobileTowerViewshedId(
+    stringProperty(providerTags.nearestTowerId)
+    ?? stringProperty(tags.nearestTowerId)
+  );
+  if (nearestTowerId) {
+    return nearestTowerId;
+  }
   const osmType = stringProperty(tags.osmType) ?? stringProperty(providerTags.osmType);
   const osmId = stringProperty(tags.osmId) ?? stringProperty(providerTags.osmId);
   if (osmType && osmId) {
-    return `${osmType}:${osmId}`;
+    return cleanMobileTowerViewshedId(`${osmType}:${osmId}`);
   }
-  return stringProperty(tags.nearestTowerId)
-    ?? stringProperty(providerTags.nearestTowerId)
-    ?? stringProperty(feature.properties.featureId?.startsWith("mobile:osm_postgis:") ? feature.properties.featureId.replace(/^mobile:osm_postgis:/u, "") : undefined);
+  return cleanMobileTowerViewshedId(stringProperty(feature.properties.featureId));
+}
+
+function mobileTowerIdFromViewshedUrl(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const match = value.match(/\/mobile-coverage\/towers\/([^/?#]+)\/viewshed\b/u);
+  if (!match?.[1]) {
+    return undefined;
+  }
+  try {
+    return cleanMobileTowerViewshedId(decodeURIComponent(match[1]));
+  } catch {
+    return cleanMobileTowerViewshedId(match[1]);
+  }
+}
+
+function cleanMobileTowerViewshedId(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const legacyFeatureMatch = trimmed.match(/^mobile:osm_postgis:(node|way|relation|area):([^:]+)(?::communications_tower)?$/iu);
+  if (legacyFeatureMatch?.[1] && legacyFeatureMatch[2]) {
+    return `${legacyFeatureMatch[1].toLowerCase()}:${legacyFeatureMatch[2]}`;
+  }
+  const legacyTowerMatch = trimmed.match(/^(node|way|relation|area):([^:]+):communications_tower$/iu);
+  if (legacyTowerMatch?.[1] && legacyTowerMatch[2]) {
+    return `${legacyTowerMatch[1].toLowerCase()}:${legacyTowerMatch[2]}`;
+  }
+  return trimmed;
 }
 
 function mobileTowerViewshedResponseToSituationFeatures(

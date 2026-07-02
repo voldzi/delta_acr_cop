@@ -3541,9 +3541,30 @@ export function isSimulatedAirObject(object: CopObject): boolean {
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText || "API request failed"} for ${url}`);
+    const apiMessage = await readApiErrorMessage(response);
+    throw new Error(apiMessage ?? `${response.status} ${response.statusText || "API request failed"} for ${url}`);
   }
   return (await response.json()) as T;
+}
+
+async function readApiErrorMessage(response: Response): Promise<string | undefined> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return undefined;
+  }
+  try {
+    const body = (await response.clone().json()) as unknown;
+    if (typeof body === "object" && body !== null && "error" in body) {
+      const error = (body as { error?: unknown }).error;
+      if (typeof error === "object" && error !== null && "message" in error) {
+        const message = (error as { message?: unknown }).message;
+        return typeof message === "string" && message.trim().length > 0 ? message : undefined;
+      }
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 async function fetchOptionalJson<T>(url: string, init?: RequestInit): Promise<T | undefined> {

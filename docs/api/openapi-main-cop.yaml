@@ -830,8 +830,9 @@ paths:
       description: >
         Server-side proxy for the SIM situation-data per-BTS viewshed endpoint. Clients call this
         only after a user selects one communication tower/BTS reference; COP must not call it in
-        bulk for all towers. The response is a model estimate, not confirmed operator/NOC BTS
-        status.
+        bulk for all towers. Prefer a SIM-provided viewshed tower id or clean {osmType}:{osmId};
+        legacy COP map feature ids are normalized defensively. The response is a model estimate, not
+        confirmed operator/NOC BTS status.
       parameters:
         - name: towerId
           in: path
@@ -884,6 +885,12 @@ paths:
                 $ref: "#/components/schemas/MobileTowerViewshed"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "404":
+          description: The selected object does not support mobile viewshed calculation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "502":
           description: SIM situation-data mobile viewshed detail is unavailable.
           content:

@@ -42,6 +42,8 @@ export type SituationLayerId =
 
 type SituationCacheStatus = "coalesced" | "hit" | "miss" | "stale";
 
+const MOBILE_TOWER_VIEWSHED_TIMEOUT_MS = 20_000;
+
 export interface SituationDataCacheStats {
   entries: number;
   inflight: number;
@@ -1146,7 +1148,9 @@ async function fetchMobileTowerViewshed(
   url.searchParams.set("radiusM", String(query.radiusM));
   url.searchParams.set("azimuthStepDeg", String(query.azimuthStepDeg));
   url.searchParams.set("distanceStepM", String(query.distanceStepM));
-  return normalizeMobileTowerViewshedResponse(await fetchJson(url, config, requestNow));
+  return normalizeMobileTowerViewshedResponse(await fetchJson(url, config, requestNow, {
+    timeoutMs: Math.max(config.timeoutMs, MOBILE_TOWER_VIEWSHED_TIMEOUT_MS)
+  }));
 }
 
 async function fetchRadioProfiles(config: SituationDataSourceConfig, requestNow: Date): Promise<RadioProfilesResponse> {
@@ -1181,22 +1185,35 @@ async function runRadioSiteSearch(config: SituationDataSourceConfig, request: Ra
   }));
 }
 
-async function fetchJson(url: URL, config: SituationDataSourceConfig, requestNow: Date, init: RequestInit = {}): Promise<unknown> {
+type FetchJsonInit = RequestInit & { timeoutMs?: number };
+
+class SituationDataHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, statusText: string, url: URL) {
+    super(`${status} ${statusText || "Situation data request failed"} for ${url.pathname}`);
+    this.name = "SituationDataHttpError";
+    this.status = status;
+  }
+}
+
+async function fetchJson(url: URL, config: SituationDataSourceConfig, requestNow: Date, init: FetchJsonInit = {}): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  const { timeoutMs, ...requestInit } = init;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? config.timeoutMs);
   try {
     const response = await fetch(url, {
-      ...init,
+      ...requestInit,
       headers: {
         Accept: "application/json",
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...(requestInit.body ? { "Content-Type": "application/json" } : {}),
         "X-COP-Request-At": requestNow.toISOString(),
-        ...(init.headers ?? {})
+        ...(requestInit.headers ?? {})
       },
       signal: controller.signal
     });
     if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText || "Situation data request failed"}`);
+      throw new SituationDataHttpError(response.status, response.statusText, url);
     }
     return response.json();
   } finally {

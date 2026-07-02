@@ -551,6 +551,48 @@ describe("map catalog route", () => {
     });
   });
 
+  it("normalizes legacy mobile feature ids before calling SIM viewshed", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const situationDataSource = new FakeSituationDataSource();
+    const app = buildServer({
+      now: () => new Date("2026-06-27T10:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/mobile-coverage/towers/mobile%3Aosm_postgis%3Anode%3A123%3Acommunications_tower/viewshed?technology=4G"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(situationDataSource.lastTowerViewshed?.towerId).toBe("node:123");
+  });
+
+  it("maps unsupported mobile viewshed objects to a user-facing unavailable state", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const situationDataSource = new FakeSituationDataSource();
+    situationDataSource.towerViewshedError = Object.assign(new Error("404 Not Found for /mobile-coverage/towers/node:missing/viewshed"), { status: 404 });
+    const app = buildServer({
+      now: () => new Date("2026-06-27T10:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/mobile-coverage/towers/node%3Amissing/viewshed?technology=4G"
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: "MOBILE_TOWER_VIEWSHED_UNAVAILABLE",
+        message: "Pro tento typ objektu není výpočet dostupný."
+      }
+    });
+  });
+
   it("proxies radio profile catalog through COP API", async () => {
     const app = buildServer({
       now: () => new Date("2026-06-27T10:00:00Z"),
@@ -1336,6 +1378,7 @@ class FakeSituationDataSource implements SituationDataSource {
   lastRadioLinkCheck: RadioLinkCheckRequest | null = null;
   lastRadioProfile: RadioProfile | null = null;
   lastTowerViewshed: { query: MobileTowerViewshedQuery; towerId: string } | null = null;
+  towerViewshedError: unknown = undefined;
 
   async fetchLayers(_requestNow: Date): Promise<SituationLayerDescriptor[]> {
     return [
@@ -1383,6 +1426,9 @@ class FakeSituationDataSource implements SituationDataSource {
 
   async fetchMobileTowerViewshed(towerId: string, query: MobileTowerViewshedQuery, requestNow: Date): Promise<MobileTowerViewshedResponse> {
     this.lastTowerViewshed = { query, towerId };
+    if (this.towerViewshedError) {
+      throw this.towerViewshedError;
+    }
     return {
       contractVersion: "sim-mobile-coverage-tower-viewshed-v1",
       features: [

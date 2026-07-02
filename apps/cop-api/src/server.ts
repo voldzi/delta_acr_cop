@@ -4492,6 +4492,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return await situationDataSource.fetchMobileTowerViewshed(towerId, query, requestNow);
       } catch (error) {
         app.log.warn({ error, towerId }, "Mobile tower viewshed failed.");
+        const upstreamStatus = upstreamHttpStatus(error);
+        if (upstreamStatus === 400 || upstreamStatus === 404) {
+          return sendError(reply, upstreamStatus, "MOBILE_TOWER_VIEWSHED_UNAVAILABLE", "Pro tento typ objektu není výpočet dostupný.", correlationId);
+        }
         return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
       }
     },
@@ -7741,10 +7745,26 @@ function parseSafetyHydroStationDetailQuery(value: Record<string, unknown>): Saf
 
 function parseMobileTowerId(value: unknown): string | null {
   const towerId = optionalTrimmedString(value, 240);
-  if (!towerId || !/^[a-z0-9:_./-]+$/iu.test(towerId)) {
+  const normalizedTowerId = normalizeMobileTowerId(towerId);
+  if (!normalizedTowerId || !/^[a-z0-9:_./-]+$/iu.test(normalizedTowerId)) {
     return null;
   }
-  return towerId;
+  return normalizedTowerId;
+}
+
+function normalizeMobileTowerId(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const legacyFeatureMatch = value.match(/^mobile:osm_postgis:(node|way|relation|area):([^:]+)(?::communications_tower)?$/iu);
+  if (legacyFeatureMatch?.[1] && legacyFeatureMatch[2]) {
+    return `${legacyFeatureMatch[1].toLowerCase()}:${legacyFeatureMatch[2]}`;
+  }
+  const legacyTowerMatch = value.match(/^(node|way|relation|area):([^:]+):communications_tower$/iu);
+  if (legacyTowerMatch?.[1] && legacyTowerMatch[2]) {
+    return `${legacyTowerMatch[1].toLowerCase()}:${legacyTowerMatch[2]}`;
+  }
+  return value;
 }
 
 function parseMobileTowerViewshedQuery(value: Record<string, unknown>): MobileTowerViewshedQuery | null {
@@ -11748,6 +11768,18 @@ function headerAsString(value: unknown): string | undefined {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "unknown error";
+}
+
+function upstreamHttpStatus(error: unknown): number | undefined {
+  if (isRecord(error) && typeof error.status === "number" && Number.isInteger(error.status)) {
+    return error.status;
+  }
+  const match = errorMessage(error).match(/^(\d{3})\b/u);
+  if (!match) {
+    return undefined;
+  }
+  const status = Number(match[1]);
+  return Number.isInteger(status) ? status : undefined;
 }
 
 function createStreamBroadcasterFromEnv(env: Record<string, string | undefined> = process.env): CopStreamBroadcaster {

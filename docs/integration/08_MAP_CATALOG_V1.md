@@ -775,12 +775,17 @@ interactive per-tower viewshed through the COP backend:
 
 The COP backend calls the SIM internal
 `/situation-data/api/v1/mobile-coverage/towers/{towerId}/viewshed` endpoint
-server-side. `towerId` is built from OSM tags as `{osmType}:{osmId}` when the
-selected feature is an OSM tower, or from `tags.nearestTowerId` when the user
-is viewing a coverage detail. COP must not call this endpoint for all BTS at
-once. The returned sectors are a temporary map overlay for the selected tower
-only. Sector color follows `properties.quality` and opacity follows
-`properties.confidence`.
+server-side with a minimum 20 s upstream timeout. `towerId` is taken first from
+the SIM-provided `tags.viewshedTowerId` or viewshed URL when present, then from
+OSM tags as `{osmType}:{osmId}`, or from `tags.nearestTowerId` when the user is
+viewing a coverage detail. COP must not pass the full map feature id such as
+`mobile:osm_postgis:node:...:communications_tower` to SIM; the API normalizes
+legacy ids defensively, but clients should send the clean tower id. COP must not
+call this endpoint for all BTS at once. The returned sectors are a temporary map
+overlay for the selected tower only. Sector color follows `properties.quality`
+and opacity follows `properties.confidence`. If SIM returns 400/404, COP reports
+that the calculation is not available for that object, not that the SIM service
+is down.
 
 The detail panel must state that this is a SIM model estimate, not confirmed
 operator/NOC state. It should display `tower.btsStatus`,
