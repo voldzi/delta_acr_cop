@@ -83,6 +83,7 @@ describe("map catalog route", () => {
       "public.mobile.network",
       "public.weather.current",
       "public.weather.observations",
+      "public.weather.forecast_area",
       "public.weather.webcams",
       "public.safety.air_quality",
       "public.boundary.admin",
@@ -118,6 +119,17 @@ describe("map catalog route", () => {
         providerSourceIds: ["chmi_weather_stations"]
       },
       role: "primary",
+      selectable: true
+    });
+    expect(body.layers.find((layer) => layer.layerId === "public.weather.forecast_area")).toMatchObject({
+      groupId: "risks.weather",
+      label: "Předpověď počasí",
+      minZoom: 4,
+      query: {
+        maxFeatures: 24,
+        providerLayerIds: ["weather_forecast_area"],
+        providerSourceIds: ["weather_forecast"]
+      },
       selectable: true
     });
     expect(body.layers.find((layer) => layer.layerId === "public.traffic.transit")).toMatchObject({
@@ -781,6 +793,36 @@ describe("map catalog route", () => {
     });
   });
 
+  it("queries weather forecast areas with the dedicated SIM forecast layer", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const situationDataSource = new FakeSituationDataSource();
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [12.0, 48.5, 18.9, 51.2],
+        layerIds: ["public.weather.forecast_area"],
+        limit: 250
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { situation?: SituationFeatureCollection };
+    expect(situationDataSource.lastFeatureQuery).toMatchObject({
+      layers: ["weather_forecast_area"],
+      sources: ["weather_forecast"]
+    });
+    expect(body.situation?.query).toMatchObject({
+      layers: ["weather_forecast_area"],
+      sources: ["weather_forecast"]
+    });
+  });
+
   it("post-filters provider features by catalog category ids", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const app = buildServer({
@@ -1004,6 +1046,49 @@ describe("map catalog route", () => {
       }
     });
     expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather-stations/0-20000-0-11406/detail?historyHours=48&forecastHours=24", expect.objectContaining({
+      headers: expect.objectContaining({
+        accept: "application/json"
+      })
+    }));
+  });
+
+  it("proxies weather forecast area detail through the server-side SIM provider", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const fetchMock = vi.fn(async () => Response.json({
+      areaId: "cz-praha",
+      charts: [],
+      contractVersion: "sim-weather-forecast-area-detail-v1",
+      current: {
+        display: {
+          badgeLabel: "déšť",
+          iconKey: "rain",
+          primaryValue: "19 °C",
+          title: "Praha"
+        }
+      },
+      summary: "Plošná předpověď pro Prahu"
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      situationDataSource: new FakeSituationDataSource(),
+      now: () => new Date("2026-06-28T08:00:00Z")
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/weather-forecast/areas/cz-praha/detail?nowcastHours=6&forecastHours=48&dailyDays=5"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      current: {
+        display: {
+          iconKey: "rain"
+        }
+      },
+      summary: "Plošná předpověď pro Prahu"
+    });
+    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather-forecast/areas/cz-praha?nowcastHours=6&forecastHours=48&dailyDays=5", expect.objectContaining({
       headers: expect.objectContaining({
         accept: "application/json"
       })
@@ -1255,6 +1340,7 @@ class FakeSituationDataSource implements SituationDataSource {
   async fetchLayers(_requestNow: Date): Promise<SituationLayerDescriptor[]> {
     return [
       { defaultVisible: true, expectedCadenceSeconds: 600, geometryTypes: ["Point"], label: "Weather", layerId: "weather" },
+      { defaultVisible: false, expectedCadenceSeconds: 600, geometryTypes: ["Polygon", "MultiPolygon"], label: "Předpověď počasí", layerId: "weather_forecast_area" },
       { defaultVisible: false, expectedCadenceSeconds: 600, geometryTypes: ["Point"], label: "ČHMÚ webkamery", layerId: "weather_webcams" },
       { defaultVisible: false, expectedCadenceSeconds: 900, geometryTypes: ["Point"], label: "Air quality", layerId: "air_quality" },
       { defaultVisible: false, expectedCadenceSeconds: 3600, geometryTypes: ["Polygon"], label: "Unified mobile network", layerId: "mobile_network" },
@@ -1269,6 +1355,7 @@ class FakeSituationDataSource implements SituationDataSource {
     return [
       { enabled: true, label: "Open-Meteo", layers: ["weather"], sourceId: "open_meteo", updateCadenceSeconds: 600 },
       { enabled: true, label: "ČHMÚ měřené počasí", layers: ["weather"], sourceId: "chmi_weather_stations", updateCadenceSeconds: 600 },
+      { enabled: true, label: "Plošná předpověď počasí", layers: ["weather_forecast_area"], sourceId: "weather_forecast", updateCadenceSeconds: 600 },
       { enabled: true, label: "ČHMÚ webkamery", layers: ["weather_webcams"], sourceId: "chmi_weather_webcams", updateCadenceSeconds: 600 },
       { enabled: true, label: "ČHMÚ kvalita ovzduší", layers: ["air_quality"], sourceId: "chmi_air_quality", updateCadenceSeconds: 900 },
       { enabled: true, label: "Unified mobile network assessment", layers: ["mobile_network"], sourceId: "mobile_network_model", updateCadenceSeconds: 3600 },

@@ -184,6 +184,7 @@ export type SituationLayerId =
   | "traffic"
   | "warnings"
   | "weather_alerts"
+  | "weather_forecast_area"
   | "weather_webcams"
   | "weather"
   | "weather_humidity_grid"
@@ -586,6 +587,42 @@ export interface WeatherStationDetailResponse {
     to?: string;
   };
   station?: Record<string, unknown>;
+  warnings?: string[];
+}
+
+export interface WeatherForecastAreaDetailResponse {
+  area?: Record<string, unknown>;
+  areaId?: string;
+  attribution?: string | WeatherStationAttribution[];
+  charts?: WeatherStationChart[];
+  contractVersion?: string;
+  current?: {
+    display?: WeatherDisplayPresentation;
+    metrics?: Record<string, unknown>;
+    observedAt?: string;
+    severity?: string;
+    validUntil?: string;
+  };
+  daily?: {
+    from?: string;
+    pointCount?: number;
+    points?: Array<Record<string, unknown>>;
+    to?: string;
+  };
+  generatedAt?: string;
+  hourly?: {
+    from?: string;
+    pointCount?: number;
+    points?: Array<Record<string, unknown>>;
+    to?: string;
+  };
+  nowcast?: {
+    from?: string;
+    pointCount?: number;
+    points?: Array<Record<string, unknown>>;
+    to?: string;
+  };
+  summary?: string | Record<string, unknown>;
   warnings?: string[];
 }
 
@@ -2485,6 +2522,34 @@ export async function fetchWeatherStationDetail(
   );
 }
 
+export async function fetchWeatherForecastAreaDetail(
+  apiBase: string,
+  token: string | undefined,
+  detailUrl: string,
+  options: { dailyDays?: number; forecastHours?: number; nowcastHours?: number } = {}
+): Promise<WeatherForecastAreaDetailResponse> {
+  const request = weatherForecastAreaDetailRequest(detailUrl);
+  if (!request.query.has("nowcastHours") && options.nowcastHours !== undefined) {
+    request.query.set("nowcastHours", String(options.nowcastHours));
+  }
+  if (!request.query.has("forecastHours") && options.forecastHours !== undefined) {
+    request.query.set("forecastHours", String(options.forecastHours));
+  }
+  if (!request.query.has("dailyDays") && options.dailyDays !== undefined) {
+    request.query.set("dailyDays", String(options.dailyDays));
+  }
+  const suffix = request.query.toString() ? `?${request.query.toString()}` : "";
+  return fetchJson<WeatherForecastAreaDetailResponse>(
+    `${apiBase}/api/v1/weather-forecast/areas/${encodeURIComponent(request.areaId)}/detail${suffix}`,
+    {
+      headers: {
+        ...(authHeaders(token) ?? {}),
+        Accept: "application/json"
+      }
+    }
+  );
+}
+
 export async function fetchTransitVehicleDetail(
   apiBase: string,
   token: string | undefined,
@@ -2640,6 +2705,21 @@ function weatherStationDetailRequest(detailUrl: string): { query: URLSearchParam
   return {
     query: new URLSearchParams(url.searchParams),
     stationId
+  };
+}
+
+function weatherForecastAreaDetailRequest(detailUrl: string): { areaId: string; query: URLSearchParams } {
+  const url = new URL(detailUrl, "https://cop.local");
+  const match = /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)$/u.exec(url.pathname)
+    ?? /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)\/detail$/u.exec(url.pathname)
+    ?? /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/detail$/u.exec(url.pathname);
+  const areaId = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+  if (!areaId) {
+    throw new Error("Neplatná adresa detailu plošné předpovědi počasí.");
+  }
+  return {
+    areaId,
+    query: new URLSearchParams(url.searchParams)
   };
 }
 

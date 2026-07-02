@@ -72,10 +72,20 @@ function normalizeCompactAscii(value: string): string {
 
 export function normalizeWeatherConditionIconId(value: string | undefined): WeatherConditionIconId {
   const normalized = normalizeCompactAscii(value ?? "");
-  if (["clear", "clearday", "sun", "sunny", "jasno"].includes(normalized)) {
+  if (["clear", "clearday", "clearnight", "clearsky", "clearskyday", "clearskynight", "sun", "sunny", "jasno"].includes(normalized)) {
     return "sun";
   }
-  if (["partlycloudy", "partlycloudyday", "mostlycloudy", "polojasno", "oblacno"].includes(normalized)) {
+  if ([
+    "fair",
+    "fairday",
+    "fairnight",
+    "partlycloudy",
+    "partlycloudyday",
+    "partlycloudynight",
+    "mostlycloudy",
+    "polojasno",
+    "oblacno"
+  ].includes(normalized)) {
     return "partly_cloudy";
   }
   if (["cloud", "cloudy", "overcast", "zatazeno"].includes(normalized)) {
@@ -84,13 +94,49 @@ export function normalizeWeatherConditionIconId(value: string | undefined): Weat
   if (["fog", "mist", "mlha"].includes(normalized)) {
     return "fog";
   }
-  if (["rain", "showers", "drizzle", "precipitation", "dest", "mrholeni", "srazky"].includes(normalized)) {
+  if ([
+    "drizzle",
+    "heavyrain",
+    "lightrain",
+    "precipitation",
+    "rain",
+    "rainshowers",
+    "rainshowersday",
+    "rainshowersnight",
+    "showers",
+    "dest",
+    "mrholeni",
+    "srazky"
+  ].includes(normalized)) {
     return "rain";
   }
-  if (["snow", "sleet", "snowfall", "snezeni", "snih"].includes(normalized)) {
+  if ([
+    "heavysnow",
+    "lightsleet",
+    "lightsnow",
+    "sleet",
+    "sleetshowers",
+    "snow",
+    "snowfall",
+    "snowshowers",
+    "snowshowersday",
+    "snowshowersnight",
+    "snezeni",
+    "snih"
+  ].includes(normalized)) {
     return "snow";
   }
-  if (["storm", "thunderstorm", "thunder", "bourka", "bourky"].includes(normalized)) {
+  if ([
+    "lightning",
+    "rainandthunder",
+    "showersandthunder",
+    "storm",
+    "thunder",
+    "thunderstorm",
+    "thunderstormwithrain",
+    "bourka",
+    "bourky"
+  ].includes(normalized)) {
     return "storm";
   }
   if (["wind", "windy", "vitr", "veterno"].includes(normalized)) {

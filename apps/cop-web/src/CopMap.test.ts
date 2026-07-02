@@ -275,6 +275,84 @@ describe("COP map data helpers", () => {
     expect(collection.features[0]?.properties.riskFeature).toBeUndefined();
   });
 
+  it("renders SIM weather forecast areas as dedicated forecast polygons", () => {
+    const collection = situationFeaturesToFeatureCollection({
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [[
+              [14.2, 50.0],
+              [14.6, 50.0],
+              [14.6, 50.3],
+              [14.2, 50.3],
+              [14.2, 50.0]
+            ]],
+            type: "Polygon"
+          },
+          properties: {
+            category: "weather_forecast_area",
+            confidence: 0.87,
+            featureId: "weather-forecast:area:praha",
+            label: "Praha a okolí",
+            layer: "weather_forecast_area",
+            layerId: "public.weather.forecast_area",
+            metrics: {
+              riskScore: 0.58
+            },
+            observedAt: "2026-07-02T10:00:00Z",
+            providerLayerId: "weather_forecast_area",
+            providerProperties: {
+              presentation: {
+                mapLabel: "Praha: déšť",
+                riskLevel: "moderate",
+                symbolKey: "rain"
+              },
+              weatherForecast: {
+                detailUrl: "/situation-data/api/v1/weather-forecast/areas/praha"
+              }
+            },
+            sourceId: "weather_forecast",
+            stale: false
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: "2026-07-02T10:00:00Z",
+      query: {
+        bbox: { east: 15, north: 51, south: 49, west: 13 },
+        layers: ["weather_forecast_area"],
+        limit: 24,
+        sources: ["weather_forecast"]
+      },
+      source: {
+        sourceId: "situation-data-api",
+        sourceType: "PUBLIC_SITUATION_AGGREGATE"
+      },
+      sources: [],
+      summary: {
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
+      type: "FeatureCollection",
+      warnings: []
+    });
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      mapLabel: "Praha: déšť",
+      mapPointSuppressed: true,
+      situationStatusLabel: "RIZIKO",
+      weatherForecastArea: true,
+      weatherForecastDetailUrl: "/situation-data/api/v1/weather-forecast/areas/praha",
+      weatherForecastLabel: "Praha: déšť",
+      weatherForecastRiskScore: 0.58,
+      weatherForecastSymbolKey: "cop-weather-condition-rain"
+    });
+    expect(collection.features[0]?.properties.weatherObservation).toBeUndefined();
+  });
+
   it("builds editable handles for polygon user zones", () => {
     const collection = aoiRuleToEditFeatureCollection({
       color: "#8cb6d8",

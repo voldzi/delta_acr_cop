@@ -713,6 +713,109 @@
         }
       }
     },
+    "/api/v1/weather-forecast/areas/{areaId}/detail": {
+      "get": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Return SIM weather forecast area detail through COP.",
+        "operationId": "getWeatherForecastAreaDetail",
+        "description": "Server-side proxy for the SIM situation-data weather forecast area detail endpoint. Clients derive detailUrl from providerProperties.weatherForecast.detailUrl and call COP API, so browsers and native clients do not need direct SIM connectivity. COP renders SIM-prepared summary, current state and charts without inferring weather state from raw weather codes.\n",
+        "parameters": [
+          {
+            "name": "areaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 220
+            }
+          },
+          {
+            "name": "nowcastHours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 48
+            }
+          },
+          {
+            "name": "forecastHours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 168
+            }
+          },
+          {
+            "name": "dailyDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 14
+            }
+          },
+          {
+            "name": "nocache",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Diagnostic cache bypass forwarded to SIM when set to 1."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Weather forecast area detail with SIM-prepared summary, current display, forecast series and charts.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "description": "SIM situation-data weather forecast area detail is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
     "/api/v1/transit/vehicles/{featureId}/detail": {
       "get": {
         "tags": [

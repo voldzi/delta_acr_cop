@@ -232,6 +232,7 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
     || path.startsWith("/api/v1/safety/hydro/stations/")
     || path.startsWith("/api/v1/transit/stops/")
     || path.startsWith("/api/v1/transit/vehicles/")
+    || path.startsWith("/api/v1/weather-forecast/areas/")
     || path.startsWith("/api/v1/weather-stations/")
     || path === "/api/v1/weather-radar/frames"
     || path === "/api/v1/weather/webcam-proxy"

@@ -1,7 +1,9 @@
 import React from "react";
 import {
+  fetchWeatherForecastAreaDetail,
   fetchWeatherStationDetail,
   type SituationFeature,
+  type WeatherForecastAreaDetailResponse,
   type WeatherStationAttribution,
   type WeatherStationChart,
   type WeatherStationDetailResponse
@@ -29,6 +31,7 @@ import {
 import {
   formatOptionalNumber,
   formatOptionalPercentFromWhole,
+  formatShortDateTime,
   formatShortTime,
   humanizeApiError,
   isRecord,
@@ -96,6 +99,172 @@ export function WeatherContextSummary({ feature }: { feature: SituationFeature }
       <DataMetric label="Charakter" value={weatherFeatureConditionLabel(feature, metrics)} tone={weatherFeatureTone(feature)} />
       <DataMetric label="Podklad" value={weatherDataQualityLabel(stringProperty(feature.properties.dataQuality)) ?? "měření/model"} tone="neutral" />
       <DataMetric label="Zdroj" value={feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)} tone="neutral" />
+    </div>
+  );
+}
+
+export function isWeatherForecastAreaFeature(feature: SituationFeature): boolean {
+  const providerLayerId = stringProperty(feature.properties.providerLayerId);
+  return feature.properties.layer === "weather_forecast_area"
+    || feature.properties.layerId === "public.weather.forecast_area"
+    || feature.properties.sourceId === "weather_forecast"
+    || providerLayerId === "weather.forecast_area"
+    || providerLayerId === "weather_forecast_area"
+    || providerLayerId === "public.weather.forecast_area";
+}
+
+export function weatherForecastAreaTitle(feature: SituationFeature): string {
+  const presentation = weatherForecastAreaPresentation(feature);
+  return stringProperty(presentation.title)
+    ?? stringProperty(presentation.mapLabel)
+    ?? stringProperty(presentation.label)
+    ?? feature.properties.areaName
+    ?? feature.properties.label
+    ?? feature.properties.headline
+    ?? "Předpověď počasí";
+}
+
+export function weatherForecastAreaSubtitle(feature: SituationFeature): string {
+  const presentation = weatherForecastAreaPresentation(feature);
+  const providerProperties = weatherForecastAreaProviderProperties(feature);
+  const forecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
+  return [
+    stringProperty(presentation.subtitle)
+      ?? stringProperty(forecast.summary)
+      ?? stringProperty(feature.properties.description)
+      ?? "plošná předpověď",
+    sourceDisplayName(feature.properties.sourceId)
+  ].filter(Boolean).join(" · ");
+}
+
+export function WeatherForecastAreaSummary({ feature }: { feature: SituationFeature }) {
+  const presentation = weatherForecastAreaPresentation(feature);
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const riskScore = numberProperty(metrics.riskScore) ?? numberProperty(presentation.riskScore);
+  const riskLevel = stringProperty(presentation.riskLevel) ?? stringProperty(metrics.riskLevel) ?? stringProperty(feature.properties.severity);
+  const badgeTone = stringProperty(presentation.badgeTone) ?? weatherForecastRiskTone(riskScore, riskLevel);
+  return (
+    <div className="mobile-status-summary weather-context-summary">
+      <DataMetric
+        label="Stav"
+        value={stringProperty(presentation.badgeLabel) ?? weatherForecastRiskLabel(riskScore, riskLevel)}
+        tone={weatherDisplayToneFromDisplay(badgeTone)}
+      />
+      <DataMetric
+        label="Hodnota"
+        value={stringProperty(presentation.primaryValue) ?? stringProperty(presentation.mapLabel) ?? "předpověď"}
+        tone={weatherDisplayToneFromDisplay(badgeTone)}
+      />
+      <DataMetric
+        label="Doplňkově"
+        value={[stringProperty(presentation.secondaryValue), stringProperty(presentation.tertiaryValue)].filter(Boolean).join(" · ") || "n/a"}
+        tone="neutral"
+      />
+      <DataMetric
+        label="Riziko"
+        value={formatWeatherForecastRiskValue(riskScore, riskLevel)}
+        tone={weatherDisplayToneFromDisplay(badgeTone)}
+      />
+      <DataMetric
+        label="Jistota"
+        value={formatOptionalPercentFromWhole(numberProperty(presentation.confidencePercent), feature.properties.confidence)}
+        tone="neutral"
+      />
+    </div>
+  );
+}
+
+export function WeatherForecastAreaDetailPanel({
+  apiBase,
+  authToken,
+  feature
+}: {
+  apiBase: string;
+  authToken: string | undefined;
+  feature: SituationFeature;
+}) {
+  const detailUrl = React.useMemo(() => weatherForecastAreaDetailUrl(feature), [feature]);
+  const [detail, setDetail] = React.useState<WeatherForecastAreaDetailResponse | null>(null);
+  const [detailError, setDetailError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  const loadDetail = React.useCallback(async () => {
+    if (!detailUrl) {
+      return;
+    }
+    setLoading(true);
+    setDetailError(null);
+    try {
+      setDetail(await fetchWeatherForecastAreaDetail(apiBase, authToken, detailUrl, {
+        dailyDays: 5,
+        forecastHours: 48,
+        nowcastHours: 6
+      }));
+    } catch (error) {
+      setDetail(null);
+      setDetailError(error instanceof Error ? humanizeApiError(error.message) : "Detail plošné předpovědi se nepodařilo načíst.");
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBase, authToken, detailUrl]);
+
+  React.useEffect(() => {
+    if (!isWeatherForecastAreaFeature(feature) || !detailUrl) {
+      setDetail(null);
+      setDetailError(null);
+      setLoading(false);
+      return;
+    }
+    void loadDetail();
+  }, [detailUrl, feature, loadDetail]);
+
+  if (!isWeatherForecastAreaFeature(feature)) {
+    return null;
+  }
+  if (!detailUrl) {
+    return <div className="weather-station-detail-empty">Detail plošné předpovědi zatím není dostupný.</div>;
+  }
+
+  const currentDisplay = detail?.current?.display;
+  const title = currentDisplay?.title ?? weatherForecastAreaTitle(feature);
+  const subtitle = currentDisplay?.subtitle ?? weatherForecastAreaSubtitle(feature);
+
+  return (
+    <div className="weather-station-detail">
+      <div className="weather-station-detail-header">
+        <div>
+          <strong>{title}</strong>
+          <span>{subtitle}</span>
+        </div>
+        <button className="mini-button" disabled={loading} onClick={() => void loadDetail()} type="button">
+          {loading ? "Načítám" : "Obnovit"}
+        </button>
+      </div>
+      {currentDisplay ? (
+        <div className="mobile-status-summary weather-context-summary">
+          <DataMetric label="Stav" value={currentDisplay.badgeLabel ?? "předpověď"} tone={weatherDisplayToneFromDisplay(currentDisplay.badgeTone)} />
+          <DataMetric label="Hodnota" value={currentDisplay.primaryValue ?? "n/a"} tone={weatherDisplayToneFromDisplay(currentDisplay.badgeTone)} />
+          <DataMetric label="Doplňkově" value={[currentDisplay.secondaryValue, currentDisplay.tertiaryValue].filter(Boolean).join(" · ") || "n/a"} tone="neutral" />
+          <DataMetric label="Jistota" value={formatOptionalPercentFromWhole(currentDisplay.confidencePercent, currentDisplay.confidence)} tone="neutral" />
+        </div>
+      ) : null}
+      {detailError ? <div className="weather-station-detail-error">{detailError}</div> : null}
+      {loading && !detail ? <div className="weather-station-detail-empty">Načítám plošnou předpověď a meteogram...</div> : null}
+      {detail ? (
+        <>
+          {formatWeatherForecastSummary(detail.summary) ? (
+            <div className="weather-forecast-summary-text">{formatWeatherForecastSummary(detail.summary)}</div>
+          ) : null}
+          <div className="mobile-status-summary weather-context-summary">
+            <DataMetric label="Nowcast" value={formatForecastPointCount(detail.nowcast)} tone="neutral" />
+            <DataMetric label="Hodiny" value={formatForecastPointCount(detail.hourly)} tone="neutral" />
+            <DataMetric label="Dny" value={formatForecastPointCount(detail.daily)} tone="neutral" />
+            <DataMetric label="Vygenerováno" value={formatShortDateTime(detail.generatedAt)} tone="neutral" />
+          </div>
+          <WeatherStationCharts charts={detail.charts ?? []} />
+          <div className="weather-station-attribution">{formatWeatherStationAttribution(detail.attribution)}</div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -185,6 +354,76 @@ export function WeatherStationDetailPanel({
       ) : null}
     </div>
   );
+}
+
+function weatherForecastAreaProviderProperties(feature: SituationFeature): Record<string, unknown> {
+  return isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+}
+
+function weatherForecastAreaPresentation(feature: SituationFeature): Record<string, unknown> {
+  const providerProperties = weatherForecastAreaProviderProperties(feature);
+  return isRecord(providerProperties.presentation) ? providerProperties.presentation : {};
+}
+
+function weatherForecastAreaDetailUrl(feature: SituationFeature): string | undefined {
+  const providerProperties = weatherForecastAreaProviderProperties(feature);
+  const forecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
+  return stringProperty(forecast.detailUrl) ?? stringProperty(providerProperties.detailUrl);
+}
+
+function weatherForecastRiskTone(riskScore: number | undefined, riskLevel: string | undefined): "critical" | "ok" | "warn" {
+  const normalized = (riskLevel ?? "").toLowerCase();
+  const score = riskScore ?? 0;
+  if (score >= 0.75 || normalized.includes("critical") || normalized.includes("extreme") || normalized.includes("vysok")) {
+    return "critical";
+  }
+  if (score >= 0.25 || normalized.includes("warning") || normalized.includes("advisory") || normalized.includes("moderate") || normalized.includes("riziko")) {
+    return "warn";
+  }
+  return "ok";
+}
+
+function weatherForecastRiskLabel(riskScore: number | undefined, riskLevel: string | undefined): string {
+  const tone = weatherForecastRiskTone(riskScore, riskLevel);
+  if (tone === "critical") {
+    return "vysoké riziko";
+  }
+  if (tone === "warn") {
+    return "riziko";
+  }
+  return "předpověď";
+}
+
+function formatWeatherForecastRiskValue(riskScore: number | undefined, riskLevel: string | undefined): string {
+  const level = riskLevel?.trim();
+  const score = typeof riskScore === "number" && Number.isFinite(riskScore) ? `${Math.round(riskScore * 100)} %` : undefined;
+  return [level, score].filter(Boolean).join(" · ") || "nízké";
+}
+
+function formatWeatherForecastSummary(summary: WeatherForecastAreaDetailResponse["summary"]): string | undefined {
+  if (typeof summary === "string") {
+    const trimmed = summary.trim();
+    return trimmed || undefined;
+  }
+  if (!isRecord(summary)) {
+    return undefined;
+  }
+  return stringProperty(summary.cs)
+    ?? stringProperty(summary.text)
+    ?? stringProperty(summary.summary)
+    ?? stringProperty(summary.headline)
+    ?? stringProperty(summary.label);
+}
+
+function formatForecastPointCount(section: WeatherForecastAreaDetailResponse["hourly"]): string {
+  if (!section) {
+    return "n/a";
+  }
+  const count = typeof section.pointCount === "number" ? section.pointCount : section.points?.length;
+  const interval = [formatShortDateTime(section.from), formatShortDateTime(section.to)]
+    .filter((value) => value !== "n/a")
+    .join(" - ");
+  return [typeof count === "number" ? `${count} bodů` : undefined, interval].filter(Boolean).join(" · ") || "n/a";
 }
 
 function weatherDisplayToneFromDisplay(value: string | undefined): "critical" | "neutral" | "ok" | "warn" {

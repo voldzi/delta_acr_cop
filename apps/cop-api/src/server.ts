@@ -4215,6 +4215,42 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  app.get("/api/v1/weather-forecast/areas/:areaId/detail", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const params = request.params as { areaId: string };
+    const areaId = optionalTrimmedString(params.areaId, 220);
+    if (!areaId) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Weather forecast area detail requires areaId.", correlationId);
+    }
+    const query = request.query as Record<string, unknown>;
+    const upstreamUrl = new URL(`weather-forecast/areas/${encodeURIComponent(areaId)}`, `${trimTrailingSlash(situationDataBaseUrl)}/`);
+    const nowcastHours = optionalBoundedQueryInteger(query.nowcastHours, 0, 48);
+    const forecastHours = optionalBoundedQueryInteger(query.forecastHours, 1, 168);
+    const dailyDays = optionalBoundedQueryInteger(query.dailyDays, 1, 14);
+    if (nowcastHours !== undefined) {
+      upstreamUrl.searchParams.set("nowcastHours", String(nowcastHours));
+    }
+    if (forecastHours !== undefined) {
+      upstreamUrl.searchParams.set("forecastHours", String(forecastHours));
+    }
+    if (dailyDays !== undefined) {
+      upstreamUrl.searchParams.set("dailyDays", String(dailyDays));
+    }
+    if (optionalTrimmedString(query.nocache, 8) === "1") {
+      upstreamUrl.searchParams.set("nocache", "1");
+    }
+
+    try {
+      const body = await fetchWeatherForecastAreaDetailResource(upstreamUrl, situationDataSource?.config.timeoutMs);
+      return reply
+        .header("Cache-Control", "public, max-age=60, stale-while-revalidate=180")
+        .send(body);
+    } catch (error) {
+      app.log.warn({ areaId, error, upstreamUrl: upstreamUrl.toString() }, "Weather forecast area detail request failed.");
+      return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+    }
+  });
+
   app.get("/api/v1/transit/vehicles/:featureId/detail", async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const params = request.params as { featureId: string };
@@ -8176,6 +8212,7 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "traffic"
     || value === "warnings"
     || value === "weather_alerts"
+    || value === "weather_forecast_area"
     || value === "weather_webcams"
     || value === "weather"
     || value === "weather_humidity_grid"
@@ -8210,6 +8247,10 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "weather.pressure_grid":
     case "public.weather.pressure_grid":
       return "weather_pressure_grid";
+    case "weather.forecast_area":
+    case "weather_forecast_area":
+    case "public.weather.forecast_area":
+      return "weather_forecast_area";
     case "weather.webcams":
     case "weather_webcams":
     case "public.weather.webcams":
@@ -11348,6 +11389,27 @@ async function fetchWeatherStationDetailResource(url: URL, timeoutMsOverride?: n
   }
 }
 
+async function fetchWeatherForecastAreaDetailResource(url: URL, timeoutMsOverride?: number): Promise<unknown> {
+  const timeoutMs = timeoutMsOverride ?? readPositiveInteger(process.env.COP_SITUATION_DATA_TIMEOUT_MS, 8000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        accept: "application/json",
+        "user-agent": "CSM-COP weather forecast area detail proxy"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`SIM weather forecast area detail returned HTTP ${response.status}.`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchTransitVehicleDetailResource(url: URL, timeoutMsOverride?: number): Promise<unknown> {
   const timeoutMs = timeoutMsOverride ?? readPositiveInteger(process.env.COP_SITUATION_DATA_TIMEOUT_MS, 8000);
   const controller = new AbortController();
@@ -11417,6 +11479,11 @@ function optionalRadarProduct(value: unknown): string | undefined {
 function boundedQueryInteger(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === "string" || typeof value === "number" ? Number(value) : Number.NaN;
   return Number.isFinite(parsed) ? boundedInteger(Math.trunc(parsed), min, max) : fallback;
+}
+
+function optionalBoundedQueryInteger(value: unknown, min: number, max: number): number | undefined {
+  const parsed = typeof value === "string" || typeof value === "number" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? boundedInteger(Math.trunc(parsed), min, max) : undefined;
 }
 
 function boundedInteger(value: number, min: number, max: number): number {

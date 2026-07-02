@@ -141,6 +141,10 @@ const situationRadioLabelLayerId = "cop-situation-radio-label";
 const situationRasterOverlayLayerPrefix = "cop-situation-raster-overlay-layer";
 const situationRasterOverlaySourcePrefix = "cop-situation-raster-overlay-source";
 const situationPointSelectedLayerId = "cop-situation-point-selected";
+const situationWeatherForecastFillLayerId = "cop-situation-weather-forecast-fill";
+const situationWeatherForecastLineLayerId = "cop-situation-weather-forecast-line";
+const situationWeatherForecastIconLayerId = "cop-situation-weather-forecast-icon";
+const situationWeatherForecastLabelLayerId = "cop-situation-weather-forecast-label";
 const situationWeatherGridFillLayerId = "cop-situation-weather-grid-fill";
 const situationWeatherGridLineLayerId = "cop-situation-weather-grid-line";
 const situationWeatherGridLabelLayerId = "cop-situation-weather-grid-label";
@@ -230,6 +234,10 @@ const mapFeatureClickPriorityLayerIds = [
   situationWeatherPriorityLayerId,
   situationWeatherConditionLayerId,
   situationWeatherCameraSelectedLayerId,
+  situationWeatherForecastIconLayerId,
+  situationWeatherForecastLabelLayerId,
+  situationWeatherForecastLineLayerId,
+  situationWeatherForecastFillLayerId,
   situationAirQualityLabelLayerId,
   situationAirQualityPointLayerId,
   situationOsmDetailSymbolLayerId,
@@ -291,6 +299,8 @@ const mapPointRaiseLayerIds = [
   situationWeatherWindLayerId,
   situationWeatherValueLayerId,
   situationWeatherLabelLayerId,
+  situationWeatherForecastIconLayerId,
+  situationWeatherForecastLabelLayerId,
   situationAirQualityPointLayerId,
   situationAirQualityLabelLayerId,
   userLocationAccuracyLayerId,
@@ -491,6 +501,15 @@ export interface SituationContextFeatureCollection {
       weatherFillColor?: string;
       weatherFillOpacity?: number;
       weatherFlightCategoryColor?: string;
+      weatherForecastArea?: boolean;
+      weatherForecastDetailUrl?: string;
+      weatherForecastFillColor?: string;
+      weatherForecastLabel?: string;
+      weatherForecastLineColor?: string;
+      weatherForecastRiskLevel?: string;
+      weatherForecastRiskScore?: number;
+      weatherForecastSubtitle?: string;
+      weatherForecastSymbolKey?: string;
       weatherGrid?: boolean;
       weatherGridKind?: string;
       weatherHeadline?: string;
@@ -1628,6 +1647,7 @@ function CopMapComponent({
           filter: [
             "all",
             ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+            ["!=", ["get", "weatherForecastArea"], true],
             ["!=", ["get", "weatherGrid"], true],
             ["in", ["get", "safetyAlertLayer"], ["literal", ["warnings", "weather_alerts"]]]
           ],
@@ -1680,6 +1700,7 @@ function CopMapComponent({
           filter: [
             "all",
             ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+            ["!=", ["get", "weatherForecastArea"], true],
             ["!=", ["get", "weatherGrid"], true],
             ["!=", ["get", "radioOverlay"], true],
             ["!", ["in", ["get", "safetyAlertLayer"], ["literal", ["warnings", "weather_alerts"]]]]
@@ -1747,6 +1768,7 @@ function CopMapComponent({
           filter: [
             "all",
             ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]],
+            ["!=", ["get", "weatherForecastArea"], true],
             ["!=", ["get", "weatherGrid"], true],
             ["!=", ["get", "radioOverlay"], true],
             ["!", ["in", ["get", "safetyAlertLayer"], ["literal", ["warnings", "weather_alerts"]]]]
@@ -1968,6 +1990,7 @@ function CopMapComponent({
           filter: [
             "all",
             ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]],
+            ["!=", ["get", "weatherForecastArea"], true],
             ["!=", ["get", "weatherGrid"], true],
             ["in", ["get", "safetyAlertLayer"], ["literal", ["warnings", "weather_alerts"]]]
           ],
@@ -2018,6 +2041,110 @@ function CopMapComponent({
               16,
               ["case", ["get", "selected"], 4, 2.9]
             ]
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherForecastFillLayerId,
+          type: "fill",
+          source: situationSourceId,
+          filter: [
+            "all",
+            ["==", ["get", "weatherForecastArea"], true],
+            ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]]
+          ],
+          paint: {
+            "fill-color": ["coalesce", ["get", "weatherForecastFillColor"], "#38bdf8"],
+            "fill-opacity": [
+              "case",
+              ["get", "selected"],
+              0.32,
+              ["get", "stale"],
+              0.08,
+              0.2
+            ]
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherForecastLineLayerId,
+          type: "line",
+          source: situationSourceId,
+          filter: [
+            "all",
+            ["==", ["get", "weatherForecastArea"], true],
+            ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]]
+          ],
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": ["coalesce", ["get", "weatherForecastLineColor"], ["get", "weatherForecastFillColor"], "#38bdf8"],
+            "line-opacity": ["case", ["get", "selected"], 0.98, ["get", "stale"], 0.42, 0.78],
+            "line-width": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              5,
+              ["case", ["get", "selected"], 2.6, 1.2],
+              12,
+              ["case", ["get", "selected"], 3.4, 1.8],
+              16,
+              ["case", ["get", "selected"], 4.2, 2.4]
+            ]
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherForecastIconLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 5,
+          filter: [
+            "all",
+            ["==", ["get", "weatherForecastArea"], true],
+            ["has", "weatherForecastSymbolKey"]
+          ],
+          layout: {
+            "icon-image": ["get", "weatherForecastSymbolKey"],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.36, 10, 0.5, 14, 0.64],
+            "icon-allow-overlap": false,
+            "icon-ignore-placement": false,
+            "icon-optional": true,
+            "symbol-sort-key": ["-", ["coalesce", ["get", "weatherForecastRiskScore"], 0]]
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.52, 0.92]
+          }
+        });
+
+        map.addLayer({
+          id: situationWeatherForecastLabelLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 7,
+          filter: [
+            "all",
+            ["==", ["get", "weatherForecastArea"], true],
+            ["has", "weatherForecastLabel"]
+          ],
+          layout: {
+            "text-field": ["get", "weatherForecastLabel"],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 7, 9, 10, 11, 14, 13],
+            "text-offset": [0, 1.35],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-ignore-placement": false,
+            "text-optional": true,
+            "symbol-sort-key": ["-", ["coalesce", ["get", "weatherForecastRiskScore"], 0]]
+          },
+          paint: {
+            "text-color": "#f8fafc",
+            "text-halo-color": "rgba(6, 16, 25, 0.92)",
+            "text-halo-width": 1.8,
+            "text-halo-blur": 0.3
           }
         });
 
@@ -3580,6 +3707,18 @@ function CopMapComponent({
         map.on("mouseenter", situationWeatherCameraLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationWeatherForecastIconLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationWeatherForecastLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationWeatherForecastLineLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationWeatherForecastFillLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationAirQualityPointLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -3692,6 +3831,18 @@ function CopMapComponent({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationWeatherCameraLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationWeatherForecastIconLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationWeatherForecastLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationWeatherForecastLineLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationWeatherForecastFillLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationAirQualityPointLayerId, () => {
@@ -6354,6 +6505,30 @@ function buildSituationRenderProperties(
       weatherObservation: false
     };
   }
+  if (isWeatherForecastAreaFeature(feature)) {
+    const presentation = weatherForecastPresentation(feature);
+    const symbolKey = recordString(presentation, "symbolKey");
+    const riskScore = weatherForecastRiskScore(feature, presentation);
+    const riskLevel = weatherForecastRiskLevel(feature, presentation);
+    const colors = weatherForecastColors(riskScore, riskLevel, status.color);
+    const label = weatherForecastMapLabel(feature, presentation);
+    return {
+      mapLabel: label,
+      mapPointSuppressed: feature.geometry.type !== "Point" ? true : undefined,
+      situationStatusColor: colors.fill,
+      situationStatusLabel: weatherForecastStatusLabel(riskScore, riskLevel),
+      situationStatusTone: weatherForecastTone(riskScore, riskLevel) === "bad" ? "critical" : weatherForecastTone(riskScore, riskLevel) === "warn" ? "warning" : "info",
+      weatherForecastArea: true,
+      weatherForecastDetailUrl: weatherForecastDetailUrl(feature),
+      weatherForecastFillColor: colors.fill,
+      weatherForecastLabel: label,
+      weatherForecastLineColor: colors.line,
+      weatherForecastRiskLevel: riskLevel,
+      weatherForecastRiskScore: riskScore,
+      weatherForecastSubtitle: weatherForecastSubtitle(feature, presentation),
+      weatherForecastSymbolKey: getWeatherConditionIconKey(symbolKey ?? "measurement")
+    };
+  }
   if (isRiskFeature(feature)) {
     const kind = riskIconKind(feature);
     const floodStage = kind === "flood" ? floodStageValue(feature) : undefined;
@@ -6621,6 +6796,113 @@ function isWeatherContextFeature(feature: SituationFeature): boolean {
     || feature.properties.layer === "weather_precipitation_grid"
     || feature.properties.layer === "weather_humidity_grid"
     || feature.properties.layer === "weather_pressure_grid";
+}
+
+function isWeatherForecastAreaFeature(feature: SituationFeature): boolean {
+  const providerLayerId = stringProperty(feature.properties.providerLayerId);
+  return feature.properties.layer === "weather_forecast_area"
+    || feature.properties.layerId === "public.weather.forecast_area"
+    || feature.properties.sourceId === "weather_forecast"
+    || providerLayerId === "weather.forecast_area"
+    || providerLayerId === "weather_forecast_area"
+    || providerLayerId === "public.weather.forecast_area";
+}
+
+function weatherForecastProviderProperties(feature: SituationFeature): Record<string, unknown> {
+  return isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+}
+
+function weatherForecastPresentation(feature: SituationFeature): Record<string, unknown> {
+  const providerProperties = weatherForecastProviderProperties(feature);
+  return isRecord(providerProperties.presentation) ? providerProperties.presentation : {};
+}
+
+function weatherForecastDetailUrl(feature: SituationFeature): string | undefined {
+  const providerProperties = weatherForecastProviderProperties(feature);
+  const forecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
+  return recordString(forecast, "detailUrl") ?? recordString(providerProperties, "detailUrl");
+}
+
+function weatherForecastRiskScore(feature: SituationFeature, presentation: Record<string, unknown>): number | undefined {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  return recordNumber(metrics, "riskScore") ?? recordNumber(presentation, "riskScore");
+}
+
+function weatherForecastRiskLevel(feature: SituationFeature, presentation: Record<string, unknown>): string | undefined {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  return recordString(presentation, "riskLevel")
+    ?? recordString(metrics, "riskLevel")
+    ?? stringProperty(feature.properties.severity)
+    ?? stringProperty(feature.properties.status);
+}
+
+function weatherForecastColors(riskScore: number | undefined, riskLevel: string | undefined, fallback: string): { fill: string; line: string } {
+  const normalized = normalizeSituationCategory(riskLevel);
+  const score = riskScore ?? (
+    normalized.includes("critical") || normalized.includes("extreme") || normalized.includes("veryhigh") ? 0.9
+      : normalized.includes("high") || normalized.includes("warning") ? 0.72
+        : normalized.includes("medium") || normalized.includes("moderate") || normalized.includes("advisory") ? 0.48
+          : normalized.includes("low") || normalized.includes("minor") ? 0.22
+            : 0
+  );
+  if (score >= 0.75) {
+    return { fill: "#ef4444", line: "#b91c1c" };
+  }
+  if (score >= 0.5) {
+    return { fill: "#f97316", line: "#c2410c" };
+  }
+  if (score >= 0.25) {
+    return { fill: "#facc15", line: "#ca8a04" };
+  }
+  if (score > 0) {
+    return { fill: "#a3e635", line: "#65a30d" };
+  }
+  return { fill: fallback, line: "#38bdf8" };
+}
+
+function weatherForecastTone(riskScore: number | undefined, riskLevel: string | undefined): "bad" | "ok" | "warn" {
+  const normalized = normalizeSituationCategory(riskLevel);
+  const score = riskScore ?? 0;
+  if (score >= 0.75 || normalized.includes("critical") || normalized.includes("extreme")) {
+    return "bad";
+  }
+  if (score >= 0.25 || normalized.includes("warning") || normalized.includes("advisory") || normalized.includes("moderate")) {
+    return "warn";
+  }
+  return "ok";
+}
+
+function weatherForecastStatusLabel(riskScore: number | undefined, riskLevel: string | undefined): string {
+  const tone = weatherForecastTone(riskScore, riskLevel);
+  if (tone === "bad") {
+    return "VYSOKÉ RIZIKO";
+  }
+  if (tone === "warn") {
+    return "RIZIKO";
+  }
+  return "PŘEDPOVĚĎ";
+}
+
+function weatherForecastMapLabel(feature: SituationFeature, presentation: Record<string, unknown>): string {
+  return recordString(presentation, "mapLabel")
+    ?? recordString(presentation, "label")
+    ?? feature.properties.areaName
+    ?? feature.properties.label
+    ?? feature.properties.headline
+    ?? "Předpověď";
+}
+
+function weatherForecastSubtitle(feature: SituationFeature, presentation: Record<string, unknown>): string {
+  const providerProperties = weatherForecastProviderProperties(feature);
+  const forecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
+  const properties = feature.properties as unknown as Record<string, unknown>;
+  return [
+    recordString(presentation, "subtitle")
+      ?? recordString(forecast, "summary")
+      ?? recordString(properties, "description")
+      ?? recordString(properties, "summary"),
+    sourceDisplayName(feature.properties.sourceId)
+  ].filter(Boolean).join(" · ");
 }
 
 function isWeatherWebcamFeature(feature: SituationFeature): boolean {
@@ -7910,6 +8192,8 @@ function sourceDisplayName(sourceId: string | undefined): string | undefined {
       return "ČHMÚ webkamery";
     case "open_meteo":
       return "Open-Meteo";
+    case "weather_forecast":
+      return "Předpověď počasí";
     case "aviation_weather":
       return "METAR/TAF";
     default:
@@ -8303,6 +8587,9 @@ function formatSituationFeatureSelectionCard(
       return formatTransportFeatureSelectionCard(feature, presentation, transitDetail);
     }
   }
+  if (isWeatherForecastAreaFeature(feature)) {
+    return formatWeatherForecastFeatureSelectionCard(feature);
+  }
   if (isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature)) {
     return formatWeatherFeatureSelectionCard(feature);
   }
@@ -8314,6 +8601,36 @@ function formatSituationFeatureSelectionCard(
     metaItems: [],
     subtitle,
     title: formatSituationFeatureTitle(feature)
+  };
+}
+
+function formatWeatherForecastFeatureSelectionCard(feature: SituationFeature): MapSelectionCard {
+  const presentation = weatherForecastPresentation(feature);
+  const providerProperties = weatherForecastProviderProperties(feature);
+  const forecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
+  const riskScore = weatherForecastRiskScore(feature, presentation);
+  const riskLevel = weatherForecastRiskLevel(feature, presentation);
+  const title = weatherForecastMapLabel(feature, presentation);
+  const subtitle = weatherForecastSubtitle(feature, presentation);
+  const statusLabel = weatherForecastStatusLabel(riskScore, riskLevel);
+  const detailUrl = weatherForecastDetailUrl(feature);
+  const detailRows = [
+    rowValue("Souhrn", recordString(forecast, "summary") ?? recordString(presentation, "subtitle")),
+    rowValue("Riziko", riskScore !== undefined ? `${Math.round(riskScore * 100)} %` : riskLevel),
+    rowValue("Detail", detailUrl ? "dostupný meteogram" : undefined)
+  ].filter((row): row is { label: string; value: string } => Boolean(row));
+  return {
+    compactSubtitle: recordString(presentation, "mapLabel") ?? statusLabel,
+    detailRows,
+    eyebrow: "Předpověď počasí",
+    key: `feature:${feature.properties.featureId}`,
+    metaItems: [
+      statusLabel,
+      sourceDisplayName(feature.properties.sourceId)
+    ].filter((item, index, items): item is string => Boolean(item) && items.indexOf(item) === index),
+    statusTone: weatherForecastTone(riskScore, riskLevel),
+    subtitle,
+    title
   };
 }
 

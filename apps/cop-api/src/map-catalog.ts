@@ -516,6 +516,7 @@ const curatedCatalogLayerLabels: Record<string, string> = {
   "public.safety.air_quality": "Kvalita ovzduší",
   "public.safety.flood": "Vodní stavy a průtoky",
   "public.weather.current": "Počasí ve středu mapy",
+  "public.weather.forecast_area": "Předpověď počasí",
   "public.weather.observations": "Počasí",
   "public.weather.temperature_grid": "Teplota",
   "public.weather.wind_field": "Vítr",
@@ -911,6 +912,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       selectable: true,
       styleProfile: "weather-observations-v1"
     },
+    buildWeatherForecastAreaCatalogLayer(sources),
     buildWeatherWebcamCatalogLayer(sources),
     {
       audience: "public",
@@ -1066,6 +1068,9 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
 
 function buildSituationCatalogCompatibilityLayers(catalog: ProviderMapCatalog, sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
   return [
+    catalog.layers.some((layer) => layer.recommendedCatalogLayerId === "public.weather.forecast_area")
+      ? undefined
+      : buildWeatherForecastAreaCatalogLayer(sources),
     catalog.layers.some((layer) => layer.recommendedCatalogLayerId === "public.weather.webcams")
       ? undefined
       : buildWeatherWebcamCatalogLayer(sources)
@@ -1073,24 +1078,76 @@ function buildSituationCatalogCompatibilityLayers(catalog: ProviderMapCatalog, s
 }
 
 function buildSituationCatalogCompatibilitySources(catalog: ProviderMapCatalog, sources: SituationSourceDescriptor[]): MapCatalogSource[] {
-  if (catalog.sources.some((source) => source.sourceId === "chmi_weather_webcams")) {
-    return [];
+  const compatibilitySources: MapCatalogSource[] = [];
+  if (!catalog.sources.some((source) => source.sourceId === "weather_forecast")) {
+    const source = findSource(sources, "weather_forecast");
+    const enabled = source?.enabled !== false;
+    compatibilitySources.push({
+      audience: "public",
+      cacheTtlSeconds: source?.updateCadenceSeconds ?? 600,
+      enabled,
+      feedsCatalogLayerIds: ["public.weather.forecast_area"],
+      label: source?.label ?? "Předpověď počasí",
+      providerId: "sim.situation-data",
+      selectableInMap: enabled,
+      sourceId: "weather_forecast",
+      sourceRole: "final",
+      updateCadenceSeconds: source?.updateCadenceSeconds ?? 600,
+      visibleInDiagnostics: true
+    });
   }
-  const source = findSource(sources, "chmi_weather_webcams");
-  const enabled = source?.enabled !== false;
-  return [{
+  if (!catalog.sources.some((source) => source.sourceId === "chmi_weather_webcams")) {
+    const source = findSource(sources, "chmi_weather_webcams");
+    const enabled = source?.enabled !== false;
+    compatibilitySources.push({
+      audience: "public",
+      cacheTtlSeconds: source?.updateCadenceSeconds ?? 600,
+      enabled,
+      feedsCatalogLayerIds: ["public.weather.webcams"],
+      label: source?.label ?? "ČHMÚ webkamery",
+      providerId: "sim.situation-data",
+      selectableInMap: enabled,
+      sourceId: "chmi_weather_webcams",
+      sourceRole: "final",
+      updateCadenceSeconds: source?.updateCadenceSeconds ?? 600,
+      visibleInDiagnostics: true
+    });
+  }
+  return compatibilitySources;
+}
+
+function buildWeatherForecastAreaCatalogLayer(sources: SituationSourceDescriptor[]): MapCatalogLayer {
+  const source = findSource(sources, "weather_forecast");
+  const refreshSeconds = source?.updateCadenceSeconds ?? 600;
+  return {
     audience: "public",
-    cacheTtlSeconds: source?.updateCadenceSeconds ?? 600,
-    enabled,
-    feedsCatalogLayerIds: ["public.weather.webcams"],
-    label: source?.label ?? "ČHMÚ webkamery",
-    providerId: "sim.situation-data",
-    selectableInMap: enabled,
-    sourceId: "chmi_weather_webcams",
-    sourceRole: "final",
-    updateCadenceSeconds: source?.updateCadenceSeconds ?? 600,
-    visibleInDiagnostics: true
-  }];
+    cacheTtlSeconds: refreshSeconds,
+    defaultVisible: false,
+    description: "Plošná předpověď počasí ze SIM se symbolem, rizikem a detailním meteogramem.",
+    geometryTypes: ["Polygon", "MultiPolygon"],
+    groupId: "risks.weather",
+    kind: "vector_features",
+    label: "Předpověď počasí",
+    layerId: "public.weather.forecast_area",
+    legal: legalFromSource(source),
+    maxZoom: 18,
+    minZoom: 4,
+    provenance: {
+      sourceIds: ["sim.situation-data:weather_forecast"]
+    },
+    query: {
+      maxFeatures: 24,
+      mode: "bbox",
+      providerId: "sim.situation-data",
+      providerLayerIds: ["weather_forecast_area"],
+      providerSourceIds: ["weather_forecast"],
+      streamId: "features"
+    },
+    refreshSeconds,
+    role: "overlay",
+    selectable: true,
+    styleProfile: "weather-forecast-area-v1"
+  };
 }
 
 function buildWeatherWebcamCatalogLayer(sources: SituationSourceDescriptor[]): MapCatalogLayer {
@@ -1649,6 +1706,8 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
       return { audience: "public", feedsCatalogLayerIds: ["public.weather.aviation"], selectableInMap: true, sourceRole: "final" };
     case "chmi_weather_stations":
       return { audience: "public", feedsCatalogLayerIds: ["public.weather.observations"], selectableInMap: true, sourceRole: "final" };
+    case "weather_forecast":
+      return { audience: "public", feedsCatalogLayerIds: ["public.weather.forecast_area"], selectableInMap: true, sourceRole: "final" };
     case "chmi_weather_webcams":
       return { audience: "public", feedsCatalogLayerIds: ["public.weather.webcams"], selectableInMap: true, sourceRole: "final" };
     case "chmi_air_quality":

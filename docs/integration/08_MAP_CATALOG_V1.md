@@ -35,6 +35,7 @@ Current weather curation:
 | --- | --- |
 | Current weather summary | kept as non-selectable reference `public.weather.current` for diagnostics and fallback details |
 | ČHMÚ station observations | main selectable weather layer `public.weather.observations`, shown to users as `Počasí` |
+| Forecast areas | selectable as `public.weather.forecast_area` with SIM-prepared forecast polygons, presentation symbols, labels and meteogram detail |
 | ČHMÚ weather webcams | selectable as `public.weather.webcams` with camera point icons and preview through COP proxy |
 | ČHMÚ radar precipitation overlay | selectable as `public.weather.radar_precipitation` |
 | Air quality station observations | selectable as `public.safety.air_quality` |
@@ -71,6 +72,7 @@ public.safety.fire
 public.safety.weather_alerts
 public.boundary.admin
 public.weather.current
+public.weather.forecast_area
 public.weather.aviation
 public.mobile.network
 public.traffic.transit
@@ -453,6 +455,13 @@ secondary metric such as wind or recent precipitation. If SIM provides
 directly. Otherwise COP may infer a conservative symbol from WMO weather code,
 precipitation, cloud cover, humidity, wind and temperature.
 
+`public.weather.forecast_area` is a separate polygon forecast layer backed by
+SIM `weather_forecast_area` / `weather_forecast`. COP renders its polygon,
+`providerProperties.presentation.symbolKey`, `mapLabel`, risk fill and
+`providerProperties.weatherForecast.detailUrl` without deriving iconography from
+raw weather codes. It must not be visually merged with ČHMÚ meteorological
+alerts in `public.safety.weather_alerts`.
+
 `public.weather.current` is only a reference point summary for the center of the
 current map view. It is identified by `providerLayerId=weather.open_meteo` or
 `tags.mapDisplayHint=weather_observation_point` and should be labeled "Počasí
@@ -556,6 +565,7 @@ Provider-native fields may be preserved under:
 | `public.place.settlements` | Sídla | `sim.situation-data` layer `place_settlements`, source `osm_postgis` |
 | `public.weather.current` | Počasí ve středu mapy | `sim.situation-data` layer `weather`, source `open_meteo`; non-selectable reference/fallback layer |
 | `public.weather.observations` | Počasí | `sim.situation-data` layer `weather`, source `chmi_weather_stations`; primary public weather layer |
+| `public.weather.forecast_area` | Předpověď počasí | `sim.situation-data` layer `weather_forecast_area`, source `weather_forecast`; polygon forecast areas with SIM presentation symbol/label, risk fill and `providerProperties.weatherForecast.detailUrl` |
 | `public.weather.webcams` | Kamery | `sim.situation-data` layer `weather_webcams`, source `chmi_weather_webcams`; samostatná kamerová vrstva používající `properties.providerProperties.camera.detailUrl` nebo `snapshotUrl` přes COP proxy |
 | `public.weather.aviation` | Letištní počasí | `sim.situation-data` layer `weather`, source `aviation_weather` |
 | `public.safety.air_quality` | Kvalita ovzduší | `sim.situation-data` layer `air_quality`, source `chmi_air_quality` |

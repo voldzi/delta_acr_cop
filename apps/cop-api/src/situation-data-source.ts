@@ -28,6 +28,7 @@ export type SituationLayerId =
   | "warnings"
   | "weather"
   | "weather_alerts"
+  | "weather_forecast_area"
   | "weather_webcams"
   | "weather_humidity_grid"
   | "weather_precipitation_grid"
@@ -345,6 +346,7 @@ const defaultConfig: SituationDataSourceConfig = {
     warnings: 5 * 60 * 1000,
     weather: 5 * 60 * 1000,
     weather_alerts: 5 * 60 * 1000,
+    weather_forecast_area: 10 * 60 * 1000,
     weather_webcams: 10 * 60 * 1000,
     weather_humidity_grid: 10 * 60 * 1000,
     weather_precipitation_grid: 10 * 60 * 1000,
@@ -364,6 +366,7 @@ const defaultConfig: SituationDataSourceConfig = {
     chmi_weather_radar: 5 * 60 * 1000,
     chmi_weather_stations: 10 * 60 * 1000,
     chmi_weather_webcams: 10 * 60 * 1000,
+    weather_forecast: 10 * 60 * 1000,
     mobile_coverage_model: 10 * 60 * 1000,
     mobile_network_model: 10 * 60 * 1000,
     osm_postgis: 6 * 60 * 60 * 1000
@@ -374,6 +377,7 @@ const defaultConfig: SituationDataSourceConfig = {
 
 const allowedLayerIds: SituationLayerId[] = [
   "weather",
+  "weather_forecast_area",
   "weather_webcams",
   "weather_temperature_grid",
   "weather_wind_field",
@@ -430,6 +434,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       warnings: readInteger(env.COP_SITUATION_DATA_WARNINGS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_alerts: readInteger(env.COP_SITUATION_DATA_WEATHER_ALERTS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_forecast_area: readInteger(env.COP_SITUATION_DATA_WEATHER_FORECAST_AREA_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_webcams: readInteger(env.COP_SITUATION_DATA_WEATHER_WEBCAMS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_humidity_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_HUMIDITY_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_precipitation_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_PRECIPITATION_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
@@ -449,6 +454,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       chmi_weather_radar: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_RADAR_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       chmi_weather_stations: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       chmi_weather_webcams: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_WEBCAMS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      weather_forecast: readInteger(env.COP_SITUATION_DATA_WEATHER_FORECAST_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_coverage_model: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_network_model: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       osm_postgis: readInteger(env.COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)

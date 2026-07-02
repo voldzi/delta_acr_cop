@@ -334,7 +334,12 @@ import {
 import { DataMetric, DetailGrid, ObjectDetailSection, StatusBadge } from "./detail-ui";
 import { SafetyRiskSummary } from "./hydrology-detail";
 import {
+  isWeatherForecastAreaFeature,
   WeatherContextSummary,
+  WeatherForecastAreaDetailPanel,
+  WeatherForecastAreaSummary,
+  weatherForecastAreaSubtitle,
+  weatherForecastAreaTitle,
   WeatherStationDetailPanel
 } from "./weather-detail";
 import {
@@ -6552,12 +6557,13 @@ function SelectedObjectDataCard({ object }: { object: CopObject }) {
 function SelectedSituationDataCard({ authToken, feature }: { authToken: string | undefined; feature: SituationFeature }) {
   const status = situationFeatureStatusModel(feature);
   const weatherCamera = isWeatherWebcamFeature(feature);
-  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera;
+  const weatherForecastArea = isWeatherForecastAreaFeature(feature);
+  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera && !weatherForecastArea;
   const rows: Array<[string, React.ReactNode]> = [
-    ["Název", weatherCamera ? weatherWebcamTitle(feature) : weatherContext ? weatherFeatureHeadline(feature) : feature.properties.headline ?? feature.properties.label],
+    ["Název", weatherForecastArea ? weatherForecastAreaTitle(feature) : weatherCamera ? weatherWebcamTitle(feature) : weatherContext ? weatherFeatureHeadline(feature) : feature.properties.headline ?? feature.properties.label],
     ["Vrstva", situationDisplayLayerLabel(feature)],
     ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
-    [weatherContext || weatherCamera ? "Typ" : "Kategorie", weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : feature.properties.category],
+    [weatherContext || weatherCamera || weatherForecastArea ? "Typ" : "Kategorie", weatherForecastArea ? "Plošná předpověď" : weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : feature.properties.category],
     ["Zdroj", feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)],
     ["Aktualizace", formatShortDateTime(feature.properties.observedAt)]
   ];
@@ -6577,6 +6583,7 @@ function SelectedSituationDataCard({ authToken, feature }: { authToken: string |
       {feature.properties.layer === "traffic" ? <TrafficSummary feature={feature} /> : null}
       {isSafetyLayerId(feature.properties.layer) ? <SafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
+      {weatherForecastArea ? <WeatherForecastAreaSummary feature={feature} /> : null}
       {weatherCamera ? <WeatherWebcamSummary feature={feature} /> : null}
       {weatherContext ? <WeatherContextSummary feature={feature} /> : null}
     </ObjectDetailSection>
@@ -11912,10 +11919,13 @@ function SituationFeatureDetail({
   const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
   const trafficPresentation = properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
   const weatherCamera = isWeatherWebcamFeature(feature);
-  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera;
+  const weatherForecastArea = isWeatherForecastAreaFeature(feature);
+  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera && !weatherForecastArea;
   const floodDetail = properties.layer === "flood";
   const title = isMissionArenaFeature(feature)
     ? missionArenaDetailTitle(feature)
+    : weatherForecastArea
+      ? weatherForecastAreaTitle(feature)
     : weatherCamera
       ? weatherWebcamTitle(feature)
     : weatherContext
@@ -11927,7 +11937,9 @@ function SituationFeatureDetail({
     ? properties.groupName.trim()
     : undefined;
   const linkedCommunityGroupId = isCommunityReport && typeof properties.groupId === "string" ? properties.groupId : undefined;
-  const subtitle = weatherContext
+  const subtitle = weatherForecastArea
+    ? weatherForecastAreaSubtitle(feature)
+    : weatherContext
     ? weatherFeatureSubtitle(feature)
     : weatherCamera
     ? weatherWebcamSubtitle(feature)
@@ -11960,7 +11972,7 @@ function SituationFeatureDetail({
           rows={[
             [isCommunityReport ? "Typ" : "Vrstva", isCommunityReport ? communityReportCategoryDisplay(properties.category) : situationLayerLabel(properties.layer)],
             ...(isCommunityReport && legacyCommunityGroup ? [["Skupina", legacyCommunityGroup] as [string, React.ReactNode]] : []),
-            ...(!isCommunityReport && !floodDetail ? [[weatherContext || weatherCamera ? "Typ" : "Kategorie", weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : properties.category] as [string, React.ReactNode]] : []),
+            ...(!isCommunityReport && !floodDetail ? [[weatherContext || weatherCamera || weatherForecastArea ? "Typ" : "Kategorie", weatherForecastArea ? "Plošná předpověď" : weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : properties.category] as [string, React.ReactNode]] : []),
             ["Zdroj", properties.sourceName ?? sourceDisplayName(properties.sourceId)],
             [isCommunityReport ? "Vloženo" : "Pozorováno", formatShortDateTime(properties.observedAt)],
             [isCommunityReport ? "Platnost" : "Platí do", formatShortDateTime(properties.validUntil)],
@@ -11969,7 +11981,7 @@ function SituationFeatureDetail({
               [isCommunityReport ? "Riziko" : "Naléhavost", communitySeverityDisplay(properties.hazardSeverity ?? properties.severity ?? properties.urgency)],
               ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />]
             ] as Array<[string, React.ReactNode]> : []),
-            ...(isCommunityReport || weatherContext || weatherCamera || floodDetail ? [] : [
+            ...(isCommunityReport || weatherContext || weatherCamera || weatherForecastArea || floodDetail ? [] : [
               ["Účinné od", formatShortDateTime(properties.effectiveAt)],
               ["Konec platnosti", formatShortDateTime(properties.expiresAt)],
               ["Jistota", formatOptionalPercent(properties.confidence)],
@@ -12044,6 +12056,12 @@ function SituationFeatureDetail({
       {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {properties.layer === "traffic" ? <TrafficDetailSection apiBase={apiBase} authToken={authToken} feature={feature} onShareTransit={onShareTransit} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
+      {weatherForecastArea ? (
+        <ObjectDetailSection title="Předpověď počasí">
+          <WeatherForecastAreaSummary feature={feature} />
+          <WeatherForecastAreaDetailPanel apiBase={apiBase} authToken={authToken} feature={feature} />
+        </ObjectDetailSection>
+      ) : null}
       {weatherCamera ? <WeatherWebcamPreview authToken={authToken} feature={feature} /> : null}
       {weatherContext ? (
         <ObjectDetailSection title="Počasí">
@@ -14238,6 +14256,7 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     traffic: "Doprava",
     warnings: "Výstrahy",
     weather_alerts: "Meteorologické výstrahy",
+    weather_forecast_area: "Předpověď počasí",
     weather: "Počasí",
     weather_webcams: "Webkamery ČHMÚ",
     weather_humidity_grid: "Vlhkost",
@@ -15611,6 +15630,7 @@ function sourceDisplayName(sourceSystemId: string | undefined): string {
     "flight-data-api": "Veřejná letecká data",
     "mission-arena": "Mission Arena",
     open_meteo: "Open-Meteo",
+    weather_forecast: "Předpověď počasí",
     "safety-data-api": "Výstražná data",
     "sim-air-situation-001": "Cvičná letecká situace",
     "situation-data-api": "Situační vrstvy",
@@ -16834,6 +16854,7 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "weather_radar_precipitation"
     || value === "weather_radar_nowcast"
     || value === "weather_thunderstorm_risk"
+    || value === "weather_forecast_area"
     || value === "boundary_admin"
     || value === "boundary_country"
     || value === "boundary_region"
@@ -16879,6 +16900,10 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "weather.pressure_grid":
     case "public.weather.pressure_grid":
       return "weather_pressure_grid";
+    case "weather.forecast_area":
+    case "weather_forecast_area":
+    case "public.weather.forecast_area":
+      return "weather_forecast_area";
     case "weather.webcams":
     case "weather_webcams":
     case "public.weather.webcams":
