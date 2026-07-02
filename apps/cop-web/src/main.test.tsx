@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeChatCenterLocation } from "@cop/messaging/bridge";
-import { App, buildPriorityAlertSummary, buildStableSituationQueryBounds, formatWeatherStationAttribution, mapBoundsContainedBy } from "./main";
+import { App, buildPriorityAlertSummary, buildSituationMapRequestGroups, buildStableSituationQueryBounds, formatWeatherStationAttribution, mapBoundsContainedBy } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
 
 const initialMatchMedia = window.matchMedia;
@@ -91,6 +91,23 @@ describe("COP web dashboard", () => {
     });
     expect(mapBoundsContainedBy(queryBounds, { east: 15.85, north: 50.15, south: 49.55, west: 14.9 })).toBe(true);
     expect(mapBoundsContainedBy(queryBounds, { east: 17.1, north: 50.15, south: 49.55, west: 14.9 })).toBe(false);
+  });
+
+  it("keeps dense infrastructure requests isolated from mobile network context", () => {
+    const groups = buildSituationMapRequestGroups([
+      "reference.infrastructure.communications",
+      "public.mobile.network",
+      "public.weather.observations"
+    ], 8, "4G");
+
+    expect(groups.map((group) => group.layerIds)).toEqual([
+      ["reference.infrastructure.communications"],
+      ["public.mobile.network"],
+      ["public.weather.observations"]
+    ]);
+    expect(groups.find((group) => group.layerIds.includes("reference.infrastructure.communications"))?.limit).toBe(5000);
+    expect(groups.find((group) => group.layerIds.includes("public.mobile.network"))?.limit).toBe(5000);
+    expect(groups.find((group) => group.layerIds.includes("public.weather.observations"))?.limit).toBe(500);
   });
 
   it("builds a local priority alert from safety features by relevance", () => {

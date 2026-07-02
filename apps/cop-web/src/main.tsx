@@ -17020,28 +17020,18 @@ function roundBoundsCoordinate(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
 
-interface SituationMapRequestGroup {
+export interface SituationMapRequestGroup {
   filters: Record<string, Record<string, unknown>>;
   layerIds: string[];
   limit: number;
 }
 
-function buildSituationMapRequestGroups(
+export function buildSituationMapRequestGroups(
   layerIds: string[],
   zoom: number | undefined,
   technology: CoverageTechnology | undefined
 ): SituationMapRequestGroup[] {
-  const groups: string[][] = [];
-  const regularLayerIds = layerIds.filter((layerId) => layerId !== "public.traffic.transit" && layerId !== "public.traffic.transit_stops");
-  if (regularLayerIds.length > 0) {
-    groups.push(regularLayerIds);
-  }
-  if (layerIds.includes("public.traffic.transit")) {
-    groups.push(["public.traffic.transit"]);
-  }
-  if (layerIds.includes("public.traffic.transit_stops")) {
-    groups.push(["public.traffic.transit_stops"]);
-  }
+  const groups = uniqueStrings(layerIds).map((layerId) => [layerId]);
   return groups.map((groupLayerIds) => ({
     filters: buildCatalogFeatureFilters(groupLayerIds, technology),
     layerIds: groupLayerIds,
@@ -17231,11 +17221,20 @@ function mapFeatureQueryLimit(layerIds: string[], zoom: number | undefined): num
   if (layerIds.includes("public.traffic.transit_stops") && !layerIds.includes("public.traffic.transit")) {
     return 5000;
   }
+  if (layerIds.some(isDenseSituationCatalogLayerId)) {
+    return 5000;
+  }
   if (!layerIds.includes("public.traffic.transit")) {
     return 500;
   }
   void zoom;
   return 5000;
+}
+
+function isDenseSituationCatalogLayerId(layerId: string): boolean {
+  return layerId.startsWith("reference.infrastructure.")
+    || layerId === "public.mobile.network"
+    || layerId === "public.traffic.transit";
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {

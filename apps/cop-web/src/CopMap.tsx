@@ -106,6 +106,7 @@ const sketchDraftSourceId = "cop-sketch-draft";
 const sketchEditSourceId = "cop-sketch-edit";
 const alertAreaSourceId = "cop-alert-areas";
 const situationSourceId = "cop-situation-context";
+const situationOsmClusterSourceId = "cop-situation-osm-clusters";
 const trackHistoryLayerId = "cop-track-history-line";
 const trackPredictionLayerId = "cop-track-prediction-line";
 const userAlertRadiusFillLayerId = "cop-user-alert-radius-fill";
@@ -161,6 +162,10 @@ const situationWeatherCameraLayerId = "cop-situation-weather-camera";
 const situationAirQualityHeatLayerId = "cop-situation-air-quality-heat";
 const situationAirQualityPointLayerId = "cop-situation-air-quality-point";
 const situationAirQualityLabelLayerId = "cop-situation-air-quality-label";
+const situationOsmClusterCircleLayerId = "cop-situation-osm-cluster-circle";
+const situationOsmClusterCountLayerId = "cop-situation-osm-cluster-count";
+const situationOsmClusterSymbolLayerId = "cop-situation-osm-cluster-symbol";
+const situationOsmClusterLabelLayerId = "cop-situation-osm-cluster-label";
 const situationOsmSymbolLayerId = "cop-situation-osm-symbol";
 const situationOsmDetailSymbolLayerId = "cop-situation-osm-detail-symbol";
 const situationMobileSymbolLayerId = "cop-situation-mobile-symbol";
@@ -196,7 +201,9 @@ const trackClusterLabelLayerId = "cop-live-track-cluster-label";
 
 const mapClusterClickLayerIds = [
   trackClusterCircleLayerId,
-  trackClusterCountLayerId
+  trackClusterCountLayerId,
+  situationOsmClusterCircleLayerId,
+  situationOsmClusterCountLayerId
 ] as const;
 
 const mapFeatureClickPriorityLayerIds = [
@@ -240,6 +247,8 @@ const mapFeatureClickPriorityLayerIds = [
   situationWeatherForecastFillLayerId,
   situationAirQualityLabelLayerId,
   situationAirQualityPointLayerId,
+  situationOsmClusterSymbolLayerId,
+  situationOsmClusterLabelLayerId,
   situationOsmDetailSymbolLayerId,
   situationOsmSymbolLayerId,
   situationPointSelectedLayerId,
@@ -285,6 +294,10 @@ const mapPointRaiseLayerIds = [
   situationHydroReferenceTrendLayerId,
   situationHydroReferenceLabelLayerId,
   situationRiskLabelLayerId,
+  situationOsmClusterCircleLayerId,
+  situationOsmClusterCountLayerId,
+  situationOsmClusterSymbolLayerId,
+  situationOsmClusterLabelLayerId,
   situationOsmSymbolLayerId,
   situationOsmDetailSymbolLayerId,
   situationRadioPointHaloLayerId,
@@ -1119,6 +1132,10 @@ function CopMapComponent({
     ),
     [publicFlightSymbolMode, selectedSituationFeatureId, selectedSituationFeatureStableKey, situationFeatures]
   );
+  const situationOsmClusterFeatureCollection = React.useMemo(
+    () => situationOsmPointsToClusterFeatureCollection(situationFeatureCollection),
+    [situationFeatureCollection]
+  );
   const hasMobileCoverageFeatures = React.useMemo(
     () => situationFeatureCollection.features.some((feature) => feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network"),
     [situationFeatureCollection]
@@ -1305,6 +1322,13 @@ function CopMapComponent({
         map.addSource(situationSourceId, {
           type: "geojson",
           data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(situationOsmClusterSourceId, {
+          type: "geojson",
+          data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0],
+          cluster: true,
+          clusterMaxZoom: 13,
+          clusterRadius: 44
         });
         map.addSource(selectedTransitRouteSourceId, {
           type: "geojson",
@@ -2767,10 +2791,10 @@ function CopMapComponent({
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "osmPoi"], true]],
           layout: {
             "icon-image": ["coalesce", ["get", "osmSymbolKey"], getOsmCategoryIconKey("other")],
-            "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.26, 11, 0.34, 15, 0.48],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.22, 9, 0.3, 12, 0.38, 15, 0.48],
             "icon-anchor": "center",
-            "icon-allow-overlap": false,
-            "icon-ignore-placement": false,
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
             "text-field": ["get", "label"],
             "text-font": ["Noto Sans Regular"],
             "text-size": ["interpolate", ["linear"], ["zoom"], 7, 0, 12, 0, 13, 10, 16, 12],
@@ -2780,7 +2804,7 @@ function CopMapComponent({
             "text-optional": true
           },
           paint: {
-            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0, 10, 0, 12, ["case", ["get", "stale"], 0.68, 0.94]],
+            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.72, 9, 0.84, 12, ["case", ["get", "stale"], 0.68, 0.94]],
             "text-color": ["case", ["get", "stale"], "#facc15", "#dff8ff"],
             "text-halo-color": "#061019",
             "text-halo-width": 1.5,
@@ -2803,6 +2827,79 @@ function CopMapComponent({
           },
           paint: {
             "icon-opacity": ["case", ["get", "stale"], 0.68, 0.96]
+          }
+        });
+
+        map.addLayer({
+          id: situationOsmClusterCircleLayerId,
+          type: "circle",
+          source: situationOsmClusterSourceId,
+          filter: ["has", "point_count"],
+          paint: {
+            "circle-color": ["step", ["get", "point_count"], "#7dd3fc", 12, "#a3e635", 36, "#facc15"],
+            "circle-opacity": 0.9,
+            "circle-radius": ["step", ["get", "point_count"], 17, 12, 22, 36, 28, 80, 34],
+            "circle-stroke-color": "#061019",
+            "circle-stroke-opacity": 0.9,
+            "circle-stroke-width": 2
+          }
+        });
+
+        map.addLayer({
+          id: situationOsmClusterCountLayerId,
+          type: "symbol",
+          source: situationOsmClusterSourceId,
+          filter: ["has", "point_count"],
+          layout: {
+            "text-field": ["get", "point_count_abbreviated"],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["step", ["get", "point_count"], 11, 12, 12, 36, 13],
+            "text-allow-overlap": true,
+            "text-ignore-placement": true
+          },
+          paint: {
+            "text-color": "#061019",
+            "text-halo-color": "#eef5fb",
+            "text-halo-width": 0.7
+          }
+        });
+
+        map.addLayer({
+          id: situationOsmClusterSymbolLayerId,
+          type: "symbol",
+          source: situationOsmClusterSourceId,
+          filter: ["!", ["has", "point_count"]],
+          layout: {
+            "icon-image": ["coalesce", ["get", "osmSymbolKey"], getOsmCategoryIconKey("other")],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.22, 9, 0.3, 12, 0.38, 15, 0.48],
+            "icon-anchor": "center",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true
+          },
+          paint: {
+            "icon-opacity": ["case", ["get", "stale"], 0.68, 0.95]
+          }
+        });
+
+        map.addLayer({
+          id: situationOsmClusterLabelLayerId,
+          type: "symbol",
+          source: situationOsmClusterSourceId,
+          filter: ["!", ["has", "point_count"]],
+          layout: {
+            "text-field": ["get", "label"],
+            "text-font": ["Noto Sans Regular"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 7, 0, 12, 0, 13, 10, 16, 12],
+            "text-offset": [0, 1.35],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-optional": true
+          },
+          paint: {
+            "text-color": ["case", ["get", "stale"], "#facc15", "#dff8ff"],
+            "text-halo-color": "#061019",
+            "text-halo-width": 1.5,
+            "text-halo-blur": 0.4
           }
         });
 
@@ -3319,8 +3416,13 @@ function CopMapComponent({
         const handleClusterClick = (event: MapLayerMouseEvent) => {
           void zoomToCluster(map, event, trackClusterSourceId, setClusterInfo);
         };
+        const handleSituationOsmClusterClick = (event: MapLayerMouseEvent) => {
+          void zoomToCluster(map, event, situationOsmClusterSourceId, setClusterInfo);
+        };
         map.on("click", trackClusterCircleLayerId, handleClusterClick);
         map.on("click", trackClusterCountLayerId, handleClusterClick);
+        map.on("click", situationOsmClusterCircleLayerId, handleSituationOsmClusterClick);
+        map.on("click", situationOsmClusterCountLayerId, handleSituationOsmClusterClick);
         const updateAoiEditPoint = (zoneId: string, index: number, lngLat: maplibregl.LngLat) => {
           const rule = findEditableAoiRule(aoiRulesRef.current, zoneId);
           const points = aoiRuleEditablePoints(rule);
@@ -3623,6 +3725,20 @@ function CopMapComponent({
           setHoveredObjectId(undefined);
           map.getCanvas().style.cursor = "zoom-in";
         });
+        map.on("mouseenter", situationOsmClusterCircleLayerId, () => {
+          setHoveredObjectId(undefined);
+          map.getCanvas().style.cursor = "zoom-in";
+        });
+        map.on("mouseenter", situationOsmClusterCountLayerId, () => {
+          setHoveredObjectId(undefined);
+          map.getCanvas().style.cursor = "zoom-in";
+        });
+        map.on("mouseenter", situationOsmClusterSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationOsmClusterLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationPointLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -3745,6 +3861,20 @@ function CopMapComponent({
         });
         map.on("mouseleave", trackClusterCountLayerId, () => {
           setHoveredObjectId(undefined);
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationOsmClusterCircleLayerId, () => {
+          setHoveredObjectId(undefined);
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationOsmClusterCountLayerId, () => {
+          setHoveredObjectId(undefined);
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationOsmClusterSymbolLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationOsmClusterLabelLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", trackClusterSymbolLayerId, handleTrackLeave);
@@ -4028,6 +4158,14 @@ function CopMapComponent({
   }, [mapReady, situationFeatureCollection]);
 
   React.useEffect(() => {
+    const source = mapRef.current?.getSource(situationOsmClusterSourceId);
+    if (mapReady && source && "setData" in source) {
+      const clusterData = clusterTracks ? situationOsmClusterFeatureCollection : emptySituationContextFeatureCollection();
+      (source as GeoJSONSource).setData(clusterData as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [clusterTracks, mapReady, situationOsmClusterFeatureCollection]);
+
+  React.useEffect(() => {
     const source = mapRef.current?.getSource(selectedTransitRouteSourceId);
     if (mapReady && source && "setData" in source) {
       (source as GeoJSONSource).setData(selectedRouteFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
@@ -4120,6 +4258,7 @@ function CopMapComponent({
       return;
     }
     setTrackClusterVisibility(map, clusterTracks);
+    setSituationOsmClusterVisibility(map, clusterTracks);
     if (!clusterTracks) {
       setClusterInfo(null);
     }
@@ -5129,6 +5268,19 @@ function setTrackClusterVisibility(map: maplibregl.Map, clusterTracks: boolean):
   clusterLayerIds.forEach((layerId) => setLayerVisibility(map, layerId, clusterTracks));
 }
 
+function setSituationOsmClusterVisibility(map: maplibregl.Map, clusterPoints: boolean): void {
+  const normalLayerIds = [situationOsmSymbolLayerId, situationOsmDetailSymbolLayerId];
+  const clusterLayerIds = [
+    situationOsmClusterCircleLayerId,
+    situationOsmClusterCountLayerId,
+    situationOsmClusterSymbolLayerId,
+    situationOsmClusterLabelLayerId
+  ];
+
+  normalLayerIds.forEach((layerId) => setLayerVisibility(map, layerId, !clusterPoints));
+  clusterLayerIds.forEach((layerId) => setLayerVisibility(map, layerId, clusterPoints));
+}
+
 function setLayerVisibility(map: maplibregl.Map, layerId: string, visible: boolean): void {
   if (map.getLayer(layerId)) {
     map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
@@ -5823,6 +5975,15 @@ export function situationFeaturesToFeatureCollection(
   return {
     type: "FeatureCollection",
     features
+  };
+}
+
+function situationOsmPointsToClusterFeatureCollection(
+  collection: SituationContextFeatureCollection
+): SituationContextFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: collection.features.filter((feature) => feature.geometry.type === "Point" && feature.properties.osmPoi === true)
   };
 }
 
