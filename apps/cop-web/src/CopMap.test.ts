@@ -303,6 +303,10 @@ describe("COP map data helpers", () => {
             observedAt: "2026-07-02T10:00:00Z",
             providerLayerId: "weather_forecast_area",
             providerProperties: {
+              display: {
+                chartUrl: "/situation-data/api/v1/weather-forecast/areas/praha/meteogram?forecastHours=48",
+                detailType: "weather_forecast_meteogram"
+              },
               presentation: {
                 mapLabel: "Praha: déšť",
                 riskLevel: "moderate",
@@ -345,10 +349,20 @@ describe("COP map data helpers", () => {
       mapPointSuppressed: true,
       situationStatusLabel: "RIZIKO",
       weatherForecastArea: true,
-      weatherForecastDetailUrl: "/situation-data/api/v1/weather-forecast/areas/praha",
+      weatherForecastDetailUrl: "/situation-data/api/v1/weather-forecast/areas/praha/meteogram?forecastHours=48",
       weatherForecastLabel: "Praha: déšť",
       weatherForecastRiskScore: 0.58,
       weatherForecastSymbolKey: "cop-weather-condition-rain"
+    });
+    expect(collection.features[0]?.geometry).toEqual({
+      coordinates: [[
+        [14.2, 50.0],
+        [14.6, 50.0],
+        [14.6, 50.3],
+        [14.2, 50.3],
+        [14.2, 50.0]
+      ]],
+      type: "Polygon"
     });
     expect(collection.features[0]?.properties.weatherObservation).toBeUndefined();
   });

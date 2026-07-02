@@ -261,7 +261,7 @@ export function WeatherForecastAreaDetailPanel({
             <DataMetric label="Dny" value={formatForecastPointCount(detail.daily)} tone="neutral" />
             <DataMetric label="Vygenerováno" value={formatShortDateTime(detail.generatedAt)} tone="neutral" />
           </div>
-          <WeatherStationCharts charts={detail.charts ?? []} />
+          <WeatherStationCharts charts={detail.charts ?? []} emptyLabel="Meteogram zatím neobsahuje datové body." />
           <div className="weather-station-attribution">{formatWeatherStationAttribution(detail.attribution)}</div>
         </>
       ) : null}
@@ -365,10 +365,19 @@ function weatherForecastAreaPresentation(feature: SituationFeature): Record<stri
   return isRecord(providerProperties.presentation) ? providerProperties.presentation : {};
 }
 
+function weatherForecastAreaDisplay(feature: SituationFeature): Record<string, unknown> {
+  const providerProperties = weatherForecastAreaProviderProperties(feature);
+  return isRecord(providerProperties.display) ? providerProperties.display : {};
+}
+
 function weatherForecastAreaDetailUrl(feature: SituationFeature): string | undefined {
   const providerProperties = weatherForecastAreaProviderProperties(feature);
+  const display = weatherForecastAreaDisplay(feature);
   const forecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
-  return stringProperty(forecast.detailUrl) ?? stringProperty(providerProperties.detailUrl);
+  return stringProperty(display.chartUrl)
+    ?? stringProperty(display.detailUrl)
+    ?? stringProperty(forecast.detailUrl)
+    ?? stringProperty(providerProperties.detailUrl);
 }
 
 function weatherForecastRiskTone(riskScore: number | undefined, riskLevel: string | undefined): "critical" | "ok" | "warn" {
@@ -445,10 +454,10 @@ function weatherDisplayToneFromDisplay(value: string | undefined): "critical" | 
   }
 }
 
-function WeatherStationCharts({ charts }: { charts: WeatherStationChart[] }) {
+function WeatherStationCharts({ charts, emptyLabel = "Grafy zatím nejsou v detailu stanice dostupné." }: { charts: WeatherStationChart[]; emptyLabel?: string }) {
   const visibleCharts = charts.filter((chart) => (chart.series ?? []).some((series) => weatherChartSeriesPoints(series).length > 0));
   if (visibleCharts.length === 0) {
-    return <div className="weather-station-detail-empty">Grafy zatím nejsou v detailu stanice dostupné.</div>;
+    return <div className="weather-station-detail-empty">{emptyLabel}</div>;
   }
   return (
     <div className="weather-station-chart-grid">
@@ -570,8 +579,17 @@ function weatherStationChartUnit(
 
 function weatherChartSeriesPoints(series: NonNullable<WeatherStationChart["series"]>[number]): Array<{ time: string; value: number }> {
   return (series.points ?? []).flatMap((point) => {
-    const time = stringProperty(point.time) ?? stringProperty(point.at);
-    const value = numberProperty(point.value);
+    const record = isRecord(point) ? point : {};
+    const time = stringProperty(point.time)
+      ?? stringProperty(point.at)
+      ?? stringProperty(record.timestamp)
+      ?? stringProperty(record.validAt)
+      ?? stringProperty(record.datetime)
+      ?? stringProperty(record.x);
+    const value = numberProperty(point.value)
+      ?? numberProperty(record.y)
+      ?? numberProperty(record.v)
+      ?? numberProperty(record.riskScore);
     return time && value !== undefined && Number.isFinite(Date.parse(time)) ? [{ time, value }] : [];
   });
 }

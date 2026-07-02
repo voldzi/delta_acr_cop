@@ -6978,10 +6978,19 @@ function weatherForecastPresentation(feature: SituationFeature): Record<string, 
   return isRecord(providerProperties.presentation) ? providerProperties.presentation : {};
 }
 
+function weatherForecastDisplay(feature: SituationFeature): Record<string, unknown> {
+  const providerProperties = weatherForecastProviderProperties(feature);
+  return isRecord(providerProperties.display) ? providerProperties.display : {};
+}
+
 function weatherForecastDetailUrl(feature: SituationFeature): string | undefined {
   const providerProperties = weatherForecastProviderProperties(feature);
+  const display = weatherForecastDisplay(feature);
   const forecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
-  return recordString(forecast, "detailUrl") ?? recordString(providerProperties, "detailUrl");
+  return recordString(display, "chartUrl")
+    ?? recordString(display, "detailUrl")
+    ?? recordString(forecast, "detailUrl")
+    ?? recordString(providerProperties, "detailUrl");
 }
 
 function weatherForecastRiskScore(feature: SituationFeature, presentation: Record<string, unknown>): number | undefined {

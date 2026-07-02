@@ -507,10 +507,12 @@ export interface WeatherDisplayPresentation {
   badgeLabel?: string;
   badgeLabelEn?: string;
   badgeTone?: string;
+  chartUrl?: string;
   confidence?: number;
   confidencePercent?: number;
   conditionMode?: "estimated" | "measured" | "observed" | "unclassified" | string;
   detailUrl?: string;
+  detailType?: string;
   iconKey?: string;
   iconSet?: string;
   label?: string;
@@ -2712,7 +2714,11 @@ function weatherForecastAreaDetailRequest(detailUrl: string): { areaId: string; 
   const url = new URL(detailUrl, "https://cop.local");
   const match = /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)$/u.exec(url.pathname)
     ?? /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)\/detail$/u.exec(url.pathname)
-    ?? /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/detail$/u.exec(url.pathname);
+    ?? /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)\/meteogram$/u.exec(url.pathname)
+    ?? /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)\/charts$/u.exec(url.pathname)
+    ?? /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/detail$/u.exec(url.pathname)
+    ?? /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/meteogram$/u.exec(url.pathname)
+    ?? /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/charts$/u.exec(url.pathname);
   const areaId = match?.[1] ? decodeURIComponent(match[1]) : undefined;
   if (!areaId) {
     throw new Error("Neplatná adresa detailu plošné předpovědi počasí.");
