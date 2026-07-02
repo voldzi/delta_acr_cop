@@ -4890,12 +4890,12 @@ h1 {
   z-index: 8;
   display: grid;
   gap: 5px;
-  width: min(360px, calc(100% - 28px));
-  max-width: 360px;
-  padding: 10px 12px 11px;
+  width: min(320px, calc(100% - 28px));
+  max-width: 320px;
+  padding: 9px 10px 10px;
   pointer-events: auto;
   touch-action: manipulation;
-  transform: translate(-50%, calc(-100% - 20px));
+  transform: translate(-50%, calc(-100% - var(--popover-gap, 78px)));
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
 }
 
@@ -4912,9 +4912,9 @@ h1 {
 }
 
 .map-object-popover.collapsed {
-  width: min(166px, calc(100% - 28px));
+  width: min(148px, calc(100% - 28px));
   min-width: 0;
-  max-width: 166px;
+  max-width: 148px;
   padding: 5px 6px;
   gap: 3px;
 }
@@ -4946,7 +4946,7 @@ h1 {
 }
 
 .map-object-popover.below {
-  transform: translate(-50%, 20px);
+  transform: translate(-50%, var(--popover-gap, 30px));
 }
 
 .map-object-popover.below::after {
@@ -5005,7 +5005,7 @@ h1 {
 .map-object-popover strong {
   overflow: hidden;
   color: #f4f7fb;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.18;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5028,12 +5028,12 @@ h1 {
 }
 
 .map-object-popover-compact strong {
-  max-width: 138px;
+  max-width: 120px;
   font-size: 11px;
 }
 
 .map-object-popover-compact small {
-  max-width: 138px;
+  max-width: 120px;
   font-size: 9px;
   -webkit-line-clamp: 1;
 }
@@ -5058,6 +5058,7 @@ h1 {
 
 .map-object-popover-details {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   margin-top: 2px;
   padding-top: 6px;
@@ -5066,9 +5067,11 @@ h1 {
 
 .map-object-popover-details div {
   display: grid;
-  grid-template-columns: 70px minmax(0, 1fr);
-  align-items: baseline;
-  gap: 8px;
+  gap: 1px;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid rgba(159, 178, 196, 0.14);
+  background: rgba(15, 25, 34, 0.46);
 }
 
 .map-object-popover-details span {

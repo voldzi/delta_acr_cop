@@ -903,6 +903,7 @@ function CopMapComponent({
     placement: "above" | "below";
     x: number;
     y: number;
+    yOffset: number;
   } | null>(null);
   const [hoveredObjectId, setHoveredObjectId] = React.useState<string | undefined>();
   const [zoneDraftPoints, setZoneDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
@@ -4333,9 +4334,11 @@ function CopMapComponent({
         return;
       }
       const point = map.project({ lng: selectedAnchorCoordinate[0], lat: selectedAnchorCoordinate[1] });
+      const popoverGap = selectionPopoverCollapsed ? 44 : 78;
+      const expandedPopupMaxWidth = window.matchMedia?.("(max-width: 720px)").matches ? 300 : 320;
       const popupWidth = selectionPopoverCollapsed
-        ? Math.min(166, Math.max(120, containerRect.width - 28))
-        : Math.min(360, Math.max(244, containerRect.width - 28));
+        ? Math.min(148, Math.max(112, containerRect.width - 28))
+        : Math.min(expandedPopupMaxWidth, Math.max(236, containerRect.width - 28));
       const popupHalfWidth = popupWidth / 2;
       const horizontalPadding = 14;
       const x = clampValue(
@@ -4349,6 +4352,7 @@ function CopMapComponent({
         arrowX,
         placement,
         x,
+        yOffset: placement === "above" ? popoverGap : 30,
         y: clampValue(point.y, 20, Math.max(20, containerRect.height - 20))
       });
     };
@@ -4758,6 +4762,7 @@ function CopMapComponent({
           onWheel={stopMapToolbarEvent}
           style={{
             "--popover-arrow-x": `${selectionPopupPoint.arrowX}px`,
+            "--popover-gap": `${selectionPopupPoint.yOffset}px`,
             left: `${selectionPopupPoint.x}px`,
             top: `${selectionPopupPoint.y}px`
           } as React.CSSProperties}
@@ -8266,6 +8271,9 @@ function formatSituationFeatureSelectionCard(
       return formatTransportFeatureSelectionCard(feature, presentation, transitDetail);
     }
   }
+  if (isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature)) {
+    return formatWeatherFeatureSelectionCard(feature);
+  }
   const subtitle = formatSituationFeatureSubtitle(feature);
   return {
     compactSubtitle: subtitle,
@@ -8275,6 +8283,85 @@ function formatSituationFeatureSelectionCard(
     subtitle,
     title: formatSituationFeatureTitle(feature)
   };
+}
+
+function formatWeatherFeatureSelectionCard(feature: SituationFeature): MapSelectionCard {
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const display = weatherDisplayRecord(feature);
+  const temperatureC = weatherMetricValue(feature, metrics, "temperatureC");
+  const windSpeedMps = weatherMetricValue(feature, metrics, "windSpeedMps");
+  const windGustMps = firstRecordNumber(metrics, "windGustMps", "windGustSpeedMps");
+  const windDirectionDeg = firstRecordNumber(metrics, "windDirectionDeg", "windDirection");
+  const precipitationMm = weatherMetricValue(feature, metrics, "precipitation10mMm", "precipitationMm");
+  const humidityPercent = weatherMetricValue(feature, metrics, "relativeHumidityPercent", "humidityPercent");
+  const pressureHpa = weatherMetricValue(feature, metrics, "pressureHpa", "pressureHpaSeaLevel");
+  const stationLabel = weatherDisplayString(display, "title") ?? formatWeatherStationLabel(feature, false);
+  const conditionLabel = weatherDisplayString(display, "label") ?? weatherDisplayConditionLabel(display ?? {});
+  const temperatureLabel = temperatureC !== undefined ? formatWeatherTemperature(temperatureC) : undefined;
+  const windLabel = formatWeatherWindSelection(windDirectionDeg, windSpeedMps, windGustMps);
+  const precipitationLabel = precipitationMm !== undefined ? `${formatPrecipitationAmount(precipitationMm)} / 10 min` : undefined;
+  const humidityLabel = humidityPercent !== undefined ? `${Math.round(humidityPercent)} %` : undefined;
+  const pressureLabel = pressureHpa !== undefined ? `${Math.round(pressureHpa)} hPa` : undefined;
+  const primaryValue = formatWeatherValueLabel(display, temperatureC, windSpeedMps, precipitationMm, humidityPercent);
+  const subtitle = [
+    temperatureLabel ?? primaryValue,
+    windLabel,
+    precipitationMm !== undefined && precipitationMm > 0 ? `srážky ${precipitationLabel}` : undefined
+  ].filter(Boolean).join(" · ") || formatWeatherFeatureSubtitle(feature);
+  const compactSubtitle = [
+    temperatureLabel ?? primaryValue,
+    windSpeedMps !== undefined && windSpeedMps >= 0.5 ? `${Math.round(windSpeedMps)} m/s` : undefined
+  ].filter(Boolean).join(" · ") || conditionLabel;
+  const detailRows = [
+    rowValue("Teplota", temperatureLabel),
+    rowValue("Vítr", windLabel),
+    rowValue("Srážky", precipitationLabel),
+    rowValue("Vlhkost", humidityLabel),
+    rowValue("Tlak", pressureLabel)
+  ].filter((row): row is { label: string; value: string } => Boolean(row));
+  const metaItems = [
+    conditionLabel,
+    weatherDisplayString(display, "badgeLabel"),
+    feature.properties.stale ? "starší data" : undefined,
+    feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)
+  ].filter((item, index, items): item is string => Boolean(item) && items.indexOf(item) === index);
+  return {
+    compactSubtitle,
+    detailRows,
+    eyebrow: "Počasí",
+    key: `feature:${feature.properties.featureId}`,
+    metaItems,
+    statusTone: weatherSelectionTone(feature),
+    subtitle,
+    title: stationLabel
+  };
+}
+
+function formatWeatherTemperature(value: number): string {
+  return `${Math.round(value)} °C`;
+}
+
+function formatWeatherWindSelection(
+  directionDeg: number | undefined,
+  speedMps: number | undefined,
+  gustMps: number | undefined
+): string | undefined {
+  const speed = speedMps !== undefined ? `${Math.round(speedMps)} m/s` : undefined;
+  const gust = gustMps !== undefined && gustMps > (speedMps ?? 0) + 0.5 ? `náraz ${Math.round(gustMps)} m/s` : undefined;
+  const direction = directionDeg !== undefined ? `${Math.round(directionDeg)}°` : undefined;
+  return [speed, gust, direction].filter(Boolean).join(" · ") || undefined;
+}
+
+function weatherSelectionTone(feature: SituationFeature): "bad" | "ok" | "warn" {
+  const displayTone = weatherDisplayTone(weatherDisplayRecord(feature));
+  const severity = normalizeSituationCategory(feature.properties.severity ?? feature.properties.hazardSeverity ?? feature.properties.status);
+  if (["critical", "danger", "severe", "bad"].includes(displayTone ?? severity)) {
+    return "bad";
+  }
+  if (["warning", "warn", "advisory", "moderate"].includes(displayTone ?? severity)) {
+    return "warn";
+  }
+  return "ok";
 }
 
 function formatTransportFeatureSelectionCard(
