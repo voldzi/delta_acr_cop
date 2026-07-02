@@ -206,6 +206,57 @@ describe("COP web dashboard", () => {
     expect(summary.primary?.id).toBe("feature:heat-near");
   });
 
+  it("keeps road SRTI warnings out of the top priority alert strip", () => {
+    const now = Date.now();
+    const summary = buildPriorityAlertSummary({
+      alerts: [],
+      features: [
+        {
+          geometry: { coordinates: [14.438, 50.076], type: "Point" },
+          properties: {
+            category: "road.accident",
+            description: "Dopravně-bezpečnostní SRTI událost.",
+            featureId: "road-accident",
+            headline: "Dopravní nehoda",
+            label: "Dopravní nehoda",
+            layer: "warnings",
+            severity: "critical",
+            sourceId: "road_srti_lod",
+            tags: { dataSource: "safety-data" },
+            typeCode: "road.accident",
+            validUntil: new Date(now + 60 * 60_000).toISOString()
+          },
+          type: "Feature"
+        },
+        {
+          geometry: { coordinates: [14.44, 50.077], type: "Point" },
+          properties: {
+            category: "rescue",
+            featureId: "hzs-incident",
+            headline: "Zásah HZS",
+            label: "Zásah HZS",
+            layer: "warnings",
+            severity: "warning",
+            sourceId: "hzs_incidents",
+            tags: { dataSource: "safety-data" },
+            typeCode: "rescue.technical",
+            validUntil: new Date(now + 60 * 60_000).toISOString()
+          },
+          type: "Feature"
+        }
+      ],
+      mapView: { center: [14.4378, 50.0755], zoom: 11 },
+      objects: [],
+      proximityAlerts: [],
+      userLocation: null
+    });
+
+    expect(summary.primary?.id).toBe("feature:hzs-incident");
+    expect(summary.primary?.title).toBe("Zásah HZS");
+    expect(summary.total).toBe(1);
+    expect(summary.additionalCount).toBe(0);
+  });
+
   it("keeps technical server alerts and track lifecycle out of the public priority alert strip", () => {
     const now = Date.now();
     const summary = buildPriorityAlertSummary({

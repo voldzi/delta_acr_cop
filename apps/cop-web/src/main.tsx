@@ -13543,6 +13543,9 @@ function isPrioritySituationFeature(feature: SituationFeature): boolean {
   if (!isPublicSafetyAlertFeature(feature)) {
     return false;
   }
+  if (isRoadSafetyWarningFeature(feature)) {
+    return false;
+  }
   if (layer === "warnings" || layer === "weather_alerts" || layer === "fire" || layer === "community") {
     return priorityFeatureSeverityRank(feature) > 0;
   }
@@ -13555,6 +13558,18 @@ function isPrioritySituationFeature(feature: SituationFeature): boolean {
     return priorityFeatureSeverityRank(feature) >= 2;
   }
   return priorityFeatureSeverityRank(feature) >= 2;
+}
+
+function isRoadSafetyWarningFeature(feature: SituationFeature): boolean {
+  if (feature.properties.layer !== "warnings") {
+    return false;
+  }
+  const sourceId = stringProperty(feature.properties.sourceId)?.toLowerCase();
+  if (sourceId === "road_srti_lod") {
+    return true;
+  }
+  const typeCode = safetyCanonicalTypeCode(feature.properties)?.toLowerCase();
+  return typeCode?.startsWith("road.") === true;
 }
 
 function isPublicSafetyAlertFeature(feature: SituationFeature): boolean {
