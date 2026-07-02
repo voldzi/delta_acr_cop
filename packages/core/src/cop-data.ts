@@ -527,13 +527,18 @@ export interface WeatherDisplayPresentation {
 export interface WeatherStationChartPoint {
   time?: string;
   at?: string;
+  t?: string;
   value?: number;
+  v?: number;
 }
 
 export interface WeatherStationChartSeries {
   color?: string;
   id?: string;
+  key?: string;
   label?: string;
+  labelCs?: string;
+  labelEn?: string;
   points?: WeatherStationChartPoint[];
   role?: string;
   seriesId?: string;
@@ -545,9 +550,11 @@ export interface WeatherStationChartSeries {
 export interface WeatherStationChart {
   chartId?: string;
   id?: string;
+  labelCs?: string;
   preferredType?: string;
   series?: WeatherStationChartSeries[];
   title?: string;
+  titleCs?: string;
   titleEn?: string;
   unit?: string;
   xField?: string;

@@ -487,7 +487,7 @@ function WeatherStationChartPanel({ chart }: { chart: WeatherStationChart }) {
   return (
     <div className="weather-station-chart-panel">
       <div className="weather-station-chart-title">
-        <strong>{chart.title ?? chart.id ?? "Graf"}</strong>
+        <strong>{weatherStationChartTitle(chart)}</strong>
         <span>{unit}</span>
       </div>
       <svg aria-label={chart.title ?? "Graf počasí"} className="weather-station-chart-svg" role="img" viewBox={`0 0 ${width} ${height}`}>
@@ -501,7 +501,7 @@ function WeatherStationChartPanel({ chart }: { chart: WeatherStationChart }) {
           <polyline
             className={`weather-chart-series ${weatherStationChartSeriesRole(entry.item)}`}
             fill="none"
-            key={`${weatherStationChartSeriesId(entry.item) ?? entry.item.label ?? "series"}-${entry.index}`}
+            key={`${weatherStationChartSeriesId(entry.item) ?? weatherStationChartSeriesLabel(entry.item) ?? "series"}-${entry.index}`}
             points={entry.points.map((point) => `${x(point.time)},${y(point.value)}`).join(" ")}
             stroke={entry.item.color ?? weatherChartPalette(entry.index)}
           />
@@ -509,9 +509,9 @@ function WeatherStationChartPanel({ chart }: { chart: WeatherStationChart }) {
       </svg>
       <div className="weather-station-chart-legend">
         {series.map((entry) => (
-          <span key={`${weatherStationChartSeriesId(entry.item) ?? entry.item.label ?? "series"}-legend-${entry.index}`}>
+          <span key={`${weatherStationChartSeriesId(entry.item) ?? weatherStationChartSeriesLabel(entry.item) ?? "series"}-legend-${entry.index}`}>
             <i style={{ borderColor: entry.item.color ?? weatherChartPalette(entry.index) }} />
-            {entry.item.label ?? weatherStationChartSeriesId(entry.item) ?? `řada ${entry.index + 1}`}
+            {weatherStationChartSeriesLabel(entry.item) ?? weatherStationChartSeriesId(entry.item) ?? `řada ${entry.index + 1}`}
           </span>
         ))}
       </div>
@@ -554,13 +554,43 @@ function weatherStationChartId(chart: WeatherStationChart): string | undefined {
   return chart.id ?? chart.chartId;
 }
 
+function weatherStationChartTitle(chart: WeatherStationChart): string {
+  const explicitTitle = chart.title ?? chart.titleCs ?? chart.labelCs;
+  if (explicitTitle) {
+    return explicitTitle;
+  }
+  switch (weatherStationChartId(chart)) {
+    case "temperature":
+      return "Teplota";
+    case "precipitation":
+      return "Srážky";
+    case "wind":
+      return "Vítr";
+    case "humidity_cloud":
+      return "Vlhkost a oblačnost";
+    case "risk":
+      return "Riziko";
+    default:
+      return weatherStationChartId(chart) ?? "Graf";
+  }
+}
+
 function weatherStationChartSeriesId(series: NonNullable<WeatherStationChart["series"]>[number]): string | undefined {
-  return series.id ?? series.seriesId;
+  const record = isRecord(series) ? series : {};
+  return series.id ?? series.seriesId ?? stringProperty(record.key);
+}
+
+function weatherStationChartSeriesLabel(series: NonNullable<WeatherStationChart["series"]>[number]): string | undefined {
+  const record = isRecord(series) ? series : {};
+  return stringProperty(record.labelCs)
+    ?? series.label
+    ?? stringProperty(record.labelEn)
+    ?? weatherStationChartSeriesId(series);
 }
 
 function weatherStationChartSeriesRole(series: NonNullable<WeatherStationChart["series"]>[number]): "forecast" | "measured" {
   const role = series.role ?? series.style ?? series.source;
-  if (role === "forecast" || role === "dashed" || role === "open_meteo" || /předpověď/i.test(series.label ?? "")) {
+  if (role === "forecast" || role === "dashed" || role === "open_meteo" || /předpověď/i.test(weatherStationChartSeriesLabel(series) ?? "")) {
     return "forecast";
   }
   return "measured";
@@ -582,6 +612,7 @@ function weatherChartSeriesPoints(series: NonNullable<WeatherStationChart["serie
     const record = isRecord(point) ? point : {};
     const time = stringProperty(point.time)
       ?? stringProperty(point.at)
+      ?? stringProperty(record.t)
       ?? stringProperty(record.timestamp)
       ?? stringProperty(record.validAt)
       ?? stringProperty(record.datetime)
