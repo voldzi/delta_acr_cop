@@ -64,6 +64,7 @@ import {
   bindMessagingConversationMatrixRoom,
   createCommunityGroup,
   createMessagingConversation,
+  deleteCommunityGroup,
   fetchCommunityGroups,
   fetchMessagingConversations,
   fetchMessagingStatus,
@@ -173,6 +174,7 @@ interface LocalUserPreferences {
 
 export interface ChatListItem {
   active: boolean;
+  avatarUrl?: string;
   conversation?: MessagingConversationSummary;
   group?: CommunityGroup;
   id: string;
@@ -224,6 +226,7 @@ interface DemoConversationMedia {
 interface MessageActionPopoverState {
   left: number;
   messageId: string;
+  mode: "actions" | "reactions";
   stickerTrayOpen: boolean;
   top: number;
 }
@@ -1188,8 +1191,71 @@ export function ChatApp() {
     setNotice(null);
     try {
       await session.leaveRoom(item.roomId);
+      setRooms((current) => current.filter((room) => room.roomId !== item.roomId));
       hideChatFromList(item);
       setNotice(`Skupinu ${item.title} jste opustil/a. V tomto zařízení je skrytá ze seznamu.`);
+    } catch (caught) {
+      setError(userFacingError(caught instanceof Error ? caught.message : String(caught)));
+    } finally {
+      setChatRemovalWorking(false);
+    }
+  }
+
+  async function deleteGroupChat(item: ChatListItem): Promise<void> {
+    if (!item.group?.groupId) {
+      setError("Tuto skupinu nelze smazat, protože není propojená se skupinou COP.");
+      return;
+    }
+    if (!authToken) {
+      setError("Pro smazání skupiny je potřeba platné přihlášení do COP.");
+      return;
+    }
+    setChatRemovalWorking(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await deleteCommunityGroup(apiBase, authToken, item.group.groupId);
+      if (item.roomId && matrixSessionRef.current) {
+        try {
+          await matrixSessionRef.current.leaveRoom(item.roomId);
+        } catch {
+          // Deleting the COP group is the authoritative operation. Leaving the
+          // Matrix room is a best-effort cleanup for the current device.
+        }
+      }
+      if (item.roomId) {
+        setRooms((current) => current.filter((room) => room.roomId !== item.roomId));
+      }
+      removeChatLocalCaches(item);
+      updateChatPreferences((current) => {
+        const nextHidden = { ...current.hiddenByKey };
+        const nextMuted = { ...current.mutedUntilByKey };
+        const nextReadOverride = { ...current.readOverrideByKey };
+        delete nextHidden[item.preferenceKey];
+        delete nextMuted[item.preferenceKey];
+        delete nextReadOverride[item.preferenceKey];
+        return {
+          ...current,
+          hiddenByKey: nextHidden,
+          manualUnreadKeys: current.manualUnreadKeys.filter((key) => key !== item.preferenceKey),
+          mutedUntilByKey: nextMuted,
+          pinnedKeys: current.pinnedKeys.filter((key) => key !== item.preferenceKey),
+          readOverrideByKey: nextReadOverride
+        };
+      });
+      setGroups((current) => current.filter((group) => group.groupId !== item.group?.groupId));
+      setConversations((current) =>
+        current.filter(
+          (conversation) =>
+            conversationCommunityGroupId(conversation) !== item.group?.groupId &&
+            (!item.roomId || conversation.matrix?.roomId !== item.roomId)
+        )
+      );
+      if (item.active) {
+        clearMobileSelection();
+      }
+      setDeleteChatCandidate(null);
+      setNotice(`Skupina ${item.title} byla smazána.`);
     } catch (caught) {
       setError(userFacingError(caught instanceof Error ? caught.message : String(caught)));
     } finally {
@@ -1258,7 +1324,12 @@ export function ChatApp() {
     }
   }
 
-  function openMessageActions(message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen = false) {
+  function openMessageActions(
+    message: MatrixTimelineMessage,
+    rect: DOMRect,
+    stickerTrayOpen = false,
+    mode: MessageActionPopoverState["mode"] = "actions"
+  ) {
     if (isDemoTimelineMessage(message)) {
       return;
     }
@@ -1269,6 +1340,7 @@ export function ChatApp() {
     setMessageActionPopover({
       left,
       messageId: message.eventId,
+      mode,
       stickerTrayOpen,
       top
     });
@@ -2228,7 +2300,12 @@ export function ChatApp() {
   const handleTogglePinnedChat = useEventCallback((item: ChatListItem) => togglePinnedChat(item));
   const handleToggleUnreadChat = useEventCallback((item: ChatListItem) => toggleUnreadChat(item));
   const handleDownloadAttachment = useEventCallback((message: MatrixTimelineMessage) => { void downloadAttachment(message); });
-  const handleOpenMessageActions = useEventCallback((message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen?: boolean) => openMessageActions(message, rect, stickerTrayOpen));
+  const handleOpenMessageActions = useEventCallback((
+    message: MatrixTimelineMessage,
+    rect: DOMRect,
+    stickerTrayOpen?: boolean,
+    mode?: MessageActionPopoverState["mode"]
+  ) => openMessageActions(message, rect, stickerTrayOpen, mode));
   const handleReactToMessage = useEventCallback((message: MatrixTimelineMessage, key: string) => { void reactToMessage(message, key); });
   const handleToggleSelectedMessage = useEventCallback((messageId: string) => toggleSelectedMessage(messageId));
 
@@ -2356,7 +2433,7 @@ export function ChatApp() {
                 <ArrowLeft size={21} />
               </button>
               <span className="chat-avatar-wrap header-avatar">
-                <Avatar label={activeChat.title} src={activeChat.room?.avatarUrl} />
+                <Avatar label={activeChat.title} src={activeChat.avatarUrl} />
                 <ConnectionDot state={chatConnectionStateFor(activeChat, chatReady, matrixSession, syncState, preparingChatId === activeChat.id)} />
               </span>
               <div className="conversation-title">
@@ -2671,11 +2748,13 @@ export function ChatApp() {
       {deleteChatCandidate ? (
         <React.Suspense fallback={<DialogLoadingFallback label="Smazat chat" />}>
           <DeleteChatDialog
+            canDeleteGroup={Boolean(deleteChatCandidate.group?.groupId)}
             canLeaveGroup={Boolean(deleteChatCandidate.roomId && deleteChatCandidate.type !== "direct")}
             chatKind={deleteChatCandidate.type === "direct" ? "direct" : "group"}
             working={chatRemovalWorking}
             title={deleteChatCandidate.title}
             onClose={() => setDeleteChatCandidate(null)}
+            onDeleteGroup={() => void deleteGroupChat(deleteChatCandidate)}
             onHide={() => hideChatFromList(deleteChatCandidate)}
             onLeaveGroup={() => void leaveGroupChat(deleteChatCandidate)}
           />
@@ -2743,7 +2822,7 @@ function PinnedChats({
         <div className={clsx("pinned-chat", item.active && "active")} key={item.id}>
           <button className="pinned-chat-open" onClick={() => onOpen(item)} type="button">
             <span className="pinned-avatar-wrap">
-              <Avatar label={item.title} src={item.room?.avatarUrl} />
+              <Avatar label={item.title} src={item.avatarUrl} />
               <ConnectionDot state={connectionStateForItem(item)} />
               {item.unreadCount > 0 && !item.muted ? <span className="pinned-unread">{item.unreadCount}</span> : null}
               {item.muted ? <span className="pinned-muted"><BellOff size={13} /></span> : null}
@@ -2898,7 +2977,7 @@ function ChatRow({
       >
         <button className="chat-row-open" onClick={handleOpen} type="button">
           <span className="chat-avatar-wrap">
-            <Avatar label={item.title} src={item.room?.avatarUrl} />
+            <Avatar label={item.title} src={item.avatarUrl} />
             <ConnectionDot state={connectionState} />
           </span>
           <span className="chat-row-main">
@@ -2957,8 +3036,8 @@ function MessageActionPopover({
     <>
       <button className="message-action-backdrop" onClick={onClose} type="button" aria-label="Zavřít akce zprávy" />
       <div
-        className="message-action-popover"
-        role="menu"
+        className={clsx("message-action-popover", anchor.mode === "reactions" && "reactions-only")}
+        role={anchor.mode === "actions" ? "menu" : "dialog"}
         style={{ left: anchor.left, top: anchor.top }}
       >
         <div className="reaction-strip" aria-label="Rychlé reakce">
@@ -2997,40 +3076,42 @@ function MessageActionPopover({
             ))}
           </div>
         ) : null}
-        <div className="message-action-list">
-          <button onClick={() => onReply(message)} role="menuitem" type="button">
-            <Reply size={22} />
-            Odpovědět
-          </button>
-          <button onClick={() => onForward(message)} role="menuitem" type="button">
-            <Forward size={22} />
-            Přeposlat
-          </button>
-          <button onClick={() => onStickerTrayChange(true)} role="menuitem" type="button">
-            <Sticker size={22} />
-            Přidat nálepku
-          </button>
-          {ownReaction ? (
-            <button onClick={() => onReact(message, ownReaction.key)} role="menuitem" type="button">
-              <X size={22} />
-              Odebrat reakci
+        {anchor.mode === "actions" ? (
+          <div className="message-action-list">
+            <button onClick={() => onReply(message)} role="menuitem" type="button">
+              <Reply size={22} />
+              Odpovědět
             </button>
-          ) : null}
-          <button onClick={() => void onCopy(message)} role="menuitem" type="button">
-            <Copy size={22} />
-            Zkopírovat
-          </button>
-          <button onClick={() => onSelect(message)} role="menuitem" type="button">
-            <CheckCheck size={22} />
-            Vybrat
-          </button>
-          {message.own ? (
-            <button className="danger" onClick={() => void onDelete(message)} role="menuitem" type="button">
-              <Trash2 size={22} />
-              Odstranit
+            <button onClick={() => onForward(message)} role="menuitem" type="button">
+              <Forward size={22} />
+              Přeposlat
             </button>
-          ) : null}
-        </div>
+            <button onClick={() => onStickerTrayChange(true)} role="menuitem" type="button">
+              <Sticker size={22} />
+              Přidat nálepku
+            </button>
+            {ownReaction ? (
+              <button onClick={() => onReact(message, ownReaction.key)} role="menuitem" type="button">
+                <X size={22} />
+                Odebrat reakci
+              </button>
+            ) : null}
+            <button onClick={() => void onCopy(message)} role="menuitem" type="button">
+              <Copy size={22} />
+              Zkopírovat
+            </button>
+            <button onClick={() => onSelect(message)} role="menuitem" type="button">
+              <CheckCheck size={22} />
+              Vybrat
+            </button>
+            {message.own ? (
+              <button className="danger" onClick={() => void onDelete(message)} role="menuitem" type="button">
+                <Trash2 size={22} />
+                Odstranit
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </>
   );
@@ -3238,7 +3319,7 @@ function MessageRow({
   selected: boolean;
   senderLabel: string;
   onDownloadAttachment: (message: MatrixTimelineMessage) => void;
-  onOpenActions: (message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen?: boolean) => void;
+  onOpenActions: (message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen?: boolean, mode?: MessageActionPopoverState["mode"]) => void;
   onOpenPreview: (item: MediaPreviewItem) => void;
   onReact: (message: MatrixTimelineMessage, key: string) => void;
   onToggleSelected: (messageId: string) => void;
@@ -3259,10 +3340,10 @@ function MessageRow({
 
   React.useEffect(() => clearLongPressTimer, [clearLongPressTimer]);
 
-  function openActions(stickerTrayOpen = false) {
+  function openActions(stickerTrayOpen = false, mode: MessageActionPopoverState["mode"] = "actions") {
     const rect = rowRef.current?.querySelector(".message-bubble")?.getBoundingClientRect() ?? rowRef.current?.getBoundingClientRect();
     if (rect) {
-      onOpenActions(message, rect, stickerTrayOpen);
+      onOpenActions(message, rect, stickerTrayOpen, mode);
     }
   }
 
@@ -3364,7 +3445,7 @@ function MessageRow({
             <button
               onClick={(event) => {
                 event.stopPropagation();
-                openActions(true);
+                openActions(false, "reactions");
               }}
               type="button"
               aria-label="Reagovat na zprávu"
@@ -3405,7 +3486,7 @@ function MessageReactions({
 }: {
   message: MatrixTimelineMessage;
   reactions: NonNullable<MatrixTimelineMessage["reactions"]>;
-  onOpenActions: (message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen?: boolean) => void;
+  onOpenActions: (message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen?: boolean, mode?: MessageActionPopoverState["mode"]) => void;
   onReact: (message: MatrixTimelineMessage, key: string) => void;
 }) {
   return (
@@ -3417,7 +3498,7 @@ function MessageReactions({
           onClick={(event) => {
             event.stopPropagation();
             if (reaction.own) {
-              onOpenActions(message, event.currentTarget.getBoundingClientRect(), true);
+              onOpenActions(message, event.currentTarget.getBoundingClientRect(), true, "reactions");
               return;
             }
             onReact(message, reaction.key);
@@ -3764,7 +3845,7 @@ function ChatInfoPanel({
         </aside>
         <div className="info-content">
           <header className="info-hero">
-            <Avatar label={activeChat.title} src={activeChat.room?.avatarUrl} />
+            <Avatar label={activeChat.title} src={activeChat.avatarUrl} />
             <div>
               <h2>{activeChat.title}</h2>
               <p>{isDirect ? "Přímý chat" : `${activeChat.memberCount} ${activeChat.memberCount === 1 ? "člen" : activeChat.memberCount < 5 ? "členové" : "členů"}`}</p>
@@ -3915,6 +3996,7 @@ export function buildChatItems({
     const groupId = conversationCommunityGroupId(conversation) ?? group?.groupId;
     const roomId = conversation.matrix?.roomId ?? (group ? communityGroupMatrixRoomId(group) : undefined);
     const room = roomId ? rooms.find((item) => item.roomId === roomId) : undefined;
+    const directPeer = conversationDirectPeer(conversation, authSubjectId, ownIdentityIds);
     const title = chatTitleForConversation(conversation, room, authSubjectId, ownIdentityIds);
     const roomLatest = room?.latestMessage;
     const latest = roomLatest ?? (group ? demoLatestMessageForGroup(group) : undefined);
@@ -3925,6 +4007,7 @@ export function buildChatItems({
         : `conversation:${conversation.conversationId}`;
     remember({
       active: selectedConversationId === conversation.conversationId || selectedRoomId === conversation.matrix?.roomId || selectedGroupId === group?.groupId,
+      avatarUrl: room?.avatarUrl ?? room?.directPeer?.avatarUrl ?? conversation.avatarUrl ?? conversation.directPeer?.avatarUrl ?? directPeer?.avatarUrl,
       conversation,
       ...(group ? { group } : {}),
       id,
@@ -3982,6 +4065,7 @@ export function buildChatItems({
     const metadataLatest = metadataRoomLatest ?? demoLatestMessageForGroup(group);
     remember({
       active: selectedGroupId === group.groupId || selectedRoomId === metadataRoomId,
+      avatarUrl: metadataRoom?.avatarUrl,
       group,
       id: metadataRoomId ? `room:${metadataRoomId}` : `group:${group.groupId}`,
       latest: metadataLatest,
@@ -4031,6 +4115,7 @@ export function buildChatItems({
     }
     remember({
       active: selectedRoomId === room.roomId,
+      avatarUrl: room.avatarUrl ?? room.directPeer?.avatarUrl,
       id: `room:${room.roomId}`,
       latest,
       memberCount: 2,
@@ -4069,6 +4154,7 @@ export function dedupeChatItems(items: ChatListItem[]): ChatListItem[] {
     deduped.set(key, {
       ...preferred,
       active: current.active || item.active,
+      avatarUrl: preferred.avatarUrl ?? current.avatarUrl ?? item.avatarUrl,
       unreadCount: Math.max(current.unreadCount, item.unreadCount)
     });
   });
@@ -4154,7 +4240,7 @@ function conversationDirectPeer(
   conversation: MessagingConversationSummary,
   authSubjectId: string | undefined,
   ownIdentityIds: Set<string>
-): { displayName: string; userId: string } | undefined {
+): { avatarUrl?: string; displayName: string; userId: string } | undefined {
   const members = conversation.members ?? [];
   const fallbackOwnIds = authSubjectId ? new Set([normalizeIdentityId(authSubjectId)]) : new Set<string>();
   const ownIds = ownIdentityIds.size > 0 ? ownIdentityIds : fallbackOwnIds;
@@ -4163,6 +4249,7 @@ function conversationDirectPeer(
     return undefined;
   }
   return {
+    ...(peer.avatarUrl ? { avatarUrl: peer.avatarUrl } : {}),
     displayName: peer.displayName?.trim() || peer.userId,
     userId: peer.userId
   };
@@ -4197,7 +4284,7 @@ function buildForwardTargets(chatItems: ChatListItem[], users: UserDirectoryEntr
       continue;
     }
     targets.set(`chat:${item.id}`, {
-      avatarUrl: item.room?.avatarUrl,
+      avatarUrl: item.avatarUrl,
       chat: item,
       key: `chat:${item.id}`,
       subtitle: item.type === "direct" ? "přímý chat" : "skupina",
