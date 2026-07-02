@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { AttachmentKindIcon, attachmentKindTitle, inferChatAttachmentPreviewKind } from "./AttachmentPreview";
+import { AttachmentKindIcon, attachmentKindTitle, inferChatAttachmentPreviewKind } from "./AttachmentKind";
 
 export function DocumentThumb({ contentType, fileName, large = false }: { contentType?: string; fileName: string; large?: boolean }) {
   const dotIndex = fileName.lastIndexOf(".");

@@ -19,6 +19,11 @@ export default defineConfig({
   plugins: [react()],
   build: {
     chunkSizeWarningLimit: 1000,
+    modulePreload: {
+      resolveDependencies(_url, deps) {
+        return deps.filter((dep) => !/(^|\/)matrix-[^/]+\.js$/u.test(dep));
+      }
+    },
     rollupOptions: {
       output: {
         manualChunks(id) {
