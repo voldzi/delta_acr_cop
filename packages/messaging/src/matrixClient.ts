@@ -1433,12 +1433,21 @@ async function fetchMatrixUserProfile(
   const sdkProfile = client.getProfileInfo
     ? await client.getProfileInfo(userId).catch(() => undefined)
     : undefined;
-  const payload = sdkProfile ?? await fetchMatrixProfile(homeserverBaseUrl, accessToken, userId);
-  if (!payload) {
+  const sdkDisplayName = stringValue(sdkProfile?.displayname) ?? stringValue(sdkProfile?.displayName);
+  const sdkAvatarUrl = stringValue(sdkProfile?.avatar_url) ?? stringValue(sdkProfile?.avatarUrl);
+  const needsHttpFallback = !sdkProfile || !sdkDisplayName || !sdkAvatarUrl;
+  const httpProfile = needsHttpFallback
+    ? await fetchMatrixProfile(homeserverBaseUrl, accessToken, userId)
+    : undefined;
+  if (!sdkProfile && !httpProfile) {
     return undefined;
   }
-  const displayName = stringValue(payload.displayname) ?? stringValue(payload.displayName);
-  const avatarUrl = stringValue(payload.avatar_url) ?? stringValue(payload.avatarUrl);
+  const displayName = sdkDisplayName
+    ?? stringValue(httpProfile?.displayname)
+    ?? stringValue(httpProfile?.displayName);
+  const avatarUrl = sdkAvatarUrl
+    ?? stringValue(httpProfile?.avatar_url)
+    ?? stringValue(httpProfile?.avatarUrl);
   if (!displayName && !avatarUrl) {
     return undefined;
   }

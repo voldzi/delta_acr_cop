@@ -166,6 +166,52 @@ describe("Matrix client diagnostics", () => {
     expect(latestRooms?.[0]?.directPeer?.avatarUrl).toBe("https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fpeer-avatar");
   });
 
+  it("fills missing peer avatar from the Matrix HTTP profile when SDK profile is partial", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/_matrix/client/v3/profile/")) {
+        return new Response(JSON.stringify({ avatar_url: "mxc://cop.local/http-peer-avatar" }), {
+          headers: { "content-type": "application/json" },
+          status: 200
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const onRoomsChanged = vi.fn();
+    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(async (userId) => userId === "@peer:cop.local"
+      ? { displayname: "Peer User" }
+      : {});
+    const mxcUrlToHttp = vi.fn<MatrixMxcUrlToHttp>((mxcUrl) => `https://msg.zeleznalady.cz/media/${encodeURIComponent(mxcUrl)}`);
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      getProfileInfo,
+      mxcUrlToHttp,
+      rooms: [createRoom({
+        members: [
+          { displayName: "COP Operator", userId: "@operator:cop.local" },
+          { displayName: "Peer User", userId: "@peer:cop.local" }
+        ],
+        roomId: "!direct:cop.local"
+      })]
+    }));
+
+    await createMatrixMessagingSession(createBootstrap(), { onRoomsChanged });
+    await vi.runOnlyPendingTimersAsync();
+
+    const latestRooms = onRoomsChanged.mock.calls.at(-1)?.[0];
+    expect(getProfileInfo).toHaveBeenCalledWith("@peer:cop.local");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://msg.zeleznalady.cz/_matrix/client/v3/profile/%40peer%3Acop.local",
+      expect.objectContaining({
+        cache: "no-store",
+        headers: { Authorization: "Bearer test-token" }
+      })
+    );
+    expect(latestRooms?.[0]?.avatarUrl).toBe("https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fhttp-peer-avatar");
+    expect(latestRooms?.[0]?.directPeer?.avatarUrl).toBe("https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fhttp-peer-avatar");
+  });
+
   it("stores disappearing-message settings as Matrix room retention state", async () => {
     const sendStateEvent = vi.fn<MatrixSendStateEvent>().mockResolvedValue(undefined);
     matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
