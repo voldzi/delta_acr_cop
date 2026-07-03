@@ -128,12 +128,44 @@ describe("COP map data helpers", () => {
     expect(objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
       aircraftHeadingDeg: 275,
       civilAircraftKind: "narrow_body_airliner",
-      displaySymbolKey: "cop-civil-aircraft-narrow_body_airliner",
+      civilAircraftTone: "normal",
+      displaySymbolKey: "cop-civil-aircraft-narrow_body_airliner-normal",
       publicFlight: true,
-      symbolColor: "#facc15"
+      symbolColor: "#22c55e"
     });
     expect(objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "standard" }).features[0]?.properties.displaySymbolKey)
       .toBe(objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "standard" }).features[0]?.properties.symbolKey);
+  });
+
+  it("colors public flight symbols by operational state", () => {
+    const emergencyFlight = {
+      objectId: "flight:icao24:49f770",
+      objectType: "AIRCRAFT",
+      affiliation: "NEUTRAL",
+      domain: "AIR",
+      status: "ACTIVE",
+      confidence: 0.82,
+      position: { lat: 50.1, lon: 14.4 },
+      attributes: {
+        dataOrigin: "PUBLIC_FLIGHT_AGGREGATE",
+        flightData: {
+          callsign: "EMG770",
+          aircraft: {
+            iconHint: "aircraft_08_jumbo_airliner"
+          },
+          metadata: {
+            squawk: "7700"
+          }
+        }
+      }
+    } satisfies CopObject;
+
+    expect(objectsToTrackFeatureCollection([emergencyFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
+      civilAircraftKind: "jumbo_airliner",
+      civilAircraftTone: "emergency",
+      displaySymbolKey: "cop-civil-aircraft-jumbo_airliner-emergency",
+      symbolColor: "#ef4444"
+    });
   });
 
   it("builds context-only situation features without converting them to COP tracks", () => {

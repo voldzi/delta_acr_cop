@@ -14,15 +14,19 @@ export const civilAircraftIconKinds = [
   "glider",
   "uav",
   "unknown",
+  "aerobatic_prop",
   "light_single",
   "light_twin",
+  "jumbo_airliner",
   "regional_jet",
   "narrow_body_airliner",
   "wide_body_airliner",
   "business_jet",
   "cargo_aircraft",
   "fighter",
+  "military_bomber",
   "military_transport",
+  "military_helicopter",
   "seaplane",
   "biplane",
   "ultralight",
@@ -34,42 +38,50 @@ export const civilAircraftIconKinds = [
   "gyrocopter",
   "quadcopter_drone",
   "hexacopter_drone",
+  "fpv_drone",
   "fixed_wing_drone",
   "vtol_drone",
   "micro_drone"
 ] as const;
 export type CivilAircraftIconKind = (typeof civilAircraftIconKinds)[number];
+export const civilAircraftIconTones = ["normal", "delayed", "emergency"] as const;
+export type CivilAircraftIconTone = (typeof civilAircraftIconTones)[number];
 const civilAircraftIconAssetByKind: Record<CivilAircraftIconKind, string> = {
-  biplane: "air_biplane",
-  business_jet: "air_business_jet",
-  cargo_aircraft: "air_cargo",
-  fighter: "air_fighter",
-  fixed_wing_drone: "drone_fixed_wing",
-  glider: "air_glider",
-  gyrocopter: "air_gyrocopter",
-  heavy_tandem_helicopter: "heli_heavy_tandem",
-  helicopter: "heli_medium",
-  hexacopter_drone: "drone_hexacopter",
-  jet: "air_airliner_narrow",
-  light_helicopter: "heli_light",
-  light_single: "air_light_single",
-  light_twin: "air_light_twin",
-  medical_helicopter: "heli_medical",
-  medium_helicopter: "heli_medium",
-  micro_drone: "drone_micro",
-  military_transport: "air_military_transport",
-  narrow_body_airliner: "air_airliner_narrow",
-  quadcopter_drone: "drone_quadcopter",
-  regional_jet: "air_regional_jet",
-  seaplane: "air_seaplane",
-  small_aircraft: "air_light_single",
-  tiltrotor: "air_tiltrotor",
-  turboprop: "air_turboprop",
-  uav: "drone_fixed_wing",
-  ultralight: "air_ultralight",
-  unknown: "air_light_single",
-  vtol_drone: "drone_vtol",
-  wide_body_airliner: "air_airliner_wide"
+  aerobatic_prop: "aircraft_14_aerobatic_prop",
+  biplane: "aircraft_14_aerobatic_prop",
+  business_jet: "aircraft_04_business_jet",
+  cargo_aircraft: "aircraft_09_cargo_freighter",
+  fighter: "aircraft_11_military_fighter",
+  fixed_wing_drone: "drone_03_fixed_wing_uav",
+  fpv_drone: "drone_04_fpv_racing",
+  glider: "aircraft_10_glider",
+  gyrocopter: "aircraft_16_ultralight",
+  heavy_tandem_helicopter: "aircraft_19_helicopter_heavy",
+  helicopter: "aircraft_18_helicopter_medium",
+  hexacopter_drone: "drone_02_hexacopter",
+  jet: "aircraft_06_narrowbody_airliner",
+  jumbo_airliner: "aircraft_08_jumbo_airliner",
+  light_helicopter: "aircraft_17_helicopter_light",
+  light_single: "aircraft_01_small_ga",
+  light_twin: "aircraft_02_light_twin",
+  medical_helicopter: "aircraft_17_helicopter_light",
+  medium_helicopter: "aircraft_18_helicopter_medium",
+  micro_drone: "drone_04_fpv_racing",
+  military_bomber: "aircraft_13_military_bomber",
+  military_helicopter: "aircraft_20_helicopter_military",
+  military_transport: "aircraft_12_military_transport",
+  narrow_body_airliner: "aircraft_06_narrowbody_airliner",
+  quadcopter_drone: "drone_01_quadcopter",
+  regional_jet: "aircraft_05_regional_jet",
+  seaplane: "aircraft_15_seaplane",
+  small_aircraft: "aircraft_01_small_ga",
+  tiltrotor: "aircraft_20_helicopter_military",
+  turboprop: "aircraft_03_turboprop",
+  uav: "drone_03_fixed_wing_uav",
+  ultralight: "aircraft_16_ultralight",
+  unknown: "aircraft_01_small_ga",
+  vtol_drone: "drone_05_vtol_hybrid",
+  wide_body_airliner: "aircraft_07_widebody_airliner"
 };
 const transitIconPrefix = "cop-transit";
 const osmCategoryIconPrefix = "cop-osm-category";
@@ -223,8 +235,17 @@ export function normalizeWeatherConditionIconId(value: string | undefined): Weat
   return "unknown";
 }
 
-export function getCivilAircraftIconKey(kind: CivilAircraftIconKind): string {
-  return `${civilAircraftIconPrefix}-${kind}`;
+export function getCivilAircraftIconKey(kind: CivilAircraftIconKind, tone: CivilAircraftIconTone = "normal"): string {
+  return `${civilAircraftIconPrefix}-${kind}-${tone}`;
+}
+
+export function civilAircraftIconToneColor(tone: CivilAircraftIconTone): string {
+  const colors: Record<CivilAircraftIconTone, string> = {
+    delayed: "#facc15",
+    emergency: "#ef4444",
+    normal: "#22c55e"
+  };
+  return colors[tone];
 }
 
 export function getTransitIconKey(kind: TransportIconKind): string {
@@ -255,14 +276,16 @@ export async function registerNatoSymbolImages(map: maplibregl.Map) {
 
 export async function registerCivilAircraftSymbolImages(map: maplibregl.Map) {
   await Promise.all(
-    civilAircraftIconKinds.map(async (kind) => {
-      const key = getCivilAircraftIconKey(kind);
-      if (!map.hasImage(key)) {
-        map.addImage(key, await createCivilAircraftSymbolImage(kind), {
-          pixelRatio: 2
-        });
-      }
-    })
+    civilAircraftIconKinds.flatMap((kind) =>
+      civilAircraftIconTones.map(async (tone) => {
+        const key = getCivilAircraftIconKey(kind, tone);
+        if (!map.hasImage(key)) {
+          map.addImage(key, await createCivilAircraftSymbolImage(kind, tone), {
+            pixelRatio: 2
+          });
+        }
+      })
+    )
   );
 }
 
@@ -329,9 +352,18 @@ export async function registerSituationSymbolImages(map: maplibregl.Map) {
   }
 }
 
-export async function createCivilAircraftSymbolImage(kind: CivilAircraftIconKind): Promise<ImageData> {
+export async function createCivilAircraftSymbolImage(kind: CivilAircraftIconKind, tone: CivilAircraftIconTone = "normal"): Promise<ImageData> {
   try {
-    const image = await loadImageUrl(`/symbols/aircraft/${civilAircraftIconAssetByKind[kind]}.svg`);
+    const response = await fetch(`/symbols/aircraft/${civilAircraftIconAssetByKind[kind]}.svg`, {
+      cache: "force-cache"
+    });
+    if (!response.ok) {
+      throw new Error(`Mapový symbol se nepodařilo načíst: ${response.status}`);
+    }
+    const svg = (await response.text())
+      .replaceAll("currentColor", civilAircraftIconToneColor(tone))
+      .replace(/<svg\b/, `<svg color="${civilAircraftIconToneColor(tone)}"`);
+    const image = await loadSvgImage(svg);
     const canvas = document.createElement("canvas");
     const size = 128;
     canvas.width = size;
@@ -341,14 +373,19 @@ export async function createCivilAircraftSymbolImage(kind: CivilAircraftIconKind
       return new ImageData(size, size);
     }
     context.clearRect(0, 0, size, size);
-    context.drawImage(image, 0, 0, size, size);
+    context.save();
+    context.shadowBlur = 7;
+    context.shadowColor = "rgba(2, 6, 23, 0.88)";
+    context.drawImage(image, 10, 10, 108, 108);
+    context.restore();
+    context.drawImage(image, 10, 10, 108, 108);
     return context.getImageData(0, 0, size, size);
   } catch {
-    return createFallbackCivilAircraftSymbolImage(kind);
+    return createFallbackCivilAircraftSymbolImage(kind, tone);
   }
 }
 
-function createFallbackCivilAircraftSymbolImage(kind: CivilAircraftIconKind): ImageData {
+function createFallbackCivilAircraftSymbolImage(kind: CivilAircraftIconKind, tone: CivilAircraftIconTone = "normal"): ImageData {
   const canvas = document.createElement("canvas");
   const size = 128;
   canvas.width = size;
@@ -365,7 +402,7 @@ function createFallbackCivilAircraftSymbolImage(kind: CivilAircraftIconKind): Im
   context.lineJoin = "round";
   drawCivilAircraftShape(context, kind, "rgba(6, 16, 25, 0.92)", 10);
   drawCivilAircraftShape(context, kind, "rgba(248, 250, 252, 0.95)", 6);
-  drawCivilAircraftShape(context, kind, "#facc15", 3.2);
+  drawCivilAircraftShape(context, kind, civilAircraftIconToneColor(tone), 3.2);
   context.restore();
 
   return context.getImageData(0, 0, size, size);
@@ -1722,14 +1759,5 @@ function loadSvgImage(svg: string): Promise<HTMLImageElement> {
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error("NATO symbol SVG se nepodařilo načíst."));
     image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-  });
-}
-
-function loadImageUrl(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error(`Mapový symbol se nepodařilo načíst: ${src}`));
-    image.src = src;
   });
 }

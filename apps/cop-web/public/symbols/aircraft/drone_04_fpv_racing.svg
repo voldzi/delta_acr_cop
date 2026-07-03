@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="currentColor">
+  <line x1="50.00" y1="50.00" x2="64.14" y2="64.14" stroke="currentColor" stroke-width="3.0" stroke-linecap="round" opacity="0.90"/>
+  <circle cx="64.14" cy="64.14" r="6.50" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.42"/>
+  <circle cx="64.14" cy="64.14" r="1.50" opacity="1.00"/>
+  <line x1="50.00" y1="50.00" x2="64.14" y2="35.86" stroke="currentColor" stroke-width="3.0" stroke-linecap="round" opacity="0.90"/>
+  <circle cx="64.14" cy="35.86" r="6.50" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.42"/>
+  <circle cx="64.14" cy="35.86" r="1.50" opacity="1.00"/>
+  <line x1="50.00" y1="50.00" x2="35.86" y2="64.14" stroke="currentColor" stroke-width="3.0" stroke-linecap="round" opacity="0.90"/>
+  <circle cx="35.86" cy="64.14" r="6.50" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.42"/>
+  <circle cx="35.86" cy="64.14" r="1.50" opacity="1.00"/>
+  <line x1="50.00" y1="50.00" x2="35.86" y2="35.86" stroke="currentColor" stroke-width="3.0" stroke-linecap="round" opacity="0.90"/>
+  <circle cx="35.86" cy="35.86" r="6.50" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.42"/>
+  <circle cx="35.86" cy="35.86" r="1.50" opacity="1.00"/>
+  <circle cx="50.00" cy="50.00" r="6.00" opacity="1.00"/>
+</svg>

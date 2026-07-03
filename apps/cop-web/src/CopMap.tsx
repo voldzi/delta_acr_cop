@@ -60,6 +60,7 @@ import {
   type AffiliationDisposition
 } from "./symbology";
 import {
+  civilAircraftIconToneColor,
   civilAircraftIconKinds,
   getCivilAircraftIconKey,
   getFloodTrendIconKey,
@@ -74,6 +75,7 @@ import {
   registerSituationSymbolImages,
   weatherCameraIconKey,
   weatherWindIconKey,
+  type CivilAircraftIconTone,
   type CivilAircraftIconKind,
   type FloodStageTone,
   type FloodTrendDirection,
@@ -354,6 +356,7 @@ export interface TrackFeatureProperties {
   publicFlight: boolean;
   aircraftHeadingDeg?: number;
   civilAircraftKind?: CivilAircraftIconKind;
+  civilAircraftTone?: CivilAircraftIconTone;
   label: string;
   symbolColor: string;
   symbolDisposition: AffiliationDisposition;
@@ -8650,9 +8653,10 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
       const affiliation = getAffiliationPresentation(object.affiliation);
       const publicFlight = isPublicFlightObject(object);
       const civilAircraftKind = publicFlight ? resolveCivilAircraftIconKind(object) : undefined;
+      const civilAircraftTone = publicFlight ? resolveCivilAircraftIconTone(object) : undefined;
       const standardSymbolKey = getNatoIconKey(object.objectType, object.affiliation);
       const displaySymbolKey = publicFlight && options.publicFlightSymbolMode !== "standard"
-        ? getCivilAircraftIconKey(civilAircraftKind ?? "unknown")
+        ? getCivilAircraftIconKey(civilAircraftKind ?? "unknown", civilAircraftTone ?? "normal")
         : standardSymbolKey;
       return {
         type: "Feature",
@@ -8675,8 +8679,11 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
           publicFlight,
           aircraftHeadingDeg: publicFlight ? normalizeHeadingDeg(object.movement?.headingDeg ?? object.headingDeg) : undefined,
           civilAircraftKind,
+          civilAircraftTone,
           label: formatTrackLabel(object),
-          symbolColor: publicFlight && options.publicFlightSymbolMode !== "standard" ? "#facc15" : affiliation.color,
+          symbolColor: publicFlight && options.publicFlightSymbolMode !== "standard"
+            ? civilAircraftIconToneColor(civilAircraftTone ?? "normal")
+            : affiliation.color,
           symbolDisposition: affiliation.disposition
         }
       };
@@ -8710,6 +8717,9 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
     if (descriptor.includes("vtol")) {
       return "vtol_drone";
     }
+    if (descriptor.includes("fpv") || descriptor.includes("racing")) {
+      return "fpv_drone";
+    }
     if (descriptor.includes("micro")) {
       return "micro_drone";
     }
@@ -8722,6 +8732,9 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
     return "gyrocopter";
   }
   if (typeDesignator.startsWith("h") || descriptor.includes("helicopter") || descriptor.includes("rotorcraft")) {
+    if (descriptor.includes("military") || descriptor.includes("attack")) {
+      return "military_helicopter";
+    }
     if (descriptor.includes("medical") || descriptor.includes("ems") || descriptor.includes("rescue") || descriptor.includes("sar")) {
       return "medical_helicopter";
     }
@@ -8736,6 +8749,9 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
   if (descriptor.includes("seaplane") || descriptor.includes("amphib")) {
     return "seaplane";
   }
+  if (descriptor.includes("aerobatic") || descriptor.includes("acrobatic")) {
+    return "aerobatic_prop";
+  }
   if (descriptor.includes("biplane")) {
     return "biplane";
   }
@@ -8744,6 +8760,9 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
   }
   if (descriptor.includes("fighter") || ["f16", "f18", "f22", "f35", "gripen", "rafale", "eurofighter", "mig", "su"].some((token) => descriptor.includes(token))) {
     return "fighter";
+  }
+  if (descriptor.includes("bomber") || ["b1", "b2", "b52", "tu95", "tu160"].some((token) => typeDesignator.startsWith(token) || descriptor.includes(token))) {
+    return "military_bomber";
   }
   if (descriptor.includes("militarytransport") || ["c130", "a400", "c17", "c5", "il76", "an12", "an124"].some((token) => descriptor.includes(token))) {
     return "military_transport";
@@ -8757,7 +8776,10 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
   if (engineType.includes("turboprop") || ["at", "dh", "pc", "sf", "tb", "yk"].some((prefix) => typeDesignator.startsWith(prefix))) {
     return "turboprop";
   }
-  if (["a33", "a34", "a35", "a38", "b74", "b76", "b77", "b78", "dc10", "md11"].some((prefix) => typeDesignator.startsWith(prefix))) {
+  if (["a38", "b74"].some((prefix) => typeDesignator.startsWith(prefix)) || descriptor.includes("jumbo")) {
+    return "jumbo_airliner";
+  }
+  if (["a33", "a34", "a35", "b76", "b77", "b78", "dc10", "md11"].some((prefix) => typeDesignator.startsWith(prefix))) {
     return "wide_body_airliner";
   }
   if (["crj", "e1", "e2", "e7", "e9", "erj"].some((prefix) => typeDesignator.startsWith(prefix))) {
@@ -8772,6 +8794,103 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
   return "narrow_body_airliner";
 }
 
+function resolveCivilAircraftIconTone(object: CopObject): CivilAircraftIconTone {
+  const records = civilAircraftStatusRecords(object);
+  if (hasCivilAircraftEmergency(records, object.status)) {
+    return "emergency";
+  }
+  if (hasCivilAircraftDelay(records, object.status)) {
+    return "delayed";
+  }
+  return "normal";
+}
+
+function civilAircraftStatusRecords(object: CopObject): Array<Record<string, unknown>> {
+  const attributes = isRecord(object.attributes) ? object.attributes : {};
+  const flightData = isRecord(attributes.flightData) ? attributes.flightData : {};
+  const aircraft = isRecord(flightData.aircraft) ? flightData.aircraft : {};
+  const metadata = isRecord(flightData.metadata) ? flightData.metadata : {};
+  const quality = isRecord(flightData.quality) ? flightData.quality : {};
+  return [attributes, flightData, aircraft, metadata, quality];
+}
+
+function hasCivilAircraftEmergency(records: Array<Record<string, unknown>>, status: string): boolean {
+  const normalizedStatus = normalizeCompactAscii(status);
+  if (["emergency", "distress", "mayday", "sos", "hijack", "radiofailure"].some((token) => normalizedStatus.includes(token))) {
+    return true;
+  }
+  if (firstRecordBoolean(records, ["emergency", "distress", "mayday", "hijack", "radioFailure"]) === true) {
+    return true;
+  }
+  const statusText = firstRecordText(records, [
+    "alert",
+    "alertStatus",
+    "emergencyStatus",
+    "flightStatus",
+    "operationalStatus",
+    "squawkStatus"
+  ]);
+  if (statusText) {
+    const normalized = normalizeCompactAscii(statusText);
+    if (["emergency", "distress", "mayday", "panpan", "hijack", "radiofailure", "minfuel"].some((token) => normalized.includes(token))) {
+      return true;
+    }
+  }
+  const squawk = firstRecordText(records, ["squawk", "transponderCode", "modeA", "modeACode"]);
+  const normalizedSquawk = squawk?.replace(/\D/g, "");
+  return normalizedSquawk === "7500" || normalizedSquawk === "7600" || normalizedSquawk === "7700";
+}
+
+function hasCivilAircraftDelay(records: Array<Record<string, unknown>>, status: string): boolean {
+  const normalizedStatus = normalizeCompactAscii(status);
+  if (["delay", "delayed", "late", "stale"].some((token) => normalizedStatus.includes(token))) {
+    return true;
+  }
+  if (firstRecordBoolean(records, ["delayed", "late", "stale"]) === true) {
+    return true;
+  }
+  const delaySeconds = firstRecordNumberFromRecords(
+    records,
+    "delaySeconds",
+    "delaySec",
+    "arrivalDelaySeconds",
+    "departureDelaySeconds",
+    "estimatedDelaySeconds",
+    "scheduleDelaySeconds",
+    "scheduledDelaySeconds"
+  );
+  if (delaySeconds !== undefined && delaySeconds > 60) {
+    return true;
+  }
+  const delayMinutes = firstRecordNumberFromRecords(records, "delayMinutes", "arrivalDelayMinutes", "departureDelayMinutes");
+  if (delayMinutes !== undefined && delayMinutes > 1) {
+    return true;
+  }
+  const positionAgeSeconds = firstRecordNumberFromRecords(records, "positionAgeSeconds", "ageSeconds", "trackAgeSeconds");
+  return positionAgeSeconds !== undefined && positionAgeSeconds > 180;
+}
+
+function firstRecordBoolean(records: Array<Record<string, unknown>>, keys: string[]): boolean | undefined {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "boolean") {
+        return value;
+      }
+      if (typeof value === "string") {
+        const normalized = normalizeCompactAscii(value);
+        if (normalized === "true" || normalized === "yes" || normalized === "ano") {
+          return true;
+        }
+        if (normalized === "false" || normalized === "no" || normalized === "ne") {
+          return false;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
 function normalizeCivilAircraftIconKind(value: string | undefined): CivilAircraftIconKind | undefined {
   const normalized = value?.trim().toLowerCase().replace(/[\s./-]+/g, "_");
   if (!normalized) {
@@ -8780,6 +8899,26 @@ function normalizeCivilAircraftIconKind(value: string | undefined): CivilAircraf
   const aliases: Record<string, CivilAircraftIconKind> = {
     air_airliner_narrow: "narrow_body_airliner",
     air_airliner_wide: "wide_body_airliner",
+    aircraft_01_small_ga: "light_single",
+    aircraft_02_light_twin: "light_twin",
+    aircraft_03_turboprop: "turboprop",
+    aircraft_04_business_jet: "business_jet",
+    aircraft_05_regional_jet: "regional_jet",
+    aircraft_06_narrowbody_airliner: "narrow_body_airliner",
+    aircraft_07_widebody_airliner: "wide_body_airliner",
+    aircraft_08_jumbo_airliner: "jumbo_airliner",
+    aircraft_09_cargo_freighter: "cargo_aircraft",
+    aircraft_10_glider: "glider",
+    aircraft_11_military_fighter: "fighter",
+    aircraft_12_military_transport: "military_transport",
+    aircraft_13_military_bomber: "military_bomber",
+    aircraft_14_aerobatic_prop: "aerobatic_prop",
+    aircraft_15_seaplane: "seaplane",
+    aircraft_16_ultralight: "ultralight",
+    aircraft_17_helicopter_light: "light_helicopter",
+    aircraft_18_helicopter_medium: "medium_helicopter",
+    aircraft_19_helicopter_heavy: "heavy_tandem_helicopter",
+    aircraft_20_helicopter_military: "military_helicopter",
     air_business_jet: "business_jet",
     air_cargo: "cargo_aircraft",
     air_fighter: "fighter",
@@ -8793,6 +8932,11 @@ function normalizeCivilAircraftIconKind(value: string | undefined): CivilAircraf
     air_tiltrotor: "tiltrotor",
     air_turboprop: "turboprop",
     drone_fixed_wing: "fixed_wing_drone",
+    drone_01_quadcopter: "quadcopter_drone",
+    drone_02_hexacopter: "hexacopter_drone",
+    drone_03_fixed_wing_uav: "fixed_wing_drone",
+    drone_04_fpv_racing: "fpv_drone",
+    drone_05_vtol_hybrid: "vtol_drone",
     drone_hexacopter: "hexacopter_drone",
     drone_micro: "micro_drone",
     drone_quadcopter: "quadcopter_drone",
@@ -8845,7 +8989,8 @@ function formatAircraftSelectionCard(object: CopObject): MapSelectionCard {
   const heading = formatAircraftHeading(object);
   const age = formatAircraftAge(object);
   const confidence = formatAircraftConfidence(object);
-  const qualityTone = object.status === "STALE" || flightData?.quality?.stale ? "warn" : "ok";
+  const aircraftTone = resolveCivilAircraftIconTone(object);
+  const qualityTone = aircraftTone === "emergency" ? "bad" : aircraftTone === "delayed" ? "warn" : "ok";
   const subtitle = route ?? ([aircraftType, altitude, speed].filter(Boolean).join(" · ") || formatTrackSelectionSubtitle(object));
   const compactSubtitle = [compactAltitude, compactSpeed].filter(Boolean).join(" · ") || subtitle;
   const detailRows = [
@@ -8863,6 +9008,7 @@ function formatAircraftSelectionCard(object: CopObject): MapSelectionCard {
     eyebrow: route ? "Let" : "Letecký objekt",
     key: `object:${object.objectId}`,
     metaItems: [
+      aircraftTone === "emergency" ? "nouze" : aircraftTone === "delayed" ? "zpožděné/starší data" : undefined,
       formatAircraftStatusLabel(object.status),
       confidence,
       stringProperty(flightData?.originCountry)

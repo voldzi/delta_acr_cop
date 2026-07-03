@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="currentColor">
+  <path d="M 50.89 19.33 L 57.22 28.84 Q 58.00 30.00 57.91 31.40 L 57.25 41.20 Q 57.20 42.00 56.71 42.63 L 52.97 47.52 Q 52.60 48.00 52.58 48.60 L 51.44 87.50 Q 51.43 88.00 51.21 88.45 L 50.34 90.28 Q 50.00 91.00 49.66 90.28 L 48.79 88.45 Q 48.57 88.00 48.56 87.50 L 47.42 48.60 Q 47.40 48.00 47.03 47.52 L 43.29 42.63 Q 42.80 42.00 42.75 41.20 L 42.09 31.40 Q 42.00 30.00 42.78 28.84 L 49.11 19.33 Q 50.00 18.00 50.89 19.33 Z" />
+  <circle cx="50.00" cy="34.00" r="28.00" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.42"/>
+  <line x1="22.00" y1="34.00" x2="78.00" y2="34.00" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.42"/>
+  <line x1="50.00" y1="6.00" x2="50.00" y2="62.00" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.42"/>
+  <circle cx="50.00" cy="34.00" r="2.20" opacity="1.00"/>
+  <circle cx="50.00" cy="88.00" r="4.20" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.42"/>
+</svg>
