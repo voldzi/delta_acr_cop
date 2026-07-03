@@ -241,7 +241,7 @@ export function getCivilAircraftIconKey(kind: CivilAircraftIconKind, tone: Civil
 
 export function civilAircraftIconToneColor(tone: CivilAircraftIconTone): string {
   const colors: Record<CivilAircraftIconTone, string> = {
-    delayed: "#facc15",
+    delayed: "#eab308",
     emergency: "#ef4444",
     normal: "#22c55e"
   };

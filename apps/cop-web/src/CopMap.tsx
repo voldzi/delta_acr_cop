@@ -8654,6 +8654,7 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
       const publicFlight = isPublicFlightObject(object);
       const civilAircraftKind = publicFlight ? resolveCivilAircraftIconKind(object) : undefined;
       const civilAircraftTone = publicFlight ? resolveCivilAircraftIconTone(object) : undefined;
+      const civilAircraftSymbolColor = publicFlight ? resolveCivilAircraftSymbolColor(object, civilAircraftTone ?? "normal") : affiliation.color;
       const standardSymbolKey = getNatoIconKey(object.objectType, object.affiliation);
       const displaySymbolKey = publicFlight && options.publicFlightSymbolMode !== "standard"
         ? getCivilAircraftIconKey(civilAircraftKind ?? "unknown", civilAircraftTone ?? "normal")
@@ -8677,12 +8678,12 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
           symbolKey: standardSymbolKey,
           displaySymbolKey,
           publicFlight,
-          aircraftHeadingDeg: publicFlight ? normalizeHeadingDeg(object.movement?.headingDeg ?? object.headingDeg) : undefined,
+          aircraftHeadingDeg: publicFlight ? resolveCivilAircraftRotationDeg(object) : undefined,
           civilAircraftKind,
           civilAircraftTone,
           label: formatTrackLabel(object),
           symbolColor: publicFlight && options.publicFlightSymbolMode !== "standard"
-            ? civilAircraftIconToneColor(civilAircraftTone ?? "normal")
+            ? civilAircraftSymbolColor
             : affiliation.color,
           symbolDisposition: affiliation.disposition
         }
@@ -8693,6 +8694,15 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
 
 function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind {
   const flightData = object.attributes?.flightData;
+  const presentation = civilAircraftPresentation(object);
+  if (isAirspaceMonoPresentation(presentation)) {
+    const iconKind = normalizeCivilAircraftIconKind(
+      stripSvgExtension(recordString(presentation, "iconFile") ?? recordString(presentation, "iconKey"))
+    );
+    if (iconKind) {
+      return iconKind;
+    }
+  }
   const aircraft = isRecord(flightData?.aircraft) ? flightData.aircraft : {};
   const iconHint = normalizeCivilAircraftIconKind(stringProperty(aircraft.iconHint));
   if (iconHint) {
@@ -8799,10 +8809,83 @@ function resolveCivilAircraftIconTone(object: CopObject): CivilAircraftIconTone 
   if (hasCivilAircraftEmergency(records, object.status)) {
     return "emergency";
   }
+  const presentationTone = resolveCivilAircraftPresentationTone(civilAircraftPresentation(object));
+  if (presentationTone) {
+    return presentationTone;
+  }
   if (hasCivilAircraftDelay(records, object.status)) {
     return "delayed";
   }
   return "normal";
+}
+
+function resolveCivilAircraftSymbolColor(object: CopObject, tone: CivilAircraftIconTone): string {
+  const presentationColor = normalizeHexColor(civilAircraftPresentation(object)?.colorHex);
+  return presentationColor ?? civilAircraftIconToneColor(tone);
+}
+
+function resolveCivilAircraftRotationDeg(object: CopObject): number | undefined {
+  const presentation = civilAircraftPresentation(object);
+  if (presentation) {
+    const rotateWithHeading = presentation.rotateWithHeading;
+    if (rotateWithHeading === false) {
+      return undefined;
+    }
+    const rotationDeg = numberProperty(presentation.rotationDeg);
+    if (rotateWithHeading === true && rotationDeg !== undefined) {
+      return normalizeHeadingDeg(rotationDeg);
+    }
+  }
+  return normalizeHeadingDeg(object.movement?.headingDeg ?? object.headingDeg);
+}
+
+function civilAircraftPresentation(object: CopObject): Record<string, unknown> | undefined {
+  const flightData = object.attributes?.flightData;
+  return isRecord(flightData?.presentation) ? flightData.presentation : undefined;
+}
+
+function isAirspaceMonoPresentation(presentation: Record<string, unknown> | undefined): presentation is Record<string, unknown> {
+  return normalizeCompactAscii(recordString(presentation ?? {}, "iconSet") ?? "") === "airspaceiconsmonov1";
+}
+
+function resolveCivilAircraftPresentationTone(presentation: Record<string, unknown> | undefined): CivilAircraftIconTone | undefined {
+  if (!presentation) {
+    return undefined;
+  }
+  const colorKey = normalizeCompactAscii(recordString(presentation, "colorKey") ?? "");
+  if (colorKey === "emergency") {
+    return "emergency";
+  }
+  if (colorKey === "delayed" || colorKey === "delay" || colorKey === "late") {
+    return "delayed";
+  }
+  if (colorKey === "normal" || colorKey === "ok") {
+    return "normal";
+  }
+  const colorHex = normalizeHexColor(presentation.colorHex)?.toLowerCase();
+  if (colorHex === "#ef4444") {
+    return "emergency";
+  }
+  if (colorHex === "#eab308" || colorHex === "#facc15") {
+    return "delayed";
+  }
+  if (colorHex === "#22c55e") {
+    return "normal";
+  }
+  return undefined;
+}
+
+function normalizeHexColor(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  const match = /^#?([0-9a-fA-F]{6})$/.exec(trimmed);
+  return match?.[1] ? `#${match[1].toLowerCase()}` : undefined;
+}
+
+function stripSvgExtension(value: string | undefined): string | undefined {
+  return value?.split(/[\\/]/).pop()?.replace(/\.svg$/i, "");
 }
 
 function civilAircraftStatusRecords(object: CopObject): Array<Record<string, unknown>> {
@@ -8811,7 +8894,12 @@ function civilAircraftStatusRecords(object: CopObject): Array<Record<string, unk
   const aircraft = isRecord(flightData.aircraft) ? flightData.aircraft : {};
   const metadata = isRecord(flightData.metadata) ? flightData.metadata : {};
   const quality = isRecord(flightData.quality) ? flightData.quality : {};
-  return [attributes, flightData, aircraft, metadata, quality];
+  const status = isRecord(flightData.status) ? flightData.status : {};
+  const emergency = isRecord(status.emergency) ? status.emergency : {};
+  const delay = isRecord(status.delay) ? status.delay : {};
+  const itinerary = isRecord(flightData.itinerary) ? flightData.itinerary : {};
+  const route = isRecord(flightData.route) ? flightData.route : {};
+  return [attributes, flightData, aircraft, metadata, quality, status, emergency, delay, itinerary, route];
 }
 
 function hasCivilAircraftEmergency(records: Array<Record<string, unknown>>, status: string): boolean {
@@ -8819,7 +8907,7 @@ function hasCivilAircraftEmergency(records: Array<Record<string, unknown>>, stat
   if (["emergency", "distress", "mayday", "sos", "hijack", "radiofailure"].some((token) => normalizedStatus.includes(token))) {
     return true;
   }
-  if (firstRecordBoolean(records, ["emergency", "distress", "mayday", "hijack", "radioFailure"]) === true) {
+  if (firstRecordBoolean(records, ["emergency", "distress", "mayday", "hijack", "radioFailure", "active"]) === true) {
     return true;
   }
   const statusText = firstRecordText(records, [
@@ -8865,6 +8953,16 @@ function hasCivilAircraftDelay(records: Array<Record<string, unknown>>, status: 
   const delayMinutes = firstRecordNumberFromRecords(records, "delayMinutes", "arrivalDelayMinutes", "departureDelayMinutes");
   if (delayMinutes !== undefined && delayMinutes > 1) {
     return true;
+  }
+  const delayStatus = firstRecordText(records, ["delayStatus", "scheduleStatus", "status"]);
+  if (delayStatus) {
+    const normalizedDelayStatus = normalizeCompactAscii(delayStatus);
+    if (["delayed", "delay", "late"].some((token) => normalizedDelayStatus.includes(token))) {
+      return true;
+    }
+    if (["unknown", "unavailable", "nodata", "none"].some((token) => normalizedDelayStatus.includes(token))) {
+      return false;
+    }
   }
   const positionAgeSeconds = firstRecordNumberFromRecords(records, "positionAgeSeconds", "ageSeconds", "trackAgeSeconds");
   return positionAgeSeconds !== undefined && positionAgeSeconds > 180;
@@ -8981,24 +9079,39 @@ function formatAircraftSelectionCard(object: CopObject): MapSelectionCard {
   const aircraft = isRecord(flightData?.aircraft) ? flightData.aircraft : {};
   const aircraftType = formatAircraftTypeLabel(aircraft);
   const registration = stringProperty(flightData?.registration);
+  const icao24 = stringProperty(flightData?.icao24);
+  const adsbCategory = formatAircraftAdsbCategoryLabel(aircraft);
+  const aircraftClass = recordString(aircraft, "classKey") ?? recordString(aircraft, "aircraftClass");
   const route = formatAircraftRouteLabel(flightData);
   const altitude = formatAircraftAltitude(object);
   const compactAltitude = formatAircraftCompactAltitude(object);
   const speed = formatAircraftSpeed(object);
   const compactSpeed = formatAircraftCompactSpeed(object);
   const heading = formatAircraftHeading(object);
+  const verticalRate = formatAircraftVerticalRate(object);
   const age = formatAircraftAge(object);
   const confidence = formatAircraftConfidence(object);
+  const phase = formatAircraftPhaseLabel(flightData);
+  const emergency = formatAircraftEmergencyDetail(flightData);
+  const delay = formatAircraftDelayLabel(flightData);
   const aircraftTone = resolveCivilAircraftIconTone(object);
   const qualityTone = aircraftTone === "emergency" ? "bad" : aircraftTone === "delayed" ? "warn" : "ok";
   const subtitle = route ?? ([aircraftType, altitude, speed].filter(Boolean).join(" · ") || formatTrackSelectionSubtitle(object));
   const compactSubtitle = [compactAltitude, compactSpeed].filter(Boolean).join(" · ") || subtitle;
   const detailRows = [
     aircraftType ? { label: "Typ", value: aircraftType } : undefined,
+    adsbCategory ? { label: "Kategorie", value: adsbCategory } : undefined,
+    aircraftClass ? { label: "Třída", value: aircraftClass } : undefined,
     registration ? { label: "Registrace", value: registration } : undefined,
+    icao24 ? { label: "ICAO24", value: icao24 } : undefined,
+    route ? { label: "Trasa", value: route } : undefined,
+    phase ? { label: "Fáze", value: phase } : undefined,
+    emergency ? { label: "Nouze", value: emergency } : undefined,
+    delay ? { label: "Zpoždění", value: delay } : undefined,
     altitude ? { label: "Výška", value: altitude } : undefined,
     speed ? { label: "Rychlost", value: speed } : undefined,
     heading ? { label: "Kurz", value: heading } : undefined,
+    verticalRate ? { label: "Vertikální rychlost", value: verticalRate } : undefined,
     age ? { label: "Stáří", value: age } : undefined
   ].filter(Boolean) as Array<{ label: string; value: string }>;
 
@@ -9034,13 +9147,58 @@ function formatAircraftRouteLabel(flightData: NonNullable<CopObject["attributes"
   }
   const flightRecord = flightData as Record<string, unknown>;
   const metadata = isRecord(flightData.metadata) ? flightData.metadata : {};
-  const route = isRecord(metadata.route) ? metadata.route : {};
-  const origin = firstRecordText([flightRecord, metadata, route], ["origin", "originAirport", "departureAirport", "departure", "from"]);
-  const destination = firstRecordText([flightRecord, metadata, route], ["destination", "destinationAirport", "arrivalAirport", "arrival", "to"]);
+  const route = isRecord(flightData.route)
+    ? flightData.route
+    : isRecord(metadata.route)
+      ? metadata.route
+      : {};
+  const itinerary = isRecord(flightData.itinerary) ? flightData.itinerary : {};
+  const origin = firstRecordText([flightRecord, metadata, route, itinerary], ["origin", "originAirport", "departureAirport", "departure", "from"]);
+  const destination = firstRecordText([flightRecord, metadata, route, itinerary], ["destination", "destinationAirport", "arrivalAirport", "arrival", "to"]);
   if (!origin || !destination || origin === destination) {
     return undefined;
   }
   return `${origin} → ${destination}`;
+}
+
+function formatAircraftAdsbCategoryLabel(aircraft: Record<string, unknown>): string | undefined {
+  const adsbCategory = isRecord(aircraft.adsbCategory) ? aircraft.adsbCategory : {};
+  return recordString(adsbCategory, "label") ?? recordString(aircraft, "adsbCategoryLabel") ?? recordString(aircraft, "categoryLabel");
+}
+
+function formatAircraftPhaseLabel(flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined): string | undefined {
+  const status = isRecord(flightData?.status) ? flightData.status : {};
+  const phase = recordString(status, "phase") ?? recordString(status, "flightPhase");
+  return phase ? phase.toLowerCase() : undefined;
+}
+
+function formatAircraftEmergencyDetail(flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined): string | undefined {
+  const status = isRecord(flightData?.status) ? flightData.status : {};
+  const emergency = isRecord(status.emergency) ? status.emergency : {};
+  const active = firstRecordBoolean([status, emergency], ["active", "emergency", "distress"]);
+  const label = firstRecordText([emergency, status], ["label", "status", "type", "code"]);
+  if (active === true) {
+    return label ? `ano · ${label}` : "ano";
+  }
+  if (label && normalizeCompactAscii(label) !== "none" && normalizeCompactAscii(label) !== "normal") {
+    return label;
+  }
+  return undefined;
+}
+
+function formatAircraftDelayLabel(flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined): string | undefined {
+  const status = isRecord(flightData?.status) ? flightData.status : {};
+  const delay = isRecord(status.delay) ? status.delay : {};
+  const delayStatus = firstRecordText([delay, status], ["status", "delayStatus"]);
+  const delaySeconds = firstRecordNumberFromRecords([delay, status], "delaySeconds", "arrivalDelaySeconds", "departureDelaySeconds");
+  const delayMinutes = delaySeconds !== undefined ? Math.round(delaySeconds / 60) : firstRecordNumberFromRecords([delay, status], "delayMinutes");
+  if (delayMinutes !== undefined && Math.abs(delayMinutes) >= 1) {
+    return `${delayMinutes > 0 ? "+" : ""}${delayMinutes} min${delayStatus ? ` · ${delayStatus}` : ""}`;
+  }
+  if (delayStatus && !["unknown", "unavailable", "nodata", "none"].includes(normalizeCompactAscii(delayStatus))) {
+    return delayStatus;
+  }
+  return undefined;
 }
 
 function firstRecordText(records: Array<Record<string, unknown>>, keys: string[]): string | undefined {
@@ -9094,6 +9252,18 @@ function formatAircraftCompactSpeed(object: CopObject): string | undefined {
 function formatAircraftHeading(object: CopObject): string | undefined {
   const heading = normalizeHeadingDeg(object.movement?.headingDeg ?? object.headingDeg);
   return heading === undefined ? undefined : `${Math.round(heading)}°`;
+}
+
+function formatAircraftVerticalRate(object: CopObject): string | undefined {
+  const verticalRateMps = object.movement?.verticalRateMps ?? object.verticalRateMps;
+  if (typeof verticalRateMps !== "number" || !Number.isFinite(verticalRateMps)) {
+    return undefined;
+  }
+  const feetPerMinute = Math.round(verticalRateMps * 196.8504);
+  if (Math.abs(feetPerMinute) < 50) {
+    return "stabilní";
+  }
+  return `${feetPerMinute > 0 ? "+" : ""}${feetPerMinute.toLocaleString("cs-CZ")} ft/min`;
 }
 
 function formatAircraftAge(object: CopObject): string | undefined {

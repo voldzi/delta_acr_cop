@@ -189,18 +189,21 @@ interface FlightTrack {
   domain: string;
   headingDeg?: number | null;
   icao24?: string | null;
+  itinerary?: Record<string, unknown>;
   lastSeenAt: string;
   lat: number;
   lon: number;
   metadata?: Record<string, unknown>;
   objectType: string;
   originCountry?: string | null;
+  presentation?: Record<string, unknown>;
   quality?: {
     confidence?: number;
     positionAgeSeconds?: number;
     stale?: boolean;
   };
   registration?: string | null;
+  route?: Record<string, unknown>;
   sources: Array<{
     fetchedAt?: string;
     seenAt?: string;
@@ -208,6 +211,7 @@ interface FlightTrack {
     sourceRecordId?: string;
   }>;
   speedMps?: number | null;
+  status?: Record<string, unknown>;
   trackId: string;
   verticalRateMps?: number | null;
 }
@@ -518,8 +522,10 @@ function mapFlightTrackToEvent(
             callsign: cleanString(track.callsign),
             deduplication: track.deduplication ?? {},
             icao24: cleanString(track.icao24),
+            itinerary: track.itinerary ?? {},
             metadata: track.metadata ?? {},
             originCountry: cleanString(track.originCountry),
+            presentation: track.presentation ?? {},
             providerLicenses: providerDescriptors.map((source) => source.license).filter(Boolean),
             providers: providerDescriptors.map((source) => ({
               enabled: source.enabled,
@@ -530,7 +536,9 @@ function mapFlightTrackToEvent(
             })),
             quality: track.quality ?? {},
             registration: cleanString(track.registration),
-            sources: track.sources
+            route: track.route ?? {},
+            sources: track.sources,
+            status: track.status ?? {}
           }
         },
         confidence,
@@ -1015,12 +1023,14 @@ function normalizeTrack(value: unknown): FlightTrack[] {
       domain: typeof value.domain === "string" ? value.domain : "AIR",
       headingDeg: optionalNullableNumber(value.headingDeg),
       icao24: optionalString(value.icao24),
+      itinerary: isRecord(value.itinerary) ? value.itinerary : undefined,
       lastSeenAt: value.lastSeenAt,
       lat,
       lon,
       metadata: isRecord(value.metadata) ? value.metadata : undefined,
       objectType: typeof value.objectType === "string" ? value.objectType : "UNKNOWN",
       originCountry: optionalString(value.originCountry),
+      presentation: isRecord(value.presentation) ? value.presentation : undefined,
       quality: isRecord(value.quality)
         ? {
             confidence: optionalFinite(value.quality.confidence),
@@ -1029,8 +1039,10 @@ function normalizeTrack(value: unknown): FlightTrack[] {
           }
         : undefined,
       registration: optionalString(value.registration),
+      route: isRecord(value.route) ? value.route : undefined,
       sources: Array.isArray(value.sources) ? value.sources.flatMap(normalizeTrackSource) : [],
       speedMps: optionalNullableNumber(value.speedMps),
+      status: isRecord(value.status) ? value.status : undefined,
       trackId: value.trackId,
       verticalRateMps: optionalNullableNumber(value.verticalRateMps)
     }

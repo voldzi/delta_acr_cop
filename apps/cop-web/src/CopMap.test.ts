@@ -168,6 +168,97 @@ describe("COP map data helpers", () => {
     });
   });
 
+  it("uses SIM public flight presentation for icon, rotation, and color", () => {
+    const presentedFlight = {
+      objectId: "flight:icao24:49f123",
+      objectType: "AIRCRAFT",
+      affiliation: "NEUTRAL",
+      domain: "AIR",
+      status: "ACTIVE",
+      confidence: 0.82,
+      movement: { headingDeg: 275, speedMps: 210 },
+      position: { lat: 50.1, lon: 14.4 },
+      attributes: {
+        dataOrigin: "PUBLIC_FLIGHT_AGGREGATE",
+        flightData: {
+          callsign: "DLH123",
+          presentation: {
+            colorHex: "#eab308",
+            colorKey: "delayed",
+            iconFile: "aircraft_08_jumbo_airliner.svg",
+            iconSet: "airspace-icons-mono-v1",
+            rotateWithHeading: true,
+            rotationDeg: 123
+          },
+          status: {
+            delay: {
+              status: "delayed"
+            }
+          }
+        }
+      }
+    } satisfies CopObject;
+
+    expect(objectsToTrackFeatureCollection([presentedFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
+      aircraftHeadingDeg: 123,
+      civilAircraftKind: "jumbo_airliner",
+      civilAircraftTone: "delayed",
+      displaySymbolKey: "cop-civil-aircraft-jumbo_airliner-delayed",
+      symbolColor: "#eab308"
+    });
+  });
+
+  it("keeps flights with unknown delay data green unless an emergency is present", () => {
+    const unknownDelayFlight = {
+      objectId: "flight:icao24:49f124",
+      objectType: "AIRCRAFT",
+      affiliation: "NEUTRAL",
+      domain: "AIR",
+      status: "ACTIVE",
+      confidence: 0.82,
+      position: { lat: 50.1, lon: 14.4 },
+      attributes: {
+        dataOrigin: "PUBLIC_FLIGHT_AGGREGATE",
+        flightData: {
+          callsign: "OK123",
+          status: {
+            delay: {
+              status: "unknown"
+            }
+          }
+        }
+      }
+    } satisfies CopObject;
+
+    const emergencyFlight = {
+      ...unknownDelayFlight,
+      objectId: "flight:icao24:49f125",
+      attributes: {
+        ...unknownDelayFlight.attributes,
+        flightData: {
+          ...unknownDelayFlight.attributes.flightData,
+          status: {
+            delay: {
+              status: "unknown"
+            },
+            emergency: {
+              active: true
+            }
+          }
+        }
+      }
+    } satisfies CopObject;
+
+    expect(objectsToTrackFeatureCollection([unknownDelayFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
+      civilAircraftTone: "normal",
+      symbolColor: "#22c55e"
+    });
+    expect(objectsToTrackFeatureCollection([emergencyFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
+      civilAircraftTone: "emergency",
+      symbolColor: "#ef4444"
+    });
+  });
+
   it("builds context-only situation features without converting them to COP tracks", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",

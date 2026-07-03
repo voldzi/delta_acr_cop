@@ -79,8 +79,19 @@ export interface FlightDataAttributes {
   callsign?: string;
   deduplication?: Record<string, unknown>;
   icao24?: string;
+  itinerary?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   originCountry?: string;
+  presentation?: {
+    colorHex?: string;
+    colorKey?: string;
+    iconFile?: string;
+    iconKey?: string;
+    iconSet?: string;
+    rotateWithHeading?: boolean;
+    rotationDeg?: number;
+    [key: string]: unknown;
+  };
   providerLicenses?: Array<Record<string, unknown>>;
   providers?: Array<{
     enabled?: boolean;
@@ -95,12 +106,14 @@ export interface FlightDataAttributes {
     stale?: boolean;
   };
   registration?: string;
+  route?: Record<string, unknown>;
   sources?: Array<{
     fetchedAt?: string;
     seenAt?: string;
     sourceId?: string;
     sourceRecordId?: string;
   }>;
+  status?: Record<string, unknown>;
 }
 
 export interface ObjectProvenance {
