@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title-heli_light">
+  <title id="title-heli_light">Lehký vrtulník</title>
+  <g opacity="0.42" transform="translate(2.8 4.0)">
+    <line x1="11.0" y1="22" x2="53.0" y2="22" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="3.0" stroke-linejoin="round" />
+    <line x1="32" y1="1.0" x2="32" y2="43.0" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="3.0" stroke-linejoin="round" />
+    <circle cx="32" cy="22" r="3.2" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <path d="M31.5 18 C37.5 20 40.5 25.5 38.2 32.5 C36.5 38 31.3 39.8 26.5 37.2 C22.5 35.0 20.8 30.5 22.0 26.5 C23.4 21.5 27.0 18.5 31.5 18 Z" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <path d="M38 29 L55 43 L52 47 L36 35 Z" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <line x1="53" y1="42.8" x2="59.2" y2="38.5" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="2.4" stroke-linejoin="round" />
+    <line x1="55.2" y1="42.5" x2="59.0" y2="48.2" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="2.4" stroke-linejoin="round" />
+    <line x1="24" y1="40" x2="18" y2="50" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="2.2" stroke-linejoin="round" />
+    <line x1="37" y1="40" x2="43" y2="50" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="2.2" stroke-linejoin="round" />
+    <line x1="17" y1="50" x2="27" y2="50" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="2.4" stroke-linejoin="round" />
+    <line x1="37" y1="50" x2="47" y2="50" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="2.4" stroke-linejoin="round" />
+  </g>
+  <g fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round">
+    <line x1="11.0" y1="22" x2="53.0" y2="22" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="3.0" stroke-linejoin="round" />
+    <line x1="32" y1="1.0" x2="32" y2="43.0" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="3.0" stroke-linejoin="round" />
+    <circle cx="32" cy="22" r="3.2" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <path d="M31.5 18 C37.5 20 40.5 25.5 38.2 32.5 C36.5 38 31.3 39.8 26.5 37.2 C22.5 35.0 20.8 30.5 22.0 26.5 C23.4 21.5 27.0 18.5 31.5 18 Z" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <path d="M38 29 L55 43 L52 47 L36 35 Z" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <line x1="53" y1="42.8" x2="59.2" y2="38.5" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="2.4" stroke-linejoin="round" />
+    <line x1="55.2" y1="42.5" x2="59.0" y2="48.2" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="2.4" stroke-linejoin="round" />
+    <line x1="24" y1="40" x2="18" y2="50" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="2.2" stroke-linejoin="round" />
+    <line x1="37" y1="40" x2="43" y2="50" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="2.2" stroke-linejoin="round" />
+    <line x1="17" y1="50" x2="27" y2="50" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="2.4" stroke-linejoin="round" />
+    <line x1="37" y1="50" x2="47" y2="50" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="2.4" stroke-linejoin="round" />
+  </g>
+</svg>

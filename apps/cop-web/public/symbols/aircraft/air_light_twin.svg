@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title-air_light_twin">
+  <title id="title-air_light_twin">Lehké dvoumotorové letadlo</title>
+  <g opacity="0.42" transform="translate(2.8 4.0)">
+    <polygon points="29.00,22.00 5.50,35.50 6.00,41.50 29.60,35.50 34.40,35.50 58.00,41.50 58.50,35.50 35.00,22.00" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <ellipse cx="18.5" cy="34.8" rx="4.4" ry="2.1" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <ellipse cx="45.5" cy="34.8" rx="4.4" ry="2.1" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <ellipse cx="20" cy="34.6" rx="2.4" ry="3.0" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <ellipse cx="44" cy="34.6" rx="2.4" ry="3.0" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <polygon points="30.00,47.00 23.00,54.00 25.00,57.00 32.00,53.00 39.00,57.00 41.00,54.00 34.00,47.00" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <path d="M32 5.0 C36.0 12.0 36.2 22.0 34.4 31.0 L34.0 50.5 L32 53.5 L30.0 50.5 L29.6 31.0 C27.8 22.0 28.0 12.0 32 5.0 Z" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+  </g>
+  <g fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round">
+    <polygon points="29.00,22.00 5.50,35.50 6.00,41.50 29.60,35.50 34.40,35.50 58.00,41.50 58.50,35.50 35.00,22.00" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <ellipse cx="18.5" cy="34.8" rx="4.4" ry="2.1" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <ellipse cx="45.5" cy="34.8" rx="4.4" ry="2.1" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <ellipse cx="20" cy="34.6" rx="2.4" ry="3.0" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <ellipse cx="44" cy="34.6" rx="2.4" ry="3.0" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <polygon points="30.00,47.00 23.00,54.00 25.00,57.00 32.00,53.00 39.00,57.00 41.00,54.00 34.00,47.00" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <path d="M32 5.0 C36.0 12.0 36.2 22.0 34.4 31.0 L34.0 50.5 L32 53.5 L30.0 50.5 L29.6 31.0 C27.8 22.0 28.0 12.0 32 5.0 Z" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+  </g>
+</svg>

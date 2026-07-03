@@ -6,8 +6,71 @@ const mobileNetworkIconPrefix = "cop-mobile-network";
 export const mobileNetworkIconTones = ["info", "advisory", "warning", "critical", "unknown", "reference"] as const;
 export type MobileNetworkIconTone = (typeof mobileNetworkIconTones)[number];
 const civilAircraftIconPrefix = "cop-civil-aircraft";
-export const civilAircraftIconKinds = ["jet", "turboprop", "small_aircraft", "helicopter", "glider", "uav", "unknown"] as const;
+export const civilAircraftIconKinds = [
+  "jet",
+  "turboprop",
+  "small_aircraft",
+  "helicopter",
+  "glider",
+  "uav",
+  "unknown",
+  "light_single",
+  "light_twin",
+  "regional_jet",
+  "narrow_body_airliner",
+  "wide_body_airliner",
+  "business_jet",
+  "cargo_aircraft",
+  "fighter",
+  "military_transport",
+  "seaplane",
+  "biplane",
+  "ultralight",
+  "light_helicopter",
+  "medium_helicopter",
+  "heavy_tandem_helicopter",
+  "medical_helicopter",
+  "tiltrotor",
+  "gyrocopter",
+  "quadcopter_drone",
+  "hexacopter_drone",
+  "fixed_wing_drone",
+  "vtol_drone",
+  "micro_drone"
+] as const;
 export type CivilAircraftIconKind = (typeof civilAircraftIconKinds)[number];
+const civilAircraftIconAssetByKind: Record<CivilAircraftIconKind, string> = {
+  biplane: "air_biplane",
+  business_jet: "air_business_jet",
+  cargo_aircraft: "air_cargo",
+  fighter: "air_fighter",
+  fixed_wing_drone: "drone_fixed_wing",
+  glider: "air_glider",
+  gyrocopter: "air_gyrocopter",
+  heavy_tandem_helicopter: "heli_heavy_tandem",
+  helicopter: "heli_medium",
+  hexacopter_drone: "drone_hexacopter",
+  jet: "air_airliner_narrow",
+  light_helicopter: "heli_light",
+  light_single: "air_light_single",
+  light_twin: "air_light_twin",
+  medical_helicopter: "heli_medical",
+  medium_helicopter: "heli_medium",
+  micro_drone: "drone_micro",
+  military_transport: "air_military_transport",
+  narrow_body_airliner: "air_airliner_narrow",
+  quadcopter_drone: "drone_quadcopter",
+  regional_jet: "air_regional_jet",
+  seaplane: "air_seaplane",
+  small_aircraft: "air_light_single",
+  tiltrotor: "air_tiltrotor",
+  turboprop: "air_turboprop",
+  uav: "drone_fixed_wing",
+  ultralight: "air_ultralight",
+  unknown: "air_light_single",
+  vtol_drone: "drone_vtol",
+  wide_body_airliner: "air_airliner_wide"
+};
 const transitIconPrefix = "cop-transit";
 const osmCategoryIconPrefix = "cop-osm-category";
 export const osmCategoryIconIds = ["airport", "hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "other"] as const;
@@ -191,14 +254,16 @@ export async function registerNatoSymbolImages(map: maplibregl.Map) {
 }
 
 export async function registerCivilAircraftSymbolImages(map: maplibregl.Map) {
-  civilAircraftIconKinds.forEach((kind) => {
-    const key = getCivilAircraftIconKey(kind);
-    if (!map.hasImage(key)) {
-      map.addImage(key, createCivilAircraftSymbolImage(kind), {
-        pixelRatio: window.devicePixelRatio || 1
-      });
-    }
-  });
+  await Promise.all(
+    civilAircraftIconKinds.map(async (kind) => {
+      const key = getCivilAircraftIconKey(kind);
+      if (!map.hasImage(key)) {
+        map.addImage(key, await createCivilAircraftSymbolImage(kind), {
+          pixelRatio: 2
+        });
+      }
+    })
+  );
 }
 
 export async function registerSituationSymbolImages(map: maplibregl.Map) {
@@ -264,7 +329,26 @@ export async function registerSituationSymbolImages(map: maplibregl.Map) {
   }
 }
 
-export function createCivilAircraftSymbolImage(kind: CivilAircraftIconKind): ImageData {
+export async function createCivilAircraftSymbolImage(kind: CivilAircraftIconKind): Promise<ImageData> {
+  try {
+    const image = await loadImageUrl(`/symbols/aircraft/${civilAircraftIconAssetByKind[kind]}.svg`);
+    const canvas = document.createElement("canvas");
+    const size = 128;
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return new ImageData(size, size);
+    }
+    context.clearRect(0, 0, size, size);
+    context.drawImage(image, 0, 0, size, size);
+    return context.getImageData(0, 0, size, size);
+  } catch {
+    return createFallbackCivilAircraftSymbolImage(kind);
+  }
+}
+
+function createFallbackCivilAircraftSymbolImage(kind: CivilAircraftIconKind): ImageData {
   const canvas = document.createElement("canvas");
   const size = 128;
   canvas.width = size;
@@ -1638,5 +1722,14 @@ function loadSvgImage(svg: string): Promise<HTMLImageElement> {
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error("NATO symbol SVG se nepodařilo načíst."));
     image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  });
+}
+
+function loadImageUrl(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Mapový symbol se nepodařilo načíst: ${src}`));
+    image.src = src;
   });
 }

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title-air_ultralight">
+  <title id="title-air_ultralight">Ultralight / závěsný kluzák</title>
+  <g opacity="0.42" transform="translate(2.8 4.0)">
+    <path d="M32 7 L7 43 L32 35 L57 43 Z" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <line x1="32" y1="17" x2="32" y2="50" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="2.4" stroke-linejoin="round" />
+    <line x1="21" y1="39" x2="32" y2="50" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="2.0" stroke-linejoin="round" />
+    <line x1="43" y1="39" x2="32" y2="50" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="2.0" stroke-linejoin="round" />
+    <ellipse cx="32" cy="51" rx="3.4" ry="5.0" fill="#000000" stroke="#000000" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <line x1="32" y1="55" x2="32" y2="60" stroke-linecap="round" fill="none" stroke="#000000" stroke-width="2.0" stroke-linejoin="round" />
+  </g>
+  <g fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M32 7 L7 43 L32 35 L57 43 Z" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <line x1="32" y1="17" x2="32" y2="50" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="2.4" stroke-linejoin="round" />
+    <line x1="21" y1="39" x2="32" y2="50" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="2.0" stroke-linejoin="round" />
+    <line x1="43" y1="39" x2="32" y2="50" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="2.0" stroke-linejoin="round" />
+    <ellipse cx="32" cy="51" rx="3.4" ry="5.0" fill="#F9DA49" stroke="#15130A" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round" />
+    <line x1="32" y1="55" x2="32" y2="60" stroke-linecap="round" fill="none" stroke="#15130A" stroke-width="2.0" stroke-linejoin="round" />
+  </g>
+</svg>

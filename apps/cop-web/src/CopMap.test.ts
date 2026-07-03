@@ -127,8 +127,8 @@ describe("COP map data helpers", () => {
 
     expect(objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
       aircraftHeadingDeg: 275,
-      civilAircraftKind: "jet",
-      displaySymbolKey: "cop-civil-aircraft-jet",
+      civilAircraftKind: "narrow_body_airliner",
+      displaySymbolKey: "cop-civil-aircraft-narrow_body_airliner",
       publicFlight: true,
       symbolColor: "#facc15"
     });

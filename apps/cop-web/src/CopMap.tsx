@@ -807,6 +807,7 @@ interface MapSelectionCard {
   statusTone?: "bad" | "ok" | "warn";
   subtitle: string;
   title: string;
+  variant?: "aircraft" | "default";
 }
 
 function CopMapComponent({
@@ -1031,14 +1032,7 @@ function CopMapComponent({
     );
   const selectionCard = React.useMemo(
     () => selectedObject
-      ? {
-          compactSubtitle: formatTrackSelectionSubtitle(selectedObject),
-          eyebrow: "Vybraný objekt",
-          key: `object:${selectedObject.objectId}`,
-          metaItems: [],
-          subtitle: formatTrackSelectionSubtitle(selectedObject),
-          title: formatTrackLabel(selectedObject)
-        } satisfies MapSelectionCard
+      ? formatObjectSelectionCard(selectedObject)
       : selectedSituationFeature
         ? formatSituationFeatureSelectionCard(selectedSituationFeature, effectiveSelectedTransitRouteDetail)
         : selectedSketchDrawing
@@ -3345,7 +3339,7 @@ function CopMapComponent({
           filter: ["!", ["has", "point_count"]],
           layout: {
             "icon-image": ["get", "displaySymbolKey"],
-            "icon-size": ["case", ["get", "publicFlight"], 0.58, 0.46],
+            "icon-size": ["case", ["get", "publicFlight"], 0.52, 0.46],
             "icon-rotate": ["case", ["get", "publicFlight"], ["coalesce", ["get", "aircraftHeadingDeg"], 0], 0],
             "icon-rotation-alignment": "map",
             "icon-allow-overlap": true,
@@ -3381,7 +3375,7 @@ function CopMapComponent({
           source: trackSourceId,
           layout: {
             "icon-image": ["get", "displaySymbolKey"],
-            "icon-size": ["case", ["get", "publicFlight"], ["case", ["get", "selected"], 0.72, ["get", "hovered"], 0.68, 0.62], 0.46],
+            "icon-size": ["case", ["get", "publicFlight"], ["case", ["get", "selected"], 0.68, ["get", "hovered"], 0.62, 0.56], 0.46],
             "icon-rotate": ["case", ["get", "publicFlight"], ["coalesce", ["get", "aircraftHeadingDeg"], 0], 0],
             "icon-rotation-alignment": "map",
             "icon-allow-overlap": true,
@@ -5059,7 +5053,7 @@ function CopMapComponent({
       </div>
       {selectionCard && selectionPopupPoint ? (
         <div
-          className={`map-object-popover ${selectionPopupPoint.placement === "below" ? "below" : ""} ${selectionPopoverCollapsed ? "collapsed" : ""} ${selectionCard.statusTone ? `tone-${selectionCard.statusTone}` : ""}`}
+          className={`map-object-popover ${selectionCard.variant ? `variant-${selectionCard.variant}` : ""} ${selectionPopupPoint.placement === "below" ? "below" : ""} ${selectionPopoverCollapsed ? "collapsed" : ""} ${selectionCard.statusTone ? `tone-${selectionCard.statusTone}` : ""}`}
           onClick={stopMapToolbarEvent}
           onDoubleClick={stopMapToolbarEvent}
           onPointerDown={stopMapToolbarEvent}
@@ -8702,32 +8696,117 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
   const category = normalizeCompactAscii(stringProperty(aircraft.category) ?? "");
   const engineType = normalizeCompactAscii(stringProperty(aircraft.engineType) ?? "");
   const model = normalizeCompactAscii(stringProperty(aircraft.model) ?? "");
+  const manufacturer = normalizeCompactAscii(stringProperty(aircraft.manufacturer) ?? "");
   const objectType = normalizeCompactAscii(object.objectType);
+  const descriptor = `${typeDesignator} ${category} ${engineType} ${model} ${manufacturer} ${objectType}`;
 
-  if (objectType.includes("uav") || category.includes("uav") || category.includes("drone")) {
-    return "uav";
+  if (descriptor.includes("drone") || descriptor.includes("uav") || descriptor.includes("uas")) {
+    if (descriptor.includes("quad")) {
+      return "quadcopter_drone";
+    }
+    if (descriptor.includes("hexa")) {
+      return "hexacopter_drone";
+    }
+    if (descriptor.includes("vtol")) {
+      return "vtol_drone";
+    }
+    if (descriptor.includes("micro")) {
+      return "micro_drone";
+    }
+    return "fixed_wing_drone";
   }
-  if (typeDesignator.startsWith("h") || category.includes("helicopter") || model.includes("helicopter")) {
-    return "helicopter";
+  if (descriptor.includes("tiltrotor") || typeDesignator.startsWith("v22")) {
+    return "tiltrotor";
   }
-  if (category.includes("glider") || typeDesignator.includes("glid") || typeDesignator.startsWith("asw") || typeDesignator.startsWith("dg")) {
+  if (descriptor.includes("gyro") || descriptor.includes("autogyro")) {
+    return "gyrocopter";
+  }
+  if (typeDesignator.startsWith("h") || descriptor.includes("helicopter") || descriptor.includes("rotorcraft")) {
+    if (descriptor.includes("medical") || descriptor.includes("ems") || descriptor.includes("rescue") || descriptor.includes("sar")) {
+      return "medical_helicopter";
+    }
+    if (["ch47", "ch46", "chinook"].some((token) => descriptor.includes(token))) {
+      return "heavy_tandem_helicopter";
+    }
+    return descriptor.includes("light") ? "light_helicopter" : "medium_helicopter";
+  }
+  if (descriptor.includes("glider") || typeDesignator.includes("glid") || typeDesignator.startsWith("asw") || typeDesignator.startsWith("dg")) {
     return "glider";
   }
-  if (engineType.includes("turboprop") || ["at", "be", "dh", "pc", "sf", "tb", "yk"].some((prefix) => typeDesignator.startsWith(prefix))) {
+  if (descriptor.includes("seaplane") || descriptor.includes("amphib")) {
+    return "seaplane";
+  }
+  if (descriptor.includes("biplane")) {
+    return "biplane";
+  }
+  if (descriptor.includes("ultralight") || descriptor.includes("microlight")) {
+    return "ultralight";
+  }
+  if (descriptor.includes("fighter") || ["f16", "f18", "f22", "f35", "gripen", "rafale", "eurofighter", "mig", "su"].some((token) => descriptor.includes(token))) {
+    return "fighter";
+  }
+  if (descriptor.includes("militarytransport") || ["c130", "a400", "c17", "c5", "il76", "an12", "an124"].some((token) => descriptor.includes(token))) {
+    return "military_transport";
+  }
+  if (descriptor.includes("cargo") || descriptor.includes("freighter")) {
+    return "cargo_aircraft";
+  }
+  if (descriptor.includes("business") || descriptor.includes("bizjet") || ["c25", "c55", "c56", "c68", "cl", "fa", "glf", "h25", "lj"].some((prefix) => typeDesignator.startsWith(prefix))) {
+    return "business_jet";
+  }
+  if (engineType.includes("turboprop") || ["at", "dh", "pc", "sf", "tb", "yk"].some((prefix) => typeDesignator.startsWith(prefix))) {
     return "turboprop";
   }
-  if (category.includes("light") || category.includes("small") || ["c1", "c2", "c3", "c4", "pa", "sr", "da", "p2"].some((prefix) => typeDesignator.startsWith(prefix))) {
-    return "small_aircraft";
+  if (["a33", "a34", "a35", "a38", "b74", "b76", "b77", "b78", "dc10", "md11"].some((prefix) => typeDesignator.startsWith(prefix))) {
+    return "wide_body_airliner";
+  }
+  if (["crj", "e1", "e2", "e7", "e9", "erj"].some((prefix) => typeDesignator.startsWith(prefix))) {
+    return "regional_jet";
+  }
+  if (category.includes("light") || category.includes("small") || ["c1", "c2", "c3", "c4", "pa", "sr", "da", "be", "p2"].some((prefix) => typeDesignator.startsWith(prefix))) {
+    return descriptor.includes("twin") || ["be", "pa3", "pa4"].some((prefix) => typeDesignator.startsWith(prefix)) ? "light_twin" : "light_single";
   }
   if (engineType.includes("jet") || ["a", "b", "c", "e", "f", "m"].some((prefix) => typeDesignator.startsWith(prefix))) {
-    return "jet";
+    return "narrow_body_airliner";
   }
-  return "jet";
+  return "narrow_body_airliner";
 }
 
 function normalizeCivilAircraftIconKind(value: string | undefined): CivilAircraftIconKind | undefined {
-  const normalized = value?.trim().toLowerCase().replace(/[\s-]+/g, "_");
-  return civilAircraftIconKinds.includes(normalized as CivilAircraftIconKind) ? normalized as CivilAircraftIconKind : undefined;
+  const normalized = value?.trim().toLowerCase().replace(/[\s./-]+/g, "_");
+  if (!normalized) {
+    return undefined;
+  }
+  const aliases: Record<string, CivilAircraftIconKind> = {
+    air_airliner_narrow: "narrow_body_airliner",
+    air_airliner_wide: "wide_body_airliner",
+    air_business_jet: "business_jet",
+    air_cargo: "cargo_aircraft",
+    air_fighter: "fighter",
+    air_glider: "glider",
+    air_gyrocopter: "gyrocopter",
+    air_light_single: "light_single",
+    air_light_twin: "light_twin",
+    air_military_transport: "military_transport",
+    air_regional_jet: "regional_jet",
+    air_seaplane: "seaplane",
+    air_tiltrotor: "tiltrotor",
+    air_turboprop: "turboprop",
+    drone_fixed_wing: "fixed_wing_drone",
+    drone_hexacopter: "hexacopter_drone",
+    drone_micro: "micro_drone",
+    drone_quadcopter: "quadcopter_drone",
+    drone_vtol: "vtol_drone",
+    heli_heavy_tandem: "heavy_tandem_helicopter",
+    heli_light: "light_helicopter",
+    heli_medical: "medical_helicopter",
+    heli_medium: "medium_helicopter",
+    narrowbody: "narrow_body_airliner",
+    widebody: "wide_body_airliner"
+  };
+  return civilAircraftIconKinds.includes(normalized as CivilAircraftIconKind)
+    ? normalized as CivilAircraftIconKind
+    : aliases[normalized];
 }
 
 function normalizeHeadingDeg(value: number | null | undefined): number | undefined {
@@ -8736,6 +8815,184 @@ function normalizeHeadingDeg(value: number | null | undefined): number | undefin
     return undefined;
   }
   return ((heading % 360) + 360) % 360;
+}
+
+function formatObjectSelectionCard(object: CopObject): MapSelectionCard {
+  if (isPublicFlightObject(object)) {
+    return formatAircraftSelectionCard(object);
+  }
+  const subtitle = formatTrackSelectionSubtitle(object);
+  return {
+    compactSubtitle: subtitle,
+    eyebrow: "Vybraný objekt",
+    key: `object:${object.objectId}`,
+    metaItems: [],
+    subtitle,
+    title: formatTrackLabel(object)
+  };
+}
+
+function formatAircraftSelectionCard(object: CopObject): MapSelectionCard {
+  const flightData = object.attributes?.flightData;
+  const aircraft = isRecord(flightData?.aircraft) ? flightData.aircraft : {};
+  const aircraftType = formatAircraftTypeLabel(aircraft);
+  const registration = stringProperty(flightData?.registration);
+  const route = formatAircraftRouteLabel(flightData);
+  const altitude = formatAircraftAltitude(object);
+  const compactAltitude = formatAircraftCompactAltitude(object);
+  const speed = formatAircraftSpeed(object);
+  const compactSpeed = formatAircraftCompactSpeed(object);
+  const heading = formatAircraftHeading(object);
+  const age = formatAircraftAge(object);
+  const confidence = formatAircraftConfidence(object);
+  const qualityTone = object.status === "STALE" || flightData?.quality?.stale ? "warn" : "ok";
+  const subtitle = route ?? ([aircraftType, altitude, speed].filter(Boolean).join(" · ") || formatTrackSelectionSubtitle(object));
+  const compactSubtitle = [compactAltitude, compactSpeed].filter(Boolean).join(" · ") || subtitle;
+  const detailRows = [
+    aircraftType ? { label: "Typ", value: aircraftType } : undefined,
+    registration ? { label: "Registrace", value: registration } : undefined,
+    altitude ? { label: "Výška", value: altitude } : undefined,
+    speed ? { label: "Rychlost", value: speed } : undefined,
+    heading ? { label: "Kurz", value: heading } : undefined,
+    age ? { label: "Stáří", value: age } : undefined
+  ].filter(Boolean) as Array<{ label: string; value: string }>;
+
+  return {
+    compactSubtitle,
+    detailRows,
+    eyebrow: route ? "Let" : "Letecký objekt",
+    key: `object:${object.objectId}`,
+    metaItems: [
+      formatAircraftStatusLabel(object.status),
+      confidence,
+      stringProperty(flightData?.originCountry)
+    ].filter(Boolean) as string[],
+    statusTone: qualityTone,
+    subtitle,
+    title: formatTrackLabel(object),
+    variant: "aircraft"
+  };
+}
+
+function formatAircraftTypeLabel(aircraft: Record<string, unknown>): string | undefined {
+  const designator = recordString(aircraft, "typeDesignator") ?? recordString(aircraft, "designator");
+  const manufacturer = recordString(aircraft, "manufacturer");
+  const model = recordString(aircraft, "model");
+  const label = [designator, manufacturer, model].filter(Boolean).join(" / ");
+  return label || undefined;
+}
+
+function formatAircraftRouteLabel(flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined): string | undefined {
+  if (!flightData) {
+    return undefined;
+  }
+  const flightRecord = flightData as Record<string, unknown>;
+  const metadata = isRecord(flightData.metadata) ? flightData.metadata : {};
+  const route = isRecord(metadata.route) ? metadata.route : {};
+  const origin = firstRecordText([flightRecord, metadata, route], ["origin", "originAirport", "departureAirport", "departure", "from"]);
+  const destination = firstRecordText([flightRecord, metadata, route], ["destination", "destinationAirport", "arrivalAirport", "arrival", "to"]);
+  if (!origin || !destination || origin === destination) {
+    return undefined;
+  }
+  return `${origin} → ${destination}`;
+}
+
+function firstRecordText(records: Array<Record<string, unknown>>, keys: string[]): string | undefined {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = recordString(record, key);
+      if (value) {
+        return value;
+      }
+    }
+  }
+  return undefined;
+}
+
+function formatAircraftAltitude(object: CopObject): string | undefined {
+  const altitudeM = object.position?.altitudeM;
+  if (typeof altitudeM !== "number" || !Number.isFinite(altitudeM)) {
+    return undefined;
+  }
+  const altitudeFt = Math.round(altitudeM * 3.28084 / 100) * 100;
+  return `${altitudeFt.toLocaleString("cs-CZ")} ft · ${Math.round(altitudeM).toLocaleString("cs-CZ")} m`;
+}
+
+function formatAircraftCompactAltitude(object: CopObject): string | undefined {
+  const altitudeM = object.position?.altitudeM;
+  if (typeof altitudeM !== "number" || !Number.isFinite(altitudeM)) {
+    return undefined;
+  }
+  const flightLevel = Math.max(0, Math.round((altitudeM * 3.28084) / 100));
+  return `FL${flightLevel}`;
+}
+
+function formatAircraftSpeed(object: CopObject): string | undefined {
+  const speedMps = object.movement?.speedMps ?? object.speedMps;
+  if (typeof speedMps !== "number" || !Number.isFinite(speedMps)) {
+    return undefined;
+  }
+  const knots = Math.round(speedMps * 1.94384);
+  const kmh = Math.round(speedMps * 3.6);
+  return `${knots.toLocaleString("cs-CZ")} kt · ${kmh.toLocaleString("cs-CZ")} km/h`;
+}
+
+function formatAircraftCompactSpeed(object: CopObject): string | undefined {
+  const speedMps = object.movement?.speedMps ?? object.speedMps;
+  if (typeof speedMps !== "number" || !Number.isFinite(speedMps)) {
+    return undefined;
+  }
+  return `${Math.round(speedMps * 1.94384).toLocaleString("cs-CZ")} kt`;
+}
+
+function formatAircraftHeading(object: CopObject): string | undefined {
+  const heading = normalizeHeadingDeg(object.movement?.headingDeg ?? object.headingDeg);
+  return heading === undefined ? undefined : `${Math.round(heading)}°`;
+}
+
+function formatAircraftAge(object: CopObject): string | undefined {
+  const positionAgeSeconds = object.attributes?.flightData?.quality?.positionAgeSeconds;
+  if (typeof positionAgeSeconds === "number" && Number.isFinite(positionAgeSeconds)) {
+    return formatAgeSeconds(positionAgeSeconds);
+  }
+  const updatedAtMs = object.lastUpdatedAt ? Date.parse(object.lastUpdatedAt) : Number.NaN;
+  if (!Number.isFinite(updatedAtMs)) {
+    return undefined;
+  }
+  return formatAgeSeconds(Math.max(0, Math.round((Date.now() - updatedAtMs) / 1000)));
+}
+
+function formatAgeSeconds(seconds: number): string {
+  if (seconds < 60) {
+    return `${Math.round(seconds)} s`;
+  }
+  if (seconds < 3600) {
+    return `${Math.round(seconds / 60)} min`;
+  }
+  return `${Math.round(seconds / 3600)} h`;
+}
+
+function formatAircraftConfidence(object: CopObject): string | undefined {
+  const confidence = typeof object.confidence === "number"
+    ? object.confidence
+    : object.attributes?.flightData?.quality?.confidence;
+  return typeof confidence === "number" && Number.isFinite(confidence)
+    ? `spolehlivost ${Math.round(confidence * 100)} %`
+    : undefined;
+}
+
+function formatAircraftStatusLabel(status: string): string {
+  const normalized = status.trim().toUpperCase();
+  if (normalized === "ACTIVE") {
+    return "aktivní";
+  }
+  if (normalized === "STALE") {
+    return "starší data";
+  }
+  if (normalized === "LOST") {
+    return "ztraceno";
+  }
+  return status.trim().toLowerCase() || "stav neznámý";
 }
 
 function formatTrackSelectionSubtitle(object: CopObject): string {
