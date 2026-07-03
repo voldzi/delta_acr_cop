@@ -217,6 +217,7 @@ import {
 import type { CreateSketchDrawingRequest, SketchToolMode, UpdateSketchDrawingRequest } from "./CopMap";
 import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
+import { buildSafetyAreaAlertMatches, type SafetyAreaAlertMatch } from "./safety-area-alerts";
 import {
   createInitialStreamTelemetry,
   formatStreamLatency,
@@ -681,7 +682,6 @@ export function App() {
   const [mapBasemapMode, setMapBasemapMode] = React.useState<MapBasemapMode>(() =>
     normalizeMapBasemapMode(initialPreferences.mapBasemapMode)
   );
-  const [showAlertAreas, setShowAlertAreas] = React.useState(initialPreferences.showAlertAreas ?? false);
   const [predictionMinutes, setPredictionMinutes] = React.useState(() => clamp(initialPreferences.predictionMinutes ?? 10, 2, 20));
   const [predictionMode, setPredictionMode] = React.useState<PredictionMode>(() => readInitialPredictionMode(initialPreferences.predictionMode));
   const [trackHistoryLimit, setTrackHistoryLimit] = React.useState(() => readInitialHistoryLimit(initialPreferences.trackHistoryLimit));
@@ -733,6 +733,7 @@ export function App() {
   const [safetyFeatures, setSafetyFeatures] = React.useState<SafetyFeatureCollectionResponse | null>(null);
   const [safetyStatus, setSafetyStatus] = React.useState<SituationLayerStatus>("loading");
   const [safetyWarnings, setSafetyWarnings] = React.useState<string[]>([]);
+  const [watchedAreaSafetyFeatures, setWatchedAreaSafetyFeatures] = React.useState<SituationFeature[]>([]);
   const [safetySources, setSafetySources] = React.useState<SafetySourceDescriptor[]>([]);
   const [safetyConfig, setSafetyConfig] = React.useState<SafetyConfigResponse | null>(null);
   const [flightFeatures, setFlightFeatures] = React.useState<FlightReferenceFeatureCollectionResponse | null>(null);
@@ -773,6 +774,7 @@ export function App() {
   const [locationStatus, setLocationStatus] = React.useState("Poloha není zaměřená.");
   const [isLocating, setIsLocating] = React.useState(false);
   const [proximityAlertEnabled, setProximityAlertEnabled] = React.useState(initialPreferences.proximityAlertEnabled ?? false);
+  const [safetyAreaPopup, setSafetyAreaPopup] = React.useState<SafetyAreaAlertMatch | null>(null);
   const [alertRadiusKm, setAlertRadiusKm] = React.useState(() => clamp(initialPreferences.alertRadiusKm ?? 10, 1, 50));
   const [viewProfiles, setViewProfiles] = React.useState<ViewProfile[]>(() => readViewProfiles(userStorageScope));
   const [lastProfileName, setLastProfileName] = React.useState<string | null>(null);
@@ -870,6 +872,7 @@ export function App() {
   const skipNextAlertPreferenceWriteRef = React.useRef(false);
   const skipNextPreferenceWriteRef = React.useRef(false);
   const notifiedProximityAlertsRef = React.useRef<Set<string>>(new Set());
+  const notifiedSafetyAreaAlertsRef = React.useRef<Set<string>>(new Set());
   const authToken = getAuthorizationToken(authSession, labToken);
   const authenticatedSessionActive = isAuthSessionActive(authSession);
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken);
@@ -1971,6 +1974,48 @@ export function App() {
     };
   }, [apiBase, authToken, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
 
+  const watchedAreaSafetyBounds = React.useMemo(() => buildWatchedAreaSafetyBounds(aoiRules), [aoiRules]);
+
+  React.useEffect(() => {
+    if (!dataAccessReady || !mapCatalog || !watchedAreaSafetyBounds) {
+      setWatchedAreaSafetyFeatures([]);
+      return;
+    }
+    const catalogLayerIds = safetyAreaAlertCatalogLayerIds(mapCatalog);
+    if (catalogLayerIds.length === 0) {
+      setWatchedAreaSafetyFeatures([]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      fetchMapFeatures(apiBase, authToken, {
+        bbox: watchedAreaSafetyBounds,
+        layerIds: catalogLayerIds,
+        limit: 1_000
+      })
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+          const features = (response.safety?.features ?? [])
+            .map(safetyFeatureToSituationFeature)
+            .filter(isPublicSafetyAlertFeature);
+          setWatchedAreaSafetyFeatures(features);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setWatchedAreaSafetyFeatures([]);
+          }
+        });
+    }, mapFeatureFetchDelayMs);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [apiBase, authToken, dataAccessReady, mapCatalog, watchedAreaSafetyBounds]);
+
   React.useEffect(() => {
     if (!dataAccessReady) {
       return;
@@ -2576,6 +2621,14 @@ export function App() {
     () => filterPublicSafetyAlertFeatures(combinedSituationFeatures?.features ?? []),
     [combinedSituationFeatures]
   );
+  const safetyAreaSourceFeatures = React.useMemo(
+    () => deduplicateSituationFeatures([...publicSafetyAlertFeatures, ...watchedAreaSafetyFeatures]),
+    [publicSafetyAlertFeatures, watchedAreaSafetyFeatures]
+  );
+  const safetyAreaAlerts = React.useMemo(
+    () => buildSafetyAreaAlertMatches(safetyAreaSourceFeatures, aoiRules),
+    [aoiRules, safetyAreaSourceFeatures]
+  );
   const alertSummary = React.useMemo(() => summarizeSafetyAlerts(publicSafetyAlertFeatures), [publicSafetyAlertFeatures]);
   const technicalAlertSummary = React.useMemo(() => summarizeTechnicalAlerts(serverAlerts), [serverAlerts]);
   const priorityAlertSummary = React.useMemo(
@@ -2656,9 +2709,6 @@ export function App() {
       catalogSelectionInitializedRef.current = true;
       setVisibleCatalogLayerIds(normalizeCatalogLayerIds(settings.catalogLayerIds));
     }
-    if (settings.showAlertAreas !== undefined) {
-      setShowAlertAreas(settings.showAlertAreas);
-    }
     if (settings.situationLayerIds !== undefined) {
       setVisibleSituationLayerIds(normalizeSituationLayerIds(settings.situationLayerIds));
     }
@@ -2737,7 +2787,6 @@ export function App() {
     safetyLayerIds: visibleSafetyLayerIds,
     selectedLayer,
     situationCoverageTechnology: coverageTechnology,
-    showAlertAreas,
     showHistory,
     showPrediction,
     situationLayerIds: visibleSituationLayerIds,
@@ -2772,7 +2821,6 @@ export function App() {
     visibleCatalogLayerIds,
     selectedLayer,
     coverageTechnology,
-    showAlertAreas,
     showHistory,
     showPrediction,
     visibleSituationLayerIds,
@@ -3030,6 +3078,36 @@ export function App() {
       });
     }
   }, [proximityAlertEnabled, proximityAlerts]);
+
+  React.useEffect(() => {
+    if (safetyAreaAlerts.length === 0) {
+      notifiedSafetyAreaAlertsRef.current.clear();
+      setSafetyAreaPopup(null);
+      return;
+    }
+
+    const activeKeys = new Set(safetyAreaAlerts.map((alert) => alert.key));
+    notifiedSafetyAreaAlertsRef.current.forEach((key) => {
+      if (!activeKeys.has(key)) {
+        notifiedSafetyAreaAlertsRef.current.delete(key);
+      }
+    });
+
+    setSafetyAreaPopup((current) => (current && activeKeys.has(current.key) ? current : null));
+
+    const nextAlert = safetyAreaAlerts.find((alert) => !notifiedSafetyAreaAlertsRef.current.has(alert.key));
+    if (!nextAlert) {
+      return;
+    }
+
+    notifiedSafetyAreaAlertsRef.current.add(nextAlert.key);
+    setSafetyAreaPopup(nextAlert);
+    if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "granted") {
+      new window.Notification("Výstraha ve sledované zóně", {
+        body: `${nextAlert.aoiRule.name}: ${nextAlert.title}`
+      });
+    }
+  }, [safetyAreaAlerts]);
 
   async function askAi() {
     if (!authToken) {
@@ -4012,7 +4090,6 @@ export function App() {
         refreshSeconds,
         safetyLayerIds: visibleSafetyLayerIds,
         selectedLayer,
-        showAlertAreas,
         showHistory,
         showPrediction,
         situationLayerIds: visibleSituationLayerIds,
@@ -4480,6 +4557,18 @@ export function App() {
     setMobileSheet(mobileDetailSheetForSelection(isSelected));
   }, [mobileDetailSheetForSelection, selectedSituationFeatureId]);
 
+  const handleOpenSafetyAreaAlert = React.useCallback((alert: SafetyAreaAlertMatch) => {
+    const feature = alert.feature;
+    setActiveWorkspace("map");
+    setSelectedSituationFeatureId(feature.properties.featureId);
+    setSelectedSituationFeatureStableKey(stableSituationFeatureSelectionKey(feature));
+    setSelectedObjectId(null);
+    setSelectedSketchDrawingId(null);
+    setMobileSketchOpen(false);
+    setMobileSheet(mobileDetailSheetForSelection(false));
+    setSafetyAreaPopup(null);
+  }, [mobileDetailSheetForSelection]);
+
   const handleMapClearSelection = React.useCallback(() => {
     setSelectedObjectId(null);
     setSelectedSituationFeatureId(null);
@@ -4515,7 +4604,6 @@ export function App() {
     setMapBasemapMode(template.mapBasemapMode);
     setPublicFlightSymbolMode(template.publicFlightSymbolMode);
     setMapClusterEnabled(template.mapClusterEnabled);
-    setShowAlertAreas(template.showAlertAreas);
     setActiveWorkspace("map");
   }, []);
 
@@ -4671,6 +4759,14 @@ export function App() {
           </button>
         </div>
       </header>
+
+      {safetyAreaPopup ? (
+        <SafetyAreaPopup
+          alert={safetyAreaPopup}
+          onClose={() => setSafetyAreaPopup(null)}
+          onOpenDetail={handleOpenSafetyAreaAlert}
+        />
+      ) : null}
 
       <section className="app-shell-body">
         <WorkspaceNavigator
@@ -5042,7 +5138,7 @@ export function App() {
                 radioPointPickLabel={radioPointPickTarget ? radioPointPickTargetLabel(radioPointPickTarget) : undefined}
                 reportLocationPickActive={communityReportLocationPickMode}
                 selectedSketchDrawingId={selectedSketchDrawingId}
-                showAlertAreas={showAlertAreas}
+                showAlertAreas={false}
                 showProximityAlertRadius={proximityAlertEnabled}
                 sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : []}
                 sketchMode={sketchMode}
@@ -5534,7 +5630,6 @@ export function App() {
           refreshSeconds={refreshSeconds}
           serverProfileUpdatedAt={serverProfileUpdatedAt}
           mapClusterEnabled={mapClusterEnabled}
-          showAlertAreas={showAlertAreas}
           showHistory={showHistory}
           showPrediction={showPrediction}
           trackHistoryDisplayMode={trackHistoryDisplayMode}
@@ -5575,7 +5670,6 @@ export function App() {
           onPublicFlightSymbolModeChange={setPublicFlightSymbolMode}
           onProximityAlertEnabledChange={(value) => void handleProximityAlertToggle(value)}
           onRefreshSecondsChange={setRefreshSeconds}
-          onShowAlertAreasChange={setShowAlertAreas}
           onShowHistoryChange={setShowHistory}
           onShowPredictionChange={setShowPrediction}
           onTabChange={setSettingsTab}
@@ -6074,6 +6168,42 @@ function ProximityAlertList({ alerts }: { alerts: ProximityAlert[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function SafetyAreaPopup({
+  alert,
+  onClose,
+  onOpenDetail
+}: {
+  alert: SafetyAreaAlertMatch;
+  onClose: () => void;
+  onOpenDetail: (alert: SafetyAreaAlertMatch) => void;
+}) {
+  const distanceLabel = formatSafetyAreaDistance(alert.distanceKm);
+  return (
+    <aside className={clsx("safety-area-popup", alert.tone)} role="status" aria-live="polite">
+      <button className="safety-area-popup-close" onClick={onClose} title="Zavřít upozornění" type="button">
+        <X size={16} />
+      </button>
+      <div className="safety-area-popup-icon" aria-hidden="true">
+        <AlertTriangle size={22} />
+      </div>
+      <div className="safety-area-popup-body">
+        <span className="safety-area-popup-kicker">Výstraha ve sledované zóně</span>
+        <strong>{alert.title}</strong>
+        <p>{alert.detail ?? `Zóna ${alert.aoiRule.name} obsahuje aktivní výstrahu.`}</p>
+        <div className="safety-area-popup-meta">
+          <span>{alert.aoiRule.name}</span>
+          {distanceLabel ? <span>{distanceLabel}</span> : null}
+          {alert.validUntil ? <span>Do {formatShortDateTime(alert.validUntil)}</span> : null}
+        </div>
+        <button className="safety-area-popup-action" onClick={() => onOpenDetail(alert)} type="button">
+          <MapPin size={15} />
+          Zobrazit v mapě
+        </button>
+      </div>
+    </aside>
   );
 }
 
@@ -8429,7 +8559,6 @@ function SettingsDrawer({
   proximityAlertEnabled,
   refreshSeconds,
   serverProfileUpdatedAt,
-  showAlertAreas,
   showHistory,
   showPrediction,
   trackHistoryDisplayMode,
@@ -8460,7 +8589,6 @@ function SettingsDrawer({
   onPublicFlightSymbolModeChange,
   onProximityAlertEnabledChange,
   onRefreshSecondsChange,
-  onShowAlertAreasChange,
   onShowHistoryChange,
   onShowPredictionChange,
   onTabChange,
@@ -8502,7 +8630,6 @@ function SettingsDrawer({
   proximityAlertEnabled: boolean;
   refreshSeconds: RefreshSeconds;
   serverProfileUpdatedAt: string | null;
-  showAlertAreas: boolean;
   showHistory: boolean;
   showPrediction: boolean;
   trackHistoryDisplayMode: TrackHistoryDisplayMode;
@@ -8533,7 +8660,6 @@ function SettingsDrawer({
   onPublicFlightSymbolModeChange: (value: PublicFlightSymbolMode) => void;
   onProximityAlertEnabledChange: (value: boolean) => void;
   onRefreshSecondsChange: (value: RefreshSeconds) => void;
-  onShowAlertAreasChange: (value: boolean) => void;
   onShowHistoryChange: (value: boolean) => void;
   onShowPredictionChange: (value: boolean) => void;
   onTabChange: (value: SettingsTab) => void;
@@ -8719,11 +8845,7 @@ function SettingsDrawer({
                 <input type="checkbox" checked={proximityAlertEnabled} onChange={(event) => onProximityAlertEnabledChange(event.target.checked)} />
                 Upozornit na rizika v okolí mojí polohy
               </label>
-              <label className="toggle-row">
-                <input type="checkbox" checked={showAlertAreas} onChange={(event) => onShowAlertAreasChange(event.target.checked)} />
-                Zobrazit výstražné oblasti v mapě
-              </label>
-              <p className="settings-help">Výstražné oblasti jsou mapová vrstva pro rizika v okolí, uživatelské zóny a serverové události. Seznam výstrah zůstává dostupný i při vypnutém zobrazení v mapě.</p>
+              <p className="settings-help">Výstražné oblasti se zobrazují jako samostatné mapové vrstvy v katalogu. Tady nastavujete jen osobní upozornění pro polohu a sledované zóny.</p>
               <label className="range-label">
                 Poloměr okolí
                 <input
@@ -9412,7 +9534,6 @@ function workspaceTemplatePreferences(templateId: WorkspaceTemplateId): {
   mapBasemapMode: MapBasemapMode;
   mapClusterEnabled: boolean;
   publicFlightSymbolMode: PublicFlightSymbolMode;
-  showAlertAreas: boolean;
   workspaceLayout: Required<WorkspaceLayoutPreferences>;
   workspaceSkin: WorkspaceSkin;
 } {
@@ -9421,7 +9542,6 @@ function workspaceTemplatePreferences(templateId: WorkspaceTemplateId): {
       mapBasemapMode: "civil",
       mapClusterEnabled: true,
       publicFlightSymbolMode: "civil",
-      showAlertAreas: true,
       workspaceLayout: {
         contextRailVisible: true,
         leftPanelMode: "open",
@@ -9438,7 +9558,6 @@ function workspaceTemplatePreferences(templateId: WorkspaceTemplateId): {
       mapBasemapMode: "risk",
       mapClusterEnabled: true,
       publicFlightSymbolMode: "civil",
-      showAlertAreas: true,
       workspaceLayout: {
         contextRailVisible: false,
         leftPanelMode: "collapsed",
@@ -9454,7 +9573,6 @@ function workspaceTemplatePreferences(templateId: WorkspaceTemplateId): {
     mapBasemapMode: "dark",
     mapClusterEnabled: false,
     publicFlightSymbolMode: "standard",
-    showAlertAreas: true,
     workspaceLayout: defaultWorkspaceLayout,
     workspaceSkin: "operations"
   };
@@ -13408,6 +13526,24 @@ function filterPublicSafetyAlertFeatures(features: SituationFeature[]): Situatio
   return features.filter(isPublicSafetyAlertFeature);
 }
 
+function deduplicateSituationFeatures(features: SituationFeature[]): SituationFeature[] {
+  const seen = new Set<string>();
+  const deduplicated: SituationFeature[] = [];
+  for (const feature of features) {
+    const key = situationFeatureDeduplicationKey(feature);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduplicated.push(feature);
+  }
+  return deduplicated;
+}
+
+function situationFeatureDeduplicationKey(feature: SituationFeature): string {
+  return String(feature.properties.featureId ?? feature.id ?? `${feature.properties.layer}:${feature.properties.sourceId}:${JSON.stringify(feature.geometry)}`);
+}
+
 interface PriorityAlertInput {
   alerts: CopAlert[];
   features: SituationFeature[];
@@ -15851,6 +15987,19 @@ function formatProximityAlert(alert: ProximityAlert): string {
   return `${current} od mé polohy`;
 }
 
+function formatSafetyAreaDistance(distanceKm: number | null): string | null {
+  if (typeof distanceKm !== "number" || !Number.isFinite(distanceKm)) {
+    return null;
+  }
+  if (distanceKm <= 0.05) {
+    return "v zóně";
+  }
+  if (distanceKm < 1) {
+    return `${Math.round(distanceKm * 1000)} m`;
+  }
+  return `${distanceKm.toFixed(1)} km`;
+}
+
 function predictionModeLabel(mode: PredictionMode): string {
   return predictionModeOptions.find(([value]) => value === mode)?.[1] ?? "Pokročilá";
 }
@@ -16318,6 +16467,21 @@ function catalogLayerIdsForProviderSelection(catalog: MapCatalogResponse, provid
     .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
     .filter((layer) => (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === providerId)
     .map((layer) => layer.layerId);
+}
+
+function safetyAreaAlertCatalogLayerIds(catalog: MapCatalogResponse): string[] {
+  return catalog.layers
+    .filter((layer) => catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
+    .filter((layer) => layer.query.providerId === "sim.safety-data" && (layer.query.mode === "bbox" || layer.query.mode === "grid"))
+    .filter((layer) => isSafetyAreaAlertCatalogLayerId(layer.layerId))
+    .map((layer) => layer.layerId);
+}
+
+function isSafetyAreaAlertCatalogLayerId(layerId: string): boolean {
+  return layerId === "public.safety.warnings"
+    || layerId === "public.safety.weather_alerts"
+    || layerId === "public.safety.fire"
+    || layerId === "public.safety.flood";
 }
 
 function expandImplicitCatalogLayerIds(catalog: MapCatalogResponse, selectedLayerIds: string[]): string[] {
@@ -17077,6 +17241,70 @@ export function buildStableSituationQueryBounds(bounds: MapBounds): MapBounds {
     south: centerLat - queryHeight / 2,
     west: centerLon - queryWidth / 2
   }, 0.25);
+}
+
+function buildWatchedAreaSafetyBounds(aoiRules: AoiRule[]): MapBounds | null {
+  const enabledRules = aoiRules.filter((rule) => rule.enabled);
+  if (enabledRules.length === 0) {
+    return null;
+  }
+  const bounds = enabledRules
+    .map(aoiRuleBounds)
+    .filter((value): value is MapBounds => value !== null)
+    .reduce<MapBounds | null>((merged, next) => merged ? mergeMapBounds(merged, next) : next, null);
+  return bounds ? snapBoundsToGrid(bounds, 0.1) : null;
+}
+
+function aoiRuleBounds(rule: AoiRule): MapBounds | null {
+  const polygonBounds = rule.polygon ? aoiPolygonBounds(rule.polygon.coordinates) : null;
+  if (polygonBounds) {
+    return expandBounds(polygonBounds, 0.03);
+  }
+  if (!Number.isFinite(rule.lat) || !Number.isFinite(rule.lon)) {
+    return null;
+  }
+  const radiusKm = clamp(rule.radiusKm, 0.2, 300);
+  const latDelta = radiusKm / 111;
+  const lonFactor = Math.max(0.2, Math.abs(Math.cos(rule.lat * Math.PI / 180)));
+  const lonDelta = radiusKm / (111 * lonFactor);
+  return {
+    east: clamp(rule.lon + lonDelta, -180, 180),
+    north: clamp(rule.lat + latDelta, -90, 90),
+    south: clamp(rule.lat - latDelta, -90, 90),
+    west: clamp(rule.lon - lonDelta, -180, 180)
+  };
+}
+
+function aoiPolygonBounds(coordinates: Array<Array<[number, number]>>): MapBounds | null {
+  const points = coordinates.flatMap((ring) => ring)
+    .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+  if (points.length === 0) {
+    return null;
+  }
+  return {
+    east: clamp(Math.max(...points.map(([lon]) => lon)), -180, 180),
+    north: clamp(Math.max(...points.map(([, lat]) => lat)), -90, 90),
+    south: clamp(Math.min(...points.map(([, lat]) => lat)), -90, 90),
+    west: clamp(Math.min(...points.map(([lon]) => lon)), -180, 180)
+  };
+}
+
+function expandBounds(bounds: MapBounds, paddingDegrees: number): MapBounds {
+  return {
+    east: clamp(bounds.east + paddingDegrees, -180, 180),
+    north: clamp(bounds.north + paddingDegrees, -90, 90),
+    south: clamp(bounds.south - paddingDegrees, -90, 90),
+    west: clamp(bounds.west - paddingDegrees, -180, 180)
+  };
+}
+
+function mergeMapBounds(a: MapBounds, b: MapBounds): MapBounds {
+  return {
+    east: Math.max(a.east, b.east),
+    north: Math.max(a.north, b.north),
+    south: Math.min(a.south, b.south),
+    west: Math.min(a.west, b.west)
+  };
 }
 
 export function mapBoundsContainedBy(container: MapBounds, bounds: MapBounds): boolean {

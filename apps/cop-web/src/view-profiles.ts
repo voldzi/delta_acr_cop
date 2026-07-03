@@ -37,7 +37,6 @@ export interface ViewProfileSettings {
   safetyLayerIds?: string[];
   selectedLayer?: CopLayer;
   situationCoverageTechnology?: string;
-  showAlertAreas?: boolean;
   showHistory?: boolean;
   showPrediction?: boolean;
   situationLayerIds?: string[];
@@ -78,7 +77,6 @@ export const builtInViewProfiles: ViewProfile[] = [
       safetyLayerIds: ["warnings"],
       selectedLayer: "air-situation",
       trackLayerIds: ["air-situation"],
-      showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
       trackHistoryDisplayMode: "all",
@@ -106,7 +104,6 @@ export const builtInViewProfiles: ViewProfile[] = [
       safetyLayerIds: ["warnings"],
       selectedLayer: "uav",
       trackLayerIds: ["uav"],
-      showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
       trackHistoryDisplayMode: "all",
@@ -134,7 +131,6 @@ export const builtInViewProfiles: ViewProfile[] = [
       safetyLayerIds: ["warnings", "flood"],
       selectedLayer: "public-flights",
       trackLayerIds: ["public-flights"],
-      showAlertAreas: false,
       showHistory: true,
       showPrediction: true,
       publicFlightSymbolMode: "civil",
@@ -162,7 +158,6 @@ export const builtInViewProfiles: ViewProfile[] = [
       safetyLayerIds: ["warnings", "flood"],
       selectedLayer: "data-quality",
       trackLayerIds: ["data-quality"],
-      showAlertAreas: true,
       showHistory: false,
       showPrediction: false,
       trackHistoryDisplayMode: "all",
@@ -186,7 +181,6 @@ export const builtInViewProfiles: ViewProfile[] = [
       safetyLayerIds: ["warnings", "flood"],
       selectedLayer: "air-situation",
       trackLayerIds: ["air-situation"],
-      showAlertAreas: true,
       showHistory: true,
       showPrediction: false,
       situationLayerIds: ["weather", "ground", "traffic"],
@@ -274,7 +268,6 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
     refreshSeconds: optionalNumber(value.refreshSeconds),
     safetyLayerIds: optionalStringArray(value.safetyLayerIds),
     selectedLayer: normalizeLayer(value.selectedLayer),
-    showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
     situationLayerIds: optionalStringArray(value.situationLayerIds),
