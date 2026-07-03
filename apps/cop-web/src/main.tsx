@@ -16462,7 +16462,7 @@ function toggleCatalogLayerId(current: string[], layerId: string, enabled: boole
 }
 
 function catalogLayerIdsForProviderSelection(catalog: MapCatalogResponse, providerId: CatalogProviderId, selectedLayerIds: string[]): string[] {
-  const selected = new Set(expandImplicitCatalogLayerIds(catalog, selectedLayerIds));
+  const selected = new Set(selectedLayerIds);
   return catalog.layers
     .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
     .filter((layer) => (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === providerId)
@@ -16484,17 +16484,6 @@ function isSafetyAreaAlertCatalogLayerId(layerId: string): boolean {
     || layerId === "public.safety.flood";
 }
 
-function expandImplicitCatalogLayerIds(catalog: MapCatalogResponse, selectedLayerIds: string[]): string[] {
-  const selected = new Set(selectedLayerIds);
-  if (selected.has("public.traffic.transit")) {
-    const transitStopsLayer = catalog.layers.find((layer) => layer.layerId === "public.traffic.transit_stops");
-    if (transitStopsLayer && catalogLayerAvailableForMap(transitStopsLayer) && isImplementedCatalogLayer(transitStopsLayer)) {
-      selected.add("public.traffic.transit_stops");
-    }
-  }
-  return Array.from(selected);
-}
-
 function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | null, selectedLayerIds: string[]): number | undefined {
   if (!catalog) {
     return undefined;
@@ -16513,7 +16502,7 @@ function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | nul
 }
 
 function selectedTrafficCatalogLayerIds(catalog: MapCatalogResponse, selectedLayerIds: string[]): string[] {
-  const selected = new Set(expandImplicitCatalogLayerIds(catalog, selectedLayerIds));
+  const selected = new Set(selectedLayerIds);
   return catalog.layers
     .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
     .filter((layer) => layer.query.providerId === "sim.situation-data" && isTrafficCatalogLayerId(layer.layerId))
@@ -17476,16 +17465,16 @@ function trafficFeatureBelongsToCatalogLayers(feature: SituationFeature, layerId
     return false;
   }
   const selected = new Set(layerIds);
+  const presentation = resolveTransportPresentation(feature);
+  if (presentation?.kind === "stop" || presentation?.positionKind === "static_stop") {
+    return selected.has("public.traffic.transit_stops");
+  }
   const providerLayerId = feature.properties.layerId ?? feature.properties.providerLayerId;
   if (typeof providerLayerId === "string" && selected.has(providerLayerId)) {
     return true;
   }
-  const presentation = resolveTransportPresentation(feature);
   if (!presentation) {
     return selected.has("public.traffic.transit");
-  }
-  if (presentation.kind === "stop" || presentation.positionKind === "static_stop") {
-    return selected.has("public.traffic.transit_stops");
   }
   return selected.has("public.traffic.transit");
 }
