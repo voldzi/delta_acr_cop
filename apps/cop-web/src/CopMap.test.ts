@@ -104,6 +104,62 @@ describe("COP map data helpers", () => {
     expect(objectsToTrackFeatureCollection([publicFlight]).features[0]?.properties.label).toBe("CSA42");
   });
 
+  it("labels public flights without ICAO24 by the SIM track identity", () => {
+    const baseFlight = {
+      objectType: "UAV",
+      affiliation: "NEUTRAL",
+      domain: "AIR",
+      status: "ACTIVE",
+      confidence: 0.82,
+      position: { lat: 50.1, lon: 14.4 },
+      attributes: {
+        dataOrigin: "PUBLIC_FLIGHT_AGGREGATE"
+      }
+    } satisfies Partial<CopObject>;
+
+    const remoteIdFlight = {
+      ...baseFlight,
+      objectId: "flight:remote_id:rid-42",
+      attributes: {
+        ...baseFlight.attributes,
+        flightData: {
+          trackId: "flight:remote_id:rid-42",
+          trackKey: "CZ-RID-42",
+          trackKeyKind: "remote_id"
+        }
+      }
+    } satisfies CopObject;
+
+    const radarFlight = {
+      ...baseFlight,
+      objectId: "flight:radar_track:rdr-2042",
+      attributes: {
+        ...baseFlight.attributes,
+        flightData: {
+          trackId: "flight:radar_track:rdr-2042",
+          trackKey: "RDR-2042",
+          trackKeyKind: "radar_track"
+        }
+      }
+    } satisfies CopObject;
+
+    const partnerFlight = {
+      ...baseFlight,
+      objectId: "flight:partner_track:partner-abc",
+      attributes: {
+        ...baseFlight.attributes,
+        flightData: {
+          trackId: "flight:partner_track:partner-abc",
+          trackKeyKind: "partner_track"
+        }
+      }
+    } satisfies CopObject;
+
+    expect(formatTrackLabel(remoteIdFlight)).toBe("CZ-RID-42");
+    expect(formatTrackLabel(radarFlight)).toBe("RDR-2042");
+    expect(formatTrackLabel(partnerFlight)).toBe("partner-abc");
+  });
+
   it("can render public flights as civil aircraft symbols with heading", () => {
     const publicFlight = {
       objectId: "flight:icao24:49f007",
@@ -2343,6 +2399,40 @@ describe("COP map data helpers", () => {
     expect(predictionCollection.features[0]?.geometry.coordinates).toHaveLength(7);
     expect(predictionCollection.features[0]?.geometry.coordinates[1]?.[0]).toBeGreaterThan(14);
     expect(predictionCollection.features[0]?.properties.method).toBe("telemetry");
+  });
+
+  it("adds an uncertainty polygon for the selected advanced prediction", () => {
+    const objects = [
+      {
+        objectId: "AIR_SIM_AIRCRAFT-0003",
+        objectType: "AIRCRAFT",
+        affiliation: "FRIEND",
+        domain: "AIR",
+        status: "ACTIVE",
+        confidence: 0.9,
+        position: { lat: 50.03, lon: 14.05 },
+        movement: { speedMps: 115, headingDeg: 78, verticalRateMps: 1.2 }
+      }
+    ] satisfies CopObject[];
+    const history = {
+      "AIR_SIM_AIRCRAFT-0003": [
+        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
+        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.01, lon: 14.018, timestamp: "2026-05-19T08:01:00Z" },
+        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.02, lon: 14.035, timestamp: "2026-05-19T08:02:00Z" },
+        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.03, lon: 14.05, timestamp: "2026-05-19T08:03:00Z" }
+      ]
+    };
+
+    const predictionCollection = objectsToPredictionFeatureCollection(objects, history, "AIR_SIM_AIRCRAFT-0003", 8, "advanced");
+    const pathFeature = predictionCollection.features.find((feature) => feature.properties.kind === "path");
+    const uncertaintyFeature = predictionCollection.features.find((feature) => feature.properties.kind === "uncertainty");
+
+    expect(predictionCollection.features).toHaveLength(2);
+    expect(pathFeature?.geometry.type).toBe("LineString");
+    expect(pathFeature?.properties.method).toBe("advanced");
+    expect(uncertaintyFeature?.geometry.type).toBe("Polygon");
+    expect(uncertaintyFeature?.properties.selected).toBe(true);
+    expect(uncertaintyFeature?.properties.uncertaintyM).toBeGreaterThan(90);
   });
 
   it("can limit route history to the selected object", () => {

@@ -53,7 +53,10 @@ describe("FlightDataSourceAdapter", () => {
                 mode: "mock",
                 sourceId: "mock"
               }
-            ]
+            ],
+            trackId: "flight:icao24:4d2216",
+            trackKey: "4d2216",
+            trackKeyKind: "icao24"
           }
         },
         objectId: "flight:icao24:4d2216",
@@ -166,6 +169,8 @@ function sampleFlightResponse() {
         ],
         speedMps: 138,
         trackId: "flight:icao24:4d2216",
+        trackKey: "4d2216",
+        trackKeyKind: "icao24",
         verticalRateMps: 2.1
       }
     ],

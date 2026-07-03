@@ -213,6 +213,8 @@ interface FlightTrack {
   speedMps?: number | null;
   status?: Record<string, unknown>;
   trackId: string;
+  trackKey?: string | null;
+  trackKeyKind?: string | null;
   verticalRateMps?: number | null;
 }
 
@@ -538,7 +540,10 @@ function mapFlightTrackToEvent(
             registration: cleanString(track.registration),
             route: track.route ?? {},
             sources: track.sources,
-            status: track.status ?? {}
+            status: track.status ?? {},
+            trackId: track.trackId,
+            trackKey: cleanString(track.trackKey),
+            trackKeyKind: cleanString(track.trackKeyKind)
           }
         },
         confidence,
@@ -1044,6 +1049,8 @@ function normalizeTrack(value: unknown): FlightTrack[] {
       speedMps: optionalNullableNumber(value.speedMps),
       status: isRecord(value.status) ? value.status : undefined,
       trackId: value.trackId,
+      trackKey: optionalString(value.trackKey),
+      trackKeyKind: optionalString(value.trackKeyKind),
       verticalRateMps: optionalNullableNumber(value.verticalRateMps)
     }
   ];

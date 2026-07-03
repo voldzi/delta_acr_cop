@@ -1,4 +1,5 @@
 import type { CopObject, PlaceGeocodeResult, SituationFeature } from "./cop-data";
+import { collectTrackIdentityTokens, formatTrackLabel } from "./track-label";
 
 export type MapSearchResultKind = "feature" | "place" | "track";
 
@@ -55,9 +56,7 @@ export function buildMapSearchResults(
       object.affiliation,
       object.domain,
       object.status,
-      stringValue(object.attributes?.flightData?.icao24),
-      stringValue(object.attributes?.flightData?.registration),
-      stringValue(object.attributes?.flightData?.callsign)
+      ...collectTrackIdentityTokens(object)
     ]);
     if (score > 0) {
       results.push({ ...result, score });
@@ -100,11 +99,7 @@ export function buildMapSearchResults(
 }
 
 export function buildTrackSearchResult(object: CopObject, center: [number, number]): MapSearchResult {
-  const flightData = object.attributes?.flightData;
-  const label = cleanSearchText(flightData?.callsign)
-    ?? cleanSearchText(flightData?.registration)
-    ?? cleanSearchText(flightData?.icao24)
-    ?? object.objectId;
+  const label = formatTrackLabel(object);
   const typeLabel = isPublicFlight(object) ? "Let" : object.synthetic ? "Simulace" : "Track";
   return {
     center,

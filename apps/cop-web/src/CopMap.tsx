@@ -92,7 +92,7 @@ import {
   transportSelectionKey,
   type TransportIconKind
 } from "./transport-presentation";
-import { formatTrackLabel } from "./track-label";
+import { compactTrackIdentifier, formatTrackIdentity, formatTrackKeyKindLabel, formatTrackLabel } from "./track-label";
 
 const trackSourceId = "cop-live-tracks";
 const trackClusterSourceId = "cop-live-track-clusters";
@@ -110,6 +110,7 @@ const alertAreaSourceId = "cop-alert-areas";
 const situationSourceId = "cop-situation-context";
 const situationOsmClusterSourceId = "cop-situation-osm-clusters";
 const trackHistoryLayerId = "cop-track-history-line";
+const trackPredictionUncertaintyLayerId = "cop-track-prediction-uncertainty";
 const trackPredictionLayerId = "cop-track-prediction-line";
 const userAlertRadiusFillLayerId = "cop-user-alert-radius-fill";
 const userAlertRadiusLineLayerId = "cop-user-alert-radius-line";
@@ -378,15 +379,24 @@ export interface TrackFeatureCollection {
 
 export interface TrackLineFeature {
   type: "Feature";
-  geometry: {
-    type: "LineString";
-    coordinates: Array<[number, number]>;
-  };
+  geometry:
+    | {
+        type: "LineString";
+        coordinates: Array<[number, number]>;
+      }
+    | {
+        type: "Polygon";
+        coordinates: Array<Array<[number, number]>>;
+      };
   properties: {
     objectId: string;
     color: string;
+    confidence?: number;
+    kind?: "path" | "uncertainty";
     selected: boolean;
     method?: PredictionMethod;
+    opacity?: number;
+    uncertaintyM?: number;
   };
 }
 
@@ -3215,9 +3225,22 @@ function CopMapComponent({
         });
 
         map.addLayer({
+          id: trackPredictionUncertaintyLayerId,
+          type: "fill",
+          source: trackPredictionSourceId,
+          filter: ["==", ["geometry-type"], "Polygon"],
+          paint: {
+            "fill-color": ["get", "color"],
+            "fill-opacity": ["case", ["has", "opacity"], ["get", "opacity"], 0.12],
+            "fill-outline-color": ["get", "color"]
+          }
+        });
+
+        map.addLayer({
           id: trackPredictionLayerId,
           type: "line",
           source: trackPredictionSourceId,
+          filter: ["==", ["geometry-type"], "LineString"],
           layout: {
             "line-cap": "round",
             "line-join": "round"
@@ -8704,7 +8727,11 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
     }
   }
   const aircraft = isRecord(flightData?.aircraft) ? flightData.aircraft : {};
-  const iconHint = normalizeCivilAircraftIconKind(stringProperty(aircraft.iconHint));
+  const iconHint = normalizeCivilAircraftIconKind(
+    stringProperty(aircraft.iconKey)
+    ?? stripSvgExtension(stringProperty(aircraft.iconFile))
+    ?? stringProperty(aircraft.iconHint)
+  );
   if (iconHint) {
     return iconHint;
   }
@@ -9080,6 +9107,9 @@ function formatAircraftSelectionCard(object: CopObject): MapSelectionCard {
   const aircraftType = formatAircraftTypeLabel(aircraft);
   const registration = stringProperty(flightData?.registration);
   const icao24 = stringProperty(flightData?.icao24);
+  const trackIdentity = formatTrackIdentity(flightData, object.objectId);
+  const trackKeyKind = formatTrackKeyKindLabel(flightData?.trackKeyKind);
+  const trackId = compactTrackIdentifier(stringProperty(flightData?.trackId) ?? object.objectId);
   const adsbCategory = formatAircraftAdsbCategoryLabel(aircraft);
   const aircraftClass = recordString(aircraft, "classKey") ?? recordString(aircraft, "aircraftClass");
   const route = formatAircraftRouteLabel(flightData);
@@ -9102,6 +9132,9 @@ function formatAircraftSelectionCard(object: CopObject): MapSelectionCard {
     aircraftType ? { label: "Typ", value: aircraftType } : undefined,
     adsbCategory ? { label: "Kategorie", value: adsbCategory } : undefined,
     aircraftClass ? { label: "Třída", value: aircraftClass } : undefined,
+    trackIdentity ? { label: "Identita stopy", value: trackIdentity } : undefined,
+    trackKeyKind ? { label: "Typ identity", value: trackKeyKind } : undefined,
+    trackId && trackId !== trackIdentity ? { label: "Track ID", value: trackId } : undefined,
     registration ? { label: "Registrace", value: registration } : undefined,
     icao24 ? { label: "ICAO24", value: icao24 } : undefined,
     route ? { label: "Trasa", value: route } : undefined,
@@ -9337,11 +9370,15 @@ function formatSituationFeatureSelectionCard(
     return formatWeatherFeatureSelectionCard(feature);
   }
   const subtitle = formatSituationFeatureSubtitle(feature);
+  const municipalLocationPrecision = formatMunicipalAlertLocationPrecision(feature);
   return {
     compactSubtitle: subtitle,
+    detailRows: municipalLocationPrecision
+      ? [{ label: "Přesnost polohy", value: municipalLocationPrecision }]
+      : undefined,
     eyebrow: "Vybraný prvek",
     key: `feature:${feature.properties.featureId}`,
-    metaItems: [],
+    metaItems: municipalLocationPrecision ? ["poloha není přesná"] : [],
     subtitle,
     title: formatSituationFeatureTitle(feature)
   };
@@ -9784,6 +9821,20 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
   ].filter(Boolean).join(" · ");
 }
 
+function formatMunicipalAlertLocationPrecision(feature: SituationFeature): string | undefined {
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
+  const locationPrecision = stringProperty(feature.properties.tags?.locationPrecision)
+    ?? stringProperty(providerTags.locationPrecision);
+  if (feature.properties.sourceId !== "municipal_alerts" && locationPrecision !== "authority_fallback_point") {
+    return undefined;
+  }
+  if (locationPrecision === "authority_fallback_point") {
+    return "bod obce nebo autority, ne přesná poloha události";
+  }
+  return undefined;
+}
+
 function situationLayerDisplayName(feature: SituationFeature): string {
   if (isTakGatewayFeature(feature)) {
     return `TAK ${feature.properties.layer}`;
@@ -10026,7 +10077,8 @@ export function objectsToPredictionFeatureCollection(
         return [];
       }
       const affiliation = getAffiliationPresentation(object.affiliation);
-      return [
+      const selected = object.objectId === selectedObjectId;
+      const features: TrackLineFeature[] = [
         {
           type: "Feature" as const,
           geometry: {
@@ -10036,11 +10088,36 @@ export function objectsToPredictionFeatureCollection(
           properties: {
             objectId: object.objectId,
             color: affiliation.color,
-            selected: object.objectId === selectedObjectId,
-            method: prediction.method
+            confidence: prediction.confidence,
+            kind: "path",
+            selected,
+            method: prediction.method,
+            uncertaintyM: prediction.uncertaintyM
           }
         }
       ];
+      if (selected && prediction.uncertaintyPolygon) {
+        features.push({
+          type: "Feature" as const,
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: prediction.uncertaintyPolygon.map((ring) =>
+              ring.map((point) => [point.lon, point.lat] as [number, number])
+            )
+          },
+          properties: {
+            objectId: object.objectId,
+            color: affiliation.color,
+            confidence: prediction.confidence,
+            kind: "uncertainty",
+            method: prediction.method,
+            opacity: 0.1,
+            selected,
+            uncertaintyM: prediction.uncertaintyM
+          }
+        });
+      }
+      return features;
     })
   };
 }

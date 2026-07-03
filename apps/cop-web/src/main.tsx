@@ -348,7 +348,7 @@ import {
   readWebPushPermissionState,
   type WebPushUiState
 } from "./web-push";
-import { formatTrackLabel } from "./track-label";
+import { collectTrackIdentityTokens, formatTrackLabel } from "./track-label";
 import "./styles.css";
 
 export { formatWeatherStationAttribution } from "./weather-detail";
@@ -405,6 +405,7 @@ const defaultTakLayerIds: TakLayerId[] = [];
 const pocDemoScenarioId = "flood-central-bohemia";
 const zoneColorOptions = ["#8cb6d8", "#c8f08d", "#facc15", "#fb923c", "#ef4444", "#a78bfa"] as const;
 const predictionModeOptions: Array<[PredictionMode, string]> = [
+  ["advanced", "Pokročilá"],
   ["adaptive", "Adaptivní"],
   ["telemetry", "Telemetrie"],
   ["history", "Trend"],
@@ -12692,6 +12693,7 @@ function applyObjectSearch(objects: CopObject[], searchQuery: string): CopObject
 function buildObjectSearchText(object: CopObject): string {
   const flightData = object.attributes?.flightData;
   const provenance = object.attributes?.provenance;
+  const searchableAttributes = flightData ? undefined : object.attributes;
   const values: unknown[] = [
     object.objectId,
     formatTrackLabel(object),
@@ -12699,6 +12701,7 @@ function buildObjectSearchText(object: CopObject): string {
     object.affiliation,
     object.domain,
     object.status,
+    ...collectTrackIdentityTokens(object),
     flightData?.callsign,
     flightData?.registration,
     flightData?.icao24,
@@ -12709,7 +12712,7 @@ function buildObjectSearchText(object: CopObject): string {
     provenance?.sourceDeviceId,
     object.position?.lat,
     object.position?.lon,
-    object.attributes
+    searchableAttributes
   ];
   return collectSearchText(values).join(" ").toLowerCase();
 }
@@ -15849,7 +15852,7 @@ function formatProximityAlert(alert: ProximityAlert): string {
 }
 
 function predictionModeLabel(mode: PredictionMode): string {
-  return predictionModeOptions.find(([value]) => value === mode)?.[1] ?? "Adaptivní";
+  return predictionModeOptions.find(([value]) => value === mode)?.[1] ?? "Pokročilá";
 }
 
 function operatorDisplayName(session: AuthSession, config: AuthConfig, profile: OperatorProfilePreferences): string {
@@ -16853,7 +16856,7 @@ function readInitialDomainScope(value: string | undefined): DomainScope {
 }
 
 function readInitialPredictionMode(value: string | undefined): PredictionMode {
-  return predictionModeOptions.some(([option]) => option === value) ? (value as PredictionMode) : "adaptive";
+  return predictionModeOptions.some(([option]) => option === value) ? (value as PredictionMode) : "advanced";
 }
 
 function normalizePublicFlightSymbolMode(value: string | undefined): PublicFlightSymbolMode {

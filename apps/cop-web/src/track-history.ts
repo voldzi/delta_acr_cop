@@ -17,8 +17,8 @@ export interface TrackHistoryPoint {
 }
 
 export type TrackHistory = Record<string, TrackHistoryPoint[]>;
-export type PredictionMode = "adaptive" | "telemetry" | "history" | "maneuver";
-export type PredictionMethod = "telemetry" | "history" | "maneuver";
+export type PredictionMode = "advanced" | "adaptive" | "telemetry" | "history" | "maneuver";
+export type PredictionMethod = "advanced" | "telemetry" | "history" | "maneuver";
 
 export interface ReplayWindow {
   durationSeconds: number;
@@ -27,10 +27,13 @@ export interface ReplayWindow {
 }
 
 export interface PredictedPosition {
+  confidence?: number;
   lat: number;
   lon: number;
   method: PredictionMethod;
   path: Array<{ lat: number; lon: number }>;
+  uncertaintyM?: number;
+  uncertaintyPolygon?: Array<Array<{ lat: number; lon: number }>>;
 }
 
 const earthRadiusM = 6371000;
@@ -225,8 +228,57 @@ export function predictPosition(
   if (mode === "maneuver") {
     return predictFromManeuver(object, historyPoints, horizonMinutes) ?? predictFromHistory(object, historyPoints, horizonMinutes);
   }
+  if (mode === "advanced") {
+    return (
+      predictFromAdvanced(object, historyPoints, horizonMinutes) ??
+      predictFromManeuver(object, historyPoints, horizonMinutes) ??
+      predictFromTelemetry(object, horizonMinutes) ??
+      predictFromHistory(object, historyPoints, horizonMinutes)
+    );
+  }
 
   return predictFromTelemetry(object, horizonMinutes) ?? predictFromHistory(object, historyPoints, horizonMinutes);
+}
+
+function predictFromAdvanced(object: CopObject, historyPoints: TrackHistoryPoint[], horizonMinutes: number): PredictedPosition | null {
+  if (!hasPosition(object)) {
+    return null;
+  }
+
+  const segments = buildRecentSegments(historyPoints.slice(-7));
+  const telemetrySpeed = finitePositive(object.movement?.speedMps ?? object.speedMps);
+  const telemetryHeading = finiteHeading(object.movement?.headingDeg ?? object.headingDeg);
+  const historySpeed = segments.length > 0 ? average(segments.slice(-4).map((segment) => segment.speedMps)) : undefined;
+  const historyHeading = segments.length > 0 ? segments[segments.length - 1]?.headingDeg : undefined;
+  const speedMps = weightedAverage([
+    { value: telemetrySpeed, weight: telemetrySpeed !== undefined ? 0.72 : 0 },
+    { value: historySpeed, weight: historySpeed !== undefined && historySpeed > 0 ? 0.38 : 0 }
+  ]);
+  const headingDeg =
+    telemetryHeading !== undefined && historyHeading !== undefined
+      ? blendHeading(telemetryHeading, historyHeading, 0.72)
+      : telemetryHeading ?? historyHeading;
+
+  if (speedMps === undefined || headingDeg === undefined || speedMps <= 0) {
+    return null;
+  }
+
+  const turnRateDegPerSecond = estimateTurnRate(segments);
+  const path = buildAdvancedPath(object.position, speedMps, headingDeg, turnRateDegPerSecond, horizonMinutes);
+  const telemetryDisagreement =
+    telemetryHeading !== undefined && historyHeading !== undefined ? Math.abs(angularDeltaDeg(telemetryHeading, historyHeading)) : 0;
+  const confidence = estimatePredictionConfidence(object, segments, telemetrySpeed, telemetryHeading, telemetryDisagreement);
+  const uncertaintyM = estimatePredictionUncertaintyM(speedMps, horizonMinutes, confidence, turnRateDegPerSecond, telemetryDisagreement);
+  const uncertaintyPolygon = buildUncertaintyPolygon(path, uncertaintyM);
+
+  return {
+    ...path[path.length - 1]!,
+    confidence,
+    method: "advanced",
+    path,
+    uncertaintyM,
+    uncertaintyPolygon
+  };
 }
 
 function predictFromTelemetry(object: CopObject, horizonMinutes: number): PredictedPosition | null {
@@ -309,6 +361,113 @@ function predictFromManeuver(object: CopObject, historyPoints: TrackHistoryPoint
     method: "maneuver",
     path
   };
+}
+
+function buildAdvancedPath(
+  position: { lat: number; lon: number },
+  speedMps: number,
+  headingDeg: number,
+  turnRateDegPerSecond: number,
+  horizonMinutes: number
+): Array<{ lat: number; lon: number }> {
+  const stepSeconds = (horizonMinutes * 60) / defaultPredictionSteps;
+  const path = [{ lat: position.lat, lon: position.lon }];
+  let current = position;
+  let currentHeading = headingDeg;
+
+  for (let step = 1; step <= defaultPredictionSteps; step += 1) {
+    const turnDamping = 1 / (1 + step * 0.18);
+    currentHeading = normalizeHeading(currentHeading + turnRateDegPerSecond * stepSeconds * turnDamping);
+    current = projectPosition(current.lat, current.lon, speedMps * stepSeconds, currentHeading);
+    path.push(current);
+  }
+
+  return path;
+}
+
+function estimateTurnRate(
+  segments: Array<{
+    elapsedSeconds: number;
+    headingDeg: number;
+  }>
+): number {
+  if (segments.length < 2) {
+    return 0;
+  }
+
+  const rates: number[] = [];
+  for (let index = 1; index < segments.length; index += 1) {
+    const previous = segments[index - 1]!;
+    const current = segments[index]!;
+    const elapsedSeconds = Math.max(1, current.elapsedSeconds);
+    rates.push(angularDeltaDeg(current.headingDeg, previous.headingDeg) / elapsedSeconds);
+  }
+
+  return clampNumber(average(rates.slice(-4)), -3, 3);
+}
+
+function estimatePredictionConfidence(
+  object: CopObject,
+  segments: Array<{ elapsedSeconds: number; speedMps: number }>,
+  telemetrySpeed: number | undefined,
+  telemetryHeading: number | undefined,
+  telemetryDisagreementDeg: number
+): number {
+  const reportedConfidence = Number.isFinite(object.confidence) ? Number(object.confidence) : 0.72;
+  const historyFactor = segments.length >= 4 ? 1 : segments.length >= 2 ? 0.9 : 0.76;
+  const telemetryFactor = telemetrySpeed !== undefined && telemetryHeading !== undefined ? 1 : 0.84;
+  const disagreementFactor =
+    telemetryDisagreementDeg > 60 ? 0.68 : telemetryDisagreementDeg > 35 ? 0.8 : telemetryDisagreementDeg > 18 ? 0.9 : 1;
+  const recentCadence = average(segments.slice(-3).map((segment) => segment.elapsedSeconds));
+  const cadenceFactor = recentCadence > 180 ? 0.72 : recentCadence > 90 ? 0.84 : 1;
+
+  return clamp01(reportedConfidence * historyFactor * telemetryFactor * disagreementFactor * cadenceFactor);
+}
+
+function estimatePredictionUncertaintyM(
+  speedMps: number,
+  horizonMinutes: number,
+  confidence: number,
+  turnRateDegPerSecond: number,
+  telemetryDisagreementDeg: number
+): number {
+  const horizonSeconds = horizonMinutes * 60;
+  const distanceM = speedMps * horizonSeconds;
+  const headingUncertaintyDeg = clampNumber(
+    4 + (1 - confidence) * 30 + Math.abs(turnRateDegPerSecond) * horizonSeconds * 0.08 + telemetryDisagreementDeg * 0.18,
+    4,
+    55
+  );
+  const lateralM = Math.sin(toRadians(headingUncertaintyDeg)) * distanceM;
+  const longitudinalM = distanceM * (0.07 + (1 - confidence) * 0.18);
+
+  return clampNumber(90 + lateralM * 0.55 + longitudinalM, 90, 30000);
+}
+
+function buildUncertaintyPolygon(
+  path: Array<{ lat: number; lon: number }>,
+  finalUncertaintyM: number
+): Array<Array<{ lat: number; lon: number }>> | undefined {
+  if (path.length < 2 || !Number.isFinite(finalUncertaintyM) || finalUncertaintyM <= 0) {
+    return undefined;
+  }
+
+  const left: Array<{ lat: number; lon: number }> = [];
+  const right: Array<{ lat: number; lon: number }> = [];
+  const lastIndex = path.length - 1;
+
+  path.forEach((point, index) => {
+    const previous = path[Math.max(0, index - 1)]!;
+    const next = path[Math.min(lastIndex, index + 1)]!;
+    const headingDeg = headingBetweenPoints(previous, next);
+    const progress = index / Math.max(1, lastIndex);
+    const radiusM = 55 + finalUncertaintyM * progress ** 1.25;
+    left.push(projectPosition(point.lat, point.lon, radiusM, normalizeHeading(headingDeg - 90)));
+    right.push(projectPosition(point.lat, point.lon, radiusM, normalizeHeading(headingDeg + 90)));
+  });
+
+  const ring = [...left, ...right.reverse(), left[0]!];
+  return [ring];
 }
 
 function buildTelemetryPath(
@@ -440,6 +599,38 @@ function angularDeltaDeg(current: number, previous: number): number {
 function average(values: number[]): number {
   const finiteValues = values.filter(Number.isFinite);
   return finiteValues.length ? finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length : 0;
+}
+
+function weightedAverage(values: Array<{ value: number | undefined; weight: number }>): number | undefined {
+  const validValues = values.filter((item): item is { value: number; weight: number } => Number.isFinite(item.value) && item.weight > 0);
+  const totalWeight = validValues.reduce((sum, item) => sum + item.weight, 0);
+  if (totalWeight <= 0) {
+    return undefined;
+  }
+  return validValues.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight;
+}
+
+function finitePositive(value: unknown): number | undefined {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : undefined;
+}
+
+function finiteHeading(value: unknown): number | undefined {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? normalizeHeading(numericValue) : undefined;
+}
+
+function blendHeading(primaryDeg: number, secondaryDeg: number, primaryWeight: number): number {
+  const weight = clampNumber(primaryWeight, 0, 1);
+  return normalizeHeading(primaryDeg + angularDeltaDeg(secondaryDeg, primaryDeg) * (1 - weight));
+}
+
+function clamp01(value: number): number {
+  return clampNumber(value, 0, 1);
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function normalizeHeading(value: number): number {

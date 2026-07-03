@@ -304,7 +304,9 @@ function optionalLayerArray(value: unknown): CopLayer[] | undefined {
 }
 
 function normalizePredictionMode(value: unknown): PredictionMode | undefined {
-  return value === "adaptive" || value === "telemetry" || value === "history" || value === "maneuver" ? value : undefined;
+  return value === "advanced" || value === "adaptive" || value === "telemetry" || value === "history" || value === "maneuver"
+    ? value
+    : undefined;
 }
 
 function normalizePublicFlightSymbolMode(value: unknown): PublicFlightSymbolMode | undefined {

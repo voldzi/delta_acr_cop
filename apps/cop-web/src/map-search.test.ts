@@ -22,6 +22,25 @@ describe("map search", () => {
           lon: 14.4
         },
         status: "ACTIVE"
+      },
+      {
+        affiliation: "NEUTRAL",
+        attributes: {
+          flightData: {
+            trackId: "flight:remote_id:rid-42",
+            trackKey: "CZ-RID-42",
+            trackKeyKind: "remote_id"
+          }
+        },
+        confidence: 0.88,
+        domain: "AIR",
+        objectId: "flight:remote_id:rid-42",
+        objectType: "UAV",
+        position: {
+          lat: 50.2,
+          lon: 14.5
+        },
+        status: "ACTIVE"
       }
     ];
     const features: SituationFeature[] = [
@@ -51,6 +70,11 @@ describe("map search", () => {
       typeLabel: "BTS"
     });
     expect(buildMapSearchResults(objects, features, "Praha").map((result) => result.typeLabel)).toContain("Letiště");
+    expect(buildMapSearchResults(objects, features, "RID-42")[0]).toMatchObject({
+      kind: "track",
+      label: "CZ-RID-42",
+      typeLabel: "Let"
+    });
   });
 
   it("computes a stable center for polygon features", () => {

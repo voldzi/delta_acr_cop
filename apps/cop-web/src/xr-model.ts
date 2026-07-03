@@ -1,4 +1,5 @@
 import { isPublicFlightObject, type CopObject, type ServerTrackHistoryPoint, type SourceSystem } from "./cop-data";
+import { formatTrackLabel } from "./track-label";
 
 const maxXrObjects = 260;
 const boardWidthM = 16;
@@ -83,11 +84,7 @@ export function summarizeXrObjects(models: XrObjectModel[], sources: SourceSyste
 }
 
 export function formatXrObjectLabel(object: CopObject): string {
-  const flightData = object.attributes?.flightData;
-  return flightData?.callsign?.trim()
-    || flightData?.registration?.trim()
-    || flightData?.icao24?.trim().toUpperCase()
-    || object.objectId;
+  return formatTrackLabel(object);
 }
 
 export function isSimulatedObject(object: CopObject): boolean {

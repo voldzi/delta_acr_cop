@@ -169,6 +169,37 @@ describe("track history helpers", () => {
     expect(prediction?.lon).toBeLessThan(14.02);
   });
 
+  it("can predict an advanced path with confidence and uncertainty corridor", () => {
+    const prediction = predictPosition(
+      {
+        objectId: "AIR_SIM_AIRCRAFT-0003",
+        objectType: "AIRCRAFT",
+        affiliation: "FRIEND",
+        confidence: 0.88,
+        domain: "AIR",
+        status: "ACTIVE",
+        position: { lat: 50.03, lon: 14.05 },
+        movement: { speedMps: 115, headingDeg: 78, verticalRateMps: 1.2 }
+      },
+      [
+        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
+        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.01, lon: 14.018, timestamp: "2026-05-19T08:01:00Z" },
+        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.02, lon: 14.035, timestamp: "2026-05-19T08:02:00Z" },
+        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.03, lon: 14.05, timestamp: "2026-05-19T08:03:00Z" }
+      ],
+      8,
+      "advanced"
+    );
+
+    expect(prediction?.method).toBe("advanced");
+    expect(prediction?.path).toHaveLength(7);
+    expect(prediction?.confidence).toBeGreaterThan(0.5);
+    expect(prediction?.uncertaintyM).toBeGreaterThan(90);
+    expect(prediction?.uncertaintyPolygon?.[0]).toHaveLength(15);
+    expect(prediction?.uncertaintyPolygon?.[0]?.at(-1)).toEqual(prediction?.uncertaintyPolygon?.[0]?.[0]);
+    expect(prediction?.lon).toBeGreaterThan(14.05);
+  });
+
   it("derives a replay window and timestamp from retained history", () => {
     const history = {
       "AIR_SIM_UAV-0001": [

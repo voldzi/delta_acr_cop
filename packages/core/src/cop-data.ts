@@ -114,6 +114,9 @@ export interface FlightDataAttributes {
     sourceRecordId?: string;
   }>;
   status?: Record<string, unknown>;
+  trackId?: string;
+  trackKey?: string;
+  trackKeyKind?: "icao24" | "remote_id" | "radar_track" | "partner_track" | string;
 }
 
 export interface ObjectProvenance {
