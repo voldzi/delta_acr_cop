@@ -483,6 +483,42 @@ function WeatherStationChartPanel({ chart }: { chart: WeatherStationChart }) {
   const x = (time: string) => padding.left + ((Date.parse(time) - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
   const y = (value: number) => padding.top + chartHeight - ((value - valueDomain.min) / Math.max(1, valueDomain.max - valueDomain.min)) * chartHeight;
   const unit = weatherStationChartUnit(chart, series);
+  const [focusTime, setFocusTime] = React.useState<number | null>(null);
+  const updateFocusFromPointer = React.useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+    setFocusTime(weatherChartPointerTime(event, width, padding.left, chartWidth, timeDomain));
+  }, [chartWidth, timeDomain.max, timeDomain.min]);
+  const handlePointerDown = React.useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    updateFocusFromPointer(event);
+  }, [updateFocusFromPointer]);
+  const handlePointerLeave = React.useCallback(() => setFocusTime(null), []);
+  const focusItems = focusTime === null ? [] : series.flatMap((entry) => {
+    const point = nearestWeatherChartPoint(entry.points, focusTime);
+    if (!point) {
+      return [];
+    }
+    const color = entry.item.color ?? weatherChartPalette(entry.index);
+    const label = weatherStationChartSeriesLabel(entry.item) ?? weatherStationChartSeriesId(entry.item) ?? `řada ${entry.index + 1}`;
+    const itemUnit = entry.item.unit ?? unit;
+    return [{
+      color,
+      label,
+      time: point.time,
+      value: point.value,
+      x: x(point.time),
+      y: y(point.value),
+      valueLabel: formatWeatherChartAxisValue(point.value, itemUnit)
+    }];
+  });
+  const focusX = focusTime === null
+    ? null
+    : padding.left + ((focusTime - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
+  const tooltipWidth = 190;
+  const tooltipHeight = Math.max(42, 22 + focusItems.length * 15);
+  const tooltipX = focusX !== null && focusX > padding.left + chartWidth - tooltipWidth - 10
+    ? padding.left + 8
+    : Math.min((focusX ?? padding.left) + 10, padding.left + chartWidth - tooltipWidth);
+  const tooltipY = padding.top + 6;
 
   return (
     <div className="weather-station-chart-panel">
@@ -490,7 +526,16 @@ function WeatherStationChartPanel({ chart }: { chart: WeatherStationChart }) {
         <strong>{weatherStationChartTitle(chart)}</strong>
         <span>{unit}</span>
       </div>
-      <svg aria-label={chart.title ?? "Graf počasí"} className="weather-station-chart-svg" role="img" viewBox={`0 0 ${width} ${height}`}>
+      <svg
+        aria-label={chart.title ?? "Graf počasí"}
+        className="weather-station-chart-svg"
+        onPointerCancel={handlePointerLeave}
+        onPointerDown={handlePointerDown}
+        onPointerLeave={handlePointerLeave}
+        onPointerMove={updateFocusFromPointer}
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
         <line className="weather-chart-axis" x1={padding.left} x2={padding.left + chartWidth} y1={padding.top + chartHeight} y2={padding.top + chartHeight} />
         <line className="weather-chart-axis" x1={padding.left} x2={padding.left} y1={padding.top} y2={padding.top + chartHeight} />
         <text className="weather-chart-axis-label" x={padding.left} y={height - 6}>{formatShortTime(timeDomain.min)}</text>
@@ -506,6 +551,38 @@ function WeatherStationChartPanel({ chart }: { chart: WeatherStationChart }) {
             stroke={entry.item.color ?? weatherChartPalette(entry.index)}
           />
         ))}
+        {focusX !== null && focusItems.length > 0 ? (
+          <g className="weather-chart-focus" pointerEvents="none">
+            <line className="weather-chart-crosshair" x1={focusX} x2={focusX} y1={padding.top} y2={padding.top + chartHeight} />
+            {focusItems.map((item) => (
+              <circle
+                className="weather-chart-focus-dot"
+                cx={item.x}
+                cy={item.y}
+                key={`${item.label}-${item.time}`}
+                r={3.8}
+                style={{ stroke: item.color }}
+              />
+            ))}
+            <rect className="weather-chart-tooltip-bg" height={tooltipHeight} rx={6} width={tooltipWidth} x={tooltipX} y={tooltipY} />
+            <text className="weather-chart-tooltip-time" x={tooltipX + 10} y={tooltipY + 15}>{formatChartFocusDateTime(focusTime ?? timeDomain.min)}</text>
+            {focusItems.map((item, index) => (
+              <g key={`${item.label}-${item.time}-label`}>
+                <circle cx={tooltipX + 11} cy={tooltipY + 30 + index * 15} fill={item.color} r={3} />
+                <text className="weather-chart-tooltip-text" x={tooltipX + 20} y={tooltipY + 33 + index * 15}>
+                  {`${item.label}: ${item.valueLabel}`}
+                </text>
+              </g>
+            ))}
+          </g>
+        ) : null}
+        <rect
+          className="weather-chart-hitbox"
+          height={chartHeight}
+          width={chartWidth}
+          x={padding.left}
+          y={padding.top}
+        />
       </svg>
       <div className="weather-station-chart-legend">
         {series.map((entry) => (
@@ -659,4 +736,35 @@ function weatherChartPalette(index: number): string {
 function formatWeatherChartAxisValue(value: number, unit: string | undefined): string {
   const rounded = Math.abs(value) >= 100 ? Math.round(value).toString() : value.toFixed(Math.abs(value) < 10 ? 1 : 0);
   return unit ? `${rounded} ${unit}` : rounded;
+}
+
+function weatherChartPointerTime(
+  event: React.PointerEvent<SVGSVGElement>,
+  svgWidth: number,
+  paddingLeft: number,
+  chartWidth: number,
+  timeDomain: { max: number; min: number }
+): number {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const renderedWidth = rect.width || svgWidth;
+  const svgX = ((event.clientX - rect.left) / Math.max(1, renderedWidth)) * svgWidth;
+  const clampedX = Math.min(paddingLeft + chartWidth, Math.max(paddingLeft, svgX));
+  const ratio = (clampedX - paddingLeft) / Math.max(1, chartWidth);
+  return timeDomain.min + ratio * (timeDomain.max - timeDomain.min);
+}
+
+function nearestWeatherChartPoint(points: Array<{ time: string; value: number }>, timeMs: number): { time: string; value: number } | undefined {
+  return points.reduce<{ distance: number; point: { time: string; value: number } } | undefined>((nearest, point) => {
+    const distance = Math.abs(Date.parse(point.time) - timeMs);
+    return !nearest || distance < nearest.distance ? { distance, point } : nearest;
+  }, undefined)?.point;
+}
+
+function formatChartFocusDateTime(timeMs: number): string {
+  return new Intl.DateTimeFormat("cs-CZ", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit"
+  }).format(new Date(timeMs));
 }

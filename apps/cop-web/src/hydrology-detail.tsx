@@ -247,6 +247,39 @@ function HydroChartPanel({
   const x = (at: string) => padding.left + ((Date.parse(at) - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
   const y = (value: number) => padding.top + chartHeight - ((value - valueDomain.min) / Math.max(1, valueDomain.max - valueDomain.min)) * chartHeight;
   const nowX = x(detail.chart.currentTime);
+  const [focusTime, setFocusTime] = React.useState<number | null>(null);
+  const updateFocusFromPointer = React.useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+    setFocusTime(hydroChartPointerTime(event, width, padding.left, chartWidth, timeDomain));
+  }, [chartWidth, timeDomain.max, timeDomain.min]);
+  const handlePointerDown = React.useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    updateFocusFromPointer(event);
+  }, [updateFocusFromPointer]);
+  const handlePointerLeave = React.useCallback(() => setFocusTime(null), []);
+  const focusItems = focusTime === null ? [] : series.flatMap((item) => {
+    const point = nearestHydroChartPoint(item.points, focusTime);
+    if (!point) {
+      return [];
+    }
+    return [{
+      colorClass: `${item.role === "forecast" ? "forecast" : "measured"} ${item.id}`,
+      label: item.label,
+      time: point.at,
+      value: point.value,
+      x: x(point.at),
+      y: y(point.value),
+      valueLabel: formatHydroAxisValue(point.value, panel.yAxis.unit)
+    }];
+  });
+  const focusX = focusTime === null
+    ? null
+    : padding.left + ((focusTime - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
+  const tooltipWidth = 190;
+  const tooltipHeight = Math.max(42, 22 + focusItems.length * 15);
+  const tooltipX = focusX !== null && focusX > padding.left + chartWidth - tooltipWidth - 10
+    ? padding.left + 8
+    : Math.min((focusX ?? padding.left) + 10, padding.left + chartWidth - tooltipWidth);
+  const tooltipY = padding.top + 6;
 
   return (
     <div className="hydro-chart-panel">
@@ -254,7 +287,16 @@ function HydroChartPanel({
         <strong>{panel.title}</strong>
         <span>{panel.yAxis.unit}</span>
       </div>
-      <svg aria-label={panel.title} className="hydro-chart-svg" role="img" viewBox={`0 0 ${width} ${height}`}>
+      <svg
+        aria-label={panel.title}
+        className="hydro-chart-svg"
+        onPointerCancel={handlePointerLeave}
+        onPointerDown={handlePointerDown}
+        onPointerLeave={handlePointerLeave}
+        onPointerMove={updateFocusFromPointer}
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
         <line className="hydro-axis" x1={padding.left} x2={padding.left + chartWidth} y1={padding.top + chartHeight} y2={padding.top + chartHeight} />
         <line className="hydro-axis" x1={padding.left} x2={padding.left} y1={padding.top} y2={padding.top + chartHeight} />
         <text className="hydro-axis-label" x={padding.left} y={height - 6}>{formatShortTime(timeDomain.min)}</text>
@@ -276,6 +318,37 @@ function HydroChartPanel({
             points={item.points.map((point) => `${x(point.at)},${y(point.value)}`).join(" ")}
           />
         ))}
+        {focusX !== null && focusItems.length > 0 ? (
+          <g className="hydro-chart-focus" pointerEvents="none">
+            <line className="hydro-chart-crosshair" x1={focusX} x2={focusX} y1={padding.top} y2={padding.top + chartHeight} />
+            {focusItems.map((item) => (
+              <circle
+                className={`hydro-chart-focus-dot ${item.colorClass}`}
+                cx={item.x}
+                cy={item.y}
+                key={`${item.label}-${item.time}`}
+                r={3.8}
+              />
+            ))}
+            <rect className="hydro-chart-tooltip-bg" height={tooltipHeight} rx={6} width={tooltipWidth} x={tooltipX} y={tooltipY} />
+            <text className="hydro-chart-tooltip-time" x={tooltipX + 10} y={tooltipY + 15}>{formatHydroChartFocusDateTime(focusTime ?? timeDomain.min)}</text>
+            {focusItems.map((item, index) => (
+              <g key={`${item.label}-${item.time}-label`}>
+                <circle className={`hydro-chart-tooltip-dot ${item.colorClass}`} cx={tooltipX + 11} cy={tooltipY + 30 + index * 15} r={3} />
+                <text className="hydro-chart-tooltip-text" x={tooltipX + 20} y={tooltipY + 33 + index * 15}>
+                  {`${item.label}: ${item.valueLabel}`}
+                </text>
+              </g>
+            ))}
+          </g>
+        ) : null}
+        <rect
+          className="hydro-chart-hitbox"
+          height={chartHeight}
+          width={chartWidth}
+          x={padding.left}
+          y={padding.top}
+        />
       </svg>
     </div>
   );
@@ -343,6 +416,37 @@ function hydroThresholdLines(
 
 function formatHydroAxisValue(value: number, unit: string): string {
   return `${Math.round(value * 10) / 10} ${normalizeHydroUnit(unit)}`;
+}
+
+function hydroChartPointerTime(
+  event: React.PointerEvent<SVGSVGElement>,
+  svgWidth: number,
+  paddingLeft: number,
+  chartWidth: number,
+  timeDomain: { max: number; min: number }
+): number {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const renderedWidth = rect.width || svgWidth;
+  const svgX = ((event.clientX - rect.left) / Math.max(1, renderedWidth)) * svgWidth;
+  const clampedX = Math.min(paddingLeft + chartWidth, Math.max(paddingLeft, svgX));
+  const ratio = (clampedX - paddingLeft) / Math.max(1, chartWidth);
+  return timeDomain.min + ratio * (timeDomain.max - timeDomain.min);
+}
+
+function nearestHydroChartPoint(points: Array<{ at: string; value: number }>, timeMs: number): { at: string; value: number } | undefined {
+  return points.reduce<{ distance: number; point: { at: string; value: number } } | undefined>((nearest, point) => {
+    const distance = Math.abs(Date.parse(point.at) - timeMs);
+    return !nearest || distance < nearest.distance ? { distance, point } : nearest;
+  }, undefined)?.point;
+}
+
+function formatHydroChartFocusDateTime(timeMs: number): string {
+  return new Intl.DateTimeFormat("cs-CZ", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit"
+  }).format(new Date(timeMs));
 }
 
 function normalizeHydroUnit(unit: string): string {
