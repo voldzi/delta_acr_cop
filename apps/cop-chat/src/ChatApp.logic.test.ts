@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  aiMatrixBotInvitePlan,
   applyChatPreferences,
   buildChatItems,
   chatPreferenceSnapshot,
@@ -281,6 +282,71 @@ describe("dedupeChatItems", () => {
     });
 
     expect(isAiAgentChatItem(item)).toBe(true);
+  });
+
+  it("recognizes a metadata-light AI direct chat by the canonical assistant title", () => {
+    expect(isAiAgentChatItem(chatItem({
+      conversation: undefined,
+      room: undefined,
+      title: "COP AI Assistant",
+      type: "direct"
+    }))).toBe(true);
+  });
+});
+
+describe("aiMatrixBotInvitePlan", () => {
+  it("invites the bot when backend has a Matrix identity but join is still pending", () => {
+    expect(aiMatrixBotInvitePlan({
+      enabled: true,
+      label: "COP AI Assistant",
+      matrixBot: {
+        matrixUserId: "@cop.ai.agent:docker.home.cz",
+        roomId: "!room:docker.home.cz",
+        status: "bot_join_failed"
+      },
+      mode: "cop-context"
+    })).toEqual({
+      matrixUserId: "@cop.ai.agent:docker.home.cz",
+      roomId: "!room:docker.home.cz"
+    });
+  });
+
+  it("uses the selected Matrix room as a fallback when metadata has not caught up", () => {
+    expect(aiMatrixBotInvitePlan({
+      enabled: true,
+      label: "COP AI Assistant",
+      matrixBot: {
+        matrixUserId: "@cop.ai.agent:docker.home.cz",
+        status: "bot_join_failed"
+      },
+      mode: "cop-context"
+    }, "!selected:docker.home.cz")).toEqual({
+      matrixUserId: "@cop.ai.agent:docker.home.cz",
+      roomId: "!selected:docker.home.cz"
+    });
+  });
+
+  it("does not invite when the bot is already joined or cannot authenticate", () => {
+    expect(aiMatrixBotInvitePlan({
+      enabled: true,
+      label: "COP AI Assistant",
+      matrixBot: {
+        matrixUserId: "@cop.ai.agent:docker.home.cz",
+        roomId: "!room:docker.home.cz",
+        status: "joined"
+      },
+      mode: "cop-context"
+    })).toBeNull();
+    expect(aiMatrixBotInvitePlan({
+      enabled: true,
+      label: "COP AI Assistant",
+      matrixBot: {
+        matrixUserId: "@cop.ai.agent:docker.home.cz",
+        roomId: "!room:docker.home.cz",
+        status: "bot_token_unavailable"
+      },
+      mode: "cop-context"
+    })).toBeNull();
   });
 });
 

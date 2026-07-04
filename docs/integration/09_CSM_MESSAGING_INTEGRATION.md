@@ -425,7 +425,10 @@ The phase-0 implementation focus is trust and control:
   configured `COP AI Assistant` system user into CSM Messaging conversation
   members, obtains a short-lived Matrix token for the bot account through the
   same server-side Matrix bootstrap contract, and accepts the room invite when
-  the encrypted room is already bound. The resulting
+  the encrypted room is already bound. For private E2EE rooms this is a
+  two-step client/server projection: the logged-in web client invites the bot
+  Matrix user to the current room, then repeats the metadata update so COP can
+  confirm the bot join and refresh status. The resulting
   `metadata.chat.aiAssistant.matrixBot` and `e2ee` fields expose membership and
   key status to clients without exposing Matrix tokens or passwords.
 - AI agent E2EE uses a dedicated Matrix account/device model:
@@ -472,9 +475,10 @@ The phase-0 implementation focus is trust and control:
   does not bypass the group-level consent model: group room access still
   requires `chat.aiAssistant.enabled` and visible bot membership.
 - The composer exposes inline suggestions for `@COP AI`, `@AI`, `/ai`,
-  `/fast` and `/reasoning`. Member-add actions are guarded client-side against
-  duplicate clicks and already-active group members. COP group membership is
-  updated first; CSM Messaging and Matrix invite synchronization are best-effort
+  `/fast` and `/reasoning` in groups with an enabled agent and in the dedicated
+  AI direct chat. Member-add actions are guarded client-side against duplicate
+  clicks and already-active group members. COP group membership is updated
+  first; CSM Messaging and Matrix invite synchronization are best-effort
   projections and degraded sync is shown as a notice instead of undoing the COP
   membership change.
 - Current direct-chat removal is local hiding. Current group deletion deletes

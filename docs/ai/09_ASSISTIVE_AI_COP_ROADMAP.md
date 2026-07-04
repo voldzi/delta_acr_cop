@@ -121,8 +121,11 @@ AI agenta zapnout nebo vypnout z menu skupiny i v detailu skupiny, ale zapnutí
 vyžaduje explicitní consent pro viditelného Matrix bot člena místnosti. COP po consentu synchronizuje
 konfigurovaný systémový účet `COP AI Assistant` do CSM Messaging konverzace,
 získá pro něj krátkodobý Matrix token přes server-side bootstrap a přijme pozvánku
-do navázané E2EE místnosti. Metadata `chat.aiAssistant.matrixBot` a `e2ee`
-ukazují stav členství a key model bez zveřejnění tokenů.
+do navázané E2EE místnosti. U soukromých E2EE místností pozvánku posílá
+aktuální webový klient, který už je členem roomu; po pozvánce klient zopakuje
+metadata update, aby backend mohl potvrdit bot join a obnovit stav. Metadata
+`chat.aiAssistant.matrixBot` a `e2ee` ukazují stav členství a key model bez
+zveřejnění tokenů.
 
 Key model agenta je `dedicated_matrix_account_device` s politikou
 `future_megolm_sessions_after_join`. Agent může pracovat s novými zprávami po
@@ -137,7 +140,10 @@ timeline.
 Webový klient navíc nabízí samostatný direct chat s `COP AI Assistant`. V tomto
 AI-only chatu je každá běžná zpráva dotazem na AI agenta. Slash příkazy
 `/ai`, `/reasoning` a `/fast` fungují v AI chatu i ve skupinách se zapnutým
-agentem; `/reasoning` předává do API `modelPreference=reasoning`.
+agentem; `/reasoning` předává do API `modelPreference=reasoning`. Composer
+našeptává také `@COP AI` a `@AI`, a to jak ve skupinách se zapnutým agentem,
+tak v metadata-light AI direct chatech rozpoznaných podle kanonického titulku
+`COP AI Assistant`.
 
 Odpovědi AI odeslané do Matrixu jsou běžné `m.room.message` události s
 namespaced `cz.cop` metadaty. UI je díky tomu označí jako `COP AI agent` nebo

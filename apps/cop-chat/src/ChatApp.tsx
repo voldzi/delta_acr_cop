@@ -2405,15 +2405,68 @@ export function ChatApp() {
           }
         }
       });
-      setGroups((current) => current.map((group) => group.groupId === updatedGroup.groupId ? updatedGroup : group));
-      const nextAi = communityGroupAiAssistantMetadata(updatedGroup);
+      let finalGroup = updatedGroup;
+      let nextAi = communityGroupAiAssistantMetadata(finalGroup);
+      let matrixInviteWarning: string | null = null;
+      if (enabled) {
+        const inviteResult = await inviteAiMatrixBotIfNeeded(finalGroup, nextAi);
+        finalGroup = inviteResult.group;
+        nextAi = communityGroupAiAssistantMetadata(finalGroup);
+        matrixInviteWarning = inviteResult.warning ?? null;
+      }
+      setGroups((current) => current.map((group) => group.groupId === finalGroup.groupId ? finalGroup : group));
       setNotice(enabled
-        ? `AI agent je zapnutý. ${aiAssistantStatusLabel(nextAi)}.`
+        ? `AI agent je zapnutý. ${aiAssistantStatusLabel(nextAi)}.${matrixInviteWarning ? ` ${matrixInviteWarning}` : ""}`
         : "AI agent je pro skupinu vypnutý.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Nastavení AI agenta se nepodařilo uložit.");
     } finally {
       setAiAgentGroupUpdating(false);
+    }
+  }
+
+  async function inviteAiMatrixBotIfNeeded(
+    group: CommunityGroup,
+    aiAssistant: CommunityGroupAiAssistantMetadata
+  ): Promise<{ group: CommunityGroup; warning?: string }> {
+    if (!authToken) {
+      return { group };
+    }
+    const chat = communityGroupChatMetadata(group);
+    const plan = aiMatrixBotInvitePlan(aiAssistant, selectedRoomId ?? chat.matrixRoomId);
+    if (!plan) {
+      return { group };
+    }
+    const session = matrixSessionRef.current;
+    if (!session) {
+      return {
+        group,
+        warning: "Matrix pozvánka pro AI bota se odešle po obnovení chatové session."
+      };
+    }
+    try {
+      await session.inviteUsersToRoom(plan.roomId, [plan.matrixUserId]);
+    } catch (caught) {
+      return {
+        group,
+        warning: `Matrix pozvánka pro AI bota zatím neprošla: ${userFacingError(caught instanceof Error ? caught.message : String(caught))}`
+      };
+    }
+
+    try {
+      const refreshed = await updateCommunityGroupMetadata(apiBase, authToken, group.groupId, {
+        chat: {
+          ...chat,
+          matrixRoomId: chat.matrixRoomId ?? plan.roomId,
+          aiAssistant
+        }
+      });
+      return { group: refreshed };
+    } catch (caught) {
+      return {
+        group,
+        warning: `Matrix pozvánka pro AI bota byla odeslána, ale potvrzení členství se nepodařilo obnovit: ${userFacingError(caught instanceof Error ? caught.message : String(caught))}`
+      };
     }
   }
 
@@ -5181,7 +5234,7 @@ interface CommunityGroupChatMetadata {
   source?: string;
 }
 
-interface CommunityGroupAiAssistantMetadata {
+export interface CommunityGroupAiAssistantMetadata {
   consent?: {
     granted: boolean;
     grantedAt?: string;
@@ -5216,6 +5269,24 @@ interface CommunityGroupAiAssistantMetadata {
   mode: "cop-context";
   updatedAt?: string;
   updatedBy?: string;
+}
+
+export function aiMatrixBotInvitePlan(
+  aiAssistant: CommunityGroupAiAssistantMetadata,
+  fallbackRoomId?: string | null
+): { matrixUserId: string; roomId: string } | null {
+  if (!aiAssistant.enabled || aiAssistant.matrixBot?.status === "joined") {
+    return null;
+  }
+  const matrixUserId = aiAssistant.matrixBot?.matrixUserId?.trim();
+  const roomId = aiAssistant.matrixBot?.roomId?.trim() || fallbackRoomId?.trim();
+  if (!matrixUserId || !roomId) {
+    return null;
+  }
+  if (aiAssistant.matrixBot?.status === "bot_token_unavailable" || aiAssistant.matrixBot?.status === "bot_disabled") {
+    return null;
+  }
+  return { matrixUserId, roomId };
 }
 
 function communityGroupChatMetadata(group: CommunityGroup): CommunityGroupChatMetadata {
@@ -5607,6 +5678,7 @@ export function isAiAgentChatItem(item: ChatListItem): boolean {
   return item.type === "direct" && (
     isAiAgentDirectConversation(item.conversation)
     || isAiAgentRoomSummary(item.room)
+    || isAiAgentDisplayName(item.title)
   );
 }
 
