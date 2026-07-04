@@ -423,8 +423,13 @@ The phase-0 implementation focus is trust and control:
   groups show `COP AI Assistant` in the member list and expose an explicit
   “Zeptat se AI agenta” action. Questions call authenticated
   `POST /api/v1/ai/chat-agent/query`, which requires active membership for the
-  supplied `groupId`, builds COP context server-side and returns audit metadata.
-  Sending the answer to Matrix remains an explicit user action.
+  supplied `groupId`, builds COP context server-side from objects, alerts,
+  community reports, incidents and source health, and returns audit metadata.
+  The web client may include a bounded `chatContext` snapshot from the currently
+  visible/decrypted Matrix timeline; this is explicit client-provided context,
+  not hidden server-side E2EE history reading. Sending the answer to Matrix
+  remains an explicit user action unless a leading `@COP AI ...` mention returns
+  a completed answer that does not require human review.
 - AI answers sent to Matrix carry namespaced `cz.cop` message metadata with
   `kind`, `requestId`, `auditId`, provider/model, policy reason and the
   original question when present. The metadata is used only for timeline

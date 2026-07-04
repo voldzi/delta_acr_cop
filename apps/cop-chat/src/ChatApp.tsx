@@ -83,6 +83,7 @@ import {
   upsertCommunityGroupMember
 } from "@cop/core/cop-data";
 import type {
+  AiChatAgentContextSnapshot,
   AiCopResponse,
   CommunityGroup,
   MessagingConversationSummary,
@@ -2210,6 +2211,10 @@ export function ChatApp() {
     setError(null);
     try {
       const response = await queryAiChatAgent(apiBase, authToken, {
+        chatContext: buildAiChatContextSnapshot(timelineMessages, {
+          encrypted: selectedRoom?.encrypted,
+          roomId: selectedRoomId
+        }),
         conversationId: selectedConversation?.conversationId,
         groupId: selectedGroup?.groupId,
         language: "cs",
@@ -2493,6 +2498,11 @@ export function ChatApp() {
     let response: AiCopResponse;
     try {
       response = await queryAiChatAgent(apiBase, authToken, {
+        chatContext: buildAiChatContextSnapshot(timelineMessages, {
+          currentUserMessage: userMessage,
+          encrypted: selectedRoom?.encrypted,
+          roomId: selectedRoomId
+        }),
         conversationId: selectedConversation?.conversationId,
         groupId: selectedGroup?.groupId,
         language: "cs",
@@ -5301,6 +5311,63 @@ export function formatAiAgentShareBody(answer: string, question: string): string
 
 export function formatAiSituationShareBody(summary: string): string {
   return `AI situační souhrn:\n\n${summary.trim()}`.trim();
+}
+
+export function buildAiChatContextSnapshot(
+  messages: MatrixTimelineMessage[],
+  options: {
+    currentUserMessage?: string;
+    encrypted?: boolean;
+    roomId?: string | null;
+  } = {}
+): AiChatAgentContextSnapshot {
+  const sourceMessages = messages
+    .map((message) => {
+      const body = messageDisplayBody(message).trim();
+      if (!body) {
+        return null;
+      }
+      return {
+        ...(message.cop?.ai ? {
+          ai: {
+            ...(message.cop.ai.auditId ? { auditId: message.cop.ai.auditId } : {}),
+            ...(message.cop.ai.provider ? { provider: message.cop.ai.provider } : {}),
+            ...(message.cop.ai.status ? { status: message.cop.ai.status } : {}),
+            ...(message.cop.ai.type ? { type: message.cop.ai.type } : {})
+          }
+        } : {}),
+        body: body.slice(0, 1200),
+        eventId: message.eventId,
+        kind: message.kind,
+        own: message.own,
+        sender: message.sender,
+        ...(message.senderDisplayName ? { senderDisplayName: message.senderDisplayName } : {}),
+        timestamp: message.timestamp
+      };
+    })
+    .filter((message): message is NonNullable<typeof message> => Boolean(message));
+  const currentUserMessage = options.currentUserMessage?.trim();
+  const allMessages = currentUserMessage
+    ? [
+        ...sourceMessages,
+        {
+          body: currentUserMessage.slice(0, 1200),
+          eventId: "local:current-ai-question",
+          kind: "text",
+          own: true,
+          timestamp: new Date().toISOString()
+        }
+      ]
+    : sourceMessages;
+  const includedMessages = allMessages.slice(-30);
+  return {
+    encrypted: options.encrypted === true,
+    includedMessageCount: includedMessages.length,
+    messages: includedMessages,
+    ...(options.roomId ? { roomId: options.roomId } : {}),
+    source: "browser-visible-decrypted-timeline",
+    visibleMessageCount: allMessages.length
+  };
 }
 
 function messageDisplayBody(message: MatrixTimelineMessage): string {

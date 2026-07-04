@@ -38,6 +38,11 @@ AI clients must call only COP API endpoints such as
 Browser and native clients must never call Ollama, AI KnowledgeBase LLM Gateway
 or any provider service token directly.
 
+`/api/v1/ai/chat-agent/query` may include a bounded `chatContext` snapshot from
+the client's currently visible/decrypted Matrix timeline. COP API combines that
+explicit client context with authorized server-side COP data; it does not fetch
+or decrypt Matrix room history on the server.
+
 The resettable PoC demo is exposed through `/api/v1/demo/scenarios` and
 documented in the OpenAPI contract. Demo seeding and reset are server-side
 operations; browser and native clients only launch them through authenticated COP

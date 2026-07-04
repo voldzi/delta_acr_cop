@@ -766,6 +766,35 @@ describe("community report routes", () => {
       headers: { authorization: "Bearer dev-lab-token" },
       method: "POST",
       payload: {
+        chatContext: {
+          encrypted: true,
+          messages: [
+            {
+              body: "Ve Vrbně hlásí dobrovolníci stoupající hladinu u mostu.",
+              eventId: "$chat-1",
+              kind: "text",
+              own: false,
+              senderDisplayName: "Jiří Volek",
+              timestamp: "2026-05-20T11:55:00.000Z"
+            },
+            {
+              ai: {
+                auditId: "audit-previous",
+                provider: "mock",
+                status: "COMPLETED",
+                type: "chat-agent"
+              },
+              body: "COP AI agent\nDotaz: Stav?\n\nPředchozí odpověď.",
+              eventId: "$chat-ai",
+              kind: "text",
+              own: true,
+              timestamp: "2026-05-20T11:56:00.000Z"
+            }
+          ],
+          roomId: "!group1:docker.home.cz",
+          source: "browser-visible-decrypted-timeline",
+          visibleMessageCount: 2
+        },
         groupId: group.groupId,
         question: "Co je v COP kontextu nejisté?"
       },

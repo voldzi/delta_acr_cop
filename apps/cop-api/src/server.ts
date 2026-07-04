@@ -5810,6 +5810,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         correlationId
       );
     }
+    const chatContext = summarizeAiChatContextForAi(body.chatContext);
     const subject = defaultSystemSubject();
     const maxObjects = readBoundedInteger(body.maxObjects, 30, 1, 60);
     const readableObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
@@ -5823,13 +5824,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       includeExpired: false,
       requestNow
     })).slice(0, 20);
+    const communityReports = (await listCommunityReports({
+      limit: 40,
+      statuses: ["submitted", "published"]
+    }))
+      .filter((report) => canReadCommunityReport(report, actor))
+      .slice(0, 20);
+    const incidents = (await listIncidents({ limit: 20 })).slice(0, 20);
     const aiRequest: AiCopQuery = {
       requestId: aiRequestId(body.requestId),
       purpose: "COP_EXPLANATION",
       prompt: [
         `Odpověz jako viditelný AI agent v COP chatu v jazyce ${aiLanguage(body.language)}.`,
-        "Použij pouze přiložený COP kontext a jasně odděl ověřená data, odhady a chybějící informace.",
-        "Nečti ani nepředstírej znalost šifrované Matrix komunikace. Neformuluj taktické pokyny, targeting ani doporučení použití síly.",
+        "Použij přiložený COP kontext napříč objekty, výstrahami, komunitními hlášeními, incidenty, stavem zdrojů a explicitně poskytnutým chatContext.",
+        "ChatContext ber jen jako výňatek viditelné dešifrované timeline poskytnutý klientem; nedovozuj neviděnou historii místnosti.",
+        "Jasně odděl ověřená data, odhady a chybějící informace. Neformuluj taktické pokyny, targeting ani doporučení použití síly.",
         `Dotaz uživatele: ${question}`
       ].join(" "),
       context: {
@@ -5843,13 +5852,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           aiAssistant: group ? summarizeGroupAiAssistantForAi(group) : undefined,
           activeMemberCount: group ? group.members.filter((member) => member.status === "active").length : undefined
         }),
+        chatContext,
         scope: {
           objectCount: readableObjects.length,
           alertCount: alerts.length,
+          chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
+          communityReportCount: communityReports.length,
+          incidentCount: incidents.length,
           sourceCount: sourceHealth.length
         },
         objects: decoratedObjects.map(summarizeObjectForAi),
         alerts: alerts.map(summarizeAlertForAi),
+        communityReports: communityReports.map(summarizeCommunityReportForAi),
+        incidents: incidents.map(summarizeIncidentForAi),
         sourceHealth: sourceHealth.map(summarizeSourceHealthForAi)
       },
       providerPreference: "auto",
@@ -5859,6 +5874,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const response = await aiGateway.queryCopAssistant(aiRequest);
     appendAudit(state, `AI_CHAT_AGENT_${response.status}`, {
       ...aiAuditMetadata(response, actor),
+      chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
       conversationId: optionalText(body.conversationId),
       groupId: group?.groupId
     }, correlationId);
@@ -11865,6 +11881,57 @@ function summarizeAlertForAi(alert: CopAlert): Record<string, unknown> {
   });
 }
 
+function summarizeCommunityReportForAi(report: CommunityReportRecord): Record<string, unknown> {
+  return compactRecord({
+    attachmentCount: report.attachments.filter((attachment) => attachment.status === "uploaded").length,
+    attachmentKinds: Array.from(new Set(report.attachments
+      .filter((attachment) => attachment.status === "uploaded")
+      .map((attachment) => attachment.kind))).slice(0, 5),
+    category: report.category,
+    description: report.description?.slice(0, 600),
+    location: {
+      accuracyM: report.location.accuracyM,
+      lat: roundCoordinate(report.location.lat),
+      lon: roundCoordinate(report.location.lon),
+      source: report.location.source
+    },
+    observedAt: report.observedAt,
+    reportId: report.reportId,
+    status: report.status,
+    submittedAt: report.submittedAt,
+    title: report.title,
+    updatedAt: report.updatedAt,
+    visibility: report.visibility
+  });
+}
+
+function summarizeIncidentForAi(incident: IncidentRecord): Record<string, unknown> {
+  return compactRecord({
+    category: incident.category,
+    confidence: incident.confidence,
+    description: incident.description?.slice(0, 600),
+    incidentId: incident.incidentId,
+    location: {
+      accuracyM: incident.location.accuracyM,
+      label: incident.location.label,
+      lat: roundCoordinate(incident.location.lat),
+      lon: roundCoordinate(incident.location.lon),
+      source: incident.location.source
+    },
+    severity: incident.severity,
+    sourceRefs: incident.sourceRefs.slice(0, 8).map((sourceRef) => compactRecord({
+      id: sourceRef.id,
+      kind: sourceRef.kind,
+      observedAt: sourceRef.observedAt,
+      sourceId: sourceRef.sourceId,
+      title: sourceRef.title
+    })),
+    status: incident.status,
+    title: incident.title,
+    updatedAt: incident.updatedAt
+  });
+}
+
 function summarizeSourceHealthForAi(source: SourceHealthItem): Record<string, unknown> {
   return compactRecord({
     acceptedEvents: source.acceptedEvents,
@@ -11882,6 +11949,58 @@ function summarizeSourceHealthForAi(source: SourceHealthItem): Record<string, un
     status: source.status,
     totalTracks: source.totalTracks,
     warnings: source.warnings?.slice(0, 5)
+  });
+}
+
+function summarizeAiChatContextForAi(value: unknown): Record<string, unknown> | undefined {
+  const record = isRecord(value) ? value : undefined;
+  if (!record) {
+    return undefined;
+  }
+  const rawMessages = Array.isArray(record.messages) ? record.messages : [];
+  const messages = rawMessages
+    .flatMap((item) => {
+      const message = summarizeAiChatMessageForAi(item);
+      return message ? [message] : [];
+    })
+    .slice(-30);
+  if (messages.length === 0) {
+    return undefined;
+  }
+  return compactRecord({
+    encrypted: record.encrypted === true,
+    includedMessageCount: messages.length,
+    messages,
+    roomId: optionalTrimmedString(record.roomId, 160),
+    source: record.source === "browser-visible-decrypted-timeline" ? record.source : undefined,
+    visibleMessageCount: readBoundedInteger(record.visibleMessageCount, messages.length, 0, 5000)
+  });
+}
+
+function summarizeAiChatMessageForAi(value: unknown): Record<string, unknown> | undefined {
+  const record = isRecord(value) ? value : undefined;
+  if (!record) {
+    return undefined;
+  }
+  const body = optionalTrimmedString(record.body, 1200);
+  if (!body) {
+    return undefined;
+  }
+  const ai = isRecord(record.ai) ? record.ai : undefined;
+  return compactRecord({
+    ai: ai ? compactRecord({
+      auditId: optionalTrimmedString(ai.auditId, 160),
+      provider: optionalTrimmedString(ai.provider, 80),
+      status: optionalTrimmedString(ai.status, 40),
+      type: optionalTrimmedString(ai.type, 80)
+    }) : undefined,
+    body,
+    eventId: optionalTrimmedString(record.eventId, 160),
+    kind: optionalTrimmedString(record.kind, 40),
+    own: record.own === true,
+    sender: optionalTrimmedString(record.sender, 160),
+    senderDisplayName: optionalTrimmedString(record.senderDisplayName, 160),
+    timestamp: optionalTrimmedString(record.timestamp, 80)
   });
 }
 

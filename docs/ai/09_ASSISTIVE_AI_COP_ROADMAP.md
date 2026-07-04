@@ -111,8 +111,10 @@ COP Chat má také group-level metadata `chat.aiAssistant`. Správce skupiny mů
 AI agenta zapnout nebo vypnout v detailu skupiny. Zapnutý agent je v UI
 viditelný jako samostatný řádek mezi členy a dotazy jdou přes
 `POST /api/v1/ai/chat-agent/query`. Endpoint je autentizovaný, pro `groupId`
-vyžaduje aktivní členství a skládá COP kontext server-side; nečte šifrovanou
-Matrix historii.
+vyžaduje aktivní členství a skládá COP kontext server-side z aktuálních
+objektů, výstrah, komunitních hlášení, incidentů a stavu zdrojů. Klient může k
+dotazu přidat `chatContext` s omezeným výňatkem aktuálně viditelné/dešifrované
+Matrix timeline. API samo nečte šifrovanou Matrix historii.
 
 Odpovědi AI odeslané do Matrixu jsou běžné `m.room.message` události s
 namespaced `cz.cop` metadaty. UI je díky tomu označí jako `COP AI agent` nebo
@@ -146,6 +148,7 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
    první chat UI dialog napojený na server-side COP kontext.
 5. Community report assistant pro text a kategorie. Stav: základní endpoint hotový bez čtení médií.
 6. Viditelný chat AI agent. Stav: group-level metadata, explicitní dotazovací
-   dialog, `@COP AI` mention tok a Matrix `cz.cop` auditní metadata jsou hotové
-   bez čtení E2EE historie.
+   dialog, `@COP AI` mention tok, Matrix `cz.cop` auditní metadata a
+   client-supplied `chatContext` nad viditelnou timeline jsou hotové bez
+   server-side čtení E2EE historie.
 7. Až potom multimediální shrnutí, a jen s media ACL.

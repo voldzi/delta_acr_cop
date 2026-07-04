@@ -66,12 +66,38 @@ export interface AiSituationSummaryOptions {
 }
 
 export interface AiChatAgentQueryOptions {
+  chatContext?: AiChatAgentContextSnapshot;
   conversationId?: string;
   groupId?: string;
   language?: "cs" | "en";
   maxObjects?: number;
   question: string;
   requestId?: string;
+}
+
+export interface AiChatAgentContextSnapshot {
+  encrypted?: boolean;
+  includedMessageCount?: number;
+  messages?: AiChatAgentContextMessage[];
+  roomId?: string;
+  source?: "browser-visible-decrypted-timeline";
+  visibleMessageCount?: number;
+}
+
+export interface AiChatAgentContextMessage {
+  ai?: {
+    auditId?: string;
+    provider?: string;
+    status?: string;
+    type?: string;
+  };
+  body: string;
+  eventId?: string;
+  kind?: string;
+  own?: boolean;
+  sender?: string;
+  senderDisplayName?: string;
+  timestamp?: string;
 }
 
 export interface CopObject {
