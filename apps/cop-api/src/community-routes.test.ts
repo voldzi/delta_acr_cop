@@ -745,6 +745,96 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("answers AI chat agent questions with group-scoped COP context", async () => {
+    const app = buildServer({
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        name: "AI skupina",
+        visibility: "public"
+      },
+      url: "/api/v1/community/groups"
+    });
+    expect(createResponse.statusCode).toBe(201);
+    const group = createResponse.json() as { groupId: string };
+
+    const disabledResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        groupId: group.groupId,
+        question: "Co je v COP kontextu nejisté?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+    expect(disabledResponse.statusCode).toBe(409);
+
+    const metadataResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "PATCH",
+      payload: {
+        metadata: {
+          chat: {
+            aiAssistant: {
+              enabled: true,
+              label: "COP AI Assistant",
+              mode: "cop-context",
+              updatedAt: "2026-05-20T12:00:00.000Z"
+            }
+          }
+        }
+      },
+      url: `/api/v1/community/groups/${group.groupId}/metadata`
+    });
+    expect(metadataResponse.statusCode).toBe(200);
+
+    const queryResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        groupId: group.groupId,
+        question: "Co je v COP kontextu nejisté?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+    expect(queryResponse.statusCode).toBe(200);
+    expect(queryResponse.json()).toMatchObject({
+      policy: {
+        allowed: true
+      },
+      provider: "mock",
+      status: "COMPLETED"
+    });
+    expect(queryResponse.json().result.summary).toContain("Mock COP assistant response");
+
+    const emptyQuestionResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        question: " "
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+    expect(emptyQuestionResponse.statusCode).toBe(400);
+
+    const forbiddenResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        groupId: "77777777-7777-4777-8777-777777777777",
+        question: "Stav?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+    expect(forbiddenResponse.statusCode).toBe(403);
+
+    await app.close();
+  });
+
   it("lets an OIDC owner delete legacy groups stored under preferred username", async () => {
     const issuer = "https://login.zeleznalady.cz/realms/cop-community-legacy-test";
     const keyId = "cop-community-legacy-test-key";

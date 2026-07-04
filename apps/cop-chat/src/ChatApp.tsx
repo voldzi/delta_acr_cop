@@ -39,6 +39,7 @@ import {
   Share2,
   ShieldCheck,
   Smile,
+  Sparkles,
   Sticker,
   Trash2,
   UserMinus,
@@ -73,6 +74,7 @@ import {
   fetchMessagingStatus,
   fetchUserProfile,
   leaveCommunityGroup,
+  queryAiChatAgent,
   removeCommunityGroupMember,
   resolveMessagingMatrixIdentities,
   searchUserDirectory,
@@ -152,6 +154,7 @@ export {
 export type { ChatPreferences } from "./chat-model";
 
 const AiSituationDialog = React.lazy(() => import("./dialogs/AiSituationDialog"));
+const AiAgentDialog = React.lazy(() => import("./dialogs/AiAgentDialog"));
 const EncryptionRecoveryDialog = React.lazy(() => import("./dialogs/EncryptionRecoveryDialog"));
 const DeleteChatDialog = React.lazy(() => import("./dialogs/DeleteChatDialog"));
 const ForwardDialog = React.lazy(() => import("./dialogs/ForwardDialog"));
@@ -362,6 +365,11 @@ export function ChatApp() {
   const [aiSituationDialogOpen, setAiSituationDialogOpen] = React.useState(false);
   const [aiSituationResponse, setAiSituationResponse] = React.useState<AiCopResponse | null>(null);
   const [aiSituationWorking, setAiSituationWorking] = React.useState(false);
+  const [aiAgentDialogOpen, setAiAgentDialogOpen] = React.useState(false);
+  const [aiAgentQuestion, setAiAgentQuestion] = React.useState("");
+  const [aiAgentResponse, setAiAgentResponse] = React.useState<AiCopResponse | null>(null);
+  const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
+  const [aiAgentGroupUpdating, setAiAgentGroupUpdating] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
   const [deleteChatCandidate, setDeleteChatCandidate] = React.useState<ChatListItem | null>(null);
   const [retentionDialogOpen, setRetentionDialogOpen] = React.useState(false);
@@ -486,6 +494,8 @@ export function ChatApp() {
   const canManageSelectedGroupMembers = selectedGroup
     ? canManageCommunityGroupMembers(selectedGroup, authSubjectId)
     : false;
+  const selectedGroupAiAssistant = selectedGroup ? communityGroupAiAssistantMetadata(selectedGroup) : null;
+  const selectedGroupAiAssistantEnabled = Boolean(selectedGroupAiAssistant?.enabled);
   const selectedRoom = selectedRoomId
     ? rooms.find((room) => room.roomId === selectedRoomId) ?? null
     : selectedConversation?.matrix?.roomId
@@ -2172,6 +2182,87 @@ export function ChatApp() {
     }
   }
 
+  function openAiAgentDialog() {
+    if (selectedGroup && !selectedGroupAiAssistantEnabled) {
+      setNotice("AI agent zatím není pro tuto skupinu zapnutý.");
+      return;
+    }
+    setMessageMenuOpen(false);
+    setAiAgentDialogOpen(true);
+  }
+
+  async function askAiAgent(): Promise<void> {
+    const question = aiAgentQuestion.trim();
+    if (!authToken || !question) {
+      return;
+    }
+    setAiAgentWorking(true);
+    setError(null);
+    try {
+      const response = await queryAiChatAgent(apiBase, authToken, {
+        conversationId: selectedConversation?.conversationId,
+        groupId: selectedGroup?.groupId,
+        language: "cs",
+        maxObjects: 40,
+        question
+      });
+      setAiAgentResponse(response);
+      if (response.status === "NEEDS_HUMAN_REVIEW") {
+        setNotice("Odpověď AI agenta vyžaduje lidskou kontrolu před dalším sdílením.");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "AI agent teď nedokáže odpovědět.");
+    } finally {
+      setAiAgentWorking(false);
+    }
+  }
+
+  async function sendAiAgentResponseToChat(text: string): Promise<void> {
+    if (!composerEnabled || !matrixSession || !selectedRoomId) {
+      setError("Nejdřív otevřete chatovou místnost, do které chcete odpověď AI agenta poslat.");
+      return;
+    }
+    const question = aiAgentQuestion.trim();
+    const sent = await sendMessage(`COP AI agent${question ? `\nDotaz: ${question}` : ""}\n\n${text}`);
+    if (sent) {
+      setAiAgentDialogOpen(false);
+      setNotice("Odpověď AI agenta byla odeslána do chatu.");
+    }
+  }
+
+  async function toggleAiAgentForSelectedGroup(enabled: boolean): Promise<void> {
+    if (!authToken || !selectedGroup) {
+      return;
+    }
+    if (!canManageCommunityGroupMembers(selectedGroup, authSubjectId)) {
+      setError("AI agenta může spravovat jen správce skupiny.");
+      return;
+    }
+    setAiAgentGroupUpdating(true);
+    setError(null);
+    try {
+      const currentChat = communityGroupChatMetadata(selectedGroup);
+      const updatedGroup = await updateCommunityGroupMetadata(apiBase, authToken, selectedGroup.groupId, {
+        chat: {
+          ...currentChat,
+          aiAssistant: {
+            enabled,
+            label: currentChat.aiAssistant?.label ?? "COP AI Assistant",
+            mode: "cop-context",
+            updatedAt: new Date().toISOString(),
+            updatedBy: authSubjectId ?? authSession.profile?.username ?? "unknown"
+          }
+        }
+      });
+      setGroups((current) => current.map((group) => group.groupId === updatedGroup.groupId ? updatedGroup : group));
+      setNotice(enabled ? "AI agent je pro skupinu viditelně zapnutý." : "AI agent je pro skupinu vypnutý.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nastavení AI agenta se nepodařilo uložit.");
+    } finally {
+      setAiAgentGroupUpdating(false);
+    }
+  }
+
   async function createRoomForConversation(conversation: MessagingConversationSummary, session = matrixSessionRef.current): Promise<string> {
     if (conversation.matrix?.roomId) {
       setSelectedRoomId(conversation.matrix.roomId);
@@ -2627,9 +2718,11 @@ export function ChatApp() {
                   {messageMenuOpen ? (
                     <ChatActionMenu
                       activeChat={activeChat}
+                      aiAgentAvailable={selectedGroupAiAssistantEnabled}
                       canAddMember={canManageSelectedGroupMembers}
                       muted={activeChat.muted}
                       onAddMember={openAddMemberDialog}
+                      onAskAiAgent={openAiAgentDialog}
                       onInfo={openChatInfo}
                       onManage={() => {
                         setMessageMenuOpen(false);
@@ -2847,6 +2940,24 @@ export function ChatApp() {
         </React.Suspense>
       ) : null}
 
+      {aiAgentDialogOpen ? (
+        <React.Suspense fallback={<DialogLoadingFallback label="AI agent" />}>
+          <AiAgentDialog
+            question={aiAgentQuestion}
+            response={aiAgentResponse}
+            sending={sending}
+            working={aiAgentWorking}
+            onAsk={() => void askAiAgent()}
+            onClose={() => setAiAgentDialogOpen(false)}
+            onQuestionChange={(value) => {
+              setAiAgentQuestion(value);
+              setAiAgentResponse(null);
+            }}
+            onSendToChat={(text) => void sendAiAgentResponseToChat(text)}
+          />
+        </React.Suspense>
+      ) : null}
+
       {actionMessage && messageActionPopover ? (
         <MessageActionPopover
           anchor={messageActionPopover}
@@ -2899,6 +3010,7 @@ export function ChatApp() {
         <ChatInfoPanel
           activeChat={activeChat}
           authSession={authSession}
+          aiAgentUpdating={aiAgentGroupUpdating}
           canAddMember={canManageSelectedGroupMembers}
           conversation={selectedConversation}
           group={selectedGroup}
@@ -2911,6 +3023,7 @@ export function ChatApp() {
           tab={infoPanelTab}
           onClose={() => setInfoPanelOpen(false)}
           onAddMember={openAddMemberDialog}
+          onAskAiAgent={openAiAgentDialog}
           onMediaTabChange={setMediaPanelTab}
           onManageChat={() => {
             setInfoPanelOpen(false);
@@ -2919,6 +3032,7 @@ export function ChatApp() {
           onTabChange={setInfoPanelTab}
           onTogglePinned={() => togglePinnedChat(activeChat)}
           onToggleMute={activeChat.muted ? clearActiveMute : () => setMuteDialogOpen(true)}
+          onToggleAiAgent={(enabled) => void toggleAiAgentForSelectedGroup(enabled)}
           onOpenRetentionSettings={() => setRetentionDialogOpen(true)}
           onOpenPreview={setPreviewItem}
           onRemoveMember={openRemoveMemberDialog}
@@ -3972,6 +4086,7 @@ function ChatSkeleton() {
 function ChatInfoPanel({
   activeChat,
   authSession,
+  aiAgentUpdating,
   canAddMember,
   conversation,
   group,
@@ -3984,17 +4099,20 @@ function ChatInfoPanel({
   tab,
   onClose,
   onAddMember,
+  onAskAiAgent,
   onMediaTabChange,
   onManageChat,
   onOpenRetentionSettings,
   onOpenPreview,
   onRemoveMember,
   onTabChange,
+  onToggleAiAgent,
   onToggleMute,
   onTogglePinned
 }: {
   activeChat: ChatListItem;
   authSession: AuthSession;
+  aiAgentUpdating: boolean;
   canAddMember: boolean;
   conversation: MessagingConversationSummary | null;
   group: CommunityGroup | null;
@@ -4007,16 +4125,19 @@ function ChatInfoPanel({
   tab: InfoPanelTab;
   onClose: () => void;
   onAddMember: () => void;
+  onAskAiAgent: () => void;
   onMediaTabChange: (tab: MediaPanelTab) => void;
   onManageChat: () => void;
   onOpenRetentionSettings: () => void;
   onOpenPreview: (item: MediaPreviewItem) => void;
   onRemoveMember: (member: ChatInfoMember) => void;
   onTabChange: (tab: InfoPanelTab) => void;
+  onToggleAiAgent: (enabled: boolean) => void;
   onToggleMute: () => void;
   onTogglePinned: () => void;
 }) {
   const isDirect = activeChat.type === "direct";
+  const aiAssistant = group ? communityGroupAiAssistantMetadata(group) : null;
   const members = infoMembersForChat(activeChat, conversation, group, authSession);
   const mediaMessages = messages.filter((message) => message.attachment && (message.kind === "image" || message.kind === "video"));
   const documentMessages = messages.filter((message) => message.attachment && message.kind === "file");
@@ -4081,6 +4202,23 @@ function ChatInfoPanel({
                   <ChevronRight size={18} />
                 </strong>
               </button>
+              {!isDirect ? (
+                <button
+                  className="info-setting-row"
+                  disabled={aiAgentUpdating || !canAddMember}
+                  onClick={() => onToggleAiAgent(!aiAssistant?.enabled)}
+                  type="button"
+                >
+                  <span>
+                    <Sparkles size={20} />
+                    AI agent ve skupině
+                  </span>
+                  <strong>
+                    {aiAssistant?.enabled ? "Zapnutý" : canAddMember ? "Vypnutý" : "Pouze správce"}
+                    <ChevronRight size={18} />
+                  </strong>
+                </button>
+              ) : null}
               <div className="info-actions-row">
                 <button onClick={onTogglePinned} type="button">
                   {pinned ? <PinOff size={18} /> : <Pin size={18} />}
@@ -4094,6 +4232,12 @@ function ChatInfoPanel({
                   <button onClick={onAddMember} type="button">
                     <UserPlus size={18} />
                     Přidat člena
+                  </button>
+                ) : null}
+                {!isDirect && aiAssistant?.enabled ? (
+                  <button onClick={onAskAiAgent} type="button">
+                    <Sparkles size={18} />
+                    Zeptat se AI
                   </button>
                 ) : null}
                 <button onClick={onManageChat} type="button">
@@ -4160,6 +4304,15 @@ function ChatInfoPanel({
                   ) : null}
                 </div>
               ))}
+              {!isDirect && aiAssistant?.enabled ? (
+                <div className="member-row ai-agent-member">
+                  <Avatar label={aiAssistant.label} small />
+                  <span>
+                    <strong>{aiAssistant.label}</strong>
+                    <small>AI agent • COP kontext • auditované odpovědi</small>
+                  </span>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -4630,6 +4783,7 @@ function conversationCommunityGroupId(conversation: MessagingConversationSummary
 }
 
 interface CommunityGroupChatMetadata {
+  aiAssistant?: CommunityGroupAiAssistantMetadata;
   conversationId?: string;
   disappearingMessages?: {
     enabled: boolean;
@@ -4642,15 +4796,25 @@ interface CommunityGroupChatMetadata {
   source?: string;
 }
 
+interface CommunityGroupAiAssistantMetadata {
+  enabled: boolean;
+  label: string;
+  mode: "cop-context";
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 function communityGroupChatMetadata(group: CommunityGroup): CommunityGroupChatMetadata {
   const chat = asRecord(group.metadata?.chat);
   if (!chat) {
     return {};
   }
   const disappearingMessages = asRecord(chat.disappearingMessages);
+  const aiAssistant = asRecord(chat.aiAssistant);
   const retentionSeconds = normalizeMessageRetentionSeconds(disappearingMessages?.seconds);
   const retentionEnabled = disappearingMessages?.enabled === true && retentionSeconds !== null;
   return {
+    ...(aiAssistant ? { aiAssistant: communityGroupAiAssistantMetadata(group) } : {}),
     conversationId: typeof chat.conversationId === "string" ? chat.conversationId : undefined,
     ...(disappearingMessages ? {
       disappearingMessages: {
@@ -4663,6 +4827,18 @@ function communityGroupChatMetadata(group: CommunityGroup): CommunityGroupChatMe
     linkedAt: typeof chat.linkedAt === "string" ? chat.linkedAt : undefined,
     matrixRoomId: typeof chat.matrixRoomId === "string" ? chat.matrixRoomId : undefined,
     source: typeof chat.source === "string" ? chat.source : undefined
+  };
+}
+
+function communityGroupAiAssistantMetadata(group: CommunityGroup): CommunityGroupAiAssistantMetadata {
+  const chat = asRecord(group.metadata?.chat);
+  const aiAssistant = asRecord(chat?.aiAssistant);
+  return {
+    enabled: aiAssistant?.enabled === true,
+    label: typeof aiAssistant?.label === "string" && aiAssistant.label.trim() ? aiAssistant.label.trim() : "COP AI Assistant",
+    mode: "cop-context",
+    updatedAt: typeof aiAssistant?.updatedAt === "string" ? aiAssistant.updatedAt : undefined,
+    updatedBy: typeof aiAssistant?.updatedBy === "string" ? aiAssistant.updatedBy : undefined
   };
 }
 

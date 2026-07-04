@@ -2725,7 +2725,8 @@ button {
   opacity: 0.58;
 }
 
-.ai-situation-dialog {
+.ai-situation-dialog,
+.ai-agent-dialog {
   display: grid;
   width: min(680px, 100%);
   max-height: min(760px, 92dvh);
@@ -2736,7 +2737,8 @@ button {
   animation: cop-sheet-rise 180ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
 }
 
-.ai-situation-dialog header {
+.ai-situation-dialog header,
+.ai-agent-dialog header {
   display: flex;
   min-height: 58px;
   align-items: center;
@@ -2746,7 +2748,8 @@ button {
   border-bottom: 1px solid var(--line-soft);
 }
 
-.ai-situation-dialog header span {
+.ai-situation-dialog header span,
+.ai-agent-dialog header span {
   display: inline-flex;
   min-width: 0;
   align-items: center;
@@ -2754,9 +2757,40 @@ button {
   color: var(--accent-dark);
 }
 
-.ai-situation-dialog header strong {
+.ai-situation-dialog header strong,
+.ai-agent-dialog header strong {
   color: #111b21;
   font-size: 1.04rem;
+}
+
+.ai-agent-question {
+  display: grid;
+  gap: 7px;
+  margin: 16px 16px 0;
+}
+
+.ai-agent-question span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 780;
+}
+
+.ai-agent-question textarea {
+  min-height: 106px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111b21;
+  outline: 0;
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.ai-agent-question textarea:focus {
+  border-color: rgba(0, 128, 105, 0.58);
+  box-shadow: 0 0 0 3px rgba(0, 168, 132, 0.12);
 }
 
 .ai-situation-status,
@@ -2774,6 +2808,11 @@ button {
 .ai-situation-status svg,
 .ai-situation-empty svg {
   color: var(--accent-dark);
+}
+
+.ai-situation-status.compact,
+.ai-situation-empty.compact {
+  min-height: 120px;
 }
 
 .ai-situation-output {
@@ -2819,7 +2858,8 @@ button {
   line-height: 1.35;
 }
 
-.ai-situation-dialog footer {
+.ai-situation-dialog footer,
+.ai-agent-dialog footer {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -2828,7 +2868,9 @@ button {
 }
 
 .ai-situation-dialog footer .primary-dialog-action,
-.ai-situation-dialog footer .secondary-dialog-action {
+.ai-situation-dialog footer .secondary-dialog-action,
+.ai-agent-dialog footer .primary-dialog-action,
+.ai-agent-dialog footer .secondary-dialog-action {
   margin: 0;
   gap: 8px;
 }
@@ -3927,6 +3969,7 @@ button {
 
   .new-chat-dialog,
   .ai-situation-dialog,
+  .ai-agent-dialog,
   .preview-dialog,
   .forward-dialog {
     width: 100%;

@@ -65,6 +65,15 @@ export interface AiSituationSummaryOptions {
   requestId?: string;
 }
 
+export interface AiChatAgentQueryOptions {
+  conversationId?: string;
+  groupId?: string;
+  language?: "cs" | "en";
+  maxObjects?: number;
+  question: string;
+  requestId?: string;
+}
+
 export interface CopObject {
   objectId: string;
   objectType: string;
@@ -3027,6 +3036,17 @@ export async function acknowledgeCopAlert(apiBase: string, token: string, alertI
 
 export async function createAiSituationSummary(apiBase: string, token: string, options: AiSituationSummaryOptions = {}): Promise<AiCopResponse> {
   return fetchJson<AiCopResponse>(`${apiBase}/api/v1/ai/situation-summary`, {
+    body: JSON.stringify(options),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function queryAiChatAgent(apiBase: string, token: string, options: AiChatAgentQueryOptions): Promise<AiCopResponse> {
+  return fetchJson<AiCopResponse>(`${apiBase}/api/v1/ai/chat-agent/query`, {
     body: JSON.stringify(options),
     headers: {
       ...(authHeaders(token) ?? {}),

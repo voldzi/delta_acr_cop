@@ -418,6 +418,13 @@ The phase-0 implementation focus is trust and control:
   provider/policy/audit metadata and lets the user copy or explicitly send the
   generated text to the current chat. It does not make AI an invisible Matrix
   participant and does not read encrypted message history.
+- The first visible AI-agent increment is group metadata, not a hidden Matrix
+  bot. Group managers toggle `metadata.chat.aiAssistant.enabled`; enabled
+  groups show `COP AI Assistant` in the member list and expose an explicit
+  “Zeptat se AI agenta” action. Questions call authenticated
+  `POST /api/v1/ai/chat-agent/query`, which requires active membership for the
+  supplied `groupId`, builds COP context server-side and returns audit metadata.
+  Sending the answer to Matrix remains an explicit user action.
 - Current direct-chat removal is local hiding. Current group deletion deletes
   the COP community group when the authenticated actor may manage it. Leaving a
   group calls `DELETE /api/v1/community/groups/{groupId}/members/me`, marks the

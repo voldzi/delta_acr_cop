@@ -5762,6 +5762,109 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return response;
   });
 
+  app.post("/api/v1/ai/chat-agent/query", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
+    const body = isRecord(request.body) ? request.body : {};
+    const question = optionalTrimmedString(body.question, 2000);
+    if (!question) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "AI chat agent query requires a non-empty question.",
+        correlationId
+      );
+    }
+    const rawGroupId = optionalText(body.groupId);
+    const groupId = rawGroupId ? optionalUuid(rawGroupId) : undefined;
+    if (rawGroupId && !groupId) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "AI chat agent groupId must be a UUID.",
+        correlationId
+      );
+    }
+    const group = groupId ? await readCommunityGroup(groupId) : null;
+    if (groupId && (!group || !canUseCommunityGroupForReport(group, actor))) {
+      return sendError(
+        reply,
+        403,
+        "FORBIDDEN",
+        "Current user cannot use the AI chat agent for the selected group.",
+        correlationId
+      );
+    }
+    if (group && summarizeGroupAiAssistantForAi(group).enabled !== true) {
+      return sendError(
+        reply,
+        409,
+        "AI_CHAT_AGENT_DISABLED",
+        "AI chat agent is not enabled for the selected group.",
+        correlationId
+      );
+    }
+    const subject = defaultSystemSubject();
+    const maxObjects = readBoundedInteger(body.maxObjects, 30, 1, 60);
+    const readableObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
+      .filter((object) => canReadObject(subject, object))
+      .slice(0, maxObjects);
+    const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
+    const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const alerts = (await buildAlertItems({
+      actor,
+      includeAcknowledged: false,
+      includeExpired: false,
+      requestNow
+    })).slice(0, 20);
+    const aiRequest: AiCopQuery = {
+      requestId: aiRequestId(body.requestId),
+      purpose: "COP_EXPLANATION",
+      prompt: [
+        `Odpověz jako viditelný AI agent v COP chatu v jazyce ${aiLanguage(body.language)}.`,
+        "Použij pouze přiložený COP kontext a jasně odděl ověřená data, odhady a chybějící informace.",
+        "Nečti ani nepředstírej znalost šifrované Matrix komunikace. Neformuluj taktické pokyny, targeting ani doporučení použití síly.",
+        `Dotaz uživatele: ${question}`
+      ].join(" "),
+      context: {
+        contractVersion: "cop-ai-chat-agent-query-v1",
+        generatedAt: requestNow.toISOString(),
+        question,
+        chat: compactRecord({
+          conversationId: optionalText(body.conversationId),
+          groupId: group?.groupId,
+          groupName: group?.name,
+          aiAssistant: group ? summarizeGroupAiAssistantForAi(group) : undefined,
+          activeMemberCount: group ? group.members.filter((member) => member.status === "active").length : undefined
+        }),
+        scope: {
+          objectCount: readableObjects.length,
+          alertCount: alerts.length,
+          sourceCount: sourceHealth.length
+        },
+        objects: decoratedObjects.map(summarizeObjectForAi),
+        alerts: alerts.map(summarizeAlertForAi),
+        sourceHealth: sourceHealth.map(summarizeSourceHealthForAi)
+      },
+      providerPreference: "auto",
+      outputFormat: "MARKDOWN",
+      safetyScope: "COP_DATA_ASSISTANCE_ONLY"
+    };
+    const response = await aiGateway.queryCopAssistant(aiRequest);
+    appendAudit(state, `AI_CHAT_AGENT_${response.status}`, {
+      ...aiAuditMetadata(response, actor),
+      conversationId: optionalText(body.conversationId),
+      groupId: group?.groupId
+    }, correlationId);
+    return response;
+  });
+
   app.post("/api/v1/ai/source-health-summary", async (request, reply) => {
     const actor = requireActor(request, reply);
     if (!actor) {
@@ -11796,6 +11899,17 @@ function summarizeLocationForAi(value: unknown): Record<string, unknown> | undef
     lat: roundCoordinate(lat),
     lon: roundCoordinate(lon),
     source: optionalText(value.source)
+  });
+}
+
+function summarizeGroupAiAssistantForAi(group: CommunityGroupRecord): Record<string, unknown> {
+  const chat = isRecord(group.metadata.chat) ? group.metadata.chat : {};
+  const aiAssistant = isRecord(chat.aiAssistant) ? chat.aiAssistant : {};
+  return compactRecord({
+    enabled: aiAssistant.enabled === true,
+    label: optionalText(aiAssistant.label),
+    mode: optionalText(aiAssistant.mode),
+    updatedAt: optionalText(aiAssistant.updatedAt)
   });
 }
 

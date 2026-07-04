@@ -2340,6 +2340,38 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+  /api/v1/ai/chat-agent/query:
+    post:
+      tags:
+        - AI
+      summary: Ask a visible COP chat AI agent using server-side policy-filtered context.
+      operationId: queryAiChatAgent
+      description: Creates an audit-backed AI response for an explicit chat question. COP builds the
+        context from authorized COP data and optional group metadata; the endpoint does not read
+        encrypted Matrix message history.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiChatAgentQueryRequest"
+      responses:
+        "200":
+          description: AI assistant response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
   /api/v1/ai/source-health-summary:
     post:
       tags:
@@ -11109,6 +11141,35 @@ components:
         includeAlerts:
           type: boolean
           default: true
+    AiChatAgentQueryRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - question
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        language:
+          type: string
+          enum:
+            - cs
+            - en
+          default: cs
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        conversationId:
+          type: string
+        groupId:
+          type: string
+          format: uuid
+        maxObjects:
+          type: integer
+          minimum: 1
+          maximum: 60
+          default: 30
     AiSourceHealthSummaryRequest:
       type: object
       additionalProperties: false

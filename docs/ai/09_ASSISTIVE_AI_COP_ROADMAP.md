@@ -98,6 +98,7 @@ Aktivní aplikační endpointy:
 
 - `POST /api/v1/ai/cop-assistant/query` pro obecné povolené dotazy,
 - `POST /api/v1/ai/situation-summary` pro situační souhrn z COP objektů, výstrah a provider health,
+- `POST /api/v1/ai/chat-agent/query` pro explicitní otázku viditelnému AI agentovi v COP chatu,
 - `POST /api/v1/ai/source-health-summary` pro vysvětlení kvality zdrojů,
 - `POST /api/v1/ai/community-report/draft` pro pomoc s občanským hlášením.
 
@@ -105,6 +106,13 @@ COP Chat používá `POST /api/v1/ai/situation-summary` pro explicitní
 uživatelský dialog “AI situační souhrn”. První verze pracuje jen s
 policy-filtered COP kontextem připraveným serverem, zobrazuje audit ID a
 nečte Matrix E2EE obsah místnosti.
+
+COP Chat má také group-level metadata `chat.aiAssistant`. Správce skupiny může
+AI agenta zapnout nebo vypnout v detailu skupiny. Zapnutý agent je v UI
+viditelný jako samostatný řádek mezi členy a dotazy jdou přes
+`POST /api/v1/ai/chat-agent/query`. Endpoint je autentizovaný, pro `groupId`
+vyžaduje aktivní členství a skládá COP kontext server-side; nečte šifrovanou
+Matrix historii.
 
 Tyto endpointy jsou určeny i pro iOS/iPadOS klienty. Klienti nemají znát Ollama
 URL, LLM Gateway URL ani service tokeny.
@@ -130,4 +138,6 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
 4. Situation summary pro událost/workspace. Stav: základní endpoint hotový a
    první chat UI dialog napojený na server-side COP kontext.
 5. Community report assistant pro text a kategorie. Stav: základní endpoint hotový bez čtení médií.
-6. Až potom multimediální shrnutí, a jen s media ACL.
+6. Viditelný chat AI agent. Stav: group-level metadata a explicitní dotazovací
+   dialog hotový bez čtení E2EE historie.
+7. Až potom multimediální shrnutí, a jen s media ACL.

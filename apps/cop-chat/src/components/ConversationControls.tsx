@@ -23,9 +23,11 @@ export interface ChatActionMenuChat {
 
 export function ChatActionMenu({
   activeChat,
+  aiAgentAvailable = false,
   canAddMember = false,
   muted,
   onAddMember,
+  onAskAiAgent,
   onInfo,
   onManage,
   onMute,
@@ -37,9 +39,11 @@ export function ChatActionMenu({
   onTogglePinned
 }: {
   activeChat: ChatActionMenuChat;
+  aiAgentAvailable?: boolean;
   canAddMember?: boolean;
   muted: boolean;
   onAddMember?: () => void;
+  onAskAiAgent?: () => void;
   onInfo: () => void;
   onManage: () => void;
   onMute: () => void;
@@ -61,6 +65,12 @@ export function ChatActionMenu({
         <Sparkles size={17} />
         AI situační souhrn
       </button>
+      {aiAgentAvailable && onAskAiAgent ? (
+        <button onClick={onAskAiAgent} role="menuitem" type="button">
+          <Sparkles size={17} />
+          Zeptat se AI agenta
+        </button>
+      ) : null}
       {activeChat.type !== "direct" && canAddMember && onAddMember ? (
         <button onClick={onAddMember} role="menuitem" type="button">
           <UserPlus size={17} />

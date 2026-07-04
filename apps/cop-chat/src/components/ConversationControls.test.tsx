@@ -38,6 +38,7 @@ describe("ConversationControls", () => {
   });
 
   it("switches muted menu item to unmute action", () => {
+    const onAskAiAgent = vi.fn();
     const onAddMember = vi.fn();
     const onManage = vi.fn();
     const onToggleMute = vi.fn();
@@ -45,9 +46,11 @@ describe("ConversationControls", () => {
     render(
       <ChatActionMenu
         activeChat={{ pinned: true, type: "group" }}
+        aiAgentAvailable
         canAddMember
         muted
         onAddMember={onAddMember}
+        onAskAiAgent={onAskAiAgent}
         onInfo={vi.fn()}
         onManage={onManage}
         onMute={onMute}
@@ -62,6 +65,9 @@ describe("ConversationControls", () => {
 
     expect(screen.getByRole("menuitem", { name: /O skupině/u })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /Odepnout/u })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /Zeptat se AI agenta/u }));
+    expect(onAskAiAgent).toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("menuitem", { name: /Přidat člena/u }));
     expect(onAddMember).toHaveBeenCalled();

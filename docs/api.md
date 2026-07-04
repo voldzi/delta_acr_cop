@@ -33,9 +33,10 @@ Current COP error responses use the repository's compatibility envelope with
 request-id field must be compatibility-safe and recorded in an ADR.
 
 AI clients must call only COP API endpoints such as
-`/api/v1/ai/situation-summary`, `/api/v1/ai/source-health-summary` and
-`/api/v1/ai/community-report/draft`. Browser and native clients must never call
-Ollama, AI KnowledgeBase LLM Gateway or any provider service token directly.
+`/api/v1/ai/situation-summary`, `/api/v1/ai/chat-agent/query`,
+`/api/v1/ai/source-health-summary` and `/api/v1/ai/community-report/draft`.
+Browser and native clients must never call Ollama, AI KnowledgeBase LLM Gateway
+or any provider service token directly.
 
 The resettable PoC demo is exposed through `/api/v1/demo/scenarios` and
 documented in the OpenAPI contract. Demo seeding and reset are server-side
