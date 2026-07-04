@@ -66,6 +66,16 @@ jsou pro situační přehled nízká priorita, pokud nejsou přímo relevantní.
 Kontext obsahuje citační značky a strukturované `mapSnapshot` kandidáty pro
 budoucí render mapového náhledu.
 
+`cop-api` navíc udržuje background `indexedContext` přes `AiContextIndex`.
+Index se periodicky obnovuje z public/policy-safe canonical entit: aktuálních
+objektů, systémových alertů, veřejných/komunitních hlášení, incidentů a source
+health. Při AI dotazu se index čte read-only nástrojem
+`cop.ai.context_index.query`, aplikuje geo filtr (`bbox`, current location nebo
+odhad místa z dotazu přes geocoder), časové okno a `bge-m3` semantic řazení.
+Každé tool volání se audituje a LLM dostává citace `[I*]` vedle requestového
+`semanticContext` (`[S*]`) a krizového `priorityContext` (`[P*]`). Index nečte
+historii Matrix E2EE místností a neobsahuje privátní komunitní reporty.
+
 AI KnowledgeBase LLM Gateway zůstává podporovaná jako volitelný kompatibilní
 fallback provider `local`, zejména pokud prostředí chce sdílet jeden gateway pro
 více aplikací.
@@ -98,6 +108,15 @@ COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS=10000
 COP_AI_SEMANTIC_RETRIEVAL_ENABLED=true
 COP_AI_SEMANTIC_RETRIEVAL_MAX_DOCUMENTS=12
 COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES=500
+COP_AI_CONTEXT_INDEX_ENABLED=true
+COP_AI_CONTEXT_INDEX_REFRESH_SECONDS=120
+COP_AI_CONTEXT_INDEX_MAX_DOCUMENTS=800
+COP_AI_CONTEXT_INDEX_QUERY_LIMIT=8
+COP_AI_CONTEXT_INDEX_LOOKBACK_SECONDS=604800
+COP_AI_CONTEXT_INDEX_DEFAULT_RADIUS_KM=30
+COP_AI_CONTEXT_INDEX_OBJECT_LIMIT=250
+COP_AI_CONTEXT_INDEX_COMMUNITY_REPORT_LIMIT=250
+COP_AI_CONTEXT_INDEX_INCIDENT_LIMIT=200
 ```
 
 `COP_AI_DEFAULT_PROVIDER=mock` ponechává bezpečný vývojový režim bez externího
@@ -111,6 +130,9 @@ router pak preferuje `COP_AI_OLLAMA_REASONING_MODEL`, pokud je dostupný.
 `/health/dependencies`; samotné AI dotazy používají provider timeouty
 `COP_AI_OLLAMA_TIMEOUT_MS`, `COP_AI_OLLAMA_REASONING_TIMEOUT_MS` a
 `COP_AI_LOCAL_TIMEOUT_MS`.
+`COP_AI_CONTEXT_INDEX_*` řídí background COP index pro AI agenta: refresh
+periodu, maximální velikost snapshotu, počet relevantních dokumentů předaných
+LLM, výchozí časové okno a limit canonical entit jednotlivých typů.
 
 Volitelný compatibility fallback přes AI KnowledgeBase LLM Gateway:
 

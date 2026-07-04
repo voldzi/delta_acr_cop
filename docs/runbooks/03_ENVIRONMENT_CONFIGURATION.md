@@ -132,6 +132,15 @@ COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS=10000
 COP_AI_SEMANTIC_RETRIEVAL_ENABLED=true
 COP_AI_SEMANTIC_RETRIEVAL_MAX_DOCUMENTS=12
 COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES=500
+COP_AI_CONTEXT_INDEX_ENABLED=true
+COP_AI_CONTEXT_INDEX_REFRESH_SECONDS=120
+COP_AI_CONTEXT_INDEX_MAX_DOCUMENTS=800
+COP_AI_CONTEXT_INDEX_QUERY_LIMIT=8
+COP_AI_CONTEXT_INDEX_LOOKBACK_SECONDS=604800
+COP_AI_CONTEXT_INDEX_DEFAULT_RADIUS_KM=30
+COP_AI_CONTEXT_INDEX_OBJECT_LIMIT=250
+COP_AI_CONTEXT_INDEX_COMMUNITY_REPORT_LIMIT=250
+COP_AI_CONTEXT_INDEX_INCIDENT_LIMIT=200
 ```
 
 Bezpečný vývojový default zůstává:
@@ -153,9 +162,12 @@ embedding provider pro retrieval/RAG nad policy-filtered COP daty; klienti ho
 nevolají přímo. `COP_AI_SEMANTIC_RETRIEVAL_ENABLED` zapíná server-side
 semantic context vrstvu pro AI endpointy. Vrstva indexuje jen už autorizovaný
 kontext dotazu, používá LRU cache embeddingů a do LLM předává jen omezený počet
-nejrelevantnějších dokumentů. Guardrails se vyhodnocují před každým voláním LLM.
+nejrelevantnějších dokumentů. `COP_AI_CONTEXT_INDEX_*` řídí background COP index
+pro AI agenta: refresh, velikost snapshotu, výchozí geo-radius, lookback a počty
+canonical entit jednotlivých typů. Guardrails se vyhodnocují před každým voláním LLM.
 `/health/dependencies` ukazuje `ai-gateway` jako `ok`, `degraded` nebo
-`disabled`; degraded AI nesmí blokovat mapu, reporting ani chat.
+`disabled` a `ai-context-index` jako stav background indexu; degraded AI nesmí
+blokovat mapu, reporting ani chat.
 
 Volitelný compatibility fallback:
 

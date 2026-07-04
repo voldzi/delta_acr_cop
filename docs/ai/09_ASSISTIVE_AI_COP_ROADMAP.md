@@ -94,9 +94,11 @@ COP má server-side AI runtime za `@cop/ai-gateway`:
   Ollama profilu,
 - server-side Ollama embedding provider a semantic context vrstva přes `bge-m3`
   pro retrieval/RAG nad policy-filtered COP daty,
+- background `AiContextIndex` přes public/policy-safe canonical entity s geo
+  filtrem, časovým oknem, citacemi `[I*]` a auditovanými read-only tool calls,
 - guardrails před každým voláním modelu,
 - audit pro každý AI request,
-- health signal `ai-gateway` v `/health/dependencies`.
+- health signal `ai-gateway` a `ai-context-index` v `/health/dependencies`.
 
 Aktivní aplikační endpointy:
 
@@ -161,9 +163,20 @@ výstrahy mají přednost před rutinní diagnostikou zdrojů. Zastaralé nebo
 low-confidence civilní letecké tracky jsou nízká priorita, pokud přímo nesouvisí
 s dotazem, bezpečností nebo datovým pokrytím. `semanticContext.citations` a
 `priorityContext.citations` dávají modelu krátké citační značky (`[S1]`,
-`[P1]`) pro důležitá tvrzení. `priorityContext.mapSnapshot` zatím obsahuje
-strukturované kandidáty a bounding box pro budoucí mapový náhled; není to
-serverem vyrenderovaný obrázek.
+`[P1]`) pro důležitá tvrzení.
+
+Stejné endpointy přidávají také `indexedContext`. Ten je načtený z
+background COP indexu přes auditované tool volání `cop.ai.context_index.query`.
+Index se obnovuje na pozadí z aktuálních objektů, systémových alertů,
+veřejných/komunitních hlášení, incidentů a source health. Dotaz do indexu
+používá explicitní `bbox`/current location z klienta, případně odhad místa z
+textu přes geocoder, a výchozí sedmidenní časové okno. Citace z indexu mají
+tvar `[I1]`. Index záměrně neobsahuje privátní community reporty ani server-side
+Matrix E2EE historii; chatová paměť zůstává jen v consentovaném requestovém
+`chatContext`.
+
+`priorityContext.mapSnapshot` zatím obsahuje strukturované kandidáty a bounding
+box pro budoucí mapový náhled; není to serverem vyrenderovaný obrázek.
 
 Tyto endpointy jsou určeny i pro iOS/iPadOS klienty. Klienti nemají znát Ollama
 URL, LLM Gateway URL ani service tokeny.
@@ -197,7 +210,9 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
    historie.
 7. Až potom multimediální shrnutí, a jen s media ACL.
 8. Semantický COP retrieval/RAG přes `bge-m3` nad canonical entity chunks. Stav:
-   první semantic context vrstva je hotová pro aktuální autorizovaný kontext,
-   včetně krizového priority contextu, citací a map snapshot kandidátů; další
-   krok je perzistentní/background index, mapová/geografická filtrace nad
-   dlouhodobějšími canonical entitami a auditované tool calls.
+   semantic context vrstva je hotová pro aktuální autorizovaný kontext a první
+   background `AiContextIndex` je hotový pro public/policy-safe canonical entity
+   s geo filtrem, časovým oknem, `[I*]` citacemi, health signálem a auditovanými
+   read-only tool calls. Další krok je perzistence indexu mimo paměť procesu,
+   širší konektory na weather/safety/mapové vrstvy, incremental refresh a
+   mapové snapshoty jako strukturované přílohy odpovědi.

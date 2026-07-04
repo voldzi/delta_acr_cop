@@ -34,6 +34,7 @@ import {
   type CommunityReportVisibility
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
+import { AiContextIndex, type AiContextGeoFilter, type AiContextIndexRefreshResult, type AiContextTimeWindow, type AiIndexedContext } from "./ai-context-index.js";
 import { AiSemanticRetriever, createSemanticDocuments } from "./ai-semantic-retrieval.js";
 import { createCopStreamBusFromEnv, type CopStreamBus } from "./cop-stream-bus.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
@@ -548,6 +549,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     maxCacheEntries: readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES, 500),
     maxDocuments: readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_MAX_DOCUMENTS, 12)
   });
+  const aiContextIndex = new AiContextIndex({
+    enabled: readBoolean(process.env.COP_AI_CONTEXT_INDEX_ENABLED, true),
+    maxDocuments: readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_MAX_DOCUMENTS, 800)
+  });
+  const aiContextIndexRefreshSeconds = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_REFRESH_SECONDS, 120);
+  const aiContextIndexMaxAgeMs = aiContextIndexRefreshSeconds * 1000;
+  const aiContextIndexQueryLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_QUERY_LIMIT, 8);
+  const aiContextIndexLookbackSeconds = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_LOOKBACK_SECONDS, 7 * 24 * 3600);
+  const aiContextIndexDefaultRadiusKm = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_DEFAULT_RADIUS_KM, 30);
+  const aiContextIndexObjectLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_OBJECT_LIMIT, 250);
+  const aiContextIndexCommunityReportLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_COMMUNITY_REPORT_LIMIT, 250);
+  const aiContextIndexIncidentLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_INCIDENT_LIMIT, 200);
   const now = options.now ?? (() => new Date());
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
@@ -601,6 +614,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let streamBusDetail = streamBus.diagnostics();
   let restoredCurrentTrackCount = 0;
   let flightDataPollTimer: ReturnType<typeof setInterval> | undefined;
+  let aiContextIndexRefreshTimer: ReturnType<typeof setInterval> | undefined;
+  let aiContextIndexRefreshInFlight: Promise<AiContextIndexRefreshResult> | undefined;
   let trackPersistenceFlushTimer: ReturnType<typeof setTimeout> | undefined;
   let trackPersistenceFlushInFlight = false;
   let droppedTrackHistoryPoints = 0;
@@ -678,10 +693,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
     }
     await initializeFlightDataSource();
+    await refreshAiContextIndex("startup", now());
+    aiContextIndexRefreshTimer = setInterval(() => {
+      void refreshAiContextIndex("background", now()).catch((error) => {
+        app.log.warn({ error }, "AI context index refresh failed.");
+      });
+    }, aiContextIndexRefreshSeconds * 1000);
+    aiContextIndexRefreshTimer.unref?.();
   });
   app.addHook("onClose", async () => {
     if (flightDataPollTimer) {
       clearInterval(flightDataPollTimer);
+    }
+    if (aiContextIndexRefreshTimer) {
+      clearInterval(aiContextIndexRefreshTimer);
     }
     if (trackPersistenceFlushTimer) {
       clearTimeout(trackPersistenceFlushTimer);
@@ -756,6 +781,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
         { name: "mobile-device-store", status: mobileDeviceStoreStatus, detail: mobileDeviceStoreDependencyDetail() },
         { name: "place-geocoder", status: placeGeocoder ? "ok" : "disabled", detail: placeGeocoder?.diagnostics?.() ?? "disabled" },
+        aiContextIndexDependency(),
         messaging,
         ...(flightDataSource ? [flightDataDependency()] : []),
         ...(situationDataSource ? [situationDataDependency()] : []),
@@ -1183,6 +1209,216 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       name: "flight-data-source",
       status: health.health === "ONLINE" ? "ok" : "degraded"
     };
+  }
+
+  function aiContextIndexDependency(): { detail: string; name: string; status: DependencyStatus } {
+    const diagnostics = aiContextIndex.diagnostics();
+    return {
+      detail: [
+        `documents ${diagnostics.documentCount}`,
+        diagnostics.refreshedAt ? `refreshedAt ${diagnostics.refreshedAt}` : "not refreshed"
+      ].join("; "),
+      name: "ai-context-index",
+      status: diagnostics.status === "disabled" ? "disabled" : diagnostics.status === "ok" ? "ok" : "degraded"
+    };
+  }
+
+  async function refreshAiContextIndex(reason: string, requestNow: Date): Promise<AiContextIndexRefreshResult> {
+    if (aiContextIndexRefreshInFlight) {
+      return aiContextIndexRefreshInFlight;
+    }
+    aiContextIndexRefreshInFlight = (async () => {
+      const documents = createSemanticDocuments(await buildAiContextIndexSnapshot(requestNow));
+      const result = aiContextIndex.replaceDocuments(documents, {
+        indexedAt: requestNow,
+        reason
+      });
+      if (reason !== "background") {
+        appendAudit(state, "AI_CONTEXT_INDEX_REFRESHED", {
+          documentCount: result.documentCount,
+          reason,
+          status: result.status
+        });
+      }
+      return result;
+    })();
+    try {
+      return await aiContextIndexRefreshInFlight;
+    } finally {
+      aiContextIndexRefreshInFlight = undefined;
+    }
+  }
+
+  async function buildAiContextIndexSnapshot(requestNow: Date): Promise<{
+    alerts: Record<string, unknown>[];
+    communityReports: Record<string, unknown>[];
+    incidents: Record<string, unknown>[];
+    objects: Record<string, unknown>[];
+    sourceHealth: Record<string, unknown>[];
+  }> {
+    const subject = defaultSystemSubject();
+    const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const readableObjects = prioritizeObjectsForAi(selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
+      .filter((object) => canReadObject(subject, object)))
+      .slice(0, aiContextIndexObjectLimit);
+    const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
+    const alerts = buildCopAlerts({
+      acknowledgements: new Map(),
+      aoiRules: [],
+      evaluatedAt: requestNow.toISOString(),
+      objects: decoratedObjects,
+      sourceHealth
+    })
+      .filter((alert) => alert.status === "ACTIVE")
+      .slice(0, 80);
+    const communityReports = (await listCommunityReports({
+      limit: aiContextIndexCommunityReportLimit,
+      statuses: ["submitted", "published"]
+    }))
+      .filter((report) => report.visibility !== "private")
+      .slice(0, aiContextIndexCommunityReportLimit);
+    const incidents = (await listIncidents({
+      limit: aiContextIndexIncidentLimit,
+      statuses: ["active", "candidate", "monitoring"]
+    })).slice(0, aiContextIndexIncidentLimit);
+    return {
+      alerts: alerts.map(summarizeAlertForAi),
+      communityReports: communityReports.map(summarizeCommunityReportForAi),
+      incidents: incidents.map(summarizeIncidentForAi),
+      objects: decoratedObjects.map(summarizeObjectForAi),
+      sourceHealth: sourceHealth.map(summarizeSourceHealthForAi)
+    };
+  }
+
+  async function queryAiContextIndexForAi(input: {
+    actor: AuthenticatedActor;
+    body: Record<string, unknown>;
+    correlationId: string;
+    query: string;
+    requestId: string;
+    requestNow: Date;
+  }): Promise<AiIndexedContext> {
+    if (aiContextIndex.shouldRefresh(input.requestNow, aiContextIndexMaxAgeMs)) {
+      try {
+        await refreshAiContextIndex("lazy-query", input.requestNow);
+      } catch (error) {
+        appendAudit(state, "AI_CONTEXT_INDEX_REFRESH_FAILED", {
+          actorSubjectId: input.actor.subjectId,
+          error: errorMessage(error),
+          requestId: input.requestId
+        }, input.correlationId);
+        app.log.warn({ error }, "AI context index lazy refresh failed.");
+      }
+    }
+    const geo = await resolveAiContextGeoFilter(input.body, input.query, input.requestNow);
+    const timeWindow = resolveAiContextTimeWindow(input.body);
+    const indexedContext = await aiContextIndex.query(aiSemanticRetriever, {
+      generatedAt: input.requestNow,
+      ...(geo ? { geo } : {}),
+      limit: aiContextIndexQueryLimit,
+      query: input.query,
+      timeWindow
+    });
+    appendAudit(state, "AI_CONTEXT_INDEX_TOOL_INVOKED", {
+      actorSubjectId: input.actor.subjectId,
+      candidateDocumentCount: indexedContext.toolCall.candidateDocumentCount,
+      geo: indexedContext.query.geo,
+      invocationId: indexedContext.toolCall.invocationId,
+      matchedDocumentCount: indexedContext.toolCall.matchedDocumentCount,
+      requestId: input.requestId,
+      status: indexedContext.toolCall.status,
+      timeWindow: indexedContext.query.timeWindow,
+      toolId: indexedContext.toolCall.toolId,
+      warnings: indexedContext.toolCall.warnings
+    }, input.correlationId);
+    return indexedContext;
+  }
+
+  async function resolveAiContextGeoFilter(body: Record<string, unknown>, query: string, requestNow: Date): Promise<AiContextGeoFilter | undefined> {
+    const explicitGeo = parseAiContextGeoFilter(body);
+    if (explicitGeo) {
+      return explicitGeo;
+    }
+    const placeQuery = aiContextPlaceFromBody(body) ?? aiPlaceQueryFromQuestion(query);
+    if (!placeQuery || !placeGeocoder) {
+      return undefined;
+    }
+    try {
+      const response = await placeGeocoder.search({
+        language: aiLanguage(body.language),
+        limit: 1,
+        query: placeQuery
+      }, requestNow);
+      const place = response.items[0];
+      if (!place) {
+        return undefined;
+      }
+      const [lon, lat] = place.center;
+      return {
+        ...(place.bbox ? { bbox: place.bbox } : {}),
+        center: {
+          lat,
+          lon,
+          radiusKm: aiContextIndexDefaultRadiusKm
+        },
+        label: place.displayName,
+        source: "geocoder"
+      };
+    } catch (error) {
+      app.log.warn({ error, placeQuery }, "AI context geocode lookup failed.");
+      return undefined;
+    }
+  }
+
+  function parseAiContextGeoFilter(body: Record<string, unknown>): AiContextGeoFilter | undefined {
+    const geoContext = isRecord(body.geoContext) ? body.geoContext : {};
+    const bbox = parseMapQueryBbox(geoContext.bbox ?? body.bbox);
+    const location = firstRecord(
+      geoContext.currentLocation,
+      geoContext.location,
+      body.currentLocation,
+      body.location
+    );
+    const lat = location ? optionalFiniteNumber(location.lat ?? location.latitude, -90, 90) : undefined;
+    const lon = location ? optionalFiniteNumber(location.lon ?? location.lng ?? location.longitude, -180, 180) : undefined;
+    const radiusKm = location
+      ? optionalFiniteNumber(location.radiusKm ?? location.radius ?? geoContext.radiusKm ?? body.radiusKm, 0.1, 500) ?? aiContextIndexDefaultRadiusKm
+      : undefined;
+    if (!bbox && (lat === undefined || lon === undefined || radiusKm === undefined)) {
+      return undefined;
+    }
+    return {
+      ...(bbox ? { bbox } : {}),
+      ...(lat !== undefined && lon !== undefined && radiusKm !== undefined ? { center: { lat, lon, radiusKm } } : {}),
+      ...(optionalText(geoContext.label ?? location?.label ?? body.locationLabel) ? { label: optionalText(geoContext.label ?? location?.label ?? body.locationLabel) } : {}),
+      source: "body"
+    };
+  }
+
+  function resolveAiContextTimeWindow(body: Record<string, unknown>): AiContextTimeWindow {
+    const timeWindow = isRecord(body.timeWindow) ? body.timeWindow : {};
+    const from = optionalIsoString(timeWindow.from ?? timeWindow.since ?? body.from ?? body.since);
+    const to = optionalIsoString(timeWindow.to ?? body.to);
+    const maxAgeSeconds = readBoundedInteger(
+      timeWindow.maxAgeSeconds ?? body.maxAgeSeconds ?? body.lookbackSeconds,
+      aiContextIndexLookbackSeconds,
+      60,
+      30 * 24 * 3600
+    );
+    return compactRecord({
+      from,
+      maxAgeSeconds,
+      to
+    }) as AiContextTimeWindow;
+  }
+
+  function aiContextPlaceFromBody(body: Record<string, unknown>): string | undefined {
+    const geoContext = isRecord(body.geoContext) ? body.geoContext : {};
+    return optionalTrimmedString(geoContext.place ?? geoContext.query ?? body.placeQuery ?? body.place, 120);
+  }
+
+  function firstRecord(...values: unknown[]): Record<string, unknown> | undefined {
+    return values.find(isRecord);
   }
 
   function activeFlightDataSourceSystem(): SourceSystem {
@@ -5880,6 +6116,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       objects: aiObjects,
       sourceHealth: aiSourceHealth
     });
+    const requestId = aiRequestId(body.requestId);
+    const summaryQuery = [
+      "situační souhrn krizové priority povodeň hladina řeky požár bezpečnost policie incident infrastruktura komunita výstrahy",
+      aiLanguage(body.language),
+      aiIncidents.length ? `incidenty ${aiIncidents.length}` : "",
+      aiCommunityReports.length ? `komunitní hlášení ${aiCommunityReports.length}` : "",
+      aiAlerts.length ? `výstrahy ${aiAlerts.length}` : "",
+      aiObjects.length ? `objekty ${aiObjects.length}` : ""
+    ].filter(Boolean).join(" ");
     const semanticContext = await aiSemanticRetriever.retrieve({
       documents: createSemanticDocuments({
         alerts: aiAlerts,
@@ -5890,24 +6135,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }),
       generatedAt: requestNow,
       limit: 12,
-      query: [
-        "situační souhrn krizové priority povodeň hladina řeky požár bezpečnost policie incident infrastruktura komunita výstrahy",
-        aiLanguage(body.language),
-        aiIncidents.length ? `incidenty ${aiIncidents.length}` : "",
-        aiCommunityReports.length ? `komunitní hlášení ${aiCommunityReports.length}` : "",
-        aiAlerts.length ? `výstrahy ${aiAlerts.length}` : "",
-        aiObjects.length ? `objekty ${aiObjects.length}` : ""
-      ].filter(Boolean).join(" ")
+      query: summaryQuery
+    });
+    const indexedContext = await queryAiContextIndexForAi({
+      actor,
+      body,
+      correlationId,
+      query: summaryQuery,
+      requestId,
+      requestNow
     });
     const aiRequest: AiCopQuery = {
-      requestId: aiRequestId(body.requestId),
+      requestId,
       purpose: "COP_EXPLANATION",
       prompt: [
         `Vytvoř stručný situační souhrn pro civilní mapu v jazyce ${aiLanguage(body.language)}.`,
         "Priorita je bezpečnost lidí a majetku: povodně/voda, požáry, zdravotní události, infrastruktura, dopravní omezení, bezpečnostní/policejní incidenty, komunitní hlášení a aktivní výstrahy.",
         "Letecké tracky a stale/low-confidence diagnostiku zmiň jen tehdy, když jsou přímo bezpečnostně relevantní nebo výrazně ovlivňují situační přehled; běžné zastaralé civilní letové tracky nejsou hlavní událost.",
-        "Použij priorityContext jako první vodítko, semanticContext jako bge-m3 vybraný seznam relevantních COP entit a neopouštěj přiložený autorizovaný kontext.",
-        "U každého důležitého tvrzení přidej citaci ve tvaru [S1] ze semanticContext.citations nebo [P1] z priorityContext.citations.",
+        "Použij priorityContext jako první vodítko, semanticContext jako requestově aktuální bge-m3 výběr a indexedContext jako širší background COP index s geo/časovým filtrem. Neopouštěj přiložený autorizovaný kontext.",
+        "U každého důležitého tvrzení přidej citaci ve tvaru [S1] ze semanticContext.citations, [I1] z indexedContext.citations nebo [P1] z priorityContext.citations.",
         "Odděl ověřená data, odhady a chybějící informace. Uveď, když chybí lokální vodní/požární/bezpečnostní evidence.",
         "Nepřidávej vlastní fakta a neformuluj operační pokyny."
       ].join(" "),
@@ -5920,9 +6166,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           communityReportCount: communityReports.length,
           incidentCount: incidents.length,
           sourceCount: sourceHealth.length,
+          indexedCandidateDocumentCount: indexedContext.toolCall.candidateDocumentCount,
+          indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
           semanticDocumentCount: semanticContext.includedDocumentCount
         },
         priorityContext,
+        indexedContext,
         objects: aiObjects,
         alerts: aiAlerts,
         communityReports: aiCommunityReports,
@@ -5937,6 +6186,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const response = await aiGateway.queryCopAssistant(aiRequest);
     appendAudit(state, `AI_SITUATION_SUMMARY_${response.status}`, {
       ...aiAuditMetadata(response, actor),
+      indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
+      indexedStatus: indexedContext.semanticContext.status,
+      indexedToolInvocationId: indexedContext.toolCall.invocationId,
       semanticDocumentCount: semanticContext.includedDocumentCount,
       semanticStatus: semanticContext.status
     }, correlationId);
@@ -6026,6 +6278,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       objects: aiObjects,
       sourceHealth: aiSourceHealth
     });
+    const requestId = aiRequestId(body.requestId);
     const semanticContext = await aiSemanticRetriever.retrieve({
       documents: createSemanticDocuments({
         alerts: aiAlerts,
@@ -6039,15 +6292,23 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       limit: 12,
       query: question
     });
+    const indexedContext = await queryAiContextIndexForAi({
+      actor,
+      body,
+      correlationId,
+      query: question,
+      requestId,
+      requestNow
+    });
     const aiRequest: AiCopQuery = {
-      requestId: aiRequestId(body.requestId),
+      requestId,
       purpose: "COP_EXPLANATION",
       prompt: [
         `Odpověz jako viditelný AI agent v COP chatu v jazyce ${aiLanguage(body.language)}.`,
         "Použij přiložený COP kontext napříč objekty, výstrahami, komunitními hlášeními, incidenty, stavem zdrojů a explicitně poskytnutým chatContext.",
-        "Použij priorityContext pro krizovou důležitost a semanticContext jako bge-m3 vybraný seznam relevantních COP entit a chatových výňatků; uveď, když je retrieval degraded nebo prázdný.",
+        "Použij priorityContext pro krizovou důležitost, semanticContext jako requestově aktuální bge-m3 výběr COP entit a chatových výňatků a indexedContext jako širší background COP index s geo/časovým filtrem; uveď, když je retrieval degraded nebo prázdný.",
         "Bezpečnostní priority jsou voda/povodeň, požár, zdravotní riziko, infrastruktura, dopravní omezení, bezpečnostní/policejní incident a komunitní hlášení; běžné stale civilní letové tracky zmiň jen pokud přímo souvisí s dotazem.",
-        "Důležitá tvrzení cituj pomocí [S1] ze semanticContext.citations nebo [P1] z priorityContext.citations.",
+        "Důležitá tvrzení cituj pomocí [S1] ze semanticContext.citations, [I1] z indexedContext.citations nebo [P1] z priorityContext.citations.",
         "ChatContext ber jen jako výňatek viditelné dešifrované timeline poskytnutý klientem; nedovozuj neviděnou historii místnosti.",
         "Jasně odděl ověřená data, odhady a chybějící informace. Neformuluj taktické pokyny, targeting ani doporučení použití síly.",
         `Dotaz uživatele: ${question}`
@@ -6072,6 +6333,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           communityReportCount: communityReports.length,
           incidentCount: incidents.length,
           sourceCount: sourceHealth.length,
+          indexedCandidateDocumentCount: indexedContext.toolCall.candidateDocumentCount,
+          indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
           semanticDocumentCount: semanticContext.includedDocumentCount
         },
         objects: aiObjects,
@@ -6079,6 +6342,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         communityReports: aiCommunityReports,
         incidents: aiIncidents,
         sourceHealth: aiSourceHealth,
+        indexedContext,
         semanticContext
       },
       ...(modelPreference ? { modelPreference } : {}),
@@ -6092,6 +6356,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
       conversationId: optionalText(body.conversationId),
       groupId: group?.groupId,
+      indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
+      indexedStatus: indexedContext.semanticContext.status,
+      indexedToolInvocationId: indexedContext.toolCall.invocationId,
       semanticDocumentCount: semanticContext.includedDocumentCount,
       semanticStatus: semanticContext.status
     }, correlationId);
@@ -12043,6 +12310,33 @@ function aiRequestId(value: unknown): string {
 
 function aiLanguage(value: unknown): "cs" | "en" {
   return value === "en" ? "en" : "cs";
+}
+
+function aiPlaceQueryFromQuestion(question: string): string | undefined {
+  const text = question.replace(/\s+/gu, " ").trim();
+  const patterns = [
+    /\b(?:ve|v|u|okolo|okolí|poblíž|blízko|kolem|pro)\s+(?<place>[^?.!,;\n]{3,120})/iu,
+    /\bsituace\s+(?<place>[^?.!,;\n]{3,120})/iu
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    const rawPlace = match?.groups?.place;
+    if (!rawPlace) {
+      continue;
+    }
+    const place = rawPlace
+      .replace(/\b(?:vytvoř|vytvor|udělej|udelej|shrň|shrn|situational|awareness|prosím|prosim|co\b|jaká\b|jaka\b|jaký\b|jaky\b).*$/iu, "")
+      .trim();
+    if (place.length >= 3 && !isAiGenericPlaceQuery(place)) {
+      return place.slice(0, 120);
+    }
+  }
+  return undefined;
+}
+
+function isAiGenericPlaceQuery(value: string): boolean {
+  const normalized = value.toLocaleLowerCase("cs-CZ");
+  return /^(cop|chatu?|skupině|skupine|místnosti|mistnosti|aplikaci|kontextu|mapě|mape)$/u.test(normalized);
 }
 
 function aiModelPreference(value: unknown): AiModelPreference | undefined {

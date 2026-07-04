@@ -57,6 +57,15 @@ for future map-preview rendering. Routine stale or low-confidence civil air
 tracks are intentionally low priority unless directly relevant to the user
 question, safety or a data-coverage caveat.
 
+The same endpoints also attach `indexedContext` from the background
+`AiContextIndex`. It is a read-only, audited query over public/policy-safe
+canonical COP entities with geo filtering, a time window and `bge-m3` ranking.
+Clients may pass `geoContext`, `bbox`, `currentLocation`, `placeQuery` and
+`timeWindow`; if they do not, COP may infer a place from the natural-language
+question through the configured geocoder. `indexedContext.citations` use `[I*]`
+labels. The index does not include private community reports or server-side
+Matrix E2EE history.
+
 `/api/v1/ai/chat-agent/query` may include a bounded `chatContext` snapshot from
 the client's currently visible/decrypted Matrix timeline. COP API combines that
 explicit client context with authorized server-side COP data; it does not fetch

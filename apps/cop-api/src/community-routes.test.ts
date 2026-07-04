@@ -1,5 +1,5 @@
 import { createSign, generateKeyPairSync, type KeyObject } from "node:crypto";
-import { AiGateway, type AiCopQuery, type AiProvider } from "@cop/ai-gateway";
+import { AiGateway, OllamaEmbeddingProvider, type AiCopQuery, type AiProvider } from "@cop/ai-gateway";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryCommunityReportStore } from "./community-report-store.js";
 import { buildServer } from "./server.js";
@@ -771,7 +771,10 @@ describe("community report routes", () => {
     };
     const communityReportStore = new InMemoryCommunityReportStore("ai-chat-agent-test");
     const app = buildServer({
-      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), { defaultProvider: "mock" }),
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
       communityReportStore,
       now: () => new Date("2026-05-20T12:00:00Z")
     });
@@ -886,6 +889,7 @@ describe("community report routes", () => {
       url: "/api/v1/ai/chat-agent/query"
     });
     expect(queryResponse.statusCode).toBe(200);
+    const queryBody = queryResponse.json();
     expect(queryResponse.json()).toMatchObject({
       policy: {
         allowed: true
@@ -893,9 +897,10 @@ describe("community report routes", () => {
       provider: "mock",
       status: "COMPLETED"
     });
-    expect(queryResponse.json().result.summary).toContain("Captured COP assistant response");
+    expect(queryBody.result.summary).toContain("Captured COP assistant response");
     expect(capturedQueries).toHaveLength(1);
     expect(capturedQueries[0]?.prompt).toContain("priorityContext");
+    expect(capturedQueries[0]?.prompt).toContain("indexedContext");
     const priorityContext = capturedQueries[0]?.context?.priorityContext as Record<string, unknown> | undefined;
     expect(priorityContext).toMatchObject({
       contractVersion: "cop-ai-priority-context-v1"
@@ -918,15 +923,45 @@ describe("community report routes", () => {
         })
       ])
     });
+    const indexedContext = capturedQueries[0]?.context?.indexedContext as Record<string, unknown> | undefined;
+    expect(indexedContext).toMatchObject({
+      contractVersion: "cop-ai-indexed-context-v1",
+      toolCall: {
+        matchedDocumentCount: expect.any(Number),
+        mode: "read_only",
+        toolId: "cop.ai.context_index.query"
+      }
+    });
+    expect(indexedContext?.citations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        citationId: "I1"
+      })
+    ]));
+    const indexedSemanticContext = indexedContext?.semanticContext as Record<string, unknown> | undefined;
+    expect(indexedSemanticContext?.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        entityId: floodReport.reportId,
+        entityType: "communityReport"
+      })
+    ]));
     const auditResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
       url: "/api/v1/audit/events"
     });
     const auditItems = auditResponse.json().items as Array<Record<string, unknown>>;
+    const indexToolAudit = auditItems.find((item) => item.eventType === "AI_CONTEXT_INDEX_TOOL_INVOKED");
+    expect(indexToolAudit).toMatchObject({
+      requestId: queryBody.requestId,
+      toolId: "cop.ai.context_index.query",
+      matchedDocumentCount: expect.any(Number)
+    });
     const aiAudit = auditItems.find((item) => item.eventType === "AI_CHAT_AGENT_COMPLETED");
     expect(aiAudit).toMatchObject({
+      indexedDocumentCount: expect.any(Number),
+      indexedToolInvocationId: expect.any(String),
       semanticDocumentCount: expect.any(Number)
     });
+    expect(["degraded", "disabled", "ok"]).toContain(aiAudit?.indexedStatus);
     expect(["degraded", "disabled", "ok"]).toContain(aiAudit?.semanticStatus);
 
     const emptyQuestionResponse = await app.inject({
@@ -1871,6 +1906,24 @@ describe("community report routes", () => {
     await app.close();
   });
 });
+
+class FakeEmbeddingProvider extends OllamaEmbeddingProvider {
+  constructor() {
+    super({
+      baseUrls: ["http://embedding.example.test"],
+      model: "bge-m3:test",
+      retryAttempts: 0,
+      timeoutMs: 1000
+    });
+  }
+
+  override async embed() {
+    return {
+      embedding: [1, 0],
+      model: "bge-m3:test"
+    };
+  }
+}
 
 class FakeMediaStorage implements MediaStorage {
   readonly name = "fake-media";
