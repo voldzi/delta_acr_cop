@@ -95,7 +95,7 @@ export function ChatActionMenu({
         AI situační souhrn
       </button>
       {aiAgentAvailable && onAskAiAgent ? (
-        <button onClick={onAskAiAgent} role="menuitem" type="button">
+        <button onClick={() => onAskAiAgent()} role="menuitem" type="button">
           <Sparkles size={17} />
           Zeptat se AI agenta
         </button>
