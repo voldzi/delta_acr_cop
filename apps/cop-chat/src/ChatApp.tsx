@@ -110,6 +110,7 @@ import type {
 import { decodeChatShareTransit } from "@cop/messaging/bridge";
 import { chatText } from "./i18n";
 import { Avatar } from "./components/Avatar";
+import { AiMarkdownOutput } from "./components/AiMarkdownOutput";
 import { ChatActionMenu, MessageSearchBar, SelectionToolbar } from "./components/ConversationControls";
 import { DocumentThumb } from "./components/DocumentThumb";
 import { StaticLocationMap, formatCoordinates } from "./components/LocationPreview";
@@ -3826,6 +3827,8 @@ function MessageRow({
             onDownloadAttachment={onDownloadAttachment}
             onOpenPreview={onOpenPreview}
           />
+        ) : hasAiMetadata ? (
+          <AiMarkdownOutput query={searchQuery} text={messageDisplayBody(message)} />
         ) : (
           <HighlightedMessageText query={searchQuery} text={messageDisplayBody(message)} />
         )}

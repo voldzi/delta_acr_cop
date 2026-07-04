@@ -1,6 +1,7 @@
 import React from "react";
 import { Check, Copy, Loader2, Send, Sparkles, X } from "lucide-react";
 import type { AiCopResponse } from "@cop/core/cop-data";
+import { AiMarkdownOutput } from "../components/AiMarkdownOutput";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { aiResponseSummary, aiStatusLabel } from "./aiResponse";
 
@@ -87,7 +88,9 @@ export default function AiAgentDialog({
           </div>
         ) : response ? (
           <>
-            <div className="ai-situation-output">{answer}</div>
+            <div className="ai-situation-output">
+              <AiMarkdownOutput text={answer} variant="dialog" />
+            </div>
             <dl className="ai-situation-meta">
               <div>
                 <dt>Stav</dt>
