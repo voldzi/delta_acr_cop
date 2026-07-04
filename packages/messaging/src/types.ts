@@ -101,11 +101,15 @@ export interface MatrixCopMessageMetadata {
 
 export interface MatrixCopAiMessageMetadata {
   auditId?: string;
+  indexedDocumentCount?: number;
+  indexedStatus?: "degraded" | "disabled" | "ok";
   model?: string;
   policyReason?: string;
   provider?: string;
   question?: string;
   requestId?: string;
+  semanticDocumentCount?: number;
+  semanticStatus?: "degraded" | "disabled" | "ok";
   status?: "COMPLETED" | "NEEDS_HUMAN_REVIEW" | "REJECTED";
   type?: "chat-agent" | "situation-summary";
 }

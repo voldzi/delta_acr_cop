@@ -69,23 +69,70 @@ export interface AiCopResponse {
 }
 
 export interface AiSituationSummaryOptions {
+  bbox?: AiContextBbox;
+  currentLocation?: AiContextLocation;
+  geoContext?: AiContextGeoContext;
   includeAlerts?: boolean;
   language?: "cs" | "en";
+  lookbackSeconds?: number;
   maxObjects?: number;
+  maxAgeSeconds?: number;
+  place?: string;
+  placeQuery?: string;
   requestId?: string;
+  timeWindow?: AiContextTimeWindow;
 }
 
 export type AiModelPreference = "auto" | "fast" | "reasoning";
 
 export interface AiChatAgentQueryOptions {
+  bbox?: AiContextBbox;
   chatContext?: AiChatAgentContextSnapshot;
   conversationId?: string;
+  currentLocation?: AiContextLocation;
+  geoContext?: AiContextGeoContext;
   groupId?: string;
   language?: "cs" | "en";
+  lookbackSeconds?: number;
+  maxAgeSeconds?: number;
   maxObjects?: number;
   modelPreference?: AiModelPreference;
+  place?: string;
+  placeQuery?: string;
   question: string;
   requestId?: string;
+  timeWindow?: AiContextTimeWindow;
+}
+
+export interface AiContextBbox {
+  east: number;
+  north: number;
+  south: number;
+  west: number;
+}
+
+export interface AiContextLocation {
+  label?: string;
+  lat: number;
+  lon: number;
+  radiusKm?: number;
+}
+
+export interface AiContextGeoContext {
+  bbox?: AiContextBbox;
+  currentLocation?: AiContextLocation;
+  label?: string;
+  location?: AiContextLocation;
+  place?: string;
+  query?: string;
+  radiusKm?: number;
+}
+
+export interface AiContextTimeWindow {
+  from?: string;
+  maxAgeSeconds?: number;
+  since?: string;
+  to?: string;
 }
 
 export interface AiChatAgentContextSnapshot {

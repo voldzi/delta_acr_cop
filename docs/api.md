@@ -66,6 +66,14 @@ question through the configured geocoder. `indexedContext.citations` use `[I*]`
 labels. The index does not include private community reports or server-side
 Matrix E2EE history.
 
+Both endpoints echo a bounded, client-safe evidence summary in
+`result.structured.evidence`. The summary contains citation lists from
+`priorityContext` (`[P*]`), request-time `semanticContext` (`[S*]`) and
+background `indexedContext` (`[I*]`), plus map snapshot candidates for future
+visual previews. UI clients may render these citations and counts, but must not
+treat them as authorization to fetch entities outside the normal COP API access
+rules.
+
 `/api/v1/ai/chat-agent/query` may include a bounded `chatContext` snapshot from
 the client's currently visible/decrypted Matrix timeline. COP API combines that
 explicit client context with authorized server-side COP data; it does not fetch

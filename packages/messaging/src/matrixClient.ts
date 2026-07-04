@@ -2274,13 +2274,25 @@ function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata[
   const provider = stringValue(record.provider)?.slice(0, 80);
   const question = stringValue(record.question)?.slice(0, 500);
   const requestId = stringValue(record.requestId)?.slice(0, 160);
+  const indexedDocumentCount = nonNegativeInteger(record.indexedDocumentCount, 0, 1000);
+  const indexedStatus: MatrixCopAiMessageMetadata["indexedStatus"] = record.indexedStatus === "ok" || record.indexedStatus === "degraded" || record.indexedStatus === "disabled"
+    ? record.indexedStatus
+    : undefined;
+  const semanticDocumentCount = nonNegativeInteger(record.semanticDocumentCount, 0, 1000);
+  const semanticStatus: MatrixCopAiMessageMetadata["semanticStatus"] = record.semanticStatus === "ok" || record.semanticStatus === "degraded" || record.semanticStatus === "disabled"
+    ? record.semanticStatus
+    : undefined;
   const ai: MatrixCopAiMessageMetadata = {
     ...(auditId ? { auditId } : {}),
+    ...(indexedDocumentCount !== undefined ? { indexedDocumentCount } : {}),
+    ...(indexedStatus ? { indexedStatus } : {}),
     ...(model ? { model } : {}),
     ...(policyReason ? { policyReason } : {}),
     ...(provider ? { provider } : {}),
     ...(question ? { question } : {}),
     ...(requestId ? { requestId } : {}),
+    ...(semanticDocumentCount !== undefined ? { semanticDocumentCount } : {}),
+    ...(semanticStatus ? { semanticStatus } : {}),
     ...(status ? { status } : {}),
     ...(type ? { type } : {})
   };
@@ -2431,6 +2443,11 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function nonNegativeInteger(value: unknown, min: number, max: number): number | undefined {
+  const parsed = typeof value === "number" ? value : Number.NaN;
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.trunc(parsed))) : undefined;
 }
 
 function matrixMsgTypeForAttachment(kind: MatrixAttachmentKind): "m.file" | "m.image" | "m.video" {

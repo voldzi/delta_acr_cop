@@ -898,6 +898,23 @@ describe("community report routes", () => {
       status: "COMPLETED"
     });
     expect(queryBody.result.summary).toContain("Captured COP assistant response");
+    expect(queryBody.result.structured.evidence).toMatchObject({
+      contractVersion: "cop-ai-response-evidence-v1",
+      indexed: {
+        toolCall: {
+          toolId: "cop.ai.context_index.query"
+        }
+      },
+      priority: {
+        citations: expect.arrayContaining([
+          expect.objectContaining({
+            citationId: "P1",
+            entityId: floodReport.reportId,
+            entityType: "communityReport"
+          })
+        ])
+      }
+    });
     expect(capturedQueries).toHaveLength(1);
     expect(capturedQueries[0]?.prompt).toContain("priorityContext");
     expect(capturedQueries[0]?.prompt).toContain("indexedContext");

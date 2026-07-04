@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { mergeTimelineMessages } from "./chat-model";
-import { buildAiChatContextSnapshot, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
+import { buildAiChatContextSnapshot, buildAiRequestContextOptions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
 describe("mergeTimelineMessages", () => {
@@ -135,6 +135,64 @@ describe("buildAiChatContextSnapshot", () => {
       body: "@COP AI shrň rizika",
       eventId: "local:current-ai-question",
       own: true
+    });
+  });
+});
+
+describe("buildAiRequestContextOptions", () => {
+  it("adds the latest shared location as AI geo context", () => {
+    const messages: MatrixTimelineMessage[] = [
+      {
+        body: "Stará poloha",
+        eventId: "$loc-1",
+        kind: "location",
+        location: {
+          label: "Stará poloha",
+          lat: 50.02,
+          lon: 17.01,
+          source: "map"
+        },
+        own: true,
+        sender: "@me:cop.local",
+        timestamp: "2026-06-26T07:45:00.000Z"
+      },
+      {
+        body: "Text bez polohy",
+        eventId: "$text",
+        kind: "text",
+        own: false,
+        sender: "@peer:cop.local",
+        timestamp: "2026-06-26T07:46:00.000Z"
+      },
+      {
+        body: "Moje poloha",
+        eventId: "$loc-2",
+        kind: "location",
+        location: {
+          label: "Moje poloha",
+          lat: 50.12952,
+          lon: 17.36285,
+          source: "device"
+        },
+        own: true,
+        sender: "@me:cop.local",
+        timestamp: "2026-06-26T07:47:00.000Z"
+      }
+    ];
+
+    expect(buildAiRequestContextOptions(messages)).toEqual({
+      geoContext: {
+        currentLocation: {
+          label: "Moje poloha",
+          lat: 50.12952,
+          lon: 17.36285,
+          radiusKm: 30
+        },
+        label: "Moje poloha"
+      },
+      timeWindow: {
+        maxAgeSeconds: 604800
+      }
     });
   });
 });

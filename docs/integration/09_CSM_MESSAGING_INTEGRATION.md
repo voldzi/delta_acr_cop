@@ -456,7 +456,9 @@ The phase-0 implementation focus is trust and control:
   candidates for future preview rendering.
 - AI answers sent to Matrix carry namespaced `cz.cop` message metadata with
   `kind`, `requestId`, `auditId`, provider/model, policy reason and the
-  original question when present. The metadata is used only for timeline
+  original question when present. It also carries bounded semantic/indexed
+  source counts so the timeline can show whether an answer used request-time
+  COP context and the background index. The metadata is used only for timeline
   labeling and audit visibility; COP still does not persist or proxy Matrix
   plaintext. In enabled groups the composer also recognizes a leading
   `@COP AI ...` mention and slash commands `/ai ...`, `/reasoning ...` and

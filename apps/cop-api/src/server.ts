@@ -35,7 +35,7 @@ import {
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { AiContextIndex, type AiContextGeoFilter, type AiContextIndexRefreshResult, type AiContextTimeWindow, type AiIndexedContext } from "./ai-context-index.js";
-import { AiSemanticRetriever, createSemanticDocuments } from "./ai-semantic-retrieval.js";
+import { AiSemanticRetriever, createSemanticDocuments, type AiSemanticContext } from "./ai-semantic-retrieval.js";
 import { createCopStreamBusFromEnv, type CopStreamBus } from "./cop-stream-bus.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
@@ -6183,7 +6183,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
-    const response = await aiGateway.queryCopAssistant(aiRequest);
+    const response = withAiResponseEvidence(await aiGateway.queryCopAssistant(aiRequest), {
+      indexedContext,
+      priorityContext,
+      requestContext: aiRequest.context ?? {},
+      semanticContext
+    });
     appendAudit(state, `AI_SITUATION_SUMMARY_${response.status}`, {
       ...aiAuditMetadata(response, actor),
       indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
@@ -6350,7 +6355,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
-    const response = await aiGateway.queryCopAssistant(aiRequest);
+    const response = withAiResponseEvidence(await aiGateway.queryCopAssistant(aiRequest), {
+      indexedContext,
+      priorityContext,
+      requestContext: aiRequest.context ?? {},
+      semanticContext
+    });
     appendAudit(state, `AI_CHAT_AGENT_${response.status}`, {
       ...aiAuditMetadata(response, actor),
       chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
@@ -12481,6 +12491,91 @@ function buildAiPriorityContext(input: {
     }),
     prioritySignals: signals
   });
+}
+
+function withAiResponseEvidence(response: AiCopResponse, input: {
+  indexedContext: AiIndexedContext;
+  priorityContext: Record<string, unknown>;
+  requestContext: Record<string, unknown>;
+  semanticContext: AiSemanticContext;
+}): AiCopResponse {
+  const structured = isRecord(response.result.structured) ? response.result.structured : {};
+  return {
+    ...response,
+    result: {
+      ...response.result,
+      structured: {
+        ...structured,
+        evidence: compactRecord({
+          contractVersion: "cop-ai-response-evidence-v1",
+          indexed: compactRecord({
+            citations: aiEvidenceSemanticCitations(input.indexedContext.citations, "I"),
+            documentCount: input.indexedContext.semanticContext.includedDocumentCount,
+            indexStatus: input.indexedContext.index.status,
+            matchedDocumentCount: input.indexedContext.toolCall.matchedDocumentCount,
+            query: input.indexedContext.query,
+            status: input.indexedContext.semanticContext.status,
+            toolCall: compactRecord({
+              candidateDocumentCount: input.indexedContext.toolCall.candidateDocumentCount,
+              invocationId: input.indexedContext.toolCall.invocationId,
+              matchedDocumentCount: input.indexedContext.toolCall.matchedDocumentCount,
+              status: input.indexedContext.toolCall.status,
+              toolId: input.indexedContext.toolCall.toolId,
+              warnings: input.indexedContext.toolCall.warnings
+            })
+          }),
+          mapSnapshot: isRecord(input.priorityContext.mapSnapshot) ? input.priorityContext.mapSnapshot : undefined,
+          priority: compactRecord({
+            citations: aiEvidencePriorityCitations(input.priorityContext),
+            focusOrder: Array.isArray(input.priorityContext.focusOrder) ? input.priorityContext.focusOrder : undefined
+          }),
+          scope: isRecord(input.requestContext.scope) ? input.requestContext.scope : undefined,
+          semantic: compactRecord({
+            citations: aiEvidenceSemanticCitations(input.semanticContext.citations, "S"),
+            documentCount: input.semanticContext.includedDocumentCount,
+            model: input.semanticContext.model,
+            status: input.semanticContext.status,
+            warnings: input.semanticContext.warnings
+          })
+        })
+      }
+    }
+  };
+}
+
+function aiEvidencePriorityCitations(priorityContext: Record<string, unknown>): Record<string, unknown>[] {
+  const citations = Array.isArray(priorityContext.citations) ? priorityContext.citations : [];
+  return citations
+    .filter(isRecord)
+    .slice(0, 12)
+    .map((citation) => compactRecord({
+      citationId: optionalText(citation.citationId),
+      entityId: optionalText(citation.entityId),
+      entityType: optionalText(citation.entityType),
+      label: optionalText(citation.label),
+      location: aiEvidenceLocation(citation.location),
+      sourceSystemIds: Array.isArray(citation.sourceSystemIds) ? citation.sourceSystemIds.filter((item): item is string => typeof item === "string").slice(0, 8) : undefined,
+      updatedAt: optionalText(citation.updatedAt)
+    }));
+}
+
+function aiEvidenceSemanticCitations(citations: AiSemanticContext["citations"], expectedPrefix: "I" | "S"): Record<string, unknown>[] {
+  return citations.slice(0, 12).map((citation) => compactRecord({
+    citationId: citation.citationId.startsWith(expectedPrefix) ? citation.citationId : undefined,
+    entityId: citation.entityId,
+    entityType: citation.entityType,
+    label: citation.label,
+    location: citation.position,
+    sourceSystemIds: citation.sourceSystemIds?.slice(0, 8),
+    updatedAt: citation.updatedAt
+  }));
+}
+
+function aiEvidenceLocation(value: unknown): { lat: number; lon: number } | undefined {
+  const record = isRecord(value) ? value : undefined;
+  const lat = record ? optionalFiniteNumber(record.lat, -90, 90) : undefined;
+  const lon = record ? optionalFiniteNumber(record.lon, -180, 180) : undefined;
+  return lat !== undefined && lon !== undefined ? { lat, lon } : undefined;
 }
 
 function aiPrioritySignalFromRecord(

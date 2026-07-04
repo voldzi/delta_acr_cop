@@ -84,6 +84,8 @@ import {
 } from "@cop/core/cop-data";
 import type {
   AiChatAgentContextSnapshot,
+  AiContextGeoContext,
+  AiContextTimeWindow,
   AiCopResponse,
   AiModelPreference,
   CommunityGroup,
@@ -2227,6 +2229,7 @@ export function ChatApp() {
     setError(null);
     try {
       const response = await createAiSituationSummary(apiBase, authToken, {
+        ...buildAiRequestContextOptions(timelineMessages),
         includeAlerts: true,
         language: "cs",
         maxObjects: 40
@@ -2276,6 +2279,7 @@ export function ChatApp() {
     setError(null);
     try {
       const response = await queryAiChatAgent(apiBase, authToken, {
+        ...buildAiRequestContextOptions(timelineMessages),
         chatContext: buildAiChatContextSnapshot(timelineMessages, {
           encrypted: selectedRoom?.encrypted,
           roomId: selectedRoomId
@@ -2591,6 +2595,7 @@ export function ChatApp() {
     let response: AiCopResponse;
     try {
       response = await queryAiChatAgent(apiBase, authToken, {
+        ...buildAiRequestContextOptions(timelineMessages),
         chatContext: buildAiChatContextSnapshot(timelineMessages, {
           currentUserMessage: userMessage,
           encrypted: selectedRoom?.encrypted,
@@ -4002,6 +4007,7 @@ function MessageAiMetadata({ message }: { message: MatrixTimelineMessage }) {
         <span className="message-ai-audit">
           {ai?.auditId ? <span>Audit {shortAuditId(ai.auditId)}</span> : null}
           {provider ? <span>{provider}</span> : null}
+          {aiEvidenceMetadataLabel(ai) ? <span>{aiEvidenceMetadataLabel(ai)}</span> : null}
           {ai?.policyReason ? <span>{ai.policyReason}</span> : null}
         </span>
       ) : null}
@@ -5656,6 +5662,45 @@ export function formatAiSituationShareBody(summary: string): string {
   return `AI situační souhrn:\n\n${summary.trim()}`.trim();
 }
 
+export function buildAiRequestContextOptions(messages: MatrixTimelineMessage[]): {
+  geoContext?: AiContextGeoContext;
+  timeWindow: AiContextTimeWindow;
+} {
+  const latestLocation = latestTimelineLocation(messages);
+  return {
+    ...(latestLocation ? {
+      geoContext: {
+        currentLocation: {
+          ...(latestLocation.label ? { label: latestLocation.label } : {}),
+          lat: latestLocation.lat,
+          lon: latestLocation.lon,
+          radiusKm: 30
+        },
+        label: latestLocation.label ?? "Sdílená poloha v chatu"
+      }
+    } : {}),
+    timeWindow: {
+      maxAgeSeconds: 7 * 24 * 3600
+    }
+  };
+}
+
+function latestTimelineLocation(messages: MatrixTimelineMessage[]): MatrixLocationShare | undefined {
+  return [...messages]
+    .reverse()
+    .find((message) => message.kind === "location" && message.location && validMatrixLocation(message.location))
+    ?.location;
+}
+
+function validMatrixLocation(location: MatrixLocationShare): boolean {
+  return Number.isFinite(location.lat)
+    && Number.isFinite(location.lon)
+    && location.lat >= -90
+    && location.lat <= 90
+    && location.lon >= -180
+    && location.lon <= 180;
+}
+
 export function buildAiChatContextSnapshot(
   messages: MatrixTimelineMessage[],
   options: {
@@ -5766,20 +5811,61 @@ function buildAiMessageMetadata(
   }
 ): MatrixCopMessageMetadata {
   const question = options.question?.trim();
+  const evidence = aiResponseEvidenceMetadata(response);
   return {
     ai: {
       ...(response?.auditId ? { auditId: response.auditId } : {}),
+      ...(evidence.indexedDocumentCount !== undefined ? { indexedDocumentCount: evidence.indexedDocumentCount } : {}),
+      ...(evidence.indexedStatus ? { indexedStatus: evidence.indexedStatus } : {}),
       ...(response?.model ? { model: response.model } : {}),
       ...(response?.policy.reason ? { policyReason: response.policy.reason } : {}),
       ...(response?.provider ? { provider: response.provider } : {}),
       ...(question ? { question } : {}),
       ...(response?.requestId ? { requestId: response.requestId } : {}),
+      ...(evidence.semanticDocumentCount !== undefined ? { semanticDocumentCount: evidence.semanticDocumentCount } : {}),
+      ...(evidence.semanticStatus ? { semanticStatus: evidence.semanticStatus } : {}),
       ...(response?.status ? { status: response.status } : {}),
       type: options.type
     },
     kind: options.kind,
     source: "cop-chat"
   };
+}
+
+function aiResponseEvidenceMetadata(response: AiCopResponse | null): {
+  indexedDocumentCount?: number;
+  indexedStatus?: "degraded" | "disabled" | "ok";
+  semanticDocumentCount?: number;
+  semanticStatus?: "degraded" | "disabled" | "ok";
+} {
+  const structured = asRecord(response?.result.structured);
+  const evidence = asRecord(structured?.evidence);
+  const indexed = asRecord(evidence?.indexed);
+  const semantic = asRecord(evidence?.semantic);
+  return {
+    indexedDocumentCount: boundedAiDocumentCount(indexed?.documentCount),
+    indexedStatus: aiRetrievalStatus(indexed?.status),
+    semanticDocumentCount: boundedAiDocumentCount(semantic?.documentCount),
+    semanticStatus: aiRetrievalStatus(semantic?.status)
+  };
+}
+
+function aiEvidenceMetadataLabel(ai: MatrixCopMessageMetadata["ai"]): string | undefined {
+  const parts = [
+    typeof ai?.semanticDocumentCount === "number" ? `S:${ai.semanticDocumentCount}` : undefined,
+    typeof ai?.indexedDocumentCount === "number" ? `I:${ai.indexedDocumentCount}` : undefined
+  ].filter(Boolean);
+  return parts.length ? `zdroje ${parts.join(" ")}` : undefined;
+}
+
+function aiRetrievalStatus(value: unknown): "degraded" | "disabled" | "ok" | undefined {
+  return value === "ok" || value === "degraded" || value === "disabled" ? value : undefined;
+}
+
+function boundedAiDocumentCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(1000, Math.trunc(value)))
+    : undefined;
 }
 
 function latestMessagePreview(message: MatrixTimelineMessage): string {

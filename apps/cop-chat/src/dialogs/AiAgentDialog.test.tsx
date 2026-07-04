@@ -18,6 +18,45 @@ function response(overrides: Partial<AiCopResponse> = {}): AiCopResponse {
     provider: "mock",
     requestId: "44444444-4444-4444-8444-444444444444",
     result: {
+      structured: {
+        evidence: {
+          indexed: {
+            citations: [{
+              citationId: "I1",
+              entityId: "report-1",
+              entityType: "communityReport",
+              label: "Stoupající hladina řeky",
+              location: {
+                lat: 50.12,
+                lon: 17.36
+              },
+              updatedAt: "2026-07-04T09:20:00.000Z"
+            }],
+            documentCount: 3,
+            matchedDocumentCount: 1,
+            status: "ok"
+          },
+          priority: {
+            citations: [{
+              citationId: "P1",
+              entityId: "alert-1",
+              entityType: "alert",
+              label: "Povodňová bdělost"
+            }]
+          },
+          semantic: {
+            citations: [{
+              citationId: "S1",
+              entityId: "incident-1",
+              entityType: "incident",
+              label: "Uzavřený most"
+            }],
+            documentCount: 2,
+            model: "bge-m3",
+            status: "ok"
+          }
+        }
+      },
       summary: "Zdroje jsou online, ale část letových stop může mít zpoždění."
     },
     status: "COMPLETED",
@@ -71,6 +110,9 @@ describe("AiAgentDialog", () => {
 
     expect(screen.getByText("Zdroje jsou online, ale část letových stop může mít zpoždění.")).toBeTruthy();
     expect(screen.getByText("33333333-3333-4333-8333-333333333333")).toBeTruthy();
+    expect(screen.getByText("Zdrojové citace")).toBeTruthy();
+    expect(screen.getByText("Background index")).toBeTruthy();
+    expect(screen.getByText("Stoupající hladina řeky")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Odeslat odpověď/u }));
     expect(onSendToChat).toHaveBeenCalledWith("Zdroje jsou online, ale část letových stop může mít zpoždění.");

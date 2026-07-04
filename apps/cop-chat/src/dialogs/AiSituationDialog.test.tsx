@@ -19,6 +19,40 @@ function response(overrides: Partial<AiCopResponse> = {}): AiCopResponse {
     provider: "mock",
     requestId: "22222222-2222-4222-8222-222222222222",
     result: {
+      structured: {
+        evidence: {
+          indexed: {
+            citations: [{
+              citationId: "I1",
+              entityId: "report-1",
+              entityType: "communityReport",
+              label: "Stoupající hladina řeky"
+            }],
+            documentCount: 1,
+            matchedDocumentCount: 1,
+            status: "ok"
+          },
+          priority: {
+            citations: [{
+              citationId: "P1",
+              entityId: "alert-1",
+              entityType: "alert",
+              label: "Aktivní výstraha"
+            }]
+          },
+          semantic: {
+            citations: [{
+              citationId: "S1",
+              entityId: "incident-1",
+              entityType: "incident",
+              label: "Místní incident"
+            }],
+            documentCount: 2,
+            model: "bge-m3",
+            status: "ok"
+          }
+        }
+      },
       summary: "Aktivní výstrahy jsou bez kritických konfliktů."
     },
     status: "COMPLETED",
@@ -44,6 +78,8 @@ describe("AiSituationDialog", () => {
     expect(screen.getByText("Aktivní výstrahy jsou bez kritických konfliktů.")).toBeTruthy();
     expect(screen.getByText("mock / mock-cop-assistant-v1")).toBeTruthy();
     expect(screen.getByText("11111111-1111-4111-8111-111111111111")).toBeTruthy();
+    expect(screen.getByText("Zdrojové citace")).toBeTruthy();
+    expect(screen.getByText("Aktivní výstraha")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Odeslat do chatu/u }));
     expect(onSendToChat).toHaveBeenCalledWith("Aktivní výstrahy jsou bez kritických konfliktů.");

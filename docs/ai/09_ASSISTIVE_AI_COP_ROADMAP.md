@@ -111,9 +111,10 @@ Aktivní aplikační endpointy:
 - `POST /api/v1/ai/community-report/draft` pro pomoc s občanským hlášením.
 
 COP Chat používá `POST /api/v1/ai/situation-summary` pro explicitní
-uživatelský dialog “AI situační souhrn”. První verze pracuje jen s
-policy-filtered COP kontextem připraveným serverem, zobrazuje audit ID a
-nečte Matrix E2EE obsah místnosti.
+uživatelský dialog “AI situační souhrn”. Dialog pracuje s policy-filtered COP
+kontextem připraveným serverem, k requestu přidává poslední sdílenou polohu z
+viditelné timeline jako `geoContext`, zobrazuje audit ID, citace použitých
+zdrojů a nečte Matrix E2EE obsah místnosti na serveru.
 
 COP Chat má také group-level metadata `chat.aiAssistant`. Správce skupiny může
 AI agenta zapnout nebo vypnout z menu skupiny i v detailu skupiny, ale zapnutí
@@ -145,6 +146,12 @@ zprávy. V zapnutých skupinách composer rozpozná také vedoucí zmínku
 `@COP AI ...`; odpovědi se statusem `NEEDS_HUMAN_REVIEW` se neodesílají
 automaticky a otevřou potvrzovací dialog.
 
+AI odpovědi zároveň nesou `result.structured.evidence` s krátkými citacemi z
+`priorityContext`, requestového `semanticContext` a background `indexedContext`.
+COP Chat tento evidence blok zobrazuje v náhledu odpovědi a do Matrix `cz.cop`
+metadat ukládá počty requestových a indexovaných zdrojů, aby timeline ukázala,
+zda odpověď vznikla nad reálným COP kontextem.
+
 AI Gateway vrací volitelné `routing` metadata. Běžné dotazy používají fast profil
 `gemma4:12b-mlx`; komplexní dotazy nad širším COP kontextem, konflikty zdrojů,
 riziky, projekcí vývoje nebo delší chatovou timeline může router poslat na
@@ -174,6 +181,11 @@ textu přes geocoder, a výchozí sedmidenní časové okno. Citace z indexu maj
 tvar `[I1]`. Index záměrně neobsahuje privátní community reporty ani server-side
 Matrix E2EE historii; chatová paměť zůstává jen v consentovaném requestovém
 `chatContext`.
+
+Každý výstup z těchto endpointů vrací klientovi omezený evidence blok, který
+spojuje priority `[P*]`, requestové semantic citace `[S*]`, background index
+citace `[I*]`, stav retrievalu a mapové kandidáty. Tento blok je určený pro
+transparentní UI a budoucí mapové snapshoty, ne jako náhrada COP oprávnění.
 
 `priorityContext.mapSnapshot` zatím obsahuje strukturované kandidáty a bounding
 box pro budoucí mapový náhled; není to serverem vyrenderovaný obrázek.
@@ -205,7 +217,7 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
 6. Viditelný chat AI agent. Stav: explicitní consent, Matrix bot účet jako
    systémový člen konverzace, přijetí invite do E2EE místnosti, key model
    `dedicated_matrix_account_device`, dotazovací dialog, `@COP AI` mention tok,
-   Matrix `cz.cop` auditní metadata a client-supplied `chatContext` nad
+   Matrix `cz.cop` auditní metadata včetně počtů zdrojů a client-supplied `chatContext` nad
    viditelnou timeline jsou hotové bez server-side čtení historické E2EE
    historie.
 7. Až potom multimediální shrnutí, a jen s media ACL.
@@ -213,6 +225,7 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
    semantic context vrstva je hotová pro aktuální autorizovaný kontext a první
    background `AiContextIndex` je hotový pro public/policy-safe canonical entity
    s geo filtrem, časovým oknem, `[I*]` citacemi, health signálem a auditovanými
-   read-only tool calls. Další krok je perzistence indexu mimo paměť procesu,
-   širší konektory na weather/safety/mapové vrstvy, incremental refresh a
-   mapové snapshoty jako strukturované přílohy odpovědi.
+   read-only tool calls. API odpovědi vrací `result.structured.evidence` a chat
+   UI ho zobrazuje jako citace zdrojů. Další krok je perzistence indexu mimo
+   paměť procesu, širší konektory na weather/safety/mapové vrstvy, incremental
+   refresh a mapové snapshoty jako obrazové/strukturované přílohy odpovědi.

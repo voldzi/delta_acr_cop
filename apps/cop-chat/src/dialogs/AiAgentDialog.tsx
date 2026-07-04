@@ -1,6 +1,7 @@
 import React from "react";
 import { Check, Copy, Loader2, Send, Sparkles, X } from "lucide-react";
 import type { AiCopResponse, AiModelPreference } from "@cop/core/cop-data";
+import { AiEvidencePanel } from "../components/AiEvidencePanel";
 import { AiMarkdownOutput } from "../components/AiMarkdownOutput";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { aiResponseSummary, aiStatusLabel } from "./aiResponse";
@@ -125,6 +126,7 @@ export default function AiAgentDialog({
                 <dd>{response.policy.reason}</dd>
               </div>
             </dl>
+            <AiEvidencePanel response={response} />
           </>
         ) : (
           <div className="ai-situation-empty compact">
