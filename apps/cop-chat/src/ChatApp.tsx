@@ -4775,10 +4775,16 @@ export function dedupeChatItems(items: ChatListItem[]): ChatListItem[] {
       return;
     }
     const preferred = preferChatListItem(current, item);
+    const conversation = preferred.conversation ?? current.conversation ?? item.conversation;
+    const group = preferred.group ?? current.group ?? item.group;
+    const room = preferred.room ?? current.room ?? item.room;
     deduped.set(key, {
       ...preferred,
       active: current.active || item.active,
       avatarUrl: preferred.avatarUrl ?? current.avatarUrl ?? item.avatarUrl,
+      ...(conversation ? { conversation } : {}),
+      ...(group ? { group } : {}),
+      ...(room ? { room } : {}),
       unreadCount: Math.max(current.unreadCount, item.unreadCount)
     });
   });
@@ -4788,9 +4794,18 @@ export function dedupeChatItems(items: ChatListItem[]): ChatListItem[] {
 function chatDedupeKey(item: ChatListItem): string {
   const memberIds = item.conversation?.members?.map((member) => member.userId).filter(Boolean).sort().join("|");
   if (item.type === "direct" && memberIds) {
-    return `direct:${memberIds}`;
+    return `direct:${normalizeDirectIdentityKey(memberIds)}`;
+  }
+  const directPeerId = item.type === "direct" ? item.room?.directPeer?.userId : undefined;
+  if (directPeerId) {
+    return `direct:${normalizeDirectIdentityKey(directPeerId)}`;
   }
   return `${item.type === "direct" ? "direct" : "group"}:${normalizeTitle(item.title)}`;
+}
+
+function normalizeDirectIdentityKey(value: string): string {
+  const localpart = matrixUserIdLocalpart(value);
+  return normalizeIdentityId(localpart ?? value);
 }
 
 function preferChatListItem(left: ChatListItem, right: ChatListItem): ChatListItem {
@@ -5451,8 +5466,11 @@ function findExistingAiAgentDirectConversation(conversations: MessagingConversat
   return candidates.find((conversation) => Boolean(conversation.matrix?.roomId)) ?? candidates[0];
 }
 
-function isAiAgentChatItem(item: ChatListItem): boolean {
-  return item.type === "direct" && isAiAgentDirectConversation(item.conversation);
+export function isAiAgentChatItem(item: ChatListItem): boolean {
+  return item.type === "direct" && (
+    isAiAgentDirectConversation(item.conversation)
+    || isAiAgentRoomSummary(item.room)
+  );
 }
 
 function isAiAgentDirectConversation(conversation: MessagingConversationSummary | null | undefined): conversation is MessagingConversationSummary {
@@ -5463,6 +5481,28 @@ function isAiAgentDirectConversation(conversation: MessagingConversationSummary 
     return true;
   }
   return Boolean(conversation.members?.some((member) => member.userId === copAiAgentUser.subjectId));
+}
+
+function isAiAgentRoomSummary(room: MatrixRoomSummary | null | undefined): boolean {
+  if (!room?.directPeer) {
+    return false;
+  }
+  return isAiAgentUserId(room.directPeer.userId) || isAiAgentDisplayName(room.directPeer.displayName);
+}
+
+function isAiAgentUserId(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  const normalized = normalizeIdentityId(value);
+  const localpart = matrixUserIdLocalpart(value);
+  return normalized === normalizeIdentityId(copAiAgentUser.subjectId)
+    || normalized === normalizeIdentityId(copAiAgentUser.username)
+    || (localpart ? normalizeIdentityId(localpart) === normalizeIdentityId(copAiAgentUser.subjectId) : false);
+}
+
+function isAiAgentDisplayName(value: string | undefined): boolean {
+  return Boolean(value && normalizeTitle(value) === normalizeTitle(copAiAgentUser.displayName));
 }
 
 function matrixUserIdsFromResolution(result: MessagingMatrixIdentityResolutionResponse, requestedUserIds: string[]): string[] {

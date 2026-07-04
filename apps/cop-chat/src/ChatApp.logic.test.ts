@@ -5,6 +5,7 @@ import {
   buildChatItems,
   chatPreferenceSnapshot,
   dedupeChatItems,
+  isAiAgentChatItem,
   userFacingError
 } from "./ChatApp";
 import {
@@ -215,6 +216,71 @@ describe("dedupeChatItems", () => {
     expect(deduped).toHaveLength(1);
     expect(deduped[0]?.roomId).toBe("!a");
     expect(deduped[0]?.unreadCount).toBe(2); // max of the two
+  });
+
+  it("keeps AI conversation metadata when a Matrix room-backed item wins", () => {
+    const conversation = {
+      conversationId: "c-ai",
+      members: [{ displayName: "COP AI Assistant", role: "bot", userId: "cop.ai.agent" }],
+      metadata: {
+        externalId: "cop.ai.agent",
+        source: "cop.ai.direct"
+      },
+      title: "COP AI Assistant",
+      type: "direct"
+    } as unknown as MessagingConversationSummary;
+    const metadataOnly = chatItem({
+      conversation,
+      id: "conversation:c-ai",
+      preferenceKey: "conversation:c-ai",
+      roomId: undefined,
+      title: "COP AI Assistant"
+    });
+    const withRoom = chatItem({
+      id: "room:!ai",
+      latest: message({ eventId: "$ai", body: "Dotaz", timestamp: "2026-06-26T09:00:00.000Z" }),
+      preferenceKey: "room:!ai",
+      room: {
+        directPeer: {
+          displayName: "COP AI Assistant",
+          userId: "@cop.ai.agent:docker.home.cz"
+        },
+        encrypted: true,
+        name: "COP AI Assistant",
+        roomId: "!ai",
+        unreadCount: 0
+      } as MatrixRoomSummary,
+      roomId: "!ai",
+      sortAt: 2_000,
+      title: "COP AI Assistant"
+    });
+
+    const deduped = dedupeChatItems([metadataOnly, withRoom]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]?.roomId).toBe("!ai");
+    expect(deduped[0]?.conversation?.conversationId).toBe("c-ai");
+    expect(isAiAgentChatItem(deduped[0] as ChatListItem)).toBe(true);
+  });
+
+  it("recognizes a room-only AI direct chat from the Matrix peer identity", () => {
+    const item = chatItem({
+      conversation: undefined,
+      room: {
+        directPeer: {
+          displayName: "COP AI Assistant",
+          userId: "@cop.ai.agent:docker.home.cz"
+        },
+        encrypted: true,
+        name: "COP AI Assistant",
+        roomId: "!ai",
+        unreadCount: 0
+      } as MatrixRoomSummary,
+      roomId: "!ai",
+      title: "COP AI Assistant"
+    });
+
+    expect(isAiAgentChatItem(item)).toBe(true);
   });
 });
 
