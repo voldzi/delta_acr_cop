@@ -47,6 +47,11 @@ export interface AiProviderHealth {
   detail: string;
 }
 
+export interface AiEmbeddingResponse {
+  embedding: number[];
+  model: string;
+}
+
 export interface AiProvider {
   id: AiProviderId;
   model: string;
@@ -399,7 +404,7 @@ export class OllamaEmbeddingProvider {
     return this.options.model;
   }
 
-  async embed(input: string): Promise<{ embedding: number[]; model: string }> {
+  async embed(input: string): Promise<AiEmbeddingResponse> {
     const body = {
       model: this.options.model,
       input
@@ -876,6 +881,13 @@ export class AiGateway {
       result,
       auditId
     };
+  }
+
+  async embedText(input: string): Promise<AiEmbeddingResponse> {
+    if (!this.embeddingProvider) {
+      throw new Error("AI embedding provider is not configured.");
+    }
+    return this.embeddingProvider.embed(input);
   }
 
   listProviders(): Array<{ id: AiProviderId; model: string; available: boolean }> {

@@ -847,6 +847,16 @@ describe("community report routes", () => {
       status: "COMPLETED"
     });
     expect(queryResponse.json().result.summary).toContain("Mock COP assistant response");
+    const auditResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      url: "/api/v1/audit/events"
+    });
+    const auditItems = auditResponse.json().items as Array<Record<string, unknown>>;
+    const aiAudit = auditItems.find((item) => item.eventType === "AI_CHAT_AGENT_COMPLETED");
+    expect(aiAudit).toMatchObject({
+      semanticDocumentCount: expect.any(Number)
+    });
+    expect(["degraded", "disabled", "ok"]).toContain(aiAudit?.semanticStatus);
 
     const emptyQuestionResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },

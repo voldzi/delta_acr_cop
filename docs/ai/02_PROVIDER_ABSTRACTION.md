@@ -29,14 +29,19 @@ volí konkrétní lokální modelový profil:
 - `fast`: výchozí rychlý model pro běžné dotazy, krátké shrnutí a UI dialogy,
 - `reasoning`: větší model pro konfliktní analýzu, širší situační souhrny,
   vícezdrojové porovnání, predikční otázky a delší chatový kontext,
-- `embedding`: embedding model pro budoucí retrieval/RAG nad policy-filtered
-  COP entitami a consentovanou chat pamětí; klienti ho nikdy nevolají přímo.
+- `embedding`: embedding model pro retrieval/RAG nad policy-filtered COP entitami
+  a consentovanou chat pamětí; klienti ho nikdy nevolají přímo.
 
 Router používá deterministické scoring pravidlo nad účelem dotazu, délkou
 promptu, velikostí kontextu, počtem objektů/výstrah/incidentů/zpráv a výrazy
 typu konflikt, predikce, dopad, riziko nebo situational awareness. Rozhodnutí
 se vrací jako volitelné `routing` metadata v AI odpovědi a zapisuje se do
 auditu bez promptu a bez kontextu.
+
+Semantic context vrstva běží až po policy filtraci v aplikačních AI endpointech.
+Neindexuje globálně všechna surová data do LLM dotazu; z aktuálně oprávněného
+kontextu vytvoří malé dokumenty, použije `bge-m3` pro podobnost k dotazu a do
+LLM vloží jen top-N výsledků s metadaty zdroje.
 
 Výchozí produkční pořadí pro `auto` je:
 

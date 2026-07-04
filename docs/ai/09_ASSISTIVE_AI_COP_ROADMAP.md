@@ -92,8 +92,8 @@ COP má server-side AI runtime za `@cop/ai-gateway`:
 - bezpečný vývojový `mock` provider,
 - deterministický model router `deterministic-v1` pro volbu fast/reasoning
   Ollama profilu,
-- server-side Ollama embedding provider pro navazující retrieval/RAG nad
-  policy-filtered COP daty,
+- server-side Ollama embedding provider a semantic context vrstva přes `bge-m3`
+  pro retrieval/RAG nad policy-filtered COP daty,
 - guardrails před každým voláním modelu,
 - audit pro každý AI request,
 - health signal `ai-gateway` v `/health/dependencies`.
@@ -139,10 +139,12 @@ automaticky a otevřou potvrzovací dialog.
 AI Gateway vrací volitelné `routing` metadata. Běžné dotazy používají fast profil
 `gemma4:12b-mlx`; komplexní dotazy nad širším COP kontextem, konflikty zdrojů,
 riziky, projekcí vývoje nebo delší chatovou timeline může router poslat na
-reasoning profil `gemma4:31b-mlx`. `bge-m3` je připravený jako server-side
-embedding model pro další fázi: semantický retrieval nad canonical entitami,
-track-history souhrny, incidenty, hlášeními, výstrahami, zdroji a consentovanou
-chat pamětí. Retrieval musí vždy před LLM aplikovat RBAC/ABAC a release policy.
+reasoning profil `gemma4:31b-mlx`. `bge-m3` běží jako server-side embedding model
+pro semantic context vrstvu. AI endpointy z už autorizovaných COP objektů,
+výstrah, komunitních hlášení, incidentů, source health a consentovaného
+chatContextu sestaví dokumenty, seřadí je podle podobnosti k dotazu a vloží do
+LLM kontextu omezený `semanticContext`. Retrieval nikdy nerozšiřuje oprávnění:
+RBAC/ABAC, release policy a E2EE consent se aplikují před tvorbou dokumentů.
 
 Tyto endpointy jsou určeny i pro iOS/iPadOS klienty. Klienti nemají znát Ollama
 URL, LLM Gateway URL ani service tokeny.
@@ -175,5 +177,7 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
    viditelnou timeline jsou hotové bez server-side čtení historické E2EE
    historie.
 7. Až potom multimediální shrnutí, a jen s media ACL.
-8. Semantický COP retrieval/RAG přes `bge-m3` nad canonical entity chunks,
-   mapovou/geografickou filtrací, citacemi zdrojů a auditovanými tool calls.
+8. Semantický COP retrieval/RAG přes `bge-m3` nad canonical entity chunks. Stav:
+   první semantic context vrstva je hotová pro aktuální autorizovaný kontext;
+   další krok je perzistentní/background index, mapová/geografická filtrace,
+   citace zdrojů a auditované tool calls.

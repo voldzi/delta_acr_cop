@@ -129,6 +129,9 @@ COP_AI_OLLAMA_REASONING_RETRY_ATTEMPTS=1
 COP_AI_OLLAMA_REASONING_THINK=false
 COP_AI_OLLAMA_EMBEDDING_MODEL=bge-m3:latest
 COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS=10000
+COP_AI_SEMANTIC_RETRIEVAL_ENABLED=true
+COP_AI_SEMANTIC_RETRIEVAL_MAX_DOCUMENTS=12
+COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES=500
 ```
 
 Bezpečný vývojový default zůstává:
@@ -147,7 +150,10 @@ deterministický router `deterministic-v1`: rychlé dotazy používají
 `COP_AI_OLLAMA_REASONING_MODEL`. `COP_AI_OLLAMA_MODEL` zůstává kompatibilní
 alias pro fast profil. `COP_AI_OLLAMA_EMBEDDING_MODEL` připravuje server-side
 embedding provider pro retrieval/RAG nad policy-filtered COP daty; klienti ho
-nevolají přímo. Guardrails se vyhodnocují před každým voláním LLM.
+nevolají přímo. `COP_AI_SEMANTIC_RETRIEVAL_ENABLED` zapíná server-side
+semantic context vrstvu pro AI endpointy. Vrstva indexuje jen už autorizovaný
+kontext dotazu, používá LRU cache embeddingů a do LLM předává jen omezený počet
+nejrelevantnějších dokumentů. Guardrails se vyhodnocují před každým voláním LLM.
 `/health/dependencies` ukazuje `ai-gateway` jako `ok`, `degraded` nebo
 `disabled`; degraded AI nesmí blokovat mapu, reporting ani chat.
 

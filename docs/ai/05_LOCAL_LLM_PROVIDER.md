@@ -53,7 +53,11 @@ typické pro konfliktní analýzu, dopady, rizika, predikci nebo situational
 awareness. Rozhodnutí se vrací jako volitelné `routing` metadata a auditují se
 jen technické hodnoty (`modelRole`, skóre, strategie), ne prompt ani kontext.
 `bge-m3` je podporovaný server-side embedding model pro následné retrieval/RAG
-nad policy-filtered COP daty; klienti ho nevolají přímo.
+nad policy-filtered COP daty; klienti ho nevolají přímo. `cop-api` používá
+embedding provider v semantic context vrstvě pro `situation-summary` a
+`chat-agent/query`: z už autorizovaných COP objektů, výstrah, hlášení, incidentů,
+source health a consentovaného chatContextu sestaví dokumenty, seřadí je podle
+podobnosti k dotazu a do LLM kontextu vloží jen omezený relevantní výběr.
 
 AI KnowledgeBase LLM Gateway zůstává podporovaná jako volitelný kompatibilní
 fallback provider `local`, zejména pokud prostředí chce sdílet jeden gateway pro
@@ -84,6 +88,9 @@ COP_AI_OLLAMA_REASONING_RETRY_ATTEMPTS=1
 COP_AI_OLLAMA_REASONING_THINK=false
 COP_AI_OLLAMA_EMBEDDING_MODEL=bge-m3:latest
 COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS=10000
+COP_AI_SEMANTIC_RETRIEVAL_ENABLED=true
+COP_AI_SEMANTIC_RETRIEVAL_MAX_DOCUMENTS=12
+COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES=500
 ```
 
 `COP_AI_DEFAULT_PROVIDER=mock` ponechává bezpečný vývojový režim bez externího

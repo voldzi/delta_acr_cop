@@ -34,6 +34,7 @@ import {
   type CommunityReportVisibility
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
+import { AiSemanticRetriever, createSemanticDocuments } from "./ai-semantic-retrieval.js";
 import { createCopStreamBusFromEnv, type CopStreamBus } from "./cop-stream-bus.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
@@ -540,6 +541,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const state = options.state ?? createInitialState();
   const validators = new ContractValidators();
   const aiGateway = AiGateway.fromEnv(process.env);
+  const aiSemanticRetriever = new AiSemanticRetriever({
+    embedText: (input) => aiGateway.embedText(input),
+    enabled: readBoolean(process.env.COP_AI_SEMANTIC_RETRIEVAL_ENABLED, true),
+    maxCacheEntries: readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES, 500),
+    maxDocuments: readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_MAX_DOCUMENTS, 12)
+  });
   const now = options.now ?? (() => new Date());
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
@@ -5850,11 +5857,30 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           requestNow
         })).slice(0, 25)
       : [];
+    const aiObjects = decoratedObjects.map(summarizeObjectForAi);
+    const aiAlerts = alerts.map(summarizeAlertForAi);
+    const aiSourceHealth = sourceHealth.map(summarizeSourceHealthForAi);
+    const semanticContext = await aiSemanticRetriever.retrieve({
+      documents: createSemanticDocuments({
+        alerts: aiAlerts,
+        objects: aiObjects,
+        sourceHealth: aiSourceHealth
+      }),
+      generatedAt: requestNow,
+      limit: 8,
+      query: [
+        "situační souhrn civilní krizový přehled",
+        aiLanguage(body.language),
+        aiObjects.length ? `objekty ${aiObjects.length}` : "",
+        aiAlerts.length ? `výstrahy ${aiAlerts.length}` : ""
+      ].filter(Boolean).join(" ")
+    });
     const aiRequest: AiCopQuery = {
       requestId: aiRequestId(body.requestId),
       purpose: "COP_EXPLANATION",
       prompt: [
         `Vytvoř stručný situační souhrn pro civilní mapu v jazyce ${aiLanguage(body.language)}.`,
+        "Upřednostni semanticContext jako bge-m3 vybraný seznam relevantních COP entit, ale neopouštěj přiložený autorizovaný kontext.",
         "Odděl ověřená data, modelované odhady a chybějící informace.",
         "Nepřidávej vlastní fakta a neformuluj operační pokyny."
       ].join(" "),
@@ -5864,18 +5890,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         scope: {
           objectCount: readableObjects.length,
           alertCount: alerts.length,
-          sourceCount: sourceHealth.length
+          sourceCount: sourceHealth.length,
+          semanticDocumentCount: semanticContext.includedDocumentCount
         },
-        objects: decoratedObjects.map(summarizeObjectForAi),
-        alerts: alerts.map(summarizeAlertForAi),
-        sourceHealth: sourceHealth.map(summarizeSourceHealthForAi)
+        objects: aiObjects,
+        alerts: aiAlerts,
+        sourceHealth: aiSourceHealth,
+        semanticContext
       },
       providerPreference: "auto",
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
     const response = await aiGateway.queryCopAssistant(aiRequest);
-    appendAudit(state, `AI_SITUATION_SUMMARY_${response.status}`, aiAuditMetadata(response, actor), correlationId);
+    appendAudit(state, `AI_SITUATION_SUMMARY_${response.status}`, {
+      ...aiAuditMetadata(response, actor),
+      semanticDocumentCount: semanticContext.includedDocumentCount,
+      semanticStatus: semanticContext.status
+    }, correlationId);
     return response;
   });
 
@@ -5948,12 +5980,31 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       .filter((report) => canReadCommunityReport(report, actor))
       .slice(0, 20);
     const incidents = (await listIncidents({ limit: 20 })).slice(0, 20);
+    const aiObjects = decoratedObjects.map(summarizeObjectForAi);
+    const aiAlerts = alerts.map(summarizeAlertForAi);
+    const aiCommunityReports = communityReports.map(summarizeCommunityReportForAi);
+    const aiIncidents = incidents.map(summarizeIncidentForAi);
+    const aiSourceHealth = sourceHealth.map(summarizeSourceHealthForAi);
+    const semanticContext = await aiSemanticRetriever.retrieve({
+      documents: createSemanticDocuments({
+        alerts: aiAlerts,
+        chatContext,
+        communityReports: aiCommunityReports,
+        incidents: aiIncidents,
+        objects: aiObjects,
+        sourceHealth: aiSourceHealth
+      }),
+      generatedAt: requestNow,
+      limit: 12,
+      query: question
+    });
     const aiRequest: AiCopQuery = {
       requestId: aiRequestId(body.requestId),
       purpose: "COP_EXPLANATION",
       prompt: [
         `Odpověz jako viditelný AI agent v COP chatu v jazyce ${aiLanguage(body.language)}.`,
         "Použij přiložený COP kontext napříč objekty, výstrahami, komunitními hlášeními, incidenty, stavem zdrojů a explicitně poskytnutým chatContext.",
+        "Použij semanticContext jako bge-m3 vybraný prioritní seznam relevantních COP entit a chatových výňatků; uveď, když je retrieval degraded nebo prázdný.",
         "ChatContext ber jen jako výňatek viditelné dešifrované timeline poskytnutý klientem; nedovozuj neviděnou historii místnosti.",
         "Jasně odděl ověřená data, odhady a chybějící informace. Neformuluj taktické pokyny, targeting ani doporučení použití síly.",
         `Dotaz uživatele: ${question}`
@@ -5976,13 +6027,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
           communityReportCount: communityReports.length,
           incidentCount: incidents.length,
-          sourceCount: sourceHealth.length
+          sourceCount: sourceHealth.length,
+          semanticDocumentCount: semanticContext.includedDocumentCount
         },
-        objects: decoratedObjects.map(summarizeObjectForAi),
-        alerts: alerts.map(summarizeAlertForAi),
-        communityReports: communityReports.map(summarizeCommunityReportForAi),
-        incidents: incidents.map(summarizeIncidentForAi),
-        sourceHealth: sourceHealth.map(summarizeSourceHealthForAi)
+        objects: aiObjects,
+        alerts: aiAlerts,
+        communityReports: aiCommunityReports,
+        incidents: aiIncidents,
+        sourceHealth: aiSourceHealth,
+        semanticContext
       },
       providerPreference: "auto",
       outputFormat: "MARKDOWN",
@@ -5993,7 +6046,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ...aiAuditMetadata(response, actor),
       chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
       conversationId: optionalText(body.conversationId),
-      groupId: group?.groupId
+      groupId: group?.groupId,
+      semanticDocumentCount: semanticContext.includedDocumentCount,
+      semanticStatus: semanticContext.status
     }, correlationId);
     return response;
   });

@@ -44,6 +44,12 @@ AI responses may include optional `routing` metadata from the server-side
 fallback/embedding model names when configured. Clients may display the selected
 model, but must not make provider or model decisions locally.
 
+`/api/v1/ai/situation-summary` and `/api/v1/ai/chat-agent/query` also build a
+server-side `semanticContext` for the LLM. COP API embeds only the already
+authorized request context with `bge-m3`, ranks relevant COP entities/chat
+snippets and passes a bounded result set to the LLM. The semantic layer does not
+read Matrix history on the server and does not bypass RBAC/ABAC or media ACLs.
+
 `/api/v1/ai/chat-agent/query` may include a bounded `chatContext` snapshot from
 the client's currently visible/decrypted Matrix timeline. COP API combines that
 explicit client context with authorized server-side COP data; it does not fetch

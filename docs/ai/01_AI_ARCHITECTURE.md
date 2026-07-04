@@ -50,6 +50,6 @@ KnowledgeBase LLM Gateway zůstává kompatibilní fallback, ne primární cesta
 
 Nad `ollama` providerem běží deterministický model router. Běžné dotazy používají
 fast profil, komplexní situační nebo konfliktní dotazy mohou být směrovány na
-reasoning profil a server-side embedding provider je připravený pro retrieval
-nad policy-filtered COP daty. Klienti nevolají žádný model ani embedding endpoint
-přímo.
+reasoning profil. Server-side semantic context vrstva používá embedding provider
+`bge-m3` nad už autorizovaným COP kontextem a do LLM předává jen omezený
+relevantní výběr. Klienti nevolají žádný model ani embedding endpoint přímo.

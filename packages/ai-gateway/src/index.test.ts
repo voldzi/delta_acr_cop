@@ -404,4 +404,33 @@ describe("AiGateway", () => {
       })
     );
   });
+
+  it("exposes embeddings through AiGateway for COP API semantic retrieval", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      new Response(
+        JSON.stringify({
+          model: "bge-m3:latest",
+          embeddings: [[0.4, 0.5]]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = AiGateway.fromEnv({
+      COP_EXTERNAL_AI_ENABLED: "true",
+      COP_AI_OLLAMA_BASE_URLS: "http://ollama:11434",
+      COP_AI_OLLAMA_EMBEDDING_MODEL: "bge-m3:latest"
+    });
+
+    await expect(gateway.embedText("semantic query")).resolves.toEqual({
+      embedding: [0.4, 0.5],
+      model: "bge-m3:latest"
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://ollama:11434/api/embed",
+      expect.objectContaining({
+        method: "POST"
+      })
+    );
+  });
 });
