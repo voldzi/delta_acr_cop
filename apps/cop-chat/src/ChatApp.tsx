@@ -402,6 +402,7 @@ export function ChatApp() {
   const [aiAgentResponse, setAiAgentResponse] = React.useState<AiCopResponse | null>(null);
   const [aiAgentError, setAiAgentError] = React.useState<string | null>(null);
   const [aiAgentJobStatus, setAiAgentJobStatus] = React.useState<string | null>(null);
+  const [aiAgentInlineStatus, setAiAgentInlineStatus] = React.useState<string | null>(null);
   const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
   const [aiAgentGroupUpdating, setAiAgentGroupUpdating] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
@@ -2738,37 +2739,45 @@ export function ChatApp() {
       throw new Error("Nejdřív otevřete chatovou místnost.");
     }
 
-    await matrixSession.sendMessage(selectedRoomId, userMessage);
-    setNotice("COP AI agent zpracovává dotaz...");
-    let response: AiCopResponse;
+    setAiAgentInlineStatus("COP AI agent připravuje dotaz a vybírá COP zdroje...");
     try {
+      await matrixSession.sendMessage(selectedRoomId, userMessage);
+      setNotice("COP AI agent zpracovává dotaz...");
+      let response: AiCopResponse;
       response = await queryAiChatAgentWithJob(
         buildAiChatAgentQueryOptions(question, invocation.modelPreference, userMessage),
-        (job) => setNotice(aiChatAgentJobStatusLabel(job))
+        (job) => {
+          const label = aiChatAgentJobStatusLabel(job);
+          setNotice(label);
+          setAiAgentInlineStatus(label);
+        }
       );
+      setAiAgentQuestion(question);
+      setAiAgentResponse(response);
+
+      const answer = aiResponseSummary(response);
+      if (response.status !== "COMPLETED") {
+        setAiAgentDialogOpen(true);
+        setNotice(response.status === "NEEDS_HUMAN_REVIEW"
+          ? "AI odpověď vyžaduje lidskou kontrolu, proto není automaticky odeslaná."
+          : "AI odpověď nebyla automaticky odeslaná.");
+        return;
+      }
+      if (!answer.trim()) {
+        setNotice("AI agent nevrátil odpověď k odeslání.");
+        return;
+      }
+      setAiAgentInlineStatus("AI odpověď je připravená, odesílám ji do chatu...");
+      await matrixSession.sendMessage(selectedRoomId, formatAiAgentShareBody(answer, question), {
+        cop: buildAiAgentMessageMetadata(response, question)
+      });
+      setNotice("COP AI agent odpověděl do chatu.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "AI agent teď nedokáže odpovědět.");
       return;
+    } finally {
+      setAiAgentInlineStatus(null);
     }
-    setAiAgentQuestion(question);
-    setAiAgentResponse(response);
-
-    const answer = aiResponseSummary(response);
-    if (response.status !== "COMPLETED") {
-      setAiAgentDialogOpen(true);
-      setNotice(response.status === "NEEDS_HUMAN_REVIEW"
-        ? "AI odpověď vyžaduje lidskou kontrolu, proto není automaticky odeslaná."
-        : "AI odpověď nebyla automaticky odeslaná.");
-      return;
-    }
-    if (!answer.trim()) {
-      setNotice("AI agent nevrátil odpověď k odeslání.");
-      return;
-    }
-    await matrixSession.sendMessage(selectedRoomId, formatAiAgentShareBody(answer, question), {
-      cop: buildAiAgentMessageMetadata(response, question)
-    });
-    setNotice("COP AI agent odpověděl do chatu.");
   }
 
   async function shareLocation() {
@@ -3196,6 +3205,17 @@ export function ChatApp() {
                   <button className="jump-latest" onClick={() => timelineEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })} type="button">
                     <ArrowDown size={17} />
                   </button>
+                ) : null}
+                {aiAgentInlineStatus ? (
+                  <div className="ai-inline-status" role="status" aria-live="polite">
+                    <span className="ai-inline-status-icon">
+                      <Sparkles size={18} />
+                    </span>
+                    <span>
+                      <strong>COP AI agent pracuje</strong>
+                      <small>{aiAgentInlineStatus}</small>
+                    </span>
+                  </div>
                 ) : null}
                 {selectionMode ? (
                   <SelectionToolbar
@@ -3852,6 +3872,7 @@ function Composer({
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const canSend = Boolean(text.trim() || pendingAttachment) && !disabled;
   const suggestions = composerSuggestions(text, aiAgentAvailable);
+  const quickActions = composerQuickActions(aiAgentAvailable);
   const submitDraft = async () => {
     if (!canSend) {
       return;
@@ -3931,6 +3952,30 @@ function Composer({
           ))}
         </div>
       ) : null}
+      {quickActions.length > 0 && suggestions.length === 0 ? (
+        <div className="composer-ai-quickbar" aria-label="Rychlé AI akce">
+          <span className="composer-ai-ready">
+            <Sparkles size={15} />
+            COP AI
+          </span>
+          {quickActions.map((action) => (
+            <button
+              aria-label={action.description}
+              disabled={disabled}
+              key={action.value}
+              onClick={() => {
+                setText(action.value);
+                window.setTimeout(() => textareaRef.current?.focus(), 0);
+              }}
+              title={action.description}
+              type="button"
+            >
+              {action.kind === "fast" ? <Send size={14} /> : action.kind === "reasoning" ? <Search size={14} /> : action.kind === "situation" ? <ShieldCheck size={14} /> : <Sparkles size={14} />}
+              <span>{action.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="composer-row">
         <button className="round-icon" disabled={disabled} onClick={() => onAttachmentPick("file")} type="button" aria-label="Příloha">
           <Plus size={24} />
@@ -3983,6 +4028,10 @@ interface ComposerSuggestion {
   value: string;
 }
 
+interface ComposerQuickAction extends ComposerSuggestion {
+  kind: "ai" | "fast" | "reasoning" | "situation";
+}
+
 export function composerSuggestions(text: string, aiAgentAvailable: boolean): ComposerSuggestion[] {
   const draft = text.trimStart();
   if (!draft || draft.includes(" ")) {
@@ -4022,6 +4071,38 @@ export function composerSuggestions(text: string, aiAgentAvailable: boolean): Co
     ].filter((suggestion) => suggestion.label.toLocaleLowerCase("cs-CZ").startsWith(draft.toLocaleLowerCase("cs-CZ")));
   }
   return [];
+}
+
+export function composerQuickActions(aiAgentAvailable: boolean): ComposerQuickAction[] {
+  if (!aiAgentAvailable) {
+    return [];
+  }
+  return [
+    {
+      description: "Zeptat se COP AI agenta s automatickou volbou modelu",
+      kind: "ai",
+      label: "AI dotaz",
+      value: "/ai "
+    },
+    {
+      description: "Použít rychlý model pro stručnou odpověď",
+      kind: "fast",
+      label: "Rychle",
+      value: "/fast "
+    },
+    {
+      description: "Použít reasoning model pro složitější situační analýzu",
+      kind: "reasoning",
+      label: "Reasoning",
+      value: "/reasoning "
+    },
+    {
+      description: "Připravit krizový situační přehled nad COP daty a chatem",
+      kind: "situation",
+      label: "Krizový přehled",
+      value: "/ai Vytvoř krizový situační přehled pro aktuální oblast. Zaměř se na vodu, počasí, požáry, policii, zdravotní rizika, dopravu, dostupné zdroje a nejistoty. "
+    }
+  ];
 }
 
 function aiChatAgentJobStatusLabel(job: AiChatAgentJobResponse): string {

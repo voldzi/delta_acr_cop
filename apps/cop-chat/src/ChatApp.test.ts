@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { mergeTimelineMessages } from "./chat-model";
-import { buildAiChatContextSnapshot, buildAiRequestContextOptions, composerSuggestions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
+import { buildAiChatContextSnapshot, buildAiRequestContextOptions, composerQuickActions, composerSuggestions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
 describe("mergeTimelineMessages", () => {
@@ -94,6 +94,18 @@ describe("composerSuggestions", () => {
   it("suggests AI mentions only when the agent is available", () => {
     expect(composerSuggestions("@", true).map((item) => item.label)).toEqual(["@COP AI", "@AI"]);
     expect(composerSuggestions("@", false)).toEqual([]);
+  });
+});
+
+describe("composerQuickActions", () => {
+  it("keeps AI actions visible when the agent is available", () => {
+    expect(composerQuickActions(true).map((item) => item.label)).toEqual([
+      "AI dotaz",
+      "Rychle",
+      "Reasoning",
+      "Krizový přehled"
+    ]);
+    expect(composerQuickActions(false)).toEqual([]);
   });
 });
 

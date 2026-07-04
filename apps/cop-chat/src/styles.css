@@ -2019,6 +2019,63 @@ button {
   gap: 7px;
 }
 
+.ai-inline-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(620px, calc(100% - 28px));
+  margin: 0 auto 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(20, 184, 166, 0.32);
+  border-radius: 8px;
+  background: rgba(240, 253, 250, 0.96);
+  color: #0f766e;
+  box-shadow: 0 8px 20px rgba(15, 118, 110, 0.08);
+}
+
+.ai-inline-status-icon {
+  display: inline-grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ccfbf1;
+}
+
+.ai-inline-status-icon svg {
+  animation: aiPulse 1.2s ease-in-out infinite;
+}
+
+.ai-inline-status strong,
+.ai-inline-status small {
+  display: block;
+}
+
+.ai-inline-status strong {
+  color: #0f172a;
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+
+.ai-inline-status small {
+  color: #0f766e;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+@keyframes aiPulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
 .composer-suggestions {
   display: grid;
   width: min(520px, calc(100% - 104px));
@@ -2061,6 +2118,64 @@ button {
 .composer-suggestions small {
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.composer-ai-quickbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding: 0 0 1px 52px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.composer-ai-quickbar::-webkit-scrollbar {
+  display: none;
+}
+
+.composer-ai-ready,
+.composer-ai-quickbar button {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  min-height: 32px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.composer-ai-ready {
+  padding: 0 10px;
+  background: #dff8f2;
+  color: #047857;
+}
+
+.composer-ai-quickbar button {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  padding: 0 11px;
+  background: #ffffff;
+  color: #314451;
+  box-shadow: 0 1px 2px rgba(17, 27, 33, 0.05);
+  cursor: pointer;
+}
+
+.composer-ai-quickbar button:hover,
+.composer-ai-quickbar button:focus-visible {
+  border-color: rgba(20, 184, 166, 0.46);
+  background: #effdf9;
+  color: #047857;
+  outline: none;
+}
+
+.composer-ai-quickbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .reply-composer {
@@ -4411,6 +4526,21 @@ button {
 
   .composer {
     padding: 8px;
+  }
+
+  .composer-ai-quickbar {
+    padding-left: 0;
+  }
+
+  .composer-ai-ready,
+  .composer-ai-quickbar button {
+    min-height: 30px;
+    font-size: 0.74rem;
+  }
+
+  .ai-inline-status {
+    width: calc(100% - 20px);
+    margin-bottom: 6px;
   }
 
   .new-chat-dialog,

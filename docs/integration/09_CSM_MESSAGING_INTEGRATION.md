@@ -485,13 +485,15 @@ The phase-0 implementation focus is trust and control:
   The direct AI chat is scoped to the authenticated user account and the
   configured bot member; other users get their own direct AI conversation unless
   the agent is explicitly added to a shared group.
-- The composer exposes inline suggestions for `@COP AI`, `@AI`, `/ai`,
-  `/fast` and `/reasoning` in groups with an enabled agent and in the dedicated
-  AI direct chat. Member-add actions are guarded client-side against duplicate
-  clicks and already-active group members. COP group membership is updated
-  first; CSM Messaging and Matrix invite synchronization are best-effort
-  projections and degraded sync is shown as a notice instead of undoing the COP
-  membership change.
+- The composer exposes persistent AI quick actions for `AI dotaz`, `Rychle`,
+  `Reasoning` and `Krizový přehled`, plus inline suggestions for `@COP AI`,
+  `@AI`, `/ai`, `/fast` and `/reasoning` after typing `@` or `/`. During async
+  jobs the conversation shows a dedicated AI work-in-progress status in addition
+  to the normal notification banner. Member-add actions are guarded client-side
+  against duplicate clicks and already-active group members. COP group
+  membership is updated first; CSM Messaging and Matrix invite synchronization
+  are best-effort projections and degraded sync is shown as a notice instead of
+  undoing the COP membership change.
 - Current direct-chat removal is local hiding. Current group deletion deletes
   the COP community group when the authenticated actor may manage it. Leaving a
   group calls `DELETE /api/v1/community/groups/{groupId}/members/me`, marks the

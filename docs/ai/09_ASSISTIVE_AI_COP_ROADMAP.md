@@ -148,7 +148,11 @@ reasoning model. Slash příkazy
 agentem; `/ai` a `@COP AI` používají rychlý model, zatímco `/reasoning`
 předává do API `modelPreference=reasoning`. Composer našeptává také `@COP AI`
 a `@AI`, a to jak ve skupinách se zapnutým agentem, tak v metadata-light AI
-direct chatech rozpoznaných podle kanonického titulku `COP AI Assistant`.
+direct chatech rozpoznaných podle kanonického titulku `COP AI Assistant`. Od
+produkčního stavu 2026-07-04 je nad composerem zároveň trvale viditelný AI
+quickbar s akcemi `AI dotaz`, `Rychle`, `Reasoning` a `Krizový přehled`, aby
+uživatel nemusel znát slash syntaxi dopředu. Během async jobu se pod timeline
+zobrazuje stav “COP AI agent pracuje” s aktuálním stavem fronty/zpracování.
 
 Odpovědi AI odeslané do Matrixu jsou běžné `m.room.message` události s
 namespaced `cz.cop` metadaty. UI je díky tomu označí jako `COP AI agent` nebo
