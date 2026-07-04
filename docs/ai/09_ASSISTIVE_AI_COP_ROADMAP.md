@@ -101,7 +101,9 @@ COP má server-side AI runtime za `@cop/ai-gateway`:
 Aktivní aplikační endpointy:
 
 - `POST /api/v1/ai/cop-assistant/query` pro obecné povolené dotazy,
-- `POST /api/v1/ai/situation-summary` pro situační souhrn z COP objektů, výstrah a provider health,
+- `POST /api/v1/ai/situation-summary` pro situační souhrn z krizově
+  prioritizovaných COP objektů, výstrah, komunitních hlášení, incidentů a
+  provider health,
 - `POST /api/v1/ai/chat-agent/query` pro explicitní otázku viditelnému AI agentovi v COP chatu,
 - `POST /api/v1/ai/source-health-summary` pro vysvětlení kvality zdrojů,
 - `POST /api/v1/ai/community-report/draft` pro pomoc s občanským hlášením.
@@ -151,6 +153,18 @@ chatContextu sestaví dokumenty, seřadí je podle podobnosti k dotazu a vloží
 LLM kontextu omezený `semanticContext`. Retrieval nikdy nerozšiřuje oprávnění:
 RBAC/ABAC, release policy a E2EE consent se aplikují před tvorbou dokumentů.
 
+`situation-summary` a `chat-agent/query` předávají LLM také serverový
+`priorityContext`. Ten řadí signály podle krizové důležitosti před čistou
+semantic podobností: voda/povodeň, požár, zdravotní riziko, infrastruktura,
+doprava, bezpečnostní nebo policejní incidenty, komunitní hlášení a aktivní
+výstrahy mají přednost před rutinní diagnostikou zdrojů. Zastaralé nebo
+low-confidence civilní letecké tracky jsou nízká priorita, pokud přímo nesouvisí
+s dotazem, bezpečností nebo datovým pokrytím. `semanticContext.citations` a
+`priorityContext.citations` dávají modelu krátké citační značky (`[S1]`,
+`[P1]`) pro důležitá tvrzení. `priorityContext.mapSnapshot` zatím obsahuje
+strukturované kandidáty a bounding box pro budoucí mapový náhled; není to
+serverem vyrenderovaný obrázek.
+
 Tyto endpointy jsou určeny i pro iOS/iPadOS klienty. Klienti nemají znát Ollama
 URL, LLM Gateway URL ani service tokeny.
 
@@ -183,6 +197,7 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
    historie.
 7. Až potom multimediální shrnutí, a jen s media ACL.
 8. Semantický COP retrieval/RAG přes `bge-m3` nad canonical entity chunks. Stav:
-   první semantic context vrstva je hotová pro aktuální autorizovaný kontext;
-   další krok je perzistentní/background index, mapová/geografická filtrace,
-   citace zdrojů a auditované tool calls.
+   první semantic context vrstva je hotová pro aktuální autorizovaný kontext,
+   včetně krizového priority contextu, citací a map snapshot kandidátů; další
+   krok je perzistentní/background index, mapová/geografická filtrace nad
+   dlouhodobějšími canonical entitami a auditované tool calls.

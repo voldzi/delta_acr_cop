@@ -221,6 +221,7 @@ import {
 } from "./user-profile-store.js";
 
 export interface BuildServerOptions {
+  aiGateway?: AiGateway;
   flightDataSource?: FlightDataSource;
   communityReportStore?: CommunityReportStore;
   incidentStore?: IncidentStore;
@@ -540,7 +541,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   });
   const state = options.state ?? createInitialState();
   const validators = new ContractValidators();
-  const aiGateway = AiGateway.fromEnv(process.env);
+  const aiGateway = options.aiGateway ?? AiGateway.fromEnv(process.env);
   const aiSemanticRetriever = new AiSemanticRetriever({
     embedText: (input) => aiGateway.embedText(input),
     enabled: readBoolean(process.env.COP_AI_SEMANTIC_RETRIEVAL_ENABLED, true),
@@ -5844,8 +5845,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const subject = defaultSystemSubject();
     const maxObjects = readBoundedInteger(body.maxObjects, 40, 1, 80);
     const includeAlerts = body.includeAlerts !== false;
-    const readableObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
-      .filter((object) => canReadObject(subject, object))
+    const readableObjects = prioritizeObjectsForAi(selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
+      .filter((object) => canReadObject(subject, object)))
       .slice(0, maxObjects);
     const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
     const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
@@ -5857,22 +5858,45 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           requestNow
         })).slice(0, 25)
       : [];
+    const communityReports = (await listCommunityReports({
+      limit: 40,
+      statuses: ["submitted", "published"]
+    }))
+      .filter((report) => canReadCommunityReport(report, actor))
+      .slice(0, 20);
+    const incidents = (await listIncidents({
+      limit: 20,
+      statuses: ["active", "candidate", "monitoring"]
+    })).slice(0, 20);
     const aiObjects = decoratedObjects.map(summarizeObjectForAi);
     const aiAlerts = alerts.map(summarizeAlertForAi);
+    const aiCommunityReports = communityReports.map(summarizeCommunityReportForAi);
+    const aiIncidents = incidents.map(summarizeIncidentForAi);
     const aiSourceHealth = sourceHealth.map(summarizeSourceHealthForAi);
+    const priorityContext = buildAiPriorityContext({
+      alerts: aiAlerts,
+      communityReports: aiCommunityReports,
+      incidents: aiIncidents,
+      objects: aiObjects,
+      sourceHealth: aiSourceHealth
+    });
     const semanticContext = await aiSemanticRetriever.retrieve({
       documents: createSemanticDocuments({
         alerts: aiAlerts,
+        communityReports: aiCommunityReports,
+        incidents: aiIncidents,
         objects: aiObjects,
         sourceHealth: aiSourceHealth
       }),
       generatedAt: requestNow,
-      limit: 8,
+      limit: 12,
       query: [
-        "situační souhrn civilní krizový přehled",
+        "situační souhrn krizové priority povodeň hladina řeky požár bezpečnost policie incident infrastruktura komunita výstrahy",
         aiLanguage(body.language),
-        aiObjects.length ? `objekty ${aiObjects.length}` : "",
-        aiAlerts.length ? `výstrahy ${aiAlerts.length}` : ""
+        aiIncidents.length ? `incidenty ${aiIncidents.length}` : "",
+        aiCommunityReports.length ? `komunitní hlášení ${aiCommunityReports.length}` : "",
+        aiAlerts.length ? `výstrahy ${aiAlerts.length}` : "",
+        aiObjects.length ? `objekty ${aiObjects.length}` : ""
       ].filter(Boolean).join(" ")
     });
     const aiRequest: AiCopQuery = {
@@ -5880,8 +5904,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       purpose: "COP_EXPLANATION",
       prompt: [
         `Vytvoř stručný situační souhrn pro civilní mapu v jazyce ${aiLanguage(body.language)}.`,
-        "Upřednostni semanticContext jako bge-m3 vybraný seznam relevantních COP entit, ale neopouštěj přiložený autorizovaný kontext.",
-        "Odděl ověřená data, modelované odhady a chybějící informace.",
+        "Priorita je bezpečnost lidí a majetku: povodně/voda, požáry, zdravotní události, infrastruktura, dopravní omezení, bezpečnostní/policejní incidenty, komunitní hlášení a aktivní výstrahy.",
+        "Letecké tracky a stale/low-confidence diagnostiku zmiň jen tehdy, když jsou přímo bezpečnostně relevantní nebo výrazně ovlivňují situační přehled; běžné zastaralé civilní letové tracky nejsou hlavní událost.",
+        "Použij priorityContext jako první vodítko, semanticContext jako bge-m3 vybraný seznam relevantních COP entit a neopouštěj přiložený autorizovaný kontext.",
+        "U každého důležitého tvrzení přidej citaci ve tvaru [S1] ze semanticContext.citations nebo [P1] z priorityContext.citations.",
+        "Odděl ověřená data, odhady a chybějící informace. Uveď, když chybí lokální vodní/požární/bezpečnostní evidence.",
         "Nepřidávej vlastní fakta a neformuluj operační pokyny."
       ].join(" "),
       context: {
@@ -5890,11 +5917,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         scope: {
           objectCount: readableObjects.length,
           alertCount: alerts.length,
+          communityReportCount: communityReports.length,
+          incidentCount: incidents.length,
           sourceCount: sourceHealth.length,
           semanticDocumentCount: semanticContext.includedDocumentCount
         },
+        priorityContext,
         objects: aiObjects,
         alerts: aiAlerts,
+        communityReports: aiCommunityReports,
+        incidents: aiIncidents,
         sourceHealth: aiSourceHealth,
         semanticContext
       },
@@ -5963,8 +5995,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const modelPreference = aiModelPreference(body.modelPreference);
     const subject = defaultSystemSubject();
     const maxObjects = readBoundedInteger(body.maxObjects, 30, 1, 60);
-    const readableObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
-      .filter((object) => canReadObject(subject, object))
+    const readableObjects = prioritizeObjectsForAi(selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
+      .filter((object) => canReadObject(subject, object)))
       .slice(0, maxObjects);
     const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
     const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
@@ -5986,6 +6018,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const aiCommunityReports = communityReports.map(summarizeCommunityReportForAi);
     const aiIncidents = incidents.map(summarizeIncidentForAi);
     const aiSourceHealth = sourceHealth.map(summarizeSourceHealthForAi);
+    const priorityContext = buildAiPriorityContext({
+      alerts: aiAlerts,
+      chatContext,
+      communityReports: aiCommunityReports,
+      incidents: aiIncidents,
+      objects: aiObjects,
+      sourceHealth: aiSourceHealth
+    });
     const semanticContext = await aiSemanticRetriever.retrieve({
       documents: createSemanticDocuments({
         alerts: aiAlerts,
@@ -6005,7 +6045,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       prompt: [
         `Odpověz jako viditelný AI agent v COP chatu v jazyce ${aiLanguage(body.language)}.`,
         "Použij přiložený COP kontext napříč objekty, výstrahami, komunitními hlášeními, incidenty, stavem zdrojů a explicitně poskytnutým chatContext.",
-        "Použij semanticContext jako bge-m3 vybraný prioritní seznam relevantních COP entit a chatových výňatků; uveď, když je retrieval degraded nebo prázdný.",
+        "Použij priorityContext pro krizovou důležitost a semanticContext jako bge-m3 vybraný seznam relevantních COP entit a chatových výňatků; uveď, když je retrieval degraded nebo prázdný.",
+        "Bezpečnostní priority jsou voda/povodeň, požár, zdravotní riziko, infrastruktura, dopravní omezení, bezpečnostní/policejní incident a komunitní hlášení; běžné stale civilní letové tracky zmiň jen pokud přímo souvisí s dotazem.",
+        "Důležitá tvrzení cituj pomocí [S1] ze semanticContext.citations nebo [P1] z priorityContext.citations.",
         "ChatContext ber jen jako výňatek viditelné dešifrované timeline poskytnutý klientem; nedovozuj neviděnou historii místnosti.",
         "Jasně odděl ověřená data, odhady a chybějící informace. Neformuluj taktické pokyny, targeting ani doporučení použití síly.",
         `Dotaz uživatele: ${question}`
@@ -6022,6 +6064,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           activeMemberCount: group ? group.members.filter((member) => member.status === "active").length : undefined
         }),
         chatContext,
+        priorityContext,
         scope: {
           objectCount: readableObjects.length,
           alertCount: alerts.length,
@@ -12018,6 +12061,378 @@ function optionalText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
 
+interface AiPrioritySignal {
+  category?: string;
+  citation: string;
+  entityId: string;
+  entityType: "alert" | "chatMessage" | "communityReport" | "incident" | "observedObject" | "sourceHealth";
+  location?: {
+    lat: number;
+    lon: number;
+  };
+  priorityScore: number;
+  reason: string;
+  severity?: string;
+  sourceSystemIds?: string[];
+  status?: string;
+  title: string;
+  updatedAt?: string;
+}
+
+function prioritizeObjectsForAi(objects: ObservedObject[]): ObservedObject[] {
+  return [...objects].sort((left, right) =>
+    aiObservedObjectPriorityScore(right) - aiObservedObjectPriorityScore(left)
+    || timestampMillis(right.lastUpdatedAt) - timestampMillis(left.lastUpdatedAt)
+    || left.objectId.localeCompare(right.objectId)
+  );
+}
+
+function aiObservedObjectPriorityScore(object: ObservedObject): number {
+  const text = `${object.objectType} ${object.domain} ${object.status} ${object.dataQuality ?? ""}`.toLocaleLowerCase("cs-CZ");
+  let score = 0;
+  if (object.status === "ACTIVE") {
+    score += 0.1;
+  }
+  if (object.status === "LOST") {
+    score -= 0.08;
+  }
+  if (object.domain === "AIR") {
+    score -= 0.2;
+  }
+  if (/(flood|water|fire|hazard|incident|security|police|medical|infrastructure|traffic)/u.test(text)) {
+    score += 0.28;
+  }
+  if (/(stale|track_stale|low_confidence|zastaral)/u.test(text)) {
+    score -= 0.2;
+  }
+  if (object.attributes?.conflictEvidence) {
+    score += 0.08;
+  }
+  return score;
+}
+
+function buildAiPriorityContext(input: {
+  alerts?: Record<string, unknown>[];
+  chatContext?: Record<string, unknown>;
+  communityReports?: Record<string, unknown>[];
+  incidents?: Record<string, unknown>[];
+  objects?: Record<string, unknown>[];
+  sourceHealth?: Record<string, unknown>[];
+}): Record<string, unknown> {
+  const signals = [
+    ...(input.incidents ?? []).map((record) => aiPrioritySignalFromRecord("incident", record, "incidentId")),
+    ...(input.communityReports ?? []).map((record) => aiPrioritySignalFromRecord("communityReport", record, "reportId")),
+    ...(input.alerts ?? []).map((record) => aiPrioritySignalFromRecord("alert", record, "alertId")),
+    ...(input.objects ?? []).map((record) => aiPrioritySignalFromRecord("observedObject", record, "objectId")),
+    ...(input.sourceHealth ?? []).map((record) => aiPrioritySignalFromRecord("sourceHealth", record, "sourceSystemId")),
+    ...aiPrioritySignalsFromChat(input.chatContext)
+  ]
+    .filter((signal): signal is AiPrioritySignal => Boolean(signal))
+    .sort((left, right) => right.priorityScore - left.priorityScore || timestampMillis(right.updatedAt) - timestampMillis(left.updatedAt))
+    .slice(0, 16)
+    .map((signal, index) => ({
+      ...signal,
+      citation: `P${index + 1}`
+    }));
+  const mapSnapshotCandidates = signals
+    .filter((signal) => signal.location)
+    .slice(0, 12)
+    .map((signal) => compactRecord({
+      category: signal.category,
+      citation: signal.citation,
+      entityId: signal.entityId,
+      entityType: signal.entityType,
+      label: signal.title,
+      location: signal.location,
+      priorityScore: signal.priorityScore,
+      severity: signal.severity,
+      status: signal.status
+    }));
+  return compactRecord({
+    contractVersion: "cop-ai-priority-context-v1",
+    focusOrder: [
+      "flood-water",
+      "fire",
+      "medical",
+      "infrastructure",
+      "traffic-disruption",
+      "security-police",
+      "community-reports",
+      "active-alerts",
+      "air-tracks-only-if-relevant"
+    ],
+    guidance: "Treat stale civil air-track diagnostics as low priority unless directly relevant to safety, a user question, or a data-coverage caveat.",
+    counts: compactRecord({
+      alerts: input.alerts?.length ?? 0,
+      chatMessages: Array.isArray(input.chatContext?.messages) ? input.chatContext.messages.length : 0,
+      communityReports: input.communityReports?.length ?? 0,
+      incidents: input.incidents?.length ?? 0,
+      objects: input.objects?.length ?? 0,
+      sourceHealth: input.sourceHealth?.length ?? 0
+    }),
+    categoryCounts: aiCategoryCounts(signals),
+    citations: signals.map((signal) => compactRecord({
+      citationId: signal.citation,
+      entityId: signal.entityId,
+      entityType: signal.entityType,
+      label: signal.title,
+      location: signal.location,
+      sourceSystemIds: signal.sourceSystemIds,
+      updatedAt: signal.updatedAt
+    })),
+    mapSnapshot: compactRecord({
+      bbox: bboxForSignals(signals),
+      candidates: mapSnapshotCandidates,
+      contractVersion: "cop-ai-map-snapshot-candidates-v1"
+    }),
+    prioritySignals: signals
+  });
+}
+
+function aiPrioritySignalFromRecord(
+  entityType: AiPrioritySignal["entityType"],
+  record: Record<string, unknown>,
+  idKey: string
+): AiPrioritySignal | undefined {
+  const entityId = optionalText(record[idKey]);
+  if (!entityId) {
+    return undefined;
+  }
+  const title = optionalText(record.title)
+    ?? optionalText(record.displayName)
+    ?? optionalText(record.objectType)
+    ?? entityId;
+  const category = optionalText(record.category) ?? optionalText(record.type);
+  const severity = optionalText(record.severity);
+  const status = optionalText(record.status) ?? optionalText(record.health);
+  const updatedAt = optionalText(record.updatedAt) ?? optionalText(record.lastUpdatedAt) ?? optionalText(record.observedAt) ?? optionalText(record.submittedAt);
+  const priorityScore = aiPriorityScore(entityType, record);
+  return {
+    category,
+    citation: "P0",
+    entityId,
+    entityType,
+    location: aiLocationFromRecord(record.location) ?? aiLocationFromRecord(record.position),
+    priorityScore,
+    reason: aiPriorityReason(entityType, category, severity, status, record),
+    severity,
+    sourceSystemIds: aiSourceSystemIds(record),
+    status,
+    title,
+    updatedAt
+  };
+}
+
+function aiPrioritySignalsFromChat(chatContext: Record<string, unknown> | undefined): AiPrioritySignal[] {
+  const messages = Array.isArray(chatContext?.messages) ? chatContext.messages : [];
+  return messages.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    const body = optionalText(item.body);
+    if (!body) {
+      return [];
+    }
+    const entityId = optionalText(item.eventId) ?? `chat-message-${index}`;
+    const sender = optionalText(item.senderDisplayName) ?? optionalText(item.sender) ?? "chat";
+    const record = {
+      body,
+      category: "chat",
+      eventId: entityId,
+      status: "visible",
+      title: sender,
+      updatedAt: optionalText(item.timestamp)
+    };
+    const priorityScore = aiPriorityScore("chatMessage", record);
+    return priorityScore > 0.2 ? [{
+      category: "chat",
+      citation: "P0",
+      entityId,
+      entityType: "chatMessage" as const,
+      priorityScore,
+      reason: "Relevant visible chat context supplied by the client.",
+      status: "visible",
+      title: `${sender}: ${body.slice(0, 80)}`,
+      updatedAt: optionalText(item.timestamp)
+    }] : [];
+  });
+}
+
+function aiPriorityScore(entityType: AiPrioritySignal["entityType"], record: Record<string, unknown>): number {
+  const text = JSON.stringify(record).toLocaleLowerCase("cs-CZ");
+  let score = aiPriorityBaseScore(entityType);
+  score += aiSeverityScore(optionalText(record.severity));
+  score += aiStatusScore(optionalText(record.status) ?? optionalText(record.health));
+  score += aiCategoryScore(optionalText(record.category) ?? optionalText(record.type), text);
+  if ((optionalText(record.domain) ?? "").toLocaleLowerCase("cs-CZ") === "air" || /track_stale|stale track|civil.*flight|letadl/u.test(text)) {
+    score -= /critical|warning|conflict|lost|incident/u.test(text) ? 0.06 : 0.22;
+  }
+  if (/low_confidence|zastaral|stale/u.test(text)) {
+    score -= 0.14;
+  }
+  return Math.round(Math.max(0, Math.min(1, score)) * 1000) / 1000;
+}
+
+function aiPriorityBaseScore(entityType: AiPrioritySignal["entityType"]): number {
+  switch (entityType) {
+    case "incident":
+      return 0.48;
+    case "communityReport":
+      return 0.42;
+    case "alert":
+      return 0.32;
+    case "chatMessage":
+      return 0.24;
+    case "sourceHealth":
+      return 0.08;
+    case "observedObject":
+      return 0.05;
+  }
+}
+
+function aiSeverityScore(severity: string | undefined): number {
+  switch (severity) {
+    case "critical":
+      return 0.3;
+    case "warning":
+      return 0.18;
+    case "advisory":
+      return 0.08;
+    default:
+      return 0;
+  }
+}
+
+function aiStatusScore(status: string | undefined): number {
+  switch (status) {
+    case "ACTIVE":
+    case "active":
+    case "monitoring":
+    case "submitted":
+    case "published":
+      return 0.08;
+    case "candidate":
+      return 0.04;
+    case "degraded":
+    case "DISABLED":
+      return 0.1;
+    case "resolved":
+    case "closed":
+    case "ACKNOWLEDGED":
+    case "ok":
+    case "OK":
+      return -0.08;
+    default:
+      return 0;
+  }
+}
+
+function aiCategoryScore(category: string | undefined, text: string): number {
+  const value = `${category ?? ""} ${text}`;
+  if (/(flood|povod|hladin|hydro|river|řek|rek|water|voda|záplav|zaplav)/u.test(value)) {
+    return 0.24;
+  }
+  if (/(fire|požár|pozar|kouř|kour|hotspot|firms)/u.test(value)) {
+    return 0.22;
+  }
+  if (/(security|polic|kráde|krade|zlod|crime|bezpeč)/u.test(value)) {
+    return 0.2;
+  }
+  if (/(medical|zdravot|zran|evaku|bridge|most|road|silnic|infrastructure|utility|outage|výpad|vypad|hazard|nebezpe)/u.test(value)) {
+    return 0.16;
+  }
+  if (/(traffic|doprav|weather|vítr|vitr|bouř|bour)/u.test(value)) {
+    return 0.1;
+  }
+  return 0;
+}
+
+function aiPriorityReason(
+  entityType: AiPrioritySignal["entityType"],
+  category: string | undefined,
+  severity: string | undefined,
+  status: string | undefined,
+  record: Record<string, unknown>
+): string {
+  const domain = optionalText(record.domain)?.toLocaleLowerCase("cs-CZ");
+  const parts = [
+    entityType,
+    category ? `category=${category}` : undefined,
+    severity ? `severity=${severity}` : undefined,
+    status ? `status=${status}` : undefined,
+    domain === "air" ? "air-track-low-priority-unless-relevant" : undefined
+  ].filter(Boolean);
+  return parts.join("; ");
+}
+
+function aiLocationFromRecord(value: unknown): { lat: number; lon: number } | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const lat = optionalFiniteNumber(value.lat, -90, 90);
+  const lon = optionalFiniteNumber(value.lon, -180, 180);
+  return lat !== undefined && lon !== undefined
+    ? { lat: roundCoordinate(lat), lon: roundCoordinate(lon) }
+    : undefined;
+}
+
+function aiSourceSystemIds(record: Record<string, unknown>): string[] | undefined {
+  const values = [
+    optionalText(record.sourceSystemId),
+    ...aiStringList(record.sourceSystemIds),
+    ...aiSourceRefs(record.sourceRefs)
+  ].filter((item): item is string => Boolean(item));
+  const unique = Array.from(new Set(values)).slice(0, 8);
+  return unique.length ? unique : undefined;
+}
+
+function aiSourceRefs(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => isRecord(item) ? aiStringList(item.sourceId) : []);
+}
+
+function aiStringList(value: unknown): string[] {
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : []);
+}
+
+function aiCategoryCounts(signals: AiPrioritySignal[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const signal of signals) {
+    const key = signal.category ?? signal.entityType;
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function bboxForSignals(signals: AiPrioritySignal[]): { east: number; north: number; south: number; west: number } | undefined {
+  const points = signals.flatMap((signal) => signal.location ? [signal.location] : []);
+  if (points.length === 0) {
+    return undefined;
+  }
+  return {
+    east: roundCoordinate(Math.max(...points.map((point) => point.lon))),
+    north: roundCoordinate(Math.max(...points.map((point) => point.lat))),
+    south: roundCoordinate(Math.min(...points.map((point) => point.lat))),
+    west: roundCoordinate(Math.min(...points.map((point) => point.lon)))
+  };
+}
+
+function timestampMillis(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function summarizeObjectForAi(object: ObservedObject): Record<string, unknown> {
   const conflict = isRecord(object.attributes?.conflictEvidence) ? object.attributes.conflictEvidence : undefined;
   return compactRecord({
@@ -12075,6 +12490,7 @@ function summarizeCommunityReportForAi(report: CommunityReportRecord): Record<st
     },
     observedAt: report.observedAt,
     reportId: report.reportId,
+    severity: communityReportSeverity(report),
     status: report.status,
     submittedAt: report.submittedAt,
     title: report.title,

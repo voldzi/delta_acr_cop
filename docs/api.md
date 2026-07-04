@@ -49,6 +49,13 @@ server-side `semanticContext` for the LLM. COP API embeds only the already
 authorized request context with `bge-m3`, ranks relevant COP entities/chat
 snippets and passes a bounded result set to the LLM. The semantic layer does not
 read Matrix history on the server and does not bypass RBAC/ABAC or media ACLs.
+The same endpoints also build `priorityContext` before semantic ranking. It
+boosts flood/water, fire, medical, infrastructure, traffic, security/police,
+community-report and active-alert signals, emits `[P*]`/`[S*]` citation
+metadata for important claims and carries structured `mapSnapshot` candidates
+for future map-preview rendering. Routine stale or low-confidence civil air
+tracks are intentionally low priority unless directly relevant to the user
+question, safety or a data-coverage caveat.
 
 `/api/v1/ai/chat-agent/query` may include a bounded `chatContext` snapshot from
 the client's currently visible/decrypted Matrix timeline. COP API combines that

@@ -58,6 +58,13 @@ embedding provider v semantic context vrstvě pro `situation-summary` a
 `chat-agent/query`: z už autorizovaných COP objektů, výstrah, hlášení, incidentů,
 source health a consentovaného chatContextu sestaví dokumenty, seřadí je podle
 podobnosti k dotazu a do LLM kontextu vloží jen omezený relevantní výběr.
+Před semantic řazením se navíc skládá `priorityContext`, který zvýhodňuje
+krizově důležité signály: vodu/povodně, požáry, zdravotní rizika,
+infrastrukturu, dopravní omezení, bezpečnostní/policejní incidenty, komunitní
+hlášení a aktivní výstrahy. Rutinní stale/low-confidence civilní letecké tracky
+jsou pro situační přehled nízká priorita, pokud nejsou přímo relevantní.
+Kontext obsahuje citační značky a strukturované `mapSnapshot` kandidáty pro
+budoucí render mapového náhledu.
 
 AI KnowledgeBase LLM Gateway zůstává podporovaná jako volitelný kompatibilní
 fallback provider `local`, zejména pokud prostředí chce sdílet jeden gateway pro
@@ -123,7 +130,11 @@ Web a iOS klienti nepoužívají low-level LLM API. Volají pouze aplikační CO
 endpointy:
 
 - `POST /api/v1/ai/cop-assistant/query` pro obecný povolený dotaz,
-- `POST /api/v1/ai/situation-summary` pro situační souhrn z aktuálně čitelných objektů, výstrah a zdrojů,
+- `POST /api/v1/ai/situation-summary` pro situační souhrn z aktuálně čitelných
+  krizově prioritizovaných objektů, výstrah, komunitních hlášení, incidentů a
+  zdrojů,
+- `POST /api/v1/ai/chat-agent/query` pro otázku viditelnému AI agentovi nad COP
+  kontextem a volitelným consentovaným chat výňatkem,
 - `POST /api/v1/ai/source-health-summary` pro srozumitelné vysvětlení stavu providerů,
 - `POST /api/v1/ai/community-report/draft` pro pomoc s textem občanského hlášení.
 

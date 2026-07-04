@@ -1,4 +1,5 @@
 import { createSign, generateKeyPairSync, type KeyObject } from "node:crypto";
+import { AiGateway, type AiCopQuery, type AiProvider } from "@cop/ai-gateway";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryCommunityReportStore } from "./community-report-store.js";
 import { buildServer } from "./server.js";
@@ -747,9 +748,55 @@ describe("community report routes", () => {
   });
 
   it("answers AI chat agent questions with group-scoped COP context", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "Captured COP assistant response",
+          structured: {
+            purpose: query.purpose
+          }
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const communityReportStore = new InMemoryCommunityReportStore("ai-chat-agent-test");
     const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), { defaultProvider: "mock" }),
+      communityReportStore,
       now: () => new Date("2026-05-20T12:00:00Z")
     });
+    const floodReport = await communityReportStore.createReport({
+      category: "flood",
+      createdBy: {
+        displayName: "Lab",
+        subjectId: "lab",
+        username: "lab"
+      },
+      description: "Hladina řeky rychle stoupá u mostu.",
+      location: {
+        accuracyM: 8,
+        lat: 50.1,
+        lon: 17.2,
+        source: "device"
+      },
+      observedAt: "2026-05-20T11:58:00.000Z",
+      properties: {
+        hazardSeverity: "warning"
+      },
+      title: "Stoupající hladina",
+      visibility: "public"
+    }, new Date("2026-05-20T11:59:00.000Z"));
+    await communityReportStore.submitReport(floodReport.reportId, "lab", new Date("2026-05-20T12:00:00.000Z"));
 
     const createResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
@@ -846,7 +893,31 @@ describe("community report routes", () => {
       provider: "mock",
       status: "COMPLETED"
     });
-    expect(queryResponse.json().result.summary).toContain("Mock COP assistant response");
+    expect(queryResponse.json().result.summary).toContain("Captured COP assistant response");
+    expect(capturedQueries).toHaveLength(1);
+    expect(capturedQueries[0]?.prompt).toContain("priorityContext");
+    const priorityContext = capturedQueries[0]?.context?.priorityContext as Record<string, unknown> | undefined;
+    expect(priorityContext).toMatchObject({
+      contractVersion: "cop-ai-priority-context-v1"
+    });
+    expect(priorityContext?.citations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        entityId: floodReport.reportId,
+        entityType: "communityReport"
+      })
+    ]));
+    expect(priorityContext?.mapSnapshot).toMatchObject({
+      contractVersion: "cop-ai-map-snapshot-candidates-v1",
+      candidates: expect.arrayContaining([
+        expect.objectContaining({
+          entityId: floodReport.reportId,
+          location: {
+            lat: 50.1,
+            lon: 17.2
+          }
+        })
+      ])
+    });
     const auditResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
       url: "/api/v1/audit/events"

@@ -443,6 +443,14 @@ The phase-0 implementation focus is trust and control:
   reading. Sending the answer to Matrix remains an explicit user action unless
   a leading `@COP AI ...` mention returns a completed answer that does not
   require human review.
+- AI situation answers use a server-side `priorityContext` before semantic
+  retrieval. Flood/water state, fires, medical risks, infrastructure, traffic,
+  security or police incidents, community reports and active alerts outrank
+  routine source diagnostics. Stale civil air-track data is included only when
+  it is directly relevant to the question, safety impact or data coverage.
+  `priorityContext.citations`, `semanticContext.citations` and
+  `priorityContext.mapSnapshot` give the model citation IDs and structured map
+  candidates for future preview rendering.
 - AI answers sent to Matrix carry namespaced `cz.cop` message metadata with
   `kind`, `requestId`, `auditId`, provider/model, policy reason and the
   original question when present. The metadata is used only for timeline
