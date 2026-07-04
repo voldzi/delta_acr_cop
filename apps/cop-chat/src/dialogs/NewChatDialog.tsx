@@ -4,7 +4,7 @@ import type { UserDirectoryEntry } from "@cop/core/cop-data";
 import { Avatar } from "../components/Avatar";
 import { useModalFocus } from "../hooks/useModalFocus";
 
-export type NewChatMode = "direct" | "group" | null;
+export type NewChatMode = "direct" | "group" | "member" | null;
 
 export default function NewChatDialog({
   canChat,
@@ -42,6 +42,8 @@ export default function NewChatDialog({
   onModeChange: (value: NewChatMode) => void;
 }) {
   const directActive = mode === "direct";
+  const memberActive = mode === "member";
+  const title = directActive ? "Nový chat" : memberActive ? "Přidat člena" : "Nová skupina";
   const modal = useModalFocus<HTMLElement>(onClose);
   return (
     <div className="dialog-backdrop" role="presentation" onClick={onClose}>
@@ -50,7 +52,7 @@ export default function NewChatDialog({
         className="new-chat-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={directActive ? "Nový chat" : "Nová skupina"}
+        aria-label={title}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={modal.onDialogKeyDown}
@@ -59,12 +61,12 @@ export default function NewChatDialog({
           <button className="round-icon mobile-only" onClick={onClose} type="button" aria-label="Zavřít">
             <ArrowLeft size={20} />
           </button>
-          <strong>{directActive ? "Nový chat" : "Nová skupina"}</strong>
+          <strong>{title}</strong>
           <button className="round-icon" onClick={onClose} type="button" aria-label="Zavřít">
             <X size={20} />
           </button>
         </header>
-        <div className="dialog-tabs">
+        {!memberActive ? <div className="dialog-tabs">
           <button className={directActive ? "active" : ""} onClick={() => onModeChange("direct")} type="button">
             <MessageCircle size={17} />
             Chat
@@ -73,7 +75,7 @@ export default function NewChatDialog({
             <Users size={17} />
             Skupina
           </button>
-        </div>
+        </div> : null}
 
         {directActive ? (
           <>
@@ -98,6 +100,32 @@ export default function NewChatDialog({
               {!searchLoading && directQuery.trim().length >= 2 && directSuggestions.length === 0 ? <DialogHint icon={<UserPlus size={18} />} text="Nikdo nenalezen" /> : null}
               {directSuggestions.map((user) => (
                 <button className="contact-row" key={user.subjectId} onClick={() => onCreateDirect(user)} type="button">
+                  <Avatar label={user.displayName || user.username} />
+                  <span>
+                    <strong>{user.displayName || user.username}</strong>
+                    <small>{user.email ?? user.username}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : memberActive ? (
+          <>
+            <label className="dialog-search">
+              <Search size={18} />
+              <input
+                autoFocus
+                data-modal-autofocus="true"
+                disabled={!canChat}
+                placeholder="Jméno, e-mail nebo login člena"
+                value={memberQuery}
+                onChange={(event) => onMemberQueryChange(event.target.value)}
+              />
+            </label>
+            <div className="dialog-list">
+              {memberQuery.trim().length < 2 ? <DialogHint icon={<Search size={18} />} text="Zadejte alespoň dvě písmena" /> : null}
+              {memberSuggestions.map((user) => (
+                <button className="contact-row" key={user.subjectId} onClick={() => onAddMember(user)} type="button">
                   <Avatar label={user.displayName || user.username} />
                   <span>
                     <strong>{user.displayName || user.username}</strong>

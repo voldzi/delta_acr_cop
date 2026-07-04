@@ -20,6 +20,8 @@ import {
   type CommunityGroupMemberStatus,
   type CommunityGroupRecord,
   type CommunityGroupVisibility,
+  type LeaveCommunityGroupResult,
+  type RemoveCommunityGroupMemberResult,
   type CommunityAttachmentKind,
   type CommunityLocationSource,
   type CommunityReportAttachmentRecord,
@@ -1630,6 +1632,69 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function leaveCommunityGroup(groupId: string, actor: AuthenticatedActor, requestNow: Date): Promise<LeaveCommunityGroupResult> {
+    let lastManager = false;
+    for (const subjectId of actorCommunitySubjectAliases(actor)) {
+      const communityActor = {
+        ...actorToCommunityActor(actor),
+        subjectId
+      };
+      try {
+        const result = await activeCommunityReportStore().leaveGroup(groupId, communityActor, requestNow);
+        if (result.status === "left") {
+          return result;
+        }
+        if (result.status === "last_manager") {
+          lastManager = true;
+        }
+      } catch (error) {
+        markCommunityReportStoreDegraded(error);
+        const result = await communityReportFallbackStore.leaveGroup(groupId, communityActor, requestNow);
+        if (result.status === "left") {
+          return result;
+        }
+        if (result.status === "last_manager") {
+          lastManager = true;
+        }
+      }
+    }
+    return { status: lastManager ? "last_manager" : "not_found" };
+  }
+
+  async function removeCommunityGroupMember(
+    groupId: string,
+    actor: AuthenticatedActor,
+    memberSubjectId: string,
+    requestNow: Date
+  ): Promise<RemoveCommunityGroupMemberResult> {
+    let lastManager = false;
+    for (const subjectId of actorCommunitySubjectAliases(actor)) {
+      const communityActor = {
+        ...actorToCommunityActor(actor),
+        subjectId
+      };
+      try {
+        const result = await activeCommunityReportStore().removeGroupMember(groupId, communityActor, memberSubjectId, requestNow);
+        if (result.status === "left") {
+          return result;
+        }
+        if (result.status === "last_manager") {
+          lastManager = true;
+        }
+      } catch (error) {
+        markCommunityReportStoreDegraded(error);
+        const result = await communityReportFallbackStore.removeGroupMember(groupId, communityActor, memberSubjectId, requestNow);
+        if (result.status === "left") {
+          return result;
+        }
+        if (result.status === "last_manager") {
+          lastManager = true;
+        }
+      }
+    }
+    return { status: lastManager ? "last_manager" : "not_found" };
+  }
+
   async function updateCommunityGroupMetadata(input: Parameters<CommunityReportStore["updateGroupMetadata"]>[0], requestNow: Date) {
     try {
       return await activeCommunityReportStore().updateGroupMetadata(input, requestNow);
@@ -2848,6 +2913,53 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         groupId: group.groupId
       }, correlationIdFrom(request.headers["x-correlation-id"]));
       return group;
+    },
+
+    leaveGroup: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { groupId: string; };
+      const result = await leaveCommunityGroup(params.groupId, actor, now());
+      if (result.status === "not_found") {
+        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or current user is not an active member.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      if (result.status === "last_manager") {
+        return sendError(reply, 409, "COMMUNITY_GROUP_LAST_MANAGER", "The last active group owner or admin cannot leave the group.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      appendAudit(state, "COMMUNITY_GROUP_LEFT", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        groupId: result.group.groupId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return result.group;
+    },
+
+    removeGroupMember: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { groupId: string; subjectId: string; };
+      const memberSubjectId = optionalTrimmedString(params.subjectId, 160);
+      if (!memberSubjectId) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Community group member subjectId is required.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      const result = await removeCommunityGroupMember(params.groupId, actor, memberSubjectId, now());
+      if (result.status === "not_found") {
+        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be managed by current user.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      if (result.status === "last_manager") {
+        return sendError(reply, 409, "COMMUNITY_GROUP_LAST_MANAGER", "The last active group owner or admin cannot be removed from the group.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      appendAudit(state, "COMMUNITY_GROUP_MEMBER_REMOVED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        groupId: result.group.groupId,
+        memberSubjectId
+      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      return result.group;
     },
 
     upsertGroupMember: async (request, reply) => {
@@ -9669,7 +9781,10 @@ function canReadCommunityReport(report: CommunityReportRecord, actor: Authentica
 }
 
 function canReadCommunityGroup(group: CommunityGroupRecord, actor: AuthenticatedActor): boolean {
-  return group.visibility === "public" || group.members.some((member) => member.subjectId === actor.subjectId);
+  return group.visibility === "public" || group.members.some((member) =>
+    member.subjectId === actor.subjectId
+    && (member.status === "active" || member.status === "pending")
+  );
 }
 
 function canUseCommunityGroupForReport(group: CommunityGroupRecord, actor: AuthenticatedActor): boolean {
@@ -10503,7 +10618,7 @@ function isCommunityGroupMemberRole(value: unknown): value is CommunityGroupMemb
 }
 
 function isCommunityGroupMemberStatus(value: unknown): value is CommunityGroupMemberStatus {
-  return value === "active" || value === "pending";
+  return value === "active" || value === "left" || value === "pending";
 }
 
 function isCommunityAttachmentAccessMode(value: unknown): value is CommunityAttachmentAccessMode {

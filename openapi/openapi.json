@@ -2231,6 +2231,94 @@
         }
       }
     },
+    "/api/v1/community/groups/{groupId}/members/me": {
+      "delete": {
+        "tags": [
+          "Community Reports"
+        ],
+        "summary": "Leave a community sharing group as the authenticated user.",
+        "operationId": "leaveCommunityGroup",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CommunityGroupIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Community group with caller membership marked as left.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityGroup"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/community/groups/{groupId}/members/{subjectId}": {
+      "delete": {
+        "tags": [
+          "Community Reports"
+        ],
+        "summary": "Remove a member from a managed community sharing group.",
+        "operationId": "removeCommunityGroupMember",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CommunityGroupIdPath"
+          },
+          {
+            "name": "subjectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 160
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Community group with target membership marked as left.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityGroup"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/api/v1/sketch/palettes": {
       "get": {
         "tags": [
@@ -8148,6 +8236,7 @@
         "type": "string",
         "enum": [
           "active",
+          "left",
           "pending"
         ]
       },

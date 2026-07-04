@@ -30,7 +30,7 @@ describe("DeleteChatDialog", () => {
     expect(onLeaveGroup).not.toHaveBeenCalled();
   });
 
-  it("offers leaving a Matrix-backed group", () => {
+  it("offers leaving a COP-backed group", () => {
     const onHide = vi.fn();
     const onDeleteGroup = vi.fn();
     const onLeaveGroup = vi.fn();

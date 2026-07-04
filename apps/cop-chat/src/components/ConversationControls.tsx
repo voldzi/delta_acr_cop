@@ -10,7 +10,9 @@ import {
   Pin,
   PinOff,
   Search,
-  Share2
+  Share2,
+  Trash2,
+  UserPlus
 } from "lucide-react";
 
 export interface ChatActionMenuChat {
@@ -20,8 +22,11 @@ export interface ChatActionMenuChat {
 
 export function ChatActionMenu({
   activeChat,
+  canAddMember = false,
   muted,
+  onAddMember,
   onInfo,
+  onManage,
   onMute,
   onRecovery,
   onSearch,
@@ -30,8 +35,11 @@ export function ChatActionMenu({
   onTogglePinned
 }: {
   activeChat: ChatActionMenuChat;
+  canAddMember?: boolean;
   muted: boolean;
+  onAddMember?: () => void;
   onInfo: () => void;
+  onManage: () => void;
   onMute: () => void;
   onRecovery: () => void;
   onSearch: () => void;
@@ -46,6 +54,12 @@ export function ChatActionMenu({
         <Info size={17} />
         {infoLabel}
       </button>
+      {activeChat.type !== "direct" && canAddMember && onAddMember ? (
+        <button onClick={onAddMember} role="menuitem" type="button">
+          <UserPlus size={17} />
+          Přidat člena
+        </button>
+      ) : null}
       <button onClick={onTogglePinned} role="menuitem" type="button">
         {activeChat.pinned ? <PinOff size={17} /> : <Pin size={17} />}
         {activeChat.pinned ? "Odepnout" : "Připnout"}
@@ -65,6 +79,10 @@ export function ChatActionMenu({
       <button onClick={muted ? onToggleMute : onMute} role="menuitem" type="button">
         <BellOff size={17} />
         {muted ? "Zrušit ztlumení" : "Ztlumit"}
+      </button>
+      <button onClick={onManage} role="menuitem" type="button">
+        <Trash2 size={17} />
+        {activeChat.type === "direct" ? "Skrýt chat" : "Správa skupiny"}
       </button>
     </div>
   );

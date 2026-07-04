@@ -2290,6 +2290,7 @@ button {
 }
 
 .member-row span {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -2304,6 +2305,28 @@ button {
 .member-row small {
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.member-row-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: #fff1f0;
+  color: #9f1d16;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 760;
+  padding: 0 10px;
+}
+
+.member-row-action:hover,
+.member-row-action:focus-visible {
+  background: #ffe2df;
+  outline: none;
 }
 
 .mute-backdrop {

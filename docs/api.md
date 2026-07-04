@@ -41,3 +41,11 @@ The resettable PoC demo is exposed through `/api/v1/demo/scenarios` and
 documented in the OpenAPI contract. Demo seeding and reset are server-side
 operations; browser and native clients only launch them through authenticated COP
 API calls.
+
+Community sharing groups expose membership management through the OpenAPI
+contract. `DELETE /api/v1/community/groups/{groupId}/members/me` marks the
+authenticated caller as `left`; the last active owner/admin cannot leave until
+another active manager exists or the group is deleted. Managers can remove
+another member through
+`DELETE /api/v1/community/groups/{groupId}/members/{subjectId}`, which marks
+the target membership as `left` and keeps the historical membership record.

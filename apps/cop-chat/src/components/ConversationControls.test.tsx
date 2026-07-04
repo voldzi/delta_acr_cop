@@ -14,6 +14,7 @@ describe("ConversationControls", () => {
         activeChat={{ pinned: false, type: "direct" }}
         muted={false}
         onInfo={onInfo}
+        onManage={vi.fn()}
         onMute={vi.fn()}
         onRecovery={vi.fn()}
         onSearch={vi.fn()}
@@ -32,13 +33,18 @@ describe("ConversationControls", () => {
   });
 
   it("switches muted menu item to unmute action", () => {
+    const onAddMember = vi.fn();
+    const onManage = vi.fn();
     const onToggleMute = vi.fn();
     const onMute = vi.fn();
     render(
       <ChatActionMenu
         activeChat={{ pinned: true, type: "group" }}
+        canAddMember
         muted
+        onAddMember={onAddMember}
         onInfo={vi.fn()}
+        onManage={onManage}
         onMute={onMute}
         onRecovery={vi.fn()}
         onSearch={vi.fn()}
@@ -51,9 +57,15 @@ describe("ConversationControls", () => {
     expect(screen.getByRole("menuitem", { name: /O skupině/u })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /Odepnout/u })).toBeTruthy();
 
+    fireEvent.click(screen.getByRole("menuitem", { name: /Přidat člena/u }));
+    expect(onAddMember).toHaveBeenCalled();
+
     fireEvent.click(screen.getByRole("menuitem", { name: /Zrušit ztlumení/u }));
     expect(onToggleMute).toHaveBeenCalled();
     expect(onMute).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /Správa skupiny/u }));
+    expect(onManage).toHaveBeenCalled();
   });
 
   it("reports message search changes and movement", () => {

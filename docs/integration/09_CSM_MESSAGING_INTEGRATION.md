@@ -384,6 +384,51 @@ timeline according to that room setting. Physical server-side purging remains a
 homeserver/CSM Messaging retention policy concern; COP still does not proxy,
 read or persist plaintext Matrix timelines.
 
+## COP Chat Product Direction
+
+COP Chat is intended to be a complete operational messenger, not just a thin
+Matrix window. The product direction has three layers:
+
+- messenger baseline: direct chats, groups, reliable avatars/media,
+  notifications, reactions, replies, search, retention, recovery, visible group
+  management and predictable device state;
+- COP situational layer: map/report/alert cards, current source health,
+  linked community groups, watch areas, location sharing and explicit
+  conversion from chat context into COP reports;
+- AI situation layer: opt-in assistant flows that summarize selected chat
+  context together with authorized COP data, cite source objects and expose
+  map/report actions without turning COP API into a plaintext message proxy.
+
+The phase-0 implementation focus is trust and control:
+
+- Matrix profile avatars and media thumbnails that require authenticated media
+  access must be fetched with the scoped Matrix user token and rendered through
+  local browser object URLs rather than by placing access tokens in image URLs.
+- Chat and group management must be reachable from the opened conversation menu
+  and group detail panel, not only from mobile swipe actions in the chat list.
+- Adding members belongs in the group member surface and must respect COP group
+  management permissions. COP group membership remains the source of truth for
+  COP media/report ACL; Matrix membership is only the messaging projection.
+- Managers remove a group member through
+  `DELETE /api/v1/community/groups/{groupId}/members/{subjectId}`. The removed
+  member is marked `left`; only active COP members are forwarded to CSM
+  Messaging membership synchronization.
+- Current direct-chat removal is local hiding. Current group deletion deletes
+  the COP community group when the authenticated actor may manage it. Leaving a
+  group calls `DELETE /api/v1/community/groups/{groupId}/members/me`, marks the
+  caller membership as `left`, synchronizes active COP members into CSM
+  Messaging, and leaves the Matrix room as best-effort cleanup for the current
+  browser session.
+
+AI assistants follow the same boundary:
+
+- A personal assistant can summarize explicitly selected/decrypted browser chat
+  context plus policy-filtered COP data for the current user.
+- A room assistant must be a visible, explicit participant before it can observe
+  or answer in a group conversation.
+- Proactive AI notices should be rendered as system situation cards with source
+  evidence, not as hidden reads of encrypted conversations.
+
 For standalone `cop-chat`, composing is gated on active E2EE recovery. If the
 Matrix account has no key backup, the user must create and save a recovery key
 first. If a key backup exists but the current browser has not unlocked it, the

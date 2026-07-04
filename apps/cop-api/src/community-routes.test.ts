@@ -539,6 +539,212 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("lets a member leave a community sharing group without orphaning group management", async () => {
+    const issuer = "https://login.zeleznalady.cz/realms/cop-community-leave-test";
+    const keyId = "cop-community-leave-test-key";
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const publicJwk = {
+      ...publicKey.export({ format: "jwk" }),
+      alg: "RS256",
+      kid: keyId,
+      use: "sig"
+    };
+    process.env.COP_AUTH_MODE = "hybrid";
+    process.env.COP_OIDC_ISSUER = issuer;
+    process.env.COP_OIDC_ALLOWED_CLIENTS = "cop-web";
+    process.env.COP_OIDC_REQUIRED_ROLE = "cop_operator";
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ keys: [publicJwk] })));
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const fieldToken = signJwt(privateKey, keyId, {
+      azp: "cop-web",
+      email: "field.operator@example.test",
+      exp: issuedAt + 300,
+      iat: issuedAt,
+      iss: issuer,
+      name: "Field Operator",
+      preferred_username: "field.operator",
+      realm_access: {
+        roles: ["cop_operator"]
+      },
+      sub: "subject-field-operator"
+    });
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        name: "Leave test group",
+        visibility: "private"
+      },
+      url: "/api/v1/community/groups"
+    });
+    const group = createResponse.json() as { groupId: string };
+
+    const memberResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        displayName: "Field Operator",
+        role: "member",
+        status: "active",
+        subjectId: "subject-field-operator",
+        username: "field.operator"
+      },
+      url: `/api/v1/community/groups/${group.groupId}/members`
+    });
+    expect(memberResponse.statusCode).toBe(200);
+
+    const ownerLeaveResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "DELETE",
+      url: `/api/v1/community/groups/${group.groupId}/members/me`
+    });
+    expect(ownerLeaveResponse.statusCode).toBe(409);
+
+    const leaveResponse = await app.inject({
+      headers: { authorization: `Bearer ${fieldToken}` },
+      method: "DELETE",
+      url: `/api/v1/community/groups/${group.groupId}/members/me`
+    });
+    expect(leaveResponse.statusCode).toBe(200);
+    expect(leaveResponse.json()).toMatchObject({
+      members: expect.arrayContaining([
+        expect.objectContaining({
+          status: "left",
+          subjectId: "subject-field-operator"
+        })
+      ])
+    });
+
+    const listAsFormerMemberResponse = await app.inject({
+      headers: { authorization: `Bearer ${fieldToken}` },
+      method: "GET",
+      url: "/api/v1/community/groups"
+    });
+    expect(listAsFormerMemberResponse.statusCode).toBe(200);
+    expect(listAsFormerMemberResponse.json()).toMatchObject({ items: [] });
+
+    const readAsFormerMemberResponse = await app.inject({
+      headers: { authorization: `Bearer ${fieldToken}` },
+      method: "GET",
+      url: `/api/v1/community/groups/${group.groupId}`
+    });
+    expect(readAsFormerMemberResponse.statusCode).toBe(404);
+
+    const readAsOwnerResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: `/api/v1/community/groups/${group.groupId}`
+    });
+    expect(readAsOwnerResponse.statusCode).toBe(200);
+    expect(readAsOwnerResponse.json()).toMatchObject({
+      members: expect.arrayContaining([
+        expect.objectContaining({
+          status: "left",
+          subjectId: "subject-field-operator"
+        })
+      ])
+    });
+
+    await app.close();
+  });
+
+  it("lets a manager remove a member from a community sharing group", async () => {
+    const issuer = "https://login.zeleznalady.cz/realms/cop-community-remove-member-test";
+    const keyId = "cop-community-remove-member-test-key";
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const publicJwk = {
+      ...publicKey.export({ format: "jwk" }),
+      alg: "RS256",
+      kid: keyId,
+      use: "sig"
+    };
+    process.env.COP_AUTH_MODE = "hybrid";
+    process.env.COP_OIDC_ISSUER = issuer;
+    process.env.COP_OIDC_ALLOWED_CLIENTS = "cop-web";
+    process.env.COP_OIDC_REQUIRED_ROLE = "cop_operator";
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ keys: [publicJwk] })));
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const fieldToken = signJwt(privateKey, keyId, {
+      azp: "cop-web",
+      email: "removed.operator@example.test",
+      exp: issuedAt + 300,
+      iat: issuedAt,
+      iss: issuer,
+      name: "Removed Operator",
+      preferred_username: "removed.operator",
+      realm_access: {
+        roles: ["cop_operator"]
+      },
+      sub: "subject-removed-operator"
+    });
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        name: "Remove member test group",
+        visibility: "private"
+      },
+      url: "/api/v1/community/groups"
+    });
+    const group = createResponse.json() as { groupId: string };
+
+    const addResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        displayName: "Removed Operator",
+        role: "member",
+        status: "active",
+        subjectId: "subject-removed-operator",
+        username: "removed.operator"
+      },
+      url: `/api/v1/community/groups/${group.groupId}/members`
+    });
+    expect(addResponse.statusCode).toBe(200);
+
+    const removeResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "DELETE",
+      url: `/api/v1/community/groups/${group.groupId}/members/subject-removed-operator`
+    });
+    expect(removeResponse.statusCode).toBe(200);
+    expect(removeResponse.json()).toMatchObject({
+      members: expect.arrayContaining([
+        expect.objectContaining({
+          status: "left",
+          subjectId: "subject-removed-operator"
+        })
+      ])
+    });
+
+    const listAsRemovedMemberResponse = await app.inject({
+      headers: { authorization: `Bearer ${fieldToken}` },
+      method: "GET",
+      url: "/api/v1/community/groups"
+    });
+    expect(listAsRemovedMemberResponse.statusCode).toBe(200);
+    expect(listAsRemovedMemberResponse.json()).toMatchObject({ items: [] });
+
+    const removeOwnerResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "DELETE",
+      url: `/api/v1/community/groups/${group.groupId}/members/lab`
+    });
+    expect(removeOwnerResponse.statusCode).toBe(409);
+
+    await app.close();
+  });
+
   it("lets an OIDC owner delete legacy groups stored under preferred username", async () => {
     const issuer = "https://login.zeleznalady.cz/realms/cop-community-legacy-test";
     const keyId = "cop-community-legacy-test-key";

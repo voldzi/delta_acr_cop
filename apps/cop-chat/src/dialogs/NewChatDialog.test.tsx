@@ -126,4 +126,25 @@ describe("NewChatDialog", () => {
     fireEvent.click(screen.getByText("Jiří Volek"));
     expect(onAddMember).toHaveBeenCalledWith(expect.objectContaining({ subjectId: "user-2" }));
   });
+
+  it("opens a focused member-add dialog without group creation controls", () => {
+    const onAddMember = vi.fn();
+    const onMemberQueryChange = vi.fn();
+    renderDialog({
+      memberQuery: "vo",
+      memberSuggestions: [user({ displayName: "Jiří Volek", subjectId: "user-2", username: "voldzi" })],
+      mode: "member",
+      onAddMember,
+      onMemberQueryChange
+    });
+
+    expect(screen.getByRole("dialog", { name: "Přidat člena" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Vytvořit skupinu" })).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("Jméno, e-mail nebo login člena"), { target: { value: "voldzi" } });
+    expect(onMemberQueryChange).toHaveBeenCalledWith("voldzi");
+
+    fireEvent.click(screen.getByText("Jiří Volek"));
+    expect(onAddMember).toHaveBeenCalledWith(expect.objectContaining({ subjectId: "user-2" }));
+  });
 });

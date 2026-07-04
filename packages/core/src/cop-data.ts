@@ -1436,7 +1436,7 @@ export type CommunityVideoSpatialMode = "apple_mv_hevc" | "none" | "over_under" 
 export type CommunityMediaAccessMode = "groups" | "private" | "public" | "users";
 export type CommunityGroupVisibility = "private" | "public";
 export type CommunityGroupMemberRole = "admin" | "member" | "owner";
-export type CommunityGroupMemberStatus = "active" | "pending";
+export type CommunityGroupMemberStatus = "active" | "left" | "pending";
 
 export interface CommunityMediaAccessPolicy {
   audience: CommunityMediaAccessMode;
@@ -3265,6 +3265,23 @@ export async function requestCommunityGroupJoin(apiBase: string, token: string, 
     headers: authHeaders(token),
     method: "POST"
   });
+}
+
+export async function leaveCommunityGroup(apiBase: string, token: string, groupId: string): Promise<CommunityGroup> {
+  return fetchJson<CommunityGroup>(`${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}/members/me`, {
+    headers: authHeaders(token),
+    method: "DELETE"
+  });
+}
+
+export async function removeCommunityGroupMember(apiBase: string, token: string, groupId: string, subjectId: string): Promise<CommunityGroup> {
+  return fetchJson<CommunityGroup>(
+    `${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(subjectId)}`,
+    {
+      headers: authHeaders(token),
+      method: "DELETE"
+    }
+  );
 }
 
 export async function upsertCommunityGroupMember(

@@ -12,7 +12,9 @@ export interface CommunityRouteHandlers {
   getReportAttachmentContent: RouteHandlerMethod;
   getReportAttachmentDerivativeContent: RouteHandlerMethod;
   joinGroup: RouteHandlerMethod;
+  leaveGroup: RouteHandlerMethod;
   listGroups: RouteHandlerMethod;
+  removeGroupMember: RouteHandlerMethod;
   listReports: RouteHandlerMethod;
   submitReport: RouteHandlerMethod;
   updateGroupMetadata: RouteHandlerMethod;
@@ -27,7 +29,9 @@ export type CommunityGroupRouteHandlers = Pick<
   | "deleteGroup"
   | "getGroup"
   | "joinGroup"
+  | "leaveGroup"
   | "listGroups"
+  | "removeGroupMember"
   | "updateGroupMetadata"
   | "upsertGroupMember"
 >;
@@ -55,6 +59,8 @@ export function registerCommunityGroupRoutes(app: FastifyInstance, handlers: Com
   app.delete("/api/v1/community/groups/:groupId", handlers.deleteGroup);
   app.post("/api/v1/community/groups/:groupId/join-request", handlers.joinGroup);
   app.post("/api/v1/community/groups/:groupId/members", handlers.upsertGroupMember);
+  app.delete("/api/v1/community/groups/:groupId/members/me", handlers.leaveGroup);
+  app.delete("/api/v1/community/groups/:groupId/members/:subjectId", handlers.removeGroupMember);
 }
 
 export function registerCommunityReportRoutes(app: FastifyInstance, handlers: CommunityReportRouteHandlers): void {

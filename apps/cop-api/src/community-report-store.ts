@@ -21,7 +21,7 @@ export type CommunityAttachmentKind = "photo" | "video" | "document";
 export type CommunityAttachmentStatus = "pending_upload" | "uploaded" | "failed" | "removed";
 export type CommunityGroupVisibility = "private" | "public";
 export type CommunityGroupMemberRole = "admin" | "member" | "owner";
-export type CommunityGroupMemberStatus = "active" | "pending";
+export type CommunityGroupMemberStatus = "active" | "left" | "pending";
 
 export interface CommunityReportLocation {
   accuracyM?: number;
@@ -144,6 +144,13 @@ export interface UpsertCommunityGroupMemberInput {
   status: CommunityGroupMemberStatus;
 }
 
+export type LeaveCommunityGroupResult =
+  | { group: CommunityGroupRecord; status: "left" }
+  | { status: "last_manager" }
+  | { status: "not_found" };
+
+export type RemoveCommunityGroupMemberResult = LeaveCommunityGroupResult;
+
 export interface UpdateCommunityGroupMetadataInput {
   actor: CommunityReportActor;
   groupId: string;
@@ -211,8 +218,10 @@ export interface CommunityReportStore {
   getGroup(groupId: string): Promise<CommunityGroupRecord | null>;
   getReport(reportId: string): Promise<CommunityReportRecord | null>;
   init(): Promise<void>;
+  leaveGroup(groupId: string, actor: CommunityReportActor, now: Date): Promise<LeaveCommunityGroupResult>;
   listGroups(query: CommunityGroupQuery): Promise<CommunityGroupRecord[]>;
   listReports(query: CommunityReportQuery): Promise<CommunityReportRecord[]>;
+  removeGroupMember(groupId: string, actor: CommunityReportActor, memberSubjectId: string, now: Date): Promise<RemoveCommunityGroupMemberResult>;
   requestGroupMembership(groupId: string, actor: CommunityReportActor, now: Date): Promise<CommunityGroupRecord | null>;
   submitReport(reportId: string, subjectId: string, now: Date): Promise<CommunityReportRecord | null>;
   updateAttachmentMetadata(input: UpdateCommunityAttachmentMetadataInput): Promise<CommunityReportAttachmentRecord | null>;
@@ -332,6 +341,61 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
     return true;
   }
 
+  async leaveGroup(groupId: string, actor: CommunityReportActor, now: Date): Promise<LeaveCommunityGroupResult> {
+    const group = this.groups.get(groupId);
+    const member = group?.members.find((item) => item.subjectId === actor.subjectId && item.status !== "left");
+    if (!group || !member) {
+      return { status: "not_found" };
+    }
+    if (wouldRemoveLastActiveManager(group, member.subjectId, member.role, "left")) {
+      return { status: "last_manager" };
+    }
+    const timestamp = now.toISOString();
+    const updated: CommunityGroupRecord = {
+      ...group,
+      members: group.members.map((item) => item.subjectId === actor.subjectId
+        ? {
+            ...item,
+            displayName: actor.displayName,
+            status: "left",
+            username: actor.username
+          }
+        : item),
+      updatedAt: timestamp
+    };
+    this.groups.set(groupId, updated);
+    return { group: cloneCommunityGroup(updated), status: "left" };
+  }
+
+  async removeGroupMember(
+    groupId: string,
+    actor: CommunityReportActor,
+    memberSubjectId: string,
+    now: Date
+  ): Promise<RemoveCommunityGroupMemberResult> {
+    const group = this.groups.get(groupId);
+    const member = group?.members.find((item) => item.subjectId === memberSubjectId && item.status !== "left");
+    if (!group || !member || !canManageCommunityGroup(group, actor.subjectId)) {
+      return { status: "not_found" };
+    }
+    if (wouldRemoveLastActiveManager(group, member.subjectId, member.role, "left")) {
+      return { status: "last_manager" };
+    }
+    const timestamp = now.toISOString();
+    const updated: CommunityGroupRecord = {
+      ...group,
+      members: group.members.map((item) => item.subjectId === memberSubjectId
+        ? {
+            ...item,
+            status: "left"
+          }
+        : item),
+      updatedAt: timestamp
+    };
+    this.groups.set(groupId, updated);
+    return { group: cloneCommunityGroup(updated), status: "left" };
+  }
+
   async updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null> {
     const report = this.reports.get(reportId);
     if (!report || report.createdBy.subjectId !== subjectId || report.status === "hidden" || report.status === "rejected") {
@@ -406,18 +470,29 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
     }
     const timestamp = now.toISOString();
     const existing = group.members.find((member) => member.subjectId === actor.subjectId);
+    const status: CommunityGroupMemberStatus = group.visibility === "public" ? "active" : "pending";
     const nextMembers = existing
-      ? group.members.map((member) => member.subjectId === actor.subjectId ? { ...member, requestedAt: member.requestedAt ?? timestamp } : member)
+      ? group.members.map((member) => member.subjectId === actor.subjectId
+        ? {
+            ...member,
+            displayName: actor.displayName,
+            requestedAt: member.status === "active" ? member.requestedAt : timestamp,
+            role: member.status === "left" ? "member" : member.role,
+            status: member.status === "active" ? "active" : status,
+            username: actor.username,
+            ...(member.status !== "active" && status === "active" ? { joinedAt: member.joinedAt ?? timestamp } : {})
+          }
+        : member)
       : [
           ...group.members,
           {
             displayName: actor.displayName,
             requestedAt: timestamp,
             role: "member" as const,
-            status: group.visibility === "public" ? "active" as const : "pending" as const,
+            status,
             subjectId: actor.subjectId,
             username: actor.username,
-            ...(group.visibility === "public" ? { joinedAt: timestamp } : {})
+            ...(status === "active" ? { joinedAt: timestamp } : {})
           }
         ];
     const updated = { ...group, members: nextMembers, updatedAt: timestamp };
@@ -428,6 +503,9 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
   async upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null> {
     const group = this.groups.get(input.groupId);
     if (!group || !canManageCommunityGroup(group, input.actor.subjectId)) {
+      return null;
+    }
+    if (wouldRemoveLastActiveManager(group, input.member.subjectId, input.role, input.status)) {
       return null;
     }
     const timestamp = now.toISOString();
@@ -701,6 +779,59 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     return row ? groupFromRow(row, await this.membersForGroups([groupId])) : null;
   }
 
+  async leaveGroup(groupId: string, actor: CommunityReportActor, now: Date): Promise<LeaveCommunityGroupResult> {
+    const group = await this.getGroup(groupId);
+    const member = group?.members.find((item) => item.subjectId === actor.subjectId && item.status !== "left");
+    if (!group || !member) {
+      return { status: "not_found" };
+    }
+    if (wouldRemoveLastActiveManager(group, member.subjectId, member.role, "left")) {
+      return { status: "last_manager" };
+    }
+    const timestamp = now.toISOString();
+    await this.pool.query(
+      `UPDATE cop_community_group_members
+      SET username = $3,
+        display_name = $4,
+        status = 'left'
+      WHERE group_id = $1
+        AND subject_id = $2
+        AND status <> 'left'`,
+      [groupId, actor.subjectId, actor.username, actor.displayName]
+    );
+    await this.touchGroup(groupId, timestamp);
+    const updated = await this.getGroup(groupId);
+    return updated ? { group: updated, status: "left" } : { status: "not_found" };
+  }
+
+  async removeGroupMember(
+    groupId: string,
+    actor: CommunityReportActor,
+    memberSubjectId: string,
+    now: Date
+  ): Promise<RemoveCommunityGroupMemberResult> {
+    const group = await this.getGroup(groupId);
+    const member = group?.members.find((item) => item.subjectId === memberSubjectId && item.status !== "left");
+    if (!group || !member || !canManageCommunityGroup(group, actor.subjectId)) {
+      return { status: "not_found" };
+    }
+    if (wouldRemoveLastActiveManager(group, member.subjectId, member.role, "left")) {
+      return { status: "last_manager" };
+    }
+    const timestamp = now.toISOString();
+    await this.pool.query(
+      `UPDATE cop_community_group_members
+      SET status = 'left'
+      WHERE group_id = $1
+        AND subject_id = $2
+        AND status <> 'left'`,
+      [groupId, memberSubjectId]
+    );
+    await this.touchGroup(groupId, timestamp);
+    const updated = await this.getGroup(groupId);
+    return updated ? { group: updated, status: "left" } : { status: "not_found" };
+  }
+
   async deleteGroup(groupId: string, subjectId: string, _now: Date): Promise<boolean> {
     const result = await this.pool.query(
       `DELETE FROM cop_community_groups g
@@ -761,7 +892,8 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       DO UPDATE SET
         username = EXCLUDED.username,
         display_name = EXCLUDED.display_name,
-        requested_at = COALESCE(cop_community_group_members.requested_at, EXCLUDED.requested_at),
+        role = CASE WHEN cop_community_group_members.status = 'left' THEN 'member' ELSE cop_community_group_members.role END,
+        requested_at = CASE WHEN cop_community_group_members.status = 'active' THEN cop_community_group_members.requested_at ELSE EXCLUDED.requested_at END,
         status = CASE WHEN cop_community_group_members.status = 'active' THEN 'active' ELSE EXCLUDED.status END,
         joined_at = CASE
           WHEN cop_community_group_members.status = 'active' THEN cop_community_group_members.joined_at
@@ -800,6 +932,9 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   async upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null> {
     const group = await this.getGroup(input.groupId);
     if (!group || !canManageCommunityGroup(group, input.actor.subjectId)) {
+      return null;
+    }
+    if (wouldRemoveLastActiveManager(group, input.member.subjectId, input.role, input.status)) {
       return null;
     }
     const timestamp = now.toISOString();
@@ -1500,6 +1635,27 @@ function compareGroups(left: CommunityGroupRecord, right: CommunityGroupRecord):
 function canManageCommunityGroup(group: CommunityGroupRecord, subjectId: string): boolean {
   return group.members.some((member) =>
     member.subjectId === subjectId
+    && member.status === "active"
+    && (member.role === "owner" || member.role === "admin")
+  );
+}
+
+function wouldRemoveLastActiveManager(
+  group: CommunityGroupRecord,
+  subjectId: string,
+  nextRole: CommunityGroupMemberRole | undefined,
+  nextStatus: CommunityGroupMemberStatus
+): boolean {
+  const current = group.members.find((member) => member.subjectId === subjectId);
+  if (!current || current.status !== "active" || (current.role !== "owner" && current.role !== "admin")) {
+    return false;
+  }
+  const willRemainManager = nextStatus === "active" && ((nextRole ?? current.role) === "owner" || (nextRole ?? current.role) === "admin");
+  if (willRemainManager) {
+    return false;
+  }
+  return !group.members.some((member) =>
+    member.subjectId !== subjectId
     && member.status === "active"
     && (member.role === "owner" || member.role === "admin")
   );

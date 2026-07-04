@@ -41,6 +41,8 @@ import {
   Smile,
   Sticker,
   Trash2,
+  UserMinus,
+  UserPlus,
   Users,
   Video,
   X
@@ -69,6 +71,8 @@ import {
   fetchMessagingConversations,
   fetchMessagingStatus,
   fetchUserProfile,
+  leaveCommunityGroup,
+  removeCommunityGroupMember,
   resolveMessagingMatrixIdentities,
   searchUserDirectory,
   syncMessagingConversationMembers,
@@ -152,6 +156,7 @@ const MediaPreviewDialog = React.lazy(() => import("./dialogs/MediaPreviewDialog
 const MessageRetentionDialog = React.lazy(() => import("./dialogs/MessageRetentionDialog"));
 const MuteDialog = React.lazy(() => import("./dialogs/MuteDialog"));
 const NewChatDialog = React.lazy(() => import("./dialogs/NewChatDialog"));
+const RemoveMemberDialog = React.lazy(() => import("./dialogs/RemoveMemberDialog"));
 
 type ChatFilter = "all" | "direct" | "group";
 type ChatConnectionState = "offline" | "online" | "syncing";
@@ -170,6 +175,22 @@ interface LocalUserPreferences {
     avatarDataUrl?: string;
     displayName?: string;
   };
+}
+
+interface ChatInfoMember {
+  id: string;
+  name: string;
+  role?: CommunityGroup["members"][number]["role"];
+  status?: CommunityGroup["members"][number]["status"];
+  subjectId?: string;
+  subtitle: string;
+}
+
+interface MemberRemovalCandidate {
+  groupId: string;
+  groupName: string;
+  memberName: string;
+  memberSubjectId: string;
 }
 
 export interface ChatListItem {
@@ -333,6 +354,8 @@ export function ChatApp() {
   const [generatedRecoveryKey, setGeneratedRecoveryKey] = React.useState<string | null>(null);
   const [recoveryWorking, setRecoveryWorking] = React.useState(false);
   const [chatRemovalWorking, setChatRemovalWorking] = React.useState(false);
+  const [memberRemovalCandidate, setMemberRemovalCandidate] = React.useState<MemberRemovalCandidate | null>(null);
+  const [memberRemovalWorking, setMemberRemovalWorking] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
   const [deleteChatCandidate, setDeleteChatCandidate] = React.useState<ChatListItem | null>(null);
   const [retentionDialogOpen, setRetentionDialogOpen] = React.useState(false);
@@ -454,6 +477,9 @@ export function ChatApp() {
     : selectedConversation
       ? groupForConversation(selectedConversation, groups)
       : null;
+  const canManageSelectedGroupMembers = selectedGroup
+    ? canManageCommunityGroupMembers(selectedGroup, authSubjectId)
+    : false;
   const selectedRoom = selectedRoomId
     ? rooms.find((room) => room.roomId === selectedRoomId) ?? null
     : selectedConversation?.matrix?.roomId
@@ -556,6 +582,7 @@ export function ChatApp() {
   const composerEnabled = workflowState.composerEnabled;
   const actionMessage = messageActionPopover ? messageById.get(messageActionPopover.messageId) ?? null : null;
   const statusLabel = statusLabelFor(status, matrixSession, syncState, matrixLoading);
+  const matrixMediaAccessToken = matrixSession?.bootstrap.accessToken;
   const recoveryBanner = matrixSession && encryptionRecoveryStatus && !encryptionRecoveryStatus.ready
     ? encryptionRecoveryStatus.needsSetup
       ? encryptionRecoveryStatus.keyBackupEnabled
@@ -1177,23 +1204,43 @@ export function ChatApp() {
   }
 
   async function leaveGroupChat(item: ChatListItem): Promise<void> {
-    if (!item.roomId) {
-      setError("Tuto skupinu zatím nelze opustit, protože nemá aktivní Matrix místnost.");
+    if (!item.group?.groupId) {
+      setError("Tuto skupinu nelze opustit, protože není propojená se skupinou COP.");
       return;
     }
-    const session = matrixSessionRef.current;
-    if (!session) {
-      setError("Chatové spojení není připravené. Zkuste akci zopakovat po synchronizaci.");
+    if (!authToken) {
+      setError("Pro opuštění skupiny je potřeba platné přihlášení do COP.");
       return;
     }
     setChatRemovalWorking(true);
     setError(null);
     setNotice(null);
     try {
-      await session.leaveRoom(item.roomId);
+      const updatedGroup = await leaveCommunityGroup(apiBase, authToken, item.group.groupId);
+      setGroups((current) => current.filter((group) => group.groupId !== updatedGroup.groupId));
+      const conversation = item.conversation ?? findConversationForGroup(item.group, conversations);
+      if (conversation) {
+        const sync = await syncMessagingConversationMembers(
+          apiBase,
+          authToken,
+          conversation.conversationId,
+          communityGroupMembersToMessagingMembers(updatedGroup)
+        );
+        if (sync.conversation) {
+          setConversations((current) => upsertConversation(current, sync.conversation as MessagingConversationSummary));
+        }
+      }
+      if (item.roomId && matrixSessionRef.current) {
+        try {
+          await matrixSessionRef.current.leaveRoom(item.roomId);
+        } catch {
+          // COP membership is authoritative. Matrix leave is best-effort cleanup
+          // for this browser session because the room can already be gone.
+        }
+      }
       setRooms((current) => current.filter((room) => room.roomId !== item.roomId));
       hideChatFromList(item);
-      setNotice(`Skupinu ${item.title} jste opustil/a. V tomto zařízení je skrytá ze seznamu.`);
+      setNotice(`Skupinu ${item.title} jste opustil/a.`);
     } catch (caught) {
       setError(userFacingError(caught instanceof Error ? caught.message : String(caught)));
     } finally {
@@ -1268,6 +1315,35 @@ export function ChatApp() {
     setInfoPanelTab("info");
     setMediaPanelTab("media");
     setInfoPanelOpen(true);
+  }
+
+  function openAddMemberDialog() {
+    if (!selectedGroup) {
+      setError("Nejdřív otevřete skupinu, do které chcete člena přidat.");
+      return;
+    }
+    setMessageMenuOpen(false);
+    setInfoPanelOpen(false);
+    setMemberQuery("");
+    setMemberSuggestions([]);
+    setComposeMode("member");
+  }
+
+  function openRemoveMemberDialog(member: ChatInfoMember) {
+    if (!selectedGroup || !member.subjectId) {
+      setError("Nejdřív otevřete skupinu a vyberte člena, kterého chcete odebrat.");
+      return;
+    }
+    if (member.subjectId === authSubjectId) {
+      setError("Vlastní odchod proveďte přes Správa skupiny -> Opustit skupinu.");
+      return;
+    }
+    setMemberRemovalCandidate({
+      groupId: selectedGroup.groupId,
+      groupName: selectedGroup.name,
+      memberName: member.name,
+      memberSubjectId: member.subjectId
+    });
   }
 
   function startMessageSearch() {
@@ -2014,6 +2090,38 @@ export function ChatApp() {
     }
   }
 
+  async function removeMemberFromGroup(candidate: MemberRemovalCandidate): Promise<void> {
+    if (!authToken) {
+      setError("Pro odebrání člena je potřeba platné přihlášení do COP.");
+      return;
+    }
+    setMemberRemovalWorking(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const updatedGroup = await removeCommunityGroupMember(apiBase, authToken, candidate.groupId, candidate.memberSubjectId);
+      setGroups((current) => current.map((group) => group.groupId === updatedGroup.groupId ? updatedGroup : group));
+      const conversation = findConversationForGroup(updatedGroup, conversations);
+      if (conversation) {
+        const sync = await syncMessagingConversationMembers(
+          apiBase,
+          authToken,
+          conversation.conversationId,
+          communityGroupMembersToMessagingMembers(updatedGroup)
+        );
+        if (sync.conversation) {
+          setConversations((current) => upsertConversation(current, sync.conversation as MessagingConversationSummary));
+        }
+      }
+      setMemberRemovalCandidate(null);
+      setNotice(`${candidate.memberName} byl/a odebrán/a ze skupiny ${candidate.groupName}.`);
+    } catch (caught) {
+      setError(userFacingError(caught instanceof Error ? caught.message : String(caught)));
+    } finally {
+      setMemberRemovalWorking(false);
+    }
+  }
+
   async function createRoomForConversation(conversation: MessagingConversationSummary, session = matrixSessionRef.current): Promise<string> {
     if (conversation.matrix?.roomId) {
       setSelectedRoomId(conversation.matrix.roomId);
@@ -2392,6 +2500,7 @@ export function ChatApp() {
         {pinnedChatItems.length > 0 ? (
           <PinnedChats
             items={pinnedChatItems}
+            mediaAccessToken={matrixMediaAccessToken}
             connectionStateForItem={(item) => chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id)}
             onOpen={(nextItem) => void openChat(nextItem)}
             onTogglePinned={togglePinnedChat}
@@ -2413,6 +2522,7 @@ export function ChatApp() {
             <ChatRowMemo
               item={item}
               key={item.id}
+              mediaAccessToken={matrixMediaAccessToken}
               connectionState={chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id)}
               onDeleteRequest={setDeleteChatCandidate}
               onToggleMute={handleToggleMutedChat}
@@ -2433,7 +2543,7 @@ export function ChatApp() {
                 <ArrowLeft size={21} />
               </button>
               <span className="chat-avatar-wrap header-avatar">
-                <Avatar label={activeChat.title} src={activeChat.avatarUrl} />
+                <Avatar label={activeChat.title} mediaAccessToken={matrixMediaAccessToken} src={activeChat.avatarUrl} />
                 <ConnectionDot state={chatConnectionStateFor(activeChat, chatReady, matrixSession, syncState, preparingChatId === activeChat.id)} />
               </span>
               <div className="conversation-title">
@@ -2467,8 +2577,14 @@ export function ChatApp() {
                   {messageMenuOpen ? (
                     <ChatActionMenu
                       activeChat={activeChat}
+                      canAddMember={canManageSelectedGroupMembers}
                       muted={activeChat.muted}
+                      onAddMember={openAddMemberDialog}
                       onInfo={openChatInfo}
+                      onManage={() => {
+                        setMessageMenuOpen(false);
+                        setDeleteChatCandidate(activeChat);
+                      }}
                       onMute={() => {
                         setMessageMenuOpen(false);
                         setMuteDialogOpen(true);
@@ -2645,7 +2761,7 @@ export function ChatApp() {
       </section>
 
       {composeMode ? (
-        <React.Suspense fallback={<DialogLoadingFallback label={composeMode === "direct" ? "Nový chat" : "Nová skupina"} />}>
+        <React.Suspense fallback={<DialogLoadingFallback label={composeMode === "direct" ? "Nový chat" : composeMode === "member" ? "Přidat člena" : "Nová skupina"} />}>
           <NewChatDialog
             canChat={chatReady}
             directQuery={directQuery}
@@ -2719,8 +2835,10 @@ export function ChatApp() {
         <ChatInfoPanel
           activeChat={activeChat}
           authSession={authSession}
+          canAddMember={canManageSelectedGroupMembers}
           conversation={selectedConversation}
           group={selectedGroup}
+          mediaAccessToken={matrixMediaAccessToken}
           mediaTab={mediaPanelTab}
           messages={timelineMessages}
           messageRetentionSeconds={activeMessageRetentionSeconds}
@@ -2728,13 +2846,30 @@ export function ChatApp() {
           pinned={activeChat.pinned}
           tab={infoPanelTab}
           onClose={() => setInfoPanelOpen(false)}
+          onAddMember={openAddMemberDialog}
           onMediaTabChange={setMediaPanelTab}
+          onManageChat={() => {
+            setInfoPanelOpen(false);
+            setDeleteChatCandidate(activeChat);
+          }}
           onTabChange={setInfoPanelTab}
           onTogglePinned={() => togglePinnedChat(activeChat)}
           onToggleMute={activeChat.muted ? clearActiveMute : () => setMuteDialogOpen(true)}
           onOpenRetentionSettings={() => setRetentionDialogOpen(true)}
           onOpenPreview={setPreviewItem}
+          onRemoveMember={openRemoveMemberDialog}
         />
+      ) : null}
+      {memberRemovalCandidate ? (
+        <React.Suspense fallback={<DialogLoadingFallback label="Odebrat člena" />}>
+          <RemoveMemberDialog
+            groupName={memberRemovalCandidate.groupName}
+            memberName={memberRemovalCandidate.memberName}
+            working={memberRemovalWorking}
+            onClose={() => setMemberRemovalCandidate(null)}
+            onRemove={() => void removeMemberFromGroup(memberRemovalCandidate)}
+          />
+        </React.Suspense>
       ) : null}
       {muteDialogOpen && activeChat ? (
         <React.Suspense fallback={<DialogLoadingFallback label="Ztlumit upozornění" />}>
@@ -2748,8 +2883,8 @@ export function ChatApp() {
       {deleteChatCandidate ? (
         <React.Suspense fallback={<DialogLoadingFallback label="Smazat chat" />}>
           <DeleteChatDialog
-            canDeleteGroup={Boolean(deleteChatCandidate.group?.groupId)}
-            canLeaveGroup={Boolean(deleteChatCandidate.roomId && deleteChatCandidate.type !== "direct")}
+            canDeleteGroup={Boolean(deleteChatCandidate.group?.groupId && canManageCommunityGroupMembers(deleteChatCandidate.group, authSubjectId))}
+            canLeaveGroup={Boolean(deleteChatCandidate.group?.groupId && deleteChatCandidate.type !== "direct")}
             chatKind={deleteChatCandidate.type === "direct" ? "direct" : "group"}
             working={chatRemovalWorking}
             title={deleteChatCandidate.title}
@@ -2807,11 +2942,13 @@ function DialogLoadingFallback({ label }: { label: string }) {
 
 function PinnedChats({
   items,
+  mediaAccessToken,
   connectionStateForItem,
   onOpen,
   onTogglePinned
 }: {
   items: ChatListItem[];
+  mediaAccessToken?: string;
   connectionStateForItem: (item: ChatListItem) => ChatConnectionState;
   onOpen: (item: ChatListItem) => void;
   onTogglePinned: (item: ChatListItem) => void;
@@ -2822,7 +2959,7 @@ function PinnedChats({
         <div className={clsx("pinned-chat", item.active && "active")} key={item.id}>
           <button className="pinned-chat-open" onClick={() => onOpen(item)} type="button">
             <span className="pinned-avatar-wrap">
-              <Avatar label={item.title} src={item.avatarUrl} />
+              <Avatar label={item.title} mediaAccessToken={mediaAccessToken} src={item.avatarUrl} />
               <ConnectionDot state={connectionStateForItem(item)} />
               {item.unreadCount > 0 && !item.muted ? <span className="pinned-unread">{item.unreadCount}</span> : null}
               {item.muted ? <span className="pinned-muted"><BellOff size={13} /></span> : null}
@@ -2847,6 +2984,7 @@ function PinnedChats({
 function ChatRow({
   connectionState,
   item,
+  mediaAccessToken,
   onDeleteRequest,
   onToggleMute,
   onTogglePinned,
@@ -2856,6 +2994,7 @@ function ChatRow({
 }: {
   connectionState: ChatConnectionState;
   item: ChatListItem;
+  mediaAccessToken?: string;
   onDeleteRequest: (item: ChatListItem) => void;
   onToggleMute: (item: ChatListItem) => void;
   onTogglePinned: (item: ChatListItem) => void;
@@ -2977,7 +3116,7 @@ function ChatRow({
       >
         <button className="chat-row-open" onClick={handleOpen} type="button">
           <span className="chat-avatar-wrap">
-            <Avatar label={item.title} src={item.avatarUrl} />
+            <Avatar label={item.title} mediaAccessToken={mediaAccessToken} src={item.avatarUrl} />
             <ConnectionDot state={connectionState} />
           </span>
           <span className="chat-row-main">
@@ -3769,8 +3908,10 @@ function ChatSkeleton() {
 function ChatInfoPanel({
   activeChat,
   authSession,
+  canAddMember,
   conversation,
   group,
+  mediaAccessToken,
   mediaTab,
   messages,
   messageRetentionSeconds,
@@ -3778,17 +3919,22 @@ function ChatInfoPanel({
   pinned,
   tab,
   onClose,
+  onAddMember,
   onMediaTabChange,
+  onManageChat,
   onOpenRetentionSettings,
   onOpenPreview,
+  onRemoveMember,
   onTabChange,
   onToggleMute,
   onTogglePinned
 }: {
   activeChat: ChatListItem;
   authSession: AuthSession;
+  canAddMember: boolean;
   conversation: MessagingConversationSummary | null;
   group: CommunityGroup | null;
+  mediaAccessToken?: string;
   mediaTab: MediaPanelTab;
   messages: MatrixTimelineMessage[];
   messageRetentionSeconds: MessageRetentionSeconds;
@@ -3796,9 +3942,12 @@ function ChatInfoPanel({
   pinned: boolean;
   tab: InfoPanelTab;
   onClose: () => void;
+  onAddMember: () => void;
   onMediaTabChange: (tab: MediaPanelTab) => void;
+  onManageChat: () => void;
   onOpenRetentionSettings: () => void;
   onOpenPreview: (item: MediaPreviewItem) => void;
+  onRemoveMember: (member: ChatInfoMember) => void;
   onTabChange: (tab: InfoPanelTab) => void;
   onToggleMute: () => void;
   onTogglePinned: () => void;
@@ -3845,7 +3994,7 @@ function ChatInfoPanel({
         </aside>
         <div className="info-content">
           <header className="info-hero">
-            <Avatar label={activeChat.title} src={activeChat.avatarUrl} />
+            <Avatar label={activeChat.title} mediaAccessToken={mediaAccessToken} src={activeChat.avatarUrl} />
             <div>
               <h2>{activeChat.title}</h2>
               <p>{isDirect ? "Přímý chat" : `${activeChat.memberCount} ${activeChat.memberCount === 1 ? "člen" : activeChat.memberCount < 5 ? "členové" : "členů"}`}</p>
@@ -3876,6 +4025,16 @@ function ChatInfoPanel({
                 <button onClick={onToggleMute} type="button">
                   <BellOff size={18} />
                   {muted ? "Zrušit ztlumení" : "Ztlumit"}
+                </button>
+                {!isDirect && canAddMember ? (
+                  <button onClick={onAddMember} type="button">
+                    <UserPlus size={18} />
+                    Přidat člena
+                  </button>
+                ) : null}
+                <button onClick={onManageChat} type="button">
+                  <Trash2 size={18} />
+                  {isDirect ? "Skrýt chat" : "Správa skupiny"}
                 </button>
               </div>
             </div>
@@ -3913,6 +4072,15 @@ function ChatInfoPanel({
 
           {tab === "members" ? (
             <div className="info-section members-section">
+              {!isDirect && canAddMember ? (
+                <button className="info-setting-row" onClick={onAddMember} type="button">
+                  <span>
+                    <UserPlus size={20} />
+                    Přidat člena
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+              ) : null}
               {members.map((member) => (
                 <div className="member-row" key={member.id}>
                   <Avatar label={member.name} small />
@@ -3920,6 +4088,12 @@ function ChatInfoPanel({
                     <strong>{member.name}</strong>
                     <small>{member.subtitle}</small>
                   </span>
+                  {!isDirect && canAddMember && member.subjectId && member.subjectId !== authSession.profile?.subjectId && member.status !== "left" ? (
+                    <button className="member-row-action" onClick={() => onRemoveMember(member)} type="button">
+                      <UserMinus size={16} />
+                      Odebrat
+                    </button>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -4012,7 +4186,7 @@ export function buildChatItems({
       ...(group ? { group } : {}),
       id,
       latest,
-      memberCount: conversation.memberCount ?? conversation.members?.length ?? group?.members.length ?? 2,
+      memberCount: group ? activeCommunityGroupMemberCount(group) : conversation.memberCount ?? conversation.members?.length ?? 2,
       muted: false,
       pinned: false,
       preferenceKey: chatPreferenceKeyForConversation(conversation, group ?? undefined),
@@ -4036,7 +4210,7 @@ export function buildChatItems({
         items.set(groupKey, {
           ...current,
           group,
-          memberCount: current.memberCount || group.members.length,
+          memberCount: activeCommunityGroupMemberCount(group) || current.memberCount,
           searchable: `${current.searchable} ${group.name} ${group.members.map((member) => member.displayName || member.username).join(" ")}`
         });
       }
@@ -4052,7 +4226,7 @@ export function buildChatItems({
           active: current.active || selectedGroupId === group.groupId,
           group,
           id: current.roomId ? `room:${current.roomId}` : `group:${group.groupId}`,
-          memberCount: current.memberCount || group.members.length,
+          memberCount: activeCommunityGroupMemberCount(group) || current.memberCount,
           searchable: `${current.searchable} ${group.name} ${group.members.map((member) => member.displayName || member.username).join(" ")}`
         };
         remember(merged);
@@ -4069,7 +4243,7 @@ export function buildChatItems({
       group,
       id: metadataRoomId ? `room:${metadataRoomId}` : `group:${group.groupId}`,
       latest: metadataLatest,
-      memberCount: group.members.length,
+      memberCount: activeCommunityGroupMemberCount(group),
       muted: false,
       pinned: false,
       preferenceKey: chatPreferenceKeyForGroup(group),
@@ -4373,6 +4547,14 @@ function canUpdateCommunityGroupMetadata(group: CommunityGroup, subjectId: strin
   return Boolean(subjectId && group.members.some((member) => member.subjectId === subjectId && member.status === "active"));
 }
 
+function canManageCommunityGroupMembers(group: CommunityGroup, subjectId: string | null | undefined): boolean {
+  return Boolean(subjectId && group.members.some((member) =>
+    member.subjectId === subjectId &&
+    member.status === "active" &&
+    (member.role === "owner" || member.role === "admin")
+  ));
+}
+
 function findGroupByTitle(title: string, groups: CommunityGroup[]): CommunityGroup | undefined {
   const normalized = normalizeTitle(title);
   return groups.find((group) => normalizeTitle(group.name) === normalized);
@@ -4653,6 +4835,10 @@ function communityGroupMembersToMessagingMembers(group: CommunityGroup): Array<{
       role: member.role,
       userId: member.subjectId
     }));
+}
+
+function activeCommunityGroupMemberCount(group: CommunityGroup): number {
+  return group.members.filter((member) => member.status === "active").length;
 }
 
 function findExistingDirectConversation(
@@ -5334,12 +5520,15 @@ function infoMembersForChat(
   conversation: MessagingConversationSummary | null,
   group: CommunityGroup | null,
   session: AuthSession
-): Array<{ id: string; name: string; subtitle: string }> {
+): ChatInfoMember[] {
   if (group) {
     return group.members.map((member) => ({
       id: member.subjectId,
       name: member.displayName || member.username || member.subjectId,
-      subtitle: member.role === "owner" ? "správce" : member.status === "active" ? "člen" : member.status
+      role: member.role,
+      status: member.status,
+      subjectId: member.subjectId,
+      subtitle: communityGroupMemberSubtitle(member)
     }));
   }
   const ownId = session.profile?.subjectId ?? session.profile?.username ?? "";
@@ -5357,6 +5546,22 @@ function infoMembersForChat(
     name: activeChat.title,
     subtitle: activeChat.type === "direct" ? "kontakt" : "chat"
   }];
+}
+
+function communityGroupMemberSubtitle(member: CommunityGroup["members"][number]): string {
+  if (member.status === "left") {
+    return "odešel/a";
+  }
+  if (member.status === "pending") {
+    return "čeká na schválení";
+  }
+  if (member.role === "owner") {
+    return "vlastník";
+  }
+  if (member.role === "admin") {
+    return "správce";
+  }
+  return "člen";
 }
 
 function mediaGridLabel(message: MatrixTimelineMessage): string {
