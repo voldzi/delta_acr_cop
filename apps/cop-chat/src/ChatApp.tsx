@@ -64,6 +64,7 @@ import {
 import type { AuthConfig, AuthSession } from "@cop/core/auth";
 import {
   bindMessagingConversationMatrixRoom,
+  createAiSituationSummary,
   createCommunityGroup,
   createMessagingConversation,
   deleteCommunityGroup,
@@ -80,6 +81,7 @@ import {
   upsertCommunityGroupMember
 } from "@cop/core/cop-data";
 import type {
+  AiCopResponse,
   CommunityGroup,
   MessagingConversationSummary,
   MessagingMatrixIdentityResolutionResponse,
@@ -149,6 +151,7 @@ export {
 } from "./chat-model";
 export type { ChatPreferences } from "./chat-model";
 
+const AiSituationDialog = React.lazy(() => import("./dialogs/AiSituationDialog"));
 const EncryptionRecoveryDialog = React.lazy(() => import("./dialogs/EncryptionRecoveryDialog"));
 const DeleteChatDialog = React.lazy(() => import("./dialogs/DeleteChatDialog"));
 const ForwardDialog = React.lazy(() => import("./dialogs/ForwardDialog"));
@@ -356,6 +359,9 @@ export function ChatApp() {
   const [chatRemovalWorking, setChatRemovalWorking] = React.useState(false);
   const [memberRemovalCandidate, setMemberRemovalCandidate] = React.useState<MemberRemovalCandidate | null>(null);
   const [memberRemovalWorking, setMemberRemovalWorking] = React.useState(false);
+  const [aiSituationDialogOpen, setAiSituationDialogOpen] = React.useState(false);
+  const [aiSituationResponse, setAiSituationResponse] = React.useState<AiCopResponse | null>(null);
+  const [aiSituationWorking, setAiSituationWorking] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
   const [deleteChatCandidate, setDeleteChatCandidate] = React.useState<ChatListItem | null>(null);
   const [retentionDialogOpen, setRetentionDialogOpen] = React.useState(false);
@@ -2122,6 +2128,50 @@ export function ChatApp() {
     }
   }
 
+  function openAiSituationSummary() {
+    setMessageMenuOpen(false);
+    setAiSituationDialogOpen(true);
+    if (!aiSituationResponse && !aiSituationWorking) {
+      void refreshAiSituationSummary();
+    }
+  }
+
+  async function refreshAiSituationSummary(): Promise<void> {
+    if (!authToken) {
+      setError("Pro AI situační souhrn je potřeba platné přihlášení do COP.");
+      return;
+    }
+    setAiSituationWorking(true);
+    setError(null);
+    try {
+      const response = await createAiSituationSummary(apiBase, authToken, {
+        includeAlerts: true,
+        language: "cs",
+        maxObjects: 40
+      });
+      setAiSituationResponse(response);
+      if (response.status === "NEEDS_HUMAN_REVIEW") {
+        setNotice("AI souhrn vyžaduje lidskou kontrolu před dalším sdílením.");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "AI situační souhrn se nepodařilo vytvořit.");
+    } finally {
+      setAiSituationWorking(false);
+    }
+  }
+
+  async function sendAiSituationSummaryToChat(text: string): Promise<void> {
+    if (!composerEnabled || !matrixSession || !selectedRoomId) {
+      setError("Nejdřív otevřete chatovou místnost, do které chcete AI souhrn poslat.");
+      return;
+    }
+    const sent = await sendMessage(`AI situační souhrn:\n\n${text}`);
+    if (sent) {
+      setAiSituationDialogOpen(false);
+      setNotice("AI souhrn byl odeslán do chatu.");
+    }
+  }
+
   async function createRoomForConversation(conversation: MessagingConversationSummary, session = matrixSessionRef.current): Promise<string> {
     if (conversation.matrix?.roomId) {
       setSelectedRoomId(conversation.matrix.roomId);
@@ -2596,6 +2646,7 @@ export function ChatApp() {
                       }}
                       onSearch={startMessageSearch}
                       onSelect={startSelectionMode}
+                      onSituationSummary={openAiSituationSummary}
                       onToggleMute={clearActiveMute}
                       onTogglePinned={() => {
                         setMessageMenuOpen(false);
@@ -2779,6 +2830,19 @@ export function ChatApp() {
             onGroupNameChange={setNewGroupName}
             onMemberQueryChange={setMemberQuery}
             onModeChange={setComposeMode}
+          />
+        </React.Suspense>
+      ) : null}
+
+      {aiSituationDialogOpen ? (
+        <React.Suspense fallback={<DialogLoadingFallback label="AI situační souhrn" />}>
+          <AiSituationDialog
+            response={aiSituationResponse}
+            sending={sending}
+            working={aiSituationWorking}
+            onClose={() => setAiSituationDialogOpen(false)}
+            onRefresh={() => void refreshAiSituationSummary()}
+            onSendToChat={(text) => void sendAiSituationSummaryToChat(text)}
           />
         </React.Suspense>
       ) : null}

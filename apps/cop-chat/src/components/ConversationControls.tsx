@@ -11,6 +11,7 @@ import {
   PinOff,
   Search,
   Share2,
+  Sparkles,
   Trash2,
   UserPlus
 } from "lucide-react";
@@ -31,6 +32,7 @@ export function ChatActionMenu({
   onRecovery,
   onSearch,
   onSelect,
+  onSituationSummary,
   onToggleMute,
   onTogglePinned
 }: {
@@ -44,6 +46,7 @@ export function ChatActionMenu({
   onRecovery: () => void;
   onSearch: () => void;
   onSelect: () => void;
+  onSituationSummary: () => void;
   onToggleMute: () => void;
   onTogglePinned: () => void;
 }) {
@@ -53,6 +56,10 @@ export function ChatActionMenu({
       <button onClick={onInfo} role="menuitem" type="button">
         <Info size={17} />
         {infoLabel}
+      </button>
+      <button onClick={onSituationSummary} role="menuitem" type="button">
+        <Sparkles size={17} />
+        AI situační souhrn
       </button>
       {activeChat.type !== "direct" && canAddMember && onAddMember ? (
         <button onClick={onAddMember} role="menuitem" type="button">

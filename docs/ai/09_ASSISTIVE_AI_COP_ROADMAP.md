@@ -101,6 +101,11 @@ Aktivní aplikační endpointy:
 - `POST /api/v1/ai/source-health-summary` pro vysvětlení kvality zdrojů,
 - `POST /api/v1/ai/community-report/draft` pro pomoc s občanským hlášením.
 
+COP Chat používá `POST /api/v1/ai/situation-summary` pro explicitní
+uživatelský dialog “AI situační souhrn”. První verze pracuje jen s
+policy-filtered COP kontextem připraveným serverem, zobrazuje audit ID a
+nečte Matrix E2EE obsah místnosti.
+
 Tyto endpointy jsou určeny i pro iOS/iPadOS klienty. Klienti nemají znát Ollama
 URL, LLM Gateway URL ani service tokeny.
 
@@ -122,6 +127,7 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
 1. Policy-filtered AI query context nad canonical entity modelem. Stav: hotovo pro základní objekty, alerty a source health.
 2. Audit a structured output validation. Stav: audit hotový, structured validation rozšířit pro specializované JSON odpovědi.
 3. Data quality assistant pro source conflict/stale/confidence. Stav: základ přes source health summary, rozšířit o detail confidence faktorů.
-4. Situation summary pro událost/workspace. Stav: základní endpoint hotový.
+4. Situation summary pro událost/workspace. Stav: základní endpoint hotový a
+   první chat UI dialog napojený na server-side COP kontext.
 5. Community report assistant pro text a kategorie. Stav: základní endpoint hotový bez čtení médií.
 6. Až potom multimediální shrnutí, a jen s media ACL.

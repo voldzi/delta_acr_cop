@@ -8,6 +8,7 @@ import { ChatActionMenu, MessageSearchBar, SelectionToolbar } from "./Conversati
 describe("ConversationControls", () => {
   it("renders contact actions and calls the selected handler", () => {
     const onInfo = vi.fn();
+    const onSituationSummary = vi.fn();
     const onTogglePinned = vi.fn();
     render(
       <ChatActionMenu
@@ -19,6 +20,7 @@ describe("ConversationControls", () => {
         onRecovery={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
+        onSituationSummary={onSituationSummary}
         onToggleMute={vi.fn()}
         onTogglePinned={onTogglePinned}
       />
@@ -27,6 +29,9 @@ describe("ConversationControls", () => {
     expect(screen.getByRole("menu", { name: "Akce chatu" })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: /O kontaktu/u }));
     expect(onInfo).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /AI situační souhrn/u }));
+    expect(onSituationSummary).toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("menuitem", { name: /Připnout/u }));
     expect(onTogglePinned).toHaveBeenCalled();
@@ -49,6 +54,7 @@ describe("ConversationControls", () => {
         onRecovery={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
+        onSituationSummary={vi.fn()}
         onToggleMute={onToggleMute}
         onTogglePinned={vi.fn()}
       />

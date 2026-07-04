@@ -413,6 +413,11 @@ The phase-0 implementation focus is trust and control:
   `DELETE /api/v1/community/groups/{groupId}/members/{subjectId}`. The removed
   member is marked `left`; only active COP members are forwarded to CSM
   Messaging membership synchronization.
+- The phase-0 AI entry point in chat is the explicit “AI situační souhrn”
+  menu action. It calls the COP API `POST /api/v1/ai/situation-summary`, shows
+  provider/policy/audit metadata and lets the user copy or explicitly send the
+  generated text to the current chat. It does not make AI an invisible Matrix
+  participant and does not read encrypted message history.
 - Current direct-chat removal is local hiding. Current group deletion deletes
   the COP community group when the authenticated actor may manage it. Leaving a
   group calls `DELETE /api/v1/community/groups/{groupId}/members/me`, marks the

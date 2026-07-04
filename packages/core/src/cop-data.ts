@@ -44,6 +44,27 @@ export interface DemoScenarioListResponse {
   items: DemoScenarioStatus[];
 }
 
+export interface AiCopResponse {
+  auditId: string;
+  model?: string;
+  policy: {
+    allowed: boolean;
+    reason: string;
+    redactionsApplied: boolean;
+  };
+  provider?: "openai" | "codex" | "ollama" | "local" | "mock";
+  requestId: string;
+  result: Record<string, unknown>;
+  status: "COMPLETED" | "REJECTED" | "NEEDS_HUMAN_REVIEW";
+}
+
+export interface AiSituationSummaryOptions {
+  includeAlerts?: boolean;
+  language?: "cs" | "en";
+  maxObjects?: number;
+  requestId?: string;
+}
+
 export interface CopObject {
   objectId: string;
   objectType: string;
@@ -2998,6 +3019,17 @@ export async function acknowledgeCopAlert(apiBase: string, token: string, alertI
     body: JSON.stringify(note ? { note } : {}),
     headers: {
       Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function createAiSituationSummary(apiBase: string, token: string, options: AiSituationSummaryOptions = {}): Promise<AiCopResponse> {
+  return fetchJson<AiCopResponse>(`${apiBase}/api/v1/ai/situation-summary`, {
+    body: JSON.stringify(options),
+    headers: {
+      ...(authHeaders(token) ?? {}),
       "Content-Type": "application/json"
     },
     method: "POST"

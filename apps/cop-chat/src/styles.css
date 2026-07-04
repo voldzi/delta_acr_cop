@@ -2725,6 +2725,114 @@ button {
   opacity: 0.58;
 }
 
+.ai-situation-dialog {
+  display: grid;
+  width: min(680px, 100%);
+  max-height: min(760px, 92dvh);
+  overflow: hidden;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+  animation: cop-sheet-rise 180ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
+}
+
+.ai-situation-dialog header {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px 8px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.ai-situation-dialog header span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  color: var(--accent-dark);
+}
+
+.ai-situation-dialog header strong {
+  color: #111b21;
+  font-size: 1.04rem;
+}
+
+.ai-situation-status,
+.ai-situation-empty {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--muted);
+  padding: 24px;
+  text-align: center;
+}
+
+.ai-situation-status svg,
+.ai-situation-empty svg {
+  color: var(--accent-dark);
+}
+
+.ai-situation-output {
+  overflow-y: auto;
+  max-height: min(390px, 52dvh);
+  margin: 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #f7f8fa;
+  color: #111b21;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  padding: 14px 16px;
+  white-space: pre-wrap;
+}
+
+.ai-situation-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 16px 16px;
+}
+
+.ai-situation-meta div {
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 9px 11px;
+}
+
+.ai-situation-meta dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 780;
+}
+
+.ai-situation-meta dd {
+  overflow-wrap: anywhere;
+  margin: 3px 0 0;
+  color: #111b21;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.ai-situation-dialog footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.ai-situation-dialog footer .primary-dialog-action,
+.ai-situation-dialog footer .secondary-dialog-action {
+  margin: 0;
+  gap: 8px;
+}
+
 .new-chat-dialog,
 .preview-dialog,
 .forward-dialog {
@@ -3818,6 +3926,7 @@ button {
   }
 
   .new-chat-dialog,
+  .ai-situation-dialog,
   .preview-dialog,
   .forward-dialog {
     width: 100%;
