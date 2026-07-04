@@ -351,6 +351,37 @@ describe("aiMatrixBotInvitePlan", () => {
 });
 
 describe("buildChatItems", () => {
+  it("marks the dedicated AI direct chat with the AI avatar variant", () => {
+    const conversation = {
+      conversationId: "c-ai",
+      members: [{ displayName: "COP AI Assistant", role: "bot", userId: "cop.ai.agent" }],
+      metadata: {
+        externalId: "cop.ai.agent",
+        source: "cop.ai.direct"
+      },
+      title: "COP AI Assistant",
+      type: "direct",
+      updatedAt: "2026-06-26T08:00:00.000Z"
+    } as unknown as MessagingConversationSummary;
+
+    const items = buildChatItems({
+      authSubjectId: "@me:example.cz",
+      conversations: [conversation],
+      filter: "all",
+      groups: [],
+      ownIdentityIds: new Set<string>(),
+      query: "",
+      rooms: [],
+      selectedConversationId: "c-ai",
+      selectedGroupId: null,
+      selectedRoomId: null
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.avatarVariant).toBe("ai");
+    expect(isAiAgentChatItem(items[0] as ChatListItem)).toBe(true);
+  });
+
   it("derives latest/preview/unread/sortAt for a room-backed direct conversation from the room summary", () => {
     const conversation = {
       conversationId: "c1",

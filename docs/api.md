@@ -43,6 +43,10 @@ AI responses may include optional `routing` metadata from the server-side
 (`fast`, `reasoning` or provider default), selected model, complexity score and
 fallback/embedding model names when configured. Clients may display the selected
 model, but must not make provider or model decisions locally.
+For `/api/v1/ai/chat-agent/query`, omitted `modelPreference` defaults to
+`fast` so ordinary chat questions do not unexpectedly escalate to a heavy
+reasoning model. Clients can still send `modelPreference=auto` or
+`modelPreference=reasoning` when the user explicitly chooses that mode.
 
 `/api/v1/ai/situation-summary` and `/api/v1/ai/chat-agent/query` also build a
 server-side `semanticContext` for the LLM. COP API embeds only the already

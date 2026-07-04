@@ -138,12 +138,14 @@ přidat `chatContext` s omezeným výňatkem aktuálně viditelné/dešifrované
 timeline.
 
 Webový klient navíc nabízí samostatný direct chat s `COP AI Assistant`. V tomto
-AI-only chatu je každá běžná zpráva dotazem na AI agenta. Slash příkazy
+AI-only chatu je každá běžná zpráva dotazem na AI agenta s výchozím
+`modelPreference=fast`, aby běžná konverzace neeskalovala nečekaně na těžký
+reasoning model. Slash příkazy
 `/ai`, `/reasoning` a `/fast` fungují v AI chatu i ve skupinách se zapnutým
-agentem; `/reasoning` předává do API `modelPreference=reasoning`. Composer
-našeptává také `@COP AI` a `@AI`, a to jak ve skupinách se zapnutým agentem,
-tak v metadata-light AI direct chatech rozpoznaných podle kanonického titulku
-`COP AI Assistant`.
+agentem; `/ai` a `@COP AI` používají rychlý model, zatímco `/reasoning`
+předává do API `modelPreference=reasoning`. Composer našeptává také `@COP AI`
+a `@AI`, a to jak ve skupinách se zapnutým agentem, tak v metadata-light AI
+direct chatech rozpoznaných podle kanonického titulku `COP AI Assistant`.
 
 Odpovědi AI odeslané do Matrixu jsou běžné `m.room.message` události s
 namespaced `cz.cop` metadaty. UI je díky tomu označí jako `COP AI agent` nebo

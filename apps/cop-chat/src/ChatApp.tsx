@@ -219,6 +219,7 @@ interface MemberRemovalCandidate {
 
 export interface ChatListItem {
   active: boolean;
+  avatarVariant?: "ai";
   avatarUrl?: string;
   conversation?: MessagingConversationSummary;
   group?: CommunityGroup;
@@ -392,7 +393,7 @@ export function ChatApp() {
   const [aiSituationWorking, setAiSituationWorking] = React.useState(false);
   const [aiAgentDialogOpen, setAiAgentDialogOpen] = React.useState(false);
   const [aiAgentQuestion, setAiAgentQuestion] = React.useState("");
-  const [aiAgentModelPreference, setAiAgentModelPreference] = React.useState<AiModelPreference>("auto");
+  const [aiAgentModelPreference, setAiAgentModelPreference] = React.useState<AiModelPreference>("fast");
   const [aiAgentResponse, setAiAgentResponse] = React.useState<AiCopResponse | null>(null);
   const [aiAgentError, setAiAgentError] = React.useState<string | null>(null);
   const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
@@ -2302,7 +2303,7 @@ export function ChatApp() {
     }
   }
 
-  function openAiAgentDialog(modelPreference: AiModelPreference = "auto") {
+  function openAiAgentDialog(modelPreference: AiModelPreference = "fast") {
     if (selectedGroup && !selectedGroupAiAssistantEnabled) {
       setNotice("AI agent zatím není pro tuto skupinu zapnutý.");
       return;
@@ -2921,7 +2922,7 @@ export function ChatApp() {
           <PinnedChats
             items={pinnedChatItems}
             mediaAccessToken={matrixMediaAccessToken}
-            connectionStateForItem={(item) => chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id)}
+            connectionStateForItem={(item) => chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id, status)}
             onOpen={(nextItem) => void openChat(nextItem)}
             onTogglePinned={togglePinnedChat}
           />
@@ -2943,7 +2944,7 @@ export function ChatApp() {
               item={item}
               key={item.id}
               mediaAccessToken={matrixMediaAccessToken}
-              connectionState={chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id)}
+              connectionState={chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id, status)}
               onDeleteRequest={setDeleteChatCandidate}
               onToggleMute={handleToggleMutedChat}
               onTogglePinned={handleTogglePinnedChat}
@@ -2963,12 +2964,12 @@ export function ChatApp() {
                 <ArrowLeft size={21} />
               </button>
               <span className="chat-avatar-wrap header-avatar">
-                <Avatar label={activeChat.title} mediaAccessToken={matrixMediaAccessToken} src={activeChat.avatarUrl} />
-                <ConnectionDot state={chatConnectionStateFor(activeChat, chatReady, matrixSession, syncState, preparingChatId === activeChat.id)} />
+                <Avatar label={activeChat.title} mediaAccessToken={matrixMediaAccessToken} src={activeChat.avatarUrl} variant={activeChat.avatarVariant} />
+                <ConnectionDot state={chatConnectionStateFor(activeChat, chatReady, matrixSession, syncState, preparingChatId === activeChat.id, status)} />
               </span>
               <div className="conversation-title">
                 <strong>{activeChat.title}</strong>
-                <span>{conversationSubtitle(activeChat, selectedRoom)}</span>
+                <span>{conversationSubtitle(activeChat, selectedRoom, status)}</span>
               </div>
               <div className="conversation-actions">
                 {selectedRoom?.encrypted ? <span className="e2ee-chip"><ShieldCheck size={14} /> E2EE</span> : null}
@@ -3437,7 +3438,7 @@ function PinnedChats({
         <div className={clsx("pinned-chat", item.active && "active")} key={item.id}>
           <button className="pinned-chat-open" onClick={() => onOpen(item)} type="button">
             <span className="pinned-avatar-wrap">
-              <Avatar label={item.title} mediaAccessToken={mediaAccessToken} src={item.avatarUrl} />
+              <Avatar label={item.title} mediaAccessToken={mediaAccessToken} src={item.avatarUrl} variant={item.avatarVariant} />
               <ConnectionDot state={connectionStateForItem(item)} />
               {item.unreadCount > 0 && !item.muted ? <span className="pinned-unread">{item.unreadCount}</span> : null}
               {item.muted ? <span className="pinned-muted"><BellOff size={13} /></span> : null}
@@ -3594,7 +3595,7 @@ function ChatRow({
       >
         <button className="chat-row-open" onClick={handleOpen} type="button">
           <span className="chat-avatar-wrap">
-            <Avatar label={item.title} mediaAccessToken={mediaAccessToken} src={item.avatarUrl} />
+            <Avatar label={item.title} mediaAccessToken={mediaAccessToken} src={item.avatarUrl} variant={item.avatarVariant} />
             <ConnectionDot state={connectionState} />
           </span>
           <span className="chat-row-main">
@@ -4592,7 +4593,7 @@ function ChatInfoPanel({
         </aside>
         <div className="info-content">
           <header className="info-hero">
-            <Avatar label={activeChat.title} mediaAccessToken={mediaAccessToken} src={activeChat.avatarUrl} />
+            <Avatar label={activeChat.title} mediaAccessToken={mediaAccessToken} src={activeChat.avatarUrl} variant={activeChat.avatarVariant} />
             <div>
               <h2>{activeChat.title}</h2>
               <p>{isDirect ? "Přímý chat" : `${activeChat.memberCount} ${activeChat.memberCount === 1 ? "člen" : activeChat.memberCount < 5 ? "členové" : "členů"}`}</p>
@@ -4725,7 +4726,7 @@ function ChatInfoPanel({
               ))}
               {!isDirect && aiAssistant?.enabled ? (
                 <div className="member-row ai-agent-member">
-                  <Avatar label={aiAssistant.label} small />
+                  <Avatar label={aiAssistant.label} small variant="ai" />
                   <span>
                     <strong>{aiAssistant.label}</strong>
                     <small>{aiAssistantStatusLabel(aiAssistant)} • {aiAssistantE2eeLabel(aiAssistant)}</small>
@@ -4817,6 +4818,7 @@ export function buildChatItems({
         : `conversation:${conversation.conversationId}`;
     remember({
       active: selectedConversationId === conversation.conversationId || selectedRoomId === conversation.matrix?.roomId || selectedGroupId === group?.groupId,
+      ...(conversation.type === "direct" && (isAiAgentDirectConversation(conversation) || isAiAgentRoomSummary(room) || isAiAgentDisplayName(title)) ? { avatarVariant: "ai" as const } : {}),
       avatarUrl: room?.avatarUrl ?? room?.directPeer?.avatarUrl ?? conversation.avatarUrl ?? conversation.directPeer?.avatarUrl ?? directPeer?.avatarUrl,
       conversation,
       ...(group ? { group } : {}),
@@ -4925,6 +4927,7 @@ export function buildChatItems({
     }
     remember({
       active: selectedRoomId === room.roomId,
+      ...(room.directPeer && (isAiAgentRoomSummary(room) || isAiAgentDisplayName(roomTitle)) ? { avatarVariant: "ai" as const } : {}),
       avatarUrl: room.avatarUrl ?? room.directPeer?.avatarUrl,
       id: `room:${room.roomId}`,
       latest,
@@ -4967,6 +4970,7 @@ export function dedupeChatItems(items: ChatListItem[]): ChatListItem[] {
     deduped.set(key, {
       ...preferred,
       active: current.active || item.active,
+      avatarVariant: preferred.avatarVariant ?? current.avatarVariant ?? item.avatarVariant,
       avatarUrl: preferred.avatarUrl ?? current.avatarUrl ?? item.avatarUrl,
       ...(conversation ? { conversation } : {}),
       ...(group ? { group } : {}),
@@ -5802,7 +5806,7 @@ export function parseAiAgentInvocation(
   }
   const mentionQuestion = options.groupAiAssistantEnabled ? parseAiAgentMention(trimmed) : null;
   if (mentionQuestion !== null) {
-    const normalized = normalizeAiAgentQuestion(mentionQuestion, "auto");
+    const normalized = normalizeAiAgentQuestion(mentionQuestion, "fast");
     return {
       modelPreference: normalized.modelPreference,
       question: normalized.question,
@@ -5810,7 +5814,7 @@ export function parseAiAgentInvocation(
     };
   }
   if (options.aiDirectChat) {
-    const normalized = normalizeAiAgentQuestion(trimmed, "auto");
+    const normalized = normalizeAiAgentQuestion(trimmed, "fast");
     return {
       modelPreference: normalized.modelPreference,
       question: normalized.question,
@@ -5828,7 +5832,7 @@ function parseAiAgentSlashCommand(text: string): AiAgentInvocation | null {
   const command = (match.groups.command ?? "").toLocaleLowerCase("cs-CZ");
   const fallbackPreference: AiModelPreference = command === "reasoning" || command === "reason"
     ? "reasoning"
-    : command === "fast"
+    : command === "fast" || command === "ai" || command === "cop-ai" || command === "copai"
       ? "fast"
       : "auto";
   const normalized = normalizeAiAgentQuestion(match.groups.question ?? "", fallbackPreference);
@@ -6221,7 +6225,16 @@ function normalizeAttachmentKind(file: File, requestedKind: MatrixAttachmentKind
   return "file";
 }
 
-function conversationSubtitle(item: ChatListItem, room: MatrixRoomSummary | null): string {
+function conversationSubtitle(item: ChatListItem, room: MatrixRoomSummary | null, status?: MessagingStatusResponse | null): string {
+  if (isAiAgentChatItem(item)) {
+    if (status?.chatAvailable && status.status === "online") {
+      return "AI asistent online";
+    }
+    if (status?.chatAvailable) {
+      return "AI asistent dostupný";
+    }
+    return "AI backend nedostupný";
+  }
   if (item.type === "direct") {
     return roomPresenceLabel(room) ?? (room ? "stav se zjišťuje" : "přímý chat");
   }
@@ -6337,10 +6350,17 @@ function chatConnectionStateFor(
   chatReady: boolean,
   matrixSession: MatrixMessagingSession | null,
   syncState: string,
-  preparing: boolean
+  preparing: boolean,
+  status?: MessagingStatusResponse | null
 ): ChatConnectionState {
   if (!chatReady || isMatrixSyncOffline(syncState)) {
     return "offline";
+  }
+  if (isAiAgentChatItem(item)) {
+    if (preparing) {
+      return "syncing";
+    }
+    return status?.chatAvailable ? "online" : "offline";
   }
   if (preparing || !matrixSession) {
     return "syncing";

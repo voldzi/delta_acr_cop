@@ -5,12 +5,14 @@ export function Avatar({
   label,
   mediaAccessToken,
   small = false,
-  src
+  src,
+  variant
 }: {
   label: string;
   mediaAccessToken?: string;
   small?: boolean;
   src?: string;
+  variant?: "ai";
 }) {
   const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
   const [authenticatedSrc, setAuthenticatedSrc] = React.useState<string | undefined>(undefined);
@@ -66,8 +68,8 @@ export function Avatar({
   const resolvedSrc = needsAuthenticatedFetch ? authenticatedSrc : src;
   const imageSrc = resolvedSrc && failedSrc !== src && failedSrc !== resolvedSrc ? resolvedSrc : undefined;
   return (
-    <span className={clsx("avatar", small && "small", imageSrc && "image")} aria-hidden="true">
-      {imageSrc ? <img alt="" src={imageSrc} onError={() => setFailedSrc(src ?? imageSrc)} /> : initialsFor(label)}
+    <span className={clsx("avatar", small && "small", imageSrc && "image", variant === "ai" && "ai")} aria-hidden="true">
+      {imageSrc ? <img alt="" src={imageSrc} onError={() => setFailedSrc(src ?? imageSrc)} /> : variant === "ai" ? "AI" : initialsFor(label)}
     </span>
   );
 }

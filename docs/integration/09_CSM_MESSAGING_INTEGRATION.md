@@ -470,10 +470,15 @@ The phase-0 implementation focus is trust and control:
   of being sent.
 - COP Chat exposes a dedicated direct chat entry for the configured AI agent
   (`cop.ai.agent` / `COP AI Assistant`). In that AI-only chat, plain composer
-  messages are treated as authenticated AI-agent questions, while slash commands
-  can still force `modelPreference=reasoning` or `modelPreference=fast`. This
-  does not bypass the group-level consent model: group room access still
-  requires `chat.aiAssistant.enabled` and visible bot membership.
+  messages are treated as authenticated AI-agent questions with
+  `modelPreference=fast` by default, while slash commands can still force
+  `modelPreference=reasoning`, `modelPreference=auto` or
+  `modelPreference=fast`. This does not bypass the group-level consent model:
+  group room access still requires `chat.aiAssistant.enabled` and visible bot
+  membership.
+  The direct AI chat is scoped to the authenticated user account and the
+  configured bot member; other users get their own direct AI conversation unless
+  the agent is explicitly added to a shared group.
 - The composer exposes inline suggestions for `@COP AI`, `@AI`, `/ai`,
   `/fast` and `/reasoning` in groups with an enabled agent and in the dedicated
   AI direct chat. Member-add actions are guarded client-side against duplicate

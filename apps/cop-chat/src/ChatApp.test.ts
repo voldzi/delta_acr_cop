@@ -50,7 +50,7 @@ describe("parseAiAgentMention", () => {
 describe("parseAiAgentInvocation", () => {
   it("extracts slash commands with explicit model preferences", () => {
     expect(parseAiAgentInvocation("/ai shrň rizika")).toMatchObject({
-      modelPreference: "auto",
+      modelPreference: "fast",
       question: "shrň rizika",
       trigger: "slash"
     });
@@ -68,7 +68,7 @@ describe("parseAiAgentInvocation", () => {
 
   it("uses mentions only when group AI is enabled", () => {
     expect(parseAiAgentInvocation("@AI stav?", { groupAiAssistantEnabled: true })).toMatchObject({
-      modelPreference: "auto",
+      modelPreference: "fast",
       question: "stav?",
       trigger: "mention"
     });
@@ -77,7 +77,7 @@ describe("parseAiAgentInvocation", () => {
 
   it("treats normal messages as AI questions only inside the dedicated AI chat", () => {
     expect(parseAiAgentInvocation("Co je v okolí nejisté?", { aiDirectChat: true })).toMatchObject({
-      modelPreference: "auto",
+      modelPreference: "fast",
       question: "Co je v okolí nejisté?",
       trigger: "direct-ai-chat"
     });

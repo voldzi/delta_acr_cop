@@ -6415,7 +6415,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
     const chatContext = summarizeAiChatContextForAi(body.chatContext);
-    const modelPreference = aiModelPreference(body.modelPreference);
+    const modelPreference = aiModelPreference(body.modelPreference) ?? "fast";
     const subject = defaultSystemSubject();
     const maxObjects = readBoundedInteger(body.maxObjects, 30, 1, 60);
     const readableObjects = prioritizeObjectsForAi(selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)

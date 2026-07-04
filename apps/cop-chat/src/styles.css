@@ -380,6 +380,15 @@ button {
   background: #dfe8ee;
 }
 
+.avatar.ai {
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.82), transparent 30%),
+    linear-gradient(135deg, #c8f6ea, #b9ddff 54%, #e7d7ff);
+  color: #007c6a;
+  font-size: 0.86rem;
+  letter-spacing: 0;
+}
+
 .avatar img {
   display: block;
   width: 100%;

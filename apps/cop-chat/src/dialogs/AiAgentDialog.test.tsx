@@ -67,7 +67,7 @@ function response(overrides: Partial<AiCopResponse> = {}): AiCopResponse {
 function renderDialog(overrides: Partial<React.ComponentProps<typeof AiAgentDialog>> = {}) {
   return render(
     <AiAgentDialog
-      modelPreference="auto"
+      modelPreference="fast"
       question=""
       response={null}
       sending={false}
@@ -100,6 +100,7 @@ describe("AiAgentDialog", () => {
     const onModelPreferenceChange = vi.fn();
     renderDialog({ onModelPreferenceChange });
 
+    expect(screen.getByRole("button", { name: "Rychlý" }).className).toContain("active");
     fireEvent.click(screen.getByRole("button", { name: "Reasoning" }));
     expect(onModelPreferenceChange).toHaveBeenCalledWith("reasoning");
   });

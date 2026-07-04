@@ -165,6 +165,9 @@ kontext dotazu, používá LRU cache embeddingů a do LLM předává jen omezen�
 nejrelevantnějších dokumentů. `COP_AI_CONTEXT_INDEX_*` řídí background COP index
 pro AI agenta: refresh, velikost snapshotu, výchozí geo-radius, lookback a počty
 canonical entit jednotlivých typů. Guardrails se vyhodnocují před každým voláním LLM.
+Chat agent defaultuje na fast profil, pokud klient nepošle explicitní
+`modelPreference`; těžký reasoning profil se používá pro explicitní
+`modelPreference=reasoning` nebo vědomě zvolený `auto` routing.
 `/health/dependencies` ukazuje `ai-gateway` jako `ok`, `degraded` nebo
 `disabled` a `ai-context-index` jako stav background indexu; degraded AI nesmí
 blokovat mapu, reporting ani chat.

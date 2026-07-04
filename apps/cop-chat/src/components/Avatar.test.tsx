@@ -22,6 +22,11 @@ describe("Avatar", () => {
     expect(screen.getByText("CO")).toBeTruthy();
   });
 
+  it("renders the default AI assistant avatar", () => {
+    render(<Avatar label="COP AI Assistant" variant="ai" />);
+    expect(screen.getByText("AI")).toBeTruthy();
+  });
+
   it("fetches Matrix media avatars with the Matrix access token", async () => {
     const src = "https://msg.zeleznalady.cz/_matrix/client/v1/media/download/docker.home.cz/avatar-id";
     const createObjectURL = vi.fn(() => "blob:matrix-avatar");

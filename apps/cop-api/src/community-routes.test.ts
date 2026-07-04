@@ -916,6 +916,7 @@ describe("community report routes", () => {
       }
     });
     expect(capturedQueries).toHaveLength(1);
+    expect(capturedQueries[0]?.modelPreference).toBe("fast");
     expect(capturedQueries[0]?.prompt).toContain("priorityContext");
     expect(capturedQueries[0]?.prompt).toContain("indexedContext");
     const priorityContext = capturedQueries[0]?.context?.priorityContext as Record<string, unknown> | undefined;
