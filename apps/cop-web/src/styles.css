@@ -3272,6 +3272,20 @@ h1 {
   line-height: 1.35;
 }
 
+.situation-location-note {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.situation-location-note.warning {
+  border-color: rgba(249, 115, 22, 0.4);
+  color: #f8df8d;
+}
+
 .technical-source-list {
   display: grid;
   gap: 5px;

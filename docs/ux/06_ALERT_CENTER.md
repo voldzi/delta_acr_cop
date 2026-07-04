@@ -13,9 +13,11 @@ Za veřejné safety výstrahy COP považuje pouze SIM vrstvy:
 
 Frontend pracuje s normalizovanými interními layer id `weather_alerts`, `fire`, `flood` a `warnings`, ale pouze pokud feature pochází ze `safety-data` zdroje. Deduplikace a priorita nesmí vycházet z českého nebo anglického textu, ale ze stabilních SIM polí jako `layerId`, `sourceId`, `typeCode`, `severity`, `validFrom`, `validUntil`, `metrics`, `tags` a lokalizovaných textů.
 
-GDACS kontext ze SIM zdroje `gdacs_alerts` je veřejná safety vrstva: povodňové `FL` události patří do `public.safety.flood`, požární `WF` události do `public.safety.fire` a ostatní podporované krizové typy do `public.safety.warnings`. Technické `response.warnings` z providerů zůstávají pouze provozní diagnostika.
+GDACS kontext ze SIM zdroje `gdacs_alerts` je veřejná safety vrstva pro specializované vrstvy: povodňové `FL` události patří do `public.safety.flood` a požární `WF` události do `public.safety.fire`. Technické `response.warnings` z providerů zůstávají pouze provozní diagnostika.
 
-ČHMÚ CAP výstrahy ze zdroje `chmi_alerts` patří do `public.safety.weather_alerts`; obecná vrstva `public.safety.warnings` smí obsahovat pouze obecné krizové zdroje jako `gdacs_alerts`, `hzs_incidents` a `road_srti_lod`. Při současném zobrazení více polygonových výstražných vrstev se meteorologické výstrahy kreslí oddělenou žluto/oranžovou škálou a obecné krizové výstrahy samostatnou krizovou škálou, aby se vizuálně neslévaly.
+ČHMÚ CAP výstrahy ze zdroje `chmi_alerts` patří do `public.safety.weather_alerts`; obecná vrstva `public.safety.warnings` smí obsahovat pouze krizové zdroje `hzs_incidents` a `municipal_alerts`. Dopravní SRTI a technická hlášení zdrojů se v této veřejné krizové vrstvě nezobrazují. Při současném zobrazení více polygonových výstražných vrstev se meteorologické výstrahy kreslí oddělenou žluto/oranžovou škálou a obecné krizové výstrahy samostatnou krizovou škálou, aby se vizuálně neslévaly.
+
+Detail krizové výstrahy musí ukazovat přesnost polohy ze SIM. `source_point` znamená přesný bod ze zdroje. `municipality_centroid` a `admin_boundary_centroid` jsou pouze přibližné centroidy. `authority_fallback_point` a `region_centroid` nejsou poloha události; u `municipal_alerts` se uživateli zobrazuje text, že jde o bod vydávající autority, ne přesné místo události.
 
 ## Technické stavy
 

@@ -321,7 +321,7 @@ describe("map catalog route", () => {
       query: {
         providerId: "sim.safety-data",
         providerLayerIds: ["fire"],
-        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms"]
+        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms", "hzs_incidents", "municipal_alerts"]
       }
     });
     expect(fireLayer?.compatibilityOnly).toBeUndefined();
@@ -341,7 +341,7 @@ describe("map catalog route", () => {
       query: {
         providerId: "sim.safety-data",
         providerLayerIds: ["warnings"],
-        providerSourceIds: ["gdacs_alerts", "hzs_incidents", "road_srti_lod"]
+        providerSourceIds: ["hzs_incidents", "municipal_alerts"]
       }
     });
     const chmiSource = body.sources.find((source) => source.providerId === "sim.safety-data" && source.sourceId === "chmi_alerts");
@@ -480,7 +480,7 @@ describe("map catalog route", () => {
       technology: "4G"
     });
     expect(body.safety?.query.layers).toEqual(["warnings", "flood"]);
-    expect(body.safety?.query.sources).toEqual(["gdacs_alerts", "hzs_incidents", "road_srti_lod", "chmi_hydro"]);
+    expect(body.safety?.query.sources).toEqual(["hzs_incidents", "municipal_alerts", "chmi_hydro"]);
     expect(body.tak).toBeUndefined();
     expect(body.warnings.join(" ")).toContain("partner.tak.mobile");
   });
@@ -2163,7 +2163,7 @@ class FakeSafetyDataSource implements SafetyDataSource {
 
   async fetchConfig(_requestNow: Date): Promise<SafetyDataPublicConfig> {
     return {
-      enabledSources: ["chmi_alerts", "chmi_hydro", "gdacs_alerts"]
+      enabledSources: ["chmi_alerts", "chmi_hydro", "gdacs_alerts", "hzs_incidents", "municipal_alerts"]
     };
   }
 
@@ -2178,7 +2178,9 @@ class FakeSafetyDataSource implements SafetyDataSource {
     return [
       { enabled: true, label: "CHMI Alerts", layers: ["weather_alerts", "fire"], sourceId: "chmi_alerts", updateCadenceSeconds: 300 },
       { enabled: true, label: "CHMI Hydro", layers: ["flood"], sourceId: "chmi_hydro", updateCadenceSeconds: 600 },
-      { enabled: true, label: "GDACS Alerts", layers: ["warnings", "fire", "flood"], sourceId: "gdacs_alerts", updateCadenceSeconds: 300 }
+      { enabled: true, label: "GDACS Alerts", layers: ["fire", "flood"], sourceId: "gdacs_alerts", updateCadenceSeconds: 300 },
+      { enabled: true, label: "HZS incidents", layers: ["warnings", "fire"], sourceId: "hzs_incidents", updateCadenceSeconds: 300 },
+      { enabled: true, label: "Municipal alerts", layers: ["warnings", "fire"], sourceId: "municipal_alerts", updateCadenceSeconds: 300 }
     ];
   }
 
@@ -2299,14 +2301,14 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
             mode: "bbox",
             providerId: "sim.safety-data",
             providerLayerIds: ["fire"],
-            providerSourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms"],
+            providerSourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms", "hzs_incidents", "municipal_alerts"],
             streamId: "features"
           },
           recommendedCatalogLayerId: "public.safety.fire",
           refreshSeconds: 600,
           role: "primary",
           selectable: true,
-          sourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms"],
+          sourceIds: ["chmi_alerts", "gdacs_alerts", "nasa_firms", "hzs_incidents", "municipal_alerts"],
           styleProfile: "fire-risk-v1"
         },
         {
@@ -2322,14 +2324,14 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
             mode: "bbox",
             providerId: "sim.safety-data",
             providerLayerIds: ["warnings"],
-            providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "road_srti_lod"],
+            providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "municipal_alerts", "road_srti_lod"],
             streamId: "features"
           },
           recommendedCatalogLayerId: "public.safety.warnings",
           refreshSeconds: 300,
           role: "primary",
           selectable: true,
-          sourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "road_srti_lod"],
+          sourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "municipal_alerts", "road_srti_lod"],
           styleProfile: "public-warning-v1"
         }
       ],
@@ -2338,7 +2340,7 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
         {
           audience: "public",
           enabled: true,
-          feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.weather_alerts", "public.safety.fire"],
+          feedsCatalogLayerIds: ["public.safety.weather_alerts", "public.safety.fire"],
           label: "CHMI CAP alerts",
           selectableInMap: false,
           sourceId: "chmi_alerts",
@@ -2349,7 +2351,7 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
         {
           audience: "public",
           enabled: true,
-          feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.fire", "public.safety.flood"],
+          feedsCatalogLayerIds: ["public.safety.fire", "public.safety.flood"],
           label: "GDACS Alerts",
           selectableInMap: false,
           sourceId: "gdacs_alerts",
@@ -2377,6 +2379,28 @@ class FakeProviderCatalogSafetyDataSource extends FakeSafetyDataSource {
           sourceId: "nasa_firms",
           sourceRole: "final",
           updateCadenceSeconds: 600,
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.fire"],
+          label: "HZS incidents",
+          selectableInMap: false,
+          sourceId: "hzs_incidents",
+          sourceRole: "final",
+          updateCadenceSeconds: 300,
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.fire"],
+          label: "Municipal alerts",
+          selectableInMap: false,
+          sourceId: "municipal_alerts",
+          sourceRole: "final",
+          updateCadenceSeconds: 300,
           visibleInDiagnostics: true
         }
       ],

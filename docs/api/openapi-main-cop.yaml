@@ -8060,6 +8060,7 @@ components:
               - gdacs_alerts
               - hzs_incidents
               - mock
+              - municipal_alerts
               - nasa_firms
               - road_srti_lod
               - weather_alerts
@@ -8094,6 +8095,7 @@ components:
             - gdacs_alerts
             - hzs_incidents
             - mock
+            - municipal_alerts
             - nasa_firms
             - road_srti_lod
             - weather_alerts

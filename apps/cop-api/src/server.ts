@@ -8316,6 +8316,7 @@ function isSafetyDataSourceId(value: string): value is SafetyDataSourceId {
     || value === "fire_incidents"
     || value === "gdacs_alerts"
     || value === "hzs_incidents"
+    || value === "municipal_alerts"
     || value === "mock"
     || value === "nasa_firms"
     || value === "road_srti_lod"

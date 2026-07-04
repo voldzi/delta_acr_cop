@@ -9370,15 +9370,18 @@ function formatSituationFeatureSelectionCard(
     return formatWeatherFeatureSelectionCard(feature);
   }
   const subtitle = formatSituationFeatureSubtitle(feature);
-  const municipalLocationPrecision = formatMunicipalAlertLocationPrecision(feature);
+  const locationInterpretation = formatSafetyAlertLocationInterpretation(feature);
+  const locationConfidence = formatSafetyAlertLocationConfidence(feature);
+  const detailRows = [
+    locationInterpretation ? { label: "Poloha", value: locationInterpretation } : undefined,
+    locationConfidence ? { label: "Jistota polohy", value: locationConfidence } : undefined
+  ].filter((row): row is { label: string; value: string } => Boolean(row));
   return {
     compactSubtitle: subtitle,
-    detailRows: municipalLocationPrecision
-      ? [{ label: "Přesnost polohy", value: municipalLocationPrecision }]
-      : undefined,
+    detailRows: detailRows.length > 0 ? detailRows : undefined,
     eyebrow: "Vybraný prvek",
     key: `feature:${feature.properties.featureId}`,
-    metaItems: municipalLocationPrecision ? ["poloha není přesná"] : [],
+    metaItems: locationInterpretation && !locationInterpretation.includes("přesný bod") ? ["poloha není přesná"] : [],
     subtitle,
     title: formatSituationFeatureTitle(feature)
   };
@@ -9821,18 +9824,53 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
   ].filter(Boolean).join(" · ");
 }
 
-function formatMunicipalAlertLocationPrecision(feature: SituationFeature): string | undefined {
+function safetyAlertTags(feature: SituationFeature): Record<string, unknown> {
   const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
   const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
-  const locationPrecision = stringProperty(feature.properties.tags?.locationPrecision)
-    ?? stringProperty(providerTags.locationPrecision);
-  if (feature.properties.sourceId !== "municipal_alerts" && locationPrecision !== "authority_fallback_point") {
+  const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
+  return { ...providerTags, ...tags };
+}
+
+function isCrisisSafetyAlertFeature(feature: SituationFeature): boolean {
+  return (feature.properties.layer === "warnings" || feature.properties.layer === "fire")
+    && (feature.properties.sourceId === "hzs_incidents" || feature.properties.sourceId === "municipal_alerts");
+}
+
+function formatSafetyAlertLocationInterpretation(feature: SituationFeature): string | undefined {
+  if (!isCrisisSafetyAlertFeature(feature)) {
     return undefined;
   }
+  const locationPrecision = recordString(safetyAlertTags(feature), "locationPrecision");
+  if (locationPrecision === "source_point") {
+    return "přesný bod ze zdroje";
+  }
+  if (locationPrecision === "municipality_centroid") {
+    return "přibližně - centroid obce";
+  }
+  if (locationPrecision === "admin_boundary_centroid") {
+    return "přibližně - centroid oblasti";
+  }
   if (locationPrecision === "authority_fallback_point") {
-    return "bod obce nebo autority, ne přesná poloha události";
+    return feature.properties.sourceId === "municipal_alerts"
+      ? "bod vydávající autority, ne přesné místo události"
+      : "bod autority, ne přesné místo události";
+  }
+  if (locationPrecision === "region_centroid") {
+    return "bod regionu, ne přesné místo události";
   }
   return undefined;
+}
+
+function formatSafetyAlertLocationConfidence(feature: SituationFeature): string | undefined {
+  if (!isCrisisSafetyAlertFeature(feature)) {
+    return undefined;
+  }
+  const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
+  const confidence = recordNumber(metrics, "locationConfidence");
+  if (confidence === undefined) {
+    return undefined;
+  }
+  return confidence <= 1 ? `${Math.round(confidence * 100)} %` : `${Math.round(confidence)} %`;
 }
 
 function situationLayerDisplayName(feature: SituationFeature): string {

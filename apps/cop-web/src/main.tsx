@@ -6716,6 +6716,7 @@ function SelectedSituationDataCard({ authToken, feature }: { authToken: string |
       {isCommunicationTowerFeature(feature) ? <CommunicationTowerSummary feature={feature} /> : null}
       {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {feature.properties.layer === "traffic" ? <TrafficSummary feature={feature} /> : null}
+      <SafetyAlertMetadataSection feature={feature} />
       {isSafetyLayerId(feature.properties.layer) ? <SafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherForecastArea ? <WeatherForecastAreaSummary feature={feature} /> : null}
@@ -6723,6 +6724,96 @@ function SelectedSituationDataCard({ authToken, feature }: { authToken: string |
       {weatherContext ? <WeatherContextSummary feature={feature} /> : null}
     </ObjectDetailSection>
   );
+}
+
+function SafetyAlertMetadataSection({ feature }: { feature: SituationFeature }) {
+  if (!isCrisisSafetyAlertFeature(feature)) {
+    return null;
+  }
+  const properties = feature.properties;
+  const providerProperties = isRecord(properties.providerProperties) ? properties.providerProperties : {};
+  const taxonomy = isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
+  const tags = safetyAlertTags(feature);
+  const metrics = isRecord(properties.metrics) ? properties.metrics : {};
+  const sourceName = properties.sourceName
+    ?? recordString(providerProperties, "sourceName")
+    ?? sourceDisplayName(properties.sourceId);
+  const locationInterpretation = safetyAlertLocationInterpretation(feature);
+  const locationConfidence = recordNumber(metrics, "locationConfidence");
+  const rows: Array<[string, React.ReactNode]> = [
+    ["Titulek", properties.headline ?? properties.label ?? "n/a"],
+    ["Jev", recordString(tags, "hazardType") ?? recordString(providerProperties, "hazardType") ?? properties.category ?? "n/a"],
+    ["Typ", properties.typeCode ?? recordString(taxonomy, "typeCode") ?? recordString(providerProperties, "typeCode") ?? "n/a"],
+    ["Stav", properties.status ?? recordString(tags, "status") ?? "n/a"],
+    ["Pozorováno", formatShortDateTime(properties.observedAt)],
+    ["Platí do", formatShortDateTime(properties.validUntil ?? properties.expiresAt)],
+    ["Zdroj", sourceName],
+    ["Feed", recordString(tags, "feedId") ?? "n/a"],
+    ["Region feedu", recordString(tags, "feedRegion") ?? "n/a"],
+    ["Přesnost polohy", recordString(tags, "locationPrecision") ?? "n/a"],
+    ["Zdroj polohy", recordString(tags, "locationSource") ?? "n/a"],
+    ["Jistota polohy", formatLocationConfidence(locationConfidence)]
+  ];
+
+  return (
+    <ObjectDetailSection title="Krizová výstraha">
+      <DetailGrid rows={rows} />
+      {locationInterpretation ? (
+        <div className={`situation-location-note${locationInterpretation.warning ? " warning" : ""}`}>
+          {locationInterpretation.text}
+        </div>
+      ) : null}
+    </ObjectDetailSection>
+  );
+}
+
+function isCrisisSafetyAlertFeature(feature: SituationFeature): boolean {
+  return (feature.properties.layer === "warnings" || feature.properties.layer === "fire")
+    && (feature.properties.sourceId === "hzs_incidents" || feature.properties.sourceId === "municipal_alerts");
+}
+
+function safetyAlertTags(feature: SituationFeature): Record<string, unknown> {
+  const properties = feature.properties;
+  const providerProperties = isRecord(properties.providerProperties) ? properties.providerProperties : {};
+  const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
+  const tags = isRecord(properties.tags) ? properties.tags : {};
+  return { ...providerTags, ...tags };
+}
+
+function safetyAlertLocationInterpretation(feature: SituationFeature): { text: string; warning: boolean } | undefined {
+  const tags = safetyAlertTags(feature);
+  const locationPrecision = recordString(tags, "locationPrecision");
+  if (!locationPrecision) {
+    return undefined;
+  }
+  if (locationPrecision === "source_point") {
+    return { text: "Poloha je přesný bod ze zdroje a je vhodná jako skutečné místo události.", warning: false };
+  }
+  if (locationPrecision === "municipality_centroid") {
+    return { text: "Poloha je přibližná, odvozená jako centroid obce.", warning: false };
+  }
+  if (locationPrecision === "admin_boundary_centroid") {
+    return { text: "Poloha je přibližná, odvozená jako centroid administrativní oblasti.", warning: false };
+  }
+  if (locationPrecision === "authority_fallback_point") {
+    return {
+      text: feature.properties.sourceId === "municipal_alerts"
+        ? "Poloha je bod vydávající autority, ne přesné místo události."
+        : "Poloha je bod autority, ne přesné místo události.",
+      warning: true
+    };
+  }
+  if (locationPrecision === "region_centroid") {
+    return { text: "Poloha je bod regionu, ne přesné místo události.", warning: true };
+  }
+  return undefined;
+}
+
+function formatLocationConfidence(value: number | undefined): string {
+  if (value === undefined) {
+    return "n/a";
+  }
+  return value <= 1 ? formatOptionalPercent(value) : `${Math.round(value)} %`;
 }
 
 interface MobileNetworkDisplayData {
@@ -12173,6 +12264,7 @@ function SituationFeatureDetail({
       </ObjectDetailSection>
 
       {isMissionArenaFeature(feature) ? <MissionArenaSummary feature={feature} /> : null}
+      <SafetyAlertMetadataSection feature={feature} />
       {isSafetyLayerId(properties.layer) ? <SafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
 
       {properties.layer === "mobile_coverage" || properties.layer === "mobile_network" ? (
@@ -16998,6 +17090,7 @@ function isSafetySourceId(value: string): value is SafetyDataSourceId {
     || value === "fire_incidents"
     || value === "gdacs_alerts"
     || value === "hzs_incidents"
+    || value === "municipal_alerts"
     || value === "mock"
     || value === "nasa_firms"
     || value === "road_srti_lod"

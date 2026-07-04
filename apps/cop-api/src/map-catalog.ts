@@ -358,7 +358,7 @@ function sanitizeProviderCatalogLayerSourceIds(providerId: string, layerId: stri
   if (providerId !== "sim.safety-data" || layerId !== "public.safety.warnings") {
     return uniqueStrings(sourceIds);
   }
-  return uniqueStrings(sourceIds.filter((sourceId) => sourceId !== "chmi_alerts" && sourceId !== "weather_alerts"));
+  return uniqueStrings(sourceIds.filter((sourceId) => sourceId === "hzs_incidents" || sourceId === "municipal_alerts"));
 }
 
 function maxFeaturesForCatalogLayer(layer: ProviderCatalogLayer): number | undefined {
@@ -680,18 +680,18 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       kind: "vector_features",
       label: "Krizové výstrahy",
       layerId: "public.safety.warnings",
-      legal: legalFromSource(findSource(sources, "gdacs_alerts") ?? findSource(sources, "hzs_incidents") ?? findSource(sources, "road_srti_lod")),
+      legal: legalFromSource(findSource(sources, "hzs_incidents") ?? findSource(sources, "municipal_alerts")),
       maxZoom: 18,
       minZoom: 5,
       provenance: {
-        sourceIds: ["sim.safety-data:gdacs_alerts", "sim.safety-data:hzs_incidents", "sim.safety-data:road_srti_lod"]
+        sourceIds: ["sim.safety-data:hzs_incidents", "sim.safety-data:municipal_alerts"]
       },
       query: {
         maxFeatures: 250,
         mode: "bbox",
         providerId: "sim.safety-data",
         providerLayerIds: ["warnings"],
-        providerSourceIds: ["gdacs_alerts", "hzs_incidents", "road_srti_lod"],
+        providerSourceIds: ["hzs_incidents", "municipal_alerts"],
         streamId: "features"
       },
       refreshSeconds: warningLayer?.expectedCadenceSeconds ?? 300,
@@ -738,18 +738,18 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       kind: "vector_features",
       label: "Požáry",
       layerId: "public.safety.fire",
-      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "gdacs_alerts") ?? findSource(sources, "hzs_incidents") ?? findSource(sources, "nasa_firms") ?? findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
+      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "gdacs_alerts") ?? findSource(sources, "hzs_incidents") ?? findSource(sources, "municipal_alerts") ?? findSource(sources, "nasa_firms") ?? findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
       maxZoom: 18,
       minZoom: 5,
       provenance: {
-        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:gdacs_alerts", "sim.safety-data:hzs_incidents", "sim.safety-data:nasa_firms", "sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
+        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:gdacs_alerts", "sim.safety-data:hzs_incidents", "sim.safety-data:municipal_alerts", "sim.safety-data:nasa_firms", "sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
       },
       query: {
         maxFeatures: 250,
         mode: "bbox",
         providerId: "sim.safety-data",
         providerLayerIds: ["fire"],
-        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "nasa_firms", "fire_hotspots", "fire_incidents"],
+        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "municipal_alerts", "nasa_firms", "fire_hotspots", "fire_incidents"],
         streamId: "features"
       },
       refreshSeconds: fireLayer?.expectedCadenceSeconds ?? 600,
@@ -1661,13 +1661,16 @@ function safetyFeedsCatalogLayerIds(sourceId: SafetyDataSourceId): string[] | un
     return ["public.safety.flood"];
   }
   if (sourceId === "gdacs_alerts") {
-    return ["public.safety.warnings", "public.safety.fire", "public.safety.flood"];
+    return ["public.safety.fire", "public.safety.flood"];
   }
   if (sourceId === "hzs_incidents") {
     return ["public.safety.warnings", "public.safety.fire"];
   }
+  if (sourceId === "municipal_alerts") {
+    return ["public.safety.warnings", "public.safety.fire"];
+  }
   if (sourceId === "road_srti_lod") {
-    return ["public.safety.warnings"];
+    return undefined;
   }
   if (sourceId === "nasa_firms" || sourceId === "fire_hotspots" || sourceId === "fire_incidents") {
     return ["public.safety.fire"];
