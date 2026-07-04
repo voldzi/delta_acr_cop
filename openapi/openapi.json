@@ -6718,6 +6718,95 @@
           }
         }
       }
+    },
+    "/api/v1/ai/chat-agent/jobs": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "Start an asynchronous COP chat AI agent job.",
+        "operationId": "startAiChatAgentJob",
+        "description": "Queues an AI chat-agent request and returns immediately with a pollable job id. The job executes the same server-side policy-filtered context flow as the synchronous chat-agent query endpoint.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiChatAgentQueryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "AI chat agent job was accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChatAgentJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/chat-agent/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "Read an asynchronous COP chat AI agent job.",
+        "operationId": "getAiChatAgentJob",
+        "description": "Returns the queued/running/completed/failed state for an AI chat-agent job owned by the authenticated user. Completed jobs include the final AiCopResponse.",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AI chat agent job status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChatAgentJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -18754,6 +18843,72 @@
           "serverTimestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "AiChatAgentJobResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "jobId",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-ai-chat-agent-job-v1"
+            ]
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "response": {
+            "$ref": "#/components/schemas/AiCopResponse"
+          },
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "statusCode": {
+                "type": "integer",
+                "minimum": 400,
+                "maximum": 599
+              }
+            }
           }
         }
       }

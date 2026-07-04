@@ -2019,6 +2019,88 @@ describe("community report routes", () => {
 
     await app.close();
   });
+
+  it("runs AI chat agent questions as pollable async jobs", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "Async job COP assistant response",
+          structured: {
+            purpose: query.purpose
+          }
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const startResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        modelPreference: "fast",
+        question: "Jaká je situace ve Vrbně?"
+      },
+      url: "/api/v1/ai/chat-agent/jobs"
+    });
+
+    expect(startResponse.statusCode).toBe(202);
+    const started = startResponse.json() as Record<string, unknown>;
+    expect(started).toMatchObject({
+      contractVersion: "cop-ai-chat-agent-job-v1",
+      jobId: expect.any(String),
+      requestId: expect.any(String),
+      status: "queued"
+    });
+
+    let completed: Record<string, unknown> | undefined;
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const pollResponse = await app.inject({
+        headers: { authorization: "Bearer dev-lab-token" },
+        url: `/api/v1/ai/chat-agent/jobs/${String(started.jobId)}`
+      });
+      expect(pollResponse.statusCode).toBe(200);
+      const body = pollResponse.json() as Record<string, unknown>;
+      if (body.status === "completed") {
+        completed = body;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(completed).toBeDefined();
+    expect(completed).toMatchObject({
+      requestId: started.requestId,
+      response: {
+        provider: "mock",
+        result: {
+          summary: "Async job COP assistant response"
+        },
+        status: "COMPLETED"
+      },
+      status: "completed"
+    });
+    expect(capturedQueries).toHaveLength(1);
+    expect(capturedQueries[0]?.requestId).toBe(started.requestId);
+
+    await app.close();
+  });
 });
 
 class FakeEmbeddingProvider extends OllamaEmbeddingProvider {

@@ -70,20 +70,23 @@ import {
   createMessagingConversation,
   deleteCommunityGroup,
   fetchCommunityGroups,
+  fetchAiChatAgentJob,
   fetchMessagingConversations,
   fetchMessagingStatus,
   fetchUserProfile,
   leaveCommunityGroup,
-  queryAiChatAgent,
   removeCommunityGroupMember,
   resolveMessagingMatrixIdentities,
   searchUserDirectory,
+  startAiChatAgentJob,
   syncMessagingConversationMembers,
   updateCommunityGroupMetadata,
   upsertCommunityGroupMember
 } from "@cop/core/cop-data";
 import type {
   AiChatAgentContextSnapshot,
+  AiChatAgentJobResponse,
+  AiChatAgentQueryOptions,
   AiContextGeoContext,
   AiContextTimeWindow,
   AiCopResponse,
@@ -298,6 +301,8 @@ const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
 const copUserPreferencesStorageKey = "cop.user.preferences.v1";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const initialHistoryLoadRetryLimit = 8;
+const aiChatAgentJobPollIntervalMs = 1500;
+const aiChatAgentJobPollLimit = 90;
 const copAiAgentUser: UserDirectoryEntry = {
   displayName: "COP AI Assistant",
   subjectId: "cop.ai.agent",
@@ -396,6 +401,7 @@ export function ChatApp() {
   const [aiAgentModelPreference, setAiAgentModelPreference] = React.useState<AiModelPreference>("fast");
   const [aiAgentResponse, setAiAgentResponse] = React.useState<AiCopResponse | null>(null);
   const [aiAgentError, setAiAgentError] = React.useState<string | null>(null);
+  const [aiAgentJobStatus, setAiAgentJobStatus] = React.useState<string | null>(null);
   const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
   const [aiAgentGroupUpdating, setAiAgentGroupUpdating] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
@@ -421,6 +427,7 @@ export function ChatApp() {
   const selectedRoomIdRef = React.useRef<string | null>(null);
   const timelineCacheRef = React.useRef<Map<string, MatrixTimelineMessage[]>>(new Map());
   const conversationsRef = React.useRef<MessagingConversationSummary[]>(conversations);
+  const memberAddPendingIdsRef = React.useRef<Set<string>>(new Set());
 
   const authToken = getAuthorizationToken(authSession, labToken);
   const authenticated = Boolean(authToken);
@@ -2151,7 +2158,7 @@ export function ChatApp() {
     if (!authToken || !selectedGroup) {
       return;
     }
-    if (memberAddPendingIds.has(user.subjectId)) {
+    if (memberAddPendingIdsRef.current.has(user.subjectId)) {
       return;
     }
     if (groupHasActiveMember(selectedGroup, user.subjectId)) {
@@ -2160,6 +2167,7 @@ export function ChatApp() {
       setMemberSuggestions([]);
       return;
     }
+    memberAddPendingIdsRef.current.add(user.subjectId);
     setMemberAddPendingIds((current) => new Set(current).add(user.subjectId));
     setError(null);
     setNotice(null);
@@ -2212,6 +2220,7 @@ export function ChatApp() {
     } catch (caught) {
       setError(userFacingError(caught instanceof Error ? caught.message : "Člena se nepodařilo přidat."));
     } finally {
+      memberAddPendingIdsRef.current.delete(user.subjectId);
       setMemberAddPendingIds((current) => {
         const next = new Set(current);
         next.delete(user.subjectId);
@@ -2313,28 +2322,66 @@ export function ChatApp() {
     setAiAgentDialogOpen(true);
   }
 
+  function buildAiChatAgentQueryOptions(
+    question: string,
+    modelPreference: AiModelPreference,
+    currentUserMessage?: string
+  ): AiChatAgentQueryOptions {
+    return {
+      ...buildAiRequestContextOptions(timelineMessages),
+      chatContext: buildAiChatContextSnapshot(timelineMessages, {
+        ...(currentUserMessage ? { currentUserMessage } : {}),
+        encrypted: selectedRoom?.encrypted,
+        roomId: selectedRoomId
+      }),
+      conversationId: selectedConversation?.conversationId,
+      groupId: selectedGroup?.groupId,
+      language: "cs",
+      maxObjects: 40,
+      modelPreference,
+      question
+    };
+  }
+
+  async function queryAiChatAgentWithJob(
+    options: AiChatAgentQueryOptions,
+    onJobUpdate?: (job: AiChatAgentJobResponse) => void
+  ): Promise<AiCopResponse> {
+    if (!authToken) {
+      throw new Error("Pro dotaz na AI agenta je potřeba platné přihlášení do COP.");
+    }
+    const started = await startAiChatAgentJob(apiBase, authToken, options);
+    onJobUpdate?.(started);
+    for (let attempt = 0; attempt < aiChatAgentJobPollLimit; attempt += 1) {
+      if (attempt > 0) {
+        await sleep(aiChatAgentJobPollIntervalMs);
+      }
+      const job = await fetchAiChatAgentJob(apiBase, authToken, started.jobId);
+      onJobUpdate?.(job);
+      if (job.status === "completed" && job.response) {
+        return job.response;
+      }
+      if (job.status === "failed") {
+        throw new Error(job.error?.message ?? "AI agent dotaz selhal.");
+      }
+    }
+    throw new Error("AI agent stále zpracovává dotaz. Zkuste výsledek znovu za chvíli nebo dotaz zkraťte.");
+  }
+
   async function askAiAgent(): Promise<void> {
     const question = aiAgentQuestion.trim();
     if (!authToken || !question) {
       return;
     }
     setAiAgentWorking(true);
+    setAiAgentJobStatus("AI job se zakládá...");
     setAiAgentError(null);
     setError(null);
     try {
-      const response = await queryAiChatAgent(apiBase, authToken, {
-        ...buildAiRequestContextOptions(timelineMessages),
-        chatContext: buildAiChatContextSnapshot(timelineMessages, {
-          encrypted: selectedRoom?.encrypted,
-          roomId: selectedRoomId
-        }),
-        conversationId: selectedConversation?.conversationId,
-        groupId: selectedGroup?.groupId,
-        language: "cs",
-        maxObjects: 40,
-        modelPreference: aiAgentModelPreference,
-        question
-      });
+      const response = await queryAiChatAgentWithJob(
+        buildAiChatAgentQueryOptions(question, aiAgentModelPreference),
+        (job) => setAiAgentJobStatus(aiChatAgentJobStatusLabel(job))
+      );
       setAiAgentResponse(response);
       if (response.status === "NEEDS_HUMAN_REVIEW") {
         setNotice("Odpověď AI agenta vyžaduje lidskou kontrolu před dalším sdílením.");
@@ -2345,6 +2392,7 @@ export function ChatApp() {
       setError(message);
     } finally {
       setAiAgentWorking(false);
+      setAiAgentJobStatus(null);
     }
   }
 
@@ -2691,22 +2739,13 @@ export function ChatApp() {
     }
 
     await matrixSession.sendMessage(selectedRoomId, userMessage);
+    setNotice("COP AI agent zpracovává dotaz...");
     let response: AiCopResponse;
     try {
-      response = await queryAiChatAgent(apiBase, authToken, {
-        ...buildAiRequestContextOptions(timelineMessages),
-        chatContext: buildAiChatContextSnapshot(timelineMessages, {
-          currentUserMessage: userMessage,
-          encrypted: selectedRoom?.encrypted,
-          roomId: selectedRoomId
-        }),
-        conversationId: selectedConversation?.conversationId,
-        groupId: selectedGroup?.groupId,
-        language: "cs",
-        maxObjects: 40,
-        modelPreference: invocation.modelPreference,
-        question
-      });
+      response = await queryAiChatAgentWithJob(
+        buildAiChatAgentQueryOptions(question, invocation.modelPreference, userMessage),
+        (job) => setNotice(aiChatAgentJobStatusLabel(job))
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "AI agent teď nedokáže odpovědět.");
       return;
@@ -3237,6 +3276,7 @@ export function ChatApp() {
         <React.Suspense fallback={<DialogLoadingFallback label="AI agent" />}>
           <AiAgentDialog
             error={aiAgentError}
+            jobStatus={aiAgentJobStatus}
             modelPreference={aiAgentModelPreference}
             question={aiAgentQuestion}
             response={aiAgentResponse}
@@ -3982,6 +4022,24 @@ export function composerSuggestions(text: string, aiAgentAvailable: boolean): Co
     ].filter((suggestion) => suggestion.label.toLocaleLowerCase("cs-CZ").startsWith(draft.toLocaleLowerCase("cs-CZ")));
   }
   return [];
+}
+
+function aiChatAgentJobStatusLabel(job: AiChatAgentJobResponse): string {
+  switch (job.status) {
+    case "queued":
+      return "AI dotaz je ve frontě...";
+    case "running":
+      return "AI agent zpracovává COP kontext...";
+    case "completed":
+      return "AI odpověď je připravená.";
+    case "failed":
+      return job.error?.message ? `AI dotaz selhal: ${job.error.message}` : "AI dotaz selhal.";
+  }
+  return "AI agent zpracovává dotaz...";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function MessageRow({

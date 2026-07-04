@@ -141,6 +141,7 @@ COP_AI_CONTEXT_INDEX_DEFAULT_RADIUS_KM=30
 COP_AI_CONTEXT_INDEX_OBJECT_LIMIT=250
 COP_AI_CONTEXT_INDEX_COMMUNITY_REPORT_LIMIT=250
 COP_AI_CONTEXT_INDEX_INCIDENT_LIMIT=200
+COP_AI_CHAT_AGENT_JOB_TTL_SECONDS=1200
 ```
 
 Bezpečný vývojový default zůstává:
@@ -174,6 +175,9 @@ přímou bezpečnostní souvislost. Guardrails se vyhodnocují před každým vo
 Chat agent defaultuje na fast profil, pokud klient nepošle explicitní
 `modelPreference`; těžký reasoning profil se používá pro explicitní
 `modelPreference=reasoning` nebo vědomě zvolený `auto` routing.
+`COP_AI_CHAT_AGENT_JOB_TTL_SECONDS` řídí jen krátkodobou in-memory expiraci
+pollovatelných AI job stavů pro chat UI; audit a případně odeslané Matrix
+zprávy se řídí vlastními retenčními pravidly.
 `/health/dependencies` ukazuje `ai-gateway` jako `ok`, `degraded` nebo
 `disabled` a `ai-context-index` jako stav background indexu; degraded AI nesmí
 blokovat mapu, reporting ani chat.

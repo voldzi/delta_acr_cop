@@ -101,6 +101,12 @@ call is capped by `COP_AI_REQUEST_TIMEOUT_MS` (default 70 s). If the provider
 does not return in time, COP returns a normal audit-backed
 `NEEDS_HUMAN_REVIEW` AI response with evidence metadata instead of leaving the
 HTTP request hanging.
+COP Chat should use `POST /api/v1/ai/chat-agent/jobs` for user-facing composer
+requests. The job endpoint returns `202` with `cop-ai-chat-agent-job-v1`; the
+client polls `GET /api/v1/ai/chat-agent/jobs/{jobId}` until `completed` or
+`failed`. Completed jobs carry the final `AiCopResponse`. The synchronous
+`POST /api/v1/ai/chat-agent/query` remains the compatibility endpoint and is
+also the server-side execution path for jobs.
 
 `/api/v1/ai/chat-agent/query` may include a bounded `chatContext` snapshot from
 the client's currently visible/decrypted Matrix timeline. COP API combines that

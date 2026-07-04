@@ -470,7 +470,10 @@ The phase-0 implementation focus is trust and control:
   `@COP AI ...` mention and slash commands `/ai ...`, `/reasoning ...` and
   `/fast ...`. Completed answers can be posted automatically with the same
   metadata; answers requiring human review open the explicit AI dialog instead
-  of being sent.
+  of being sent. COP Chat starts these requests through
+  `POST /api/v1/ai/chat-agent/jobs` and polls
+  `GET /api/v1/ai/chat-agent/jobs/{jobId}` so long LLM calls produce a visible
+  queued/running state instead of an apparently silent composer.
 - COP Chat exposes a dedicated direct chat entry for the configured AI agent
   (`cop.ai.agent` / `COP AI Assistant`). In that AI-only chat, plain composer
   messages are treated as authenticated AI-agent questions with

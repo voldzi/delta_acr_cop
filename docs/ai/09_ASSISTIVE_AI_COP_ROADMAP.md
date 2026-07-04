@@ -131,11 +131,14 @@ Key model agenta je `dedicated_matrix_account_device` s politikou
 `future_megolm_sessions_after_join`. Agent může pracovat s novými zprávami po
 připojení a sdílení klíčů v místnosti; API samo nečte historickou šifrovanou
 Matrix timeline a není plaintext proxy. Dotazy dál jdou přes
-`POST /api/v1/ai/chat-agent/query`. Endpoint je autentizovaný, pro `groupId`
-vyžaduje aktivní členství a skládá COP kontext server-side z aktuálních objektů,
-výstrah, komunitních hlášení, incidentů a stavu zdrojů. Klient může k dotazu
-přidat `chatContext` s omezeným výňatkem aktuálně viditelné/dešifrované Matrix
-timeline.
+pollovatelný job flow `POST /api/v1/ai/chat-agent/jobs` a
+`GET /api/v1/ai/chat-agent/jobs/{jobId}`; synchronní
+`POST /api/v1/ai/chat-agent/query` zůstává kompatibilní backendový execution
+path. Endpoint je autentizovaný, pro `groupId` vyžaduje aktivní členství a
+skládá COP kontext server-side z aktuálních objektů, výstrah, komunitních
+hlášení, incidentů a stavu zdrojů. Klient může k dotazu přidat `chatContext` s
+omezeným výňatkem aktuálně viditelné/dešifrované Matrix timeline. UI během jobu
+zobrazuje stav fronty/zpracování místo tichého čekání na dlouhé LLM volání.
 
 Webový klient navíc nabízí samostatný direct chat s `COP AI Assistant`. V tomto
 AI-only chatu je každá běžná zpráva dotazem na AI agenta s výchozím

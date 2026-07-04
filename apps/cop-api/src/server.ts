@@ -250,6 +250,23 @@ export interface BuildServerOptions {
 
 type DependencyStatus = "disabled" | "degraded" | "ok";
 type CommunityReportHazardSeverity = "advisory" | "warning" | "critical";
+type AiChatAgentJobStatus = "completed" | "failed" | "queued" | "running";
+
+interface AiChatAgentJobRecord {
+  actorSubjectId: string;
+  createdAt: string;
+  error?: {
+    message: string;
+    statusCode?: number;
+  };
+  expiresAt: string;
+  jobId: string;
+  requestId?: string;
+  response?: AiCopResponse;
+  status: AiChatAgentJobStatus;
+  updatedAt: string;
+}
+
 type AiMatrixBotProvisionStatus =
   | "bot_disabled"
   | "bot_join_failed"
@@ -566,6 +583,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const aiSemanticRetrievalCandidateLimit = readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_CANDIDATE_LIMIT, 36);
   const aiSemanticRetrievalTimeoutMs = readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_TIMEOUT_MS, 20000);
   const aiGatewayRequestTimeoutMs = readPositiveInteger(process.env.COP_AI_REQUEST_TIMEOUT_MS, 70000);
+  const aiChatAgentJobTtlMs = readPositiveInteger(process.env.COP_AI_CHAT_AGENT_JOB_TTL_SECONDS, 20 * 60) * 1000;
+  const aiChatAgentJobs = new Map<string, AiChatAgentJobRecord>();
   const now = options.now ?? (() => new Date());
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
@@ -1418,6 +1437,98 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       status: "degraded",
       warnings: [warning]
     };
+  }
+
+  function pruneAiChatAgentJobs(requestNow = now()): void {
+    const timestamp = requestNow.getTime();
+    for (const [jobId, job] of aiChatAgentJobs) {
+      if (Date.parse(job.expiresAt) <= timestamp) {
+        aiChatAgentJobs.delete(jobId);
+      }
+    }
+  }
+
+  function aiChatAgentJobPayload(job: AiChatAgentJobRecord): Record<string, unknown> {
+    return compactRecord({
+      contractVersion: "cop-ai-chat-agent-job-v1",
+      createdAt: job.createdAt,
+      error: job.error,
+      expiresAt: job.expiresAt,
+      jobId: job.jobId,
+      requestId: job.requestId,
+      response: job.response,
+      status: job.status,
+      updatedAt: job.updatedAt
+    });
+  }
+
+  function updateAiChatAgentJob(jobId: string, update: Partial<AiChatAgentJobRecord>, requestNow = now()): AiChatAgentJobRecord | undefined {
+    const current = aiChatAgentJobs.get(jobId);
+    if (!current) {
+      return undefined;
+    }
+    const next = {
+      ...current,
+      ...update,
+      updatedAt: requestNow.toISOString()
+    };
+    aiChatAgentJobs.set(jobId, next);
+    return next;
+  }
+
+  function startAiChatAgentJob(input: {
+    authorization: string;
+    body: Record<string, unknown>;
+    correlationId: string;
+    jobId: string;
+  }): void {
+    setImmediate(() => {
+      void runAiChatAgentJob(input);
+    });
+  }
+
+  async function runAiChatAgentJob(input: {
+    authorization: string;
+    body: Record<string, unknown>;
+    correlationId: string;
+    jobId: string;
+  }): Promise<void> {
+    updateAiChatAgentJob(input.jobId, { status: "running" });
+    try {
+      const response = await app.inject({
+        headers: {
+          authorization: input.authorization,
+          "x-correlation-id": input.correlationId
+        },
+        method: "POST",
+        payload: input.body,
+        url: "/api/v1/ai/chat-agent/query"
+      });
+      const parsed = response.json() as Record<string, unknown>;
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        const aiResponse = parsed as unknown as AiCopResponse;
+        updateAiChatAgentJob(input.jobId, {
+          requestId: aiResponse.requestId,
+          response: aiResponse,
+          status: "completed"
+        });
+        return;
+      }
+      updateAiChatAgentJob(input.jobId, {
+        error: {
+          message: errorMessageFromResponse(parsed) ?? `AI chat agent job failed with HTTP ${response.statusCode}.`,
+          statusCode: response.statusCode
+        },
+        status: "failed"
+      });
+    } catch (error) {
+      updateAiChatAgentJob(input.jobId, {
+        error: {
+          message: errorMessage(error)
+        },
+        status: "failed"
+      });
+    }
   }
 
   function limitAiSemanticDocuments(documents: AiSemanticDocument[], limit: number, retrievalIntent: AiRetrievalIntent): AiSemanticDocument[] {
@@ -6442,6 +6553,107 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       semanticStatus: semanticContext.status
     }, correlationId);
     return response;
+  });
+
+  app.post("/api/v1/ai/chat-agent/jobs", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const authorization = headerAsString(request.headers.authorization);
+    if (!authorization) {
+      return sendError(
+        reply,
+        401,
+        "UNAUTHORIZED",
+        "Authenticated operator identity is required.",
+        correlationId
+      );
+    }
+    const body = isRecord(request.body) ? request.body : {};
+    const question = optionalTrimmedString(body.question, 2000);
+    if (!question) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "AI chat agent job requires a non-empty question.",
+        correlationId
+      );
+    }
+    pruneAiChatAgentJobs();
+    const requestNow = now();
+    const jobId = randomUUID();
+    const job: AiChatAgentJobRecord = {
+      actorSubjectId: actor.subjectId,
+      createdAt: requestNow.toISOString(),
+      expiresAt: new Date(requestNow.getTime() + aiChatAgentJobTtlMs).toISOString(),
+      jobId,
+      requestId: optionalUuid(body.requestId) ?? randomUUID(),
+      status: "queued",
+      updatedAt: requestNow.toISOString()
+    };
+    aiChatAgentJobs.set(jobId, job);
+    appendAudit(state, "AI_CHAT_AGENT_JOB_QUEUED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      conversationId: optionalText(body.conversationId),
+      groupId: optionalText(body.groupId),
+      jobId,
+      requestId: job.requestId
+    }, correlationId);
+    startAiChatAgentJob({
+      authorization,
+      body: {
+        ...body,
+        requestId: job.requestId
+      },
+      correlationId,
+      jobId
+    });
+    reply.code(202);
+    return aiChatAgentJobPayload(job);
+  });
+
+  app.get("/api/v1/ai/chat-agent/jobs/:jobId", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) {
+      return reply;
+    }
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const params = isRecord(request.params) ? request.params : {};
+    const jobId = optionalUuid(params.jobId);
+    if (!jobId) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "AI chat agent jobId must be a UUID.",
+        correlationId
+      );
+    }
+    pruneAiChatAgentJobs();
+    const job = aiChatAgentJobs.get(jobId);
+    if (!job) {
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "AI chat agent job was not found or has expired.",
+        correlationId
+      );
+    }
+    if (job.actorSubjectId !== actor.subjectId) {
+      return sendError(
+        reply,
+        403,
+        "FORBIDDEN",
+        "Current user cannot read this AI chat agent job.",
+        correlationId
+      );
+    }
+    return aiChatAgentJobPayload(job);
   });
 
   app.post("/api/v1/ai/chat-agent/query", async (request, reply) => {
@@ -13572,6 +13784,15 @@ function headerAsString(value: unknown): string | undefined {
     return value[0];
   }
   return typeof value === "string" ? value : undefined;
+}
+
+function errorMessageFromResponse(value: unknown): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return optionalTrimmedString(value.message, 500)
+    ?? optionalTrimmedString(value.error, 500)
+    ?? optionalTrimmedString(value.detail, 500);
 }
 
 function errorMessage(error: unknown): string {

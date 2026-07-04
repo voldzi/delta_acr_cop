@@ -104,6 +104,21 @@ export interface AiChatAgentQueryOptions {
   timeWindow?: AiContextTimeWindow;
 }
 
+export interface AiChatAgentJobResponse {
+  contractVersion: "cop-ai-chat-agent-job-v1";
+  createdAt: string;
+  error?: {
+    message: string;
+    statusCode?: number;
+  };
+  expiresAt: string;
+  jobId: string;
+  requestId?: string;
+  response?: AiCopResponse;
+  status: "completed" | "failed" | "queued" | "running";
+  updatedAt: string;
+}
+
 export interface AiContextBbox {
   east: number;
   north: number;
@@ -3139,6 +3154,23 @@ export async function queryAiChatAgent(apiBase: string, token: string, options: 
       "Content-Type": "application/json"
     },
     method: "POST"
+  });
+}
+
+export async function startAiChatAgentJob(apiBase: string, token: string, options: AiChatAgentQueryOptions): Promise<AiChatAgentJobResponse> {
+  return fetchJson<AiChatAgentJobResponse>(`${apiBase}/api/v1/ai/chat-agent/jobs`, {
+    body: JSON.stringify(options),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function fetchAiChatAgentJob(apiBase: string, token: string, jobId: string): Promise<AiChatAgentJobResponse> {
+  return fetchJson<AiChatAgentJobResponse>(`${apiBase}/api/v1/ai/chat-agent/jobs/${encodeURIComponent(jobId)}`, {
+    headers: authHeaders(token)
   });
 }
 
