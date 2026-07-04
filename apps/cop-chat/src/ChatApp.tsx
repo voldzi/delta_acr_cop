@@ -2257,6 +2257,10 @@ export function ChatApp() {
       setError("AI agenta může spravovat jen správce skupiny.");
       return;
     }
+    const updateTime = new Date().toISOString();
+    if (enabled && !window.confirm("Zapnout COP AI agenta jako viditelného Matrix člena této E2EE místnosti? Agent bude mít vlastní Matrix účet a device, uvidí nové zprávy sdílené po připojení a jeho odpovědi budou auditované.")) {
+      return;
+    }
     setAiAgentGroupUpdating(true);
     setError(null);
     try {
@@ -2265,16 +2269,33 @@ export function ChatApp() {
         chat: {
           ...currentChat,
           aiAssistant: {
+            ...(currentChat.aiAssistant ?? {}),
             enabled,
             label: currentChat.aiAssistant?.label ?? "COP AI Assistant",
             mode: "cop-context",
-            updatedAt: new Date().toISOString(),
+            consent: enabled ? {
+              granted: true,
+              grantedAt: updateTime,
+              grantedBy: authSubjectId ?? authSession.profile?.username ?? "unknown",
+              scope: "matrix-room-member",
+              termsVersion: "cop-ai-room-agent-consent-v1"
+            } : {
+              granted: false,
+              revokedAt: updateTime,
+              revokedBy: authSubjectId ?? authSession.profile?.username ?? "unknown",
+              scope: "matrix-room-member",
+              termsVersion: "cop-ai-room-agent-consent-v1"
+            },
+            updatedAt: updateTime,
             updatedBy: authSubjectId ?? authSession.profile?.username ?? "unknown"
           }
         }
       });
       setGroups((current) => current.map((group) => group.groupId === updatedGroup.groupId ? updatedGroup : group));
-      setNotice(enabled ? "AI agent je pro skupinu viditelně zapnutý." : "AI agent je pro skupinu vypnutý.");
+      const nextAi = communityGroupAiAssistantMetadata(updatedGroup);
+      setNotice(enabled
+        ? `AI agent je zapnutý. ${aiAssistantStatusLabel(nextAi)}.`
+        : "AI agent je pro skupinu vypnutý.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Nastavení AI agenta se nepodařilo uložit.");
     } finally {
@@ -4339,6 +4360,12 @@ function ChatInfoPanel({
                   </strong>
                 </button>
               ) : null}
+              {!isDirect && aiAssistant?.enabled ? (
+                <>
+                  <InfoMetric label="AI Matrix bot" value={aiAssistantStatusLabel(aiAssistant)} />
+                  <InfoMetric label="AI E2EE model" value={aiAssistantE2eeLabel(aiAssistant)} />
+                </>
+              ) : null}
               <div className="info-actions-row">
                 <button onClick={onTogglePinned} type="button">
                   {pinned ? <PinOff size={18} /> : <Pin size={18} />}
@@ -4429,7 +4456,7 @@ function ChatInfoPanel({
                   <Avatar label={aiAssistant.label} small />
                   <span>
                     <strong>{aiAssistant.label}</strong>
-                    <small>AI agent • COP kontext • auditované odpovědi</small>
+                    <small>{aiAssistantStatusLabel(aiAssistant)} • {aiAssistantE2eeLabel(aiAssistant)}</small>
                   </span>
                 </div>
               ) : null}
@@ -4917,8 +4944,37 @@ interface CommunityGroupChatMetadata {
 }
 
 interface CommunityGroupAiAssistantMetadata {
+  consent?: {
+    granted: boolean;
+    grantedAt?: string;
+    grantedBy?: string;
+    revokedAt?: string;
+    revokedBy?: string;
+    scope?: string;
+    termsVersion?: string;
+  };
+  e2ee?: {
+    keyModel?: string;
+    plaintextProxy?: boolean;
+    roomKeyPolicy?: string;
+    serverReadsHistory?: boolean;
+    status?: string;
+    updatedAt?: string;
+  };
   enabled: boolean;
   label: string;
+  matrixBot?: {
+    deviceId?: string;
+    displayName?: string;
+    joinedAt?: string;
+    matrixUserId?: string;
+    membership?: string;
+    roomId?: string;
+    status?: string;
+    updatedAt?: string;
+    userId?: string;
+    warnings?: string[];
+  };
   mode: "cop-context";
   updatedAt?: string;
   updatedBy?: string;
@@ -4953,13 +5009,82 @@ function communityGroupChatMetadata(group: CommunityGroup): CommunityGroupChatMe
 function communityGroupAiAssistantMetadata(group: CommunityGroup): CommunityGroupAiAssistantMetadata {
   const chat = asRecord(group.metadata?.chat);
   const aiAssistant = asRecord(chat?.aiAssistant);
+  const consent = asRecord(aiAssistant?.consent);
+  const e2ee = asRecord(aiAssistant?.e2ee);
+  const matrixBot = asRecord(aiAssistant?.matrixBot);
   return {
+    ...(consent ? {
+      consent: {
+        granted: consent.granted === true,
+        grantedAt: typeof consent.grantedAt === "string" ? consent.grantedAt : undefined,
+        grantedBy: typeof consent.grantedBy === "string" ? consent.grantedBy : undefined,
+        revokedAt: typeof consent.revokedAt === "string" ? consent.revokedAt : undefined,
+        revokedBy: typeof consent.revokedBy === "string" ? consent.revokedBy : undefined,
+        scope: typeof consent.scope === "string" ? consent.scope : undefined,
+        termsVersion: typeof consent.termsVersion === "string" ? consent.termsVersion : undefined
+      }
+    } : {}),
+    ...(e2ee ? {
+      e2ee: {
+        keyModel: typeof e2ee.keyModel === "string" ? e2ee.keyModel : undefined,
+        plaintextProxy: e2ee.plaintextProxy === true,
+        roomKeyPolicy: typeof e2ee.roomKeyPolicy === "string" ? e2ee.roomKeyPolicy : undefined,
+        serverReadsHistory: e2ee.serverReadsHistory === true,
+        status: typeof e2ee.status === "string" ? e2ee.status : undefined,
+        updatedAt: typeof e2ee.updatedAt === "string" ? e2ee.updatedAt : undefined
+      }
+    } : {}),
     enabled: aiAssistant?.enabled === true,
     label: typeof aiAssistant?.label === "string" && aiAssistant.label.trim() ? aiAssistant.label.trim() : "COP AI Assistant",
+    ...(matrixBot ? {
+      matrixBot: {
+        deviceId: typeof matrixBot.deviceId === "string" ? matrixBot.deviceId : undefined,
+        displayName: typeof matrixBot.displayName === "string" ? matrixBot.displayName : undefined,
+        joinedAt: typeof matrixBot.joinedAt === "string" ? matrixBot.joinedAt : undefined,
+        matrixUserId: typeof matrixBot.matrixUserId === "string" ? matrixBot.matrixUserId : undefined,
+        membership: typeof matrixBot.membership === "string" ? matrixBot.membership : undefined,
+        roomId: typeof matrixBot.roomId === "string" ? matrixBot.roomId : undefined,
+        status: typeof matrixBot.status === "string" ? matrixBot.status : undefined,
+        updatedAt: typeof matrixBot.updatedAt === "string" ? matrixBot.updatedAt : undefined,
+        userId: typeof matrixBot.userId === "string" ? matrixBot.userId : undefined,
+        warnings: Array.isArray(matrixBot.warnings) ? matrixBot.warnings.filter((item): item is string => typeof item === "string").slice(0, 6) : undefined
+      }
+    } : {}),
     mode: "cop-context",
     updatedAt: typeof aiAssistant?.updatedAt === "string" ? aiAssistant.updatedAt : undefined,
     updatedBy: typeof aiAssistant?.updatedBy === "string" ? aiAssistant.updatedBy : undefined
   };
+}
+
+function aiAssistantStatusLabel(aiAssistant: CommunityGroupAiAssistantMetadata): string {
+  switch (aiAssistant.matrixBot?.status) {
+    case "joined":
+      return "Matrix bot je členem místnosti";
+    case "pending_room_binding":
+      return "Matrix bot čeká na vytvoření místnosti";
+    case "pending_conversation":
+      return "Matrix bot čeká na propojení konverzace";
+    case "bot_token_unavailable":
+      return "Matrix bot nemá připravený token";
+    case "bot_join_failed":
+      return "Matrix bot pozvánku zatím nepřijal";
+    case "member_sync_failed":
+      return "Synchronizace Matrix bot člena selhala";
+    case "bot_disabled":
+      return "Matrix bot účet je vypnutý konfigurací";
+    default:
+      return aiAssistant.enabled ? "Matrix bot se připravuje" : "AI agent je vypnutý";
+  }
+}
+
+function aiAssistantE2eeLabel(aiAssistant: CommunityGroupAiAssistantMetadata): string {
+  if (aiAssistant.e2ee?.status === "ready_for_future_messages") {
+    return "Vlastní device, klíče pro nové zprávy";
+  }
+  if (aiAssistant.e2ee?.keyModel === "dedicated_matrix_account_device") {
+    return "Vlastní device, čeká na Matrix členství";
+  }
+  return "Čeká na zapnutí Matrix bot účtu";
 }
 
 function demoConversationMetadata(group: CommunityGroup): DemoConversationMetadata | null {

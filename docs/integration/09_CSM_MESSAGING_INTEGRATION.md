@@ -418,18 +418,31 @@ The phase-0 implementation focus is trust and control:
   provider/policy/audit metadata and lets the user copy or explicitly send the
   generated text to the current chat. It does not make AI an invisible Matrix
   participant and does not read encrypted message history.
-- The first visible AI-agent increment is group metadata, not a hidden Matrix
-  bot. Group managers toggle `metadata.chat.aiAssistant.enabled`; enabled
-  groups show `COP AI Assistant` in the member list and expose an explicit
-  “Zeptat se AI agenta” action. Questions call authenticated
-  `POST /api/v1/ai/chat-agent/query`, which requires active membership for the
-  supplied `groupId`, builds COP context server-side from objects, alerts,
-  community reports, incidents and source health, and returns audit metadata.
-  The web client may include a bounded `chatContext` snapshot from the currently
-  visible/decrypted Matrix timeline; this is explicit client-provided context,
-  not hidden server-side E2EE history reading. Sending the answer to Matrix
-  remains an explicit user action unless a leading `@COP AI ...` mention returns
-  a completed answer that does not require human review.
+- The visible AI-agent room increment is explicit-consent Matrix membership.
+  Group managers toggle `metadata.chat.aiAssistant.enabled` and the client must
+  send `consent.granted=true`, `scope=matrix-room-member` and
+  `termsVersion=cop-ai-room-agent-consent-v1`. COP then synchronizes the
+  configured `COP AI Assistant` system user into CSM Messaging conversation
+  members, obtains a short-lived Matrix token for the bot account through the
+  same server-side Matrix bootstrap contract, and accepts the room invite when
+  the encrypted room is already bound. The resulting
+  `metadata.chat.aiAssistant.matrixBot` and `e2ee` fields expose membership and
+  key status to clients without exposing Matrix tokens or passwords.
+- AI agent E2EE uses a dedicated Matrix account/device model:
+  `keyModel=dedicated_matrix_account_device`,
+  `roomKeyPolicy=future_megolm_sessions_after_join`,
+  `serverReadsHistory=false` and `plaintextProxy=false`. The agent can receive
+  keys for new encrypted messages after it has joined the room; COP API still
+  does not fetch or decrypt historical Matrix room content on the server.
+  Questions call authenticated `POST /api/v1/ai/chat-agent/query`, which
+  requires active membership for the supplied `groupId`, builds COP context
+  server-side from objects, alerts, community reports, incidents and source
+  health, and returns audit metadata. The web client may include a bounded
+  `chatContext` snapshot from the currently visible/decrypted Matrix timeline;
+  this is explicit client-provided context, not hidden server-side E2EE history
+  reading. Sending the answer to Matrix remains an explicit user action unless
+  a leading `@COP AI ...` mention returns a completed answer that does not
+  require human review.
 - AI answers sent to Matrix carry namespaced `cz.cop` message metadata with
   `kind`, `requestId`, `auditId`, provider/model, policy reason and the
   original question when present. The metadata is used only for timeline
@@ -518,6 +531,10 @@ COP_CSM_MESSAGING_MATRIX_PUBLIC_URL=https://msg.zeleznalady.cz
 COP_CSM_MESSAGING_TOKEN=<same-value-as-CSM_MESSAGING_API_TOKEN>
 COP_CSM_MESSAGING_TIMEOUT_MS=3000
 COP_CSM_MESSAGING_CACHE_TTL_MS=10000
+COP_AI_MATRIX_BOT_ENABLED=true
+COP_AI_MATRIX_BOT_USER_ID=cop.ai.agent
+COP_AI_MATRIX_BOT_DISPLAY_NAME="COP AI Assistant"
+COP_AI_MATRIX_BOT_DEVICE_ID=COP.AI.Agent
 COP_WEB_PUSH_ENABLED=false
 COP_WEB_PUSH_VAPID_PUBLIC_KEY=<browser-web-push-vapid-public-key-from-csm-messaging>
 COP_WEB_MESSAGING_LAUNCHER_ENABLED=true

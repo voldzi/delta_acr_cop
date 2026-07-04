@@ -43,6 +43,13 @@ the client's currently visible/decrypted Matrix timeline. COP API combines that
 explicit client context with authorized server-side COP data; it does not fetch
 or decrypt Matrix room history on the server.
 
+Enabling `metadata.chat.aiAssistant.enabled` for a community group now requires
+explicit Matrix-room-member consent. COP provisions the configured AI bot as a
+visible CSM Messaging/Matrix member and stores `matrixBot` plus `e2ee` status in
+group metadata. The bot uses a dedicated Matrix account/device key model for
+future E2EE room keys; provider tokens and Matrix bot tokens are never returned
+to clients.
+
 The resettable PoC demo is exposed through `/api/v1/demo/scenarios` and
 documented in the OpenAPI contract. Demo seeding and reset are server-side
 operations; browser and native clients only launch them through authenticated COP

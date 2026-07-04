@@ -117,6 +117,7 @@ import {
   createMessagingProviderFromEnv,
   type MessagingConversationCreateRequest,
   type MessagingConversationMember,
+  type MessagingMatrixBootstrap,
   type MessagingMatrixRoomBindingRequest,
   type MessagingMapLink,
   type MessagingProvider,
@@ -244,6 +245,14 @@ export interface BuildServerOptions {
 
 type DependencyStatus = "disabled" | "degraded" | "ok";
 type CommunityReportHazardSeverity = "advisory" | "warning" | "critical";
+type AiMatrixBotProvisionStatus =
+  | "bot_disabled"
+  | "bot_join_failed"
+  | "bot_token_unavailable"
+  | "joined"
+  | "member_sync_failed"
+  | "pending_conversation"
+  | "pending_room_binding";
 const defaultRasterOverlayAllowedHosts = "docker.home.cz,sim.zeleznalady.cz";
 const rasterOverlayMaxBytes = 8 * 1024 * 1024;
 const defaultWeatherCameraAllowedHosts = defaultRasterOverlayAllowedHosts;
@@ -1704,6 +1713,101 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function provisionAiMatrixBotForGroup(
+    group: CommunityGroupRecord,
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    correlationId: string
+  ): Promise<CommunityGroupRecord> {
+    const config = aiMatrixBotConfig();
+    const chat = isRecord(group.metadata.chat) ? group.metadata.chat : {};
+    const aiAssistant = isRecord(chat.aiAssistant) ? chat.aiAssistant : {};
+    if (aiAssistant.enabled !== true) {
+      return group;
+    }
+
+    const conversationId = optionalTrimmedString(chat.conversationId, 160);
+    const metadataRoomId = normalizeMatrixRoomId(chat.matrixRoomId);
+    let roomId = metadataRoomId;
+    let matrixUserId: string | undefined;
+    let status: AiMatrixBotProvisionStatus = config.enabled ? "pending_conversation" : "bot_disabled";
+    const warnings: string[] = [];
+    if (!config.enabled) {
+      warnings.push("AI Matrix bot is disabled by COP_AI_MATRIX_BOT_ENABLED.");
+    } else if (!conversationId) {
+      warnings.push("AI Matrix bot consent is stored; Matrix membership will be provisioned after the group is linked to a conversation.");
+    } else {
+      const sync = await messagingProvider.addConversationMembers(actor, requestNow, conversationId, [{
+        displayName: config.displayName,
+        role: "bot",
+        userId: config.userId
+      }]);
+      warnings.push(...sync.warnings);
+      if (!sync.conversation) {
+        status = "member_sync_failed";
+      } else {
+        roomId = sync.conversation.matrix?.roomId ?? roomId;
+        if (!roomId) {
+          status = "pending_room_binding";
+          warnings.push("AI Matrix bot is a conversation member; Matrix invite will be sent when the encrypted room is bound.");
+        } else {
+          const bootstrap = await messagingProvider.fetchMatrixBootstrap(aiMatrixBotActor(config), requestNow, config.deviceId);
+          warnings.push(...bootstrap.warnings);
+          matrixUserId = bootstrap.userId;
+          if (!aiMatrixBotBootstrapReady(bootstrap)) {
+            status = "bot_token_unavailable";
+          } else {
+            const join = await joinMatrixRoomAsAiBot(bootstrap, roomId, messagingProvider.config.timeoutMs);
+            status = join.joined ? "joined" : "bot_join_failed";
+            warnings.push(...join.warnings);
+          }
+        }
+      }
+    }
+
+    const nextGroup = await updateCommunityGroupMetadata({
+      actor: actorToCommunityActor(actor),
+      groupId: group.groupId,
+      metadata: {
+        ...group.metadata,
+        chat: {
+          ...chat,
+          aiAssistant: {
+            ...aiAssistant,
+            enabled: true,
+            label: config.displayName,
+            mode: "cop-context",
+            matrixBot: compactRecord({
+              deviceId: config.deviceId,
+              displayName: config.displayName,
+              joinedAt: status === "joined" ? requestNow.toISOString() : undefined,
+              matrixUserId,
+              membership: status === "joined" ? "join" : status === "pending_room_binding" ? "pending_room" : status,
+              roomId,
+              status,
+              updatedAt: requestNow.toISOString(),
+              userId: config.userId,
+              warnings: Array.from(new Set(warnings.map(sanitizeAiMatrixBotWarning))).slice(0, 6)
+            }),
+            e2ee: aiMatrixBotE2eeMetadata(status, requestNow),
+            updatedAt: requestNow.toISOString(),
+            updatedBy: actor.subjectId
+          }
+        }
+      }
+    }, requestNow);
+    appendAudit(state, "AI_MATRIX_BOT_PROVISIONED", {
+      actorAuthMode: actor.authMode,
+      actorSubjectId: actor.subjectId,
+      botStatus: status,
+      conversationId,
+      groupId: group.groupId,
+      matrixBotUserId: config.userId,
+      roomId
+    }, correlationId);
+    return nextGroup ?? group;
+  }
+
   async function upsertCommunityGroupMember(input: Parameters<CommunityReportStore["upsertGroupMember"]>[0], requestNow: Date) {
     try {
       return await activeCommunityReportStore().upsertGroupMember(input, requestNow);
@@ -2861,6 +2965,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      if (metadataEnablesAiAssistant(metadata) && !aiAssistantConsentGranted(metadata)) {
+        return sendError(
+          reply,
+          400,
+          "AI_CHAT_AGENT_CONSENT_REQUIRED",
+          "Enabling the AI chat agent requires explicit consent for a visible Matrix bot room member.",
+          correlationId
+        );
+      }
       const requestNow = now();
       const group = await updateCommunityGroupMetadata({
         actor: actorToCommunityActor(actor),
@@ -2868,14 +2982,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         metadata
       }, requestNow);
       if (!group) {
-        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be updated by current user.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be updated by current user.", correlationId);
       }
+      const responseGroup = metadataEnablesAiAssistant(metadata)
+        ? await provisionAiMatrixBotForGroup(group, actor, requestNow, correlationId)
+        : group;
       appendAudit(state, "COMMUNITY_GROUP_METADATA_UPDATED", {
         actorAuthMode: actor.authMode,
         actorSubjectId: actor.subjectId,
-        groupId: group.groupId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
-      return group;
+        groupId: responseGroup.groupId
+      }, correlationId);
+      return responseGroup;
     },
 
     deleteGroup: async (request, reply) => {
@@ -12024,12 +12141,133 @@ function summarizeLocationForAi(value: unknown): Record<string, unknown> | undef
 function summarizeGroupAiAssistantForAi(group: CommunityGroupRecord): Record<string, unknown> {
   const chat = isRecord(group.metadata.chat) ? group.metadata.chat : {};
   const aiAssistant = isRecord(chat.aiAssistant) ? chat.aiAssistant : {};
+  const matrixBot = isRecord(aiAssistant.matrixBot) ? aiAssistant.matrixBot : {};
+  const e2ee = isRecord(aiAssistant.e2ee) ? aiAssistant.e2ee : {};
   return compactRecord({
     enabled: aiAssistant.enabled === true,
+    e2ee: Object.keys(e2ee).length ? compactRecord({
+      keyModel: optionalText(e2ee.keyModel),
+      roomKeyPolicy: optionalText(e2ee.roomKeyPolicy),
+      serverReadsHistory: e2ee.serverReadsHistory === true,
+      status: optionalText(e2ee.status)
+    }) : undefined,
     label: optionalText(aiAssistant.label),
+    matrixBot: Object.keys(matrixBot).length ? compactRecord({
+      membership: optionalText(matrixBot.membership),
+      roomId: optionalText(matrixBot.roomId),
+      status: optionalText(matrixBot.status),
+      userId: optionalText(matrixBot.userId)
+    }) : undefined,
     mode: optionalText(aiAssistant.mode),
     updatedAt: optionalText(aiAssistant.updatedAt)
   });
+}
+
+function aiMatrixBotConfig(): {
+  deviceId: string;
+  displayName: string;
+  enabled: boolean;
+  userId: string;
+} {
+  return {
+    deviceId: optionalTrimmedString(process.env.COP_AI_MATRIX_BOT_DEVICE_ID, 64) ?? "COP.AI.Agent",
+    displayName: optionalTrimmedString(process.env.COP_AI_MATRIX_BOT_DISPLAY_NAME, 80) ?? "COP AI Assistant",
+    enabled: readBoolean(process.env.COP_AI_MATRIX_BOT_ENABLED, true),
+    userId: optionalTrimmedString(process.env.COP_AI_MATRIX_BOT_USER_ID, 120) ?? "cop.ai.agent"
+  };
+}
+
+function aiMatrixBotActor(config = aiMatrixBotConfig()): AuthenticatedActor {
+  return {
+    authMode: "lab",
+    displayName: config.displayName,
+    roles: ["cop_ai_agent"],
+    subjectId: config.userId,
+    username: config.userId
+  };
+}
+
+function aiMatrixBotBootstrapReady(bootstrap: MessagingMatrixBootstrap): bootstrap is MessagingMatrixBootstrap & {
+  accessToken: string;
+  homeserverBaseUrl: string;
+  userId: string;
+} {
+  return bootstrap.chatAvailable === true
+    && bootstrap.tokenAvailable === true
+    && Boolean(bootstrap.accessToken)
+    && Boolean(bootstrap.homeserverBaseUrl)
+    && Boolean(bootstrap.userId);
+}
+
+async function joinMatrixRoomAsAiBot(
+  bootstrap: MessagingMatrixBootstrap & { accessToken: string; homeserverBaseUrl: string },
+  roomId: string,
+  timeoutMs: number
+): Promise<{ joined: boolean; warnings: string[] }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${bootstrap.homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/join/${encodeURIComponent(roomId)}`, {
+      body: JSON.stringify({ reason: "COP AI agent explicit room consent" }),
+      headers: {
+        Authorization: `Bearer ${bootstrap.accessToken}`,
+        "Content-Type": "application/json"
+      },
+      method: "POST",
+      signal: controller.signal
+    });
+    if (response.ok) {
+      return { joined: true, warnings: [] };
+    }
+    return {
+      joined: false,
+      warnings: [`Matrix bot room join returned HTTP ${response.status}.`]
+    };
+  } catch (error) {
+    return {
+      joined: false,
+      warnings: [`Matrix bot room join failed: ${sanitizeAiMatrixBotWarning(errorMessage(error))}`]
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function aiMatrixBotE2eeMetadata(status: AiMatrixBotProvisionStatus, requestNow: Date): Record<string, unknown> {
+  return compactRecord({
+    keyModel: "dedicated_matrix_account_device",
+    plaintextProxy: false,
+    roomKeyPolicy: "future_megolm_sessions_after_join",
+    serverReadsHistory: false,
+    status: status === "joined" ? "ready_for_future_messages" : "pending_matrix_membership",
+    updatedAt: requestNow.toISOString()
+  });
+}
+
+function aiAssistantConsentGranted(metadata: Record<string, unknown>): boolean {
+  const chat = isRecord(metadata.chat) ? metadata.chat : {};
+  const aiAssistant = isRecord(chat.aiAssistant) ? chat.aiAssistant : {};
+  if (aiAssistant.enabled !== true) {
+    return true;
+  }
+  const consent = isRecord(aiAssistant.consent) ? aiAssistant.consent : {};
+  return consent.granted === true
+    && optionalText(consent.scope) === "matrix-room-member"
+    && optionalText(consent.termsVersion) === "cop-ai-room-agent-consent-v1";
+}
+
+function metadataEnablesAiAssistant(metadata: Record<string, unknown>): boolean {
+  const chat = isRecord(metadata.chat) ? metadata.chat : {};
+  const aiAssistant = isRecord(chat.aiAssistant) ? chat.aiAssistant : {};
+  return aiAssistant.enabled === true;
+}
+
+function sanitizeAiMatrixBotWarning(value: unknown): string {
+  const text = optionalTrimmedString(value, 220) ?? "AI Matrix bot provisioning status is unavailable.";
+  return text
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/giu, "Bearer [redacted]")
+    .replace(/access[_-]?token[=:]\s*[A-Za-z0-9._~+/=-]+/giu, "accessToken=[redacted]")
+    .replace(/password[=:]\s*[^;\s]+/giu, "password=[redacted]");
 }
 
 function aiAuditMetadata(response: AiCopResponse, actor: AuthenticatedActor): Record<string, unknown> {

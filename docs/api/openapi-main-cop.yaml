@@ -1401,6 +1401,9 @@ paths:
         - Community Reports
       summary: Merge safe metadata into a community sharing group.
       operationId: updateCommunityGroupMetadata
+      description: Updates group metadata. Enabling metadata.chat.aiAssistant.enabled requires explicit
+        consent for a visible Matrix bot room member; COP stores only bot membership/key status
+        metadata and never returns Matrix bot tokens.
       parameters:
         - $ref: "#/components/parameters/CommunityGroupIdPath"
         - $ref: "#/components/parameters/CorrelationIdHeader"
@@ -5379,8 +5382,10 @@ components:
           type: object
           additionalProperties: true
           description: Safe application metadata merged into the existing community group metadata. Chat
-            clients store only conversation and Matrix room identifiers here, never plaintext
-            messages.
+            clients store only conversation, Matrix room identifiers and AI bot consent/status
+            metadata here, never plaintext messages. Enabling chat.aiAssistant.enabled requires
+            consent.granted=true, scope=matrix-room-member and
+            termsVersion=cop-ai-room-agent-consent-v1.
     CommunityGroupMemberUpsertRequest:
       type: object
       required:

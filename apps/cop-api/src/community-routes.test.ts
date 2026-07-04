@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryCommunityReportStore } from "./community-report-store.js";
 import { buildServer } from "./server.js";
 import type { MediaObjectReadRequest, MediaObjectWriteRequest, MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
+import type { MessagingProvider } from "./messaging-provider.js";
 import { InMemoryUserProfileStore } from "./user-profile-store.js";
 
 describe("community report routes", () => {
@@ -809,6 +810,13 @@ describe("community report routes", () => {
         metadata: {
           chat: {
             aiAssistant: {
+              consent: {
+                granted: true,
+                grantedAt: "2026-05-20T12:00:00.000Z",
+                grantedBy: "lab",
+                scope: "matrix-room-member",
+                termsVersion: "cop-ai-room-agent-consent-v1"
+              },
               enabled: true,
               label: "COP AI Assistant",
               mode: "cop-context",
@@ -861,6 +869,173 @@ describe("community report routes", () => {
     });
     expect(forbiddenResponse.statusCode).toBe(403);
 
+    await app.close();
+  });
+
+  it("provisions the AI Matrix bot as an explicit E2EE room member after consent", async () => {
+    vi.stubEnv("COP_AI_MATRIX_BOT_USER_ID", "cop.ai.agent");
+    vi.stubEnv("COP_AI_MATRIX_BOT_DISPLAY_NAME", "COP AI Assistant");
+    vi.stubEnv("COP_AI_MATRIX_BOT_DEVICE_ID", "COP.AI.Agent");
+    const addConversationMembers = vi.fn(async (_actor, _requestNow, conversationId, members) => ({
+      contractVersion: "cop-messaging-conversations-v1" as const,
+      conversation: {
+        conversationId,
+        encrypted: true,
+        e2eeRequired: true,
+        matrix: {
+          roomId: "!room:docker.home.cz",
+          state: "room_bound"
+        },
+        members: [
+          { displayName: "Lab", userId: "lab" },
+          ...members
+        ],
+        metadata: {
+          externalId: "community-group-1",
+          source: "cop.community"
+        },
+        title: "AI skupina",
+        type: "group" as const
+      },
+      enabled: true,
+      providerId: "csm.messaging" as const,
+      status: "online" as const,
+      warnings: []
+    }));
+    const fetchMatrixBootstrap = vi.fn(async (actor, _requestNow, deviceId) => ({
+      accessToken: "bot-matrix-token",
+      chatAvailable: true,
+      contractVersion: "cop-messaging-bootstrap-v1" as const,
+      deviceId,
+      e2eeRequired: true,
+      enabled: true,
+      homeserverBaseUrl: "https://msg.test",
+      providerId: "csm.messaging" as const,
+      serverName: "docker.home.cz",
+      status: "online" as const,
+      tokenAvailable: true,
+      userId: `@${actor.subjectId}:docker.home.cz`,
+      warnings: []
+    }));
+    const messagingProvider = {
+      addConversationMembers,
+      bindMatrixRoom: vi.fn(),
+      config: {
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000
+      },
+      createConversation: vi.fn(),
+      deleteWebPushDevice: vi.fn(),
+      fetchConversation: vi.fn(),
+      fetchConversationByRoomId: vi.fn(),
+      fetchConversations: vi.fn(),
+      fetchMatrixBootstrap,
+      fetchStatus: vi.fn(),
+      fetchWebPushConfig: vi.fn(),
+      registerWebPushDevice: vi.fn(),
+      resolveMatrixIdentities: vi.fn(),
+      sendNotification: vi.fn()
+    } as unknown as MessagingProvider;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("https://msg.test/_matrix/client/v3/join/!room%3Adocker.home.cz");
+      expect(init?.method).toBe("POST");
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer bot-matrix-token"
+      });
+      return new Response(JSON.stringify({ room_id: "!room:docker.home.cz" }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider,
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        metadata: {
+          chat: {
+            conversationId: "conv_1",
+            encrypted: true,
+            matrixRoomId: "!room:docker.home.cz",
+            source: "cop-chat"
+          }
+        },
+        name: "AI skupina",
+        visibility: "public"
+      },
+      url: "/api/v1/community/groups"
+    });
+    expect(createResponse.statusCode).toBe(201);
+    const group = createResponse.json() as { groupId: string };
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "PATCH",
+      payload: {
+        metadata: {
+          chat: {
+            conversationId: "conv_1",
+            encrypted: true,
+            matrixRoomId: "!room:docker.home.cz",
+            source: "cop-chat",
+            aiAssistant: {
+              consent: {
+                granted: true,
+                grantedAt: "2026-05-20T12:00:00.000Z",
+                grantedBy: "lab",
+                scope: "matrix-room-member",
+                termsVersion: "cop-ai-room-agent-consent-v1"
+              },
+              enabled: true,
+              label: "COP AI Assistant",
+              mode: "cop-context",
+              updatedAt: "2026-05-20T12:00:00.000Z"
+            }
+          }
+        }
+      },
+      url: `/api/v1/community/groups/${group.groupId}/metadata`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(addConversationMembers).toHaveBeenCalledWith(
+      expect.objectContaining({ subjectId: "lab" }),
+      new Date("2026-05-20T12:00:00Z"),
+      "conv_1",
+      [{ displayName: "COP AI Assistant", role: "bot", userId: "cop.ai.agent" }]
+    );
+    expect(fetchMatrixBootstrap).toHaveBeenCalledWith(
+      expect.objectContaining({ subjectId: "cop.ai.agent" }),
+      new Date("2026-05-20T12:00:00Z"),
+      "COP.AI.Agent"
+    );
+    expect(response.json()).toMatchObject({
+      metadata: {
+        chat: {
+          aiAssistant: {
+            e2ee: {
+              keyModel: "dedicated_matrix_account_device",
+              plaintextProxy: false,
+              roomKeyPolicy: "future_megolm_sessions_after_join",
+              serverReadsHistory: false,
+              status: "ready_for_future_messages"
+            },
+            matrixBot: {
+              matrixUserId: "@cop.ai.agent:docker.home.cz",
+              membership: "join",
+              roomId: "!room:docker.home.cz",
+              status: "joined",
+              userId: "cop.ai.agent"
+            }
+          }
+        }
+      }
+    });
+    expect(JSON.stringify(response.json())).not.toContain("bot-matrix-token");
     await app.close();
   });
 
