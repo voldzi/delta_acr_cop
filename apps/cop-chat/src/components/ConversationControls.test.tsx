@@ -14,6 +14,7 @@ describe("ConversationControls", () => {
       <ChatActionMenu
         activeChat={{ pinned: false, type: "direct" }}
         muted={false}
+        onStartAiAgentChat={vi.fn()}
         onInfo={onInfo}
         onManage={vi.fn()}
         onMute={vi.fn()}
@@ -38,16 +39,19 @@ describe("ConversationControls", () => {
   });
 
   it("switches muted menu item to unmute action", () => {
-    const onAskAiAgent = vi.fn();
     const onAddMember = vi.fn();
+    const onAskAiAgent = vi.fn();
     const onManage = vi.fn();
+    const onToggleAiAgent = vi.fn();
     const onToggleMute = vi.fn();
     const onMute = vi.fn();
     render(
       <ChatActionMenu
         activeChat={{ pinned: true, type: "group" }}
         aiAgentAvailable
+        aiAgentEnabled
         canAddMember
+        canToggleAiAgent
         muted
         onAddMember={onAddMember}
         onAskAiAgent={onAskAiAgent}
@@ -58,6 +62,7 @@ describe("ConversationControls", () => {
         onSearch={vi.fn()}
         onSelect={vi.fn()}
         onSituationSummary={vi.fn()}
+        onToggleAiAgent={onToggleAiAgent}
         onToggleMute={onToggleMute}
         onTogglePinned={vi.fn()}
       />
@@ -65,6 +70,9 @@ describe("ConversationControls", () => {
 
     expect(screen.getByRole("menuitem", { name: /O skupině/u })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /Odepnout/u })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /Vypnout AI agenta/u }));
+    expect(onToggleAiAgent).toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("menuitem", { name: /Zeptat se AI agenta/u }));
     expect(onAskAiAgent).toHaveBeenCalled();
@@ -76,8 +84,31 @@ describe("ConversationControls", () => {
     expect(onToggleMute).toHaveBeenCalled();
     expect(onMute).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("menuitem", { name: /Správa skupiny/u }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Opustit \/ smazat skupinu/u }));
     expect(onManage).toHaveBeenCalled();
+  });
+
+  it("opens a dedicated AI chat from direct chat actions", () => {
+    const onStartAiAgentChat = vi.fn();
+    render(
+      <ChatActionMenu
+        activeChat={{ pinned: false, type: "direct" }}
+        muted={false}
+        onInfo={vi.fn()}
+        onManage={vi.fn()}
+        onMute={vi.fn()}
+        onRecovery={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        onSituationSummary={vi.fn()}
+        onStartAiAgentChat={onStartAiAgentChat}
+        onToggleMute={vi.fn()}
+        onTogglePinned={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /Chat s AI agentem/u }));
+    expect(onStartAiAgentChat).toHaveBeenCalled();
   });
 
   it("reports message search changes and movement", () => {

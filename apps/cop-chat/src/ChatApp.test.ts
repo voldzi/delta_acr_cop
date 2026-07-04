@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { mergeTimelineMessages } from "./chat-model";
-import { buildAiChatContextSnapshot, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentMention } from "./ChatApp";
+import { buildAiChatContextSnapshot, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
 describe("mergeTimelineMessages", () => {
@@ -44,6 +44,44 @@ describe("parseAiAgentMention", () => {
   it("ignores normal messages and mentions later in the text", () => {
     expect(parseAiAgentMention("Ahoj @COP AI")).toBeNull();
     expect(parseAiAgentMention("COP AI bez zavináče")).toBeNull();
+  });
+});
+
+describe("parseAiAgentInvocation", () => {
+  it("extracts slash commands with explicit model preferences", () => {
+    expect(parseAiAgentInvocation("/ai shrň rizika")).toMatchObject({
+      modelPreference: "auto",
+      question: "shrň rizika",
+      trigger: "slash"
+    });
+    expect(parseAiAgentInvocation("/reasoning vyhodnoť dopady")).toMatchObject({
+      modelPreference: "reasoning",
+      question: "vyhodnoť dopady",
+      trigger: "slash"
+    });
+    expect(parseAiAgentInvocation("/ai /fast krátce stav zdrojů")).toMatchObject({
+      modelPreference: "fast",
+      question: "krátce stav zdrojů",
+      trigger: "slash"
+    });
+  });
+
+  it("uses mentions only when group AI is enabled", () => {
+    expect(parseAiAgentInvocation("@AI stav?", { groupAiAssistantEnabled: true })).toMatchObject({
+      modelPreference: "auto",
+      question: "stav?",
+      trigger: "mention"
+    });
+    expect(parseAiAgentInvocation("@AI stav?", { groupAiAssistantEnabled: false })).toBeNull();
+  });
+
+  it("treats normal messages as AI questions only inside the dedicated AI chat", () => {
+    expect(parseAiAgentInvocation("Co je v okolí nejisté?", { aiDirectChat: true })).toMatchObject({
+      modelPreference: "auto",
+      question: "Co je v okolí nejisté?",
+      trigger: "direct-ai-chat"
+    });
+    expect(parseAiAgentInvocation("Co je v okolí nejisté?")).toBeNull();
   });
 });
 

@@ -75,12 +75,15 @@ export interface AiSituationSummaryOptions {
   requestId?: string;
 }
 
+export type AiModelPreference = "auto" | "fast" | "reasoning";
+
 export interface AiChatAgentQueryOptions {
   chatContext?: AiChatAgentContextSnapshot;
   conversationId?: string;
   groupId?: string;
   language?: "cs" | "en";
   maxObjects?: number;
+  modelPreference?: AiModelPreference;
   question: string;
   requestId?: string;
 }

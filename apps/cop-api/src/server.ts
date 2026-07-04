@@ -5,7 +5,7 @@ import rateLimit from "@fastify/rate-limit";
 import sensible from "@fastify/sensible";
 import underPressure from "@fastify/under-pressure";
 import websocket from "@fastify/websocket";
-import { AiGateway, type AiCopQuery, type AiCopResponse } from "@cop/ai-gateway";
+import { AiGateway, type AiCopQuery, type AiCopResponse, type AiModelPreference } from "@cop/ai-gateway";
 import { createCopObjectFromEvent, type CanonicalEventEnvelope, type ObservedObject, type SourceSystem } from "@cop/canonical-model";
 import { ContractValidators, formatValidationErrors } from "@cop/ingest-contracts";
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
@@ -5960,6 +5960,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
     const chatContext = summarizeAiChatContextForAi(body.chatContext);
+    const modelPreference = aiModelPreference(body.modelPreference);
     const subject = defaultSystemSubject();
     const maxObjects = readBoundedInteger(body.maxObjects, 30, 1, 60);
     const readableObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
@@ -6037,6 +6038,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         sourceHealth: aiSourceHealth,
         semanticContext
       },
+      ...(modelPreference ? { modelPreference } : {}),
       providerPreference: "auto",
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
@@ -11998,6 +12000,10 @@ function aiRequestId(value: unknown): string {
 
 function aiLanguage(value: unknown): "cs" | "en" {
   return value === "en" ? "en" : "cs";
+}
+
+function aiModelPreference(value: unknown): AiModelPreference | undefined {
+  return value === "fast" || value === "reasoning" || value === "auto" ? value : undefined;
 }
 
 function readBoundedInteger(value: unknown, fallback: number, min: number, max: number): number {

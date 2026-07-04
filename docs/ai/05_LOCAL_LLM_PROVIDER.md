@@ -97,9 +97,12 @@ COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES=500
 volání. `providerPreference=auto` v klientovi znamená: použij konfigurovaný
 produkční provider, jinak `ollama`, potom kompatibilní `local` gateway, a teprve
 potom `mock` fallback. `modelPreference=auto` znamená, že konkrétní modelový
-profil volí server-side router. `COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS` řídí pouze
-obalový timeout pro `/health/dependencies`; samotné AI dotazy používají provider
-timeouty `COP_AI_OLLAMA_TIMEOUT_MS`, `COP_AI_OLLAMA_REASONING_TIMEOUT_MS` a
+profil volí server-side router. COP Chat může u AI-agent dotazů předat
+`modelPreference=reasoning` přes volbu v dialogu nebo slash příkaz `/reasoning`;
+router pak preferuje `COP_AI_OLLAMA_REASONING_MODEL`, pokud je dostupný.
+`COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS` řídí pouze obalový timeout pro
+`/health/dependencies`; samotné AI dotazy používají provider timeouty
+`COP_AI_OLLAMA_TIMEOUT_MS`, `COP_AI_OLLAMA_REASONING_TIMEOUT_MS` a
 `COP_AI_LOCAL_TIMEOUT_MS`.
 
 Volitelný compatibility fallback přes AI KnowledgeBase LLM Gateway:

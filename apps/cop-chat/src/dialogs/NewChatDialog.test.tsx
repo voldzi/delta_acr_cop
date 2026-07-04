@@ -29,6 +29,7 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof NewChatDial
       searchLoading={false}
       onAddMember={vi.fn()}
       onClose={vi.fn()}
+      onCreateAiAgentChat={vi.fn()}
       onCreateDirect={vi.fn()}
       onCreateGroup={vi.fn()}
       onDirectQueryChange={vi.fn()}
@@ -67,6 +68,14 @@ describe("NewChatDialog", () => {
     expect(onModeChange).toHaveBeenCalledWith("group");
   });
 
+  it("starts a dedicated AI agent chat from direct mode", () => {
+    const onCreateAiAgentChat = vi.fn();
+    renderDialog({ onCreateAiAgentChat });
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat s AI agentem" }));
+    expect(onCreateAiAgentChat).toHaveBeenCalled();
+  });
+
   it("creates a group only after a group name is entered", () => {
     const onCreateGroup = vi.fn();
     const onGroupNameChange = vi.fn();
@@ -95,6 +104,7 @@ describe("NewChatDialog", () => {
         searchLoading={false}
         onAddMember={vi.fn()}
         onClose={vi.fn()}
+        onCreateAiAgentChat={vi.fn()}
         onCreateDirect={vi.fn()}
         onCreateGroup={onCreateGroup}
         onDirectQueryChange={vi.fn()}

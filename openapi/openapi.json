@@ -16198,6 +16198,15 @@
             "type": "string",
             "format": "uuid"
           },
+          "modelPreference": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "fast",
+              "reasoning"
+            ],
+            "default": "auto"
+          },
           "maxObjects": {
             "type": "integer",
             "minimum": 1,

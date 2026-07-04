@@ -112,8 +112,8 @@ policy-filtered COP kontextem připraveným serverem, zobrazuje audit ID a
 nečte Matrix E2EE obsah místnosti.
 
 COP Chat má také group-level metadata `chat.aiAssistant`. Správce skupiny může
-AI agenta zapnout nebo vypnout v detailu skupiny, ale zapnutí vyžaduje explicitní
-consent pro viditelného Matrix bot člena místnosti. COP po consentu synchronizuje
+AI agenta zapnout nebo vypnout z menu skupiny i v detailu skupiny, ale zapnutí
+vyžaduje explicitní consent pro viditelného Matrix bot člena místnosti. COP po consentu synchronizuje
 konfigurovaný systémový účet `COP AI Assistant` do CSM Messaging konverzace,
 získá pro něj krátkodobý Matrix token přes server-side bootstrap a přijme pozvánku
 do navázané E2EE místnosti. Metadata `chat.aiAssistant.matrixBot` a `e2ee`
@@ -128,6 +128,11 @@ vyžaduje aktivní členství a skládá COP kontext server-side z aktuálních 
 výstrah, komunitních hlášení, incidentů a stavu zdrojů. Klient může k dotazu
 přidat `chatContext` s omezeným výňatkem aktuálně viditelné/dešifrované Matrix
 timeline.
+
+Webový klient navíc nabízí samostatný direct chat s `COP AI Assistant`. V tomto
+AI-only chatu je každá běžná zpráva dotazem na AI agenta. Slash příkazy
+`/ai`, `/reasoning` a `/fast` fungují v AI chatu i ve skupinách se zapnutým
+agentem; `/reasoning` předává do API `modelPreference=reasoning`.
 
 Odpovědi AI odeslané do Matrixu jsou běžné `m.room.message` události s
 namespaced `cz.cop` metadaty. UI je díky tomu označí jako `COP AI agent` nebo

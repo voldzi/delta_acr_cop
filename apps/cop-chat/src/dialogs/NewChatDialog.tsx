@@ -1,5 +1,5 @@
 import type React from "react";
-import { ArrowLeft, Loader2, MessageCircle, Search, UserPlus, Users, X } from "lucide-react";
+import { ArrowLeft, Loader2, MessageCircle, Search, Sparkles, UserPlus, Users, X } from "lucide-react";
 import type { UserDirectoryEntry } from "@cop/core/cop-data";
 import { Avatar } from "../components/Avatar";
 import { useModalFocus } from "../hooks/useModalFocus";
@@ -17,6 +17,7 @@ export default function NewChatDialog({
   searchLoading,
   onAddMember,
   onClose,
+  onCreateAiAgentChat,
   onCreateDirect,
   onCreateGroup,
   onDirectQueryChange,
@@ -34,6 +35,7 @@ export default function NewChatDialog({
   searchLoading: boolean;
   onAddMember: (user: UserDirectoryEntry) => void;
   onClose: () => void;
+  onCreateAiAgentChat: () => void;
   onCreateDirect: (user: UserDirectoryEntry) => void;
   onCreateGroup: () => void;
   onDirectQueryChange: (value: string) => void;
@@ -93,6 +95,10 @@ export default function NewChatDialog({
             <button className="dialog-action-row" onClick={() => onModeChange("group")} type="button">
               <span><Users size={20} /></span>
               <strong>Nová skupina</strong>
+            </button>
+            <button className="dialog-action-row" onClick={onCreateAiAgentChat} type="button">
+              <span><Sparkles size={20} /></span>
+              <strong>Chat s AI agentem</strong>
             </button>
             <div className="dialog-list">
               {searchLoading ? <DialogHint icon={<Loader2 className="spin" size={18} />} text="Vyhledávám" /> : null}

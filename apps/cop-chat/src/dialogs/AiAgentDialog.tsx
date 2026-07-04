@@ -1,26 +1,30 @@
 import React from "react";
 import { Check, Copy, Loader2, Send, Sparkles, X } from "lucide-react";
-import type { AiCopResponse } from "@cop/core/cop-data";
+import type { AiCopResponse, AiModelPreference } from "@cop/core/cop-data";
 import { AiMarkdownOutput } from "../components/AiMarkdownOutput";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { aiResponseSummary, aiStatusLabel } from "./aiResponse";
 
 export default function AiAgentDialog({
+  modelPreference,
   question,
   response,
   sending,
   working,
   onAsk,
   onClose,
+  onModelPreferenceChange,
   onQuestionChange,
   onSendToChat
 }: {
+  modelPreference: AiModelPreference;
   question: string;
   response: AiCopResponse | null;
   sending: boolean;
   working: boolean;
   onAsk: () => void;
   onClose: () => void;
+  onModelPreferenceChange: (value: AiModelPreference) => void;
   onQuestionChange: (value: string) => void;
   onSendToChat: (text: string) => void;
 }) {
@@ -80,6 +84,18 @@ export default function AiAgentDialog({
             }}
           />
         </label>
+
+        <div className="dialog-tabs ai-agent-model-tabs" role="group" aria-label="Model AI agenta">
+          <button className={modelPreference === "auto" ? "active" : ""} disabled={working} onClick={() => onModelPreferenceChange("auto")} type="button">
+            Auto
+          </button>
+          <button className={modelPreference === "fast" ? "active" : ""} disabled={working} onClick={() => onModelPreferenceChange("fast")} type="button">
+            Rychlý
+          </button>
+          <button className={modelPreference === "reasoning" ? "active" : ""} disabled={working} onClick={() => onModelPreferenceChange("reasoning")} type="button">
+            Reasoning
+          </button>
+        </div>
 
         {working ? (
           <div className="ai-situation-status compact">

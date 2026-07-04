@@ -448,9 +448,16 @@ The phase-0 implementation focus is trust and control:
   original question when present. The metadata is used only for timeline
   labeling and audit visibility; COP still does not persist or proxy Matrix
   plaintext. In enabled groups the composer also recognizes a leading
-  `@COP AI ...` mention. Completed answers can be posted automatically with the
-  same metadata; answers requiring human review open the explicit AI dialog
-  instead of being sent.
+  `@COP AI ...` mention and slash commands `/ai ...`, `/reasoning ...` and
+  `/fast ...`. Completed answers can be posted automatically with the same
+  metadata; answers requiring human review open the explicit AI dialog instead
+  of being sent.
+- COP Chat exposes a dedicated direct chat entry for the configured AI agent
+  (`cop.ai.agent` / `COP AI Assistant`). In that AI-only chat, plain composer
+  messages are treated as authenticated AI-agent questions, while slash commands
+  can still force `modelPreference=reasoning` or `modelPreference=fast`. This
+  does not bypass the group-level consent model: group room access still
+  requires `chat.aiAssistant.enabled` and visible bot membership.
 - Current direct-chat removal is local hiding. Current group deletion deletes
   the COP community group when the authenticated actor may manage it. Leaving a
   group calls `DELETE /api/v1/community/groups/{groupId}/members/me`, marks the

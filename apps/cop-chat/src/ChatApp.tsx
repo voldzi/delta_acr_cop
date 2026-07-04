@@ -85,6 +85,7 @@ import {
 import type {
   AiChatAgentContextSnapshot,
   AiCopResponse,
+  AiModelPreference,
   CommunityGroup,
   MessagingConversationSummary,
   MessagingMatrixIdentityResolutionResponse,
@@ -183,6 +184,12 @@ interface PendingChatAttachment {
 interface ChatSendOptions {
   cop?: MatrixCopMessageMetadata;
   skipAiMention?: boolean;
+}
+
+export interface AiAgentInvocation {
+  modelPreference: AiModelPreference;
+  question: string;
+  trigger: "direct-ai-chat" | "mention" | "slash";
 }
 
 interface LocalUserPreferences {
@@ -288,6 +295,11 @@ const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
 const copUserPreferencesStorageKey = "cop.user.preferences.v1";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const initialHistoryLoadRetryLimit = 8;
+const copAiAgentUser: UserDirectoryEntry = {
+  displayName: "COP AI Assistant",
+  subjectId: "cop.ai.agent",
+  username: "cop.ai.agent"
+};
 const quickReactionKeys = ["👍", "❤️", "😂", "😮", "😢", "🙏", "⭐"];
 const stickerReactionKeys = ["✅", "🚨", "🔥", "💯", "👀", "🎉", "💪", "🫡", "👏", "🤝", "📍", "⚠️"];
 const emptyChatPreferences: ChatPreferences = {
@@ -376,6 +388,7 @@ export function ChatApp() {
   const [aiSituationWorking, setAiSituationWorking] = React.useState(false);
   const [aiAgentDialogOpen, setAiAgentDialogOpen] = React.useState(false);
   const [aiAgentQuestion, setAiAgentQuestion] = React.useState("");
+  const [aiAgentModelPreference, setAiAgentModelPreference] = React.useState<AiModelPreference>("auto");
   const [aiAgentResponse, setAiAgentResponse] = React.useState<AiCopResponse | null>(null);
   const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
   const [aiAgentGroupUpdating, setAiAgentGroupUpdating] = React.useState(false);
@@ -538,6 +551,7 @@ export function ChatApp() {
     [chatItems]
   );
   const activeChat = chatItems.find((item) => item.active) ?? null;
+  const selectedAiAgentDirectChat = activeChat ? isAiAgentChatItem(activeChat) : false;
   const routeChatSelected = Boolean(activeChat && readRouteSelection());
   const totalUnreadCount = React.useMemo(
     () => chatItems.reduce((count, item) => count + (!item.muted ? item.unreadCount : 0), 0),
@@ -1994,6 +2008,36 @@ export function ChatApp() {
     }
   }
 
+  async function createAiAgentChat() {
+    if (!authToken) {
+      return;
+    }
+    setMessageMenuOpen(false);
+    setError(null);
+    setPreparingChatId(`direct:${copAiAgentUser.subjectId}`);
+    try {
+      const title = copAiAgentUser.displayName || copAiAgentUser.username;
+      const existing = findExistingAiAgentDirectConversation(conversations)
+        ?? findExistingDirectConversation(copAiAgentUser, conversations, title);
+      const conversation = existing ?? await createAiAgentDirectConversation();
+      const conversationWithMember = ensureConversationHasMember(conversation, copAiAgentUser, "bot");
+      setConversations((current) => upsertConversation(current, conversationWithMember));
+      setComposeMode(null);
+      setDirectQuery("");
+      setDirectSuggestions([]);
+      selectConversation(conversationWithMember);
+      if (chatReady) {
+        const session = await ensureMatrixSession(conversationWithMember.conversationId);
+        await createRoomForConversation(conversationWithMember, session);
+      }
+      setNotice("Chat s COP AI agentem je připravený.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Chat s AI agentem se nepodařilo založit.");
+    } finally {
+      setPreparingChatId(null);
+    }
+  }
+
   async function createDirectConversation(user: UserDirectoryEntry, title: string): Promise<MessagingConversationSummary> {
     if (!authToken) {
       throw new Error("Pro založení chatu je potřeba přihlášení.");
@@ -2009,6 +2053,25 @@ export function ChatApp() {
     });
     if (!response.conversation) {
       throw new Error(response.warnings[0] ?? "Přímý chat se nepodařilo založit.");
+    }
+    return response.conversation;
+  }
+
+  async function createAiAgentDirectConversation(): Promise<MessagingConversationSummary> {
+    if (!authToken) {
+      throw new Error("Pro založení chatu je potřeba přihlášení.");
+    }
+    const response = await createMessagingConversation(apiBase, authToken, {
+      members: [{ displayName: copAiAgentUser.displayName, role: "bot", userId: copAiAgentUser.subjectId }],
+      metadata: {
+        externalId: copAiAgentUser.subjectId,
+        source: "cop.ai.direct"
+      },
+      title: copAiAgentUser.displayName || copAiAgentUser.username,
+      type: "direct"
+    });
+    if (!response.conversation) {
+      throw new Error(response.warnings[0] ?? "Chat s AI agentem se nepodařilo založit.");
     }
     return response.conversation;
   }
@@ -2194,12 +2257,13 @@ export function ChatApp() {
     }
   }
 
-  function openAiAgentDialog() {
+  function openAiAgentDialog(modelPreference: AiModelPreference = "auto") {
     if (selectedGroup && !selectedGroupAiAssistantEnabled) {
       setNotice("AI agent zatím není pro tuto skupinu zapnutý.");
       return;
     }
     setMessageMenuOpen(false);
+    setAiAgentModelPreference(modelPreference);
     setAiAgentDialogOpen(true);
   }
 
@@ -2220,6 +2284,7 @@ export function ChatApp() {
         groupId: selectedGroup?.groupId,
         language: "cs",
         maxObjects: 40,
+        modelPreference: aiAgentModelPreference,
         question
       });
       setAiAgentResponse(response);
@@ -2467,14 +2532,17 @@ export function ChatApp() {
       return false;
     }
     const attachment = pendingAttachment;
-    const aiMentionQuestion = !options.skipAiMention && !attachment && !replyDraft && selectedGroupAiAssistantEnabled
-      ? parseAiAgentMention(text)
+    const aiInvocation = !options.skipAiMention && !attachment && !replyDraft
+      ? parseAiAgentInvocation(text, {
+          aiDirectChat: selectedAiAgentDirectChat,
+          groupAiAssistantEnabled: selectedGroupAiAssistantEnabled
+        })
       : null;
     setSending(true);
     setError(null);
     try {
-      if (aiMentionQuestion !== null) {
-        await sendAiAgentMentionQuestion(text, aiMentionQuestion);
+      if (aiInvocation) {
+        await sendAiAgentMentionQuestion(text, aiInvocation);
         setReplyDraft(null);
         clearPendingAttachment();
         setTimeline(rememberRoomTimeline(selectedRoomId, matrixSession.getTimeline(selectedRoomId)));
@@ -2505,12 +2573,15 @@ export function ChatApp() {
     }
   }
 
-  async function sendAiAgentMentionQuestion(userMessage: string, question: string): Promise<void> {
+  async function sendAiAgentMentionQuestion(userMessage: string, invocation: AiAgentInvocation): Promise<void> {
+    const question = invocation.question.trim();
     if (!authToken) {
       throw new Error("Pro dotaz na AI agenta je potřeba platné přihlášení do COP.");
     }
-    if (!question.trim()) {
-      throw new Error("Za @COP AI doplňte konkrétní dotaz.");
+    if (!question) {
+      throw new Error(invocation.trigger === "slash"
+        ? "Za příkaz doplňte konkrétní dotaz pro AI agenta."
+        : "Za @COP AI doplňte konkrétní dotaz.");
     }
     if (!matrixSession || !selectedRoomId) {
       throw new Error("Nejdřív otevřete chatovou místnost.");
@@ -2529,6 +2600,7 @@ export function ChatApp() {
         groupId: selectedGroup?.groupId,
         language: "cs",
         maxObjects: 40,
+        modelPreference: invocation.modelPreference,
         question
       });
     } catch (caught) {
@@ -2822,8 +2894,11 @@ export function ChatApp() {
                   {messageMenuOpen ? (
                     <ChatActionMenu
                       activeChat={activeChat}
-                      aiAgentAvailable={selectedGroupAiAssistantEnabled}
+                      aiAgentAvailable={selectedAiAgentDirectChat || selectedGroupAiAssistantEnabled}
+                      aiAgentChatActive={selectedAiAgentDirectChat}
+                      aiAgentEnabled={selectedGroupAiAssistantEnabled}
                       canAddMember={canManageSelectedGroupMembers}
+                      canToggleAiAgent={Boolean(selectedGroup && canManageSelectedGroupMembers)}
                       muted={activeChat.muted}
                       onAddMember={openAddMemberDialog}
                       onAskAiAgent={openAiAgentDialog}
@@ -2844,6 +2919,11 @@ export function ChatApp() {
                       onSearch={startMessageSearch}
                       onSelect={startSelectionMode}
                       onSituationSummary={openAiSituationSummary}
+                      onStartAiAgentChat={() => void createAiAgentChat()}
+                      onToggleAiAgent={() => {
+                        setMessageMenuOpen(false);
+                        void toggleAiAgentForSelectedGroup(!selectedGroupAiAssistantEnabled);
+                      }}
                       onToggleMute={clearActiveMute}
                       onTogglePinned={() => {
                         setMessageMenuOpen(false);
@@ -3021,6 +3101,7 @@ export function ChatApp() {
             searchLoading={searchLoading}
             onAddMember={(user) => void addMemberToSelectedGroup(user)}
             onClose={() => setComposeMode(null)}
+            onCreateAiAgentChat={() => void createAiAgentChat()}
             onCreateDirect={(user) => void createDirectChat(user)}
             onCreateGroup={() => void createGroupChat()}
             onDirectQueryChange={setDirectQuery}
@@ -3047,12 +3128,17 @@ export function ChatApp() {
       {aiAgentDialogOpen ? (
         <React.Suspense fallback={<DialogLoadingFallback label="AI agent" />}>
           <AiAgentDialog
+            modelPreference={aiAgentModelPreference}
             question={aiAgentQuestion}
             response={aiAgentResponse}
             sending={sending}
             working={aiAgentWorking}
             onAsk={() => void askAiAgent()}
             onClose={() => setAiAgentDialogOpen(false)}
+            onModelPreferenceChange={(value) => {
+              setAiAgentModelPreference(value);
+              setAiAgentResponse(null);
+            }}
             onQuestionChange={(value) => {
               setAiAgentQuestion(value);
               setAiAgentResponse(null);
@@ -5347,7 +5433,7 @@ function findExistingDirectConversation(
   return candidates.find((conversation) => Boolean(conversation.matrix?.roomId)) ?? candidates[0];
 }
 
-function ensureConversationHasMember(conversation: MessagingConversationSummary, user: UserDirectoryEntry): MessagingConversationSummary {
+function ensureConversationHasMember(conversation: MessagingConversationSummary, user: UserDirectoryEntry, role: "bot" | "member" = "member"): MessagingConversationSummary {
   if (conversation.members?.some((member) => member.userId === user.subjectId)) {
     return conversation;
   }
@@ -5355,9 +5441,28 @@ function ensureConversationHasMember(conversation: MessagingConversationSummary,
     ...conversation,
     members: [
       ...(conversation.members ?? []),
-      { displayName: user.displayName || user.username, role: "member", userId: user.subjectId }
+      { displayName: user.displayName || user.username, role, userId: user.subjectId }
     ]
   };
+}
+
+function findExistingAiAgentDirectConversation(conversations: MessagingConversationSummary[]): MessagingConversationSummary | undefined {
+  const candidates = conversations.filter(isAiAgentDirectConversation);
+  return candidates.find((conversation) => Boolean(conversation.matrix?.roomId)) ?? candidates[0];
+}
+
+function isAiAgentChatItem(item: ChatListItem): boolean {
+  return item.type === "direct" && isAiAgentDirectConversation(item.conversation);
+}
+
+function isAiAgentDirectConversation(conversation: MessagingConversationSummary | null | undefined): conversation is MessagingConversationSummary {
+  if (!conversation || conversation.type !== "direct") {
+    return false;
+  }
+  if (conversation.metadata?.source === "cop.ai.direct" || conversation.metadata?.externalId === copAiAgentUser.subjectId) {
+    return true;
+  }
+  return Boolean(conversation.members?.some((member) => member.userId === copAiAgentUser.subjectId));
 }
 
 function matrixUserIdsFromResolution(result: MessagingMatrixIdentityResolutionResponse, requestedUserIds: string[]): string[] {
@@ -5429,6 +5534,76 @@ export function parseAiAgentMention(text: string): string | null {
     return null;
   }
   return (match.groups?.question ?? "").trim();
+}
+
+export function parseAiAgentInvocation(
+  text: string,
+  options: {
+    aiDirectChat?: boolean;
+    groupAiAssistantEnabled?: boolean;
+  } = {}
+): AiAgentInvocation | null {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const command = parseAiAgentSlashCommand(trimmed);
+  if (command) {
+    return command;
+  }
+  const mentionQuestion = options.groupAiAssistantEnabled ? parseAiAgentMention(trimmed) : null;
+  if (mentionQuestion !== null) {
+    const normalized = normalizeAiAgentQuestion(mentionQuestion, "auto");
+    return {
+      modelPreference: normalized.modelPreference,
+      question: normalized.question,
+      trigger: "mention"
+    };
+  }
+  if (options.aiDirectChat) {
+    const normalized = normalizeAiAgentQuestion(trimmed, "auto");
+    return {
+      modelPreference: normalized.modelPreference,
+      question: normalized.question,
+      trigger: "direct-ai-chat"
+    };
+  }
+  return null;
+}
+
+function parseAiAgentSlashCommand(text: string): AiAgentInvocation | null {
+  const match = text.match(/^\/(?<command>ai|cop-ai|copai|reasoning|reason|fast)\b[\s:,-]*(?<question>[\s\S]*)$/iu);
+  if (!match?.groups) {
+    return null;
+  }
+  const command = (match.groups.command ?? "").toLocaleLowerCase("cs-CZ");
+  const fallbackPreference: AiModelPreference = command === "reasoning" || command === "reason"
+    ? "reasoning"
+    : command === "fast"
+      ? "fast"
+      : "auto";
+  const normalized = normalizeAiAgentQuestion(match.groups.question ?? "", fallbackPreference);
+  return {
+    modelPreference: normalized.modelPreference,
+    question: normalized.question,
+    trigger: "slash"
+  };
+}
+
+function normalizeAiAgentQuestion(question: string, fallbackPreference: AiModelPreference): { modelPreference: AiModelPreference; question: string } {
+  const trimmed = question.trim();
+  const modelMatch = trimmed.match(/^\/(?<model>reasoning|reason|fast|auto)\b[\s:,-]*(?<question>[\s\S]*)$/iu);
+  if (!modelMatch?.groups) {
+    return {
+      modelPreference: fallbackPreference,
+      question: trimmed
+    };
+  }
+  const model = (modelMatch.groups.model ?? "").toLocaleLowerCase("cs-CZ");
+  return {
+    modelPreference: model === "reasoning" || model === "reason" ? "reasoning" : model === "fast" ? "fast" : "auto",
+    question: (modelMatch.groups.question ?? "").trim()
+  };
 }
 
 export function formatAiAgentShareBody(answer: string, question: string): string {

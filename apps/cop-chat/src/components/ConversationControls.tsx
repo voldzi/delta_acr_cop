@@ -24,7 +24,10 @@ export interface ChatActionMenuChat {
 export function ChatActionMenu({
   activeChat,
   aiAgentAvailable = false,
+  aiAgentChatActive = false,
+  aiAgentEnabled = false,
   canAddMember = false,
+  canToggleAiAgent = false,
   muted,
   onAddMember,
   onAskAiAgent,
@@ -35,12 +38,17 @@ export function ChatActionMenu({
   onSearch,
   onSelect,
   onSituationSummary,
+  onStartAiAgentChat,
+  onToggleAiAgent,
   onToggleMute,
   onTogglePinned
 }: {
   activeChat: ChatActionMenuChat;
   aiAgentAvailable?: boolean;
+  aiAgentChatActive?: boolean;
+  aiAgentEnabled?: boolean;
   canAddMember?: boolean;
+  canToggleAiAgent?: boolean;
   muted: boolean;
   onAddMember?: () => void;
   onAskAiAgent?: () => void;
@@ -51,16 +59,37 @@ export function ChatActionMenu({
   onSearch: () => void;
   onSelect: () => void;
   onSituationSummary: () => void;
+  onStartAiAgentChat?: () => void;
+  onToggleAiAgent?: () => void;
   onToggleMute: () => void;
   onTogglePinned: () => void;
 }) {
   const infoLabel = activeChat.type === "direct" ? "O kontaktu" : "O skupině";
+  const manageLabel = activeChat.type === "direct" ? "Smazat ze seznamu" : "Opustit / smazat skupinu";
   return (
     <div className="chat-action-menu" role="menu" aria-label="Akce chatu">
       <button onClick={onInfo} role="menuitem" type="button">
         <Info size={17} />
         {infoLabel}
       </button>
+      {activeChat.type !== "direct" && canAddMember && onAddMember ? (
+        <button onClick={onAddMember} role="menuitem" type="button">
+          <UserPlus size={17} />
+          Přidat člena
+        </button>
+      ) : null}
+      {activeChat.type !== "direct" && canToggleAiAgent && onToggleAiAgent ? (
+        <button onClick={onToggleAiAgent} role="menuitem" type="button">
+          <Sparkles size={17} />
+          {aiAgentEnabled ? "Vypnout AI agenta" : "Zapnout AI agenta"}
+        </button>
+      ) : null}
+      {activeChat.type === "direct" && !aiAgentChatActive && onStartAiAgentChat ? (
+        <button onClick={onStartAiAgentChat} role="menuitem" type="button">
+          <Sparkles size={17} />
+          Chat s AI agentem
+        </button>
+      ) : null}
       <button onClick={onSituationSummary} role="menuitem" type="button">
         <Sparkles size={17} />
         AI situační souhrn
@@ -69,12 +98,6 @@ export function ChatActionMenu({
         <button onClick={onAskAiAgent} role="menuitem" type="button">
           <Sparkles size={17} />
           Zeptat se AI agenta
-        </button>
-      ) : null}
-      {activeChat.type !== "direct" && canAddMember && onAddMember ? (
-        <button onClick={onAddMember} role="menuitem" type="button">
-          <UserPlus size={17} />
-          Přidat člena
         </button>
       ) : null}
       <button onClick={onTogglePinned} role="menuitem" type="button">
@@ -99,7 +122,7 @@ export function ChatActionMenu({
       </button>
       <button onClick={onManage} role="menuitem" type="button">
         <Trash2 size={17} />
-        {activeChat.type === "direct" ? "Skrýt chat" : "Správa skupiny"}
+        {manageLabel}
       </button>
     </div>
   );

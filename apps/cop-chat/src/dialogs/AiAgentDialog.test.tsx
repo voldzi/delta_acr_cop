@@ -28,12 +28,14 @@ function response(overrides: Partial<AiCopResponse> = {}): AiCopResponse {
 function renderDialog(overrides: Partial<React.ComponentProps<typeof AiAgentDialog>> = {}) {
   return render(
     <AiAgentDialog
+      modelPreference="auto"
       question=""
       response={null}
       sending={false}
       working={false}
       onAsk={vi.fn()}
       onClose={vi.fn()}
+      onModelPreferenceChange={vi.fn()}
       onQuestionChange={vi.fn()}
       onSendToChat={vi.fn()}
       {...overrides}
@@ -53,6 +55,14 @@ describe("AiAgentDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Zeptat se/u }));
     expect(onAsk).toHaveBeenCalled();
+  });
+
+  it("selects the reasoning model preference", () => {
+    const onModelPreferenceChange = vi.fn();
+    renderDialog({ onModelPreferenceChange });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reasoning" }));
+    expect(onModelPreferenceChange).toHaveBeenCalledWith("reasoning");
   });
 
   it("sends an agent answer to chat", () => {
