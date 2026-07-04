@@ -1005,6 +1005,53 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("returns a controlled AI response when the provider times out", async () => {
+    vi.stubEnv("COP_AI_REQUEST_TIMEOUT_MS", "5");
+    vi.stubEnv("COP_AI_SEMANTIC_RETRIEVAL_ENABLED", "false");
+    vi.stubEnv("COP_AI_CONTEXT_INDEX_ENABLED", "false");
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "never-finishes",
+      async execute() {
+        return new Promise<Record<string, unknown>>(() => {});
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        question: "Jaká je situace?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      model: "timeout-fallback",
+      status: "NEEDS_HUMAN_REVIEW",
+      result: {
+        summary: expect.stringContaining("časovém limitu")
+      }
+    });
+
+    await app.close();
+  });
+
   it("provisions the AI Matrix bot as an explicit E2EE room member after consent", async () => {
     vi.stubEnv("COP_AI_MATRIX_BOT_USER_ID", "cop.ai.agent");
     vi.stubEnv("COP_AI_MATRIX_BOT_DISPLAY_NAME", "COP AI Assistant");

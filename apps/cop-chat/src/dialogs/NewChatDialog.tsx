@@ -10,6 +10,8 @@ export default function NewChatDialog({
   canChat,
   directQuery,
   directSuggestions,
+  existingMemberSubjectIds,
+  memberAddingSubjectIds,
   memberQuery,
   memberSuggestions,
   mode,
@@ -28,6 +30,8 @@ export default function NewChatDialog({
   canChat: boolean;
   directQuery: string;
   directSuggestions: UserDirectoryEntry[];
+  existingMemberSubjectIds: string[];
+  memberAddingSubjectIds: string[];
   memberQuery: string;
   memberSuggestions: UserDirectoryEntry[];
   mode: NewChatMode;
@@ -47,6 +51,8 @@ export default function NewChatDialog({
   const memberActive = mode === "member";
   const title = directActive ? "Nový chat" : memberActive ? "Přidat člena" : "Nová skupina";
   const modal = useModalFocus<HTMLElement>(onClose);
+  const existingMembers = new Set(existingMemberSubjectIds);
+  const pendingMembers = new Set(memberAddingSubjectIds);
   return (
     <div className="dialog-backdrop" role="presentation" onClick={onClose}>
       <section
@@ -131,13 +137,13 @@ export default function NewChatDialog({
             <div className="dialog-list">
               {memberQuery.trim().length < 2 ? <DialogHint icon={<Search size={18} />} text="Zadejte alespoň dvě písmena" /> : null}
               {memberSuggestions.map((user) => (
-                <button className="contact-row" key={user.subjectId} onClick={() => onAddMember(user)} type="button">
-                  <Avatar label={user.displayName || user.username} />
-                  <span>
-                    <strong>{user.displayName || user.username}</strong>
-                    <small>{user.email ?? user.username}</small>
-                  </span>
-                </button>
+                <MemberSuggestionButton
+                  key={user.subjectId}
+                  pending={pendingMembers.has(user.subjectId)}
+                  alreadyMember={existingMembers.has(user.subjectId)}
+                  user={user}
+                  onAddMember={onAddMember}
+                />
               ))}
             </div>
           </>
@@ -169,19 +175,47 @@ export default function NewChatDialog({
             </label>
             <div className="dialog-list">
               {memberSuggestions.map((user) => (
-                <button className="contact-row" key={user.subjectId} onClick={() => onAddMember(user)} type="button">
-                  <Avatar label={user.displayName || user.username} />
-                  <span>
-                    <strong>{user.displayName || user.username}</strong>
-                    <small>{user.email ?? user.username}</small>
-                  </span>
-                </button>
+                <MemberSuggestionButton
+                  key={user.subjectId}
+                  pending={pendingMembers.has(user.subjectId)}
+                  alreadyMember={existingMembers.has(user.subjectId)}
+                  user={user}
+                  onAddMember={onAddMember}
+                />
               ))}
             </div>
           </>
         )}
       </section>
     </div>
+  );
+}
+
+function MemberSuggestionButton({
+  alreadyMember,
+  pending,
+  user,
+  onAddMember
+}: {
+  alreadyMember: boolean;
+  pending: boolean;
+  user: UserDirectoryEntry;
+  onAddMember: (user: UserDirectoryEntry) => void;
+}) {
+  return (
+    <button
+      className="contact-row"
+      disabled={alreadyMember || pending}
+      onClick={() => onAddMember(user)}
+      type="button"
+    >
+      <Avatar label={user.displayName || user.username} />
+      <span>
+        <strong>{user.displayName || user.username}</strong>
+        <small>{alreadyMember ? "Už je ve skupině" : pending ? "Přidávám..." : user.email ?? user.username}</small>
+      </span>
+      {pending ? <Loader2 className="spin" size={17} /> : null}
+    </button>
   );
 }
 

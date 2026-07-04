@@ -152,6 +152,11 @@ COP Chat tento evidence blok zobrazuje v náhledu odpovědi a do Matrix `cz.cop`
 metadat ukládá počty requestových a indexovaných zdrojů, aby timeline ukázala,
 zda odpověď vznikla nad reálným COP kontextem.
 
+AI endpointy mají tvrdé limity pro produkční použitelnost. Requestový semantic
+retrieval pracuje jen s nejdůležitějšími kandidáty a po timeoutu degraduje na
+prázdný semantic context; modelové volání má samostatný timeout a při překročení
+vrací auditovaný `NEEDS_HUMAN_REVIEW` výsledek s vysvětlením místo visícího UI.
+
 AI Gateway vrací volitelné `routing` metadata. Běžné dotazy používají fast profil
 `gemma4:12b-mlx`; komplexní dotazy nad širším COP kontextem, konflikty zdrojů,
 riziky, projekcí vývoje nebo delší chatovou timeline může router poslat na
@@ -219,7 +224,8 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
    `dedicated_matrix_account_device`, dotazovací dialog, `@COP AI` mention tok,
    Matrix `cz.cop` auditní metadata včetně počtů zdrojů a client-supplied `chatContext` nad
    viditelnou timeline jsou hotové bez server-side čtení historické E2EE
-   historie.
+   historie. Composer ukazuje nápovědu pro `@COP AI`, `@AI`, `/ai`, `/fast`
+   a `/reasoning`.
 7. Až potom multimediální shrnutí, a jen s media ACL.
 8. Semantický COP retrieval/RAG přes `bge-m3` nad canonical entity chunks. Stav:
    semantic context vrstva je hotová pro aktuální autorizovaný kontext a první

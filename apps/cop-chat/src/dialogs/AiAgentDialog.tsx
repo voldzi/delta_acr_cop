@@ -7,6 +7,7 @@ import { useModalFocus } from "../hooks/useModalFocus";
 import { aiResponseSummary, aiStatusLabel } from "./aiResponse";
 
 export default function AiAgentDialog({
+  error,
   modelPreference,
   question,
   response,
@@ -18,6 +19,7 @@ export default function AiAgentDialog({
   onQuestionChange,
   onSendToChat
 }: {
+  error?: string | null;
   modelPreference: AiModelPreference;
   question: string;
   response: AiCopResponse | null;
@@ -102,6 +104,11 @@ export default function AiAgentDialog({
           <div className="ai-situation-status compact">
             <Loader2 className="spin" size={22} />
             <strong>AI agent odpovídá</strong>
+          </div>
+        ) : error ? (
+          <div className="ai-situation-error compact">
+            <strong>AI agent neodpověděl</strong>
+            <p>{error}</p>
           </div>
         ) : response ? (
           <>

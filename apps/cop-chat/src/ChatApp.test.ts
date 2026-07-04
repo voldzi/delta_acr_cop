@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { mergeTimelineMessages } from "./chat-model";
-import { buildAiChatContextSnapshot, buildAiRequestContextOptions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
+import { buildAiChatContextSnapshot, buildAiRequestContextOptions, composerSuggestions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
 describe("mergeTimelineMessages", () => {
@@ -82,6 +82,18 @@ describe("parseAiAgentInvocation", () => {
       trigger: "direct-ai-chat"
     });
     expect(parseAiAgentInvocation("Co je v okolí nejisté?")).toBeNull();
+  });
+});
+
+describe("composerSuggestions", () => {
+  it("suggests slash AI commands", () => {
+    expect(composerSuggestions("/", true).map((item) => item.label)).toEqual(["/ai", "/fast", "/reasoning"]);
+    expect(composerSuggestions("/r", true)).toMatchObject([{ label: "/reasoning", value: "/reasoning " }]);
+  });
+
+  it("suggests AI mentions only when the agent is available", () => {
+    expect(composerSuggestions("@", true).map((item) => item.label)).toEqual(["@COP AI", "@AI"]);
+    expect(composerSuggestions("@", false)).toEqual([]);
   });
 });
 

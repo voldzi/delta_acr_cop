@@ -11,7 +11,7 @@ import { ContractValidators, formatValidationErrors } from "@cop/ingest-contract
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
 import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAlert } from "./alerts.js";
 import {
   createCommunityReportStoreFromEnv,
@@ -35,7 +35,7 @@ import {
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { AiContextIndex, type AiContextGeoFilter, type AiContextIndexRefreshResult, type AiContextTimeWindow, type AiIndexedContext } from "./ai-context-index.js";
-import { AiSemanticRetriever, createSemanticDocuments, type AiSemanticContext } from "./ai-semantic-retrieval.js";
+import { AiSemanticRetriever, createSemanticDocuments, type AiSemanticContext, type AiSemanticDocument } from "./ai-semantic-retrieval.js";
 import { createCopStreamBusFromEnv, type CopStreamBus } from "./cop-stream-bus.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
@@ -561,6 +561,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const aiContextIndexObjectLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_OBJECT_LIMIT, 250);
   const aiContextIndexCommunityReportLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_COMMUNITY_REPORT_LIMIT, 250);
   const aiContextIndexIncidentLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_INCIDENT_LIMIT, 200);
+  const aiSemanticRetrievalCandidateLimit = readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_CANDIDATE_LIMIT, 36);
+  const aiSemanticRetrievalTimeoutMs = readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_TIMEOUT_MS, 20000);
+  const aiGatewayRequestTimeoutMs = readPositiveInteger(process.env.COP_AI_REQUEST_TIMEOUT_MS, 70000);
   const now = options.now ?? (() => new Date());
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
@@ -1332,6 +1335,168 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       warnings: indexedContext.toolCall.warnings
     }, input.correlationId);
     return indexedContext;
+  }
+
+  async function retrieveAiSemanticContext(input: {
+    documents: AiSemanticDocument[];
+    generatedAt: Date;
+    limit?: number;
+    query: string;
+  }): Promise<AiSemanticContext> {
+    return withTimeoutFallback(
+      aiSemanticRetriever.retrieve(input),
+      aiSemanticRetrievalTimeoutMs,
+      () => emptyAiSemanticContext(input, `Semantic retrieval timed out after ${aiSemanticRetrievalTimeoutMs} ms.`),
+      "AI semantic retrieval completed after the request timeout."
+    );
+  }
+
+  async function queryCopAssistantForAi(aiRequest: AiCopQuery, requestNow: Date, operation: "chat-agent" | "situation-summary"): Promise<AiCopResponse> {
+    try {
+      return await withTimeoutFallback(
+        aiGateway.queryCopAssistant(aiRequest),
+        aiGatewayRequestTimeoutMs,
+        () => aiGatewayFallbackResponse(aiRequest, requestNow, operation, `AI provider timed out after ${aiGatewayRequestTimeoutMs} ms.`),
+        "AI provider returned after the COP request timeout."
+      );
+    } catch (error) {
+      return aiGatewayFallbackResponse(aiRequest, requestNow, operation, `AI provider failed: ${errorMessage(error)}`);
+    }
+  }
+
+  function withTimeoutFallback<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    fallback: () => T,
+    lateCompletionMessage: string
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        resolve(fallback());
+      }, timeoutMs);
+      promise.then((value) => {
+        if (settled) {
+          app.log.warn({ timeoutMs }, lateCompletionMessage);
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        resolve(value);
+      }).catch((error: unknown) => {
+        if (settled) {
+          app.log.warn({ error, timeoutMs }, lateCompletionMessage);
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      });
+    });
+  }
+
+  function emptyAiSemanticContext(input: { generatedAt: Date; query: string }, warning: string): AiSemanticContext {
+    return {
+      citations: [],
+      contractVersion: "cop-ai-semantic-context-v1",
+      generatedAt: input.generatedAt.toISOString(),
+      includedDocumentCount: 0,
+      items: [],
+      query: input.query.trim(),
+      status: "degraded",
+      warnings: [warning]
+    };
+  }
+
+  function limitAiSemanticDocuments(documents: AiSemanticDocument[], limit: number): AiSemanticDocument[] {
+    const max = Math.max(1, Math.trunc(limit));
+    if (documents.length <= max) {
+      return documents;
+    }
+    return documents
+      .map((document, index) => ({
+        document,
+        index,
+        score: aiSemanticDocumentCandidateScore(document)
+      }))
+      .sort((left, right) => right.score - left.score || left.index - right.index)
+      .slice(0, max)
+      .map((item) => item.document);
+  }
+
+  function aiSemanticDocumentCandidateScore(document: AiSemanticDocument): number {
+    const text = `${document.entityType} ${document.title ?? ""} ${document.text}`.toLocaleLowerCase("cs-CZ");
+    let score = 0;
+    switch (document.entityType) {
+      case "incident":
+        score += 1;
+        break;
+      case "communityReport":
+        score += 0.92;
+        break;
+      case "alert":
+        score += 0.86;
+        break;
+      case "chatMessage":
+        score += 0.78;
+        break;
+      case "sourceHealth":
+        score += 0.45;
+        break;
+      case "observedObject":
+        score += 0.28;
+        break;
+    }
+    if (/(povod|flood|voda|water|řek|rek|hladin|fire|požár|pozar|kouř|kour|medical|zdravot|infrastruktur|bridge|most|traffic|doprav|polic|police|security|bezpeč|bezpec|incident|evaku|hazard|rizik)/u.test(text)) {
+      score += 0.45;
+    }
+    if (/(critical|kritick|warning|výstrah|vystrah|active|aktiv|submitted|published|monitoring)/u.test(text)) {
+      score += 0.16;
+    }
+    if (/(air|flight|letadl|track_stale|stale|zastaral|low_confidence)/u.test(text)) {
+      score -= 0.22;
+    }
+    return score;
+  }
+
+  function aiGatewayFallbackResponse(
+    aiRequest: AiCopQuery,
+    requestNow: Date,
+    operation: "chat-agent" | "situation-summary",
+    reason: string
+  ): AiCopResponse {
+    return {
+      auditId: randomUUID(),
+      model: "timeout-fallback",
+      policy: {
+        allowed: true,
+        reason,
+        redactionsApplied: false
+      },
+      provider: "local",
+      requestId: aiRequest.requestId,
+      result: {
+        structured: {
+          error: {
+            operation,
+            reason,
+            timeoutMs: aiGatewayRequestTimeoutMs,
+            type: "ai-provider-timeout"
+          },
+          generatedAt: requestNow.toISOString()
+        },
+        summary: [
+          "AI odpověď se nepodařilo dokončit v časovém limitu.",
+          "COP kontext a zdroje byly připravené, ale model nevrátil použitelný výsledek včas.",
+          "Zkuste dotaz zúžit, použít `/fast`, nebo požadavek spustit znovu."
+        ].join(" ")
+      },
+      status: "NEEDS_HUMAN_REVIEW"
+    };
   }
 
   async function resolveAiContextGeoFilter(body: Record<string, unknown>, query: string, requestNow: Date): Promise<AiContextGeoFilter | undefined> {
@@ -6125,14 +6290,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       aiAlerts.length ? `výstrahy ${aiAlerts.length}` : "",
       aiObjects.length ? `objekty ${aiObjects.length}` : ""
     ].filter(Boolean).join(" ");
-    const semanticContext = await aiSemanticRetriever.retrieve({
-      documents: createSemanticDocuments({
+    const semanticContext = await retrieveAiSemanticContext({
+      documents: limitAiSemanticDocuments(createSemanticDocuments({
         alerts: aiAlerts,
         communityReports: aiCommunityReports,
         incidents: aiIncidents,
         objects: aiObjects,
         sourceHealth: aiSourceHealth
-      }),
+      }), aiSemanticRetrievalCandidateLimit),
       generatedAt: requestNow,
       limit: 12,
       query: summaryQuery
@@ -6179,11 +6344,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         sourceHealth: aiSourceHealth,
         semanticContext
       },
+      modelPreference: "fast",
       providerPreference: "auto",
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
-    const response = withAiResponseEvidence(await aiGateway.queryCopAssistant(aiRequest), {
+    const response = withAiResponseEvidence(await queryCopAssistantForAi(aiRequest, requestNow, "situation-summary"), {
       indexedContext,
       priorityContext,
       requestContext: aiRequest.context ?? {},
@@ -6284,15 +6450,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       sourceHealth: aiSourceHealth
     });
     const requestId = aiRequestId(body.requestId);
-    const semanticContext = await aiSemanticRetriever.retrieve({
-      documents: createSemanticDocuments({
+    const semanticContext = await retrieveAiSemanticContext({
+      documents: limitAiSemanticDocuments(createSemanticDocuments({
         alerts: aiAlerts,
         chatContext,
         communityReports: aiCommunityReports,
         incidents: aiIncidents,
         objects: aiObjects,
         sourceHealth: aiSourceHealth
-      }),
+      }), aiSemanticRetrievalCandidateLimit),
       generatedAt: requestNow,
       limit: 12,
       query: question
@@ -6355,7 +6521,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
-    const response = withAiResponseEvidence(await aiGateway.queryCopAssistant(aiRequest), {
+    const response = withAiResponseEvidence(await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent"), {
       indexedContext,
       priorityContext,
       requestContext: aiRequest.context ?? {},

@@ -22,6 +22,8 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof NewChatDial
       canChat
       directQuery=""
       directSuggestions={[]}
+      existingMemberSubjectIds={[]}
+      memberAddingSubjectIds={[]}
       memberQuery=""
       memberSuggestions={[]}
       mode="direct"
@@ -97,6 +99,8 @@ describe("NewChatDialog", () => {
         canChat
         directQuery=""
         directSuggestions={[]}
+        existingMemberSubjectIds={[]}
+        memberAddingSubjectIds={[]}
         memberQuery=""
         memberSuggestions={[]}
         mode="group"
@@ -156,5 +160,25 @@ describe("NewChatDialog", () => {
 
     fireEvent.click(screen.getByText("Jiří Volek"));
     expect(onAddMember).toHaveBeenCalledWith(expect.objectContaining({ subjectId: "user-2" }));
+  });
+
+  it("disables users who are already members or currently being added", () => {
+    const onAddMember = vi.fn();
+    renderDialog({
+      existingMemberSubjectIds: ["user-2"],
+      memberAddingSubjectIds: ["user-3"],
+      memberQuery: "vo",
+      memberSuggestions: [
+        user({ displayName: "Jiří Volek", subjectId: "user-2", username: "voldzi" }),
+        user({ displayName: "COP Operator", subjectId: "user-3", username: "cop.operator" })
+      ],
+      mode: "member",
+      onAddMember
+    });
+
+    expect((screen.getByRole("button", { name: /Jiří Volek/u }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /COP Operator/u }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Už je ve skupině")).toBeTruthy();
+    expect(screen.getByText("Přidávám...")).toBeTruthy();
   });
 });

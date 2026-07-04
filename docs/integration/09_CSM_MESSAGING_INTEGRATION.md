@@ -471,6 +471,12 @@ The phase-0 implementation focus is trust and control:
   can still force `modelPreference=reasoning` or `modelPreference=fast`. This
   does not bypass the group-level consent model: group room access still
   requires `chat.aiAssistant.enabled` and visible bot membership.
+- The composer exposes inline suggestions for `@COP AI`, `@AI`, `/ai`,
+  `/fast` and `/reasoning`. Member-add actions are guarded client-side against
+  duplicate clicks and already-active group members. COP group membership is
+  updated first; CSM Messaging and Matrix invite synchronization are best-effort
+  projections and degraded sync is shown as a notice instead of undoing the COP
+  membership change.
 - Current direct-chat removal is local hiding. Current group deletion deletes
   the COP community group when the authenticated actor may manage it. Leaving a
   group calls `DELETE /api/v1/community/groups/{groupId}/members/me`, marks the

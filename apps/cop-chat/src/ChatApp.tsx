@@ -356,6 +356,7 @@ export function ChatApp() {
   const [newGroupName, setNewGroupName] = React.useState("");
   const [memberQuery, setMemberQuery] = React.useState("");
   const [memberSuggestions, setMemberSuggestions] = React.useState<UserDirectoryEntry[]>([]);
+  const [memberAddPendingIds, setMemberAddPendingIds] = React.useState<Set<string>>(() => new Set());
   const [loading, setLoading] = React.useState(false);
   const [sending, setSending] = React.useState(false);
   const [searchLoading, setSearchLoading] = React.useState(false);
@@ -387,11 +388,13 @@ export function ChatApp() {
   const [memberRemovalWorking, setMemberRemovalWorking] = React.useState(false);
   const [aiSituationDialogOpen, setAiSituationDialogOpen] = React.useState(false);
   const [aiSituationResponse, setAiSituationResponse] = React.useState<AiCopResponse | null>(null);
+  const [aiSituationError, setAiSituationError] = React.useState<string | null>(null);
   const [aiSituationWorking, setAiSituationWorking] = React.useState(false);
   const [aiAgentDialogOpen, setAiAgentDialogOpen] = React.useState(false);
   const [aiAgentQuestion, setAiAgentQuestion] = React.useState("");
   const [aiAgentModelPreference, setAiAgentModelPreference] = React.useState<AiModelPreference>("auto");
   const [aiAgentResponse, setAiAgentResponse] = React.useState<AiCopResponse | null>(null);
+  const [aiAgentError, setAiAgentError] = React.useState<string | null>(null);
   const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
   const [aiAgentGroupUpdating, setAiAgentGroupUpdating] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
@@ -2147,7 +2150,18 @@ export function ChatApp() {
     if (!authToken || !selectedGroup) {
       return;
     }
+    if (memberAddPendingIds.has(user.subjectId)) {
+      return;
+    }
+    if (groupHasActiveMember(selectedGroup, user.subjectId)) {
+      setNotice(`${user.displayName || user.username} už je členem skupiny.`);
+      setMemberQuery("");
+      setMemberSuggestions([]);
+      return;
+    }
+    setMemberAddPendingIds((current) => new Set(current).add(user.subjectId));
     setError(null);
+    setNotice(null);
     try {
       const group = await upsertCommunityGroupMember(apiBase, authToken, selectedGroup.groupId, {
         displayName: user.displayName,
@@ -2158,25 +2172,50 @@ export function ChatApp() {
       });
       setGroups((current) => current.map((item) => item.groupId === group.groupId ? group : item));
       const conversation = findConversationForGroup(group, conversations);
+      const warnings: string[] = [];
       if (conversation) {
-        const sync = await syncMessagingConversationMembers(
-          apiBase,
-          authToken,
-          conversation.conversationId,
-          communityGroupMembersToMessagingMembers(group)
-        );
-        if (sync.conversation) {
-          setConversations((current) => upsertConversation(current, sync.conversation as MessagingConversationSummary));
+        try {
+          const sync = await syncMessagingConversationMembers(
+            apiBase,
+            authToken,
+            conversation.conversationId,
+            communityGroupMembersToMessagingMembers(group)
+          );
+          if (sync.conversation) {
+            setConversations((current) => upsertConversation(current, sync.conversation as MessagingConversationSummary));
+          } else {
+            warnings.push(sync.warnings[0] ?? "Messaging synchronizace zatím nevrátila konverzaci.");
+          }
+        } catch (caught) {
+          warnings.push(caught instanceof Error ? caught.message : "Messaging synchronizace selhala.");
         }
       }
       if (selectedRoomId && matrixSession) {
-        const resolution = await resolveMessagingMatrixIdentities(apiBase, authToken, [user.subjectId]);
-        await matrixSession.inviteUsersToRoom(selectedRoomId, matrixUserIdsFromResolution(resolution, [user.subjectId]));
+        try {
+          const resolution = await resolveMessagingMatrixIdentities(apiBase, authToken, [user.subjectId]);
+          const matrixUserIds = matrixUserIdsFromResolution(resolution, [user.subjectId]);
+          if (matrixUserIds.length > 0) {
+            await matrixSession.inviteUsersToRoom(selectedRoomId, matrixUserIds);
+          } else {
+            warnings.push("Matrix identita člena zatím není dostupná.");
+          }
+        } catch (caught) {
+          warnings.push(caught instanceof Error ? caught.message : "Matrix pozvánku se nepodařilo odeslat.");
+        }
       }
       setMemberQuery("");
       setMemberSuggestions([]);
+      setNotice(warnings.length > 0
+        ? `${user.displayName || user.username} byl/a přidán/a do COP skupiny. Chat synchronizace doběhne později: ${userFacingError(warnings[0] ?? "")}`
+        : `${user.displayName || user.username} byl/a přidán/a do skupiny.`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Člena se nepodařilo přidat.");
+      setError(userFacingError(caught instanceof Error ? caught.message : "Člena se nepodařilo přidat."));
+    } finally {
+      setMemberAddPendingIds((current) => {
+        const next = new Set(current);
+        next.delete(user.subjectId);
+        return next;
+      });
     }
   }
 
@@ -2226,6 +2265,7 @@ export function ChatApp() {
       return;
     }
     setAiSituationWorking(true);
+    setAiSituationError(null);
     setError(null);
     try {
       const response = await createAiSituationSummary(apiBase, authToken, {
@@ -2239,7 +2279,9 @@ export function ChatApp() {
         setNotice("AI souhrn vyžaduje lidskou kontrolu před dalším sdílením.");
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "AI situační souhrn se nepodařilo vytvořit.");
+      const message = userFacingError(caught instanceof Error ? caught.message : "AI situační souhrn se nepodařilo vytvořit.");
+      setAiSituationError(message);
+      setError(message);
     } finally {
       setAiSituationWorking(false);
     }
@@ -2276,6 +2318,7 @@ export function ChatApp() {
       return;
     }
     setAiAgentWorking(true);
+    setAiAgentError(null);
     setError(null);
     try {
       const response = await queryAiChatAgent(apiBase, authToken, {
@@ -2296,7 +2339,9 @@ export function ChatApp() {
         setNotice("Odpověď AI agenta vyžaduje lidskou kontrolu před dalším sdílením.");
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "AI agent teď nedokáže odpovědět.");
+      const message = userFacingError(caught instanceof Error ? caught.message : "AI agent teď nedokáže odpovědět.");
+      setAiAgentError(message);
+      setError(message);
     } finally {
       setAiAgentWorking(false);
     }
@@ -3069,6 +3114,7 @@ export function ChatApp() {
                   />
                 ) : (
                   <Composer
+                    aiAgentAvailable={selectedAiAgentDirectChat || selectedGroupAiAssistantEnabled}
                     disabled={!composerEnabled || sending}
                     pendingAttachment={pendingAttachment}
                     replyTo={replyDraft}
@@ -3101,6 +3147,8 @@ export function ChatApp() {
             directSuggestions={directSuggestions}
             memberQuery={memberQuery}
             memberSuggestions={memberSuggestions}
+            memberAddingSubjectIds={Array.from(memberAddPendingIds)}
+            existingMemberSubjectIds={selectedGroup?.members.filter((member) => member.status === "active").map((member) => member.subjectId) ?? []}
             mode={composeMode}
             newGroupName={newGroupName}
             searchLoading={searchLoading}
@@ -3120,6 +3168,7 @@ export function ChatApp() {
       {aiSituationDialogOpen ? (
         <React.Suspense fallback={<DialogLoadingFallback label="AI situační souhrn" />}>
           <AiSituationDialog
+            error={aiSituationError}
             response={aiSituationResponse}
             sending={sending}
             working={aiSituationWorking}
@@ -3133,6 +3182,7 @@ export function ChatApp() {
       {aiAgentDialogOpen ? (
         <React.Suspense fallback={<DialogLoadingFallback label="AI agent" />}>
           <AiAgentDialog
+            error={aiAgentError}
             modelPreference={aiAgentModelPreference}
             question={aiAgentQuestion}
             response={aiAgentResponse}
@@ -3143,10 +3193,12 @@ export function ChatApp() {
             onModelPreferenceChange={(value) => {
               setAiAgentModelPreference(value);
               setAiAgentResponse(null);
+              setAiAgentError(null);
             }}
             onQuestionChange={(value) => {
               setAiAgentQuestion(value);
               setAiAgentResponse(null);
+              setAiAgentError(null);
             }}
             onSendToChat={(text) => void sendAiAgentResponseToChat(text)}
           />
@@ -3677,6 +3729,7 @@ function HistoryLoader({
 }
 
 function Composer({
+  aiAgentAvailable,
   disabled,
   pendingAttachment,
   replyTo,
@@ -3687,6 +3740,7 @@ function Composer({
   onSend,
   onShareLocation
 }: {
+  aiAgentAvailable: boolean;
   disabled: boolean;
   pendingAttachment: PendingChatAttachment | null;
   replyTo: MatrixTimelineMessage | null;
@@ -3703,6 +3757,7 @@ function Composer({
   const [text, setText] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const canSend = Boolean(text.trim() || pendingAttachment) && !disabled;
+  const suggestions = composerSuggestions(text, aiAgentAvailable);
   const submitDraft = async () => {
     if (!canSend) {
       return;
@@ -3763,6 +3818,25 @@ function Composer({
           </button>
         </div>
       ) : null}
+      {suggestions.length > 0 ? (
+        <div className="composer-suggestions" role="listbox" aria-label="Nápověda příkazů">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion.value}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                setText(suggestion.value);
+                window.setTimeout(() => textareaRef.current?.focus(), 0);
+              }}
+              role="option"
+              type="button"
+            >
+              <span>{suggestion.label}</span>
+              <small>{suggestion.description}</small>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="composer-row">
         <button className="round-icon" disabled={disabled} onClick={() => onAttachmentPick("file")} type="button" aria-label="Příloha">
           <Plus size={24} />
@@ -3785,6 +3859,12 @@ function Composer({
             }}
             onFocus={syncTextareaHeight}
             onKeyDown={(event) => {
+              if ((event.key === "Tab" || event.key === "Enter") && suggestions.length > 0) {
+                event.preventDefault();
+                setText(suggestions[0]?.value ?? text);
+                window.setTimeout(() => textareaRef.current?.focus(), 0);
+                return;
+              }
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 void submitDraft();
@@ -3801,6 +3881,53 @@ function Composer({
       </div>
     </form>
   );
+}
+
+interface ComposerSuggestion {
+  description: string;
+  label: string;
+  value: string;
+}
+
+export function composerSuggestions(text: string, aiAgentAvailable: boolean): ComposerSuggestion[] {
+  const draft = text.trimStart();
+  if (!draft || draft.includes(" ")) {
+    return [];
+  }
+  if (draft.startsWith("/")) {
+    return [
+      {
+        description: "Dotaz na COP AI agenta s automatickou volbou modelu",
+        label: "/ai",
+        value: "/ai "
+      },
+      {
+        description: "Rychlá odpověď přes fast model",
+        label: "/fast",
+        value: "/fast "
+      },
+      {
+        description: "Složitější analýza přes reasoning model",
+        label: "/reasoning",
+        value: "/reasoning "
+      }
+    ].filter((suggestion) => suggestion.label.startsWith(draft.toLocaleLowerCase("cs-CZ")));
+  }
+  if (draft.startsWith("@") && aiAgentAvailable) {
+    return [
+      {
+        description: "Oslovit viditelného COP AI agenta v chatu",
+        label: "@COP AI",
+        value: "@COP AI "
+      },
+      {
+        description: "Krátký alias pro COP AI agenta",
+        label: "@AI",
+        value: "@AI "
+      }
+    ].filter((suggestion) => suggestion.label.toLocaleLowerCase("cs-CZ").startsWith(draft.toLocaleLowerCase("cs-CZ")));
+  }
+  return [];
 }
 
 function MessageRow({
@@ -5018,6 +5145,10 @@ function canUpdateCommunityGroupMetadata(group: CommunityGroup, subjectId: strin
   return Boolean(subjectId && group.members.some((member) => member.subjectId === subjectId && member.status === "active"));
 }
 
+function groupHasActiveMember(group: CommunityGroup, subjectId: string | null | undefined): boolean {
+  return Boolean(subjectId && group.members.some((member) => member.subjectId === subjectId && member.status === "active"));
+}
+
 function canManageCommunityGroupMembers(group: CommunityGroup, subjectId: string | null | undefined): boolean {
   return Boolean(subjectId && group.members.some((member) =>
     member.subjectId === subjectId &&
@@ -6207,6 +6338,9 @@ export function userFacingError(message: string): string {
   }
   if (/\b(500|502|503|504)\b/u.test(normalized) || /service unavailable|gateway timeout|bad gateway/i.test(normalized)) {
     return "Služba zpráv je dočasně nedostupná.";
+  }
+  if (/\b(429)\b/u.test(normalized) || /too many|rate.?limit|M_LIMIT_EXCEEDED/i.test(normalized)) {
+    return "Akce už probíhá nebo ji služba dočasně omezila. Chvíli počkejte a neopakujte kliknutí.";
   }
   if (/fetch failed|load failed|failed to fetch|network/i.test(normalized)) {
     return "Služba zpráv není z tohoto zařízení dostupná.";

@@ -74,6 +74,15 @@ visual previews. UI clients may render these citations and counts, but must not
 treat them as authorization to fetch entities outside the normal COP API access
 rules.
 
+AI endpoints bound expensive work before calling the model. Request-time
+semantic retrieval embeds only the highest-priority candidate set
+(`COP_AI_SEMANTIC_RETRIEVAL_CANDIDATE_LIMIT`, default 36) and has its own
+timeout (`COP_AI_SEMANTIC_RETRIEVAL_TIMEOUT_MS`, default 20 s). The final model
+call is capped by `COP_AI_REQUEST_TIMEOUT_MS` (default 70 s). If the provider
+does not return in time, COP returns a normal audit-backed
+`NEEDS_HUMAN_REVIEW` AI response with evidence metadata instead of leaving the
+HTTP request hanging.
+
 `/api/v1/ai/chat-agent/query` may include a bounded `chatContext` snapshot from
 the client's currently visible/decrypted Matrix timeline. COP API combines that
 explicit client context with authorized server-side COP data; it does not fetch

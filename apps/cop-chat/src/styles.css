@@ -2010,6 +2010,50 @@ button {
   gap: 7px;
 }
 
+.composer-suggestions {
+  display: grid;
+  width: min(520px, calc(100% - 104px));
+  margin-left: 52px;
+  overflow: hidden;
+  border: 1px solid rgba(182, 198, 206, 0.82);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(17, 27, 33, 0.13);
+}
+
+.composer-suggestions button {
+  display: grid;
+  gap: 2px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(233, 237, 239, 0.95);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.composer-suggestions button:last-child {
+  border-bottom: 0;
+}
+
+.composer-suggestions button:hover,
+.composer-suggestions button:focus-visible {
+  background: #eff7f4;
+  outline: none;
+}
+
+.composer-suggestions span {
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.composer-suggestions small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .reply-composer {
   display: flex;
   align-items: center;
@@ -3041,7 +3085,8 @@ button {
 }
 
 .ai-situation-status,
-.ai-situation-empty {
+.ai-situation-empty,
+.ai-situation-error {
   display: grid;
   min-height: 220px;
   place-items: center;
@@ -3058,8 +3103,21 @@ button {
 }
 
 .ai-situation-status.compact,
-.ai-situation-empty.compact {
+.ai-situation-empty.compact,
+.ai-situation-error.compact {
   min-height: 120px;
+}
+
+.ai-situation-error {
+  color: #991b1b;
+}
+
+.ai-situation-error p {
+  max-width: 520px;
+  margin: 0;
+  color: #7f1d1d;
+  font-size: 0.95rem;
+  line-height: 1.45;
 }
 
 .ai-situation-output {
@@ -3360,6 +3418,15 @@ button {
 .contact-row {
   min-height: 62px;
   padding: 8px 16px;
+}
+
+.contact-row:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.contact-row:disabled:hover {
+  background: transparent;
 }
 
 .contact-row strong {

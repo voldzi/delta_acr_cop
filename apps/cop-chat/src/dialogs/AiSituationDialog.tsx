@@ -7,6 +7,7 @@ import { useModalFocus } from "../hooks/useModalFocus";
 import { aiResponseSummary, aiStatusLabel } from "./aiResponse";
 
 export default function AiSituationDialog({
+  error,
   response,
   sending,
   working,
@@ -14,6 +15,7 @@ export default function AiSituationDialog({
   onRefresh,
   onSendToChat
 }: {
+  error?: string | null;
   response: AiCopResponse | null;
   sending: boolean;
   working: boolean;
@@ -64,6 +66,11 @@ export default function AiSituationDialog({
           <div className="ai-situation-status">
             <Loader2 className="spin" size={22} />
             <strong>Připravuji souhrn</strong>
+          </div>
+        ) : error ? (
+          <div className="ai-situation-error">
+            <strong>Souhrn se nepodařilo vytvořit</strong>
+            <p>{error}</p>
           </div>
         ) : response ? (
           <>
