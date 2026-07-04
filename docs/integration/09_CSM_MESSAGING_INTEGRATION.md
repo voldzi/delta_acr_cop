@@ -451,6 +451,9 @@ The phase-0 implementation focus is trust and control:
   security or police incidents, community reports and active alerts outrank
   routine source diagnostics. Stale civil air-track data is included only when
   it is directly relevant to the question, safety impact or data coverage.
+  The server also derives `retrievalIntent` from the natural-language question;
+  for general situational-awareness prompts it suppresses routine civil flight
+  tracks before the `bge-m3` ranking and prompt-compression stages.
   `indexedContext` adds a background COP index query over public/policy-safe
   canonical entities with geo/time filtering and audited
   `cop.ai.context_index.query` tool calls. `priorityContext.citations`,

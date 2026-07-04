@@ -108,12 +108,52 @@ describe("AiSemanticRetriever", () => {
       entityId: "report-flood",
       entityType: "communityReport"
     });
+    expect(context.retrievalIntent).toMatchObject({
+      primary: "general-safety",
+      suppressRoutineCivilAir: true
+    });
     expect(context.items[0]?.priorityScore).toBeGreaterThan(context.items[1]?.priorityScore ?? 0);
+    expect(context.items[1]?.priorityScore).toBeLessThan(-0.4);
     expect(context.items[0]?.citation).toMatchObject({
       citationId: "S1",
       position: { lat: 50.1, lon: 17.2 }
     });
     expect(context.citations[0]?.entityId).toBe("report-flood");
+  });
+
+  it("does not suppress routine civil air when the question is explicitly about air situation", async () => {
+    const retriever = new AiSemanticRetriever({
+      embedText: async () => ({
+        embedding: [1, 0],
+        model: "bge-m3:latest"
+      }),
+      maxDocuments: 2
+    });
+
+    const context = await retriever.retrieve({
+      documents: createSemanticDocuments({
+        objects: [{
+          dataQuality: "track_stale",
+          domain: "air",
+          objectId: "flight-stale",
+          objectType: "aircraft",
+          status: "ACTIVE",
+          title: "Civilní let se starším trackem"
+        }]
+      }),
+      generatedAt: new Date("2026-07-04T10:00:00.000Z"),
+      query: "Jaká je letecká situace a pohyb letadel?"
+    });
+
+    expect(context.retrievalIntent).toMatchObject({
+      primary: "air",
+      suppressRoutineCivilAir: false
+    });
+    expect(context.items[0]).toMatchObject({
+      entityId: "flight-stale",
+      entityType: "observedObject"
+    });
+    expect(context.items[0]?.priorityScore).toBeGreaterThan(-0.1);
   });
 
   it("returns degraded context when embeddings are unavailable", async () => {

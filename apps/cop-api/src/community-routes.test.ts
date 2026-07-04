@@ -905,6 +905,24 @@ describe("community report routes", () => {
           toolId: "cop.ai.context_index.query"
         }
       },
+      observability: {
+        compression: {
+          compressedContextBytes: expect.any(Number),
+          ratio: expect.any(Number),
+          uncompressedContextBytes: expect.any(Number)
+        },
+        contractVersion: "cop-ai-pipeline-observability-v1",
+        operation: "chat-agent",
+        retrievalIntent: {
+          primary: "general-safety",
+          suppressRoutineCivilAir: true
+        },
+        timingsMs: {
+          indexedContext: expect.any(Number),
+          provider: expect.any(Number),
+          semanticContext: expect.any(Number)
+        }
+      },
       priority: {
         citations: expect.arrayContaining([
           expect.objectContaining({
@@ -919,13 +937,22 @@ describe("community report routes", () => {
     expect(capturedQueries[0]?.modelPreference).toBe("fast");
     expect(capturedQueries[0]?.prompt).toContain("priorityContext");
     expect(capturedQueries[0]?.prompt).toContain("indexedContext");
+    expect(capturedQueries[0]?.prompt).toContain("civilní lety a stale civilní letové tracky nejsou priorita");
+    expect(capturedQueries[0]?.context?.retrievalIntent).toMatchObject({
+      primary: "general-safety",
+      suppressRoutineCivilAir: true
+    });
     const priorityContext = capturedQueries[0]?.context?.priorityContext as Record<string, unknown> | undefined;
     expect(priorityContext).toMatchObject({
       contractVersion: "cop-ai-priority-context-v1"
     });
     expect(capturedQueries[0]?.context?.contextCompression).toMatchObject({
       contractVersion: "cop-ai-prompt-context-compression-v1",
-      mode: "bge-m3-evidence-first"
+      mode: "bge-m3-evidence-first",
+      retrievalIntent: {
+        primary: "general-safety",
+        suppressRoutineCivilAir: true
+      }
     });
     expect(priorityContext?.citations).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -978,12 +1005,27 @@ describe("community report routes", () => {
     expect(indexToolAudit).toMatchObject({
       requestId: queryBody.requestId,
       toolId: "cop.ai.context_index.query",
-      matchedDocumentCount: expect.any(Number)
+      matchedDocumentCount: expect.any(Number),
+      retrievalIntent: {
+        primary: "general-safety",
+        suppressRoutineCivilAir: true
+      }
     });
     const aiAudit = auditItems.find((item) => item.eventType === "AI_CHAT_AGENT_COMPLETED");
     expect(aiAudit).toMatchObject({
       indexedDocumentCount: expect.any(Number),
       indexedToolInvocationId: expect.any(String),
+      pipelineObservability: {
+        contractVersion: "cop-ai-pipeline-observability-v1",
+        retrievalIntent: {
+          primary: "general-safety",
+          suppressRoutineCivilAir: true
+        }
+      },
+      retrievalIntent: {
+        primary: "general-safety",
+        suppressRoutineCivilAir: true
+      },
       semanticDocumentCount: expect.any(Number)
     });
     expect(["degraded", "disabled", "ok"]).toContain(aiAudit?.indexedStatus);

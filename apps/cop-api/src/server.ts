@@ -36,6 +36,7 @@ import {
 import { correlationIdFrom, sendError } from "./errors.js";
 import { AiContextIndex, type AiContextGeoFilter, type AiContextIndexRefreshResult, type AiContextTimeWindow, type AiIndexedContext } from "./ai-context-index.js";
 import { buildAiPromptContextCompression } from "./ai-context-compression.js";
+import { aiIntentSuppressesRoutineCivilAir, buildAiRetrievalQuery, inferAiRetrievalIntent, isRoutineCivilAirText, type AiRetrievalIntent } from "./ai-retrieval-intent.js";
 import { AiSemanticRetriever, createSemanticDocuments, type AiSemanticContext, type AiSemanticDocument } from "./ai-semantic-retrieval.js";
 import { createCopStreamBusFromEnv, type CopStreamBus } from "./cop-stream-bus.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
@@ -1298,7 +1299,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     actor: AuthenticatedActor;
     body: Record<string, unknown>;
     correlationId: string;
+    geoQuery?: string;
     query: string;
+    retrievalIntent?: AiRetrievalIntent;
     requestId: string;
     requestNow: Date;
   }): Promise<AiIndexedContext> {
@@ -1314,13 +1317,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         app.log.warn({ error }, "AI context index lazy refresh failed.");
       }
     }
-    const geo = await resolveAiContextGeoFilter(input.body, input.query, input.requestNow);
+    const geo = await resolveAiContextGeoFilter(input.body, input.geoQuery ?? input.query, input.requestNow);
     const timeWindow = resolveAiContextTimeWindow(input.body);
     const indexedContext = await aiContextIndex.query(aiSemanticRetriever, {
       generatedAt: input.requestNow,
       ...(geo ? { geo } : {}),
       limit: aiContextIndexQueryLimit,
       query: input.query,
+      ...(input.retrievalIntent ? { retrievalIntent: input.retrievalIntent } : {}),
       timeWindow
     });
     appendAudit(state, "AI_CONTEXT_INDEX_TOOL_INVOKED", {
@@ -1330,6 +1334,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       invocationId: indexedContext.toolCall.invocationId,
       matchedDocumentCount: indexedContext.toolCall.matchedDocumentCount,
       requestId: input.requestId,
+      retrievalIntent: input.retrievalIntent,
       status: indexedContext.toolCall.status,
       timeWindow: indexedContext.query.timeWindow,
       toolId: indexedContext.toolCall.toolId,
@@ -1343,6 +1348,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     generatedAt: Date;
     limit?: number;
     query: string;
+    retrievalIntent?: AiRetrievalIntent;
   }): Promise<AiSemanticContext> {
     return withTimeoutFallback(
       aiSemanticRetriever.retrieve(input),
@@ -1400,7 +1406,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   }
 
-  function emptyAiSemanticContext(input: { generatedAt: Date; query: string }, warning: string): AiSemanticContext {
+  function emptyAiSemanticContext(input: { generatedAt: Date; query: string; retrievalIntent?: AiRetrievalIntent }, warning: string): AiSemanticContext {
     return {
       citations: [],
       contractVersion: "cop-ai-semantic-context-v1",
@@ -1408,28 +1414,33 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       includedDocumentCount: 0,
       items: [],
       query: input.query.trim(),
+      ...(input.retrievalIntent ? { retrievalIntent: input.retrievalIntent } : {}),
       status: "degraded",
       warnings: [warning]
     };
   }
 
-  function limitAiSemanticDocuments(documents: AiSemanticDocument[], limit: number): AiSemanticDocument[] {
+  function limitAiSemanticDocuments(documents: AiSemanticDocument[], limit: number, retrievalIntent: AiRetrievalIntent): AiSemanticDocument[] {
     const max = Math.max(1, Math.trunc(limit));
     if (documents.length <= max) {
-      return documents;
+      return prioritizeAiSemanticDocuments(documents, retrievalIntent);
     }
+    return prioritizeAiSemanticDocuments(documents, retrievalIntent)
+      .slice(0, max);
+  }
+
+  function prioritizeAiSemanticDocuments(documents: AiSemanticDocument[], retrievalIntent: AiRetrievalIntent): AiSemanticDocument[] {
     return documents
       .map((document, index) => ({
         document,
         index,
-        score: aiSemanticDocumentCandidateScore(document)
+        score: aiSemanticDocumentCandidateScore(document, retrievalIntent)
       }))
       .sort((left, right) => right.score - left.score || left.index - right.index)
-      .slice(0, max)
       .map((item) => item.document);
   }
 
-  function aiSemanticDocumentCandidateScore(document: AiSemanticDocument): number {
+  function aiSemanticDocumentCandidateScore(document: AiSemanticDocument, retrievalIntent: AiRetrievalIntent): number {
     const text = `${document.entityType} ${document.title ?? ""} ${document.text}`.toLocaleLowerCase("cs-CZ");
     let score = 0;
     switch (document.entityType) {
@@ -1458,7 +1469,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (/(critical|kritick|warning|výstrah|vystrah|active|aktiv|submitted|published|monitoring)/u.test(text)) {
       score += 0.16;
     }
-    if (/(air|flight|letadl|track_stale|stale|zastaral|low_confidence)/u.test(text)) {
+    if (retrievalIntent.categories.includes("flood-water") && /(povod|flood|voda|water|řek|rek|hladin|hydro)/u.test(text)) {
+      score += 0.24;
+    }
+    if (retrievalIntent.categories.includes("fire") && /(fire|požár|pozar|kouř|kour|hotspot|firms)/u.test(text)) {
+      score += 0.22;
+    }
+    if (retrievalIntent.categories.includes("security-police") && /(polic|security|bezpeč|bezpec|kráde|krade|zlod|crime)/u.test(text)) {
+      score += 0.2;
+    }
+    if (aiIntentSuppressesRoutineCivilAir(retrievalIntent) && isRoutineCivilAirText(text)) {
+      score -= 0.55;
+    } else if (/(air|flight|letadl|track_stale|stale|zastaral|low_confidence)/u.test(text)) {
       score -= 0.22;
     }
     return score;
@@ -6291,6 +6313,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       aiAlerts.length ? `výstrahy ${aiAlerts.length}` : "",
       aiObjects.length ? `objekty ${aiObjects.length}` : ""
     ].filter(Boolean).join(" ");
+    const retrievalIntent = inferAiRetrievalIntent(summaryQuery);
+    const retrievalQuery = buildAiRetrievalQuery(summaryQuery, retrievalIntent);
+    const semanticStartedAt = Date.now();
     const semanticContext = await retrieveAiSemanticContext({
       documents: limitAiSemanticDocuments(createSemanticDocuments({
         alerts: aiAlerts,
@@ -6298,19 +6323,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         incidents: aiIncidents,
         objects: aiObjects,
         sourceHealth: aiSourceHealth
-      }), aiSemanticRetrievalCandidateLimit),
+      }), aiSemanticRetrievalCandidateLimit, retrievalIntent),
       generatedAt: requestNow,
       limit: 12,
-      query: summaryQuery
+      query: retrievalQuery,
+      retrievalIntent
     });
+    const semanticDurationMs = Date.now() - semanticStartedAt;
+    const indexedStartedAt = Date.now();
     const indexedContext = await queryAiContextIndexForAi({
       actor,
       body,
       correlationId,
-      query: summaryQuery,
+      geoQuery: summaryQuery,
+      query: retrievalQuery,
+      retrievalIntent,
       requestId,
       requestNow
     });
+    const indexedDurationMs = Date.now() - indexedStartedAt;
     const promptContext = buildAiPromptContextCompression({
       alerts: aiAlerts,
       communityReports: aiCommunityReports,
@@ -6319,9 +6350,49 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       indexedContext,
       objects: aiObjects,
       priorityContext,
+      retrievalIntent,
       semanticContext,
       sourceHealth: aiSourceHealth
     });
+    const scope = {
+      objectCount: readableObjects.length,
+      alertCount: alerts.length,
+      communityReportCount: communityReports.length,
+      incidentCount: incidents.length,
+      sourceCount: sourceHealth.length,
+      indexedCandidateDocumentCount: indexedContext.toolCall.candidateDocumentCount,
+      indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
+      semanticDocumentCount: semanticContext.includedDocumentCount
+    };
+    const uncompressedContext = {
+      contractVersion: "cop-ai-situation-summary-v1",
+      generatedAt: requestNow.toISOString(),
+      retrievalIntent,
+      scope,
+      priorityContext,
+      indexedContext,
+      objects: aiObjects,
+      alerts: aiAlerts,
+      communityReports: aiCommunityReports,
+      incidents: aiIncidents,
+      sourceHealth: aiSourceHealth,
+      semanticContext
+    };
+    const compressedContext = {
+      contractVersion: "cop-ai-situation-summary-v1",
+      generatedAt: requestNow.toISOString(),
+      retrievalIntent,
+      scope,
+      priorityContext,
+      contextCompression: promptContext.contextCompression,
+      indexedContext: promptContext.indexedContext,
+      objects: promptContext.objects,
+      alerts: promptContext.alerts,
+      communityReports: promptContext.communityReports,
+      incidents: promptContext.incidents,
+      sourceHealth: promptContext.sourceHealth,
+      semanticContext: promptContext.semanticContext
+    };
     const aiRequest: AiCopQuery = {
       requestId,
       purpose: "COP_EXPLANATION",
@@ -6334,36 +6405,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         "Odděl ověřená data, odhady a chybějící informace. Uveď, když chybí lokální vodní/požární/bezpečnostní evidence.",
         "Nepřidávej vlastní fakta a neformuluj operační pokyny."
       ].join(" "),
-      context: {
-        contractVersion: "cop-ai-situation-summary-v1",
-        generatedAt: requestNow.toISOString(),
-        scope: {
-          objectCount: readableObjects.length,
-          alertCount: alerts.length,
-          communityReportCount: communityReports.length,
-          incidentCount: incidents.length,
-          sourceCount: sourceHealth.length,
-          indexedCandidateDocumentCount: indexedContext.toolCall.candidateDocumentCount,
-          indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
-          semanticDocumentCount: semanticContext.includedDocumentCount
-        },
-        priorityContext,
-        contextCompression: promptContext.contextCompression,
-        indexedContext: promptContext.indexedContext,
-        objects: promptContext.objects,
-        alerts: promptContext.alerts,
-        communityReports: promptContext.communityReports,
-        incidents: promptContext.incidents,
-        sourceHealth: promptContext.sourceHealth,
-        semanticContext: promptContext.semanticContext
-      },
+      context: compressedContext,
       modelPreference: "fast",
       providerPreference: "auto",
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
-    const response = withAiResponseEvidence(await queryCopAssistantForAi(aiRequest, requestNow, "situation-summary"), {
+    const providerStartedAt = Date.now();
+    const providerResponse = await queryCopAssistantForAi(aiRequest, requestNow, "situation-summary");
+    const providerDurationMs = Date.now() - providerStartedAt;
+    const pipelineObservability = buildAiPipelineObservability({
+      compressedContext,
+      contextCompression: promptContext.contextCompression,
+      indexedDurationMs,
+      operation: "situation-summary",
+      providerDurationMs,
+      retrievalIntent,
+      semanticDurationMs,
+      uncompressedContext
+    });
+    const response = withAiResponseEvidence(providerResponse, {
       indexedContext,
+      observability: pipelineObservability,
       priorityContext,
       requestContext: aiRequest.context ?? {},
       semanticContext
@@ -6373,6 +6436,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
       indexedStatus: indexedContext.semanticContext.status,
       indexedToolInvocationId: indexedContext.toolCall.invocationId,
+      pipelineObservability,
+      retrievalIntent,
       semanticDocumentCount: semanticContext.includedDocumentCount,
       semanticStatus: semanticContext.status
     }, correlationId);
@@ -6463,6 +6528,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       sourceHealth: aiSourceHealth
     });
     const requestId = aiRequestId(body.requestId);
+    const retrievalIntent = inferAiRetrievalIntent(question);
+    const retrievalQuery = buildAiRetrievalQuery(question, retrievalIntent);
+    const semanticStartedAt = Date.now();
     const semanticContext = await retrieveAiSemanticContext({
       documents: limitAiSemanticDocuments(createSemanticDocuments({
         alerts: aiAlerts,
@@ -6471,19 +6539,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         incidents: aiIncidents,
         objects: aiObjects,
         sourceHealth: aiSourceHealth
-      }), aiSemanticRetrievalCandidateLimit),
+      }), aiSemanticRetrievalCandidateLimit, retrievalIntent),
       generatedAt: requestNow,
       limit: 12,
-      query: question
+      query: retrievalQuery,
+      retrievalIntent
     });
+    const semanticDurationMs = Date.now() - semanticStartedAt;
+    const indexedStartedAt = Date.now();
     const indexedContext = await queryAiContextIndexForAi({
       actor,
       body,
       correlationId,
-      query: question,
+      geoQuery: question,
+      query: retrievalQuery,
+      retrievalIntent,
       requestId,
       requestNow
     });
+    const indexedDurationMs = Date.now() - indexedStartedAt;
     const promptContext = buildAiPromptContextCompression({
       alerts: aiAlerts,
       ...(chatContext ? { chatContext } : {}),
@@ -6493,9 +6567,63 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       indexedContext,
       objects: aiObjects,
       priorityContext,
+      retrievalIntent,
       semanticContext,
       sourceHealth: aiSourceHealth
     });
+    const chat = compactRecord({
+      conversationId: optionalText(body.conversationId),
+      groupId: group?.groupId,
+      groupName: group?.name,
+      aiAssistant: group ? summarizeGroupAiAssistantForAi(group) : undefined,
+      activeMemberCount: group ? group.members.filter((member) => member.status === "active").length : undefined
+    });
+    const scope = {
+      objectCount: readableObjects.length,
+      alertCount: alerts.length,
+      chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
+      communityReportCount: communityReports.length,
+      incidentCount: incidents.length,
+      sourceCount: sourceHealth.length,
+      indexedCandidateDocumentCount: indexedContext.toolCall.candidateDocumentCount,
+      indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
+      semanticDocumentCount: semanticContext.includedDocumentCount
+    };
+    const uncompressedContext = {
+      contractVersion: "cop-ai-chat-agent-query-v1",
+      generatedAt: requestNow.toISOString(),
+      question,
+      retrievalIntent,
+      chat,
+      chatContext,
+      priorityContext,
+      scope,
+      objects: aiObjects,
+      alerts: aiAlerts,
+      communityReports: aiCommunityReports,
+      incidents: aiIncidents,
+      sourceHealth: aiSourceHealth,
+      indexedContext,
+      semanticContext
+    };
+    const compressedContext = {
+      contractVersion: "cop-ai-chat-agent-query-v1",
+      generatedAt: requestNow.toISOString(),
+      question,
+      retrievalIntent,
+      chat,
+      chatContext: promptContext.chatContext,
+      priorityContext,
+      contextCompression: promptContext.contextCompression,
+      scope,
+      objects: promptContext.objects,
+      alerts: promptContext.alerts,
+      communityReports: promptContext.communityReports,
+      incidents: promptContext.incidents,
+      sourceHealth: promptContext.sourceHealth,
+      indexedContext: promptContext.indexedContext,
+      semanticContext: promptContext.semanticContext
+    };
     const aiRequest: AiCopQuery = {
       requestId,
       purpose: "COP_EXPLANATION",
@@ -6503,52 +6631,35 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         `Odpověz jako viditelný AI agent v COP chatu v jazyce ${aiLanguage(body.language)}.`,
         "Použij přiložený COP kontext napříč objekty, výstrahami, komunitními hlášeními, incidenty, stavem zdrojů a explicitně poskytnutým chatContext.",
         "Použij priorityContext pro krizovou důležitost, semanticContext jako requestově aktuální bge-m3 výběr COP entit a chatových výňatků a indexedContext jako širší background COP index s geo/časovým filtrem; uveď, když je retrieval degraded nebo prázdný.",
-        "Bezpečnostní priority jsou voda/povodeň, požár, zdravotní riziko, infrastruktura, dopravní omezení, bezpečnostní/policejní incident a komunitní hlášení; běžné stale civilní letové tracky zmiň jen pokud přímo souvisí s dotazem.",
+        "Bezpečnostní priority jsou voda/povodeň, požár, zdravotní riziko, infrastruktura, dopravní omezení, bezpečnostní/policejní incident a komunitní hlášení; civilní lety a stale civilní letové tracky nejsou priorita a zmiň je jen při explicitním leteckém dotazu nebo přímé bezpečnostní souvislosti.",
         "Důležitá tvrzení cituj pomocí [S1] ze semanticContext.citations, [I1] z indexedContext.citations nebo [P1] z priorityContext.citations.",
+        "Respektuj retrievalIntent a contextCompression: pokud jsou záznamy vynechané z promptu, neber to jako důkaz jejich neexistence.",
         "ChatContext ber jen jako výňatek viditelné dešifrované timeline poskytnutý klientem; nedovozuj neviděnou historii místnosti.",
         "Jasně odděl ověřená data, odhady a chybějící informace. Neformuluj taktické pokyny, targeting ani doporučení použití síly.",
         `Dotaz uživatele: ${question}`
       ].join(" "),
-      context: {
-        contractVersion: "cop-ai-chat-agent-query-v1",
-        generatedAt: requestNow.toISOString(),
-        question,
-        chat: compactRecord({
-          conversationId: optionalText(body.conversationId),
-          groupId: group?.groupId,
-          groupName: group?.name,
-          aiAssistant: group ? summarizeGroupAiAssistantForAi(group) : undefined,
-          activeMemberCount: group ? group.members.filter((member) => member.status === "active").length : undefined
-        }),
-        chatContext: promptContext.chatContext,
-        priorityContext,
-        contextCompression: promptContext.contextCompression,
-        scope: {
-          objectCount: readableObjects.length,
-          alertCount: alerts.length,
-          chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
-          communityReportCount: communityReports.length,
-          incidentCount: incidents.length,
-          sourceCount: sourceHealth.length,
-          indexedCandidateDocumentCount: indexedContext.toolCall.candidateDocumentCount,
-          indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
-          semanticDocumentCount: semanticContext.includedDocumentCount
-        },
-        objects: promptContext.objects,
-        alerts: promptContext.alerts,
-        communityReports: promptContext.communityReports,
-        incidents: promptContext.incidents,
-        sourceHealth: promptContext.sourceHealth,
-        indexedContext: promptContext.indexedContext,
-        semanticContext: promptContext.semanticContext
-      },
+      context: compressedContext,
       ...(modelPreference ? { modelPreference } : {}),
       providerPreference: "auto",
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
-    const response = withAiResponseEvidence(await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent"), {
+    const providerStartedAt = Date.now();
+    const providerResponse = await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent");
+    const providerDurationMs = Date.now() - providerStartedAt;
+    const pipelineObservability = buildAiPipelineObservability({
+      compressedContext,
+      contextCompression: promptContext.contextCompression,
+      indexedDurationMs,
+      operation: "chat-agent",
+      providerDurationMs,
+      retrievalIntent,
+      semanticDurationMs,
+      uncompressedContext
+    });
+    const response = withAiResponseEvidence(providerResponse, {
       indexedContext,
+      observability: pipelineObservability,
       priorityContext,
       requestContext: aiRequest.context ?? {},
       semanticContext
@@ -6561,6 +6672,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
       indexedStatus: indexedContext.semanticContext.status,
       indexedToolInvocationId: indexedContext.toolCall.invocationId,
+      pipelineObservability,
+      retrievalIntent,
       semanticDocumentCount: semanticContext.includedDocumentCount,
       semanticStatus: semanticContext.status
     }, correlationId);
@@ -12687,6 +12800,7 @@ function buildAiPriorityContext(input: {
 
 function withAiResponseEvidence(response: AiCopResponse, input: {
   indexedContext: AiIndexedContext;
+  observability?: Record<string, unknown>;
   priorityContext: Record<string, unknown>;
   requestContext: Record<string, unknown>;
   semanticContext: AiSemanticContext;
@@ -12716,6 +12830,7 @@ function withAiResponseEvidence(response: AiCopResponse, input: {
               warnings: input.indexedContext.toolCall.warnings
             })
           }),
+          observability: input.observability,
           mapSnapshot: isRecord(input.priorityContext.mapSnapshot) ? input.priorityContext.mapSnapshot : undefined,
           priority: compactRecord({
             citations: aiEvidencePriorityCitations(input.priorityContext),
@@ -12733,6 +12848,51 @@ function withAiResponseEvidence(response: AiCopResponse, input: {
       }
     }
   };
+}
+
+function buildAiPipelineObservability(input: {
+  compressedContext: Record<string, unknown>;
+  contextCompression: Record<string, unknown>;
+  indexedDurationMs: number;
+  operation: "chat-agent" | "situation-summary";
+  providerDurationMs: number;
+  retrievalIntent: AiRetrievalIntent;
+  semanticDurationMs: number;
+  uncompressedContext: Record<string, unknown>;
+}): Record<string, unknown> {
+  const uncompressedContextBytes = jsonByteLength(input.uncompressedContext);
+  const compressedContextBytes = jsonByteLength(input.compressedContext);
+  return compactRecord({
+    compression: compactRecord({
+      compressedContextBytes,
+      ratio: compressionRatio(uncompressedContextBytes, compressedContextBytes),
+      uncompressedContextBytes,
+      ...compactRecord({
+        includedCounts: isRecord(input.contextCompression.includedCounts) ? input.contextCompression.includedCounts : undefined,
+        omittedCounts: isRecord(input.contextCompression.omittedCounts) ? input.contextCompression.omittedCounts : undefined,
+        originalCounts: isRecord(input.contextCompression.originalCounts) ? input.contextCompression.originalCounts : undefined
+      })
+    }),
+    contractVersion: "cop-ai-pipeline-observability-v1",
+    operation: input.operation,
+    retrievalIntent: input.retrievalIntent,
+    timingsMs: compactRecord({
+      indexedContext: input.indexedDurationMs,
+      provider: input.providerDurationMs,
+      semanticContext: input.semanticDurationMs
+    })
+  });
+}
+
+function jsonByteLength(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value ?? {}), "utf8");
+}
+
+function compressionRatio(uncompressedBytes: number, compressedBytes: number): number | undefined {
+  if (uncompressedBytes <= 0) {
+    return undefined;
+  }
+  return Math.round((compressedBytes / uncompressedBytes) * 1000) / 1000;
 }
 
 function aiEvidencePriorityCitations(priorityContext: Record<string, unknown>): Record<string, unknown>[] {

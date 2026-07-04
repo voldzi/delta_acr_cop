@@ -1,5 +1,6 @@
 import type { AiIndexedContext } from "./ai-context-index.js";
 import type { AiSemanticContext, AiSemanticEntityType, AiSemanticResult } from "./ai-semantic-retrieval.js";
+import { aiIntentSuppressesRoutineCivilAir, inferAiRetrievalIntent, isRoutineCivilAirText, type AiRetrievalIntent } from "./ai-retrieval-intent.js";
 
 type AiPromptRecordSet = Record<string, unknown>[];
 
@@ -12,6 +13,7 @@ export interface AiPromptContextCompressionInput {
   indexedContext: AiIndexedContext;
   objects: AiPromptRecordSet;
   priorityContext: Record<string, unknown>;
+  retrievalIntent?: AiRetrievalIntent;
   semanticContext: AiSemanticContext;
   sourceHealth: AiPromptRecordSet;
 }
@@ -41,12 +43,13 @@ const semanticPromptItemLimit = 8;
 const semanticPromptTextLimit = 520;
 
 export function buildAiPromptContextCompression(input: AiPromptContextCompressionInput): AiPromptContextCompressionOutput {
+  const retrievalIntent = input.retrievalIntent ?? input.semanticContext.retrievalIntent ?? inferAiRetrievalIntent(input.semanticContext.query);
   const selectedEntityIds = selectedEntityIdsFromEvidence(input.priorityContext, input.semanticContext, input.indexedContext);
-  const objects = selectPromptRecords(input.objects, "observedObject", selectedEntityIds);
-  const alerts = selectPromptRecords(input.alerts, "alert", selectedEntityIds);
-  const communityReports = selectPromptRecords(input.communityReports, "communityReport", selectedEntityIds);
-  const incidents = selectPromptRecords(input.incidents, "incident", selectedEntityIds);
-  const sourceHealth = selectPromptRecords(input.sourceHealth, "sourceHealth", selectedEntityIds);
+  const objects = selectPromptRecords(input.objects, "observedObject", selectedEntityIds, retrievalIntent);
+  const alerts = selectPromptRecords(input.alerts, "alert", selectedEntityIds, retrievalIntent);
+  const communityReports = selectPromptRecords(input.communityReports, "communityReport", selectedEntityIds, retrievalIntent);
+  const incidents = selectPromptRecords(input.incidents, "incident", selectedEntityIds, retrievalIntent);
+  const sourceHealth = selectPromptRecords(input.sourceHealth, "sourceHealth", selectedEntityIds, retrievalIntent);
   const chatContext = compressPromptChatContext(input.chatContext, selectedEntityIds);
   const semanticContext = compressPromptSemanticContext(input.semanticContext);
   const indexedContext = compressPromptIndexedContext(input.indexedContext);
@@ -83,6 +86,7 @@ export function buildAiPromptContextCompression(input: AiPromptContextCompressio
       mode: "bge-m3-evidence-first",
       omittedCounts: subtractCounts(originalCounts, includedCounts),
       originalCounts,
+      retrievalIntent,
       semantic: compactRecord({
         model: input.semanticContext.model,
         originalItemCount: input.semanticContext.items.length,
@@ -132,7 +136,8 @@ function addSelectedEntity(selected: Map<AiSemanticEntityType, Set<string>>, ent
 function selectPromptRecords(
   records: AiPromptRecordSet,
   entityType: Exclude<AiSemanticEntityType, "chatMessage">,
-  selectedEntityIds: Map<AiSemanticEntityType, Set<string>>
+  selectedEntityIds: Map<AiSemanticEntityType, Set<string>>,
+  retrievalIntent: AiRetrievalIntent
 ): AiPromptRecordSet {
   const selected = selectedEntityIds.get(entityType) ?? new Set<string>();
   const limit = promptRecordLimits[entityType];
@@ -142,7 +147,7 @@ function selectPromptRecords(
       index,
       record,
       selected: selected.has(recordEntityId(entityType, record) ?? ""),
-      score: promptRecordScore(entityType, record),
+      score: promptRecordScore(entityType, record, retrievalIntent),
       timestamp: timestampMillis(recordTimestamp(record))
     }))
     .filter((item) => (item.selected && item.score >= promptSelectedRecordFloor(entityType)) || item.score >= promptRecordFallbackThreshold(entityType))
@@ -294,17 +299,18 @@ function slimPromptValue(value: unknown, key: string, depth: number): unknown {
   return undefined;
 }
 
-function promptRecordScore(entityType: Exclude<AiSemanticEntityType, "chatMessage">, record: Record<string, unknown>): number {
+function promptRecordScore(entityType: Exclude<AiSemanticEntityType, "chatMessage">, record: Record<string, unknown>, intent: AiRetrievalIntent): number {
   const text = JSON.stringify(record).toLocaleLowerCase("cs-CZ");
   let score = promptEntityBaseScore(entityType);
   score += severityScore(textValue(record.severity));
   score += statusScore(textValue(record.status) ?? textValue(record.health));
   score += crisisTermScore(`${textValue(record.category) ?? ""} ${textValue(record.type) ?? ""} ${text}`);
-  if ((textValue(record.domain) ?? "").toLocaleLowerCase("cs-CZ") === "air" || /track_stale|stale track|civil.*flight|letadl/u.test(text)) {
-    score -= /critical|warning|conflict|lost|incident/u.test(text) ? 0.08 : 0.28;
+  if ((textValue(record.domain) ?? "").toLocaleLowerCase("cs-CZ") === "air" || isRoutineCivilAirText(text)) {
+    const routineCivilAirPenalty = isRoutineCivilAirText(text) ? 0.46 : 0.22;
+    score -= aiIntentSuppressesRoutineCivilAir(intent) ? routineCivilAirPenalty : 0.06;
   }
   if (/low_confidence|zastaral|stale/u.test(text)) {
-    score -= 0.16;
+    score -= aiIntentSuppressesRoutineCivilAir(intent) ? 0.18 : 0.08;
   }
   return Math.max(0, Math.min(1, score));
 }

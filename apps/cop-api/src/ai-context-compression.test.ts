@@ -74,6 +74,10 @@ describe("buildAiPromptContextCompression", () => {
       mode: "bge-m3-evidence-first",
       omittedCounts: {
         objects: 1
+      },
+      retrievalIntent: {
+        primary: "general-safety",
+        suppressRoutineCivilAir: true
       }
     });
     expect(compressed.communityReports).toHaveLength(1);

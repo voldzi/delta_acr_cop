@@ -164,7 +164,13 @@ semantic context vrstvu pro AI endpointy. Vrstva indexuje jen už autorizovaný
 kontext dotazu, používá LRU cache embeddingů a do LLM předává jen omezený počet
 nejrelevantnějších dokumentů. `COP_AI_CONTEXT_INDEX_*` řídí background COP index
 pro AI agenta: refresh, velikost snapshotu, výchozí geo-radius, lookback a počty
-canonical entit jednotlivých typů. Guardrails se vyhodnocují před každým voláním LLM.
+canonical entit jednotlivých typů. AI endpointy před rankingem odvozují
+`retrievalIntent` z dotazu a používají ho pro rozšíření bge-m3 retrieval dotazu,
+řazení canonical entit a prompt kompresi. Obecné situační dotazy dávají prioritu
+vodě/povodni, požáru, zdravotnímu riziku, infrastruktuře, dopravě,
+bezpečnosti/policii, komunitním hlášením a aktivním výstrahám; rutinní civilní
+letecké tracky nejsou priorita, pokud dotaz není explicitně letecký nebo nemají
+přímou bezpečnostní souvislost. Guardrails se vyhodnocují před každým voláním LLM.
 Chat agent defaultuje na fast profil, pokud klient nepošle explicitní
 `modelPreference`; těžký reasoning profil se používá pro explicitní
 `modelPreference=reasoning` nebo vědomě zvolený `auto` routing.

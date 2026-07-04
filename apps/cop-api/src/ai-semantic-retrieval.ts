@@ -1,5 +1,6 @@
 import type { AiEmbeddingResponse } from "@cop/ai-gateway";
 import { createHash } from "node:crypto";
+import { aiIntentSuppressesRoutineCivilAir, inferAiRetrievalIntent, isRoutineCivilAirText, type AiRetrievalIntent } from "./ai-retrieval-intent.js";
 
 export type AiSemanticEntityType =
   | "alert"
@@ -54,6 +55,7 @@ export interface AiSemanticContext {
   items: AiSemanticResult[];
   model?: string;
   query: string;
+  retrievalIntent?: AiRetrievalIntent;
   status: "degraded" | "disabled" | "ok";
   warnings: string[];
 }
@@ -88,21 +90,23 @@ export class AiSemanticRetriever {
     generatedAt: Date;
     limit?: number;
     query: string;
+    retrievalIntent?: AiRetrievalIntent;
   }): Promise<AiSemanticContext> {
     const query = input.query.trim();
+    const retrievalIntent = input.retrievalIntent ?? inferAiRetrievalIntent(query);
     const documents = dedupeDocuments(input.documents).filter((document) => document.text.trim());
     if (!this.enabled) {
-      return this.empty(input.generatedAt, query, "disabled", "Semantic retrieval is disabled.");
+      return this.empty(input.generatedAt, query, "disabled", "Semantic retrieval is disabled.", retrievalIntent);
     }
     if (!query || documents.length === 0) {
-      return this.empty(input.generatedAt, query, "disabled", "Semantic retrieval has no query or documents.");
+      return this.empty(input.generatedAt, query, "disabled", "Semantic retrieval has no query or documents.", retrievalIntent);
     }
     try {
       const queryEmbedding = await this.embed(`query\n${query}`);
       const scored = await mapWithConcurrency(documents, 4, async (document) => {
         const embedding = await this.embed(documentEmbeddingText(document));
         const semanticScore = cosineSimilarity(queryEmbedding.embedding, embedding.embedding);
-        const priorityScore = crisisPriorityScore(document);
+        const priorityScore = crisisPriorityScore(document, retrievalIntent);
         return {
           document,
           priorityScore,
@@ -140,15 +144,16 @@ export class AiSemanticRetriever {
         items,
         model: queryEmbedding.model,
         query,
+        retrievalIntent,
         status: "ok",
         warnings: []
       };
     } catch (error) {
-      return this.empty(input.generatedAt, query, "degraded", `Semantic retrieval unavailable: ${errorMessage(error)}`);
+      return this.empty(input.generatedAt, query, "degraded", `Semantic retrieval unavailable: ${errorMessage(error)}`, retrievalIntent);
     }
   }
 
-  private empty(generatedAt: Date, query: string, status: AiSemanticContext["status"], warning: string): AiSemanticContext {
+  private empty(generatedAt: Date, query: string, status: AiSemanticContext["status"], warning: string, retrievalIntent?: AiRetrievalIntent): AiSemanticContext {
     return {
       citations: [],
       contractVersion: "cop-ai-semantic-context-v1",
@@ -156,6 +161,7 @@ export class AiSemanticRetriever {
       includedDocumentCount: 0,
       items: [],
       query,
+      ...(retrievalIntent ? { retrievalIntent } : {}),
       status,
       warnings: [warning]
     };
@@ -291,7 +297,7 @@ function documentEmbeddingText(document: AiSemanticDocument): string {
   ].filter(Boolean).join("\n");
 }
 
-function crisisPriorityScore(document: AiSemanticDocument): number {
+function crisisPriorityScore(document: AiSemanticDocument, intent: AiRetrievalIntent): number {
   const metadata = document.metadata ?? {};
   const payload = isRecord(document.payload) ? document.payload : {};
   const text = `${document.title ?? ""}\n${document.text}`.toLocaleLowerCase("cs-CZ");
@@ -300,9 +306,10 @@ function crisisPriorityScore(document: AiSemanticDocument): number {
   score += statusPriority(optionalText(metadata.status) ?? optionalText(payload.status));
   score += healthPriority(optionalText(metadata.health) ?? optionalText(payload.health));
   score += categoryPriority(optionalText(metadata.category) ?? optionalText(payload.category), text);
-  score += domainPriority(optionalText(metadata.domain) ?? optionalText(payload.domain), text);
-  score += dataQualityPriority(optionalText(metadata.dataQuality) ?? optionalText(payload.dataQuality), text);
-  return Math.max(-0.4, Math.min(0.75, score));
+  score += intentPriority(intent, document.entityType, text);
+  score += domainPriority(optionalText(metadata.domain) ?? optionalText(payload.domain), text, intent);
+  score += dataQualityPriority(optionalText(metadata.dataQuality) ?? optionalText(payload.dataQuality), text, intent);
+  return Math.max(-0.75, Math.min(0.85, score));
 }
 
 function entityTypePriority(entityType: AiSemanticEntityType): number {
@@ -395,18 +402,49 @@ function categoryPriority(category: string | undefined, text: string): number {
   return 0;
 }
 
-function domainPriority(domain: string | undefined, text: string): number {
-  const normalizedDomain = domain?.toLocaleLowerCase("cs-CZ");
-  if (normalizedDomain === "air" || /\b(aircraft|flight|letadl|track_stale|stale track)\b/u.test(text)) {
-    return /(critical|warning|incident|conflict|lost)/u.test(text) ? 0 : -0.12;
+function intentPriority(intent: AiRetrievalIntent, entityType: AiSemanticEntityType, text: string): number {
+  if (intent.primary === "general-safety" && entityType !== "observedObject") {
+    return 0.04;
+  }
+  if (intent.categories.includes("flood-water") && /(flood|povod|řek|rek|hladin|hydro|water|voda|záplav|zaplav)/u.test(text)) {
+    return 0.18;
+  }
+  if (intent.categories.includes("fire") && /(fire|požár|pozar|kouř|kour|hotspot|firms)/u.test(text)) {
+    return 0.16;
+  }
+  if (intent.categories.includes("security-police") && /(security|polic|kráde|krade|zlod|incident|crime|bezpeč)/u.test(text)) {
+    return 0.14;
+  }
+  if (intent.categories.includes("traffic") && /(traffic|doprav|road|silnic|nehod|uzavír|uzavir)/u.test(text)) {
+    return 0.1;
+  }
+  if (intent.categories.includes("infrastructure") && /(infrastructure|utility|outage|výpad|vypad|elektř|elektr|most|bridge)/u.test(text)) {
+    return 0.1;
+  }
+  if (intent.categories.includes("medical") && /(medical|zdravot|zran|evaku|hazard|nebezpe)/u.test(text)) {
+    return 0.1;
+  }
+  if (intent.categories.includes("weather") && /(weather|vítr|vitr|bouř|bour|warning|výstrah|vystrah)/u.test(text)) {
+    return 0.08;
   }
   return 0;
 }
 
-function dataQualityPriority(dataQuality: string | undefined, text: string): number {
+function domainPriority(domain: string | undefined, text: string, intent: AiRetrievalIntent): number {
+  const normalizedDomain = domain?.toLocaleLowerCase("cs-CZ");
+  if (normalizedDomain === "air" || isRoutineCivilAirText(text)) {
+    if (!aiIntentSuppressesRoutineCivilAir(intent)) {
+      return /(critical|warning|incident|conflict|lost)/u.test(text) ? 0.04 : 0;
+    }
+    return isRoutineCivilAirText(text) ? -0.42 : -0.16;
+  }
+  return 0;
+}
+
+function dataQualityPriority(dataQuality: string | undefined, text: string, intent: AiRetrievalIntent): number {
   const value = `${dataQuality ?? ""} ${text}`;
   if (/(track_stale|TRACK_STALE|stale track|zastaral)/u.test(value)) {
-    return -0.18;
+    return aiIntentSuppressesRoutineCivilAir(intent) ? -0.24 : -0.08;
   }
   if (/(low_confidence|LOW_CONFIDENCE)/u.test(value)) {
     return -0.06;

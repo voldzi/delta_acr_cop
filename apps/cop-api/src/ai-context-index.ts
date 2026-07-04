@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AiSemanticCitation, AiSemanticContext, AiSemanticDocument, AiSemanticRetriever } from "./ai-semantic-retrieval.js";
+import type { AiRetrievalIntent } from "./ai-retrieval-intent.js";
 
 export interface AiContextGeoFilter {
   bbox?: AiContextBbox;
@@ -46,6 +47,7 @@ export interface AiIndexedContext {
   query: {
     geo?: AiContextGeoFilter;
     limit: number;
+    retrievalIntent?: AiRetrievalIntent;
     text: string;
     timeWindow?: AiContextTimeWindow;
   };
@@ -147,6 +149,7 @@ export class AiContextIndex {
     geo?: AiContextGeoFilter;
     limit?: number;
     query: string;
+    retrievalIntent?: AiRetrievalIntent;
     timeWindow?: AiContextTimeWindow;
   }): Promise<AiIndexedContext> {
     const startedAt = Date.now();
@@ -172,9 +175,10 @@ export class AiContextIndex {
           documents: matchedDocuments,
           generatedAt: input.generatedAt,
           limit,
-          query
+          query,
+          ...(input.retrievalIntent ? { retrievalIntent: input.retrievalIntent } : {})
         }), "I")
-      : emptySemanticContext(input.generatedAt, query, "disabled", warnings[0] ?? "COP AI context index is disabled.");
+      : emptySemanticContext(input.generatedAt, query, "disabled", warnings[0] ?? "COP AI context index is disabled.", input.retrievalIntent);
     for (const warning of warnings) {
       if (!semanticContext.warnings.includes(warning)) {
         semanticContext.warnings.push(warning);
@@ -194,6 +198,7 @@ export class AiContextIndex {
       query: {
         ...(input.geo ? { geo: input.geo } : {}),
         limit,
+        ...(input.retrievalIntent ? { retrievalIntent: input.retrievalIntent } : {}),
         text: query,
         ...(input.timeWindow ? { timeWindow: input.timeWindow } : {})
       },
@@ -316,7 +321,13 @@ function remapSemanticContextCitations(context: AiSemanticContext, prefix: "I"):
   };
 }
 
-function emptySemanticContext(generatedAt: Date, query: string, status: AiSemanticContext["status"], warning: string): AiSemanticContext {
+function emptySemanticContext(
+  generatedAt: Date,
+  query: string,
+  status: AiSemanticContext["status"],
+  warning: string,
+  retrievalIntent?: AiRetrievalIntent
+): AiSemanticContext {
   return {
     citations: [],
     contractVersion: "cop-ai-semantic-context-v1",
@@ -324,6 +335,7 @@ function emptySemanticContext(generatedAt: Date, query: string, status: AiSemant
     includedDocumentCount: 0,
     items: [],
     query,
+    ...(retrievalIntent ? { retrievalIntent } : {}),
     status,
     warnings: [warning]
   };

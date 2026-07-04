@@ -181,6 +181,12 @@ incidentů, source health a chatových zpráv; dostává `contextCompression`, t
 semantic/indexed položky bez raw payloadů a jen citované nebo krizově relevantní
 záznamy. Počty a plný evidence blok pro UI/audit zůstávají zachované, takže
 komprese zmenšuje prompt a snižuje riziko timeoutu bez rozšíření oprávnění.
+Výběr kandidátů je navíc řízený serverovým `retrievalIntent`, který vzniká z
+dotazu uživatele. Běžné situační dotazy nepovažují civilní letový provoz za
+prioritu; voda/povodeň, požár, zdravotní riziko, infrastruktura, doprava,
+bezpečnost/policie, komunitní hlášení a aktivní výstrahy mají přednost před
+rutinními stale civilními leteckými tracky. Letecká data se vrací jako priorita
+jen při explicitním leteckém dotazu nebo přímé bezpečnostní souvislosti.
 
 `situation-summary` a `chat-agent/query` předávají LLM také serverový
 `priorityContext`. Ten řadí signály podle krizové důležitosti před čistou
@@ -204,8 +210,10 @@ Matrix E2EE historii; chatová paměť zůstává jen v consentovaném requestov
 
 Každý výstup z těchto endpointů vrací klientovi omezený evidence blok, který
 spojuje priority `[P*]`, requestové semantic citace `[S*]`, background index
-citace `[I*]`, stav retrievalu a mapové kandidáty. Tento blok je určený pro
-transparentní UI a budoucí mapové snapshoty, ne jako náhrada COP oprávnění.
+citace `[I*]`, stav retrievalu, `retrievalIntent`, kompresní poměr promptu,
+timing semantic/index/provider kroků a mapové kandidáty. Tento blok je určený
+pro transparentní UI, audit a budoucí mapové snapshoty, ne jako náhrada COP
+oprávnění.
 
 `priorityContext.mapSnapshot` zatím obsahuje strukturované kandidáty a bounding
 box pro budoucí mapový náhled; není to serverem vyrenderovaný obrázek.

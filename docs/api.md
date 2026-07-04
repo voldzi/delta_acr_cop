@@ -53,6 +53,12 @@ server-side `semanticContext` for the LLM. COP API embeds only the already
 authorized request context with `bge-m3`, ranks relevant COP entities/chat
 snippets and passes a bounded result set to the LLM. The semantic layer does not
 read Matrix history on the server and does not bypass RBAC/ABAC or media ACLs.
+Before ranking, COP derives a server-side `retrievalIntent` from the user's
+natural-language question and expands the retrieval query with safety-relevant
+terms. General situational-awareness questions prioritize people, water/flood,
+fire, health, infrastructure, traffic, security/police, community reports and
+active alerts. Routine civil flight tracks are suppressed unless the question is
+explicitly about the air picture or the air data has direct safety relevance.
 The same endpoints also build `priorityContext` before semantic ranking. It
 boosts flood/water, fire, medical, infrastructure, traffic, security/police,
 community-report and active-alert signals, emits `[P*]`/`[S*]` citation
@@ -81,9 +87,11 @@ Both endpoints echo a bounded, client-safe evidence summary in
 `result.structured.evidence`. The summary contains citation lists from
 `priorityContext` (`[P*]`), request-time `semanticContext` (`[S*]`) and
 background `indexedContext` (`[I*]`), plus map snapshot candidates for future
-visual previews. UI clients may render these citations and counts, but must not
-treat them as authorization to fetch entities outside the normal COP API access
-rules.
+visual previews. It also carries `observability` with the applied
+`retrievalIntent`, semantic/index/provider timings and prompt-compression byte
+counts. UI clients may render these citations, counts and diagnostics, but must
+not treat them as authorization to fetch entities outside the normal COP API
+access rules.
 
 AI endpoints bound expensive work before calling the model. Request-time
 semantic retrieval embeds only the highest-priority candidate set

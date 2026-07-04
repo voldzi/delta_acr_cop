@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AiSemanticRetriever, createSemanticDocuments } from "./ai-semantic-retrieval.js";
 import { AiContextIndex } from "./ai-context-index.js";
+import { inferAiRetrievalIntent } from "./ai-retrieval-intent.js";
 
 describe("AiContextIndex", () => {
   it("queries a background COP index with geo and time filters", async () => {
@@ -43,6 +44,7 @@ describe("AiContextIndex", () => {
       maxDocuments: 8
     });
 
+    const retrievalIntent = inferAiRetrievalIntent("Jaká je situace ve Vrbně pod Pradědem?");
     const context = await index.query(retriever, {
       generatedAt: new Date("2026-07-04T10:00:00.000Z"),
       geo: {
@@ -51,6 +53,7 @@ describe("AiContextIndex", () => {
         source: "geocoder"
       },
       query: "Jaká je situace ve Vrbně pod Pradědem?",
+      retrievalIntent,
       timeWindow: {
         maxAgeSeconds: 6 * 3600
       }
@@ -62,7 +65,17 @@ describe("AiContextIndex", () => {
         documentCount: 3,
         status: "ok"
       },
+      query: {
+        retrievalIntent: {
+          primary: "general-safety",
+          suppressRoutineCivilAir: true
+        }
+      },
       semanticContext: {
+        retrievalIntent: {
+          primary: "general-safety",
+          suppressRoutineCivilAir: true
+        },
         status: "ok"
       },
       toolCall: {
