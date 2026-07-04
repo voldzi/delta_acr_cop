@@ -61,6 +61,13 @@ for future map-preview rendering. Routine stale or low-confidence civil air
 tracks are intentionally low priority unless directly relevant to the user
 question, safety or a data-coverage caveat.
 
+Before the provider call, COP applies `bge-m3` evidence-first prompt
+compression. The model receives `contextCompression`, thin semantic/indexed
+items without raw payload duplication and only the cited or crisis-relevant
+records from the larger request snapshot. Omitted records remain counted in
+`scope` and `result.structured.evidence`; omission from the prompt context does
+not mean they are absent from COP or newly authorized to the client.
+
 The same endpoints also attach `indexedContext` from the background
 `AiContextIndex`. It is a read-only, audited query over public/policy-safe
 canonical COP entities with geo filtering, a time window and `bge-m3` ranking.

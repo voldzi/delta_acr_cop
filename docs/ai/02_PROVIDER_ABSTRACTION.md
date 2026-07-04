@@ -43,6 +43,12 @@ Neindexuje globálně všechna surová data do LLM dotazu; z aktuálně oprávn�
 kontextu vytvoří malé dokumenty, použije `bge-m3` pro podobnost k dotazu a do
 LLM vloží jen top-N výsledků s metadaty zdroje.
 
+Před voláním provideru se nad stejnými výsledky použije evidence-first prompt
+compression. LLM dostane `contextCompression`, citované/top-N semantic a indexed
+položky bez raw payloadů a jen omezené podpůrné záznamy, které jsou citované
+nebo krizově relevantní. Plné počty a evidence metadata se vracejí klientovi
+odděleně, takže komprese neznamená změnu oprávnění ani ztrátu auditovatelnosti.
+
 Výchozí produkční pořadí pro `auto` je:
 
 1. explicitně nakonfigurovaný dostupný provider,

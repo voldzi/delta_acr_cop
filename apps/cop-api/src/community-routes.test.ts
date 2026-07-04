@@ -923,6 +923,10 @@ describe("community report routes", () => {
     expect(priorityContext).toMatchObject({
       contractVersion: "cop-ai-priority-context-v1"
     });
+    expect(capturedQueries[0]?.context?.contextCompression).toMatchObject({
+      contractVersion: "cop-ai-prompt-context-compression-v1",
+      mode: "bge-m3-evidence-first"
+    });
     expect(priorityContext?.citations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         entityId: floodReport.reportId,
@@ -962,6 +966,9 @@ describe("community report routes", () => {
         entityType: "communityReport"
       })
     ]));
+    const promptSemanticContext = capturedQueries[0]?.context?.semanticContext as Record<string, unknown> | undefined;
+    const promptSemanticItems = Array.isArray(promptSemanticContext?.items) ? promptSemanticContext.items : [];
+    expect(promptSemanticItems[0]).not.toHaveProperty("payload");
     const auditResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
       url: "/api/v1/audit/events"

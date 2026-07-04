@@ -35,6 +35,7 @@ import {
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { AiContextIndex, type AiContextGeoFilter, type AiContextIndexRefreshResult, type AiContextTimeWindow, type AiIndexedContext } from "./ai-context-index.js";
+import { buildAiPromptContextCompression } from "./ai-context-compression.js";
 import { AiSemanticRetriever, createSemanticDocuments, type AiSemanticContext, type AiSemanticDocument } from "./ai-semantic-retrieval.js";
 import { createCopStreamBusFromEnv, type CopStreamBus } from "./cop-stream-bus.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
@@ -6310,6 +6311,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       requestId,
       requestNow
     });
+    const promptContext = buildAiPromptContextCompression({
+      alerts: aiAlerts,
+      communityReports: aiCommunityReports,
+      generatedAt: requestNow,
+      incidents: aiIncidents,
+      indexedContext,
+      objects: aiObjects,
+      priorityContext,
+      semanticContext,
+      sourceHealth: aiSourceHealth
+    });
     const aiRequest: AiCopQuery = {
       requestId,
       purpose: "COP_EXPLANATION",
@@ -6336,13 +6348,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           semanticDocumentCount: semanticContext.includedDocumentCount
         },
         priorityContext,
-        indexedContext,
-        objects: aiObjects,
-        alerts: aiAlerts,
-        communityReports: aiCommunityReports,
-        incidents: aiIncidents,
-        sourceHealth: aiSourceHealth,
-        semanticContext
+        contextCompression: promptContext.contextCompression,
+        indexedContext: promptContext.indexedContext,
+        objects: promptContext.objects,
+        alerts: promptContext.alerts,
+        communityReports: promptContext.communityReports,
+        incidents: promptContext.incidents,
+        sourceHealth: promptContext.sourceHealth,
+        semanticContext: promptContext.semanticContext
       },
       modelPreference: "fast",
       providerPreference: "auto",
@@ -6471,6 +6484,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       requestId,
       requestNow
     });
+    const promptContext = buildAiPromptContextCompression({
+      alerts: aiAlerts,
+      ...(chatContext ? { chatContext } : {}),
+      communityReports: aiCommunityReports,
+      generatedAt: requestNow,
+      incidents: aiIncidents,
+      indexedContext,
+      objects: aiObjects,
+      priorityContext,
+      semanticContext,
+      sourceHealth: aiSourceHealth
+    });
     const aiRequest: AiCopQuery = {
       requestId,
       purpose: "COP_EXPLANATION",
@@ -6495,8 +6520,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           aiAssistant: group ? summarizeGroupAiAssistantForAi(group) : undefined,
           activeMemberCount: group ? group.members.filter((member) => member.status === "active").length : undefined
         }),
-        chatContext,
+        chatContext: promptContext.chatContext,
         priorityContext,
+        contextCompression: promptContext.contextCompression,
         scope: {
           objectCount: readableObjects.length,
           alertCount: alerts.length,
@@ -6508,13 +6534,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
           semanticDocumentCount: semanticContext.includedDocumentCount
         },
-        objects: aiObjects,
-        alerts: aiAlerts,
-        communityReports: aiCommunityReports,
-        incidents: aiIncidents,
-        sourceHealth: aiSourceHealth,
-        indexedContext,
-        semanticContext
+        objects: promptContext.objects,
+        alerts: promptContext.alerts,
+        communityReports: promptContext.communityReports,
+        incidents: promptContext.incidents,
+        sourceHealth: promptContext.sourceHealth,
+        indexedContext: promptContext.indexedContext,
+        semanticContext: promptContext.semanticContext
       },
       ...(modelPreference ? { modelPreference } : {}),
       providerPreference: "auto",

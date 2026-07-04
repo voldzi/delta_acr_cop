@@ -175,6 +175,13 @@ chatContextu sestaví dokumenty, seřadí je podle podobnosti k dotazu a vloží
 LLM kontextu omezený `semanticContext`. Retrieval nikdy nerozšiřuje oprávnění:
 RBAC/ABAC, release policy a E2EE consent se aplikují před tvorbou dokumentů.
 
+Před voláním provideru navíc běží `bge-m3` evidence-first komprese promptu.
+Provider už nedostává duplicitně celé seznamy objektů, alertů, reportů,
+incidentů, source health a chatových zpráv; dostává `contextCompression`, tenké
+semantic/indexed položky bez raw payloadů a jen citované nebo krizově relevantní
+záznamy. Počty a plný evidence blok pro UI/audit zůstávají zachované, takže
+komprese zmenšuje prompt a snižuje riziko timeoutu bez rozšíření oprávnění.
+
 `situation-summary` a `chat-agent/query` předávají LLM také serverový
 `priorityContext`. Ten řadí signály podle krizové důležitosti před čistou
 semantic podobností: voda/povodeň, požár, zdravotní riziko, infrastruktura,
