@@ -114,6 +114,13 @@ viditelný jako samostatný řádek mezi členy a dotazy jdou přes
 vyžaduje aktivní členství a skládá COP kontext server-side; nečte šifrovanou
 Matrix historii.
 
+Odpovědi AI odeslané do Matrixu jsou běžné `m.room.message` události s
+namespaced `cz.cop` metadaty. UI je díky tomu označí jako `COP AI agent` nebo
+`AI situační souhrn` a ukáže request/audit/policy údaje bez parsování textu
+zprávy. V zapnutých skupinách composer rozpozná také vedoucí zmínku
+`@COP AI ...`; odpovědi se statusem `NEEDS_HUMAN_REVIEW` se neodesílají
+automaticky a otevřou potvrzovací dialog.
+
 Tyto endpointy jsou určeny i pro iOS/iPadOS klienty. Klienti nemají znát Ollama
 URL, LLM Gateway URL ani service tokeny.
 
@@ -138,6 +145,7 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
 4. Situation summary pro událost/workspace. Stav: základní endpoint hotový a
    první chat UI dialog napojený na server-side COP kontext.
 5. Community report assistant pro text a kategorie. Stav: základní endpoint hotový bez čtení médií.
-6. Viditelný chat AI agent. Stav: group-level metadata a explicitní dotazovací
-   dialog hotový bez čtení E2EE historie.
+6. Viditelný chat AI agent. Stav: group-level metadata, explicitní dotazovací
+   dialog, `@COP AI` mention tok a Matrix `cz.cop` auditní metadata jsou hotové
+   bez čtení E2EE historie.
 7. Až potom multimediální shrnutí, a jen s media ACL.

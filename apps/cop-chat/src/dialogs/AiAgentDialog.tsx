@@ -2,7 +2,7 @@ import React from "react";
 import { Check, Copy, Loader2, Send, Sparkles, X } from "lucide-react";
 import type { AiCopResponse } from "@cop/core/cop-data";
 import { useModalFocus } from "../hooks/useModalFocus";
-import { aiResponseSummary } from "./AiSituationDialog";
+import { aiResponseSummary, aiStatusLabel } from "./aiResponse";
 
 export default function AiAgentDialog({
   question,
@@ -131,15 +131,4 @@ export default function AiAgentDialog({
       </section>
     </div>
   );
-}
-
-function aiStatusLabel(status: AiCopResponse["status"]): string {
-  switch (status) {
-    case "COMPLETED":
-      return "dokončeno";
-    case "NEEDS_HUMAN_REVIEW":
-      return "vyžaduje kontrolu";
-    case "REJECTED":
-      return "zamítnuto";
-  }
 }

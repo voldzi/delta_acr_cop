@@ -1205,6 +1205,15 @@ button {
   background: var(--bubble-own);
 }
 
+.message-row.ai-message .message-bubble {
+  border: 1px solid rgba(0, 128, 105, 0.18);
+  background: linear-gradient(180deg, #eefbf7 0%, var(--bubble-other) 100%);
+}
+
+.message-row.own.ai-message .message-bubble {
+  background: linear-gradient(180deg, #e2f7ee 0%, var(--bubble-own) 100%);
+}
+
 .message-row.selectable {
   cursor: pointer;
 }
@@ -1265,6 +1274,67 @@ button {
 
 .message-text {
   white-space: pre-wrap;
+}
+
+.message-ai-metadata {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 7px;
+}
+
+.message-ai-title {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: var(--accent-dark);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.message-ai-title em {
+  border-radius: 999px;
+  background: rgba(0, 128, 105, 0.12);
+  color: #1d6b5b;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 800;
+  padding: 2px 6px;
+}
+
+.message-ai-question {
+  display: grid;
+  gap: 1px;
+  border-left: 3px solid rgba(0, 128, 105, 0.38);
+  padding-left: 7px;
+  color: #24343d;
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.message-ai-question small {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.message-ai-audit {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: rgba(84, 101, 111, 0.88);
+  font-size: 0.66rem;
+  line-height: 1.3;
+}
+
+.message-ai-audit span {
+  max-width: 100%;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 2px 6px;
+  overflow-wrap: anywhere;
 }
 
 .message-text mark {

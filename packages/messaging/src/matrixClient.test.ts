@@ -383,6 +383,55 @@ describe("Matrix client diagnostics", () => {
     });
   });
 
+  it("sends and reads COP AI metadata on Matrix text messages", async () => {
+    const sendMessage = vi.fn<MatrixSendMessage>().mockResolvedValue(undefined);
+    const content = {
+      "cz.cop": {
+        ai: {
+          auditId: "audit-1",
+          policyReason: "allowed",
+          provider: "mock",
+          question: "Co je teď důležité?",
+          requestId: "request-1",
+          status: "COMPLETED",
+          type: "chat-agent"
+        },
+        kind: "ai-agent-response",
+        source: "cop-chat"
+      },
+      body: "AI odpověď",
+      msgtype: "m.text"
+    };
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      rooms: [createRoom({
+        roomId: "!chat:cop.local",
+        timeline: [createMessageEvent(content.body, Date.parse("2026-06-24T11:00:00.000Z"), "$ai", "@operator:cop.local", content)]
+      })],
+      sendMessage
+    }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    await session.sendMessage("!chat:cop.local", "AI odpověď", {
+      cop: {
+        ai: {
+          auditId: "audit-1",
+          policyReason: "allowed",
+          provider: "mock",
+          question: "Co je teď důležité?",
+          requestId: "request-1",
+          status: "COMPLETED",
+          type: "chat-agent"
+        },
+        kind: "ai-agent-response",
+        source: "cop-chat"
+      }
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith("!chat:cop.local", content);
+    expect(session.getTimeline("!chat:cop.local")[0]?.cop).toEqual(content["cz.cop"]);
+  });
+
   it("removes the current Matrix reaction when setting the same reaction again", async () => {
     const redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined);
     const sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
@@ -1026,9 +1075,15 @@ function createRoom({
   };
 }
 
-function createMessageEvent(body: string, timestamp: number, eventId = `$${body}`, sender = "@operator:cop.local") {
+function createMessageEvent(
+  body: string,
+  timestamp: number,
+  eventId = `$${body}`,
+  sender = "@operator:cop.local",
+  content: Record<string, unknown> = { body, msgtype: "m.text" }
+) {
   return {
-    getContent: () => ({ body, msgtype: "m.text" }),
+    getContent: () => content,
     getId: () => eventId,
     getSender: () => sender,
     getTs: () => timestamp,

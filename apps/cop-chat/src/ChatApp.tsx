@@ -99,6 +99,7 @@ import {
 import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
+  MatrixCopMessageMetadata,
   MatrixLocationShare,
   MatrixMessagingSession,
   MatrixRoomSummary,
@@ -140,6 +141,7 @@ import {
   normalizeMessageRetentionSeconds,
   type MessageRetentionSeconds
 } from "./dialogs/messageRetention";
+import { aiResponseSummary, aiStatusLabel } from "./dialogs/aiResponse";
 
 export { embeddedChatSelectionFromMessage, readRouteSelection, writeChatRoute } from "./hooks/useChatRouting";
 export { centerLocationInCop } from "./components/LocationPreview";
@@ -174,6 +176,11 @@ interface PendingChatAttachment {
   file: File;
   kind: MatrixAttachmentKind;
   previewUrl?: string;
+}
+
+interface ChatSendOptions {
+  cop?: MatrixCopMessageMetadata;
+  skipAiMention?: boolean;
 }
 
 interface LocalUserPreferences {
@@ -2175,7 +2182,10 @@ export function ChatApp() {
       setError("Nejdřív otevřete chatovou místnost, do které chcete AI souhrn poslat.");
       return;
     }
-    const sent = await sendMessage(`AI situační souhrn:\n\n${text}`);
+    const sent = await sendMessage(formatAiSituationShareBody(text), {
+      cop: buildAiSituationMessageMetadata(aiSituationResponse),
+      skipAiMention: true
+    });
     if (sent) {
       setAiSituationDialogOpen(false);
       setNotice("AI souhrn byl odeslán do chatu.");
@@ -2223,7 +2233,10 @@ export function ChatApp() {
       return;
     }
     const question = aiAgentQuestion.trim();
-    const sent = await sendMessage(`COP AI agent${question ? `\nDotaz: ${question}` : ""}\n\n${text}`);
+    const sent = await sendMessage(formatAiAgentShareBody(text, question), {
+      cop: buildAiAgentMessageMetadata(aiAgentResponse, question),
+      skipAiMention: true
+    });
     if (sent) {
       setAiAgentDialogOpen(false);
       setNotice("Odpověď AI agenta byla odeslána do chatu.");
@@ -2421,15 +2434,25 @@ export function ChatApp() {
     }
   }
 
-  async function sendMessage(draft: string): Promise<boolean> {
+  async function sendMessage(draft: string, options: ChatSendOptions = {}): Promise<boolean> {
     const text = draft.trim();
     if (!matrixSession || !selectedRoomId || !(text || pendingAttachment)) {
       return false;
     }
     const attachment = pendingAttachment;
+    const aiMentionQuestion = !options.skipAiMention && !attachment && !replyDraft && selectedGroupAiAssistantEnabled
+      ? parseAiAgentMention(text)
+      : null;
     setSending(true);
     setError(null);
     try {
+      if (aiMentionQuestion !== null) {
+        await sendAiAgentMentionQuestion(text, aiMentionQuestion);
+        setReplyDraft(null);
+        clearPendingAttachment();
+        setTimeline(rememberRoomTimeline(selectedRoomId, matrixSession.getTimeline(selectedRoomId)));
+        return true;
+      }
       if (attachment) {
         const payload: MatrixAttachmentUpload = {
           caption: text || undefined,
@@ -2438,7 +2461,10 @@ export function ChatApp() {
         };
         await matrixSession.sendAttachment(selectedRoomId, payload);
       } else {
-        await matrixSession.sendMessage(selectedRoomId, text, replyDraft ? { replyTo: matrixReplyTarget(replyDraft, authSession) } : undefined);
+        await matrixSession.sendMessage(selectedRoomId, text, {
+          ...(options.cop ? { cop: options.cop } : {}),
+          ...(replyDraft ? { replyTo: matrixReplyTarget(replyDraft, authSession) } : {})
+        });
       }
       setReplyDraft(null);
       clearPendingAttachment();
@@ -2450,6 +2476,52 @@ export function ChatApp() {
     } finally {
       setSending(false);
     }
+  }
+
+  async function sendAiAgentMentionQuestion(userMessage: string, question: string): Promise<void> {
+    if (!authToken) {
+      throw new Error("Pro dotaz na AI agenta je potřeba platné přihlášení do COP.");
+    }
+    if (!question.trim()) {
+      throw new Error("Za @COP AI doplňte konkrétní dotaz.");
+    }
+    if (!matrixSession || !selectedRoomId) {
+      throw new Error("Nejdřív otevřete chatovou místnost.");
+    }
+
+    await matrixSession.sendMessage(selectedRoomId, userMessage);
+    let response: AiCopResponse;
+    try {
+      response = await queryAiChatAgent(apiBase, authToken, {
+        conversationId: selectedConversation?.conversationId,
+        groupId: selectedGroup?.groupId,
+        language: "cs",
+        maxObjects: 40,
+        question
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "AI agent teď nedokáže odpovědět.");
+      return;
+    }
+    setAiAgentQuestion(question);
+    setAiAgentResponse(response);
+
+    const answer = aiResponseSummary(response);
+    if (response.status !== "COMPLETED") {
+      setAiAgentDialogOpen(true);
+      setNotice(response.status === "NEEDS_HUMAN_REVIEW"
+        ? "AI odpověď vyžaduje lidskou kontrolu, proto není automaticky odeslaná."
+        : "AI odpověď nebyla automaticky odeslaná.");
+      return;
+    }
+    if (!answer.trim()) {
+      setNotice("AI agent nevrátil odpověď k odeslání.");
+      return;
+    }
+    await matrixSession.sendMessage(selectedRoomId, formatAiAgentShareBody(answer, question), {
+      cop: buildAiAgentMessageMetadata(response, question)
+    });
+    setNotice("COP AI agent odpověděl do chatu.");
   }
 
   async function shareLocation() {
@@ -3646,6 +3718,7 @@ function MessageRow({
   const longPressHandledRef = React.useRef(false);
   const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const hasReactions = Boolean(message.reactions?.length);
+  const hasAiMetadata = Boolean(message.cop?.kind);
 
   const clearLongPressTimer = React.useCallback(() => {
     if (longPressTimerRef.current !== null) {
@@ -3667,7 +3740,7 @@ function MessageRow({
   return (
     <article
       ref={rowRef}
-      className={clsx("message-row", message.own && "own", grouped && "grouped", selectable && "selectable", selected && "selected", focused && "action-focused", activeSearchMatch && "search-active", hasReactions && "has-reactions")}
+      className={clsx("message-row", message.own && "own", grouped && "grouped", selectable && "selectable", selected && "selected", focused && "action-focused", activeSearchMatch && "search-active", hasReactions && "has-reactions", hasAiMetadata && "ai-message")}
       data-message-id={message.eventId}
       onClick={(event) => {
         if (longPressHandledRef.current) {
@@ -3730,6 +3803,7 @@ function MessageRow({
       ) : null}
       <div className="message-bubble">
         {!message.own && !grouped ? <span className="sender-name">{senderLabel}</span> : null}
+        {hasAiMetadata ? <MessageAiMetadata message={message} /> : null}
         {replyToMessage ? <ReplyPreview message={replyToMessage} /> : null}
         {message.kind === "location" && message.location ? (
           <LocationMessage message={message} onOpenPreview={onOpenPreview} />
@@ -3743,7 +3817,7 @@ function MessageRow({
             onOpenPreview={onOpenPreview}
           />
         ) : (
-          <HighlightedMessageText query={searchQuery} text={message.body} />
+          <HighlightedMessageText query={searchQuery} text={messageDisplayBody(message)} />
         )}
         <span className="message-time">
           {formatTime(message.timestamp)}
@@ -3784,6 +3858,39 @@ function MessageRow({
       </div>
     </article>
   );
+}
+
+function MessageAiMetadata({ message }: { message: MatrixTimelineMessage }) {
+  const ai = message.cop?.ai;
+  const title = message.cop?.kind === "ai-situation-summary" ? "AI situační souhrn" : "COP AI agent";
+  const status = ai?.status ? aiStatusLabel(ai.status) : null;
+  const provider = [ai?.provider, ai?.model].filter(Boolean).join(" / ");
+  return (
+    <div className="message-ai-metadata">
+      <span className="message-ai-title">
+        <Sparkles size={14} />
+        <strong>{title}</strong>
+        {status ? <em>{status}</em> : null}
+      </span>
+      {ai?.question ? (
+        <span className="message-ai-question">
+          <small>Dotaz</small>
+          {ai.question}
+        </span>
+      ) : null}
+      {ai?.auditId || ai?.policyReason || provider ? (
+        <span className="message-ai-audit">
+          {ai?.auditId ? <span>Audit {shortAuditId(ai.auditId)}</span> : null}
+          {provider ? <span>{provider}</span> : null}
+          {ai?.policyReason ? <span>{ai.policyReason}</span> : null}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function shortAuditId(value: string): string {
+  return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
 }
 
 function ReplyPreview({ message }: { message: MatrixTimelineMessage }) {
@@ -5178,7 +5285,101 @@ function messageSenderLabel(message: MatrixTimelineMessage, conversation: Messag
   return "Člen";
 }
 
+export function parseAiAgentMention(text: string): string | null {
+  const match = text.match(/^\s*@(?:cop[\s._-]*ai|ai)\b[\s:,-]*(?<question>[\s\S]*)$/iu);
+  if (!match) {
+    return null;
+  }
+  return (match.groups?.question ?? "").trim();
+}
+
+export function formatAiAgentShareBody(answer: string, question: string): string {
+  const normalizedQuestion = question.trim();
+  const normalizedAnswer = answer.trim();
+  return `COP AI agent${normalizedQuestion ? `\nDotaz: ${normalizedQuestion}` : ""}\n\n${normalizedAnswer}`.trim();
+}
+
+export function formatAiSituationShareBody(summary: string): string {
+  return `AI situační souhrn:\n\n${summary.trim()}`.trim();
+}
+
+function messageDisplayBody(message: MatrixTimelineMessage): string {
+  if (message.cop?.kind === "ai-agent-response") {
+    return stripAiAgentFallbackBody(message.body, message.cop.ai?.question);
+  }
+  if (message.cop?.kind === "ai-situation-summary") {
+    return stripAiSituationFallbackBody(message.body);
+  }
+  return message.body;
+}
+
+function stripAiAgentFallbackBody(body: string, question?: string): string {
+  const withoutTitle = body.replace(/^\s*COP AI agent\s*/iu, "");
+  const expectedQuestion = question?.trim();
+  if (expectedQuestion) {
+    const escapedQuestion = escapeRegExp(expectedQuestion);
+    const pattern = new RegExp(`^Dotaz:\\s*${escapedQuestion}\\s*`, "iu");
+    return withoutTitle.replace(pattern, "").trimStart();
+  }
+  return withoutTitle.trimStart();
+}
+
+function stripAiSituationFallbackBody(body: string): string {
+  return body.replace(/^\s*AI situační souhrn:\s*/iu, "").trimStart();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function buildAiAgentMessageMetadata(response: AiCopResponse | null, question: string): MatrixCopMessageMetadata {
+  return buildAiMessageMetadata(response, {
+    kind: "ai-agent-response",
+    question,
+    type: "chat-agent"
+  });
+}
+
+function buildAiSituationMessageMetadata(response: AiCopResponse | null): MatrixCopMessageMetadata {
+  return buildAiMessageMetadata(response, {
+    kind: "ai-situation-summary",
+    type: "situation-summary"
+  });
+}
+
+function buildAiMessageMetadata(
+  response: AiCopResponse | null,
+  options: {
+    kind: NonNullable<MatrixCopMessageMetadata["kind"]>;
+    question?: string;
+    type: NonNullable<NonNullable<MatrixCopMessageMetadata["ai"]>["type"]>;
+  }
+): MatrixCopMessageMetadata {
+  const question = options.question?.trim();
+  return {
+    ai: {
+      ...(response?.auditId ? { auditId: response.auditId } : {}),
+      ...(response?.model ? { model: response.model } : {}),
+      ...(response?.policy.reason ? { policyReason: response.policy.reason } : {}),
+      ...(response?.provider ? { provider: response.provider } : {}),
+      ...(question ? { question } : {}),
+      ...(response?.requestId ? { requestId: response.requestId } : {}),
+      ...(response?.status ? { status: response.status } : {}),
+      type: options.type
+    },
+    kind: options.kind,
+    source: "cop-chat"
+  };
+}
+
 function latestMessagePreview(message: MatrixTimelineMessage): string {
+  const body = messageDisplayBody(message);
+  if (message.cop?.kind === "ai-agent-response") {
+    return `${message.own ? "Vy: " : ""}COP AI agent: ${body}`;
+  }
+  if (message.cop?.kind === "ai-situation-summary") {
+    return `${message.own ? "Vy: " : ""}AI souhrn: ${body}`;
+  }
   if (message.kind === "transit") {
     return transitMessageLabel(message.transit);
   }
@@ -5186,9 +5387,9 @@ function latestMessagePreview(message: MatrixTimelineMessage): string {
     return message.location?.label ?? "Sdílená poloha";
   }
   if (message.attachment) {
-    return message.body && message.body !== message.attachment.fileName ? message.body : message.attachment.fileName;
+    return body && body !== message.attachment.fileName ? body : message.attachment.fileName;
   }
-  return message.own ? `Vy: ${message.body}` : message.body;
+  return message.own ? `Vy: ${body}` : body;
 }
 
 function attachmentIndicator(message: MatrixTimelineMessage): React.ReactNode {
@@ -5597,7 +5798,7 @@ function muteChoiceToStorageValue(choice: MuteChoice): string {
 
 function messageSearchText(message: MatrixTimelineMessage): string {
   return [
-    message.body,
+    messageDisplayBody(message),
     message.attachment?.fileName,
     message.location ? formatCoordinates(message.location) : "",
     message.location?.label ?? "",

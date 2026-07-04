@@ -4,7 +4,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { AiCopResponse } from "@cop/core/cop-data";
 
-import AiSituationDialog, { aiResponseSummary } from "./AiSituationDialog";
+import AiSituationDialog from "./AiSituationDialog";
+import { aiResponseSummary } from "./aiResponse";
 
 function response(overrides: Partial<AiCopResponse> = {}): AiCopResponse {
   return {

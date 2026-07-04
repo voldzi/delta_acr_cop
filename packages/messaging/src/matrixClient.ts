@@ -2,6 +2,8 @@ import type {
   MessagingBootstrapResponse,
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
+  MatrixCopAiMessageMetadata,
+  MatrixCopMessageMetadata,
   MatrixEncryptedFileRef,
   MatrixEncryptionRecoveryStatus,
   MatrixLocationShare,
@@ -549,17 +551,20 @@ export async function createMatrixMessagingSession(
       if (!message) {
         return;
       }
-      if (options?.replyTo && typeof client.sendMessage !== "function") {
-        throw new Error("Odpověď se nepodařilo odeslat.");
+      const cop = sanitizeCopMessageMetadata(options?.cop);
+      if ((options?.replyTo || cop) && typeof client.sendMessage !== "function") {
+        throw new Error(options?.replyTo ? "Odpověď se nepodařilo odeslat." : "Zprávu s COP metadaty se nepodařilo odeslat.");
       }
-      if (!options?.replyTo && typeof client.sendTextMessage !== "function") {
+      if (!options?.replyTo && !cop && typeof client.sendTextMessage !== "function") {
         throw new Error("Zprávu se nepodařilo odeslat.");
       }
       try {
         await joinInvitedRooms();
         await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
         if (options?.replyTo) {
-          await client.sendMessage?.(roomId, createTextMessageContent(message, options.replyTo));
+          await client.sendMessage?.(roomId, createTextMessageContent(message, { cop, replyTo: options.replyTo }));
+        } else if (cop) {
+          await client.sendMessage?.(roomId, createTextMessageContent(message, { cop }));
         } else {
           await client.sendTextMessage?.(roomId, message);
         }
@@ -1249,22 +1254,33 @@ async function decryptAttachmentPayload(payload: ArrayBuffer, encrypted: MatrixE
   );
 }
 
-function createTextMessageContent(body: string, replyTo: MatrixMessageReplyTarget): Record<string, unknown> {
-  const quoted = replyTo.body
-    .split(/\r?\n/u)
-    .filter((line) => line.trim())
-    .slice(0, 4)
-    .map((line) => `> <${replyTo.sender}> ${line}`)
-    .join("\n") || `> <${replyTo.sender}> Zpráva`;
-  return {
-    "m.relates_to": {
+function createTextMessageContent(
+  body: string,
+  options: { cop?: MatrixCopMessageMetadata; replyTo?: MatrixMessageReplyTarget } = {}
+): Record<string, unknown> {
+  const content: Record<string, unknown> = {
+    body,
+    msgtype: "m.text"
+  };
+  const replyTo = options.replyTo;
+  if (replyTo) {
+    const quoted = replyTo.body
+      .split(/\r?\n/u)
+      .filter((line) => line.trim())
+      .slice(0, 4)
+      .map((line) => `> <${replyTo.sender}> ${line}`)
+      .join("\n") || `> <${replyTo.sender}> Zpráva`;
+    content["m.relates_to"] = {
       "m.in_reply_to": {
         event_id: replyTo.eventId
       }
-    },
-    body: `${quoted}\n\n${body}`,
-    msgtype: "m.text"
-  };
+    };
+    content.body = `${quoted}\n\n${body}`;
+  }
+  if (options.cop) {
+    content["cz.cop"] = options.cop;
+  }
+  return content;
 }
 
 function createLocationMessage(location: MatrixLocationShare): Record<string, unknown> {
@@ -1914,11 +1930,13 @@ function mapMatrixMessageEvent(
   if (!body && !attachment && !location && !transit) {
     return null;
   }
+  const cop = matrixCopMessageMetadataFromContent(content);
   const sender = event.getSender?.() ?? "";
   const senderDisplayName = displayNameForMatrixSender(room, sender);
   return {
     ...(attachment ? { attachment } : {}),
     body,
+    ...(cop ? { cop } : {}),
     eventId,
     ...(geoUri ? { geoUri } : {}),
     kind,
@@ -2214,6 +2232,59 @@ function matrixMessageKind(content: Record<string, unknown>): MatrixTimelineMess
     return "location";
   }
   return "text";
+}
+
+function matrixCopMessageMetadataFromContent(content: Record<string, unknown>): MatrixCopMessageMetadata | undefined {
+  return sanitizeCopMessageMetadata(asRecord(content["cz.cop"]));
+}
+
+function sanitizeCopMessageMetadata(value: unknown): MatrixCopMessageMetadata | undefined {
+  const record = asRecord(value);
+  if (!record || record.source !== "cop-chat") {
+    return undefined;
+  }
+  const kind = record.kind === "ai-agent-response" || record.kind === "ai-situation-summary"
+    ? record.kind
+    : undefined;
+  const ai = sanitizeCopAiMessageMetadata(record.ai);
+  if (!kind && !ai) {
+    return undefined;
+  }
+  return {
+    ...(ai ? { ai } : {}),
+    ...(kind ? { kind } : {}),
+    source: "cop-chat"
+  };
+}
+
+function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata["ai"] | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const type: MatrixCopAiMessageMetadata["type"] = record.type === "chat-agent" || record.type === "situation-summary"
+    ? record.type
+    : undefined;
+  const status: MatrixCopAiMessageMetadata["status"] = record.status === "COMPLETED" || record.status === "NEEDS_HUMAN_REVIEW" || record.status === "REJECTED"
+    ? record.status
+    : undefined;
+  const auditId = stringValue(record.auditId)?.slice(0, 160);
+  const model = stringValue(record.model)?.slice(0, 120);
+  const policyReason = stringValue(record.policyReason)?.slice(0, 240);
+  const provider = stringValue(record.provider)?.slice(0, 80);
+  const question = stringValue(record.question)?.slice(0, 500);
+  const requestId = stringValue(record.requestId)?.slice(0, 160);
+  const ai: MatrixCopAiMessageMetadata = {
+    ...(auditId ? { auditId } : {}),
+    ...(model ? { model } : {}),
+    ...(policyReason ? { policyReason } : {}),
+    ...(provider ? { provider } : {}),
+    ...(question ? { question } : {}),
+    ...(requestId ? { requestId } : {}),
+    ...(status ? { status } : {}),
+    ...(type ? { type } : {})
+  };
+  return Object.keys(ai).length ? ai : undefined;
 }
 
 function sanitizeTransitShare(transit: MatrixTransitShare): MatrixTransitShare {

@@ -425,6 +425,14 @@ The phase-0 implementation focus is trust and control:
   `POST /api/v1/ai/chat-agent/query`, which requires active membership for the
   supplied `groupId`, builds COP context server-side and returns audit metadata.
   Sending the answer to Matrix remains an explicit user action.
+- AI answers sent to Matrix carry namespaced `cz.cop` message metadata with
+  `kind`, `requestId`, `auditId`, provider/model, policy reason and the
+  original question when present. The metadata is used only for timeline
+  labeling and audit visibility; COP still does not persist or proxy Matrix
+  plaintext. In enabled groups the composer also recognizes a leading
+  `@COP AI ...` mention. Completed answers can be posted automatically with the
+  same metadata; answers requiring human review open the explicit AI dialog
+  instead of being sent.
 - Current direct-chat removal is local hiding. Current group deletion deletes
   the COP community group when the authenticated actor may manage it. Leaving a
   group calls `DELETE /api/v1/community/groups/{groupId}/members/me`, marks the
@@ -456,7 +464,10 @@ The browser may send:
 - emoji/sticker reactions as Matrix `m.reaction` annotation relations,
 - encrypted image, video and file messages through Matrix media upload and
   Matrix `m.image`, `m.video` or `m.file` events,
-- location shares through Matrix `m.location` events with `geo:` URI metadata.
+- location shares through Matrix `m.location` events with `geo:` URI metadata,
+- COP-owned UI/audit annotations inside namespaced Matrix content such as
+  `cz.cop`, currently used for visible AI assistant answers and situation
+  summaries.
 
 When a user removes their own message, COP Chat sends a Matrix redaction for
 that event. COP does not implement a separate plaintext delete endpoint and does

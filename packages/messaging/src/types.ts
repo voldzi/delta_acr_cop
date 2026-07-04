@@ -55,6 +55,7 @@ export interface MatrixRoomPresenceSummary {
 export interface MatrixTimelineMessage {
   attachment?: MatrixTimelineAttachment;
   body: string;
+  cop?: MatrixCopMessageMetadata;
   eventId: string;
   geoUri?: string;
   kind: MatrixMessageKind;
@@ -90,6 +91,23 @@ export interface MatrixMessageReplyTarget {
   body: string;
   eventId: string;
   sender: string;
+}
+
+export interface MatrixCopMessageMetadata {
+  ai?: MatrixCopAiMessageMetadata;
+  kind?: "ai-agent-response" | "ai-situation-summary";
+  source: "cop-chat";
+}
+
+export interface MatrixCopAiMessageMetadata {
+  auditId?: string;
+  model?: string;
+  policyReason?: string;
+  provider?: string;
+  question?: string;
+  requestId?: string;
+  status?: "COMPLETED" | "NEEDS_HUMAN_REVIEW" | "REJECTED";
+  type?: "chat-agent" | "situation-summary";
 }
 
 export interface MatrixLocationShare {
@@ -160,7 +178,7 @@ export interface MatrixMessagingSession {
   setMessageRetentionPolicy(roomId: string, seconds: number | null): Promise<void>;
   sendAttachment(roomId: string, attachment: MatrixAttachmentUpload): Promise<void>;
   sendLocation(roomId: string, location: MatrixLocationShare): Promise<void>;
-  sendMessage(roomId: string, body: string, options?: { replyTo?: MatrixMessageReplyTarget }): Promise<void>;
+  sendMessage(roomId: string, body: string, options?: { cop?: MatrixCopMessageMetadata; replyTo?: MatrixMessageReplyTarget }): Promise<void>;
   sendReaction(roomId: string, eventId: string, key: string): Promise<void>;
   sendTransitShare(roomId: string, transit: MatrixTransitShare): Promise<void>;
   setReaction(roomId: string, eventId: string, key: string): Promise<void>;
