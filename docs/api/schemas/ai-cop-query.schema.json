@@ -65,6 +65,15 @@
         }
       }
     },
+    "modelPreference": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "fast",
+        "reasoning"
+      ],
+      "default": "auto"
+    },
     "providerPreference": {
       "type": "string",
       "enum": [

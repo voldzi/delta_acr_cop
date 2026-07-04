@@ -90,6 +90,10 @@ COP má server-side AI runtime za `@cop/ai-gateway`:
 - primární lokální provider `ollama` volaný pouze z `cop-api`,
 - kompatibilní fallback `local` pro AI KnowledgeBase LLM Gateway,
 - bezpečný vývojový `mock` provider,
+- deterministický model router `deterministic-v1` pro volbu fast/reasoning
+  Ollama profilu,
+- server-side Ollama embedding provider pro navazující retrieval/RAG nad
+  policy-filtered COP daty,
 - guardrails před každým voláním modelu,
 - audit pro každý AI request,
 - health signal `ai-gateway` v `/health/dependencies`.
@@ -132,6 +136,14 @@ zprávy. V zapnutých skupinách composer rozpozná také vedoucí zmínku
 `@COP AI ...`; odpovědi se statusem `NEEDS_HUMAN_REVIEW` se neodesílají
 automaticky a otevřou potvrzovací dialog.
 
+AI Gateway vrací volitelné `routing` metadata. Běžné dotazy používají fast profil
+`gemma4:12b-mlx`; komplexní dotazy nad širším COP kontextem, konflikty zdrojů,
+riziky, projekcí vývoje nebo delší chatovou timeline může router poslat na
+reasoning profil `gemma4:31b-mlx`. `bge-m3` je připravený jako server-side
+embedding model pro další fázi: semantický retrieval nad canonical entitami,
+track-history souhrny, incidenty, hlášeními, výstrahami, zdroji a consentovanou
+chat pamětí. Retrieval musí vždy před LLM aplikovat RBAC/ABAC a release policy.
+
 Tyto endpointy jsou určeny i pro iOS/iPadOS klienty. Klienti nemají znát Ollama
 URL, LLM Gateway URL ani service tokeny.
 
@@ -163,3 +175,5 @@ Před produkčním použitím externího nebo lokálního modelu musí být evid
    viditelnou timeline jsou hotové bez server-side čtení historické E2EE
    historie.
 7. Až potom multimediální shrnutí, a jen s media ACL.
+8. Semantický COP retrieval/RAG přes `bge-m3` nad canonical entity chunks,
+   mapovou/geografickou filtrací, citacemi zdrojů a auditovanými tool calls.

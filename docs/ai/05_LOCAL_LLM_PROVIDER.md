@@ -39,11 +39,21 @@ POST /api/chat
 
 Ollama request obsahuje:
 
-- `model`, výchozí `gemma4:12b-mlx`,
+- `model`, výchozí rychlý profil `gemma4:12b-mlx`; komplexní dotazy může
+  router přepnout na reasoning profil `gemma4:31b-mlx`,
 - `messages` se systémovým promptem COP a uživatelským dotazem,
-- `options.num_predict`, výchozí `512`,
+- `options.num_predict`, výchozí `512` pro fast profil a vyšší limit pro
+  reasoning profil,
 - `think=false`, aby thinking-capable Ollama model nevracel prázdný
   thinking-only výstup.
+
+Model router `deterministic-v1` běží v `@cop/ai-gateway` server-side. Vyhodnocuje
+účel dotazu, velikost kontextu, rozsah situačních dat, chatový výřez a výrazy
+typické pro konfliktní analýzu, dopady, rizika, predikci nebo situational
+awareness. Rozhodnutí se vrací jako volitelné `routing` metadata a auditují se
+jen technické hodnoty (`modelRole`, skóre, strategie), ne prompt ani kontext.
+`bge-m3` je podporovaný server-side embedding model pro následné retrieval/RAG
+nad policy-filtered COP daty; klienti ho nevolají přímo.
 
 AI KnowledgeBase LLM Gateway zůstává podporovaná jako volitelný kompatibilní
 fallback provider `local`, zejména pokud prostředí chce sdílet jeden gateway pro
@@ -57,21 +67,33 @@ Lokální AI je defaultně vypnutá. Pro zapnutí v produkci:
 COP_EXTERNAL_AI_ENABLED=true
 COP_AI_DEFAULT_PROVIDER=ollama
 COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS=10000
+COP_AI_MODEL_ROUTER_ENABLED=true
+COP_AI_MODEL_ROUTER_COMPLEXITY_THRESHOLD=70
 COP_AI_OLLAMA_BASE_URLS=http://192.168.200.2:11434,http://host.docker.internal:11434,http://192.168.1.176:11434
 COP_AI_OLLAMA_TOKEN=<service-token-pokud-je-vyžadován>
+COP_AI_OLLAMA_FAST_MODEL=gemma4:12b-mlx
 COP_AI_OLLAMA_MODEL=gemma4:12b-mlx
 COP_AI_OLLAMA_MAX_TOKENS=512
 COP_AI_OLLAMA_TIMEOUT_MS=30000
 COP_AI_OLLAMA_RETRY_ATTEMPTS=2
 COP_AI_OLLAMA_THINK=false
+COP_AI_OLLAMA_REASONING_MODEL=gemma4:31b-mlx
+COP_AI_OLLAMA_REASONING_MAX_TOKENS=1200
+COP_AI_OLLAMA_REASONING_TIMEOUT_MS=90000
+COP_AI_OLLAMA_REASONING_RETRY_ATTEMPTS=1
+COP_AI_OLLAMA_REASONING_THINK=false
+COP_AI_OLLAMA_EMBEDDING_MODEL=bge-m3:latest
+COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS=10000
 ```
 
 `COP_AI_DEFAULT_PROVIDER=mock` ponechává bezpečný vývojový režim bez externího
 volání. `providerPreference=auto` v klientovi znamená: použij konfigurovaný
 produkční provider, jinak `ollama`, potom kompatibilní `local` gateway, a teprve
-potom `mock` fallback. `COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS` řídí pouze
+potom `mock` fallback. `modelPreference=auto` znamená, že konkrétní modelový
+profil volí server-side router. `COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS` řídí pouze
 obalový timeout pro `/health/dependencies`; samotné AI dotazy používají provider
-timeouty `COP_AI_OLLAMA_TIMEOUT_MS` a `COP_AI_LOCAL_TIMEOUT_MS`.
+timeouty `COP_AI_OLLAMA_TIMEOUT_MS`, `COP_AI_OLLAMA_REASONING_TIMEOUT_MS` a
+`COP_AI_LOCAL_TIMEOUT_MS`.
 
 Volitelný compatibility fallback přes AI KnowledgeBase LLM Gateway:
 

@@ -23,6 +23,20 @@ nebo jako dočasná migrační cesta.
 - schopnost tool calling jen pro approved tools.
 
 Provider router vybírá provider podle policy, konfigurace, klasifikace dat, dostupnosti a uživatelského oprávnění.
+Nad `ollama` providerem běží samostatný model router `deterministic-v1`, který
+volí konkrétní lokální modelový profil:
+
+- `fast`: výchozí rychlý model pro běžné dotazy, krátké shrnutí a UI dialogy,
+- `reasoning`: větší model pro konfliktní analýzu, širší situační souhrny,
+  vícezdrojové porovnání, predikční otázky a delší chatový kontext,
+- `embedding`: embedding model pro budoucí retrieval/RAG nad policy-filtered
+  COP entitami a consentovanou chat pamětí; klienti ho nikdy nevolají přímo.
+
+Router používá deterministické scoring pravidlo nad účelem dotazu, délkou
+promptu, velikostí kontextu, počtem objektů/výstrah/incidentů/zpráv a výrazy
+typu konflikt, predikce, dopad, riziko nebo situational awareness. Rozhodnutí
+se vrací jako volitelné `routing` metadata v AI odpovědi a zapisuje se do
+auditu bez promptu a bez kontextu.
 
 Výchozí produkční pořadí pro `auto` je:
 

@@ -12,9 +12,11 @@ flowchart LR
     REDACT["Redaction / anonymization"]
     POLICY["Guardrails & policy"]
     ROUTER["Provider router"]
+    MODEL_ROUTER["Model router"]
     OPENAI["OpenAI provider"]
     CODEX["Codex provider"]
     OLLAMA_PROVIDER["COP Ollama provider"]
+    EMBEDDING["Ollama embedding provider"]
     LOCAL["Compatibility Local LLM Gateway provider"]
     AKB["AI KnowledgeBase LLM Gateway"]
     OLLAMA["Ollama"]
@@ -23,12 +25,13 @@ flowchart LR
     HUMAN["Human review when required"]
     AUDIT["AI audit log"]
 
-    USER --> GW --> CLASS --> REDACT --> POLICY --> ROUTER
-    ROUTER --> OPENAI
-    ROUTER --> CODEX
-    ROUTER --> OLLAMA_PROVIDER --> OLLAMA
-    ROUTER --> LOCAL --> AKB --> OLLAMA
-    ROUTER --> MOCK
+    USER --> GW --> CLASS --> REDACT --> POLICY --> ROUTER --> MODEL_ROUTER
+    MODEL_ROUTER --> OPENAI
+    MODEL_ROUTER --> CODEX
+    MODEL_ROUTER --> OLLAMA_PROVIDER --> OLLAMA
+    MODEL_ROUTER --> EMBEDDING --> OLLAMA
+    MODEL_ROUTER --> LOCAL --> AKB --> OLLAMA
+    MODEL_ROUTER --> MOCK
     OPENAI --> VALID
     CODEX --> VALID
     OLLAMA_PROVIDER --> VALID
@@ -44,3 +47,9 @@ Externí AI provider musí být vypnutelný. Local-only režim musí být podpor
 Produkční lokální režim COP používá primárně `ollama` provider, který běží
 server-side v COP API a volá Ollama runtime přímo. Provider `local` přes AI
 KnowledgeBase LLM Gateway zůstává kompatibilní fallback, ne primární cesta.
+
+Nad `ollama` providerem běží deterministický model router. Běžné dotazy používají
+fast profil, komplexní situační nebo konfliktní dotazy mohou být směrovány na
+reasoning profil a server-side embedding provider je připravený pro retrieval
+nad policy-filtered COP daty. Klienti nevolají žádný model ani embedding endpoint
+přímo.

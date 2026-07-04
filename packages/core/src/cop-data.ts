@@ -55,6 +55,16 @@ export interface AiCopResponse {
   provider?: "openai" | "codex" | "ollama" | "local" | "mock";
   requestId: string;
   result: Record<string, unknown>;
+  routing?: {
+    complexityScore: number;
+    embeddingModel?: string;
+    fallbackModel?: string;
+    modelRole: "fast" | "provider-default" | "reasoning";
+    provider: "openai" | "codex" | "ollama" | "local" | "mock";
+    reason: string;
+    selectedModel: string;
+    strategy: "deterministic-v1";
+  };
   status: "COMPLETED" | "REJECTED" | "NEEDS_HUMAN_REVIEW";
 }
 

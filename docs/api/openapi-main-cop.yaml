@@ -8967,6 +8967,47 @@ components:
             - mock
         model:
           type: string
+        routing:
+          type: object
+          additionalProperties: false
+          required:
+            - strategy
+            - provider
+            - modelRole
+            - selectedModel
+            - complexityScore
+            - reason
+          properties:
+            strategy:
+              type: string
+              enum:
+                - deterministic-v1
+            provider:
+              type: string
+              enum:
+                - openai
+                - codex
+                - ollama
+                - local
+                - mock
+            modelRole:
+              type: string
+              enum:
+                - fast
+                - reasoning
+                - provider-default
+            selectedModel:
+              type: string
+            complexityScore:
+              type: integer
+              minimum: 0
+              maximum: 100
+            reason:
+              type: string
+            fallbackModel:
+              type: string
+            embeddingModel:
+              type: string
         policy:
           type: object
           required:

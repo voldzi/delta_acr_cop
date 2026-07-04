@@ -112,13 +112,23 @@ fallback.
 COP_EXTERNAL_AI_ENABLED=true
 COP_AI_DEFAULT_PROVIDER=ollama
 COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS=10000
+COP_AI_MODEL_ROUTER_ENABLED=true
+COP_AI_MODEL_ROUTER_COMPLEXITY_THRESHOLD=70
 COP_AI_OLLAMA_BASE_URLS=http://192.168.200.2:11434,http://host.docker.internal:11434,http://192.168.1.176:11434
 COP_AI_OLLAMA_TOKEN=<service-token-pokud-je-vyžadován>
+COP_AI_OLLAMA_FAST_MODEL=gemma4:12b-mlx
 COP_AI_OLLAMA_MODEL=gemma4:12b-mlx
 COP_AI_OLLAMA_MAX_TOKENS=512
 COP_AI_OLLAMA_TIMEOUT_MS=30000
 COP_AI_OLLAMA_RETRY_ATTEMPTS=2
 COP_AI_OLLAMA_THINK=false
+COP_AI_OLLAMA_REASONING_MODEL=gemma4:31b-mlx
+COP_AI_OLLAMA_REASONING_MAX_TOKENS=1200
+COP_AI_OLLAMA_REASONING_TIMEOUT_MS=90000
+COP_AI_OLLAMA_REASONING_RETRY_ATTEMPTS=1
+COP_AI_OLLAMA_REASONING_THINK=false
+COP_AI_OLLAMA_EMBEDDING_MODEL=bge-m3:latest
+COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS=10000
 ```
 
 Bezpečný vývojový default zůstává:
@@ -130,7 +140,14 @@ COP_AI_DEFAULT_PROVIDER=mock
 
 `COP_AI_OLLAMA_TOKEN` a `COP_AI_LOCAL_GATEWAY_TOKEN` jsou server-side hodnoty a nesmí mít prefix
 `VITE_`. Web klient posílá `providerPreference=auto`, takže provider volí až
-COP API podle konfigurace. Guardrails se vyhodnocují před každým voláním LLM.
+COP API podle konfigurace. `COP_AI_MODEL_ROUTER_ENABLED=true` zapíná
+deterministický router `deterministic-v1`: rychlé dotazy používají
+`COP_AI_OLLAMA_FAST_MODEL`, komplexní situační/konfliktní dotazy nad prahem
+`COP_AI_MODEL_ROUTER_COMPLEXITY_THRESHOLD` používají
+`COP_AI_OLLAMA_REASONING_MODEL`. `COP_AI_OLLAMA_MODEL` zůstává kompatibilní
+alias pro fast profil. `COP_AI_OLLAMA_EMBEDDING_MODEL` připravuje server-side
+embedding provider pro retrieval/RAG nad policy-filtered COP daty; klienti ho
+nevolají přímo. Guardrails se vyhodnocují před každým voláním LLM.
 `/health/dependencies` ukazuje `ai-gateway` jako `ok`, `degraded` nebo
 `disabled`; degraded AI nesmí blokovat mapu, reporting ani chat.
 

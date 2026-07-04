@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AiGateway, LocalLlmGatewayProvider, OllamaAiProvider, createProviderRegistry } from "./index.js";
+import { AiGateway, LocalLlmGatewayProvider, OllamaAiProvider, OllamaEmbeddingProvider, createProviderRegistry } from "./index.js";
 
 const baseQuery = {
   requestId: "req_test",
@@ -49,6 +49,11 @@ describe("AiGateway", () => {
     expect(response.status).toBe("COMPLETED");
     expect(response.provider).toBe("ollama");
     expect(response.model).toBe("gemma4:12b-mlx");
+    expect(response.routing).toMatchObject({
+      modelRole: "fast",
+      selectedModel: "gemma4:12b-mlx",
+      strategy: "deterministic-v1"
+    });
     expect(response.result.summary).toBe("Ollama odpověděla přes COP server-side provider.");
     expect(fetchMock).toHaveBeenCalledWith(
       "http://ollama-primary:11434/api/chat",
@@ -62,8 +67,159 @@ describe("AiGateway", () => {
     );
     const fetchInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const requestBody = JSON.parse(fetchInit.body as string);
+    expect(requestBody.model).toBe("gemma4:12b-mlx");
     expect(requestBody.think).toBe(false);
     expect(requestBody.options.num_predict).toBe(384);
+  });
+
+  it("routes complex COP awareness questions to the reasoning Ollama model", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(
+        JSON.stringify({
+          model: body.model,
+          message: {
+            role: "assistant",
+            content: "Komplexní situační odpověď z reasoning profilu."
+          },
+          done_reason: "stop",
+          prompt_eval_count: 120,
+          eval_count: 80
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const gateway = AiGateway.fromEnv({
+      COP_EXTERNAL_AI_ENABLED: "true",
+      COP_AI_DEFAULT_PROVIDER: "auto",
+      COP_AI_MODEL_ROUTER_COMPLEXITY_THRESHOLD: "60",
+      COP_AI_OLLAMA_BASE_URLS: "http://ollama:11434",
+      COP_AI_OLLAMA_FAST_MODEL: "gemma4:12b-mlx",
+      COP_AI_OLLAMA_REASONING_MODEL: "gemma4:31b-mlx",
+      COP_AI_OLLAMA_REASONING_MAX_TOKENS: "1400",
+      COP_AI_OLLAMA_REASONING_TIMEOUT_MS: "90000",
+      COP_AI_OLLAMA_EMBEDDING_MODEL: "bge-m3:latest"
+    });
+
+    const response = await gateway.queryCopAssistant({
+      ...baseQuery,
+      purpose: "COP_EXPLANATION",
+      prompt: "Porovnej konflikty zdrojů, rizika, dopady a vývoj situational awareness.",
+      context: {
+        scope: {
+          alertCount: 12,
+          chatMessageCount: 20,
+          communityReportCount: 10,
+          incidentCount: 7,
+          objectCount: 50,
+          sourceCount: 9
+        }
+      }
+    });
+
+    expect(response.status).toBe("COMPLETED");
+    expect(response.model).toBe("gemma4:31b-mlx");
+    expect(response.routing).toMatchObject({
+      embeddingModel: "bge-m3:latest",
+      fallbackModel: "gemma4:12b-mlx",
+      modelRole: "reasoning",
+      provider: "ollama",
+      selectedModel: "gemma4:31b-mlx"
+    });
+    expect(response.routing?.complexityScore).toBeGreaterThanOrEqual(60);
+    const fetchInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const requestBody = JSON.parse(fetchInit.body as string);
+    expect(requestBody.model).toBe("gemma4:31b-mlx");
+    expect(requestBody.options.num_predict).toBe(1400);
+  });
+
+  it("allows an explicit fast model preference to bypass reasoning escalation", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(
+        JSON.stringify({
+          model: body.model,
+          message: {
+            role: "assistant",
+            content: "Rychlá odpověď."
+          },
+          done_reason: "stop"
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const gateway = AiGateway.fromEnv({
+      COP_EXTERNAL_AI_ENABLED: "true",
+      COP_AI_DEFAULT_PROVIDER: "auto",
+      COP_AI_OLLAMA_BASE_URLS: "http://ollama:11434",
+      COP_AI_OLLAMA_FAST_MODEL: "gemma4:12b-mlx",
+      COP_AI_OLLAMA_REASONING_MODEL: "gemma4:31b-mlx"
+    });
+
+    const response = await gateway.queryCopAssistant({
+      ...baseQuery,
+      modelPreference: "fast",
+      purpose: "COP_EXPLANATION",
+      prompt: "Porovnej konflikty zdrojů, rizika a očekávaný vývoj."
+    });
+
+    expect(response.model).toBe("gemma4:12b-mlx");
+    expect(response.routing?.modelRole).toBe("fast");
+    const fetchInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const requestBody = JSON.parse(fetchInit.body as string);
+    expect(requestBody.model).toBe("gemma4:12b-mlx");
+  });
+
+  it("falls back to the fast Ollama model when the reasoning model fails", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (body.model === "gemma4:31b-mlx") {
+        return new Response(JSON.stringify({ error: "model temporarily unavailable" }), { status: 503 });
+      }
+      return new Response(
+        JSON.stringify({
+          model: body.model,
+          message: {
+            role: "assistant",
+            content: "Fallback odpověď z fast profilu."
+          },
+          done_reason: "stop"
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const gateway = AiGateway.fromEnv({
+      COP_EXTERNAL_AI_ENABLED: "true",
+      COP_AI_DEFAULT_PROVIDER: "auto",
+      COP_AI_MODEL_ROUTER_COMPLEXITY_THRESHOLD: "20",
+      COP_AI_OLLAMA_BASE_URLS: "http://ollama:11434",
+      COP_AI_OLLAMA_FAST_MODEL: "gemma4:12b-mlx",
+      COP_AI_OLLAMA_REASONING_MODEL: "gemma4:31b-mlx",
+      COP_AI_OLLAMA_REASONING_RETRY_ATTEMPTS: "0"
+    });
+
+    const response = await gateway.queryCopAssistant({
+      ...baseQuery,
+      purpose: "COP_EXPLANATION",
+      prompt: "Porovnej konflikty zdrojů."
+    });
+
+    expect(response.status).toBe("COMPLETED");
+    expect(response.model).toBe("gemma4:12b-mlx");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(response.result.structured).toMatchObject({
+      routing: {
+        fallbackUsed: true,
+        requestedModel: "gemma4:31b-mlx",
+        selectedModel: "gemma4:12b-mlx"
+      }
+    });
   });
 
   it("uses the local LLM Gateway provider when enabled", async () => {
@@ -197,6 +353,54 @@ describe("AiGateway", () => {
         headers: expect.objectContaining({
           Authorization: "Bearer ollama-secret"
         })
+      })
+    );
+  });
+
+  it("uses the Ollama embedding provider for server-side retrieval preparation", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      if (String(input).endsWith("/api/tags")) {
+        return new Response(
+          JSON.stringify({
+            models: [
+              { name: "bge-m3:latest", model: "bge-m3:latest" }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          model: "bge-m3:latest",
+          embeddings: [[0.1, 0.2, 0.3]]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OllamaEmbeddingProvider({
+      baseUrls: ["http://ollama:11434/"],
+      token: "embedding-secret",
+      model: "bge-m3:latest",
+      timeoutMs: 10000,
+      retryAttempts: 0
+    });
+
+    const health = await provider.health();
+    const result = await provider.embed("COP situační dotaz");
+
+    expect(health.status).toBe("ok");
+    expect(health.detail).toContain("bge-m3:latest");
+    expect(health.detail).not.toContain("embedding-secret");
+    expect(result).toEqual({
+      embedding: [0.1, 0.2, 0.3],
+      model: "bge-m3:latest"
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://ollama:11434/api/embed",
+      expect.objectContaining({
+        body: JSON.stringify({ model: "bge-m3:latest", input: "COP situační dotaz" }),
+        method: "POST"
       })
     );
   });

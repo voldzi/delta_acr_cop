@@ -12276,8 +12276,11 @@ function aiAuditMetadata(response: AiCopResponse, actor: AuthenticatedActor): Re
     actorSubjectId: actor.subjectId,
     auditId: response.auditId,
     model: response.model,
+    modelRole: response.routing?.modelRole,
     provider: response.provider,
     requestId: response.requestId,
+    routingComplexityScore: response.routing?.complexityScore,
+    routingStrategy: response.routing?.strategy,
     status: response.status
   };
 }
