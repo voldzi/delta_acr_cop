@@ -5,6 +5,7 @@ import { Avatar } from "../components/Avatar";
 import { useModalFocus } from "../hooks/useModalFocus";
 
 export interface ForwardTarget {
+  avatarVariant?: "ai";
   avatarUrl?: string;
   chat?: ChatListItem;
   key: string;
@@ -82,7 +83,7 @@ export default function ForwardDialog({
               role="listitem"
               type="button"
             >
-              <Avatar label={target.title} src={target.avatarUrl} />
+              <Avatar label={target.title} src={target.avatarUrl} variant={target.avatarVariant} />
               <span>
                 <strong>{target.title}</strong>
                 <small>{target.subtitle}</small>

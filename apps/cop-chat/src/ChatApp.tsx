@@ -5252,6 +5252,7 @@ function buildForwardTargets(chatItems: ChatListItem[], users: UserDirectoryEntr
       continue;
     }
     targets.set(`chat:${item.id}`, {
+      ...(item.avatarVariant ? { avatarVariant: item.avatarVariant } : {}),
       avatarUrl: item.avatarUrl,
       chat: item,
       key: `chat:${item.id}`,

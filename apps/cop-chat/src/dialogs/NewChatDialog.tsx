@@ -1,5 +1,5 @@
 import type React from "react";
-import { ArrowLeft, Loader2, MessageCircle, Search, Sparkles, UserPlus, Users, X } from "lucide-react";
+import { ArrowLeft, Loader2, MessageCircle, Search, UserPlus, Users, X } from "lucide-react";
 import type { UserDirectoryEntry } from "@cop/core/cop-data";
 import { Avatar } from "../components/Avatar";
 import { useModalFocus } from "../hooks/useModalFocus";
@@ -102,8 +102,8 @@ export default function NewChatDialog({
               <span><Users size={20} /></span>
               <strong>Nová skupina</strong>
             </button>
-            <button className="dialog-action-row" onClick={onCreateAiAgentChat} type="button">
-              <span><Sparkles size={20} /></span>
+            <button className="dialog-action-row ai-action" onClick={onCreateAiAgentChat} type="button">
+              <span><Avatar label="COP AI Assistant" small variant="ai" /></span>
               <strong>Chat s AI agentem</strong>
             </button>
             <div className="dialog-list">

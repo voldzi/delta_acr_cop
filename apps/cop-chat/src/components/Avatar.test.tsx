@@ -23,8 +23,11 @@ describe("Avatar", () => {
   });
 
   it("renders the default AI assistant avatar", () => {
-    render(<Avatar label="COP AI Assistant" variant="ai" />);
-    expect(screen.getByText("AI")).toBeTruthy();
+    const { container } = render(<Avatar label="COP AI Assistant" variant="ai" />);
+    const avatar = container.querySelector(".avatar.ai.image");
+    const image = avatar?.querySelector("img");
+    expect(image?.getAttribute("src")).toContain("data:image/svg+xml");
+    expect(container.textContent).not.toContain("AI");
   });
 
   it("fetches Matrix media avatars with the Matrix access token", async () => {

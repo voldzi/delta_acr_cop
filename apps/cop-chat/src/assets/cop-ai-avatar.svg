@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="COP AI Assistant">
+  <defs>
+    <radialGradient id="bgGlow" cx="32%" cy="24%" r="76%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.95" />
+      <stop offset="0.38" stop-color="#ccfbf1" />
+      <stop offset="0.72" stop-color="#bfdbfe" />
+      <stop offset="1" stop-color="#e9d5ff" />
+    </radialGradient>
+    <linearGradient id="shieldFill" x1="36" x2="92" y1="28" y2="104" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="1" stop-color="#ecfeff" />
+    </linearGradient>
+    <linearGradient id="pinFill" x1="49" x2="79" y1="50" y2="91" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14b8a6" />
+      <stop offset="1" stop-color="#047857" />
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bgGlow)" />
+  <path d="M15 36h98M13 62h102M22 88h84M38 12v105M66 6v116M92 17v94" stroke="#0f766e" stroke-opacity="0.12" stroke-width="3" />
+  <circle cx="101" cy="32" r="9" fill="#ffffff" fill-opacity="0.72" />
+  <circle cx="27" cy="94" r="7" fill="#ffffff" fill-opacity="0.68" />
+  <path d="M64 28 92 38v23c0 22-12.8 36.2-28 42-15.2-5.8-28-20-28-42V38l28-10Z" fill="url(#shieldFill)" stroke="#0f766e" stroke-width="4" />
+  <path d="M64 49c-8.8 0-16 7-16 15.7C48 76 64 92 64 92s16-16 16-27.3C80 56 72.8 49 64 49Z" fill="url(#pinFill)" />
+  <circle cx="64" cy="64.5" r="5.8" fill="#ffffff" />
+  <path d="M33 28c5.2 1 8.2 4 9.2 9.2 1-5.2 4-8.2 9.2-9.2-5.2-1-8.2-4-9.2-9.2-1 5.2-4 8.2-9.2 9.2ZM88 89c3.7.7 5.8 2.9 6.5 6.5.7-3.6 2.8-5.8 6.5-6.5-3.7-.7-5.8-2.9-6.5-6.5-.7 3.6-2.8 5.8-6.5 6.5Z" fill="#0f766e" />
+  <circle cx="41" cy="77" r="3.5" fill="#14b8a6" />
+  <circle cx="87" cy="72" r="3.5" fill="#14b8a6" />
+</svg>

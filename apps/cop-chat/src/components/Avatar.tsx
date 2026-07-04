@@ -1,6 +1,8 @@
 import * as React from "react";
 import clsx from "clsx";
 
+import copAiAvatarUrl from "../assets/cop-ai-avatar.svg";
+
 export function Avatar({
   label,
   mediaAccessToken,
@@ -66,10 +68,13 @@ export function Avatar({
     };
   }, [mediaAccessToken, src]);
   const resolvedSrc = needsAuthenticatedFetch ? authenticatedSrc : src;
-  const imageSrc = resolvedSrc && failedSrc !== src && failedSrc !== resolvedSrc ? resolvedSrc : undefined;
+  const primaryImageFailed = Boolean(src && (failedSrc === src || failedSrc === resolvedSrc));
+  const primaryImageSrc = resolvedSrc && !primaryImageFailed ? resolvedSrc : undefined;
+  const defaultAiImageSrc = variant === "ai" && failedSrc !== copAiAvatarUrl ? copAiAvatarUrl : undefined;
+  const imageSrc = primaryImageSrc ?? defaultAiImageSrc;
   return (
     <span className={clsx("avatar", small && "small", imageSrc && "image", variant === "ai" && "ai")} aria-hidden="true">
-      {imageSrc ? <img alt="" src={imageSrc} onError={() => setFailedSrc(src ?? imageSrc)} /> : variant === "ai" ? "AI" : initialsFor(label)}
+      {imageSrc ? <img alt="" src={imageSrc} onError={() => setFailedSrc(primaryImageSrc ? src ?? primaryImageSrc : imageSrc)} /> : variant === "ai" ? "AI" : initialsFor(label)}
     </span>
   );
 }
