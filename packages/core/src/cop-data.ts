@@ -328,6 +328,8 @@ export type SituationLayerId =
   | "mobile_network"
   | "mission_arena"
   | "place_settlements"
+  | "trail_poi"
+  | "trail_routes"
   | "traffic"
   | "warnings"
   | "weather_alerts"
@@ -499,6 +501,7 @@ export type SituationGeometry =
   | { coordinates: Array<Array<Array<[number, number]>>>; type: "MultiPolygon" }
   | { coordinates: [number, number]; type: "Point" }
   | { coordinates: Array<[number, number]>; type: "LineString" }
+  | { coordinates: Array<Array<[number, number]>>; type: "MultiLineString" }
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface SituationFeatureProperties {

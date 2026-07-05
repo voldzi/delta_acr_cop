@@ -9471,6 +9471,8 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "mobile_coverage"
     || value === "mobile_network"
     || value === "place_settlements"
+    || value === "trail_poi"
+    || value === "trail_routes"
     || value === "traffic"
     || value === "warnings"
     || value === "weather_alerts"
@@ -9541,6 +9543,16 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "weather.wind_field":
     case "public.weather.wind_field":
       return "weather_wind_field";
+    case "trail.routes":
+    case "trail_routes":
+    case "public.trails.routes":
+    case "outdoor.osm_postgis.trail_routes":
+      return "trail_routes";
+    case "trail.poi":
+    case "trail_poi":
+    case "public.trails.poi":
+    case "outdoor.osm_postgis.trail_poi":
+      return "trail_poi";
     default:
       return undefined;
   }

@@ -143,6 +143,22 @@ export interface BuildMapCatalogInput {
   };
 }
 
+const PUBLIC_TRANSIT_BASE_LAYER_ID = "public.traffic.transit";
+const PUBLIC_TRANSIT_PID_LAYER_ID = "public.traffic.transit.pid";
+const PUBLIC_TRANSIT_IDSJMK_LAYER_ID = "public.traffic.transit.idsjmk";
+const PUBLIC_TRANSIT_TRAINS_LAYER_ID = "public.traffic.transit.trains";
+const PUBLIC_TRANSIT_STOPS_LAYER_ID = "public.traffic.transit_stops";
+const PUBLIC_TRAIL_ROUTES_LAYER_ID = "public.trails.routes";
+const PUBLIC_TRAIL_POI_LAYER_ID = "public.trails.poi";
+
+interface PublicTransitLayerVariant {
+  layerId: string;
+  providerLayerIds: string[];
+  refreshSeconds?: number;
+  sourceIds: string[];
+  styleProfile?: string;
+}
+
 export function buildMapCatalog(input: BuildMapCatalogInput): MapCatalogResponse {
   const includeDiagnostics = input.includeDiagnostics === true;
   const includePartner = input.includePartner === true;
@@ -252,6 +268,7 @@ function defaultGroups(includeDiagnostics: boolean, includePartner: boolean): Ma
     { groupId: "transport", icon: "bus", label: "Doprava", order: 35 },
     { groupId: "infrastructure", icon: "building-2", label: "Infrastruktura", order: 40 },
     { groupId: "boundary", icon: "map", label: "Hranice a území", order: 45 },
+    { groupId: "outdoor", icon: "map", label: "Turistika / Outdoor", order: 47 },
     { groupId: "flight", icon: "plane", label: "Letecký provoz", order: 50 },
     { groupId: "user", icon: "map-pin", label: "Moje data", order: 60 },
     { groupId: "presentation", icon: "sparkles", label: "Prezentace a eventy", order: 65 },
@@ -266,36 +283,156 @@ function buildProviderCatalogLayers(catalog: ProviderMapCatalog, includeDiagnost
     .flatMap((layer) => providerCatalogLayerToMapLayer(catalog.providerId, layer));
 }
 
+function publicTransitLayerVariants(providerLayerIds: string[], providerSourceIds: string[], fallbackRefreshSeconds: number | undefined): PublicTransitLayerVariant[] {
+  const normalizedProviderLayerIds = providerLayerIdsForPublicTransitVariant(providerLayerIds);
+  if (providerSourceIds.length === 0) {
+    return [{
+      layerId: PUBLIC_TRANSIT_BASE_LAYER_ID,
+      providerLayerIds: normalizedProviderLayerIds,
+      refreshSeconds: publicTransitRefreshSecondsForLayerId(PUBLIC_TRANSIT_BASE_LAYER_ID) ?? fallbackRefreshSeconds,
+      sourceIds: [],
+      styleProfile: publicTransitStyleProfileForLayerId(PUBLIC_TRANSIT_BASE_LAYER_ID)
+    }];
+  }
+  const variants = new Map<string, PublicTransitLayerVariant>();
+  for (const sourceId of providerSourceIds) {
+    const layerId = publicTransitCatalogLayerIdForSourceId(sourceId);
+    const existing = variants.get(layerId);
+    if (existing) {
+      existing.sourceIds.push(sourceId);
+      continue;
+    }
+    variants.set(layerId, {
+      layerId,
+      providerLayerIds: normalizedProviderLayerIds,
+      refreshSeconds: publicTransitRefreshSecondsForLayerId(layerId) ?? fallbackRefreshSeconds,
+      sourceIds: [sourceId],
+      styleProfile: publicTransitStyleProfileForLayerId(layerId)
+    });
+  }
+  return Array.from(variants.values()).filter((variant) => variant.sourceIds.length > 0);
+}
+
+function providerLayerIdsForPublicTransitVariant(providerLayerIds: string[]): string[] {
+  return providerLayerIds.includes("traffic") || providerLayerIds.length === 0 ? ["traffic"] : providerLayerIds;
+}
+
+function publicTransitCatalogLayerIdForSourceId(sourceId: string): string {
+  const normalized = sourceId.toLowerCase();
+  if (isPublicTransitStaticSourceId(normalized)) {
+    return PUBLIC_TRANSIT_STOPS_LAYER_ID;
+  }
+  if (normalized === "spravazeleznic_trains" || normalized.includes("spravazeleznic") || normalized.includes("rail") || normalized.includes("train")) {
+    return PUBLIC_TRANSIT_TRAINS_LAYER_ID;
+  }
+  if (normalized === "pid_gtfs_rt" || normalized.startsWith("pid_") || normalized.includes("_pid_")) {
+    return PUBLIC_TRANSIT_PID_LAYER_ID;
+  }
+  if (normalized === "idsjmk_vehicle_positions" || normalized === "ids_jmk_vehicle_positions" || normalized.includes("idsjmk") || normalized.includes("ids_jmk")) {
+    return PUBLIC_TRANSIT_IDSJMK_LAYER_ID;
+  }
+  return PUBLIC_TRANSIT_BASE_LAYER_ID;
+}
+
+function isPublicTransitSourceId(sourceId: string): boolean {
+  const normalized = sourceId.toLowerCase();
+  return isPublicTransitStaticSourceId(normalized)
+    || normalized === "pid_gtfs_rt"
+    || normalized.startsWith("pid_")
+    || normalized.includes("gtfs")
+    || normalized.includes("transit")
+    || normalized.includes("vehicle_position")
+    || normalized.includes("idsjmk")
+    || normalized.includes("ids_jmk")
+    || normalized.includes("spravazeleznic")
+    || normalized.includes("rail")
+    || normalized.includes("train");
+}
+
+function isPublicTransitCatalogLayerId(layerId: string): boolean {
+  return layerId === PUBLIC_TRANSIT_STOPS_LAYER_ID || isPublicTransitVehicleCatalogLayerId(layerId);
+}
+
+function isPublicTransitVehicleCatalogLayerId(layerId: string): boolean {
+  return layerId === PUBLIC_TRANSIT_BASE_LAYER_ID
+    || layerId === PUBLIC_TRANSIT_PID_LAYER_ID
+    || layerId === PUBLIC_TRANSIT_IDSJMK_LAYER_ID
+    || layerId === PUBLIC_TRANSIT_TRAINS_LAYER_ID;
+}
+
+function publicTransitRefreshSecondsForLayerId(layerId: string): number | undefined {
+  switch (layerId) {
+    case PUBLIC_TRANSIT_PID_LAYER_ID:
+    case PUBLIC_TRANSIT_IDSJMK_LAYER_ID:
+      return 20;
+    case PUBLIC_TRANSIT_TRAINS_LAYER_ID:
+      return 900;
+    case PUBLIC_TRANSIT_STOPS_LAYER_ID:
+      return 21_600;
+    default:
+      return undefined;
+  }
+}
+
+function publicTransitStyleProfileForLayerId(layerId: string): string | undefined {
+  if (layerId === PUBLIC_TRANSIT_STOPS_LAYER_ID) {
+    return "traffic-public-transit-stops-v1";
+  }
+  if (isPublicTransitVehicleCatalogLayerId(layerId)) {
+    return "traffic-public-transit-v1";
+  }
+  return undefined;
+}
+
+function isTrailCatalogLayerId(layerId: string): boolean {
+  return layerId === PUBLIC_TRAIL_ROUTES_LAYER_ID || layerId === PUBLIC_TRAIL_POI_LAYER_ID;
+}
+
+function trailStyleProfileForLayerId(layerId: string): string | undefined {
+  if (layerId === PUBLIC_TRAIL_ROUTES_LAYER_ID) {
+    return "trail-route-osm-v1";
+  }
+  if (layerId === PUBLIC_TRAIL_POI_LAYER_ID) {
+    return "trail-poi-osm-v1";
+  }
+  return undefined;
+}
+
 function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatalogLayer): MapCatalogLayer[] {
   const providerLayerIds = layer.query?.providerLayerIds?.filter(Boolean) ?? [];
   const rawProviderSourceIds = layer.query?.providerSourceIds?.filter(Boolean) ?? layer.sourceIds?.filter(Boolean) ?? [];
   const providerSourceIds = sanitizeProviderCatalogLayerSourceIds(providerId, layer.recommendedCatalogLayerId, rawProviderSourceIds);
-  const variants = layer.recommendedCatalogLayerId === "public.traffic.transit" && providerSourceIds.some(isPublicTransitStaticSourceId)
-    ? [
-        { layerId: "public.traffic.transit", sourceIds: providerSourceIds.filter((sourceId) => !isPublicTransitStaticSourceId(sourceId)) },
-        { layerId: "public.traffic.transit_stops", sourceIds: providerSourceIds.filter(isPublicTransitStaticSourceId) }
-      ].filter((variant) => variant.sourceIds.length > 0)
-    : [{ layerId: layer.recommendedCatalogLayerId, sourceIds: providerSourceIds }];
-  return variants.map((variant) => providerCatalogLayerVariantToMapLayer(providerId, layer, providerLayerIds, variant.layerId, variant.sourceIds));
+  const variants = providerId === "sim.situation-data" && layer.recommendedCatalogLayerId === PUBLIC_TRANSIT_BASE_LAYER_ID
+    ? publicTransitLayerVariants(providerLayerIds, providerSourceIds, layer.refreshSeconds)
+    : [{ layerId: layer.recommendedCatalogLayerId, providerLayerIds, sourceIds: providerSourceIds }];
+  return variants.map((variant) => providerCatalogLayerVariantToMapLayer(providerId, layer, variant));
 }
 
 function providerCatalogLayerVariantToMapLayer(
   providerId: string,
   layer: ProviderCatalogLayer,
-  providerLayerIds: string[],
-  catalogLayerId: string,
-  providerSourceIds: string[]
+  variant: PublicTransitLayerVariant
 ): MapCatalogLayer {
+  const catalogLayerId = variant.layerId;
+  const providerLayerIds = variant.providerLayerIds;
+  const providerSourceIds = variant.sourceIds;
+  const refreshSeconds = variant.refreshSeconds ?? layer.refreshSeconds;
+  const highVolumeBboxLayer = isPublicTransitCatalogLayerId(catalogLayerId) || isTrailCatalogLayerId(catalogLayerId);
+  const cacheTtlSeconds = highVolumeBboxLayer
+    ? refreshSeconds ?? layer.cacheTtlSeconds
+    : layer.cacheTtlSeconds;
   const variantLayer: ProviderCatalogLayer = {
     ...layer,
     recommendedCatalogLayerId: catalogLayerId,
     query: {
       ...layer.query,
-      maxFeatures: catalogLayerId === "public.traffic.transit_stops" ? 5000 : layer.query?.maxFeatures,
+      maxFeatures: highVolumeBboxLayer ? 5000 : layer.query?.maxFeatures,
       providerSourceIds
     },
     sourceIds: providerSourceIds,
-    styleProfile: catalogLayerId === "public.traffic.transit_stops" ? "traffic-public-transit-stops-v1" : layer.styleProfile
+    styleProfile: variant.styleProfile
+      ?? trailStyleProfileForLayerId(catalogLayerId)
+      ?? (catalogLayerId === PUBLIC_TRANSIT_STOPS_LAYER_ID ? "traffic-public-transit-stops-v1" : layer.styleProfile)
   };
   const mode = normalizeQueryMode(layer.query?.mode);
   const role = roleForCatalogLayer(variantLayer);
@@ -314,7 +451,7 @@ function providerCatalogLayerVariantToMapLayer(
   return {
     audience,
     ...(layer.availability ? { availability: layer.availability } : {}),
-    cacheTtlSeconds: layer.cacheTtlSeconds,
+    cacheTtlSeconds,
     ...(layer.compatibilityOnly === true ? { compatibilityOnly: true } : {}),
     defaultVisible: enabled && defaultVisibleForCatalogLayer(variantLayer),
     description: descriptionForCatalogLayer(variantLayer),
@@ -343,7 +480,7 @@ function providerCatalogLayerVariantToMapLayer(
       ...(providerSourceIds.length > 0 ? { providerSourceIds } : {}),
       streamId: streamIdForCatalogLayer(layer.query?.streamId)
     },
-    refreshSeconds: layer.refreshSeconds,
+    refreshSeconds,
     role,
     selectable: enabled && selectableForCatalogLayer(variantLayer),
     styleProfile: variantLayer.styleProfile ?? styleProfileForCatalogLayer(variantLayer)
@@ -355,6 +492,10 @@ function providerCatalogLayerEnabled(layer: ProviderCatalogLayer): boolean {
 }
 
 function sanitizeProviderCatalogLayerSourceIds(providerId: string, layerId: string, sourceIds: string[]): string[] {
+  if (providerId === "sim.situation-data" && isTrailCatalogLayerId(layerId)) {
+    const normalized = uniqueStrings(sourceIds.filter((sourceId) => sourceId === "osm_postgis"));
+    return normalized.length > 0 ? normalized : ["osm_postgis"];
+  }
   if (providerId !== "sim.safety-data" || layerId !== "public.safety.warnings") {
     return uniqueStrings(sourceIds);
   }
@@ -365,10 +506,10 @@ function maxFeaturesForCatalogLayer(layer: ProviderCatalogLayer): number | undef
   if (layer.recommendedCatalogLayerId === "public.safety.flood") {
     return Math.max(layer.query?.maxFeatures ?? 0, 600);
   }
-  if (layer.recommendedCatalogLayerId === "public.traffic.transit_stops") {
+  if (isPublicTransitCatalogLayerId(layer.recommendedCatalogLayerId)) {
     return Math.max(layer.query?.maxFeatures ?? 0, 5000);
   }
-  if (layer.recommendedCatalogLayerId === "public.traffic.transit") {
+  if (isTrailCatalogLayerId(layer.recommendedCatalogLayerId)) {
     return Math.max(layer.query?.maxFeatures ?? 0, 5000);
   }
   return layer.query?.maxFeatures;
@@ -404,6 +545,12 @@ function geometryTypesForCatalogLayer(layer: ProviderCatalogLayer): string[] | u
     || layer.recommendedCatalogLayerId === "public.place.settlements") {
     return uniqueStrings([...geometryTypes, "Polygon", "MultiPolygon"]);
   }
+  if (layer.recommendedCatalogLayerId === PUBLIC_TRAIL_ROUTES_LAYER_ID) {
+    return uniqueStrings([...geometryTypes, "LineString", "MultiLineString"]);
+  }
+  if (layer.recommendedCatalogLayerId === PUBLIC_TRAIL_POI_LAYER_ID) {
+    return uniqueStrings([...geometryTypes, "Point"]);
+  }
   return geometryTypes.length > 0 ? geometryTypes : undefined;
 }
 
@@ -423,11 +570,17 @@ function minZoomForCatalogLayer(layer: ProviderCatalogLayer): number | undefined
   ) {
     return Math.min(layer.minZoom ?? 4, 4);
   }
-  if (layerId === "public.traffic.transit") {
+  if (isPublicTransitVehicleCatalogLayerId(layerId)) {
     return Math.min(layer.minZoom ?? 7, 7);
   }
-  if (layerId === "public.traffic.transit_stops") {
+  if (layerId === PUBLIC_TRANSIT_STOPS_LAYER_ID) {
     return Math.max(layer.minZoom ?? 11, 11);
+  }
+  if (layerId === PUBLIC_TRAIL_ROUTES_LAYER_ID) {
+    return Math.min(layer.minZoom ?? 7, 7);
+  }
+  if (layerId === PUBLIC_TRAIL_POI_LAYER_ID) {
+    return Math.max(layer.minZoom ?? 12, 12);
   }
   return layer.minZoom;
 }
@@ -439,12 +592,19 @@ function buildProviderCatalogSources(catalog: ProviderMapCatalog, includeDiagnos
 }
 
 function providerCatalogSourceToMapSource(providerId: string, source: ProviderCatalogSource): MapCatalogSource[] {
+  const publicTransitLayerId = providerId === "sim.situation-data" && isPublicTransitSourceId(source.sourceId) ? publicTransitCatalogLayerIdForSourceId(source.sourceId) : undefined;
+  const isOsmPostgisSource = providerId === "sim.situation-data" && source.sourceId === "osm_postgis";
   const feedsCatalogLayerIds = sanitizeProviderCatalogSourceFeedLayerIds(
     providerId,
     source.sourceId,
     nonEmpty(source.feedsCatalogLayerIds) ?? nonEmpty(source.feedsLayerIds)
   );
   const enabled = source.enabled === true && source.availability !== "disabled";
+  const usedByCatalogLayerIds = providerId === "sim.situation-data" && isPublicTransitCatalogLayerId(publicTransitLayerId ?? "")
+    ? [publicTransitLayerId!]
+    : isOsmPostgisSource
+      ? uniqueStrings([...(source.usedByCatalogLayerIds ?? []), PUBLIC_TRAIL_ROUTES_LAYER_ID, PUBLIC_TRAIL_POI_LAYER_ID])
+      : source.usedByCatalogLayerIds;
   return [
     {
       audience: normalizeAudience(source.audience),
@@ -461,15 +621,21 @@ function providerCatalogSourceToMapSource(providerId: string, source: ProviderCa
       sourceId: source.sourceId,
       sourceRole: normalizeSourceRole(source.sourceRole),
       updateCadenceSeconds: source.updateCadenceSeconds,
-      usedByCatalogLayerIds: nonEmpty(providerId === "sim.situation-data" && isPublicTransitStaticSourceId(source.sourceId) ? ["public.traffic.transit_stops"] : source.usedByCatalogLayerIds),
+      usedByCatalogLayerIds: nonEmpty(usedByCatalogLayerIds),
       visibleInDiagnostics: source.visibleInDiagnostics === true || normalizeAudience(source.audience) === "diagnostic"
     }
   ];
 }
 
 function sanitizeProviderCatalogSourceFeedLayerIds(providerId: string, sourceId: string, layerIds: string[] | undefined): string[] | undefined {
-  if (providerId === "sim.situation-data" && isPublicTransitStaticSourceId(sourceId)) {
-    return ["public.traffic.transit_stops"];
+  if (providerId === "sim.situation-data" && isPublicTransitSourceId(sourceId)) {
+    const publicTransitLayerId = publicTransitCatalogLayerIdForSourceId(sourceId);
+    if (isPublicTransitCatalogLayerId(publicTransitLayerId)) {
+      return [publicTransitLayerId];
+    }
+  }
+  if (providerId === "sim.situation-data" && sourceId === "osm_postgis") {
+    return uniqueStrings([...(layerIds ?? []), PUBLIC_TRAIL_ROUTES_LAYER_ID, PUBLIC_TRAIL_POI_LAYER_ID]);
   }
   if (providerId !== "sim.safety-data") {
     return layerIds;
@@ -512,7 +678,12 @@ function shouldIncludeCatalogAudience(value: string | undefined, includeDiagnost
 
 const curatedCatalogLayerLabels: Record<string, string> = {
   "public.traffic.transit": "Veřejná doprava",
+  "public.traffic.transit.pid": "Veřejná doprava Praha/PID",
+  "public.traffic.transit.idsjmk": "Veřejná doprava Brno/IDS JMK",
+  "public.traffic.transit.trains": "Vlaky",
   "public.traffic.transit_stops": "Zastávky veřejné dopravy",
+  "public.trails.routes": "Turistické trasy",
+  "public.trails.poi": "Outdoor body",
   "public.safety.air_quality": "Kvalita ovzduší",
   "public.safety.flood": "Vodní stavy a průtoky",
   "public.weather.current": "Počasí ve středu mapy",
@@ -529,7 +700,12 @@ const curatedCatalogLayerLabels: Record<string, string> = {
 
 const curatedCatalogLayerDescriptions: Record<string, string> = {
   "public.traffic.transit": "Živá poloha vozidel veřejné dopravy ze SIM.",
+  "public.traffic.transit.pid": "Živá poloha vozidel PID s rychlou obnovou po 20 sekundách.",
+  "public.traffic.transit.idsjmk": "Živá poloha vozidel IDS JMK s rychlou obnovou po 20 sekundách.",
+  "public.traffic.transit.trains": "Živé polohy vlaků ze Správy železnic s delší obnovou podle zdroje.",
   "public.traffic.transit_stops": "Statické zastávky veřejné dopravy ze SIM katalogu.",
+  "public.trails.routes": "Turistické, pěší, cyklistické a MTB trasy z normalizovaných OSM dat.",
+  "public.trails.poi": "Outdoor body zájmu jako přístřešky, voda, kempování, servis a nouzové body z OSM.",
   "public.safety.flood": "Hydrologické stanice, vodní stavy, průtoky a stupně povodňové aktivity."
 };
 
@@ -583,6 +759,9 @@ function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
   }
   if (layerId.startsWith("public.place.")) {
     return "boundary";
+  }
+  if (layerId.startsWith("public.trails.")) {
+    return "outdoor";
   }
   if (layerId.startsWith("public.weather.")) {
     return "risks.weather";
@@ -982,56 +1161,15 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       selectable: true,
       styleProfile: "mobile-network-quality-v1"
     },
-    (() => {
-      const trafficSources = publicTransitVehicleSources(sources);
-      const trafficSourceIds = trafficSources.length > 0 ? trafficSources.map((source) => source.sourceId) : ["pid_gtfs_rt"];
-      const trafficRefreshSeconds = Math.min(
-        ...trafficSources
-          .map((source) => source.updateCadenceSeconds)
-          .filter((seconds): seconds is number => typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0),
-        trafficLayer?.expectedCadenceSeconds ?? 60
-      );
-      return {
-      audience: "public",
-      cacheTtlSeconds: trafficRefreshSeconds,
-      defaultVisible: trafficLayer?.defaultVisible ?? false,
-      description: trafficLayer?.description ?? "Živá poloha vozidel veřejné dopravy ze SIM.",
-      geometryTypes: trafficLayer?.geometryTypes ?? ["Point", "LineString"],
-      groupId: "transport",
-      kind: "vector_features",
-      label: "Veřejná doprava",
-      layerId: "public.traffic.transit",
-      legal: legalFromSource(trafficSources[0]),
-      maxZoom: 18,
-      minZoom: 7,
-      provenance: {
-        sourceIds: trafficSourceIds.map((sourceId) => `sim.situation-data:${sourceId}`)
-      },
-      query: {
-        maxFeatures: 5000,
-        mode: "bbox",
-        providerId: "sim.situation-data",
-        providerLayerIds: ["traffic"],
-        providerSourceIds: trafficSourceIds,
-        streamId: "features"
-      },
-      refreshSeconds: trafficRefreshSeconds,
-      role: "reference",
-      selectable: true,
-      styleProfile: "traffic-public-transit-v1"
-      };
-    })(),
+    ...buildPublicTransitVehicleCompatibilityLayers(trafficLayer, sources),
     (() => {
       const stopSources = publicTransitStaticSources(sources);
       if (stopSources.length === 0) {
         return undefined;
       }
-      const refreshSeconds = Math.min(
-        ...stopSources
-          .map((source) => source.updateCadenceSeconds)
-          .filter((seconds): seconds is number => typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0),
-        3600
-      );
+      const refreshSeconds = minPositiveNumber(stopSources.map((source) => source.updateCadenceSeconds))
+        ?? publicTransitRefreshSecondsForLayerId(PUBLIC_TRANSIT_STOPS_LAYER_ID)
+        ?? 21_600;
       return {
         audience: "public",
         cacheTtlSeconds: refreshSeconds,
@@ -1041,7 +1179,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         groupId: "transport",
         kind: "vector_features",
         label: "Zastávky veřejné dopravy",
-        layerId: "public.traffic.transit_stops",
+        layerId: PUBLIC_TRANSIT_STOPS_LAYER_ID,
         legal: legalFromSource(stopSources[0]),
         maxZoom: 18,
         minZoom: 11,
@@ -1062,6 +1200,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         styleProfile: "traffic-public-transit-stops-v1"
       } satisfies MapCatalogLayer;
     })(),
+    ...buildTrailCompatibilityLayers(sources),
     ...buildInfrastructureLayers(groundLayer, sources)
   ].filter((layer): layer is MapCatalogLayer => Boolean(layer));
 }
@@ -1073,7 +1212,13 @@ function buildSituationCatalogCompatibilityLayers(catalog: ProviderMapCatalog, s
       : buildWeatherForecastAreaCatalogLayer(sources),
     catalog.layers.some((layer) => layer.recommendedCatalogLayerId === "public.weather.webcams")
       ? undefined
-      : buildWeatherWebcamCatalogLayer(sources)
+      : buildWeatherWebcamCatalogLayer(sources),
+    catalog.layers.some((layer) => layer.recommendedCatalogLayerId === PUBLIC_TRAIL_ROUTES_LAYER_ID)
+      ? undefined
+      : buildTrailRoutesCompatibilityLayer(sources),
+    catalog.layers.some((layer) => layer.recommendedCatalogLayerId === PUBLIC_TRAIL_POI_LAYER_ID)
+      ? undefined
+      : buildTrailPoiCompatibilityLayer(sources)
   ].filter((layer): layer is MapCatalogLayer => Boolean(layer));
 }
 
@@ -1179,6 +1324,79 @@ function buildWeatherWebcamCatalogLayer(sources: SituationSourceDescriptor[]): M
     role: "overlay",
     selectable: true,
     styleProfile: "weather-webcams-v1"
+  };
+}
+
+function buildTrailCompatibilityLayers(sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
+  const osm = findSource(sources, "osm_postgis");
+  if (!osm || osm.enabled === false) {
+    return [];
+  }
+  return [
+    buildTrailRoutesCompatibilityLayer(sources),
+    buildTrailPoiCompatibilityLayer(sources)
+  ];
+}
+
+function buildTrailRoutesCompatibilityLayer(sources: SituationSourceDescriptor[]): MapCatalogLayer {
+  const osm = findSource(sources, "osm_postgis");
+  return {
+    audience: "public",
+    cacheTtlSeconds: 21_600,
+    defaultVisible: false,
+    description: curatedCatalogLayerDescriptions[PUBLIC_TRAIL_ROUTES_LAYER_ID] ?? "Turistické, pěší, cyklistické a MTB trasy z normalizovaných OSM dat.",
+    geometryTypes: ["LineString", "MultiLineString"],
+    groupId: "outdoor",
+    kind: "vector_features",
+    label: curatedCatalogLayerLabels[PUBLIC_TRAIL_ROUTES_LAYER_ID] ?? "Turistické trasy",
+    layerId: PUBLIC_TRAIL_ROUTES_LAYER_ID,
+    legal: legalFromSource(osm, ["OpenStreetMap contributors, licence ODbL 1.0"]),
+    maxZoom: 18,
+    minZoom: 7,
+    provenance: { sourceIds: ["sim.situation-data:osm_postgis"] },
+    query: {
+      maxFeatures: 5000,
+      mode: "bbox",
+      providerId: "sim.situation-data",
+      providerLayerIds: ["trail_routes"],
+      providerSourceIds: ["osm_postgis"],
+      streamId: "features"
+    },
+    refreshSeconds: osm?.updateCadenceSeconds ?? 21_600,
+    role: "reference",
+    selectable: true,
+    styleProfile: "trail-route-osm-v1"
+  };
+}
+
+function buildTrailPoiCompatibilityLayer(sources: SituationSourceDescriptor[]): MapCatalogLayer {
+  const osm = findSource(sources, "osm_postgis");
+  return {
+    audience: "public",
+    cacheTtlSeconds: 21_600,
+    defaultVisible: false,
+    description: curatedCatalogLayerDescriptions[PUBLIC_TRAIL_POI_LAYER_ID] ?? "Outdoor body zájmu jako přístřešky, voda, kempování, servis a nouzové body z OSM.",
+    geometryTypes: ["Point"],
+    groupId: "outdoor",
+    kind: "vector_features",
+    label: curatedCatalogLayerLabels[PUBLIC_TRAIL_POI_LAYER_ID] ?? "Outdoor body",
+    layerId: PUBLIC_TRAIL_POI_LAYER_ID,
+    legal: legalFromSource(osm, ["OpenStreetMap contributors, licence ODbL 1.0"]),
+    maxZoom: 18,
+    minZoom: 12,
+    provenance: { sourceIds: ["sim.situation-data:osm_postgis"] },
+    query: {
+      maxFeatures: 5000,
+      mode: "bbox",
+      providerId: "sim.situation-data",
+      providerLayerIds: ["trail_poi"],
+      providerSourceIds: ["osm_postgis"],
+      streamId: "features"
+    },
+    refreshSeconds: osm?.updateCadenceSeconds ?? 21_600,
+    role: "reference",
+    selectable: true,
+    styleProfile: "trail-poi-osm-v1"
   };
 }
 
@@ -1724,24 +1942,33 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
     case "osm_postgis":
       return {
         audience: "public",
-        feedsCatalogLayerIds: ["reference.infrastructure.healthcare", "reference.infrastructure.emergency", "reference.infrastructure.communications"],
+        feedsCatalogLayerIds: [
+          "reference.infrastructure.healthcare",
+          "reference.infrastructure.emergency",
+          "reference.infrastructure.communications",
+          PUBLIC_TRAIL_ROUTES_LAYER_ID,
+          PUBLIC_TRAIL_POI_LAYER_ID
+        ],
         selectableInMap: false,
         sourceRole: "reference",
-        usedByCatalogLayerIds: ["public.mobile.network"]
+        usedByCatalogLayerIds: ["public.mobile.network", PUBLIC_TRAIL_ROUTES_LAYER_ID, PUBLIC_TRAIL_POI_LAYER_ID]
       };
     case "osm_overpass":
       return { audience: "diagnostic", feedsCatalogLayerIds: ["diagnostic.osm.overpass"], selectableInMap: false, sourceRole: "diagnostic" };
     case "pid_gtfs_rt":
-      return { audience: "public", feedsCatalogLayerIds: ["public.traffic.transit"], selectableInMap: true, sourceRole: "final" };
+      return { audience: "public", feedsCatalogLayerIds: [PUBLIC_TRANSIT_PID_LAYER_ID], selectableInMap: true, sourceRole: "final" };
     case "public_transit_static":
-      return { audience: "public", feedsCatalogLayerIds: ["public.traffic.transit_stops"], selectableInMap: true, sourceRole: "reference" };
+      return { audience: "public", feedsCatalogLayerIds: [PUBLIC_TRANSIT_STOPS_LAYER_ID], selectableInMap: true, sourceRole: "reference" };
+    case "spravazeleznic_trains":
+      return { audience: "public", feedsCatalogLayerIds: [PUBLIC_TRANSIT_TRAINS_LAYER_ID], selectableInMap: true, sourceRole: "final" };
     case "ids_jmk_gtfs_rt":
     case "idsjmk_gtfs_rt":
     case "ids_jmk_vehicle_positions":
     case "idsjmk_vehicle_positions":
+      return { audience: "public", feedsCatalogLayerIds: [PUBLIC_TRANSIT_IDSJMK_LAYER_ID], selectableInMap: true, sourceRole: "final" };
     case "transit_vehicle_positions":
     case "transit_gtfs_rt":
-      return { audience: "public", feedsCatalogLayerIds: ["public.traffic.transit"], selectableInMap: true, sourceRole: "final" };
+      return { audience: "public", feedsCatalogLayerIds: [PUBLIC_TRANSIT_BASE_LAYER_ID], selectableInMap: true, sourceRole: "final" };
     case "safety_data":
       return { audience: "public", feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.flood", "public.safety.fire", "public.safety.weather_alerts"], selectableInMap: false, sourceRole: "projection" };
     case "ardos_partner":
@@ -1798,6 +2025,57 @@ function legalFromSource(source: { license?: Record<string, unknown> } | undefin
   };
 }
 
+function buildPublicTransitVehicleCompatibilityLayers(trafficLayer: SituationLayerDescriptor | undefined, sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
+  const trafficSources = publicTransitVehicleSources(sources);
+  const fallbackSources = trafficSources.length > 0 ? trafficSources : [{ sourceId: "pid_gtfs_rt", updateCadenceSeconds: 20 } as SituationSourceDescriptor];
+  const groups = new Map<string, SituationSourceDescriptor[]>();
+  for (const source of fallbackSources) {
+    const layerId = publicTransitCatalogLayerIdForSourceId(source.sourceId);
+    if (layerId === PUBLIC_TRANSIT_STOPS_LAYER_ID) {
+      continue;
+    }
+    const current = groups.get(layerId) ?? [];
+    current.push(source);
+    groups.set(layerId, current);
+  }
+  return Array.from(groups.entries()).map(([layerId, groupedSources]) => {
+    const sourceIds = groupedSources.map((source) => source.sourceId);
+    const refreshSeconds = minPositiveNumber(groupedSources.map((source) => source.updateCadenceSeconds))
+      ?? publicTransitRefreshSecondsForLayerId(layerId)
+      ?? trafficLayer?.expectedCadenceSeconds
+      ?? 60;
+    return {
+      audience: "public",
+      cacheTtlSeconds: refreshSeconds,
+      defaultVisible: trafficLayer?.defaultVisible ?? false,
+      description: curatedCatalogLayerDescriptions[layerId] ?? trafficLayer?.description ?? "Živá poloha vozidel veřejné dopravy ze SIM.",
+      geometryTypes: trafficLayer?.geometryTypes ?? ["Point", "LineString"],
+      groupId: "transport",
+      kind: "vector_features",
+      label: curatedCatalogLayerLabels[layerId] ?? "Veřejná doprava",
+      layerId,
+      legal: legalFromSource(groupedSources[0]),
+      maxZoom: 18,
+      minZoom: 7,
+      provenance: {
+        sourceIds: sourceIds.map((sourceId) => `sim.situation-data:${sourceId}`)
+      },
+      query: {
+        maxFeatures: 5000,
+        mode: "bbox",
+        providerId: "sim.situation-data",
+        providerLayerIds: ["traffic"],
+        providerSourceIds: sourceIds,
+        streamId: "features"
+      },
+      refreshSeconds,
+      role: "reference",
+      selectable: true,
+      styleProfile: "traffic-public-transit-v1"
+    } satisfies MapCatalogLayer;
+  });
+}
+
 function findLayer<T extends { layerId: string }>(layers: T[], layerId: string): T | undefined {
   return layers.find((layer) => layer.layerId === layerId);
 }
@@ -1820,7 +2098,10 @@ function publicTransitVehicleSources(sources: SituationSourceDescriptor[]): Situ
       || sourceId.includes("vehicle_position")
       || sourceId.includes("pid_")
       || sourceId.includes("ids_jmk")
-      || sourceId.includes("idsjmk");
+      || sourceId.includes("idsjmk")
+      || sourceId.includes("spravazeleznic")
+      || sourceId.includes("rail")
+      || sourceId.includes("train");
   });
 }
 

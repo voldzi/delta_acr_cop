@@ -24,6 +24,8 @@ export type SituationLayerId =
   | "mobile_coverage"
   | "mobile_network"
   | "place_settlements"
+  | "trail_poi"
+  | "trail_routes"
   | "traffic"
   | "warnings"
   | "weather"
@@ -245,6 +247,7 @@ export type SituationGeometry =
   | { coordinates: Array<Array<Array<[number, number]>>>; type: "MultiPolygon" }
   | { coordinates: [number, number]; type: "Point" }
   | { coordinates: Array<[number, number]>; type: "LineString" }
+  | { coordinates: Array<Array<[number, number]>>; type: "MultiLineString" }
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface SituationFeatureProperties {
@@ -344,6 +347,8 @@ const defaultConfig: SituationDataSourceConfig = {
     mobile: 15 * 60 * 1000,
     mobile_coverage: 10 * 60 * 1000,
     mobile_network: 10 * 60 * 1000,
+    trail_poi: 6 * 60 * 60 * 1000,
+    trail_routes: 6 * 60 * 60 * 1000,
     traffic: 20 * 1000,
     warnings: 5 * 60 * 1000,
     weather: 5 * 60 * 1000,
@@ -396,6 +401,8 @@ const allowedLayerIds: SituationLayerId[] = [
   "mobile",
   "mobile_network",
   "mobile_coverage",
+  "trail_routes",
+  "trail_poi",
   "traffic",
   "warnings",
   "flood",
@@ -432,6 +439,8 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       mobile: readInteger(env.COP_SITUATION_DATA_MOBILE_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_coverage: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_network: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      trail_poi: readInteger(env.COP_SITUATION_DATA_TRAIL_POI_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      trail_routes: readInteger(env.COP_SITUATION_DATA_TRAIL_ROUTES_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       traffic: readInteger(env.COP_SITUATION_DATA_TRAFFIC_CACHE_TTL_MS, cacheTtlMs, 1000, 5 * 60 * 1000),
       warnings: readInteger(env.COP_SITUATION_DATA_WARNINGS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
@@ -1591,6 +1600,19 @@ function normalizeGeometry(value: unknown): SituationGeometry | null {
     });
     return coordinates.length >= 2 ? { coordinates, type: "LineString" } : null;
   }
+  if (value.type === "MultiLineString" && Array.isArray(value.coordinates)) {
+    const lines = value.coordinates.flatMap((line) => {
+      if (!Array.isArray(line)) {
+        return [];
+      }
+      const coordinates = line.flatMap((item) => {
+        const point = tupleCoordinate(item);
+        return point ? [point] : [];
+      });
+      return coordinates.length >= 2 ? [coordinates] : [];
+    });
+    return lines.length > 0 ? { coordinates: lines, type: "MultiLineString" } : null;
+  }
   if (value.type === "Polygon" && Array.isArray(value.coordinates)) {
     const rings = value.coordinates.flatMap((ring) => {
       if (!Array.isArray(ring)) {
@@ -1796,6 +1818,9 @@ function geometryCoordinates(geometry: SituationGeometry): Array<[number, number
   }
   if (geometry.type === "LineString") {
     return geometry.coordinates;
+  }
+  if (geometry.type === "MultiLineString") {
+    return geometry.coordinates.flatMap((line) => line);
   }
   if (geometry.type === "MultiPolygon") {
     return geometry.coordinates.flatMap((polygon) => polygon.flatMap((ring) => ring));

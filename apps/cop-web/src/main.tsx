@@ -1626,9 +1626,13 @@ export function App() {
     () => selectedSituationRasterRefreshSeconds(mapCatalog, effectiveVisibleCatalogLayerIds),
     [effectiveVisibleCatalogLayerKey, mapCatalog]
   );
-  const trafficRefreshSeconds = React.useMemo(
-    () => selectedTrafficRefreshSeconds(mapCatalog, effectiveVisibleCatalogLayerIds, situationFeatures),
+  const trafficRefreshPlans = React.useMemo(
+    () => selectedTrafficRefreshPlans(mapCatalog, effectiveVisibleCatalogLayerIds, situationFeatures),
     [effectiveVisibleCatalogLayerKey, mapCatalog, situationFeatures]
+  );
+  const trafficRefreshPlanKey = React.useMemo(
+    () => trafficRefreshPlans.map((plan) => `${plan.key}:${plan.refreshSeconds}`).join("|"),
+    [trafficRefreshPlans]
   );
   const weatherRadarSelected = React.useMemo(
     () => effectiveVisibleCatalogLayerIds.some(isWeatherRadarCatalogLayerId),
@@ -1857,23 +1861,19 @@ export function App() {
   }, [apiBase, authToken, coverageTechnology, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom, situationRasterRefreshTick]);
 
   React.useEffect(() => {
-    if (!autoRefresh || !dataAccessReady || !mapBounds || !mapCatalog || trafficRefreshSeconds === undefined) {
+    if (!autoRefresh || !dataAccessReady || !mapBounds || !mapCatalog || trafficRefreshPlans.length === 0) {
       return;
     }
     if (shouldSkipSituationFeatureLoad(mapBounds, mapView?.zoom)) {
       return;
     }
-    const trafficLayerIds = selectedTrafficCatalogLayerIds(mapCatalog, effectiveVisibleCatalogLayerIds);
-    if (trafficLayerIds.length === 0) {
-      return;
-    }
     const queryBounds = buildStableSituationQueryBounds(mapBounds);
-    const requestGroups = buildSituationMapRequestGroups(
-      trafficLayerIds,
-      mapView?.zoom,
-      hasMobileCatalogSelection(trafficLayerIds) ? coverageTechnology : undefined
-    );
-    const refreshTrafficLayers = () => {
+    const refreshTrafficLayers = (layerIds: string[]) => {
+      const requestGroups = buildSituationMapRequestGroups(
+        layerIds,
+        mapView?.zoom,
+        hasMobileCatalogSelection(layerIds) ? coverageTechnology : undefined
+      );
       void Promise.all(requestGroups.map((group) => fetchMapFeatures(apiBase, authToken, {
         bbox: queryBounds,
         filters: group.filters,
@@ -1882,7 +1882,7 @@ export function App() {
       })))
         .then((responses) => {
           const collection = mergeSituationMapFeatureResponses(responses);
-          setSituationFeatures((current) => replaceTrafficFeaturesInSituationCollection(current, collection, trafficLayerIds));
+          setSituationFeatures((current) => replaceTrafficFeaturesInSituationCollection(current, collection, layerIds));
           const responseWarnings = uniqueStrings(responses.flatMap((response) => response.warnings));
           setSituationWarnings((current) => sourceQualityWarnings(uniqueStrings([
             ...current,
@@ -1898,8 +1898,13 @@ export function App() {
           ])));
         });
     };
-    const timer = window.setInterval(refreshTrafficLayers, trafficRefreshSeconds * 1000);
-    return () => window.clearInterval(timer);
+    const timers = trafficRefreshPlans.map((plan) => window.setInterval(
+      () => refreshTrafficLayers(plan.layerIds),
+      plan.refreshSeconds * 1000
+    ));
+    return () => {
+      timers.forEach((timer) => window.clearInterval(timer));
+    };
   }, [
     apiBase,
     authToken,
@@ -1911,7 +1916,8 @@ export function App() {
     mapBounds,
     mapCatalog,
     mapView?.zoom,
-    trafficRefreshSeconds
+    trafficRefreshPlanKey,
+    trafficRefreshPlans
   ]);
 
   React.useEffect(() => {
@@ -5115,7 +5121,7 @@ export function App() {
                 mapLayerLabel={mapLayerLabel}
                 situationFeatures={combinedSituationFeatures}
                 selectedTransitRouteDetail={selectedTransitRouteDetail}
-                selectedTransitRouteShape={selectedTransitRouteDetail?.routeShape ?? selectedTransitRouteDetail?.route?.shape ?? null}
+                selectedTransitRouteShape={transitRouteShapeForMap(selectedTransitRouteDetail)}
                 onBoundsChange={setMapBounds}
                 onSelectObject={handleMapSelectObject}
                 onSelectSituationFeature={handleMapSelectSituationFeature}
@@ -7111,6 +7117,89 @@ function TrafficDetailSection({
   );
 }
 
+function TrailDetailSection({ feature }: { feature: SituationFeature }) {
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const display = isRecord(providerProperties.display) ? providerProperties.display : {};
+  const attribution = recordString(display, "attribution") ?? "OpenStreetMap contributors, licence ODbL 1.0";
+
+  if (feature.properties.layer === "trail_routes") {
+    const trail = isRecord(providerProperties.trail) ? providerProperties.trail : {};
+    const mode = recordString(trail, "mode") ?? feature.properties.category;
+    const lengthKm = recordNumber(trail, "lengthKm");
+    const segmentCount = recordNumber(trail, "segmentCount");
+    const routeRef = recordString(trail, "ref") ?? recordString(display, "label");
+
+    return (
+      <ObjectDetailSection title="Turistická trasa">
+        <DetailGrid
+          rows={[
+            ["Režim", trailModeLabel(mode)],
+            ["Síť", recordString(trail, "network") ?? "n/a"],
+            ["Značka / ref", routeRef ?? "n/a"],
+            ["OSMC symbol", recordString(trail, "osmcSymbol") ?? "n/a"],
+            ["Délka", formatOptionalNumber(lengthKm, " km")],
+            ["Segmenty", formatOptionalInteger(segmentCount)],
+            ["Správce", recordString(trail, "operator") ?? "n/a"],
+            ["Atribuce", attribution]
+          ]}
+        />
+      </ObjectDetailSection>
+    );
+  }
+
+  if (feature.properties.layer === "trail_poi") {
+    const trailPoi = isRecord(providerProperties.trailPoi) ? providerProperties.trailPoi : {};
+    const mayDisplayContact = booleanProperty(trailPoi.mayDisplayContact);
+    const categoryLabel = localizedTextValue(trailPoi.categoryLabelLocalized)
+      ?? recordString(trailPoi, "category")
+      ?? feature.properties.category
+      ?? "n/a";
+
+    return (
+      <ObjectDetailSection title="Outdoor bod">
+        <DetailGrid
+          rows={[
+            ["Kategorie", categoryLabel],
+            ["Otevírací doba", recordString(trailPoi, "openingHours") ?? "n/a"],
+            ["Web", recordString(trailPoi, "website") ?? "n/a"],
+            ["Bezbariérovost", recordString(trailPoi, "wheelchair") ?? "n/a"],
+            ["Přístup", recordString(trailPoi, "access") ?? "n/a"],
+            ["Kontakty", mayDisplayContact ? "povoleny zdrojem" : "přímé kontakty se nezobrazují"],
+            ["Atribuce", attribution]
+          ]}
+        />
+      </ObjectDetailSection>
+    );
+  }
+
+  return null;
+}
+
+function localizedTextValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim() !== "") {
+    return value.trim();
+  }
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return stringProperty(value.cs) ?? stringProperty(value.en);
+}
+
+function trailModeLabel(mode: string | undefined): string {
+  switch ((mode ?? "").toLowerCase()) {
+    case "cycling_route":
+      return "Cyklistická trasa";
+    case "foot_route":
+      return "Pěší trasa";
+    case "hiking_route":
+      return "Pěší turistická trasa";
+    case "mtb_route":
+      return "MTB trasa";
+    default:
+      return mode ?? "trasa";
+  }
+}
+
 function TransitStopList({ stops }: { stops: TransitStopTime[] }) {
   return (
     <div className="traffic-stop-list">
@@ -7346,15 +7435,26 @@ function formatAvailabilityFlag(label: string, value: boolean | undefined): stri
 }
 
 function formatTransitRouteShape(detail: TransitVehicleDetailResponse | null): string {
+  if (!transitRouteShapeAvailable(detail)) {
+    return "n/a";
+  }
   const shape = detail?.routeShape;
   const coordinates = Array.isArray(shape?.coordinates) ? shape.coordinates : [];
   if (coordinates.length > 0) {
     return `${coordinates.length} bodů${shape?.truncated ? " · zkráceno" : ""}`;
   }
-  if (detail?.quality?.routeShapeAvailable || detail?.quality?.shapeAvailable) {
-    return "dostupná";
+  return "dostupná";
+}
+
+function transitRouteShapeForMap(detail: TransitVehicleDetailResponse | null): unknown {
+  if (!transitRouteShapeAvailable(detail)) {
+    return null;
   }
-  return "n/a";
+  return detail?.routeShape ?? detail?.route?.shape ?? null;
+}
+
+function transitRouteShapeAvailable(detail: TransitVehicleDetailResponse | null): boolean {
+  return detail?.quality?.routeShapeAvailable === true || detail?.quality?.shapeAvailable === true;
 }
 
 function transitDetailWarnings(detail: TransitVehicleDetailResponse | null): string[] {
@@ -12328,6 +12428,7 @@ function SituationFeatureDetail({
       ) : null}
       {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {properties.layer === "traffic" ? <TrafficDetailSection apiBase={apiBase} authToken={authToken} feature={feature} onShareTransit={onShareTransit} /> : null}
+      {properties.layer === "trail_routes" || properties.layer === "trail_poi" ? <TrailDetailSection feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherForecastArea ? (
         <ObjectDetailSection title="Předpověď počasí">
@@ -13943,6 +14044,11 @@ function collectSituationGeometryPoints(geometry: SituationFeature["geometry"]):
   if (geometry.type === "LineString") {
     return geometry.coordinates.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : []);
   }
+  if (geometry.type === "MultiLineString") {
+    return geometry.coordinates.flatMap((line) =>
+      line.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : [])
+    );
+  }
   if (geometry.type === "Polygon") {
     return geometry.coordinates.flatMap((ring) =>
       ring.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : [])
@@ -14561,6 +14667,8 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     mobile_network: "Mobilní síť",
     mission_arena: "Mission Arena",
     place_settlements: "Sídla",
+    trail_poi: "Outdoor body",
+    trail_routes: "Turistické trasy",
     traffic: "Doprava",
     warnings: "Výstrahy",
     weather_alerts: "Meteorologické výstrahy",
@@ -16593,51 +16701,81 @@ function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | nul
   return Math.max(60, Math.min(seconds, 900));
 }
 
-function selectedTrafficCatalogLayerIds(catalog: MapCatalogResponse, selectedLayerIds: string[]): string[] {
-  const selected = new Set(selectedLayerIds);
-  return catalog.layers
-    .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
-    .filter((layer) => layer.query.providerId === "sim.situation-data" && isTrafficCatalogLayerId(layer.layerId))
-    .map((layer) => layer.layerId);
-}
-
-function selectedTrafficRefreshSeconds(
+function selectedTrafficRefreshPlans(
   catalog: MapCatalogResponse | null,
   selectedLayerIds: string[],
   collection: SituationFeatureCollectionResponse | null
-): number | undefined {
-  const liveFeatureCadences = (collection?.features ?? [])
-    .map((feature) => {
-      const presentation = feature.properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
-      if (!presentation || presentation.kind === "stop" || presentation.positionKind === "static_stop") {
-        return undefined;
-      }
-      const kind = presentation.positionKind ?? "vehicle_live_cached";
-      if (kind !== "vehicle_live" && kind !== "vehicle_live_cached") {
-        return undefined;
-      }
-      return presentation.refreshSeconds;
-    })
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-  if (liveFeatureCadences.length > 0) {
-    return Math.max(3, Math.min(Math.min(...liveFeatureCadences), 120));
-  }
+): TrafficRefreshPlan[] {
   if (!catalog) {
-    return undefined;
+    return [];
   }
   const selected = new Set(selectedLayerIds);
-  const catalogCadences = catalog.layers
-    .filter((layer) => selected.has(layer.layerId) && layer.layerId === "public.traffic.transit")
-    .map((layer) => layer.refreshSeconds)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-  if (catalogCadences.length === 0) {
+  const selectedTrafficLayers = catalog.layers
+    .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
+    .filter((layer) => layer.query.providerId === "sim.situation-data" && isTrafficCatalogLayerId(layer.layerId));
+  if (selectedTrafficLayers.length === 0) {
+    return [];
+  }
+  const cadencesByLayerId = new Map<string, number[]>();
+  for (const feature of collection?.features ?? []) {
+    if (feature.properties.layer !== "traffic") {
+      continue;
+    }
+    const presentation = resolveTransportPresentation(feature);
+    if (!presentation || presentation.kind === "stop" || presentation.positionKind === "static_stop") {
+      continue;
+    }
+    const kind = presentation.positionKind ?? "vehicle_live_cached";
+    if (kind !== "vehicle_live" && kind !== "vehicle_live_cached") {
+      continue;
+    }
+    const cadence = presentation.refreshSeconds;
+    if (typeof cadence !== "number" || !Number.isFinite(cadence) || cadence <= 0) {
+      continue;
+    }
+    for (const layerId of trafficCatalogLayerIdsForFeature(feature)) {
+      if (!selected.has(layerId)) {
+        continue;
+      }
+      const values = cadencesByLayerId.get(layerId) ?? [];
+      values.push(cadence);
+      cadencesByLayerId.set(layerId, values);
+    }
+  }
+  return selectedTrafficLayers.flatMap((layer) => {
+    const featureCadences = cadencesByLayerId.get(layer.layerId) ?? [];
+    const rawRefreshSeconds = featureCadences.length > 0 ? Math.min(...featureCadences) : layer.refreshSeconds;
+    const refreshSeconds = normalizeTrafficRefreshSeconds(layer.layerId, rawRefreshSeconds);
+    if (refreshSeconds === undefined) {
+      return [];
+    }
+    return [{
+      key: layer.layerId,
+      layerIds: [layer.layerId],
+      refreshSeconds
+    }];
+  });
+}
+
+function normalizeTrafficRefreshSeconds(layerId: string, seconds: number | undefined): number | undefined {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) {
     return undefined;
   }
-  return Math.max(5, Math.min(Math.min(...catalogCadences), 120));
+  if (layerId === "public.traffic.transit_stops") {
+    return Math.max(300, Math.min(seconds, 21_600));
+  }
+  if (layerId === "public.traffic.transit.trains") {
+    return Math.max(60, Math.min(seconds, 3_600));
+  }
+  return Math.max(5, Math.min(seconds, 120));
 }
 
 function isTrafficCatalogLayerId(layerId: string): boolean {
-  return layerId === "public.traffic.transit" || layerId === "public.traffic.transit_stops";
+  return layerId === "public.traffic.transit_stops" || isTrafficVehicleCatalogLayerId(layerId);
+}
+
+function isTrafficVehicleCatalogLayerId(layerId: string): boolean {
+  return layerId === "public.traffic.transit" || layerId.startsWith("public.traffic.transit.");
 }
 
 function isWeatherRadarCatalogLayerId(layerId: string): boolean {
@@ -17197,6 +17335,8 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "mobile_network"
     || value === "mission_arena"
     || value === "place_settlements"
+    || value === "trail_poi"
+    || value === "trail_routes"
     || value === "traffic"
     || value === "warnings"
     || value === "weather_alerts"
@@ -17254,6 +17394,16 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "weather_thunderstorm_risk":
     case "public.safety.thunderstorm_risk":
       return "weather_thunderstorm_risk";
+    case "trail.routes":
+    case "trail_routes":
+    case "public.trails.routes":
+    case "outdoor.osm_postgis.trail_routes":
+      return "trail_routes";
+    case "trail.poi":
+    case "trail_poi":
+    case "public.trails.poi":
+    case "outdoor.osm_postgis.trail_poi":
+      return "trail_poi";
     case "weather.wind":
     case "weather.wind_field":
     case "public.weather.wind_field":
@@ -17416,6 +17566,12 @@ export interface SituationMapRequestGroup {
   limit: number;
 }
 
+interface TrafficRefreshPlan {
+  key: string;
+  layerIds: string[];
+  refreshSeconds: number;
+}
+
 export function buildSituationMapRequestGroups(
   layerIds: string[],
   zoom: number | undefined,
@@ -17558,18 +17714,30 @@ function trafficFeatureBelongsToCatalogLayers(feature: SituationFeature, layerId
     return false;
   }
   const selected = new Set(layerIds);
+  return trafficCatalogLayerIdsForFeature(feature).some((layerId) => selected.has(layerId));
+}
+
+function trafficCatalogLayerIdsForFeature(feature: SituationFeature): string[] {
+  const sourceId = stringProperty(feature.properties.sourceId)?.toLowerCase() ?? "";
+  const providerLayerId = stringProperty(feature.properties.providerLayerId)?.toLowerCase() ?? "";
+  const layerId = stringProperty(feature.properties.layerId)?.toLowerCase() ?? "";
+  const combined = `${sourceId} ${providerLayerId} ${layerId}`;
   const presentation = resolveTransportPresentation(feature);
-  if (presentation?.kind === "stop" || presentation?.positionKind === "static_stop") {
-    return selected.has("public.traffic.transit_stops");
+  if (presentation?.kind === "stop"
+    || presentation?.positionKind === "static_stop"
+    || combined.includes("public_transit_static")) {
+    return ["public.traffic.transit_stops"];
   }
-  const providerLayerId = feature.properties.layerId ?? feature.properties.providerLayerId;
-  if (typeof providerLayerId === "string" && selected.has(providerLayerId)) {
-    return true;
+  if (combined.includes("spravazeleznic") || combined.includes("train") || combined.includes("rail")) {
+    return ["public.traffic.transit.trains", "public.traffic.transit"];
   }
-  if (!presentation) {
-    return selected.has("public.traffic.transit");
+  if (combined.includes("idsjmk") || combined.includes("ids_jmk")) {
+    return ["public.traffic.transit.idsjmk", "public.traffic.transit"];
   }
-  return selected.has("public.traffic.transit");
+  if (combined.includes("pid")) {
+    return ["public.traffic.transit.pid", "public.traffic.transit"];
+  }
+  return ["public.traffic.transit"];
 }
 
 function stableSituationFeatureSelectionKey(feature: SituationFeature | null | undefined): string | null {
@@ -17608,23 +17776,20 @@ function uniqueStrings(values: readonly string[]): string[] {
 }
 
 function mapFeatureQueryLimit(layerIds: string[], zoom: number | undefined): number {
-  if (layerIds.includes("public.traffic.transit_stops") && !layerIds.includes("public.traffic.transit")) {
+  if (layerIds.some(isTrafficCatalogLayerId)) {
+    void zoom;
     return 5000;
   }
   if (layerIds.some(isDenseSituationCatalogLayerId)) {
     return 5000;
   }
-  if (!layerIds.includes("public.traffic.transit")) {
-    return 500;
-  }
-  void zoom;
-  return 5000;
+  return 500;
 }
 
 function isDenseSituationCatalogLayerId(layerId: string): boolean {
   return layerId.startsWith("reference.infrastructure.")
     || layerId === "public.mobile.network"
-    || layerId === "public.traffic.transit";
+    || isTrafficCatalogLayerId(layerId);
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {

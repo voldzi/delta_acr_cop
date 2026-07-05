@@ -76,6 +76,8 @@ public.weather.forecast_area
 public.weather.aviation
 public.mobile.network
 public.traffic.transit
+public.trails.routes
+public.trails.poi
 reference.infrastructure.healthcare
 reference.infrastructure.emergency
 reference.infrastructure.communications
@@ -580,16 +582,10 @@ Provider-native fields may be preserved under:
 | `public.weather.radar_nowcast` | Radarový nowcast | `sim.situation-data` layer `weather_radar_nowcast`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
 | `public.safety.thunderstorm_risk` | Bouřkové riziko | `sim.situation-data` layer `weather_thunderstorm_risk`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
 | `public.safety.air_quality_grid` | Kvalita ovzduší - plocha | `sim.situation-data` layer `air_quality_grid`, source `chmi_air_quality` |
-
-ČHMÚ webkamery jsou jen vizuální kontext počasí a jsou oddělené od vrstvy
-`public.weather.observations`. COP je nezapočítává jako výstrahy, neotevírá
-incident automaticky a v UI je vede jako samostatné klikací ikony kamer se
-stavem `KAMERA`. Klienti nesmí volat upstream ČHMÚ přímo; detail a snapshot
-musí jít přes URL předané v `providerProperties.camera` a v COP webu přes
-`/api/v1/weather/webcam-proxy`. Náhled musí vždy zobrazit atribuci
-`Český hydrometeorologický ústav`.
 | `public.mobile.network` | Mobilní síť | `sim.situation-data` layer `mobile_network`, source `mobile_network_model` |
 | `public.traffic.transit` | Veřejná doprava | `sim.situation-data` layer `traffic`, sources `pid_gtfs_rt`, `ids_jmk*` a další SIM transit adaptéry z katalogu |
+| `public.trails.routes` | Turistické trasy | `sim.situation-data` layer `trail_routes`, source `osm_postgis`; LineString/MultiLineString turistické, pěší, cyklistické a MTB trasy |
+| `public.trails.poi` | Outdoor body | `sim.situation-data` layer `trail_poi`, source `osm_postgis`; body typu nocleh, tábořiště, přístřešek, voda, jídlo, servis, půjčovna, doprava a nouzový bod |
 | `reference.infrastructure.healthcare` | Zdravotnictví | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `hospital`, `clinic`, `doctors`, `pharmacy` |
 | `reference.infrastructure.emergency` | Záchranná infrastruktura | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `fire_station`, `police`, `ambulance_station`, `shelter` |
 | `reference.infrastructure.communications` | BTS / komunikační stožáry | `sim.situation-data` layer `mobile`, source `osm_postgis`, category `communications_tower` |
@@ -605,6 +601,28 @@ musí jít přes URL předané v `providerProperties.camera` a v COP webu přes
 | `user.sketch.drawings` | Zákresy | COP sketch drawing store |
 | `diagnostic.mobile.coverage` | Technický odhad pokrytí | `sim.situation-data` layer `mobile_coverage`, source `mobile_coverage_model` |
 | `diagnostic.mobile.ctu_measurements` | ČTÚ měření | `sim.situation-data` layer `mobile`, source `ctu_nettest` |
+
+ČHMÚ webkamery jsou jen vizuální kontext počasí a jsou oddělené od vrstvy
+`public.weather.observations`. COP je nezapočítává jako výstrahy, neotevírá
+incident automaticky a v UI je vede jako samostatné klikací ikony kamer se
+stavem `KAMERA`. Klienti nesmí volat upstream ČHMÚ přímo; detail a snapshot
+musí jít přes URL předané v `providerProperties.camera` a v COP webu přes
+`/api/v1/weather/webcam-proxy`. Náhled musí vždy zobrazit atribuci
+`Český hydrometeorologický ústav`.
+
+Outdoor vrstvy nejsou krizové výstrahy a nesmí vstupovat do horního prioritního
+pruhu `Rizika a výstrahy`. COP je vede v samostatné skupině `Turistika /
+Outdoor`. U nízkého zoomu má primárně zobrazovat `public.trails.routes`; body
+`public.trails.poi` jsou určeny pro vyšší zoom nebo pro řízené shlukování a
+filtrování podle kategorií. Detail tras čte normalizovaná pole
+`providerProperties.trail.mode`, `network`, `ref`, `operator`, `osmcSymbol`,
+`lengthKm` a `segmentCount`. Detail outdoor bodů čte
+`providerProperties.trailPoi.category`, `categoryLabelLocalized`,
+`openingHours`, `website`, `wheelchair` a `access`. Pokud SIM pošle
+`mayDisplayContact=false`, COP nesmí zobrazovat přímé kontaktní údaje z OSM.
+Mapa a detail musí zachovat atribuci `OpenStreetMap contributors, licence ODbL
+1.0`. Klienti nemají parsovat raw OSM tagy, ale používat `properties.category`,
+`label`, `summaryLocalized` a normalizovaná `providerProperties`.
 
 For `grid_field` weather/environment layers, clients must color the geometry from the numeric value, not from generic severity. Prefer `properties.rendering.valueMetric`; otherwise use `properties.metrics.value`, then the layer-specific fallback metric. Use the catalog `legend` for labels, stops and units. For `public.weather.precipitation_grid`, the unit is `mm/10min`.
 

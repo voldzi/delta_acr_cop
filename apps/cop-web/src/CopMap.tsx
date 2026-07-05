@@ -137,6 +137,8 @@ const situationSafetyAlertFillLayerId = "cop-situation-safety-alert-fill";
 const situationSafetyAlertLineLayerId = "cop-situation-safety-alert-line";
 const situationFillLayerId = "cop-situation-fill";
 const situationLineLayerId = "cop-situation-line";
+const situationTrailRouteLineLayerId = "cop-situation-trail-route-line";
+const situationTrailRouteLabelLayerId = "cop-situation-trail-route-label";
 const situationRadioFillLayerId = "cop-situation-radio-fill";
 const situationRadioLineLayerId = "cop-situation-radio-line";
 const situationRadioPointHaloLayerId = "cop-situation-radio-point-halo";
@@ -262,6 +264,8 @@ const mapFeatureClickPriorityLayerIds = [
   situationWeatherGridFillLayerId,
   situationSafetyAlertLineLayerId,
   situationSafetyAlertFillLayerId,
+  situationTrailRouteLabelLayerId,
+  situationTrailRouteLineLayerId,
   situationLineLayerId,
   situationFillLayerId
 ] as const;
@@ -592,6 +596,13 @@ export interface SituationContextFeatureCollection {
       trafficStaticStop?: boolean;
       trafficStopName?: string;
       trafficTransit?: boolean;
+      trailPoi?: boolean;
+      trailPoiCategory?: string;
+      trailPoiLabel?: string;
+      trailRoute?: boolean;
+      trailRouteColor?: string;
+      trailRouteLabel?: string;
+      trailRouteMode?: string;
       mobileNetworkLabel?: string;
       mobileSymbolKey?: string;
       osmCategoryLabel?: string;
@@ -1071,10 +1082,7 @@ function CopMapComponent({
     () => selectedSituationFeature
       ? selectedTransitRouteToFeatureCollection(
           selectedSituationFeature,
-          selectedTransitRouteShape
-            ?? effectiveSelectedTransitRouteDetail?.routeShape
-            ?? effectiveSelectedTransitRouteDetail?.route?.shape
-            ?? null,
+          selectedTransitRouteShapeForMap(selectedTransitRouteShape, effectiveSelectedTransitRouteDetail),
           effectiveSelectedTransitRouteDetail
         )
       : emptySelectedRouteFeatureCollection(),
@@ -1793,12 +1801,79 @@ function CopMapComponent({
         });
 
         map.addLayer({
+          id: situationTrailRouteLineLayerId,
+          type: "line",
+          source: situationSourceId,
+          filter: [
+            "all",
+            ["==", ["get", "trailRoute"], true],
+            ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString"]]]
+          ],
+          layout: {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          paint: {
+            "line-color": ["coalesce", ["get", "trailRouteColor"], "#84cc16"],
+            "line-dasharray": [
+              "case",
+              ["==", ["get", "trailRouteMode"], "cycling_route"],
+              ["literal", [2.2, 1.2]],
+              ["==", ["get", "trailRouteMode"], "mtb_route"],
+              ["literal", [1.2, 1]],
+              ["literal", [1000, 0.0001]]
+            ],
+            "line-opacity": ["case", ["get", "stale"], 0.42, 0.86],
+            "line-width": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              7,
+              1.4,
+              11,
+              2.1,
+              14,
+              3.2,
+              17,
+              4.4
+            ]
+          }
+        });
+
+        map.addLayer({
+          id: situationTrailRouteLabelLayerId,
+          type: "symbol",
+          source: situationSourceId,
+          minzoom: 11.5,
+          filter: [
+            "all",
+            ["==", ["get", "trailRoute"], true],
+            ["has", "trailRouteLabel"],
+            ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString"]]]
+          ],
+          layout: {
+            "symbol-placement": "line",
+            "text-allow-overlap": false,
+            "text-field": ["get", "trailRouteLabel"],
+            "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+            "text-ignore-placement": false,
+            "text-size": ["interpolate", ["linear"], ["zoom"], 11.5, 10, 14, 12, 17, 13]
+          },
+          paint: {
+            "text-color": ["coalesce", ["get", "trailRouteColor"], "#84cc16"],
+            "text-halo-color": "rgba(6, 12, 17, 0.9)",
+            "text-halo-width": 2
+          }
+        });
+
+        map.addLayer({
           id: situationLineLayerId,
           type: "line",
           source: situationSourceId,
           filter: [
             "all",
-            ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]],
+            ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]],
+            ["!=", ["get", "trailRoute"], true],
             ["!=", ["get", "weatherForecastArea"], true],
             ["!=", ["get", "weatherGrid"], true],
             ["!=", ["get", "radioOverlay"], true],
@@ -3867,6 +3942,12 @@ function CopMapComponent({
         map.on("mouseenter", situationSafetyAlertFillLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
+        map.on("mouseenter", situationTrailRouteLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", situationTrailRouteLineLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", situationLineLayerId, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -4005,6 +4086,12 @@ function CopMapComponent({
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationSafetyAlertFillLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationTrailRouteLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", situationTrailRouteLineLayerId, () => {
           map.getCanvas().style.cursor = "";
         });
         map.on("mouseleave", situationLineLayerId, () => {
@@ -6351,6 +6438,9 @@ function selectedTransitRouteToFeatureCollection(
   if (feature.properties.layer !== "traffic" || !resolveTransportPresentation(feature)) {
     return emptySelectedRouteFeatureCollection();
   }
+  if (!transitRouteShapeAvailable(detail)) {
+    return emptySelectedRouteFeatureCollection();
+  }
   const coordinates = extractTransitRouteCoordinates(feature, detailRouteShape);
   if (!coordinates || coordinates.length < 2) {
     return emptySelectedRouteFeatureCollection();
@@ -6379,6 +6469,20 @@ function selectedTransitRouteToFeatureCollection(
       ...pointFeatures
     ]
   };
+}
+
+function selectedTransitRouteShapeForMap(
+  explicitRouteShape: unknown,
+  detail: TransitVehicleDetailResponse | null | undefined
+): unknown {
+  if (!transitRouteShapeAvailable(detail)) {
+    return null;
+  }
+  return explicitRouteShape ?? detail?.routeShape ?? detail?.route?.shape ?? null;
+}
+
+function transitRouteShapeAvailable(detail: TransitVehicleDetailResponse | null | undefined): boolean {
+  return detail?.quality?.routeShapeAvailable === true || detail?.quality?.shapeAvailable === true;
 }
 
 function transitRouteStopPoints(detail: TransitVehicleDetailResponse | null | undefined): Array<{ coordinate: [number, number]; label: string }> {
@@ -6629,6 +6733,33 @@ function buildSituationRenderProperties(
   }
   if (isRadioOverlayFeature(feature)) {
     return buildRadioOverlayRenderProperties(feature);
+  }
+  const trailRoute = resolveTrailRoutePresentation(feature);
+  if (trailRoute) {
+    return {
+      mapLabel: trailRoute.label,
+      situationStatusColor: trailRoute.color,
+      situationStatusLabel: "TRASA",
+      situationStatusTone: "info",
+      trailRoute: true,
+      trailRouteColor: trailRoute.color,
+      trailRouteLabel: trailRoute.label,
+      trailRouteMode: trailRoute.mode
+    };
+  }
+  const trailPoi = resolveTrailPoiPresentation(feature);
+  if (trailPoi) {
+    return {
+      osmCategoryLabel: trailPoi.label,
+      osmPoi: true,
+      osmSymbolKey: getOsmCategoryIconKey(trailPoi.iconId),
+      situationStatusColor: trailPoi.color,
+      situationStatusLabel: "OUTDOOR",
+      situationStatusTone: "info",
+      trailPoi: true,
+      trailPoiCategory: trailPoi.category,
+      trailPoiLabel: trailPoi.label
+    };
   }
   const osmCategory = resolveOsmCategoryPresentation(feature);
   if (osmCategory) {
@@ -7730,6 +7861,123 @@ function resolveOsmCategoryPresentation(feature: SituationFeature): { iconId: Os
     return { iconId: "communications_tower", label: "Komunikační věž" };
   }
   return { iconId: "other", label: "OSM" };
+}
+
+function resolveTrailRoutePresentation(feature: SituationFeature): { color: string; label: string; mode: string } | null {
+  if (feature.properties.layer !== "trail_routes") {
+    return null;
+  }
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const trail = isRecord(providerProperties.trail) ? providerProperties.trail : {};
+  const display = isRecord(providerProperties.display) ? providerProperties.display : {};
+  const mode = normalizeSituationCategory(recordString(trail, "mode") ?? feature.properties.category);
+  const ref = recordString(trail, "ref") ?? recordString(display, "label");
+  const modeLabel = trailRouteModeLabel(mode);
+  const label = [ref, modeLabel].filter(Boolean).join(" · ") || feature.properties.label || "Turistická trasa";
+  return {
+    color: recordString(display, "colorHex") ?? recordString(display, "strokeColor") ?? trailRouteColor(mode),
+    label,
+    mode: mode || "trail_route"
+  };
+}
+
+function resolveTrailPoiPresentation(feature: SituationFeature): { category: string; color: string; iconId: OsmCategoryIconId; label: string } | null {
+  if (feature.properties.layer !== "trail_poi") {
+    return null;
+  }
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const trailPoi = isRecord(providerProperties.trailPoi) ? providerProperties.trailPoi : {};
+  const display = isRecord(providerProperties.display) ? providerProperties.display : {};
+  const category = normalizeSituationCategory(recordString(trailPoi, "category") ?? feature.properties.category);
+  const label = localizedDisplayValue(trailPoi.categoryLabelLocalized)
+    ?? recordString(display, "label")
+    ?? feature.properties.label
+    ?? trailPoiCategoryLabel(category);
+  return {
+    category,
+    color: recordString(display, "colorHex") ?? "#84cc16",
+    iconId: trailPoiIconId(category),
+    label
+  };
+}
+
+function localizedDisplayValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return stringProperty(value.cs) ?? stringProperty(value.en);
+}
+
+function trailRouteModeLabel(mode: string): string {
+  switch (mode) {
+    case "cycling_route":
+      return "cyklo";
+    case "foot_route":
+      return "pěší";
+    case "hiking_route":
+      return "turistika";
+    case "mtb_route":
+      return "MTB";
+    default:
+      return mode || "trasa";
+  }
+}
+
+function trailRouteColor(mode: string): string {
+  switch (mode) {
+    case "cycling_route":
+      return "#38bdf8";
+    case "mtb_route":
+      return "#f97316";
+    case "foot_route":
+    case "hiking_route":
+      return "#84cc16";
+    default:
+      return "#84cc16";
+  }
+}
+
+function trailPoiCategoryLabel(category: string): string {
+  switch (category) {
+    case "camp":
+      return "Tábořiště";
+    case "emergency":
+      return "Nouzový bod";
+    case "food":
+      return "Občerstvení";
+    case "rental":
+      return "Půjčovna";
+    case "repair":
+      return "Servis";
+    case "shelter":
+      return "Přístřešek";
+    case "sleep":
+      return "Ubytování";
+    case "transport":
+      return "Doprava";
+    case "water":
+      return "Voda";
+    default:
+      return "Outdoor bod";
+  }
+}
+
+function trailPoiIconId(category: string): OsmCategoryIconId {
+  switch (category) {
+    case "camp":
+    case "shelter":
+    case "sleep":
+      return "shelter";
+    case "emergency":
+      return "fire_station";
+    case "transport":
+      return "other";
+    default:
+      return "other";
+  }
 }
 
 function normalizeSituationCategory(category: string | undefined): string {
@@ -9892,6 +10140,8 @@ function situationLayerDisplayName(feature: SituationFeature): string {
     mobile_coverage: "Model mobilní sítě",
     mobile_network: "Mobilní síť",
     mission_arena: "Mission Arena",
+    trail_poi: "Outdoor body",
+    trail_routes: "Turistické trasy",
     traffic: "Doprava",
     warnings: "Výstrahy",
     weather_alerts: "Meteorologické výstrahy",

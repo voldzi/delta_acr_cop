@@ -132,9 +132,9 @@ describe("map catalog route", () => {
       },
       selectable: true
     });
-    expect(body.layers.find((layer) => layer.layerId === "public.traffic.transit")).toMatchObject({
+    expect(body.layers.find((layer) => layer.layerId === "public.traffic.transit.pid")).toMatchObject({
       groupId: "transport",
-      label: "Veřejná doprava",
+      label: "Veřejná doprava Praha/PID",
       minZoom: 7,
       query: {
         maxFeatures: 5000,
@@ -185,7 +185,7 @@ describe("map catalog route", () => {
         selectableInMap: false,
         sourceId: "osm_postgis",
         sourceRole: "reference",
-        usedByCatalogLayerIds: ["public.mobile.network"]
+        usedByCatalogLayerIds: expect.arrayContaining(["public.mobile.network"])
       })
     ]));
   });
@@ -255,14 +255,53 @@ describe("map catalog route", () => {
       }),
       expect.objectContaining({
         groupId: "transport",
-        label: "Veřejná doprava",
-        layerId: "public.traffic.transit",
+        label: "Veřejná doprava Praha/PID",
+        layerId: "public.traffic.transit.pid",
         minZoom: 6,
         query: expect.objectContaining({
           maxFeatures: 5000,
           providerLayerIds: ["traffic"],
           providerSourceIds: ["pid_gtfs_rt"]
         }),
+        selectable: true
+      }),
+      expect.objectContaining({
+        groupId: "transport",
+        label: "Veřejná doprava Brno/IDS JMK",
+        layerId: "public.traffic.transit.idsjmk",
+        minZoom: 6,
+        query: expect.objectContaining({
+          maxFeatures: 5000,
+          providerLayerIds: ["traffic"],
+          providerSourceIds: ["idsjmk_vehicle_positions"]
+        }),
+        refreshSeconds: 20,
+        selectable: true
+      }),
+      expect.objectContaining({
+        groupId: "transport",
+        label: "Vlaky",
+        layerId: "public.traffic.transit.trains",
+        minZoom: 6,
+        query: expect.objectContaining({
+          maxFeatures: 5000,
+          providerLayerIds: ["traffic"],
+          providerSourceIds: ["spravazeleznic_trains"]
+        }),
+        refreshSeconds: 900,
+        selectable: true
+      }),
+      expect.objectContaining({
+        groupId: "transport",
+        label: "Zastávky veřejné dopravy",
+        layerId: "public.traffic.transit_stops",
+        minZoom: 11,
+        query: expect.objectContaining({
+          maxFeatures: 5000,
+          providerLayerIds: ["traffic"],
+          providerSourceIds: ["public_transit_static"]
+        }),
+        refreshSeconds: 21600,
         selectable: true
       })
     ]));
@@ -283,7 +322,7 @@ describe("map catalog route", () => {
     expect(body.layers.map((layer) => layer.layerId)).not.toContain("diagnostic.mobile.coverage");
     expect(body.sources).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        feedsCatalogLayerIds: ["reference.infrastructure.communications"],
+        feedsCatalogLayerIds: expect.arrayContaining(["reference.infrastructure.communications"]),
         selectableInMap: false,
         sourceId: "osm_postgis",
         sourceRole: "reference"
@@ -480,7 +519,7 @@ describe("map catalog route", () => {
       technology: "4G"
     });
     expect(body.safety?.query.layers).toEqual(["warnings", "flood"]);
-    expect(body.safety?.query.sources).toEqual(["hzs_incidents", "municipal_alerts", "chmi_hydro"]);
+    expect(body.safety?.query.sources).toEqual(["hzs_incidents", "municipal_alerts", "chmi_hydro", "gdacs_alerts"]);
     expect(body.tak).toBeUndefined();
     expect(body.warnings.join(" ")).toContain("partner.tak.mobile");
   });
@@ -1672,14 +1711,14 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
             mode: "bbox",
             providerId: "sim.situation-data",
             providerLayerIds: ["traffic"],
-            providerSourceIds: ["pid_gtfs_rt"],
+            providerSourceIds: ["pid_gtfs_rt", "idsjmk_vehicle_positions", "spravazeleznic_trains", "public_transit_static"],
             streamId: "features"
           },
           recommendedCatalogLayerId: "public.traffic.transit",
           refreshSeconds: 20,
           role: "reference",
           selectable: true,
-          sourceIds: ["pid_gtfs_rt"],
+          sourceIds: ["pid_gtfs_rt", "idsjmk_vehicle_positions", "spravazeleznic_trains", "public_transit_static"],
           styleProfile: "transit-vehicle-position-v1"
         },
         {
@@ -1739,13 +1778,46 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
         {
           audience: "public",
           enabled: true,
-          feedsCatalogLayerIds: ["public.traffic.transit"],
+          feedsCatalogLayerIds: ["public.traffic.transit.pid"],
           label: "PID GTFS-RT",
           selectableInMap: true,
           sourceId: "pid_gtfs_rt",
           sourceRole: "final",
           updateCadenceSeconds: 20,
-          usedByCatalogLayerIds: ["public.traffic.transit"]
+          usedByCatalogLayerIds: ["public.traffic.transit.pid"]
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.traffic.transit.idsjmk"],
+          label: "IDS JMK vehicle positions",
+          selectableInMap: true,
+          sourceId: "idsjmk_vehicle_positions",
+          sourceRole: "final",
+          updateCadenceSeconds: 20,
+          usedByCatalogLayerIds: ["public.traffic.transit.idsjmk"]
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.traffic.transit.trains"],
+          label: "Správa železnic live trains",
+          selectableInMap: true,
+          sourceId: "spravazeleznic_trains",
+          sourceRole: "final",
+          updateCadenceSeconds: 900,
+          usedByCatalogLayerIds: ["public.traffic.transit.trains"]
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.traffic.transit_stops"],
+          label: "Public transit static stops",
+          selectableInMap: true,
+          sourceId: "public_transit_static",
+          sourceRole: "final",
+          updateCadenceSeconds: 21600,
+          usedByCatalogLayerIds: ["public.traffic.transit_stops"]
         },
         {
           audience: "public",

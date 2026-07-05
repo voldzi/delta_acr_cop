@@ -100,6 +100,9 @@ function representativePoints(geometry: SituationGeometry): LonLat[] {
   if (geometry.type === "LineString") {
     return sampleLine(geometry.coordinates);
   }
+  if (geometry.type === "MultiLineString") {
+    return geometry.coordinates.flatMap(sampleLine);
+  }
   if (geometry.type === "Polygon") {
     return samplePolygon(geometry.coordinates);
   }
