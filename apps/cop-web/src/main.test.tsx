@@ -8,12 +8,16 @@ import { App, buildPriorityAlertSummary, buildSituationMapRequestGroups, buildSt
 import { writeCopOfflineSnapshot } from "./pwa-offline";
 
 const initialMatchMedia = window.matchMedia;
+const initialGeolocation = navigator.geolocation;
 
 vi.mock("./CopMap", async () => {
   const React = await import("react");
   return {
     CopMap: ({
       emptyMessage,
+      emergencyRoute,
+      emergencyRouteMessage,
+      emergencyRouteStatus,
       focusView,
       focusViewRequest,
       mapInteractionSuspended,
@@ -23,6 +27,9 @@ vi.mock("./CopMap", async () => {
       situationFeatures
     }: {
       emptyMessage: string | null;
+      emergencyRoute?: { features?: unknown[] } | null;
+      emergencyRouteMessage?: string | null;
+      emergencyRouteStatus?: string;
       focusView?: { center: [number, number]; zoom?: number };
       focusViewRequest?: number;
       mapInteractionSuspended?: boolean;
@@ -36,6 +43,9 @@ vi.mock("./CopMap", async () => {
         {
           "data-focus-center": focusView ? `${focusView.center[0].toFixed(5)},${focusView.center[1].toFixed(5)}` : "",
           "data-focus-view-request": String(focusViewRequest ?? 0),
+          "data-emergency-route-features": String(emergencyRoute?.features?.length ?? 0),
+          "data-emergency-route-message": emergencyRouteMessage ?? "",
+          "data-emergency-route-status": emergencyRouteStatus ?? "idle",
           "data-map-interaction-suspended": String(Boolean(mapInteractionSuspended)),
           "data-selected-situation-feature-id": selectedSituationFeatureId ?? "",
           "data-testid": "cop-map"
@@ -84,6 +94,10 @@ afterEach(() => {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: initialMatchMedia
+  });
+  Object.defineProperty(navigator, "geolocation", {
+    configurable: true,
+    value: initialGeolocation
   });
   vi.restoreAllMocks();
 });
@@ -659,6 +673,138 @@ describe("COP web dashboard", () => {
     )).toBe(true), { timeout: 2500 });
     await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-selected-situation-feature-id")).toBe("security-police:vrbno"));
     expect(screen.getByText("Integrovaný COP Chat")).toBeTruthy();
+  });
+
+  it("requests an emergency route when chat sends a route map action", async () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: {
+          accuracy: 15,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          latitude: 50.12952,
+          longitude: 17.36285,
+          speed: null
+        },
+        timestamp: Date.parse("2026-05-19T08:00:00Z")
+      } as GeolocationPosition);
+    });
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition }
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/routing/route")) {
+        return jsonResponse({
+          contractVersion: "sim-emergency-routing-v1",
+          features: [
+            {
+              geometry: { coordinates: [[17.36285, 50.12952], [17.37303, 50.15077]], type: "LineString" },
+              properties: { label: "Primární zásahová trasa", role: "primary", routeId: "primary" },
+              type: "Feature"
+            }
+          ],
+          generatedAt: "2026-05-19T08:00:00Z",
+          providerId: "sim.situation-data.routing",
+          quality: { confidence: 0.88, mode: "osm_graph" },
+          routes: [
+            {
+              distanceM: 2500,
+              durationSeconds: 420,
+              quality: { confidence: 0.88, mode: "osm_graph" },
+              routeId: "primary",
+              warnings: []
+            }
+          ],
+          warnings: []
+        });
+      }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse(emptyMapQueryResponse(["reference.infrastructure.emergency"]));
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/map/catalog"), expect.any(Object)));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, options]) =>
+      String(url).includes("/api/v1/map/query")
+      && typeof options === "object"
+      && options !== null
+      && "body" in options
+      && String(options.body).includes("public.weather.current")
+    )).toBe(true), { timeout: 2500 });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    getCurrentPosition.mockClear();
+
+    await act(async () => {
+      window.dispatchEvent(new MessageEvent("message", {
+        data: encodeChatCenterLocation(50.15077, 17.37303, {
+          action: "route",
+          category: "flood",
+          featureId: "safety:dcf33fc1bc7fff2a7c66cad3",
+          featureKind: "feature",
+          label: "Mnichov - Černá Opava",
+          layerId: "reference.infrastructure.emergency",
+          zoom: 16
+        }),
+        origin: window.location.origin
+      }));
+    });
+
+    await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
+    await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled());
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/routing/route"))).toBe(true));
+    const routeCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/routing/route"));
+    const routeBody = JSON.parse(String((routeCall?.[1] as RequestInit | undefined)?.body));
+    expect(routeBody).toMatchObject({
+      avoid: ["flood", "road_closure"],
+      from: { lat: 50.12952, lon: 17.36285 },
+      profileId: "emergency_vehicle",
+      to: { label: "Mnichov - Černá Opava", lat: 50.15077, lon: 17.37303 }
+    });
+    expect(getCurrentPosition).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-status")).toBe("ready"));
+    expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-features")).toBe("1");
+    expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-message")).toContain("Zásahová trasa: 2.5 km");
   });
 
   it("initializes the map from standalone chat COP focus URL parameters", async () => {

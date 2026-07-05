@@ -873,6 +873,43 @@ results show `linkStatus`, `distanceM`, `azimuthDeg`,
 `requiredExtraAntennaHeightM` and the SIM-provided profile/elevation metadata
 when present.
 
+## Emergency Routing Overlay
+
+Emergency routing is an interactive operational overlay, not a selectable
+catalog layer. COP exposes it through its backend under `/api/v1/routing/*` and
+calls SIM server-side through the configured internal `situation-data` URL.
+Browsers, Chat and native clients must not call SIM routing endpoints directly.
+SIM owns OSM/PostGIS routing data, road/path graph processing, profile
+constraints, risk-aware alternatives and quality metadata. COP owns operator
+inputs, display, sharing and audit.
+
+The COP public endpoints are:
+
+- `GET /api/v1/routing/profiles` - available routing profiles.
+- `POST /api/v1/routing/route` - primary route between two points.
+- `POST /api/v1/routing/alternatives` - primary route plus alternatives.
+- `POST /api/v1/routing/isochrone` - reachable area from one point.
+- `POST /api/v1/routing/nearest-access` - nearest graph access point.
+
+The minimal route request is:
+
+```json
+{
+  "profileId": "emergency_vehicle",
+  "from": { "lon": 17.36285, "lat": 50.12952, "label": "Moje poloha" },
+  "to": { "lon": 17.37303, "lat": 50.15077, "label": "Mnichov - Černá Opava" },
+  "avoid": ["flood", "road_closure"]
+}
+```
+
+COP renders returned `features[]` as a temporary map overlay and shows
+`routes[].distanceM`, `durationSeconds`, `steps[]`, `quality.mode`,
+`quality.confidence`, `warnings[]` and any provider caveats in route detail.
+If `quality.mode` is not `osm_graph`, the UI must label the route as
+orientational. Chat map actions may request `action=route`; COP then asks for
+the user's current position, calls `/api/v1/routing/route` and draws the SIM
+route over the map.
+
 COP must not expose `mobile_coverage` as a normal public layer. Diagnostic
 mobile layers such as `diagnostic.mobile.coverage`,
 `diagnostic.mobile.ctu_measurements`, and

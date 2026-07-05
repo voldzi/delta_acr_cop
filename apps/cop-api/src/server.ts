@@ -171,6 +171,7 @@ import { registerHealthRoutes } from "./routes/health-routes.js";
 import { registerMessagingRoutes } from "./routes/messaging-routes.js";
 import { registerMobileRoutes } from "./routes/mobile-routes.js";
 import { registerRadioRoutes } from "./routes/radio-routes.js";
+import { registerRoutingRoutes } from "./routes/routing-routes.js";
 import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems, type SourceHealthItem } from "./source-health.js";
 import {
@@ -212,6 +213,11 @@ import {
   type SimSearchDataSource,
   type SimSearchEntitiesResponse
 } from "./sim-search-data-source.js";
+import {
+  createRoutingSourceFromEnv,
+  type RoutingRouteRequest,
+  type RoutingSource
+} from "./routing-source.js";
 import {
   buildSketchDrawingCollection,
   createSketchDrawingStoreFromEnv,
@@ -258,6 +264,7 @@ export interface BuildServerOptions {
   messagingProvider?: MessagingProvider;
   missionArenaSource?: MissionArenaSource;
   placeGeocoder?: PlaceGeocoder;
+  routingSource?: RoutingSource;
   safetyDataSource?: SafetyDataSource;
   sketchDrawingStore?: SketchDrawingStore;
   simSearchDataSource?: SimSearchDataSource;
@@ -643,6 +650,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const simSearchDataSource = options.simSearchDataSource ?? createSimSearchDataSourceFromEnv();
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
   const situationDataBaseUrl = situationDataSource?.config.baseUrl ?? createSituationDataSourceConfigFromEnv().baseUrl;
+  const routingSource = options.routingSource ?? createRoutingSourceFromEnv();
   const takGatewaySource = options.takGatewaySource ?? createTakGatewaySourceFromEnv();
   const weatherRadarFramesCache = new Map<string, WeatherRadarFramesCacheEntry>();
   const edgeReplayCursors = new Map<string, EdgeReplayCursorRecord>();
@@ -840,6 +848,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         messaging,
         ...(flightDataSource ? [flightDataDependency()] : []),
         ...(situationDataSource ? [situationDataDependency()] : []),
+        ...(routingSource ? [routingDependency()] : []),
         ...(safetyDataSource ? [safetyDataDependency()] : []),
         ...(simSearchDataSource ? [simSearchDataDependency()] : []),
         ...(missionArenaSource ? [missionArenaDependency()] : []),
@@ -2214,6 +2223,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       detail: health.detail ?? health.lastError ?? health.health.toLowerCase(),
       name: "situation-data-source",
       status: health.health === "ONLINE" ? "ok" : "degraded"
+    };
+  }
+
+  function routingDependency(): { detail: string; name: string; status: DependencyStatus } {
+    if (!routingSource) {
+      return { detail: "disabled", name: "sim-routing-source", status: "disabled" };
+    }
+    return {
+      detail: `enabled; ${routingSource.config.baseUrl}`,
+      name: "sim-routing-source",
+      status: "ok"
     };
   }
 
@@ -5671,6 +5691,94 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       tak: takCollection,
       warnings
     };
+  });
+
+  registerRoutingRoutes(app, {
+    profiles: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      if (!routingSource) {
+        return sendError(reply, 503, "ROUTING_UNAVAILABLE", "SIM routing source is disabled.", correlationId);
+      }
+      try {
+        return await routingSource.fetchProfiles(requestNow);
+      } catch (error) {
+        app.log.warn({ error }, "SIM routing profiles request failed.");
+        return sendError(reply, 502, "ROUTING_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+      }
+    },
+    route: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      if (!routingSource) {
+        return sendError(reply, 503, "ROUTING_UNAVAILABLE", "SIM routing source is disabled.", correlationId);
+      }
+      if (!isRecord(request.body)) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Routing route requires a JSON object body.", correlationId);
+      }
+      try {
+        return await routingSource.route(request.body as unknown as RoutingRouteRequest, requestNow);
+      } catch (error) {
+        const message = errorMessage(error);
+        if (message.startsWith("Routing ")) {
+          return sendError(reply, 400, "VALIDATION_ERROR", message, correlationId);
+        }
+        app.log.warn({ error }, "SIM routing route request failed.");
+        return sendError(reply, 502, "ROUTING_UPSTREAM_UNAVAILABLE", message, correlationId);
+      }
+    },
+    alternatives: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      if (!routingSource) {
+        return sendError(reply, 503, "ROUTING_UNAVAILABLE", "SIM routing source is disabled.", correlationId);
+      }
+      if (!isRecord(request.body)) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Routing alternatives requires a JSON object body.", correlationId);
+      }
+      try {
+        return await routingSource.alternatives(request.body as unknown as RoutingRouteRequest, requestNow);
+      } catch (error) {
+        const message = errorMessage(error);
+        if (message.startsWith("Routing ")) {
+          return sendError(reply, 400, "VALIDATION_ERROR", message, correlationId);
+        }
+        app.log.warn({ error }, "SIM routing alternatives request failed.");
+        return sendError(reply, 502, "ROUTING_UPSTREAM_UNAVAILABLE", message, correlationId);
+      }
+    },
+    isochrone: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      if (!routingSource) {
+        return sendError(reply, 503, "ROUTING_UNAVAILABLE", "SIM routing source is disabled.", correlationId);
+      }
+      if (!isRecord(request.body)) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Routing isochrone requires a JSON object body.", correlationId);
+      }
+      try {
+        return await routingSource.isochrone(request.body, requestNow);
+      } catch (error) {
+        app.log.warn({ error }, "SIM routing isochrone request failed.");
+        return sendError(reply, 502, "ROUTING_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+      }
+    },
+    nearestAccess: async (request, reply) => {
+      const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+      const requestNow = now();
+      if (!routingSource) {
+        return sendError(reply, 503, "ROUTING_UNAVAILABLE", "SIM routing source is disabled.", correlationId);
+      }
+      if (!isRecord(request.body)) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "Routing nearest-access requires a JSON object body.", correlationId);
+      }
+      try {
+        return await routingSource.nearestAccess(request.body, requestNow);
+      } catch (error) {
+        app.log.warn({ error }, "SIM routing nearest-access request failed.");
+        return sendError(reply, 502, "ROUTING_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
+      }
+    }
   });
 
   app.get("/api/v1/safety/hydro/stations/:stationId/observations", async (request, reply) => {

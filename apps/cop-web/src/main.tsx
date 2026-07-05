@@ -129,6 +129,7 @@ import {
   resetDemoScenario,
   revokeMobileDevice,
   runRadioCoverage,
+  runEmergencyRoute,
   runRadioLinkCheck,
   runRadioSiteSearch,
   updateCommunityGroupMetadata,
@@ -185,6 +186,7 @@ import {
   type RadioProfile,
   type RadioProfilesResponse,
   type RadioSiteSearchRequest,
+  type RoutingRouteResponse,
   type SourceHealthItem,
   type SourceSystem,
   type SafetyDataSourceId,
@@ -784,6 +786,14 @@ export function App() {
   const [selectedSituationFeatureId, setSelectedSituationFeatureId] = React.useState<string | null>(null);
   const [selectedSituationFeatureStableKey, setSelectedSituationFeatureStableKey] = React.useState<string | null>(null);
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
+  const [emergencyRoute, setEmergencyRoute] = React.useState<RoutingRouteResponse | null>(null);
+  const [emergencyRouteStatus, setEmergencyRouteStatus] = React.useState<"error" | "idle" | "loading" | "ready">("idle");
+  const [emergencyRouteMessage, setEmergencyRouteMessage] = React.useState<string | null>(null);
+  const [pendingRouteTarget, setPendingRouteTarget] = React.useState<{ label?: string; lat: number; lon: number } | null>(() =>
+    initialMapFocus?.action === "route"
+      ? { ...(initialMapFocus.label ? { label: initialMapFocus.label } : {}), lat: initialMapFocus.lat, lon: initialMapFocus.lon }
+      : null
+  );
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
   const [locationStatus, setLocationStatus] = React.useState(() =>
     initialMapFocus?.label
@@ -888,6 +898,13 @@ export function App() {
           setSafetyAreaPopup(null);
           setMobileSketchOpen(false);
           setMobileSheet(null);
+        }
+        if (center.action === "route") {
+          setPendingRouteTarget({
+            ...(center.label ? { label: center.label } : {}),
+            lat: center.lat,
+            lon: center.lon
+          });
         }
         setFocusViewRequest((current) => current + 1);
       }
@@ -3679,9 +3696,51 @@ export function App() {
     }
   }
 
-  function locateUser() {
+  const runEmergencyRouteFromLocation = React.useCallback(async (
+    location: UserLocation,
+    target: { label?: string; lat: number; lon: number }
+  ) => {
+    setEmergencyRouteStatus("loading");
+    setEmergencyRouteMessage(`Počítám zásahovou trasu k cíli ${target.label ?? "vybraný bod"}...`);
+    try {
+      const response = await runEmergencyRoute(apiBase, authToken, {
+        avoid: ["flood", "road_closure"],
+        from: {
+          ...(typeof location.accuracyM === "number" ? { label: `Moje poloha (±${Math.round(location.accuracyM)} m)` } : { label: "Moje poloha" }),
+          lat: location.lat,
+          lon: location.lon
+        },
+        profileId: "emergency_vehicle",
+        to: {
+          ...(target.label ? { label: target.label } : {}),
+          lat: target.lat,
+          lon: target.lon
+        }
+      });
+      setEmergencyRoute(response);
+      setEmergencyRouteStatus("ready");
+      const primary = response.routes[0];
+      const summary = formatEmergencyRouteSummary(primary, response.quality);
+      setEmergencyRouteMessage(summary);
+      setLocationStatus(summary);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Zásahovou trasu se nepodařilo vypočítat.";
+      setEmergencyRouteStatus("error");
+      setEmergencyRouteMessage(message);
+      setLocationStatus(message);
+    }
+  }, [apiBase, authToken]);
+
+  function locateUser(routeTarget?: { label?: string; lat: number; lon: number }) {
+    const requestedRouteTarget = routeTarget ?? pendingRouteTarget;
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setLocationStatus("Prohlížeč neposkytuje geolokaci.");
+      const message = "Prohlížeč neposkytuje geolokaci.";
+      setLocationStatus(message);
+      if (requestedRouteTarget) {
+        setPendingRouteTarget(null);
+        setEmergencyRouteStatus("error");
+        setEmergencyRouteMessage("Pro výpočet trasy není dostupná poloha zařízení.");
+      }
       return;
     }
 
@@ -3698,9 +3757,20 @@ export function App() {
         setLocationStatus(formatUserLocation(location));
         setFocusUserLocationRequest((current) => current + 1);
         setIsLocating(false);
+        if (requestedRouteTarget) {
+          const target = requestedRouteTarget;
+          setPendingRouteTarget(null);
+          void runEmergencyRouteFromLocation(location, target);
+        }
       },
       (error) => {
-        setLocationStatus(error.message || "Polohu se nepodařilo zaměřit.");
+        const message = error.message || "Polohu se nepodařilo zaměřit.";
+        setLocationStatus(message);
+        if (requestedRouteTarget) {
+          setPendingRouteTarget(null);
+          setEmergencyRouteStatus("error");
+          setEmergencyRouteMessage(`Pro výpočet trasy se nepodařilo zaměřit polohu: ${message}`);
+        }
         setIsLocating(false);
       },
       {
@@ -3710,6 +3780,38 @@ export function App() {
       }
     );
   }
+
+  const requestEmergencyRouteToPoint = React.useCallback(async (target: { label?: string; lat: number; lon: number }) => {
+    if (!userLocation) {
+      setPendingRouteTarget(target);
+      setEmergencyRouteStatus("loading");
+      setEmergencyRouteMessage("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
+      setLocationStatus("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
+      locateUser(target);
+      return;
+    }
+    await runEmergencyRouteFromLocation(userLocation, target);
+  }, [runEmergencyRouteFromLocation, userLocation]);
+
+  React.useEffect(() => {
+    if (!pendingRouteTarget) {
+      return;
+    }
+    if (!userLocation) {
+      if (emergencyRouteStatus !== "loading") {
+        setEmergencyRouteStatus("loading");
+        setEmergencyRouteMessage("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
+        setLocationStatus("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
+      }
+      if (!isLocating) {
+        locateUser(pendingRouteTarget);
+      }
+      return;
+    }
+    const target = pendingRouteTarget;
+    setPendingRouteTarget(null);
+    void requestEmergencyRouteToPoint(target);
+  }, [emergencyRouteStatus, isLocating, pendingRouteTarget, requestEmergencyRouteToPoint, userLocation]);
 
   function selectMapSearchResult(result: MapSearchResult) {
     if (result.kind === "track" && result.objectId) {
@@ -5201,6 +5303,9 @@ export function App() {
                 clusterTracks={mapClusterEnabled}
                 objects={visibleObjects}
                 emptyMessage={mapEmptyMessage}
+                emergencyRoute={emergencyRoute}
+                emergencyRouteMessage={emergencyRouteMessage}
+                emergencyRouteStatus={emergencyRouteStatus}
                 selectedSituationFeatureId={selectedSituationFeatureId ?? undefined}
                 selectedSituationFeatureStableKey={selectedSituationFeatureStableKey ?? undefined}
                 selectedObjectId={explicitlySelectedObject?.objectId}
@@ -5232,6 +5337,11 @@ export function App() {
                 onSelectObject={handleMapSelectObject}
                 onSelectSituationFeature={handleMapSelectSituationFeature}
                 onAutoFitChange={setAutoFit}
+                onClearEmergencyRoute={() => {
+                  setEmergencyRoute(null);
+                  setEmergencyRouteStatus("idle");
+                  setEmergencyRouteMessage(null);
+                }}
                 onClearSelection={handleMapClearSelection}
                 onCancelZoneCreation={() => setZoneCreationMode(false)}
                 onCancelZoneEditing={() => setEditingZoneId(null)}
@@ -5239,6 +5349,7 @@ export function App() {
                 onUpdateZonePolygon={handleAoiRulePolygonUpdate}
                 onPickReportLocation={handleCommunityReportLocationPicked}
                 onPickRadioPoint={handleRadioPointPicked}
+                onRequestRouteToPoint={(target) => void requestEmergencyRouteToPoint(target)}
                 onCreateSketchDrawing={handleCreateSketchDrawing}
                 onDeleteSketchDrawing={handleDeleteSketchDrawing}
                 onSelectSketchDrawing={handleMapSelectSketchDrawing}
@@ -16085,6 +16196,29 @@ function formatIncidentTimeSpan(value: number): string {
     return `okno ${Math.round(value / 60)} min`;
   }
   return `okno ${(value / 3600).toFixed(value >= 36000 ? 0 : 1)} h`;
+}
+
+function formatEmergencyRouteSummary(route: Record<string, unknown> | undefined, fallbackQuality: Record<string, unknown> | undefined): string {
+  const distance = formatRouteDistance(numberProperty(route?.distanceM));
+  const duration = formatDurationSeconds(numberProperty(route?.durationSeconds));
+  const routeQuality = isRecord(route?.quality) ? route.quality : fallbackQuality;
+  const mode = stringProperty(routeQuality?.mode);
+  const confidence = numberProperty(routeQuality?.confidence);
+  const quality = [
+    mode ? (mode === "osm_graph" ? "OSM graf" : `orientační režim ${mode}`) : undefined,
+    confidence !== undefined ? `${Math.round(clamp(confidence, 0, 1) * 100)} % jistota` : undefined
+  ].filter(Boolean).join(" · ");
+  return `Zásahová trasa: ${distance}, ETA ${duration}${quality ? ` · ${quality}` : ""}.`;
+}
+
+function formatRouteDistance(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "délka n/a";
+  }
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)} km`;
+  }
+  return `${Math.round(value)} m`;
 }
 
 function formatDurationSeconds(value: number | undefined): string {

@@ -28,6 +28,7 @@ import {
   MessageSquarePlus,
   Mic,
   MoreVertical,
+  Navigation,
   Phone,
   Pin,
   PinOff,
@@ -4424,36 +4425,59 @@ function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
   }
   return (
     <div className="message-ai-actions" aria-label="Mapové akce AI odpovědi">
-      {visibleActions.map((action, index) => (
-        <button
-          key={`${action.entityId ?? action.title ?? "map"}-${index}`}
-          className="message-ai-map-action"
-          onClick={(event) => {
-            event.stopPropagation();
-            const focus = encodeChatCenterLocation(action.lat, action.lon, {
-              category: action.category,
-              featureId: action.entityId,
-              featureKind: chatCenterFeatureKindFromAiAction(action),
-              label: action.title ?? action.label,
-              layerId: action.layerId,
-              sourceName: action.sourceName,
-              sourceSystemIds: action.sourceSystemIds,
-              zoom: action.zoom
-            });
-            if (window.parent !== window && new URLSearchParams(window.location.search).get("embedded") === "1") {
-              window.parent.postMessage(focus, window.location.origin);
-              return;
-            }
-            window.open(encodeCopMapFocusUrl(new URL("/", window.location.origin), focus), "_self", "noopener,noreferrer");
-          }}
-          type="button"
-        >
-          <MapPin size={14} />
-          <span>{action.label || "Zobrazit na mapě"}</span>
-        </button>
-      ))}
+      {visibleActions.flatMap((action, index) => {
+        const key = `${action.entityId ?? action.title ?? "map"}-${index}`;
+        const baseOptions = {
+          category: action.category,
+          featureId: action.entityId,
+          featureKind: chatCenterFeatureKindFromAiAction(action),
+          label: action.title ?? action.label,
+          layerId: action.layerId,
+          sourceName: action.sourceName,
+          sourceSystemIds: action.sourceSystemIds,
+          zoom: action.zoom
+        };
+        return [
+          <button
+            key={`${key}:focus`}
+            className="message-ai-map-action"
+            onClick={(event) => {
+              event.stopPropagation();
+              openCopMapFocus(encodeChatCenterLocation(action.lat, action.lon, baseOptions));
+            }}
+            type="button"
+          >
+            <MapPin size={14} />
+            <span>{action.label || "Zobrazit na mapě"}</span>
+          </button>,
+          <button
+            key={`${key}:route`}
+            className="message-ai-map-action"
+            onClick={(event) => {
+              event.stopPropagation();
+              openCopMapFocus(encodeChatCenterLocation(action.lat, action.lon, { ...baseOptions, action: "route" }));
+            }}
+            type="button"
+          >
+            <Navigation size={14} />
+            <span>Trasa: {action.title ?? stripMapActionPrefix(action.label)}</span>
+          </button>
+        ];
+      })}
     </div>
   );
+}
+
+function openCopMapFocus(focus: ReturnType<typeof encodeChatCenterLocation>): void {
+  if (window.parent !== window && new URLSearchParams(window.location.search).get("embedded") === "1") {
+    window.parent.postMessage(focus, window.location.origin);
+    return;
+  }
+  window.open(encodeCopMapFocusUrl(new URL("/", window.location.origin), focus), "_self", "noopener,noreferrer");
+}
+
+function stripMapActionPrefix(label: string): string {
+  return label.replace(/^Zobrazit na mapě:\s*/iu, "").trim() || "cíl";
 }
 
 export function aiMapActionsForMessage(message: MatrixTimelineMessage): MatrixCopMapAction[] | undefined {

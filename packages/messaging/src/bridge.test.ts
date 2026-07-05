@@ -128,6 +128,7 @@ describe("center-location (chat -> web)", () => {
 
   it("round-trips optional map focus metadata", () => {
     const payload = encodeChatCenterLocation(50.1187, 17.3842, {
+      action: "route",
       category: " police ",
       featureId: " security-police:vrbno ",
       featureKind: "feature",
@@ -139,6 +140,7 @@ describe("center-location (chat -> web)", () => {
     });
 
     expect(payload).toEqual({
+      action: "route",
       category: "police",
       featureId: "security-police:vrbno",
       featureKind: "feature",
@@ -162,6 +164,7 @@ describe("center-location (chat -> web)", () => {
 
   it("encodes and decodes COP map focus URLs for standalone chat", () => {
     const focus = encodeChatCenterLocation(50.1187, 17.3842, {
+      action: "route",
       category: "police",
       featureId: "security-police:vrbno",
       featureKind: "feature",
@@ -175,6 +178,7 @@ describe("center-location (chat -> web)", () => {
 
     expect(url).toContain("copLat=50.1187");
     expect(url).toContain("copLon=17.3842");
+    expect(url).toContain("copAction=route");
     expect(url).toContain("copLayerId=reference.infrastructure.emergency");
     expect(decodeCopMapFocusSearch(new URL(url).search)).toEqual(focus);
   });

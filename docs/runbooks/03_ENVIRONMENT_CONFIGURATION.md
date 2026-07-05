@@ -226,6 +226,9 @@ COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS=600000
 COP_SITUATION_DATA_CHMI_WEATHER_WEBCAMS_CACHE_TTL_MS=600000
 COP_SITUATION_DATA_CHMI_AIR_QUALITY_CACHE_TTL_MS=900000
 COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS=600000
+COP_ROUTING_ENABLED=true
+COP_ROUTING_BASE_URL=http://docker.home.cz:5020/situation-data/api/v1
+COP_ROUTING_TIMEOUT_MS=15000
 COP_WEATHER_RADAR_FRAMES_CACHE_SECONDS=120
 COP_WEATHER_CAMERA_ALLOWED_HOSTS=docker.home.cz,sim.zeleznalady.cz
 COP_WEATHER_CAMERA_DETAIL_CACHE_SECONDS=60
@@ -234,6 +237,17 @@ COP_WEATHER_CAMERA_TIMEOUT_MS=8000
 ```
 
 Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora a v produkci používá interní server-to-server URL `http://docker.home.cz:5020/...`, nikoli veřejné browser API. COP při čtení katalogu načítá také `GET /situation-data/api/v1/taxonomy`; taxonomy zůstává server-side a promítá se do Source Health, zatímco rozhodování o významu vrstev a jevů vychází ze stabilních polí `layerId`, `sourceId`, `typeCode`, `category`, `severity`, `metrics`, `tags` a `localized`, ne z českého nebo anglického textu. Při výpadku SIM endpointu vrací prázdný degraded `FeatureCollection`, aby mapa zůstala použitelná. Timeout je vyšší než běžná obnovovací kadence mapy, protože kombinované veřejné vrstvy mohou po studeném startu trvat několik sekund.
+
+Emergency routing je samostatná server-side integrace přes SIM
+`/situation-data/api/v1/routing/*`. COP API ji vystavuje klientům jen přes
+`/api/v1/routing/*`, aby web ani Chat nevolaly SIM přímo. Pokud `COP_ROUTING_*`
+není nastaveno, adapter dědí `COP_SITUATION_DATA_BASE_URL`,
+`COP_SITUATION_DATA_ENABLED` a `COP_SITUATION_DATA_TIMEOUT_MS`. Mapa zobrazuje
+vrácené `features[]` jako dočasný operační overlay, v detailu ukazuje
+`routes[].distanceM`, `durationSeconds`, `quality.mode`,
+`quality.confidence` a `warnings[]`. Pokud `quality.mode` není `osm_graph`,
+UI musí trasu označit jako orientační, protože COP nepočítá routovací graf a
+necertifikuje navigaci.
 
 ČHMÚ radar COP načítá pouze přes SIM. Aktuální raster overlay používá SIM clean
 URL z `providerProperties.raster.url`; frame katalog pro animaci jde přes COP

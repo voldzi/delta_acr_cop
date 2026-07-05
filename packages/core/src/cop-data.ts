@@ -1082,6 +1082,47 @@ export interface RadioLinkCheckResponse {
   warnings: string[];
 }
 
+export type RoutingProfileId =
+  | "car"
+  | "emergency_vehicle"
+  | "evacuation_walking"
+  | "large_emergency_vehicle"
+  | "offroad_4x4"
+  | "walking"
+  | string;
+
+export interface RoutingPoint {
+  label?: string;
+  lat: number;
+  lon: number;
+}
+
+export interface RoutingRouteRequest {
+  avoid?: string[];
+  from: RoutingPoint;
+  profileId?: RoutingProfileId;
+  to: RoutingPoint;
+}
+
+export interface RoutingRouteFeature {
+  geometry:
+    | { coordinates: Array<[number, number]>; type: "LineString" }
+    | { coordinates: Array<Array<[number, number]>>; type: "MultiLineString" }
+    | { coordinates: [number, number]; type: "Point" };
+  properties?: Record<string, unknown>;
+  type: "Feature";
+}
+
+export interface RoutingRouteResponse {
+  contractVersion?: string;
+  features: RoutingRouteFeature[];
+  generatedAt?: string;
+  providerId?: string;
+  quality?: Record<string, unknown>;
+  routes: Array<Record<string, unknown>>;
+  warnings: string[];
+}
+
 export interface MissionArenaTeamScore {
   aggregate?: number;
   aggregateDelta?: number;
@@ -2832,6 +2873,21 @@ export async function runRadioSiteSearch(
   request: RadioSiteSearchRequest
 ): Promise<RadioFeatureCollectionResponse> {
   return fetchJson<RadioFeatureCollectionResponse>(`${apiBase}/api/v1/radio/site-search`, {
+    body: JSON.stringify(request),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function runEmergencyRoute(
+  apiBase: string,
+  token: string | undefined,
+  request: RoutingRouteRequest
+): Promise<RoutingRouteResponse> {
+  return fetchJson<RoutingRouteResponse>(`${apiBase}/api/v1/routing/route`, {
     body: JSON.stringify(request),
     headers: {
       ...(authHeaders(token) ?? {}),

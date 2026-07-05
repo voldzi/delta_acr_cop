@@ -25,6 +25,7 @@ export interface ChatUnreadMessage {
 }
 
 export interface ChatCenterLocationMessage {
+  action?: "focus" | "route";
   category?: string;
   featureId?: string;
   featureKind?: "feature" | "place" | "track";
@@ -53,6 +54,7 @@ export interface ChatCurrentLocationMessage {
 }
 
 export const copMapFocusSearchParams = {
+  action: "copAction",
   category: "copCategory",
   featureId: "copFeatureId",
   featureKind: "copFeatureKind",
@@ -120,6 +122,7 @@ export function encodeChatCenterLocation(
   lat: number,
   lon: number,
   options: {
+    action?: ChatCenterLocationMessage["action"];
     category?: string;
     featureId?: string;
     featureKind?: ChatCenterLocationMessage["featureKind"];
@@ -131,6 +134,7 @@ export function encodeChatCenterLocation(
   } = {}
 ): ChatCenterLocationMessage {
   return compactRecord({
+    action: normalizeCenterAction(options.action),
     category: normalizeBridgeText(options.category, 120),
     featureId: normalizeBridgeText(options.featureId, 160),
     featureKind: normalizeCenterFeatureKind(options.featureKind),
@@ -159,6 +163,7 @@ export function decodeChatCenterLocation(value: unknown): ChatCenterLocationMess
   }
   return compactRecord({
     category: normalizeBridgeText(data.category, 120),
+    action: normalizeCenterAction(data.action),
     featureId: normalizeBridgeText(data.featureId, 160),
     featureKind: normalizeCenterFeatureKind(data.featureKind),
     label: normalizeBridgeText(data.label, 180),
@@ -182,6 +187,9 @@ export function encodeCopMapFocusUrl(baseUrl: string | URL, focus: ChatCenterLoc
   url.searchParams.set(copMapFocusSearchParams.lon, String(normalized.lon));
   if (normalized.zoom !== undefined) {
     url.searchParams.set(copMapFocusSearchParams.zoom, String(normalized.zoom));
+  }
+  if (normalized.action && normalized.action !== "focus") {
+    url.searchParams.set(copMapFocusSearchParams.action, normalized.action);
   }
   if (normalized.category) {
     url.searchParams.set(copMapFocusSearchParams.category, normalized.category);
@@ -214,6 +222,7 @@ export function decodeCopMapFocusSearch(search: string | URLSearchParams): ChatC
   const lat = Number(params.get(copMapFocusSearchParams.lat));
   const lon = Number(params.get(copMapFocusSearchParams.lon));
   return decodeChatCenterLocation({
+    action: params.get(copMapFocusSearchParams.action) ?? undefined,
     category: params.get(copMapFocusSearchParams.category) ?? undefined,
     featureId: params.get(copMapFocusSearchParams.featureId) ?? undefined,
     featureKind: params.get(copMapFocusSearchParams.featureKind) ?? undefined,
@@ -305,6 +314,10 @@ function normalizeTransitShare(value: unknown): ChatTransitSharePayload | null {
 
 function normalizeCenterFeatureKind(value: unknown): ChatCenterLocationMessage["featureKind"] | undefined {
   return value === "feature" || value === "place" || value === "track" ? value : undefined;
+}
+
+function normalizeCenterAction(value: unknown): ChatCenterLocationMessage["action"] | undefined {
+  return value === "route" ? "route" : value === "focus" ? "focus" : undefined;
 }
 
 function normalizeCurrentLocation(value: unknown): ChatCurrentLocationPayload | null {

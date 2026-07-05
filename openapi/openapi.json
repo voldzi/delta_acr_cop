@@ -6196,6 +6196,233 @@
         }
       }
     },
+    "/api/v1/routing/profiles": {
+      "get": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Return SIM emergency routing profile catalog through COP.",
+        "operationId": "getRoutingProfiles",
+        "description": "Server-side proxy for SIM emergency routing profiles. Browsers, Chat and native clients must call COP, not SIM, for routing data.",
+        "responses": {
+          "200": {
+            "description": "Emergency routing profile catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingProfilesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM emergency routing service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/routing/route": {
+      "post": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Calculate a SIM emergency route through COP.",
+        "operationId": "runEmergencyRoute",
+        "description": "Calculates a primary route between two points through the server-side SIM routing provider. COP renders returned GeoJSON features as a temporary operational overlay and displays ETA, distance, quality and warnings.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutingRouteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Primary emergency route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingRouteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM emergency routing service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/routing/alternatives": {
+      "post": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Calculate SIM emergency route alternatives through COP.",
+        "operationId": "runEmergencyRouteAlternatives",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutingRouteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Primary route and alternatives.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingRouteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM emergency routing service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/routing/isochrone": {
+      "post": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Calculate a SIM emergency routing isochrone through COP.",
+        "operationId": "runEmergencyRoutingIsochrone",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutingGenericRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reachable-area response from SIM routing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingGenericResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM emergency routing service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/routing/nearest-access": {
+      "post": {
+        "tags": [
+          "Map Catalog"
+        ],
+        "summary": "Find a SIM emergency routing graph access point through COP.",
+        "operationId": "runEmergencyRoutingNearestAccess",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutingGenericRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Nearest routing access response from SIM.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingGenericResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "description": "SIM emergency routing service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
     "/api/v1/mobile/pairing/sessions": {
       "post": {
         "tags": [
@@ -11391,6 +11618,30 @@
             "minItems": 2,
             "items": {
               "$ref": "#/components/schemas/Coordinate"
+            }
+          }
+        }
+      },
+      "GeoJsonMultiLineString": {
+        "type": "object",
+        "required": [
+          "coordinates",
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "MultiLineString"
+          },
+          "coordinates": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "$ref": "#/components/schemas/Coordinate"
+              }
             }
           }
         }
@@ -18223,6 +18474,261 @@
             }
           }
         }
+      },
+      "RoutingProfile": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9:_./-]+$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "description": "SIM routing profile such as emergency_vehicle, large_emergency_vehicle, offroad_4x4, walking, evacuation_walking or car."
+      },
+      "RoutingProfilesResponse": {
+        "type": "object",
+        "required": [
+          "profiles",
+          "warnings"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutingProfile"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RoutingPoint": {
+        "type": "object",
+        "required": [
+          "lon",
+          "lat"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 180
+          }
+        }
+      },
+      "RoutingRouteRequest": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "default": "emergency_vehicle",
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9:_./-]+$"
+          },
+          "from": {
+            "$ref": "#/components/schemas/RoutingPoint"
+          },
+          "to": {
+            "$ref": "#/components/schemas/RoutingPoint"
+          },
+          "avoid": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "Risk or restriction classes requested from SIM, for example flood or road_closure."
+          }
+        }
+      },
+      "RoutingRouteFeature": {
+        "type": "object",
+        "required": [
+          "geometry",
+          "properties",
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Feature"
+          },
+          "id": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "geometry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GeoJsonPoint"
+              },
+              {
+                "$ref": "#/components/schemas/GeoJsonLineString"
+              },
+              {
+                "$ref": "#/components/schemas/GeoJsonMultiLineString"
+              },
+              {
+                "$ref": "#/components/schemas/GeoJsonPolygon"
+              },
+              {
+                "$ref": "#/components/schemas/GeoJsonMultiPolygon"
+              }
+            ]
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "SIM route feature properties such as routeId, role, label, warningLevel or segment metadata."
+          }
+        }
+      },
+      "RoutingRoute": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "routeId": {
+            "type": "string"
+          },
+          "distanceM": {
+            "type": "number",
+            "minimum": 0
+          },
+          "durationSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "elevationGainM": {
+            "type": "number"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "quality": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "mode": {
+                "type": "string",
+                "description": "SIM computation mode. osm_graph means graph-based route; other modes are orientational."
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RoutingRouteResponse": {
+        "type": "object",
+        "required": [
+          "features",
+          "routes",
+          "warnings"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "quality": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutingRouteFeature"
+            }
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutingRoute"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RoutingGenericRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Provider-shaped SIM routing request for isochrone and nearest-access calls."
+      },
+      "RoutingGenericResponse": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Provider-shaped SIM routing response for isochrone and nearest-access calls."
       },
       "RadioLinkCheckResponse": {
         "type": "object",
