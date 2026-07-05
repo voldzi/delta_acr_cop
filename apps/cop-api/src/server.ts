@@ -209,7 +209,8 @@ import {
   buildSimSearchDataHealth,
   createSimSearchDataSourceFromEnv,
   unavailableSimSearchDataHealth,
-  type SimSearchDataSource
+  type SimSearchDataSource,
+  type SimSearchEntitiesResponse
 } from "./sim-search-data-source.js";
 import {
   buildSketchDrawingCollection,
@@ -605,6 +606,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const aiContextIndexObjectLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_OBJECT_LIMIT, 250);
   const aiContextIndexCommunityReportLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_COMMUNITY_REPORT_LIMIT, 250);
   const aiContextIndexIncidentLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_INCIDENT_LIMIT, 200);
+  const aiContextIndexSimSearchEntityLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_SIM_SEARCH_ENTITY_LIMIT, 1000);
   const aiSemanticRetrievalCandidateLimit = readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_CANDIDATE_LIMIT, 36);
   const aiSemanticRetrievalTimeoutMs = readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_TIMEOUT_MS, 20000);
   const aiGatewayRequestTimeoutMs = readPositiveInteger(process.env.COP_AI_REQUEST_TIMEOUT_MS, 70000);
@@ -1307,10 +1309,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     alerts: Record<string, unknown>[];
     communityReports: Record<string, unknown>[];
     incidents: Record<string, unknown>[];
+    mapFeatures: Record<string, unknown>[];
     objects: Record<string, unknown>[];
     sourceHealth: Record<string, unknown>[];
   }> {
     const subject = defaultSystemSubject();
+    const simSearchMapFeatures = await readSimSearchMapFeaturesForAiIndex(requestNow);
     const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
     const readableObjects = prioritizeObjectsForAi(selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
       .filter((object) => canReadObject(subject, object)))
@@ -1339,9 +1343,56 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       alerts: alerts.map(summarizeAlertForAi),
       communityReports: communityReports.map(summarizeCommunityReportForAi),
       incidents: incidents.map(summarizeIncidentForAi),
+      mapFeatures: simSearchMapFeatures,
       objects: decoratedObjects.map(summarizeObjectForAi),
       sourceHealth: sourceHealth.map(summarizeSourceHealthForAi)
     };
+  }
+
+  async function readSimSearchMapFeaturesForAiIndex(requestNow: Date): Promise<Record<string, unknown>[]> {
+    if (!simSearchDataSource?.fetchEntities || aiContextIndexSimSearchEntityLimit <= 0) {
+      return [];
+    }
+    const responses: SimSearchEntitiesResponse[] = [];
+    let cursor: string | undefined;
+    let remaining = aiContextIndexSimSearchEntityLimit;
+    try {
+      for (let page = 0; page < 8 && remaining > 0; page += 1) {
+        const response = await simSearchDataSource.fetchEntities({
+          ...(cursor ? { cursor } : {}),
+          limit: Math.min(remaining, simSearchDataSource.config.indexLimit || remaining)
+        }, requestNow);
+        responses.push(response);
+        remaining -= response.results.length;
+        cursor = response.nextCursor;
+        if (!cursor || response.results.length === 0) {
+          break;
+        }
+      }
+      const combined: SimSearchEntitiesResponse = {
+        contractVersion: "sim-search-source-v1",
+        generatedAt: requestNow.toISOString(),
+        providerId: responses[0]?.providerId ?? "sim.search-data",
+        query: {
+          limit: aiContextIndexSimSearchEntityLimit
+        },
+        results: responses.flatMap((response) => response.results),
+        summary: {
+          resultCount: responses.reduce((sum, response) => sum + response.results.length, 0),
+          staleResultCount: responses.reduce((sum, response) => sum + response.summary.staleResultCount, 0),
+          warningCount: responses.reduce((sum, response) => sum + response.warnings.length, 0)
+        },
+        warnings: Array.from(new Set(responses.flatMap((response) => response.warnings)))
+      };
+      const health = buildSimSearchDataHealth(combined, requestNow);
+      state.sources.set(simSearchDataSource.sourceSystem.sourceSystemId, withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health));
+      return summarizeSimSearchResponseForAi(combined, undefined);
+    } catch (error) {
+      const health = unavailableSimSearchDataHealth(error, requestNow);
+      state.sources.set(simSearchDataSource.sourceSystem.sourceSystemId, withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health));
+      app.log.warn({ error }, "AI context index SIM search-data entity refresh failed.");
+      return [];
+    }
   }
 
   async function queryAiContextIndexForAi(input: {
@@ -6949,6 +7000,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       alerts: promptContext.alerts,
       communityReports: promptContext.communityReports,
       incidents: promptContext.incidents,
+      mapFeatures: promptContext.mapFeatures,
       sourceHealth: promptContext.sourceHealth,
       semanticContext: promptContext.semanticContext
     };
@@ -7187,12 +7239,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       requestId,
       requestNow
     });
+    const aiMapFeatures = aiMapSearch?.results ?? [];
     const priorityContext = buildAiPriorityContext({
       alerts: aiAlerts,
       chatContext,
       communityReports: aiCommunityReports,
       incidents: aiIncidents,
-      mapFeatures: aiMapSearch?.results,
+      mapFeatures: aiMapFeatures,
       objects: aiObjects,
       sourceHealth: aiSourceHealth
     });
@@ -7205,6 +7258,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         chatContext,
         communityReports: aiCommunityReports,
         incidents: aiIncidents,
+        mapFeatures: aiMapFeatures,
         objects: aiObjects,
         sourceHealth: aiSourceHealth
       }), aiSemanticRetrievalCandidateLimit, retrievalIntent),
@@ -7233,6 +7287,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       generatedAt: requestNow,
       incidents: aiIncidents,
       indexedContext,
+      mapFeatures: aiMapFeatures,
       objects: aiObjects,
       priorityContext,
       retrievalIntent,
@@ -7272,6 +7327,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       alerts: aiAlerts,
       communityReports: aiCommunityReports,
       incidents: aiIncidents,
+      mapFeatures: aiMapFeatures,
       sourceHealth: aiSourceHealth,
       indexedContext,
       semanticContext
@@ -7291,6 +7347,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       alerts: promptContext.alerts,
       communityReports: promptContext.communityReports,
       incidents: promptContext.incidents,
+      mapFeatures: promptContext.mapFeatures,
       sourceHealth: promptContext.sourceHealth,
       indexedContext: promptContext.indexedContext,
       semanticContext: promptContext.semanticContext

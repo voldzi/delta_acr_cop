@@ -7,6 +7,7 @@ export type AiSemanticEntityType =
   | "chatMessage"
   | "communityReport"
   | "incident"
+  | "mapFeature"
   | "observedObject"
   | "sourceHealth";
 
@@ -208,10 +209,12 @@ export function createSemanticDocuments(input: {
   chatContext?: Record<string, unknown>;
   communityReports?: Record<string, unknown>[];
   incidents?: Record<string, unknown>[];
+  mapFeatures?: Record<string, unknown>[];
   objects?: Record<string, unknown>[];
   sourceHealth?: Record<string, unknown>[];
 }): AiSemanticDocument[] {
   return [
+    ...(input.mapFeatures ?? []).map((item) => documentFromRecord("mapFeature", item, "mapFeatureId")),
     ...(input.objects ?? []).map((item) => documentFromRecord("observedObject", item, "objectId")),
     ...(input.alerts ?? []).map((item) => documentFromRecord("alert", item, "alertId")),
     ...(input.communityReports ?? []).map((item) => documentFromRecord("communityReport", item, "reportId")),
@@ -318,6 +321,8 @@ function entityTypePriority(entityType: AiSemanticEntityType): number {
       return 0.34;
     case "communityReport":
       return 0.28;
+    case "mapFeature":
+      return 0.2;
     case "alert":
       return 0.22;
     case "chatMessage":

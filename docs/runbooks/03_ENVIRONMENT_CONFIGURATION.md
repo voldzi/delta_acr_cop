@@ -275,15 +275,22 @@ normalizované mapové/search entity, které COP převádí na auditovaný
 ```env
 COP_SIM_SEARCH_DATA_ENABLED=true
 COP_SIM_SEARCH_DATA_BASE_URL=http://docker.home.cz:5020/search-data/api/v1
+COP_SIM_SEARCH_DATA_INDEX_LIMIT=1000
 COP_SIM_SEARCH_DATA_MAX_LIMIT=100
 COP_SIM_SEARCH_DATA_TIMEOUT_MS=6000
 ```
 
-COP volá `POST /search-data/api/v1/query` pouze server-side. Pokud endpoint
-není dostupný, AI map-search pokračuje přes stávající map catalog/query a
-geocoder fallbacky; chyba se promítne do auditu a Source Health jako
-`sim-search-data-source` degraded/unavailable. SIM search-data se zapíná až po
-nasazení odpovídající SIM části.
+COP volá `POST /search-data/api/v1/query` pouze server-side pro interaktivní AI
+mapové dotazy a `GET /search-data/api/v1/entities` pro background AI index.
+`COP_SIM_SEARCH_DATA_INDEX_LIMIT` omezuje počet entit načtených do COP AI
+indexu; stránkování používá `nextCursor` a server-side limit SIM endpointu.
+Adapter také podporuje `GET /taxonomy`, `GET /entities/{providerEntityId}` a
+`GET /observability`. Pokud endpoint není dostupný, AI map-search pokračuje
+přes stávající map catalog/query a geocoder fallbacky; chyba se promítne do
+auditu a Source Health jako `sim-search-data-source` degraded/unavailable.
+COP zachovává pole `handling`, `allowedUse`, `classification`, `visibility` a
+`positionQuality`; zejména `reference_not_operational_status` znamená, že
+referenční OSM objekt není potvrzený operační stav.
 
 ## TAK Gateway Source
 

@@ -773,14 +773,25 @@ function summarizeSimSearchEntityForAi(
   ].filter((value): value is string => Boolean(value))));
   const category = entity.entitySubtype ?? entity.entityType;
   const priorityFromScore = optionalFiniteNumber(entity.score, 0, 1);
+  const handlingFlags = simSearchHandlingFlags(entity.handling);
   return compactRecord({
+    allowedUse: entity.allowedUse,
     category,
-    detail: entity.summary ?? entity.searchableText,
+    classification: entity.classification,
+    dataQuality: entity.dataQuality,
+    detail: [
+      entity.summary ?? entity.searchableText,
+      handlingFlags.includes("reference_not_operational_status") ? "Referenční objekt; nejde o potvrzený operační stav." : undefined,
+      handlingFlags.includes("dynamic_data_requires_timestamp") ? "Dynamický údaj vyžaduje čas měření." : undefined
+    ].filter(Boolean).join(" "),
     distanceM,
     distanceText: formatAiMapDistance(distanceM),
+    handling: entity.handling,
     layerId: entity.layerIds?.[0],
     location,
     mapFeatureId: entity.providerEntityId,
+    metrics: entity.metrics,
+    positionQuality: entity.positionQuality,
     priorityScore: priorityFromScore ?? aiSimSearchPriorityScore(entity, distanceM),
     sourceAuthority: entity.sourceAuthority,
     sourceName: entity.sourceSystem ?? entity.providerId ?? providerId,
@@ -789,7 +800,29 @@ function summarizeSimSearchEntityForAi(
     status: entity.status ?? (entity.stale ? "stale" : "map-result"),
     title: entity.title,
     type: "mapFeature",
-    updatedAt: entity.observedAt ?? entity.updatedAt ?? entity.validFrom
+    updatedAt: entity.observedAt ?? entity.updatedAt ?? entity.validFrom,
+    visibility: entity.visibility
+  });
+}
+
+function simSearchHandlingFlags(value: SimSearchEntity["handling"]): string[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (!isRecord(value)) {
+    return [];
+  }
+  return Object.entries(value).flatMap(([key, entry]) => {
+    if (entry === true) {
+      return [key];
+    }
+    if (Array.isArray(entry)) {
+      return entry.filter((item): item is string => typeof item === "string");
+    }
+    if (typeof entry === "string") {
+      return [entry];
+    }
+    return [];
   });
 }
 

@@ -87,7 +87,10 @@ For `chat-agent/query`, search-like questions such as "najdi", "vyhledej" or
 "nejbližší" also create an audited `mapSearch` context. COP uses the same map
 catalog/query path as the map UI and, when enabled, first asks the internal SIM
 `sim-search-source-v1` provider (`COP_SIM_SEARCH_DATA_*`) for normalized
-country-wide search entities. Known emergency categories such as police,
+country-wide search entities. COP also pages `GET /search-data/api/v1/entities`
+into the background AI context index, bounded by `COP_SIM_SEARCH_DATA_INDEX_LIMIT`,
+so non-interactive situational-awareness questions can retrieve SIM canonical
+map entities through indexed evidence. Known emergency categories such as police,
 fire, rescue, shelters, defibrillators, sirens, healthcare and pharmacies still
 resolve to narrow catalog layers, but generic "find/show/nearest" questions now
 also search queryable catalog layers in the supplied bbox and match feature
@@ -108,6 +111,12 @@ matching result, COP also runs a bounded geocoder fallback for known emergency
 categories. If that fallback is empty too, the deterministic answer must state
 that the supplied location or area was searched; it must not claim that the
 assistant has no access to the user's location.
+
+SIM `osm_reference` entities are treated as public reference read-models, not
+confirmed operational status. COP preserves `handling`, `allowedUse`,
+`classification`, `visibility`, `metrics` and `positionQuality` in AI evidence
+and map results; `reference_not_operational_status` must be rendered as a
+reference caveat.
 
 Both endpoints echo a bounded, client-safe evidence summary in
 `result.structured.evidence`. The summary contains citation lists from

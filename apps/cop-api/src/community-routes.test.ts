@@ -2703,6 +2703,7 @@ class FakeAiMapSearchSimSearchDataSource implements SimSearchDataSource {
   readonly config: SimSearchDataSourceConfig = {
     baseUrl: "https://sim.example.test/search-data/api/v1",
     enabled: true,
+    indexLimit: 1000,
     maxLimit: 100,
     timeoutMs: 6000
   };

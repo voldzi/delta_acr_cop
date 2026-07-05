@@ -24,6 +24,7 @@ export type SimSearchEntityType =
 export interface SimSearchDataSourceConfig {
   baseUrl: string;
   enabled: boolean;
+  indexLimit: number;
   maxLimit: number;
   timeoutMs: number;
 }
@@ -47,6 +48,7 @@ export interface SimSearchQueryRequest {
   includeStale?: boolean;
   limit?: number;
   radiusM?: number;
+  sourceSystems?: string[];
   text?: string;
   validAt?: string;
 }
@@ -54,7 +56,9 @@ export interface SimSearchQueryRequest {
 export interface SimSearchEntity {
   address?: Record<string, unknown>;
   aliases?: string[];
+  allowedUse?: string[];
   centroid?: SimSearchCoordinate;
+  classification?: Record<string, unknown> | string;
   confidence?: number;
   contractVersion?: string;
   dataQuality?: string;
@@ -64,10 +68,12 @@ export interface SimSearchEntity {
   entityType: SimSearchEntityType | string;
   expiresAt?: string;
   geometry?: Record<string, unknown>;
+  handling?: Record<string, unknown> | string[];
   layerIds?: string[];
   localized?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
   observedAt?: string;
+  positionQuality?: Record<string, unknown> | string;
   providerEntityId: string;
   providerId?: string;
   providerProperties?: Record<string, unknown>;
@@ -86,6 +92,7 @@ export interface SimSearchEntity {
   updatedAt?: string;
   validFrom?: string;
   validUntil?: string;
+  visibility?: string;
 }
 
 export interface SimSearchQueryResponse {
@@ -102,6 +109,15 @@ export interface SimSearchQueryResponse {
   warnings: string[];
 }
 
+export interface SimSearchEntitiesRequest {
+  cursor?: string;
+  limit?: number;
+}
+
+export interface SimSearchEntitiesResponse extends SimSearchQueryResponse {
+  nextCursor?: string;
+}
+
 export interface SimSearchObservability {
   generatedAt?: string;
   sourceCaches?: Array<Record<string, unknown>>;
@@ -113,13 +129,17 @@ export interface SimSearchObservability {
 export interface SimSearchDataSource {
   readonly config: SimSearchDataSourceConfig;
   readonly sourceSystem: SourceSystem;
+  fetchEntities?(request: SimSearchEntitiesRequest, requestNow: Date): Promise<SimSearchEntitiesResponse>;
+  fetchEntity?(providerEntityId: string, requestNow: Date): Promise<SimSearchEntity | undefined>;
   fetchObservability?(requestNow: Date): Promise<SimSearchObservability>;
+  fetchTaxonomy?(requestNow: Date): Promise<Record<string, unknown>>;
   query(request: SimSearchQueryRequest, requestNow: Date): Promise<SimSearchQueryResponse>;
 }
 
 const defaultConfig: SimSearchDataSourceConfig = {
   baseUrl: "http://docker.home.cz:5020/search-data/api/v1",
   enabled: false,
+  indexLimit: 1000,
   maxLimit: 100,
   timeoutMs: 6000
 };
@@ -128,7 +148,8 @@ export function createSimSearchDataSourceConfigFromEnv(env: Record<string, strin
   return {
     baseUrl: trimTrailingSlash(env.COP_SIM_SEARCH_DATA_BASE_URL ?? defaultConfig.baseUrl),
     enabled: readBoolean(env.COP_SIM_SEARCH_DATA_ENABLED, defaultConfig.enabled),
-    maxLimit: readInteger(env.COP_SIM_SEARCH_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 500),
+    indexLimit: readInteger(env.COP_SIM_SEARCH_DATA_INDEX_LIMIT, defaultConfig.indexLimit, 0, 5000),
+    maxLimit: readInteger(env.COP_SIM_SEARCH_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 5000),
     timeoutMs: readInteger(env.COP_SIM_SEARCH_DATA_TIMEOUT_MS, defaultConfig.timeoutMs, 500, 30000)
   };
 }
@@ -156,8 +177,31 @@ export class SimSearchDataSourceAdapter implements SimSearchDataSource {
     }), body);
   }
 
+  async fetchEntities(request: SimSearchEntitiesRequest, requestNow: Date): Promise<SimSearchEntitiesResponse> {
+    const url = new URL(`${trimTrailingSlash(this.config.baseUrl)}/entities`);
+    const limit = Math.min(Math.max(1, request.limit ?? this.config.indexLimit), Math.max(1, this.config.indexLimit));
+    url.searchParams.set("limit", String(limit));
+    if (request.cursor) {
+      url.searchParams.set("cursor", request.cursor);
+    }
+    return normalizeSimSearchEntitiesResponse(await fetchJson(url, this.config, requestNow), {
+      ...(request.cursor ? { cursor: request.cursor } : {}),
+      limit
+    });
+  }
+
+  async fetchEntity(providerEntityId: string, requestNow: Date): Promise<SimSearchEntity | undefined> {
+    const value = await fetchJson(new URL(`${trimTrailingSlash(this.config.baseUrl)}/entities/${encodeURIComponent(providerEntityId)}`), this.config, requestNow);
+    return normalizeSimSearchEntityResponse(value);
+  }
+
   async fetchObservability(requestNow: Date): Promise<SimSearchObservability> {
     return normalizeSimSearchObservability(await fetchJson(new URL(`${trimTrailingSlash(this.config.baseUrl)}/observability`), this.config, requestNow));
+  }
+
+  async fetchTaxonomy(requestNow: Date): Promise<Record<string, unknown>> {
+    const value = await fetchJson(new URL(`${trimTrailingSlash(this.config.baseUrl)}/taxonomy`), this.config, requestNow);
+    return isRecord(value) ? value : {};
   }
 }
 
@@ -287,6 +331,27 @@ function normalizeSimSearchQueryResponse(value: unknown, query: Record<string, u
   };
 }
 
+function normalizeSimSearchEntitiesResponse(value: unknown, query: Record<string, unknown>): SimSearchEntitiesResponse {
+  if (!isRecord(value)) {
+    throw new Error("SIM search-data entities response is not an object.");
+  }
+  const response = normalizeSimSearchQueryResponse(value, query);
+  const nextCursor = optionalString(value.nextCursor);
+  return {
+    ...response,
+    ...(nextCursor ? { nextCursor } : {})
+  };
+}
+
+function normalizeSimSearchEntityResponse(value: unknown): SimSearchEntity | undefined {
+  const raw = isRecord(value) && isRecord(value.entity)
+    ? value.entity
+    : isRecord(value) && isRecord(value.result)
+      ? value.result
+      : value;
+  return normalizeSimSearchEntity(raw)[0];
+}
+
 function normalizeSimSearchEntity(value: unknown): SimSearchEntity[] {
   if (!isRecord(value)) {
     return [];
@@ -302,8 +367,10 @@ function normalizeSimSearchEntity(value: unknown): SimSearchEntity[] {
   }
   const entity: SimSearchEntity = {
     address: isRecord(value.address) ? value.address : undefined,
-    aliases: Array.isArray(value.aliases) ? value.aliases.filter((item): item is string => typeof item === "string") : undefined,
+    aliases: stringArray(value.aliases),
+    allowedUse: stringArray(value.allowedUse),
     centroid: normalizeCoordinate(value.centroid),
+    classification: recordOrString(value.classification),
     confidence: optionalRatio(value.confidence),
     contractVersion: optionalString(value.contractVersion),
     dataQuality: optionalString(value.dataQuality),
@@ -313,10 +380,12 @@ function normalizeSimSearchEntity(value: unknown): SimSearchEntity[] {
     entityType,
     expiresAt: optionalString(value.expiresAt),
     geometry: isRecord(value.geometry) ? value.geometry : undefined,
-    layerIds: Array.isArray(value.layerIds) ? value.layerIds.filter((item): item is string => typeof item === "string") : undefined,
+    handling: recordOrStringArray(value.handling),
+    layerIds: stringArray(value.layerIds),
     localized: isRecord(value.localized) ? value.localized : undefined,
     metrics: isRecord(value.metrics) ? value.metrics : undefined,
     observedAt: optionalString(value.observedAt),
+    positionQuality: recordOrString(value.positionQuality),
     providerEntityId,
     providerId: optionalString(value.providerId),
     providerProperties: isRecord(value.providerProperties) ? value.providerProperties : undefined,
@@ -334,7 +403,8 @@ function normalizeSimSearchEntity(value: unknown): SimSearchEntity[] {
     title,
     updatedAt: optionalString(value.updatedAt),
     validFrom: optionalString(value.validFrom),
-    validUntil: optionalString(value.validUntil)
+    validUntil: optionalString(value.validUntil),
+    visibility: optionalString(value.visibility)
   };
   return [entity];
 }
@@ -377,6 +447,14 @@ function warningStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "") : [];
 }
 
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items = value.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim());
+  return items.length > 0 ? items : undefined;
+}
+
 function readBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) {
     return fallback;
@@ -401,6 +479,17 @@ function optionalNumber(value: unknown): number | undefined {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function recordOrString(value: unknown): Record<string, unknown> | string | undefined {
+  return isRecord(value) ? value : optionalString(value);
+}
+
+function recordOrStringArray(value: unknown): Record<string, unknown> | string[] | undefined {
+  if (isRecord(value)) {
+    return value;
+  }
+  return stringArray(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

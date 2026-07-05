@@ -11,6 +11,7 @@ export interface AiPromptContextCompressionInput {
   generatedAt: Date;
   incidents: AiPromptRecordSet;
   indexedContext: AiIndexedContext;
+  mapFeatures?: AiPromptRecordSet;
   objects: AiPromptRecordSet;
   priorityContext: Record<string, unknown>;
   retrievalIntent?: AiRetrievalIntent;
@@ -25,6 +26,7 @@ export interface AiPromptContextCompressionOutput {
   contextCompression: Record<string, unknown>;
   incidents: AiPromptRecordSet;
   indexedContext: AiIndexedContext;
+  mapFeatures: AiPromptRecordSet;
   objects: AiPromptRecordSet;
   semanticContext: AiSemanticContext;
   sourceHealth: AiPromptRecordSet;
@@ -35,6 +37,7 @@ const promptRecordLimits: Record<AiSemanticEntityType, number> = {
   chatMessage: 8,
   communityReport: 8,
   incident: 6,
+  mapFeature: 8,
   observedObject: 6,
   sourceHealth: 6
 };
@@ -49,6 +52,7 @@ export function buildAiPromptContextCompression(input: AiPromptContextCompressio
   const alerts = selectPromptRecords(input.alerts, "alert", selectedEntityIds, retrievalIntent);
   const communityReports = selectPromptRecords(input.communityReports, "communityReport", selectedEntityIds, retrievalIntent);
   const incidents = selectPromptRecords(input.incidents, "incident", selectedEntityIds, retrievalIntent);
+  const mapFeatures = selectPromptRecords(input.mapFeatures ?? [], "mapFeature", selectedEntityIds, retrievalIntent);
   const sourceHealth = selectPromptRecords(input.sourceHealth, "sourceHealth", selectedEntityIds, retrievalIntent);
   const chatContext = compressPromptChatContext(input.chatContext, selectedEntityIds);
   const semanticContext = compressPromptSemanticContext(input.semanticContext);
@@ -58,6 +62,7 @@ export function buildAiPromptContextCompression(input: AiPromptContextCompressio
     chatMessages: promptChatMessageCount(input.chatContext),
     communityReports: input.communityReports.length,
     incidents: input.incidents.length,
+    mapFeatures: input.mapFeatures?.length ?? 0,
     objects: input.objects.length,
     sourceHealth: input.sourceHealth.length
   };
@@ -66,6 +71,7 @@ export function buildAiPromptContextCompression(input: AiPromptContextCompressio
     chatMessages: promptChatMessageCount(chatContext),
     communityReports: communityReports.length,
     incidents: incidents.length,
+    mapFeatures: mapFeatures.length,
     objects: objects.length,
     sourceHealth: sourceHealth.length
   };
@@ -97,6 +103,7 @@ export function buildAiPromptContextCompression(input: AiPromptContextCompressio
     }),
     incidents,
     indexedContext,
+    mapFeatures,
     objects,
     semanticContext,
     sourceHealth
@@ -330,6 +337,8 @@ function promptEntityBaseScore(entityType: Exclude<AiSemanticEntityType, "chatMe
       return 0.44;
     case "communityReport":
       return 0.38;
+    case "mapFeature":
+      return 0.34;
     case "alert":
       return 0.28;
     case "sourceHealth":
@@ -343,6 +352,8 @@ function promptRecordFallbackThreshold(entityType: Exclude<AiSemanticEntityType,
   switch (entityType) {
     case "sourceHealth":
       return 0.16;
+    case "mapFeature":
+      return 0.22;
     case "observedObject":
       return 0.28;
     default:
@@ -422,6 +433,8 @@ function recordEntityId(entityType: Exclude<AiSemanticEntityType, "chatMessage">
       return textValue(record.reportId);
     case "incident":
       return textValue(record.incidentId);
+    case "mapFeature":
+      return textValue(record.mapFeatureId);
     case "observedObject":
       return textValue(record.objectId);
     case "sourceHealth":
@@ -457,6 +470,7 @@ function entityTypeFromValue(value: unknown): AiSemanticEntityType | undefined {
     || value === "chatMessage"
     || value === "communityReport"
     || value === "incident"
+    || value === "mapFeature"
     || value === "observedObject"
     || value === "sourceHealth"
     ? value
