@@ -73,6 +73,38 @@ describe("AI map search", () => {
     expect(aiSituationFeatureMatchesMapSearchIntent(policeFeature, intent)).toBe(false);
   });
 
+  it("treats surrounding-area water-level questions as current-location hydro searches", () => {
+    const intent = inferAiMapSearchIntent("Kde se měří výška vody v okolí? a jaká je nyní hodnota?", {});
+    const waterGaugeFeature: SituationFeature = {
+      geometry: {
+        coordinates: [17.3835, 50.1201],
+        type: "Point"
+      },
+      id: "hydro-vrbno",
+      properties: {
+        category: "water-gauge",
+        featureId: "chmi-hydro:opava-vrbno",
+        label: "Vodoměrná stanice Opava - Vrbno pod Pradědem",
+        layer: "flood",
+        layerId: "public.safety.flood",
+        providerLayerId: "chmi_hydro",
+        sourceId: "chmi_hydro",
+        sourceName: "ČHMÚ hydrologická měření",
+        summary: "Aktuální stav hladiny řeky Opavy."
+      },
+      type: "Feature"
+    };
+
+    expect(intent).toMatchObject({
+      categoryIds: [],
+      requested: true
+    });
+    expect(intent.placeQuery).toBeUndefined();
+    expect(intent.searchTerms).toEqual(expect.arrayContaining(["vody"]));
+    expect(intent.searchTerms).not.toEqual(expect.arrayContaining(["okoli", "meri", "vysk", "hodnot"]));
+    expect(aiSituationFeatureMatchesMapSearchIntent(waterGaugeFeature, intent)).toBe(true);
+  });
+
   it("extracts a clean place query from generic map searches with a location phrase", () => {
     const intent = inferAiMapSearchIntent("Najdi vodoměrnou stanici ve Vrbně pod Pradědem.", {});
     const waterGaugeFeature: SituationFeature = {

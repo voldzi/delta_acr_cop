@@ -40,7 +40,7 @@ export interface AiMapSearchIntent {
 
 export function inferAiMapSearchIntent(question: string, body: Record<string, unknown>): AiMapSearchIntent {
   const normalized = normalizeAiMapSearchText(question);
-  const requested = /(?:^|\b)(najdi|najit|vyhledej|hledej|ukaz|ukaž|zobraz|kde je|kde jsou|nejbliz|nejblizsi|nejbli|nearest|closest|find|show)(?:\b|$)/u.test(normalized);
+  const requested = /(?:^|\b)(najdi|najit|vyhledej|hledej|ukaz|ukaž|zobraz|kde je|kde jsou|kde se|nejbliz|nejblizsi|nejbli|nearest|closest|find|show)(?:\b|$)/u.test(normalized);
   const layerIds = new Set<string>();
   const categoryIds = new Set<string>();
   const searchTerms = new Set<string>();
@@ -71,13 +71,14 @@ export function inferAiMapSearchIntent(question: string, body: Record<string, un
   if (/(nemocnic|hospital|klinik|clinic|lekar|lékar|doktor|doctors|lekarn|lékarn|pharmacy|zdravotnictv)/u.test(normalized)) {
     addInfrastructureCategory("reference.infrastructure.healthcare", ["hospital", "clinic", "doctors", "pharmacy"], ["healthcare"]);
   }
-
   aiMapSearchTermsFromQuestion(question).forEach((term) => searchTerms.add(term));
 
   const bodyPlaceQuery = aiMapPlaceQueryFromBody(body);
+  const usesImplicitCurrentArea = aiQuestionUsesImplicitCurrentArea(question);
+  const questionPlaceQuery = usesImplicitCurrentArea ? undefined : aiPlaceQueryFromQuestion(question);
   const placeQuery = requested && layerIds.size === 0
-    ? bodyPlaceQuery ?? aiPlaceQueryFromQuestion(question) ?? aiMapPlaceQueryFromQuestion(question)
-    : bodyPlaceQuery ?? aiPlaceQueryFromQuestion(question);
+    ? bodyPlaceQuery ?? questionPlaceQuery ?? (usesImplicitCurrentArea ? undefined : aiMapPlaceQueryFromQuestion(question))
+    : bodyPlaceQuery ?? questionPlaceQuery;
   const filteredSearchTerms = aiMapSearchTermsWithoutPlace(Array.from(searchTerms), placeQuery);
 
   return {
@@ -280,7 +281,7 @@ export function simSearchEntityTypesForAiMapSearchIntent(intent: AiMapSearchInte
     }
   }
   const terms = aiMapSearchMeaningfulTerms(intent.searchTerms);
-  if (terms.some((term) => /^(vodomer|hydro|limnigraf|hladin|reka|rek|river|gauge|water)/u.test(term))) {
+  if (terms.some((term) => /^(vod|vodomer|hydro|limnigraf|hladin|reka|rek|river|gauge|water)/u.test(term))) {
     entityTypes.add("hydro_station");
     entityTypes.add("hydro_measurement");
   }
@@ -530,12 +531,20 @@ function isAiMapSearchStopword(term: string): boolean {
     "current",
     "find",
     "hledej",
+    "hodnot",
+    "hodnota",
+    "jak",
+    "jaka",
+    "jaky",
     "jsou",
     "kde",
     "kolem",
     "mapa",
     "mape",
     "mapy",
+    "meren",
+    "mereni",
+    "meri",
     "moje",
     "moji",
     "najdi",
@@ -544,6 +553,7 @@ function isAiMapSearchStopword(term: string): boolean {
     "nearest",
     "nejbliz",
     "nejblizsi",
+    "nyni",
     "okoli",
     "okolo",
     "pobliz",
@@ -552,7 +562,10 @@ function isAiMapSearchStopword(term: string): boolean {
     "prosim",
     "show",
     "soucasne",
+    "ted",
     "ukaz",
+    "vysk",
+    "vyska",
     "vyhledej",
     "zobraz"
   ]).has(term);
@@ -588,8 +601,8 @@ function aiMapSearchTokenVariants(term: string): string[] {
   if (/n$/u.test(normalized)) {
     variants.add(`${normalized}o`);
   }
-  if (/^(vodomer|hydro|limnigraf|hladin|reka|river)/u.test(normalized)) {
-    ["vodomer", "hydro", "hydrological", "limnigraf", "hladin", "water", "water_level", "river", "gauge", "chmi"].forEach((value) => variants.add(value));
+  if (/^(vod|vodomer|hydro|limnigraf|hladin|reka|river|water)/u.test(normalized)) {
+    ["vod", "voda", "vodomer", "hydro", "hydrological", "limnigraf", "hladin", "water", "water_level", "river", "gauge", "chmi"].forEach((value) => variants.add(value));
   }
   if (normalized === "stan") {
     ["stanice", "station", "stations"].forEach((value) => variants.add(value));
@@ -697,7 +710,7 @@ function aiMapPlaceQueryFromQuestion(question: string): string | undefined {
   if (text.length < 3 || isAiGenericPlaceQuery(text)) {
     return undefined;
   }
-  if (/(polic|hasi|zachran|ambulanc|nemocnic|lekar|lekarn|kryt|defibrilator|sirena|vodom[eě]r|stanic|zast[aá]v|most|kamera|webcam|hladin|řek|rek|report|hl[aá][sš]en)/iu.test(text)) {
+  if (/(polic|hasi|zachran|ambulanc|nemocnic|lekar|lekarn|kryt|defibrilator|sirena|vod|vodom[eě]r|stanic|zast[aá]v|most|kamera|webcam|hladin|řek|rek|report|hl[aá][sš]en|m[eě][řr]|v[yý][sš]ka|hodnot)/iu.test(text)) {
     return undefined;
   }
   return text.slice(0, 120);
@@ -731,8 +744,14 @@ function aiMapPlaceQueryFromBody(body: Record<string, unknown>): string | undefi
 }
 
 function isAiGenericPlaceQuery(value: string): boolean {
-  const normalized = value.toLocaleLowerCase("cs-CZ");
-  return /^(cop|chatu?|skupině|skupine|místnosti|mistnosti|aplikaci|kontextu|mapě|mape)$/u.test(normalized);
+  const normalized = normalizeAiMapSearchText(value);
+  return /^(cop|chatu?|skupine|mistnosti|aplikaci|kontextu|mape|okoli|okolo|pobliz|blizko|kolem|tady|zde|moje okoli|moji polohy|me polohy|aktualni polohy|nearby|around|near me)$/u.test(normalized);
+}
+
+function aiQuestionUsesImplicitCurrentArea(question: string): boolean {
+  const normalized = normalizeAiMapSearchText(question);
+  return /\b(v okoli|okoli me|okoli moji polohy|okoli me polohy|pobliz me|pobliz moji polohy|blizko me|blizko moji polohy|kolem me|kolem moji polohy|u me|u moji polohy|moje okoli|near me|nearby|around me|current location)\b/u.test(normalized)
+    || /\bv okoli(?:\s*(?:\?|\.|!|,|;|$)|\s+(?:a|nebo|ted|nyni|moji|me|aktualni)\b)/u.test(normalized);
 }
 
 function summarizeSimSearchEntityForAi(

@@ -2521,6 +2521,101 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("uses current location for surrounding-area water-level questions instead of geocoding Okolí", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "Provider should not be called for deterministic hydro map search fallback",
+          structured: {}
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const placeGeocoder = new FakeAiMapSearchPlaceGeocoder();
+    const safetyDataSource = new FakeAiMapSearchSafetyDataSource();
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      placeGeocoder,
+      safetyDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        geoContext: {
+          currentLocation: {
+            lat: 50.12952,
+            lon: 17.36285,
+            radiusKm: 30
+          },
+          label: "Moje poloha"
+        },
+        question: "Kde se měří výška vody v okolí? a jaká je nyní hodnota?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    expect(placeGeocoder.queries).not.toContain("Okolí");
+    expect(safetyDataSource.lastFeatureQuery).toMatchObject({
+      bbox: expect.objectContaining({
+        east: expect.any(Number),
+        north: expect.any(Number),
+        south: expect.any(Number),
+        west: expect.any(Number)
+      }),
+      layers: expect.arrayContaining(["flood"]),
+      sources: expect.arrayContaining(["chmi_hydro"])
+    });
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "map-search-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    const structured = aiResponse.result.structured as Record<string, unknown>;
+    const mapSearch = structured.mapSearch as Record<string, unknown>;
+    expect(mapSearch).toMatchObject({
+      resultCount: 1,
+      query: {
+        center: {
+          lat: 50.12952,
+          lon: 17.36285,
+          radiusKm: 30
+        },
+        requested: true,
+        searchTerms: expect.arrayContaining(["vody"])
+      }
+    });
+    expect(mapSearch.query).not.toHaveProperty("placeQuery");
+    expect(mapSearch.results).toEqual([
+      expect.objectContaining({
+        category: "water_level",
+        mapFeatureId: "flood:chmi_hydro:1vnc992",
+        sourceName: "CHMI hydrological stations",
+        title: "water_level"
+      })
+    ]);
+
+    await app.close();
+  });
+
   it("runs AI chat agent questions as pollable async jobs", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {

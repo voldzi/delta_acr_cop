@@ -394,6 +394,7 @@ describe("aiQuestionNeedsCurrentLocation", () => {
   it("detects nearest/current-location questions without triggering for explicit places", () => {
     expect(aiQuestionNeedsCurrentLocation("Najdi mi nejbližší policii od mé polohy.")).toBe(true);
     expect(aiQuestionNeedsCurrentLocation("Kde je nejbližší AED?")).toBe(true);
+    expect(aiQuestionNeedsCurrentLocation("Kde se měří výška vody v okolí? a jaká je nyní hodnota?")).toBe(true);
     expect(aiQuestionNeedsCurrentLocation("Najdi policii ve Vrbně pod Pradědem.")).toBe(false);
     expect(aiQuestionNeedsCurrentLocation("Jaká je situace ve Vrbně pod Pradědem?")).toBe(false);
   });

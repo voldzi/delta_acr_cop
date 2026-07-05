@@ -7294,7 +7294,8 @@ export function aiQuestionNeedsCurrentLocation(question: string): boolean {
     .replace(/\p{Diacritic}/gu, "")
     .toLocaleLowerCase("cs-CZ");
   return /\b(nejbliz|nejblizsi|closest|nearest|near me)\b/u.test(normalized)
-    || /\b(u me|ode me|moje poloha|moji polohy|aktualni poloha|current location)\b/u.test(normalized);
+    || /\b(u me|ode me|moje poloha|moji polohy|me polohy|blizko me polohy|blizko moji polohy|aktualni poloha|current location)\b/u.test(normalized)
+    || /\b(v okoli|okoli me|okoli moji polohy|pobliz me|pobliz moji polohy|kolem me|around me|nearby)\b/u.test(normalized);
 }
 
 function geolocationErrorMessage(error: unknown): string {

@@ -1674,8 +1674,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (explicitGeo) {
       return explicitGeo;
     }
+    const usesImplicitCurrentArea = aiQuestionUsesImplicitCurrentArea(query);
     const placeQuery = aiContextPlaceFromBody(body)
-      ?? aiPlaceQueryFromQuestion(query)
+      ?? (usesImplicitCurrentArea ? undefined : aiPlaceQueryFromQuestion(query))
       ?? inferAiMapSearchIntent(query, body).placeQuery;
     if (!placeQuery || !placeGeocoder) {
       return undefined;
@@ -13368,8 +13369,24 @@ function aiPlaceQueryFromQuestion(question: string): string | undefined {
 }
 
 function isAiGenericPlaceQuery(value: string): boolean {
-  const normalized = value.toLocaleLowerCase("cs-CZ");
-  return /^(cop|chatu?|skupině|skupine|místnosti|mistnosti|aplikaci|kontextu|mapě|mape)$/u.test(normalized);
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase("cs-CZ");
+  return /^(cop|chatu?|skupine|mistnosti|aplikaci|kontextu|mape|okoli|okolo|pobliz|blizko|kolem|tady|zde|moje okoli|moji polohy|me polohy|aktualni polohy|nearby|around|near me)$/u.test(normalized);
+}
+
+function aiQuestionUsesImplicitCurrentArea(question: string): boolean {
+  const normalized = question
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase("cs-CZ");
+  return /\b(v okoli|okoli me|okoli moji polohy|okoli me polohy|pobliz me|pobliz moji polohy|blizko me|blizko moji polohy|kolem me|kolem moji polohy|u me|u moji polohy|moje okoli|near me|nearby|around me|current location)\b/u.test(normalized)
+    || /\bv okoli(?:\s*(?:\?|\.|!|,|;|$)|\s+(?:a|nebo|ted|nyni|moji|me|aktualni)\b)/u.test(normalized);
 }
 
 function aiModelPreference(value: unknown): AiModelPreference | undefined {
