@@ -115,7 +115,7 @@ import type {
   MatrixTimelineMessage,
   MatrixTransitShare
 } from "@cop/messaging/types";
-import { decodeChatCurrentLocation, decodeChatShareTransit, encodeChatCenterLocation, encodeCopMapFocusUrl } from "@cop/messaging/bridge";
+import { decodeChatCurrentLocation, decodeChatShareTransit, decodeCopMapFocusSearch, encodeChatCenterLocation, encodeCopMapFocusUrl } from "@cop/messaging/bridge";
 import { chatText } from "./i18n";
 import { Avatar } from "./components/Avatar";
 import { AiMarkdownOutput } from "./components/AiMarkdownOutput";
@@ -405,7 +405,7 @@ export function ChatApp() {
   const [aiAgentError, setAiAgentError] = React.useState<string | null>(null);
   const [aiAgentJobStatus, setAiAgentJobStatus] = React.useState<string | null>(null);
   const [aiAgentInlineStatus, setAiAgentInlineStatus] = React.useState<string | null>(null);
-  const [hostCurrentLocation, setHostCurrentLocation] = React.useState<MatrixLocationShare | null>(null);
+  const [hostCurrentLocation, setHostCurrentLocation] = React.useState<MatrixLocationShare | null>(() => initialEmbeddedHostLocation());
   const [standaloneAiLocation, setStandaloneAiLocation] = React.useState<MatrixLocationShare | null>(null);
   const [standaloneAiLocationBusy, setStandaloneAiLocationBusy] = React.useState(false);
   const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
@@ -6258,6 +6258,26 @@ export function buildAiRequestContextOptions(messages: MatrixTimelineMessage[], 
       maxAgeSeconds: 7 * 24 * 3600
     }
   };
+}
+
+function initialEmbeddedHostLocation(): MatrixLocationShare | null {
+  if (typeof window === "undefined" || window.parent === window) {
+    return null;
+  }
+  try {
+    const focus = decodeCopMapFocusSearch(window.parent.location.search);
+    if (!focus) {
+      return null;
+    }
+    return {
+      label: focus.label ?? "Střed mapy",
+      lat: focus.lat,
+      lon: focus.lon,
+      source: "map"
+    };
+  } catch {
+    return null;
+  }
 }
 
 function latestTimelineLocation(messages: MatrixTimelineMessage[]): MatrixLocationShare | undefined {
