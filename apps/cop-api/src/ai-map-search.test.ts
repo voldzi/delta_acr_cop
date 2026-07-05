@@ -272,8 +272,11 @@ describe("AI map search", () => {
         action: "focus-map",
         entityId: "security-police:vrbno",
         label: expect.stringContaining("Zobrazit na mapě"),
+        layerId: "reference.infrastructure.emergency",
         lat: 50.1187,
         lon: 17.3842,
+        sourceName: "COP reference data",
+        sourceSystemIds: ["sim.situation-data", "reference:security-police:vrbno"],
         title: "Policie ČR - Obvodní oddělení Vrbno pod Pradědem",
         zoom: 16
       })

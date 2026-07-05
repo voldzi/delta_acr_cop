@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeChatCenterLocation } from "@cop/messaging/bridge";
@@ -18,7 +18,9 @@ vi.mock("./CopMap", async () => {
       focusViewRequest,
       mapInteractionSuspended,
       objects,
-      onSelectObject
+      onSelectObject,
+      selectedSituationFeatureId,
+      situationFeatures
     }: {
       emptyMessage: string | null;
       focusView?: { center: [number, number]; zoom?: number };
@@ -26,6 +28,8 @@ vi.mock("./CopMap", async () => {
       mapInteractionSuspended?: boolean;
       objects: Array<{ objectId: string }>;
       onSelectObject?: (object: { objectId: string }) => void;
+      selectedSituationFeatureId?: string;
+      situationFeatures?: { features?: Array<{ properties?: { featureId?: string; label?: string } }> };
     }) =>
       React.createElement(
         "div",
@@ -33,22 +37,35 @@ vi.mock("./CopMap", async () => {
           "data-focus-center": focusView ? `${focusView.center[0].toFixed(5)},${focusView.center[1].toFixed(5)}` : "",
           "data-focus-view-request": String(focusViewRequest ?? 0),
           "data-map-interaction-suspended": String(Boolean(mapInteractionSuspended)),
+          "data-selected-situation-feature-id": selectedSituationFeatureId ?? "",
           "data-testid": "cop-map"
         },
         objects.length === 0 && emptyMessage
           ? React.createElement("span", null, emptyMessage)
-          : objects.map((object) =>
+          : [
+            ...objects.map((object) =>
+              React.createElement(
+                "button",
+                {
+                  "data-testid": `map-select-object-${object.objectId}`,
+                  key: object.objectId,
+                  onClick: () => onSelectObject?.(object),
+                  type: "button"
+                },
+                object.objectId
+              )
+            ),
+            ...(situationFeatures?.features ?? []).map((feature) =>
             React.createElement(
-              "button",
+              "span",
               {
-                "data-testid": `map-select-object-${object.objectId}`,
-                key: object.objectId,
-                onClick: () => onSelectObject?.(object),
-                type: "button"
+                "data-testid": `map-situation-feature-${feature.properties?.featureId ?? "feature"}`,
+                key: feature.properties?.featureId ?? feature.properties?.label ?? "feature"
               },
-              object.objectId
+              feature.properties?.label ?? feature.properties?.featureId ?? "feature"
             )
-          )
+            )
+          ]
       ),
     formatTrackLabel: (object: { attributes?: { flightData?: { callsign?: string; icao24?: string; registration?: string } }; objectId: string }) =>
       object.attributes?.flightData?.callsign
@@ -322,7 +339,7 @@ describe("COP web dashboard", () => {
 
   it("renders SIM tracks returned from COP API", async () => {
     installMatchMedia(true);
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/health/ready")) {
         return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
@@ -504,7 +521,7 @@ describe("COP web dashboard", () => {
   });
 
   it("keeps integrated chat open and focuses the map when chat sends a location", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/health/ready")) {
         return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
@@ -540,29 +557,112 @@ describe("COP web dashboard", () => {
       if (url.includes("/api/v1/cop/track-history?")) {
         return jsonResponse({ items: [] });
       }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse({
+          contractVersion: "cop-map-query-v1",
+          generatedAt: "2026-05-19T08:00:00Z",
+          query: {
+            bbox: { east: 19.1, north: 51.2, south: 48.5, west: 12 },
+            layerIds: ["reference.infrastructure.emergency"],
+            limit: 5000
+          },
+          situation: {
+            contractVersion: "cop-situation-source-v1",
+            features: [
+              {
+                geometry: { coordinates: [17.3842, 50.1187], type: "Point" },
+                id: "police-vrbno",
+                properties: {
+                  category: "police",
+                  featureId: "security-police:vrbno",
+                  label: "Policie ČR - Vrbno pod Pradědem",
+                  layer: "ground",
+                  layerId: "reference.infrastructure.emergency",
+                  providerLayerId: "ground",
+                  sourceId: "reference.infrastructure.emergency",
+                  sourceName: "SIM search-data"
+                },
+                type: "Feature"
+              }
+            ],
+            generatedAt: "2026-05-19T08:00:00Z",
+            query: {
+              bbox: { east: 19.1, north: 51.2, south: 48.5, west: 12 },
+              layers: ["ground"],
+              limit: 5000
+            },
+            source: {
+              sourceId: "situation-data-api",
+              sourceType: "PUBLIC_SITUATION_AGGREGATE"
+            },
+            sources: [],
+            summary: {
+              featureCount: 1,
+              sourceCount: 1,
+              staleFeatureCount: 0,
+              warningCount: 0
+            },
+            warnings: []
+          },
+          summary: {
+            featureCount: 1,
+            layerCount: 1,
+            warningCount: 0
+          },
+          warnings: []
+        });
+      }
       return jsonResponse({ items: [] });
-    }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
     await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/map/catalog"), expect.any(Object)));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, options]) =>
+      String(url).includes("/api/v1/map/query")
+      && typeof options === "object"
+      && options !== null
+      && "body" in options
+      && String(options.body).includes("public.weather.current")
+    )).toBe(true), { timeout: 2500 });
 
     fireEvent.click(screen.getByRole("button", { name: "Komunikace" }));
     expect(screen.getByText("Integrovaný COP Chat")).toBeTruthy();
 
-    window.dispatchEvent(new MessageEvent("message", {
-      data: encodeChatCenterLocation(50.12951, 17.36297),
-      origin: window.location.origin
-    }));
+    act(() => {
+      window.dispatchEvent(new MessageEvent("message", {
+        data: encodeChatCenterLocation(50.1187, 17.3842, {
+          category: "police",
+          featureId: "security-police:vrbno",
+          featureKind: "feature",
+          label: "Policie ČR - Vrbno pod Pradědem",
+          layerId: "reference.infrastructure.emergency",
+          sourceName: "SIM search-data",
+          sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
+          zoom: 16
+        }),
+        origin: window.location.origin
+      }));
+    });
 
     await waitFor(() => {
       expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1");
     });
-    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("17.36297,50.12951");
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("17.38420,50.11870");
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, options]) =>
+      String(url).includes("/api/v1/map/query")
+      && typeof options === "object"
+      && options !== null
+      && "body" in options
+      && String(options.body).includes("reference.infrastructure.emergency")
+    )).toBe(true), { timeout: 2500 });
+    await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-selected-situation-feature-id")).toBe("security-police:vrbno"));
     expect(screen.getByText("Integrovaný COP Chat")).toBeTruthy();
   });
 
   it("initializes the map from standalone chat COP focus URL parameters", async () => {
-    window.history.replaceState(null, "", "/?copLat=50.1187&copLon=17.3842&copZoom=16&copLabel=Policie");
+    window.history.replaceState(null, "", "/?copLat=50.1187&copLon=17.3842&copZoom=16&copLabel=Policie&copFeatureKind=feature&copFeatureId=security-police%3Avrbno&copLayerId=reference.infrastructure.emergency");
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/health/ready")) {
@@ -583,6 +683,9 @@ describe("COP web dashboard", () => {
       }
       if (url.includes("/api/v1/map/catalog")) {
         return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse(emptyMapQueryResponse(["reference.infrastructure.emergency"]));
       }
       return jsonResponse({ items: [] });
     }));
@@ -780,6 +883,7 @@ function testMapCatalogResponse(): unknown {
     groups: [
       { groupId: "risks", icon: "alert-triangle", label: "Rizika a výstrahy", order: 10 },
       { groupId: "risks.weather", icon: "cloud-sun", label: "Počasí", order: 20, parentGroupId: "risks" },
+      { groupId: "infrastructure", icon: "building-2", label: "Infrastruktura", order: 30 },
       { groupId: "flight", icon: "plane", label: "Letecký provoz", order: 50 }
     ],
     layers: [
@@ -843,6 +947,27 @@ function testMapCatalogResponse(): unknown {
         role: "primary",
         selectable: true,
         styleProfile: "weather-current-v1"
+      },
+      {
+        audience: "public",
+        defaultVisible: false,
+        geometryTypes: ["Point"],
+        groupId: "infrastructure",
+        kind: "vector_features",
+        label: "Bezpečnostní infrastruktura",
+        layerId: "reference.infrastructure.emergency",
+        query: {
+          maxFeatures: 500,
+          mode: "bbox",
+          providerId: "sim.situation-data",
+          providerLayerIds: ["ground"],
+          providerSourceIds: ["reference.infrastructure.emergency"],
+          streamId: "reference.infrastructure.emergency"
+        },
+        refreshSeconds: 3600,
+        role: "reference",
+        selectable: true,
+        styleProfile: "reference-emergency-v1"
       }
     ],
     locale: "cs-CZ",
@@ -862,6 +987,24 @@ function jsonResponse(body: unknown): Response {
     statusText: "OK",
     json: async () => body
   } as Response;
+}
+
+function emptyMapQueryResponse(layerIds: string[]): unknown {
+  return {
+    contractVersion: "cop-map-query-v1",
+    generatedAt: "2026-05-19T08:00:00Z",
+    query: {
+      bbox: { east: 19.1, north: 51.2, south: 48.5, west: 12 },
+      layerIds,
+      limit: 500
+    },
+    summary: {
+      featureCount: 0,
+      layerCount: layerIds.length,
+      warningCount: 0
+    },
+    warnings: []
+  };
 }
 
 function installMatchMedia(matches: boolean): () => void {

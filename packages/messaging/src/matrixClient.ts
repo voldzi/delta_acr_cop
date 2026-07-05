@@ -2327,6 +2327,9 @@ function sanitizeCopMapAction(value: unknown): MatrixCopMapAction | undefined {
   const distanceText = stringValue(record.distanceText)?.slice(0, 80);
   const entityId = stringValue(record.entityId)?.slice(0, 200);
   const entityType = stringValue(record.entityType)?.slice(0, 80);
+  const layerId = stringValue(record.layerId)?.slice(0, 160);
+  const sourceName = stringValue(record.sourceName)?.slice(0, 160);
+  const sourceSystemIds = stringListValue(record.sourceSystemIds, 16, 160);
   const title = stringValue(record.title)?.slice(0, 200);
   const zoom = finiteNumber(record.zoom, 3, 20);
   return {
@@ -2336,8 +2339,11 @@ function sanitizeCopMapAction(value: unknown): MatrixCopMapAction | undefined {
     ...(entityId ? { entityId } : {}),
     ...(entityType ? { entityType } : {}),
     label: stringValue(record.label)?.slice(0, 240) ?? title ?? "Zobrazit na mapě",
+    ...(layerId ? { layerId } : {}),
     lat,
     lon,
+    ...(sourceName ? { sourceName } : {}),
+    ...(sourceSystemIds.length > 0 ? { sourceSystemIds } : {}),
     ...(title ? { title } : {}),
     ...(zoom !== undefined ? { zoom } : {})
   };
@@ -2487,6 +2493,16 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function stringListValue(value: unknown, maxItems: number, maxLength: number): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(new Set(value.flatMap((item) => {
+    const normalized = stringValue(item)?.slice(0, maxLength);
+    return normalized ? [normalized] : [];
+  }))).slice(0, maxItems);
 }
 
 function nonNegativeInteger(value: unknown, min: number, max: number): number | undefined {

@@ -718,6 +718,7 @@ export function App() {
   const [mapBounds, setMapBounds] = React.useState<MapBounds>(defaultMapBounds);
   const [focusViewRequest, setFocusViewRequest] = React.useState(0);
   const [mapCatalog, setMapCatalog] = React.useState<MapCatalogResponse | null>(null);
+  const mapCatalogRef = React.useRef<MapCatalogResponse | null>(null);
   const [situationLayers, setSituationLayers] = React.useState<SituationLayer[]>([]);
   const [situationSources, setSituationSources] = React.useState<SituationSourceDescriptor[]>([]);
   const [visibleSituationLayerIds, setVisibleSituationLayerIds] = React.useState<SituationLayerId[]>(() =>
@@ -812,12 +813,18 @@ export function App() {
   const messagingSelectionNonceRef = React.useRef(0);
   const messagingTransitShareNonceRef = React.useRef(0);
   const initialMapFeatureFocusRef = React.useRef(initialMapFocus);
+  const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [webPushBusy, setWebPushBusy] = React.useState(false);
   const [incidentSuggestions, setIncidentSuggestions] = React.useState<IncidentFusionSuggestion[]>([]);
   const [incidents, setIncidents] = React.useState<IncidentRecord[]>([]);
   const [incidentTasksById, setIncidentTasksById] = React.useState<Record<string, IncidentTaskRecord[]>>({});
   const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null);
+  const [pendingMapFocusNonce, setPendingMapFocusNonce] = React.useState(0);
+
+  React.useEffect(() => {
+    mapCatalogRef.current = mapCatalog;
+  }, [mapCatalog]);
 
   React.useEffect(() => {
     const applyUnread = (value: unknown) => applyChatUnreadPayload(value, setMessagingUnreadCount);
@@ -846,7 +853,19 @@ export function App() {
           zoom: center.zoom ?? Math.max(current?.zoom ?? 0, 15)
         }));
         if (center.featureKind === "feature" && center.featureId) {
-          setSelectedSituationFeatureId(center.featureId);
+          initialMapFeatureFocusRef.current = center;
+          setPendingMapFocusNonce((current) => current + 1);
+          const catalog = mapCatalogRef.current;
+          const layerIds = catalog ? catalogLayerIdsForMapFocus(catalog, center) : [];
+          if (layerIds.length > 0) {
+            catalogSelectionInitializedRef.current = true;
+            setVisibleCatalogLayerIds((current) => normalizeCatalogLayerIds([...current, ...layerIds]));
+            const firstLayer = catalog?.layers.find((layer) => layerIds.includes(layer.layerId));
+            if (firstLayer) {
+              setActiveCatalogGroupId(firstLayer.groupId);
+            }
+          }
+          setSelectedSituationFeatureId(null);
           setSelectedSituationFeatureStableKey(null);
           setSelectedObjectId(null);
           setSelectedSketchDrawingId(null);
@@ -909,7 +928,6 @@ export function App() {
   const [incidentWorkflowStatus, setIncidentWorkflowStatus] = React.useState<string | null>(null);
   const [aiResult, setAiResult] = React.useState("AI asistent je připraven zkontrolovat kvalitu zobrazených dat.");
   const loadInFlightRef = React.useRef(false);
-  const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
   const situationFeatureRequestRef = React.useRef<StableFeatureRequest | null>(null);
   const profileHydratedRef = React.useRef(false);
   const profileLoadKeyRef = React.useRef<string | null>(null);
@@ -925,6 +943,26 @@ export function App() {
   const mobilePairCodeFromPath = React.useMemo(readMobilePairCodeFromLocation, []);
   const messagingAuthenticated = authenticatedSessionActive;
   const authSubjectId = subjectIdFromAuthSession(authSession);
+
+  React.useEffect(() => {
+    const focus = initialMapFeatureFocusRef.current;
+    if (!mapCatalog || focus?.featureKind !== "feature") {
+      return;
+    }
+    const layerIds = catalogLayerIdsForMapFocus(mapCatalog, focus);
+    if (layerIds.length === 0) {
+      return;
+    }
+    catalogSelectionInitializedRef.current = true;
+    setVisibleCatalogLayerIds((current) => {
+      const next = normalizeCatalogLayerIds([...current, ...layerIds]);
+      return next.length === current.length && next.every((layerId, index) => layerId === current[index]) ? current : next;
+    });
+    const firstLayer = mapCatalog.layers.find((layer) => layerIds.includes(layer.layerId));
+    if (firstLayer) {
+      setActiveCatalogGroupId(firstLayer.groupId);
+    }
+  }, [mapCatalog, pendingMapFocusNonce]);
 
   React.useEffect(() => {
     if (!authenticatedSessionActive || !authToken || messagingOpen) {
@@ -3053,9 +3091,12 @@ export function App() {
     if (!focus?.featureId) {
       return;
     }
-    if (focus.featureKind === "feature" && findSelectedSituationFeature(combinedSituationFeatures, focus.featureId, null)) {
-      setSelectedSituationFeatureId(focus.featureId);
-      setSelectedSituationFeatureStableKey(null);
+    const focusedFeature = focus.featureKind === "feature"
+      ? findSituationFeatureForMapFocus(combinedSituationFeatures, focus)
+      : null;
+    if (focusedFeature) {
+      setSelectedSituationFeatureId(focusedFeature.properties.featureId);
+      setSelectedSituationFeatureStableKey(stableSituationFeatureSelectionKey(focusedFeature));
       setSelectedObjectId(null);
       initialMapFeatureFocusRef.current = null;
       return;
@@ -17833,6 +17874,146 @@ function stableSituationFeatureSelectionKey(feature: SituationFeature | null | u
     return null;
   }
   return transportSelectionKey(feature) ?? null;
+}
+
+function catalogLayerIdsForMapFocus(catalog: MapCatalogResponse, focus: ChatCenterLocationMessage): string[] {
+  const identifiers = new Set([
+    focus.layerId,
+    ...(focus.sourceSystemIds ?? [])
+  ].flatMap((value) => normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []));
+  const category = normalizedMapFocusToken(focus.category);
+  const label = normalizedMapFocusToken(focus.label);
+  const sourceName = normalizedMapFocusToken(focus.sourceName);
+  const directMatches = selectableCatalogLayers(catalog)
+    .filter((layer) => {
+      const layerTokens = catalogLayerMapFocusTokens(layer);
+      return Array.from(identifiers).some((identifier) => layerTokens.has(identifier));
+    })
+    .map((layer) => layer.layerId);
+  if (directMatches.length > 0) {
+    return normalizeCatalogLayerIds(directMatches);
+  }
+  const fuzzyMatches = selectableCatalogLayers(catalog)
+    .filter((layer) => {
+      const haystack = catalogLayerMapFocusHaystack(layer);
+      return Boolean(
+        (category && haystack.includes(category))
+        || (sourceName && haystack.includes(sourceName))
+        || (label && label.length >= 4 && haystack.includes(label))
+      );
+    })
+    .map((layer) => layer.layerId);
+  return normalizeCatalogLayerIds(fuzzyMatches);
+}
+
+function catalogLayerMapFocusTokens(layer: MapCatalogLayer): Set<string> {
+  return new Set([
+    layer.layerId,
+    ...(layer.query.providerLayerIds ?? []),
+    ...(layer.query.providerSourceIds ?? []),
+    ...(layer.provenance?.sourceIds ?? []),
+    layer.query.providerId,
+    layer.query.streamId
+  ].flatMap((value) => normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []));
+}
+
+function catalogLayerMapFocusHaystack(layer: MapCatalogLayer): string {
+  return [
+    layer.layerId,
+    layer.label,
+    layer.description,
+    layer.groupId,
+    layer.query.providerId,
+    layer.query.streamId,
+    ...(layer.query.categoryIds ?? []),
+    ...(layer.query.providerLayerIds ?? []),
+    ...(layer.query.providerSourceIds ?? []),
+    ...(layer.provenance?.sourceIds ?? [])
+  ].flatMap((value) => normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []).join(" ");
+}
+
+function findSituationFeatureForMapFocus(
+  collection: SituationFeatureCollectionResponse | null,
+  focus: ChatCenterLocationMessage
+): SituationFeature | null {
+  if (!collection) {
+    return null;
+  }
+  const focusIdentifiers = new Set([
+    focus.featureId
+  ].flatMap((value) => normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []));
+  const direct = collection.features.find((feature) =>
+    situationFeatureMapFocusIdentifiers(feature).some((identifier) => focusIdentifiers.has(identifier))
+  );
+  if (direct) {
+    return direct;
+  }
+  const focusLocation = { lat: focus.lat, lon: focus.lon };
+  const focusCategory = normalizedMapFocusToken(focus.category);
+  const focusLayer = normalizedMapFocusToken(focus.layerId);
+  const focusLabel = normalizedMapFocusToken(focus.label);
+  return collection.features
+    .map((feature) => {
+      const featureLocation = situationFeaturePointLocation(feature);
+      if (!featureLocation) {
+        return null;
+      }
+      const distanceKm = distanceBetweenKm(focusLocation, featureLocation);
+      if (distanceKm > 10) {
+        return null;
+      }
+      const tokens = new Set(situationFeatureMapFocusIdentifiers(feature));
+      const label = normalizedMapFocusToken(feature.properties.label);
+      const titleMatch = Boolean(focusLabel && label && (label.includes(focusLabel) || focusLabel.includes(label)));
+      const layerMatch = Boolean(focusLayer && tokens.has(focusLayer));
+      const categoryMatch = Boolean(focusCategory && tokens.has(focusCategory));
+      if (!titleMatch && !layerMatch && !categoryMatch) {
+        return null;
+      }
+      return { distanceKm, feature, score: (titleMatch ? 3 : 0) + (layerMatch ? 2 : 0) + (categoryMatch ? 1 : 0) };
+    })
+    .filter((item): item is { distanceKm: number; feature: SituationFeature; score: number } => item !== null)
+    .sort((a, b) => b.score - a.score || a.distanceKm - b.distanceKm)[0]?.feature ?? null;
+}
+
+function situationFeatureMapFocusIdentifiers(feature: SituationFeature): string[] {
+  const properties = feature.properties;
+  return [
+    properties.featureId,
+    typeof feature.id === "string" || typeof feature.id === "number" ? String(feature.id) : undefined,
+    properties.reportId,
+    properties.stationId,
+    properties.sourceId,
+    properties.sourceSystem,
+    properties.sourceName,
+    properties.layer,
+    properties.layerId,
+    properties.providerId,
+    properties.providerLayerId,
+    properties.category,
+    properties.typeCode,
+    recordString(properties.providerProperties, "providerEntityId"),
+    recordString(properties.providerProperties, "entityId"),
+    recordString(properties.providerProperties, "sourceEntityId")
+  ].flatMap((value) => normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []);
+}
+
+function situationFeaturePointLocation(feature: SituationFeature): { lat: number; lon: number } | null {
+  return feature.geometry.type === "Point"
+    ? { lat: feature.geometry.coordinates[1], lon: feature.geometry.coordinates[0] }
+    : null;
+}
+
+function normalizedMapFocusToken(value: unknown): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return undefined;
+  }
+  const normalized = String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .trim()
+    .toLocaleLowerCase("cs-CZ");
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 function findSelectedSituationFeature(

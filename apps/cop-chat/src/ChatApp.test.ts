@@ -146,8 +146,11 @@ describe("aiMapActionsFromResponse", () => {
               action: "focus-map",
               entityId: "security-police:vrbno",
               label: "Zobrazit na mapě: Policie",
+              layerId: "reference.infrastructure.emergency",
               lat: 50.1187,
               lon: 17.3842,
+              sourceName: "SIM search-data",
+              sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
               title: "Policie"
             },
             {
@@ -164,8 +167,11 @@ describe("aiMapActionsFromResponse", () => {
         action: "focus-map",
         entityId: "security-police:vrbno",
         label: "Zobrazit na mapě: Policie",
+        layerId: "reference.infrastructure.emergency",
         lat: 50.1187,
         lon: 17.3842,
+        sourceName: "SIM search-data",
+        sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
         title: "Policie"
       })
     ]);
@@ -185,7 +191,10 @@ describe("aiMapActionsFromResponse", () => {
                   lat: 50.1187,
                   lon: 17.3842
                 },
+                layerId: "reference.infrastructure.emergency",
                 mapFeatureId: "security-police:vrbno",
+                sourceName: "SIM search-data",
+                sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
                 title: "Policie ČR - Vrbno pod Pradědem",
                 type: "mapFeature"
               }
@@ -198,8 +207,11 @@ describe("aiMapActionsFromResponse", () => {
         action: "focus-map",
         entityId: "security-police:vrbno",
         label: "Zobrazit na mapě: Policie ČR - Vrbno pod Pradědem (1.2 km)",
+        layerId: "reference.infrastructure.emergency",
         lat: 50.1187,
         lon: 17.3842,
+        sourceName: "SIM search-data",
+        sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
         title: "Policie ČR - Vrbno pod Pradědem",
         zoom: 16
       })

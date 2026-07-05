@@ -395,8 +395,11 @@ describe("Matrix client diagnostics", () => {
             entityId: "place:nominatim:183697209",
             entityType: "place",
             label: "Zobrazit na mapě: Policie ČR - Vrbno pod Pradědem (1.8 km)",
+            layerId: "reference.infrastructure.emergency",
             lat: 50.12076,
             lon: 17.38413,
+            sourceName: "SIM search-data",
+            sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
             title: "Policie ČR - Vrbno pod Pradědem",
             zoom: 16
           }],
@@ -433,8 +436,11 @@ describe("Matrix client diagnostics", () => {
             entityId: "place:nominatim:183697209",
             entityType: "place",
             label: "Zobrazit na mapě: Policie ČR - Vrbno pod Pradědem (1.8 km)",
+            layerId: "reference.infrastructure.emergency",
             lat: 50.12076,
             lon: 17.38413,
+            sourceName: "SIM search-data",
+            sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
             title: "Policie ČR - Vrbno pod Pradědem",
             zoom: 16
           }],

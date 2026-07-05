@@ -128,18 +128,26 @@ describe("center-location (chat -> web)", () => {
 
   it("round-trips optional map focus metadata", () => {
     const payload = encodeChatCenterLocation(50.1187, 17.3842, {
+      category: " police ",
       featureId: " security-police:vrbno ",
       featureKind: "feature",
       label: " Policie ČR - Vrbno ",
+      layerId: " reference.infrastructure.emergency ",
+      sourceName: " SIM search-data ",
+      sourceSystemIds: [" sim.search-data ", "reference.infrastructure.emergency", ""],
       zoom: 16
     });
 
     expect(payload).toEqual({
+      category: "police",
       featureId: "security-police:vrbno",
       featureKind: "feature",
       label: "Policie ČR - Vrbno",
+      layerId: "reference.infrastructure.emergency",
       lat: 50.1187,
       lon: 17.3842,
+      sourceName: "SIM search-data",
+      sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
       type: "cop-chat:center-location",
       zoom: 16
     });
@@ -154,15 +162,20 @@ describe("center-location (chat -> web)", () => {
 
   it("encodes and decodes COP map focus URLs for standalone chat", () => {
     const focus = encodeChatCenterLocation(50.1187, 17.3842, {
+      category: "police",
       featureId: "security-police:vrbno",
       featureKind: "feature",
       label: "Policie ČR - Vrbno",
+      layerId: "reference.infrastructure.emergency",
+      sourceName: "SIM search-data",
+      sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
       zoom: 16
     });
     const url = encodeCopMapFocusUrl("https://cop.zeleznalady.cz/", focus);
 
     expect(url).toContain("copLat=50.1187");
     expect(url).toContain("copLon=17.3842");
+    expect(url).toContain("copLayerId=reference.infrastructure.emergency");
     expect(decodeCopMapFocusSearch(new URL(url).search)).toEqual(focus);
   });
 });

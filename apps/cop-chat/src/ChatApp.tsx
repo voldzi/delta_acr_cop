@@ -4431,9 +4431,13 @@ function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
           onClick={(event) => {
             event.stopPropagation();
             const focus = encodeChatCenterLocation(action.lat, action.lon, {
+              category: action.category,
               featureId: action.entityId,
               featureKind: chatCenterFeatureKindFromAiAction(action),
               label: action.title ?? action.label,
+              layerId: action.layerId,
+              sourceName: action.sourceName,
+              sourceSystemIds: action.sourceSystemIds,
               zoom: action.zoom
             });
             if (window.parent !== window && new URLSearchParams(window.location.search).get("embedded") === "1") {
@@ -6418,6 +6422,9 @@ function normalizeAiMapAction(value: unknown): MatrixCopMapAction | undefined {
   const distanceText = optionalAiText(raw.distanceText);
   const entityId = optionalAiText(raw.entityId);
   const entityType = optionalAiText(raw.entityType);
+  const layerId = optionalAiText(raw.layerId);
+  const sourceName = optionalAiText(raw.sourceName);
+  const sourceSystemIds = optionalAiTextList(raw.sourceSystemIds);
   const title = optionalAiText(raw.title);
   const zoom = finiteCoordinate(raw.zoom, 3, 20);
   return {
@@ -6427,8 +6434,11 @@ function normalizeAiMapAction(value: unknown): MatrixCopMapAction | undefined {
     ...(entityId ? { entityId } : {}),
     ...(entityType ? { entityType } : {}),
     label: optionalAiText(raw.label) ?? title ?? "Zobrazit na mapě",
+    ...(layerId ? { layerId } : {}),
     lat,
     lon,
+    ...(sourceName ? { sourceName } : {}),
+    ...(sourceSystemIds.length > 0 ? { sourceSystemIds } : {}),
     ...(title ? { title } : {}),
     ...(zoom ? { zoom } : {})
   };
@@ -6446,6 +6456,9 @@ function aiMapActionFromResult(result: Record<string, unknown>): MatrixCopMapAct
   const distanceText = optionalAiText(result.distanceText);
   const entityId = optionalAiText(result.mapFeatureId);
   const entityType = optionalAiText(result.type);
+  const layerId = optionalAiText(result.layerId);
+  const sourceName = optionalAiText(result.sourceName);
+  const sourceSystemIds = optionalAiTextList(result.sourceSystemIds);
   const labelBase = title ?? category ?? "mapový výsledek";
   return {
     action: "focus-map",
@@ -6454,8 +6467,11 @@ function aiMapActionFromResult(result: Record<string, unknown>): MatrixCopMapAct
     ...(entityId ? { entityId } : {}),
     ...(entityType ? { entityType } : {}),
     label: distanceText ? `Zobrazit na mapě: ${labelBase} (${distanceText})` : `Zobrazit na mapě: ${labelBase}`,
+    ...(layerId ? { layerId } : {}),
     lat,
     lon,
+    ...(sourceName ? { sourceName } : {}),
+    ...(sourceSystemIds.length > 0 ? { sourceSystemIds } : {}),
     ...(title ? { title } : {}),
     zoom: 16
   };
@@ -6471,6 +6487,16 @@ function finiteCoordinate(value: unknown, min: number, max: number): number | un
 
 function optionalAiText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim().slice(0, 160) : undefined;
+}
+
+function optionalAiTextList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(new Set(value.flatMap((item) => {
+    const normalized = optionalAiText(item);
+    return normalized ? [normalized] : [];
+  }))).slice(0, 16);
 }
 
 function aiResponseEvidenceMetadata(response: AiCopResponse | null): {

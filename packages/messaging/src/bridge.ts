@@ -25,11 +25,15 @@ export interface ChatUnreadMessage {
 }
 
 export interface ChatCenterLocationMessage {
+  category?: string;
   featureId?: string;
   featureKind?: "feature" | "place" | "track";
   label?: string;
+  layerId?: string;
   lat: number;
   lon: number;
+  sourceName?: string;
+  sourceSystemIds?: string[];
   type: typeof chatBridgeMessageTypes.centerLocation;
   zoom?: number;
 }
@@ -49,11 +53,15 @@ export interface ChatCurrentLocationMessage {
 }
 
 export const copMapFocusSearchParams = {
+  category: "copCategory",
   featureId: "copFeatureId",
   featureKind: "copFeatureKind",
   label: "copLabel",
+  layerId: "copLayerId",
   lat: "copLat",
   lon: "copLon",
+  sourceName: "copSourceName",
+  sourceSystemIds: "copSourceSystemIds",
   zoom: "copZoom"
 } as const;
 
@@ -112,18 +120,26 @@ export function encodeChatCenterLocation(
   lat: number,
   lon: number,
   options: {
+    category?: string;
     featureId?: string;
     featureKind?: ChatCenterLocationMessage["featureKind"];
     label?: string;
+    layerId?: string;
+    sourceName?: string;
+    sourceSystemIds?: string[];
     zoom?: number;
   } = {}
 ): ChatCenterLocationMessage {
   return compactRecord({
+    category: normalizeBridgeText(options.category, 120),
     featureId: normalizeBridgeText(options.featureId, 160),
     featureKind: normalizeCenterFeatureKind(options.featureKind),
     label: normalizeBridgeText(options.label, 180),
+    layerId: normalizeBridgeText(options.layerId, 160),
     lat,
     lon,
+    sourceName: normalizeBridgeText(options.sourceName, 160),
+    sourceSystemIds: normalizeBridgeTextList(options.sourceSystemIds, 160, 16),
     type: chatBridgeMessageTypes.centerLocation,
     zoom: normalizeCenterZoom(options.zoom)
   }) as ChatCenterLocationMessage;
@@ -142,11 +158,15 @@ export function decodeChatCenterLocation(value: unknown): ChatCenterLocationMess
     return null;
   }
   return compactRecord({
+    category: normalizeBridgeText(data.category, 120),
     featureId: normalizeBridgeText(data.featureId, 160),
     featureKind: normalizeCenterFeatureKind(data.featureKind),
     label: normalizeBridgeText(data.label, 180),
+    layerId: normalizeBridgeText(data.layerId, 160),
     lat: data.lat,
     lon: data.lon,
+    sourceName: normalizeBridgeText(data.sourceName, 160),
+    sourceSystemIds: normalizeBridgeTextList(data.sourceSystemIds, 160, 16),
     type: chatBridgeMessageTypes.centerLocation,
     zoom: normalizeCenterZoom(data.zoom)
   }) as ChatCenterLocationMessage;
@@ -163,6 +183,9 @@ export function encodeCopMapFocusUrl(baseUrl: string | URL, focus: ChatCenterLoc
   if (normalized.zoom !== undefined) {
     url.searchParams.set(copMapFocusSearchParams.zoom, String(normalized.zoom));
   }
+  if (normalized.category) {
+    url.searchParams.set(copMapFocusSearchParams.category, normalized.category);
+  }
   if (normalized.featureId) {
     url.searchParams.set(copMapFocusSearchParams.featureId, normalized.featureId);
   }
@@ -171,6 +194,15 @@ export function encodeCopMapFocusUrl(baseUrl: string | URL, focus: ChatCenterLoc
   }
   if (normalized.label) {
     url.searchParams.set(copMapFocusSearchParams.label, normalized.label);
+  }
+  if (normalized.layerId) {
+    url.searchParams.set(copMapFocusSearchParams.layerId, normalized.layerId);
+  }
+  if (normalized.sourceName) {
+    url.searchParams.set(copMapFocusSearchParams.sourceName, normalized.sourceName);
+  }
+  if (normalized.sourceSystemIds?.length) {
+    url.searchParams.set(copMapFocusSearchParams.sourceSystemIds, normalized.sourceSystemIds.join(","));
   }
   return url.toString();
 }
@@ -182,11 +214,15 @@ export function decodeCopMapFocusSearch(search: string | URLSearchParams): ChatC
   const lat = Number(params.get(copMapFocusSearchParams.lat));
   const lon = Number(params.get(copMapFocusSearchParams.lon));
   return decodeChatCenterLocation({
+    category: params.get(copMapFocusSearchParams.category) ?? undefined,
     featureId: params.get(copMapFocusSearchParams.featureId) ?? undefined,
     featureKind: params.get(copMapFocusSearchParams.featureKind) ?? undefined,
     label: params.get(copMapFocusSearchParams.label) ?? undefined,
+    layerId: params.get(copMapFocusSearchParams.layerId) ?? undefined,
     lat,
     lon,
+    sourceName: params.get(copMapFocusSearchParams.sourceName) ?? undefined,
+    sourceSystemIds: params.get(copMapFocusSearchParams.sourceSystemIds)?.split(",") ?? undefined,
     type: chatBridgeMessageTypes.centerLocation,
     zoom: params.has(copMapFocusSearchParams.zoom) ? Number(params.get(copMapFocusSearchParams.zoom)) : undefined
   });
@@ -298,6 +334,17 @@ function normalizeCenterZoom(value: unknown): number | undefined {
 
 function normalizeBridgeText(value: unknown, maxLength: number): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim().slice(0, maxLength) : undefined;
+}
+
+function normalizeBridgeTextList(value: unknown, maxLength: number, maxItems: number): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const values = Array.from(new Set(value.flatMap((item) => {
+    const normalized = normalizeBridgeText(item, maxLength);
+    return normalized ? [normalized] : [];
+  }))).slice(0, maxItems);
+  return values.length > 0 ? values : undefined;
 }
 
 function compactRecord<T extends Record<string, unknown>>(value: T): Partial<T> {

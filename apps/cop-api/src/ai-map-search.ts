@@ -24,8 +24,11 @@ export interface AiMapAction {
   entityId?: string;
   entityType?: string;
   label: string;
+  layerId?: string;
   lat: number;
   lon: number;
+  sourceName?: string;
+  sourceSystemIds?: string[];
   title?: string;
   zoom?: number;
 }
@@ -463,6 +466,9 @@ function aiMapActionFromResult(result: Record<string, unknown>): AiMapAction | u
   const distanceText = optionalText(result.distanceText);
   const entityId = optionalText(result.mapFeatureId);
   const entityType = optionalText(result.type);
+  const layerId = optionalText(result.layerId);
+  const sourceName = optionalText(result.sourceName);
+  const sourceSystemIds = optionalTextList(result.sourceSystemIds, 16);
   const labelBase = title ?? category ?? "mapový výsledek";
   const label = distanceText
     ? `Zobrazit na mapě: ${labelBase} (${distanceText})`
@@ -474,8 +480,11 @@ function aiMapActionFromResult(result: Record<string, unknown>): AiMapAction | u
     ...(entityId ? { entityId } : {}),
     ...(entityType ? { entityType } : {}),
     label,
+    ...(layerId ? { layerId } : {}),
     lat: location.lat,
     lon: location.lon,
+    ...(sourceName ? { sourceName } : {}),
+    ...(sourceSystemIds.length > 0 ? { sourceSystemIds } : {}),
     ...(title ? { title } : {}),
     zoom: 16
   };
@@ -1042,6 +1051,16 @@ function optionalTrimmedString(value: unknown, maxLength: number): string | unde
 
 function optionalText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function optionalTextList(value: unknown, maxItems: number): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(new Set(value.flatMap((item) => {
+    const normalized = optionalText(item);
+    return normalized ? [normalized] : [];
+  }))).slice(0, maxItems);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -122,8 +122,11 @@ export interface MatrixCopMapAction {
   entityId?: string;
   entityType?: string;
   label: string;
+  layerId?: string;
   lat: number;
   lon: number;
+  sourceName?: string;
+  sourceSystemIds?: string[];
   title?: string;
   zoom?: number;
 }
