@@ -1859,6 +1859,8 @@ export interface PlaceGeocodeResponse {
   items: PlaceGeocodeResult[];
   providerId: string;
   query: {
+    bbox?: MapBounds;
+    bounded?: boolean;
     language: string;
     limit: number;
     q: string;
@@ -3033,12 +3035,18 @@ export async function fetchPlaceGeocode(
   apiBase: string,
   token: string | undefined,
   query: string,
-  options: { language?: string; limit?: number } = {}
+  options: { bbox?: MapBounds; bounded?: boolean; language?: string; limit?: number } = {}
 ): Promise<PlaceGeocodeResponse> {
   const params = new URLSearchParams({
     q: query,
     limit: String(options.limit ?? 5)
   });
+  if (options.bbox) {
+    params.set("bbox", [options.bbox.west, options.bbox.south, options.bbox.east, options.bbox.north].join(","));
+  }
+  if (options.bounded) {
+    params.set("bounded", "1");
+  }
   if (options.language) {
     params.set("language", options.language);
   }

@@ -102,7 +102,12 @@ map result, COP may answer deterministically from `mapSearch` without waiting
 for the LLM provider, so the chat cannot contradict the authoritative map tool
 by claiming that no result was found. If SIM search-data is unavailable, COP
 keeps using the existing catalog/query and geocoder fallbacks and records the
-SIM search failure in audit and Source Health.
+SIM search failure in audit and Source Health. When the client supplies an
+explicit `geoContext.currentLocation` or bbox and catalog/SIM search returns no
+matching result, COP also runs a bounded geocoder fallback for known emergency
+categories. If that fallback is empty too, the deterministic answer must state
+that the supplied location or area was searched; it must not claim that the
+assistant has no access to the user's location.
 
 Both endpoints echo a bounded, client-safe evidence summary in
 `result.structured.evidence`. The summary contains citation lists from

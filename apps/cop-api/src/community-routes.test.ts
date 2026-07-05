@@ -2167,6 +2167,102 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("uses bounded geocoder fallback for nearest police when COP map layers are empty", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "Provider should not be called for deterministic map search fallback",
+          structured: {}
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const placeGeocoder = new FakeAiMapSearchPlaceGeocoder();
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      placeGeocoder
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        geoContext: {
+          currentLocation: {
+            lat: 50.12952,
+            lon: 17.36285,
+            radiusKm: 30
+          },
+          label: "Moje poloha"
+        },
+        question: "Najdi nejbližší policejní stanici blízko mé polohy."
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    expect(placeGeocoder.searchRequests[0]).toMatchObject({
+      bounded: true,
+      query: "police"
+    });
+    expect(placeGeocoder.searchRequests[0]?.bbox).toEqual(expect.objectContaining({
+      east: expect.any(Number),
+      north: expect.any(Number),
+      south: expect.any(Number),
+      west: expect.any(Number)
+    }));
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "map-search-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("Policie ČR Obvodní oddělení Vrbno pod Pradědem");
+    expect(aiResponse.result.summary).not.toContain("potřebuje aktuální polohu");
+    const structured = aiResponse.result.structured as Record<string, unknown>;
+    const mapSearch = structured.mapSearch as Record<string, unknown>;
+    expect(mapSearch).toMatchObject({
+      resultCount: 1,
+      toolCall: {
+        matchedFeatureCount: 1,
+        status: "degraded",
+        toolId: "cop.map.query.search"
+      }
+    });
+    expect(mapSearch.results).toEqual([
+      expect.objectContaining({
+        category: "police",
+        mapFeatureId: "place:fake-place-geocoder:place:police-vrbno",
+        sourceName: "fake-place-geocoder bounded search",
+        title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
+      })
+    ]);
+    expect(structured.mapActions).toEqual([
+      expect.objectContaining({
+        action: "focus-map",
+        entityId: "place:fake-place-geocoder:place:police-vrbno",
+        title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
+      })
+    ]);
+
+    await app.close();
+  });
+
   it("uses SIM search-data as the first AI map-search source for nearest object questions", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
@@ -2783,10 +2879,13 @@ class FakeAiMapSearchSafetyDataSource implements SafetyDataSource {
 class FakeAiMapSearchPlaceGeocoder implements PlaceGeocoder {
   readonly providerId = "fake-place-geocoder";
   readonly queries: string[] = [];
+  readonly searchRequests: PlaceGeocodeQuery[] = [];
 
   async search(query: PlaceGeocodeQuery, now: Date): Promise<PlaceGeocodeResponse> {
     this.queries.push(query.query);
+    this.searchRequests.push(query);
     const matched = query.query === "Vrbno pod Pradědem";
+    const policeMatched = ["police", "Policie ČR", "policie", "police station"].includes(query.query) && query.bounded === true && Boolean(query.bbox);
     return {
       cache: {
         key: query.query,
@@ -2794,7 +2893,17 @@ class FakeAiMapSearchPlaceGeocoder implements PlaceGeocoder {
         ttlSeconds: 60
       },
       contractVersion: "cop-geocode-v1",
-      items: matched
+      items: policeMatched
+        ? [{
+            center: [17.3832, 50.1209],
+            displayName: "Policie ČR Obvodní oddělení Vrbno pod Pradědem",
+            id: "place:police-vrbno",
+            kind: "police",
+            providerId: this.providerId,
+            subtitle: "amenity · police",
+            zoomHint: 16
+          }]
+        : matched
         ? [{
             bbox: {
               east: 17.45,
@@ -2811,6 +2920,8 @@ class FakeAiMapSearchPlaceGeocoder implements PlaceGeocoder {
         : [],
       providerId: this.providerId,
       query: {
+        ...(query.bbox ? { bbox: query.bbox } : {}),
+        ...(query.bounded ? { bounded: query.bounded } : {}),
         language: query.language ?? "cs",
         limit: query.limit ?? 1,
         q: query.query

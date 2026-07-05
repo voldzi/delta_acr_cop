@@ -4,15 +4,16 @@ import type { PlaceGeocodeQuery, PlaceGeocodeResponse, PlaceGeocoder } from "./p
 
 describe("place geocoder routes", () => {
   it("returns place search results through the COP API", async () => {
+    const geocoder = new FakePlaceGeocoder();
     const app = buildServer({
       now: () => new Date("2026-05-23T08:00:00Z"),
-      placeGeocoder: new FakePlaceGeocoder()
+      placeGeocoder: geocoder
     });
 
     const response = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
       method: "GET",
-      url: "/api/v1/geocode/search?q=Kyjev&limit=3"
+      url: "/api/v1/geocode/search?q=Kyjev&limit=3&bbox=13.5,49.5,15.5,50.5&bounded=1"
     });
 
     expect(response.statusCode).toBe(200);
@@ -28,9 +29,26 @@ describe("place geocoder routes", () => {
         }
       ],
       query: {
+        bbox: {
+          east: 15.5,
+          north: 50.5,
+          south: 49.5,
+          west: 13.5
+        },
+        bounded: true,
         limit: 3,
         q: "Kyjev"
       }
+    });
+    expect(geocoder.lastQuery).toMatchObject({
+      bbox: {
+        east: 15.5,
+        north: 50.5,
+        south: 49.5,
+        west: 13.5
+      },
+      bounded: true,
+      query: "Kyjev"
     });
 
     await app.close();
@@ -39,8 +57,10 @@ describe("place geocoder routes", () => {
 
 class FakePlaceGeocoder implements PlaceGeocoder {
   readonly providerId = "test-geocoder";
+  lastQuery: PlaceGeocodeQuery | null = null;
 
   async search(query: PlaceGeocodeQuery, now: Date): Promise<PlaceGeocodeResponse> {
+    this.lastQuery = query;
     return {
       cache: {
         key: query.query,
@@ -59,6 +79,8 @@ class FakePlaceGeocoder implements PlaceGeocoder {
       }],
       providerId: this.providerId,
       query: {
+        ...(query.bbox ? { bbox: query.bbox } : {}),
+        ...(query.bounded ? { bounded: query.bounded } : {}),
         language: query.language ?? "cs,en",
         limit: query.limit ?? 5,
         q: query.query

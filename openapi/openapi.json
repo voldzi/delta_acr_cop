@@ -1044,6 +1044,26 @@
               "maximum": 8,
               "default": 5
             }
+          },
+          {
+            "name": "bbox",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^-?\\d+(?:\\.\\d+)?,-?\\d+(?:\\.\\d+)?,-?\\d+(?:\\.\\d+)?,-?\\d+(?:\\.\\d+)?$"
+            },
+            "description": "Optional search viewbox as west,south,east,north in WGS84."
+          },
+          {
+            "name": "bounded",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "When true and bbox is supplied, restricts provider results to the supplied viewbox."
           }
         ],
         "responses": {
@@ -9061,6 +9081,32 @@
               "q"
             ],
             "properties": {
+              "bbox": {
+                "type": "object",
+                "required": [
+                  "east",
+                  "north",
+                  "south",
+                  "west"
+                ],
+                "properties": {
+                  "east": {
+                    "type": "number"
+                  },
+                  "north": {
+                    "type": "number"
+                  },
+                  "south": {
+                    "type": "number"
+                  },
+                  "west": {
+                    "type": "number"
+                  }
+                }
+              },
+              "bounded": {
+                "type": "boolean"
+              },
               "language": {
                 "type": "string"
               },

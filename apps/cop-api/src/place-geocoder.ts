@@ -16,6 +16,13 @@ export interface PlaceGeocodeResult {
 }
 
 export interface PlaceGeocodeQuery {
+  bbox?: {
+    east: number;
+    north: number;
+    south: number;
+    west: number;
+  };
+  bounded?: boolean;
   language?: string;
   limit?: number;
   query: string;
@@ -31,6 +38,13 @@ export interface PlaceGeocodeResponse {
   items: PlaceGeocodeResult[];
   providerId: string;
   query: {
+    bbox?: {
+      east: number;
+      north: number;
+      south: number;
+      west: number;
+    };
+    bounded?: boolean;
     language: string;
     limit: number;
     q: string;
@@ -103,7 +117,9 @@ export class NominatimPlaceGeocoder implements PlaceGeocoder {
     const normalizedQuery = normalizeQuery(query.query);
     const limit = clampInteger(query.limit, 1, 8, 5);
     const language = normalizeLanguage(query.language);
-    const cacheKey = `${language}:${limit}:${normalizedQuery.toLowerCase()}`;
+    const bbox = normalizeQueryBbox(query.bbox);
+    const bounded = query.bounded === true && Boolean(bbox);
+    const cacheKey = `${language}:${limit}:${normalizedQuery.toLowerCase()}:${bbox ? `${bbox.west},${bbox.south},${bbox.east},${bbox.north}` : ""}:${bounded ? "bounded" : "unbounded"}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > now.getTime()) {
       return {
@@ -123,6 +139,12 @@ export class NominatimPlaceGeocoder implements PlaceGeocoder {
     url.searchParams.set("limit", String(limit));
     url.searchParams.set("addressdetails", "1");
     url.searchParams.set("accept-language", language);
+    if (bbox) {
+      url.searchParams.set("viewbox", `${bbox.west},${bbox.north},${bbox.east},${bbox.south}`);
+      if (bounded) {
+        url.searchParams.set("bounded", "1");
+      }
+    }
     if (this.config.email) {
       url.searchParams.set("email", this.config.email);
     }
@@ -144,7 +166,9 @@ export class NominatimPlaceGeocoder implements PlaceGeocoder {
       payload.map(nominatimResultToPlace).filter((item): item is PlaceGeocodeResult => Boolean(item)),
       now,
       cacheKey,
-      "miss"
+      "miss",
+      bbox,
+      bounded
     );
     this.cache.set(cacheKey, {
       expiresAt: now.getTime() + this.config.cacheTtlSeconds * 1000,
@@ -160,7 +184,9 @@ export class NominatimPlaceGeocoder implements PlaceGeocoder {
     items: PlaceGeocodeResult[],
     now: Date,
     cacheKey: string,
-    cacheStatus: PlaceGeocodeResponse["cache"]["status"]
+    cacheStatus: PlaceGeocodeResponse["cache"]["status"],
+    bbox?: NonNullable<PlaceGeocodeQuery["bbox"]>,
+    bounded?: boolean
   ): PlaceGeocodeResponse {
     return {
       cache: {
@@ -172,6 +198,8 @@ export class NominatimPlaceGeocoder implements PlaceGeocoder {
       items,
       providerId: this.providerId,
       query: {
+        ...(bbox ? { bbox } : {}),
+        ...(bounded ? { bounded } : {}),
         language,
         limit,
         q: query
@@ -180,6 +208,20 @@ export class NominatimPlaceGeocoder implements PlaceGeocoder {
       warnings: []
     };
   }
+}
+
+function normalizeQueryBbox(value: PlaceGeocodeQuery["bbox"] | undefined): PlaceGeocodeQuery["bbox"] | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const west = clampNumber(Number(value.west), -180, 180);
+  const south = clampNumber(Number(value.south), -90, 90);
+  const east = clampNumber(Number(value.east), -180, 180);
+  const north = clampNumber(Number(value.north), -90, 90);
+  if (![west, south, east, north].every(Number.isFinite) || west >= east || south >= north) {
+    return undefined;
+  }
+  return { east, north, south, west };
 }
 
 function nominatimResultToPlace(result: NominatimSearchResult): PlaceGeocodeResult | null {

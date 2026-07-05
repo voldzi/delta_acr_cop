@@ -394,6 +394,57 @@ export function aiMapSearchFallbackResponse(
   };
 }
 
+export function aiMapSearchNoResultFallbackResponse(
+  aiRequest: AiCopQuery,
+  requestNow: Date,
+  reason: string
+): AiCopResponse | undefined {
+  const context = isRecord(aiRequest.context) ? aiRequest.context : undefined;
+  const mapSearch = isRecord(context?.mapSearch) ? context.mapSearch : undefined;
+  if (!mapSearch || !Array.isArray(mapSearch.results) || mapSearch.results.length > 0) {
+    return undefined;
+  }
+  const query = isRecord(mapSearch.query) ? mapSearch.query : {};
+  const center = aiLocationFromRecord(query.center);
+  const bbox = isRecord(query.bbox) ? query.bbox : undefined;
+  const warnings = Array.isArray(mapSearch.warnings)
+    ? mapSearch.warnings.map((warning) => optionalText(warning)).filter((warning): warning is string => Boolean(warning)).slice(0, 3)
+    : [];
+  const geoText = center
+    ? `Prohledal jsem dostupné COP mapové zdroje v okolí polohy ${center.lat}, ${center.lon}.`
+    : bbox
+      ? "Prohledal jsem dostupné COP mapové zdroje v zadané oblasti."
+      : "Prohledal jsem dostupné COP mapové zdroje bez polohového omezení.";
+  const warningText = warnings.length > 0 ? ` Omezení: ${warnings.join(" ")}` : "";
+  return {
+    auditId: randomUUID(),
+    model: "map-search-empty-fallback",
+    policy: {
+      allowed: true,
+      reason: `AI provider fallback used deterministic empty COP map search response. ${reason}`,
+      redactionsApplied: false
+    },
+    provider: "local",
+    requestId: aiRequest.requestId,
+    result: {
+      structured: {
+        generatedAt: requestNow.toISOString(),
+        mapSearch: {
+          query,
+          resultCount: 0,
+          warnings
+        },
+        mapSearchFallback: {
+          reason,
+          resultCount: 0
+        }
+      },
+      summary: `${geoText} Nenašel jsem odpovídající objekt v aktuálně dostupném COP mapovém indexu.${warningText}`.trim()
+    },
+    status: "COMPLETED"
+  };
+}
+
 function aiMapActionsFromMapSearchResults(results: Record<string, unknown>[]): AiMapAction[] {
   return results
     .map(aiMapActionFromResult)

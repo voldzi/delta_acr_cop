@@ -36,6 +36,7 @@ import {
 import { correlationIdFrom, sendError } from "./errors.js";
 import {
   aiMapSearchFallbackResponse,
+  aiMapSearchNoResultFallbackResponse,
   aiMapSearchResultCompare,
   aiMapActionsFromMapSearchContext,
   aiMapCatalogLayerMatchesMapSearchIntent,
@@ -1945,6 +1946,65 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
     }
 
+    if (mapResults.length === 0 && placeGeocoder && bbox && (intent.categoryIds.length > 0 || intent.searchTerms.length > 0)) {
+      const fallbackQueries = aiMapGeocoderFallbackQueries(intent);
+      for (const fallbackQuery of fallbackQueries) {
+        try {
+          const placeResponse = await placeGeocoder.search({
+            bbox,
+            bounded: true,
+            language: aiLanguage(input.body.language),
+            limit: 5,
+            query: fallbackQuery
+          }, input.requestNow);
+          warnings.push(...placeResponse.warnings);
+          const placeResults = placeResponse.items
+            .filter((place) => aiGeocodedPlaceMatchesMapSearchIntent(place, intent))
+            .map((place) => {
+              const summary = summarizeGeocodedPlaceForAi(place, geoFilter);
+              return compactRecord({
+                ...summary,
+                ...(intent.categoryIds[0] ? { category: intent.categoryIds[0] } : {}),
+                sourceName: `${place.providerId} bounded search`,
+                sourceSystemIds: ["geocoder", place.providerId],
+                status: "map-result"
+              });
+            });
+          if (placeResults.length > 0) {
+            mapResults.push(...placeResults);
+            appendAudit(state, "AI_GEOCODER_MAP_SEARCH_FALLBACK_INVOKED", {
+              bbox,
+              categoryIds: intent.categoryIds,
+              matchedFeatureCount: placeResults.length,
+              query: fallbackQuery,
+              requestId: input.requestId,
+              status: "ok",
+              toolId: "cop.geocoder.search"
+            });
+            break;
+          }
+          appendAudit(state, "AI_GEOCODER_MAP_SEARCH_FALLBACK_INVOKED", {
+            bbox,
+            categoryIds: intent.categoryIds,
+            matchedFeatureCount: 0,
+            query: fallbackQuery,
+            requestId: input.requestId,
+            status: "empty",
+            toolId: "cop.geocoder.search"
+          });
+        } catch (error) {
+          app.log.warn({ error, query: fallbackQuery, requestId: input.requestId }, "AI geocoder map-search fallback failed.");
+          warnings.push(`Geocoder fallback selhal: ${errorMessage(error)}`);
+          appendAudit(state, "AI_GEOCODER_MAP_SEARCH_FALLBACK_FAILED", {
+            error: errorMessage(error),
+            query: fallbackQuery,
+            requestId: input.requestId,
+            toolId: "cop.geocoder.search"
+          });
+        }
+      }
+    }
+
     if (intent.placeQuery && placeGeocoder) {
       try {
         const placeResponse = await placeGeocoder.search({
@@ -2001,6 +2061,82 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       warnings
     });
     return context;
+  }
+
+  function shouldAnswerAiChatAgentWithEmptyMapSearchResult(
+    question: string,
+    body: Record<string, unknown>,
+    mapSearch: AiMapSearchContext | undefined
+  ): boolean {
+    if (!mapSearch || mapSearch.results.length > 0) {
+      return false;
+    }
+    const intent = inferAiMapSearchIntent(question, body);
+    const explicitGeoFilter = parseAiContextGeoFilter(body);
+    return Boolean(explicitGeoFilter?.bbox || explicitGeoFilter?.center)
+      && (intent.requested || intent.layerIds.length > 0 || intent.categoryIds.length > 0);
+  }
+
+  function aiMapGeocoderFallbackQueries(intent: ReturnType<typeof inferAiMapSearchIntent>): string[] {
+    const queries = new Set<string>();
+    if (intent.categoryIds.includes("police")) {
+      queries.add("police");
+      queries.add("policie");
+      queries.add("Policie ČR");
+      queries.add("police station");
+    }
+    if (intent.categoryIds.includes("fire_station")) {
+      queries.add("hasiči");
+      queries.add("hasičská stanice");
+      queries.add("fire station");
+    }
+    if (intent.categoryIds.includes("ambulance_station")) {
+      queries.add("záchranná služba");
+      queries.add("ambulance station");
+      queries.add("nemocnice");
+    }
+    if (intent.categoryIds.includes("shelter")) {
+      queries.add("evakuační centrum");
+      queries.add("shelter");
+    }
+    if (intent.categoryIds.includes("defibrillator")) {
+      queries.add("AED");
+      queries.add("defibrilátor");
+    }
+    const terms = intent.searchTerms
+      .filter((term) => term.length >= 3)
+      .slice(0, 4)
+      .join(" ");
+    if (terms) {
+      queries.add(terms);
+    }
+    return Array.from(queries).slice(0, 6);
+  }
+
+  function aiGeocodedPlaceMatchesMapSearchIntent(place: PlaceGeocodeResult, intent: ReturnType<typeof inferAiMapSearchIntent>): boolean {
+    if (intent.categoryIds.length === 0) {
+      return true;
+    }
+    const haystack = [place.displayName, place.subtitle, place.kind].filter(Boolean).join(" ")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/gu, "")
+      .toLocaleLowerCase("cs-CZ");
+    return intent.categoryIds.some((categoryId) => {
+      switch (categoryId) {
+        case "police":
+          return haystack.includes("polic") || /\b(security)\b/u.test(haystack);
+        case "fire_station":
+          return haystack.includes("hasic") || haystack.includes("pozarn") || /\b(fire)\b/u.test(haystack);
+        case "ambulance_station":
+          return haystack.includes("zachran") || haystack.includes("ambulanc") || haystack.includes("nemocnic") || /\b(hospital|medical)\b/u.test(haystack);
+        case "shelter":
+          return /\b(kryt|shelter|evakuac|assembly)\b/u.test(haystack);
+        case "defibrillator":
+          return /\b(aed|defibrilator|defib)\b/u.test(haystack);
+        default:
+          return haystack.includes(categoryId.replace(/_/gu, " "));
+      }
+    });
   }
 
   function firstRecord(...values: unknown[]): Record<string, unknown> | undefined {
@@ -5401,7 +5537,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 400, "VALIDATION_ERROR", "Geocode search requires q with at least 3 characters.", correlationIdFrom(request.headers["x-correlation-id"]));
     }
     try {
+      const bbox = parseMapQueryBbox(query.bbox ?? query.viewbox);
       return await placeGeocoder.search({
+        ...(bbox ? { bbox, bounded: optionalTrimmedString(query.bounded, 8) === "1" || optionalTrimmedString(query.bounded, 8) === "true" } : {}),
         language: optionalTrimmedString(query.language, 40),
         limit: optionalFiniteNumber(query.limit, 1, 8),
         query: q
@@ -7181,9 +7319,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const deterministicMapSearchResponse = shouldAnswerAiChatAgentWithMapSearchResult(question, body, aiMapSearch)
       ? aiMapSearchFallbackResponse(aiRequest, requestNow, "Explicit COP map search resolved by the read-only map tool.")
       : undefined;
+    const deterministicEmptyMapSearchResponse = !deterministicMapSearchResponse && shouldAnswerAiChatAgentWithEmptyMapSearchResult(question, body, aiMapSearch)
+      ? aiMapSearchNoResultFallbackResponse(aiRequest, requestNow, "Explicit COP map search returned no matching object.")
+      : undefined;
     const providerStartedAt = Date.now();
-    const providerResponse = deterministicMapSearchResponse ?? await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent");
-    const providerDurationMs = deterministicMapSearchResponse ? 0 : Date.now() - providerStartedAt;
+    const providerResponse = deterministicMapSearchResponse ?? deterministicEmptyMapSearchResponse ?? await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent");
+    const providerDurationMs = deterministicMapSearchResponse || deterministicEmptyMapSearchResponse ? 0 : Date.now() - providerStartedAt;
     const pipelineObservability = buildAiPipelineObservability({
       compressedContext,
       contextCompression: promptContext.contextCompression,
