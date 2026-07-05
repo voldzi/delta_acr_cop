@@ -24,9 +24,13 @@ export interface ChatUnreadMessage {
 }
 
 export interface ChatCenterLocationMessage {
+  featureId?: string;
+  featureKind?: "feature" | "place" | "track";
+  label?: string;
   lat: number;
   lon: number;
   type: typeof chatBridgeMessageTypes.centerLocation;
+  zoom?: number;
 }
 
 export interface ChatSelectMessage {
@@ -79,12 +83,29 @@ export function decodeChatUnread(value: unknown): number | null {
   return clampUnreadCount(data.count);
 }
 
-// chat → web: center the map on a shared location.
-export function encodeChatCenterLocation(lat: number, lon: number): ChatCenterLocationMessage {
-  return { lat, lon, type: chatBridgeMessageTypes.centerLocation };
+// chat → web: center the map on a shared location and optionally focus a map entity.
+export function encodeChatCenterLocation(
+  lat: number,
+  lon: number,
+  options: {
+    featureId?: string;
+    featureKind?: ChatCenterLocationMessage["featureKind"];
+    label?: string;
+    zoom?: number;
+  } = {}
+): ChatCenterLocationMessage {
+  return compactRecord({
+    featureId: normalizeBridgeText(options.featureId, 160),
+    featureKind: normalizeCenterFeatureKind(options.featureKind),
+    label: normalizeBridgeText(options.label, 180),
+    lat,
+    lon,
+    type: chatBridgeMessageTypes.centerLocation,
+    zoom: normalizeCenterZoom(options.zoom)
+  }) as ChatCenterLocationMessage;
 }
 
-export function decodeChatCenterLocation(value: unknown): { lat: number; lon: number } | null {
+export function decodeChatCenterLocation(value: unknown): ChatCenterLocationMessage | null {
   const data = asRecord(value);
   if (
     !data
@@ -96,7 +117,15 @@ export function decodeChatCenterLocation(value: unknown): { lat: number; lon: nu
   ) {
     return null;
   }
-  return { lat: data.lat, lon: data.lon };
+  return compactRecord({
+    featureId: normalizeBridgeText(data.featureId, 160),
+    featureKind: normalizeCenterFeatureKind(data.featureKind),
+    label: normalizeBridgeText(data.label, 180),
+    lat: data.lat,
+    lon: data.lon,
+    type: chatBridgeMessageTypes.centerLocation,
+    zoom: normalizeCenterZoom(data.zoom)
+  }) as ChatCenterLocationMessage;
 }
 
 // web → chat: open a specific conversation in the embedded chat.
@@ -152,6 +181,27 @@ function normalizeTransitShare(value: unknown): ChatTransitSharePayload | null {
     ...(optionalString(data.vehicleId) ? { vehicleId: optionalString(data.vehicleId) } : {}),
     ...(optionalStringList(data.warnings) ? { warnings: optionalStringList(data.warnings) } : {})
   };
+}
+
+function normalizeCenterFeatureKind(value: unknown): ChatCenterLocationMessage["featureKind"] | undefined {
+  return value === "feature" || value === "place" || value === "track" ? value : undefined;
+}
+
+function normalizeCenterZoom(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.min(20, Math.max(3, value));
+}
+
+function normalizeBridgeText(value: unknown, maxLength: number): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value.trim().slice(0, maxLength) : undefined;
+}
+
+function compactRecord<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined)
+  ) as Partial<T>;
 }
 
 // web → chat: send a normalized public-transit card into the active conversation.

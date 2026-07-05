@@ -218,6 +218,9 @@ Od 2026-07-05 odpověď obsahuje také `result.structured.mapActions` s akcemi
 `cz.cop.ai.mapActions` metadat a vykresluje je jako tlačítka v AI bublině.
 Kliknutí odešle existující `cop-chat:center-location` bridge zprávu do webové
 mapy, která přepne workspace na mapu a vycentruje ji na souřadnice výsledku.
+Pokud akce obsahuje `featureId`, bridge payload nese i `featureKind=feature`
+a webová mapa nastaví stejný selection stav jako při ručním výběru z mapového
+vyhledávání, takže se otevře standardní detail/popup nalezeného prvku.
 Kategorie `security-police` a podobné provider názvy se při vyhledávání
 normalizují jako policejní výsledky, aby dotazy typu “nejbližší policie”
 neskončily prázdně jen kvůli rozdílnému názvosloví vrstvy.

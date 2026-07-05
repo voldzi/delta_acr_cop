@@ -4324,7 +4324,12 @@ function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
           className="message-ai-map-action"
           onClick={(event) => {
             event.stopPropagation();
-            window.parent.postMessage(encodeChatCenterLocation(action.lat, action.lon), window.location.origin);
+            window.parent.postMessage(encodeChatCenterLocation(action.lat, action.lon, {
+              featureId: action.entityId,
+              featureKind: chatCenterFeatureKindFromAiAction(action),
+              label: action.title ?? action.label,
+              zoom: action.zoom
+            }), window.location.origin);
           }}
           type="button"
         >
@@ -4334,6 +4339,19 @@ function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
       ))}
     </div>
   );
+}
+
+function chatCenterFeatureKindFromAiAction(action: MatrixCopMapAction): "feature" | "place" | "track" | undefined {
+  if (action.entityType === "mapFeature") {
+    return "feature";
+  }
+  if (action.entityType === "place") {
+    return "place";
+  }
+  if (action.entityType === "track") {
+    return "track";
+  }
+  return undefined;
 }
 
 function MessageAiMetadata({ message }: { message: MatrixTimelineMessage }) {

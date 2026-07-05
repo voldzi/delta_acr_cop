@@ -472,9 +472,12 @@ The phase-0 implementation focus is trust and control:
   carry `cz.cop.ai.mapActions[]` with `focus-map` actions, validated
   coordinates and a display label. COP Chat renders those as action buttons in
   the AI bubble and sends the existing `cop-chat:center-location` bridge message
-  so the embedded web map centers on the selected result. The metadata is used
-  only for timeline labeling, audit visibility and explicit user-triggered map
-  focusing; COP still does not persist or proxy Matrix plaintext. In enabled
+  so the embedded web map centers on the selected result. When the action also
+  contains a map `featureId`, the bridge payload includes `featureKind=feature`
+  and the web map selects that feature, reusing the same detail/popup state as
+  manual map search selection. The metadata is used only for timeline labeling,
+  audit visibility and explicit user-triggered map focusing; COP still does
+  not persist or proxy Matrix plaintext. In enabled
   groups the composer also recognizes a leading
   `@COP AI ...` mention and slash commands `/ai ...`, `/reasoning ...` and
   `/fast ...`. Completed answers can be posted automatically with the same

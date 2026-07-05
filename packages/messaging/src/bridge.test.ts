@@ -86,7 +86,27 @@ describe("center-location (chat -> web)", () => {
   it("round-trips finite coordinates", () => {
     const payload = encodeChatCenterLocation(50.0755, 14.4378);
     expect(payload).toEqual({ lat: 50.0755, lon: 14.4378, type: "cop-chat:center-location" });
-    expect(decodeChatCenterLocation(payload)).toEqual({ lat: 50.0755, lon: 14.4378 });
+    expect(decodeChatCenterLocation(payload)).toEqual({ lat: 50.0755, lon: 14.4378, type: "cop-chat:center-location" });
+  });
+
+  it("round-trips optional map focus metadata", () => {
+    const payload = encodeChatCenterLocation(50.1187, 17.3842, {
+      featureId: " security-police:vrbno ",
+      featureKind: "feature",
+      label: " Policie ČR - Vrbno ",
+      zoom: 16
+    });
+
+    expect(payload).toEqual({
+      featureId: "security-police:vrbno",
+      featureKind: "feature",
+      label: "Policie ČR - Vrbno",
+      lat: 50.1187,
+      lon: 17.3842,
+      type: "cop-chat:center-location",
+      zoom: 16
+    });
+    expect(decodeChatCenterLocation(payload)).toEqual(payload);
   });
 
   it("rejects non-finite or foreign payloads", () => {

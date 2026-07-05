@@ -823,8 +823,33 @@ export function App() {
           bearing: current?.bearing ?? 0,
           center: [center.lon, center.lat],
           pitch: current?.pitch ?? 0,
-          zoom: Math.max(current?.zoom ?? 0, 15)
+          zoom: center.zoom ?? Math.max(current?.zoom ?? 0, 15)
         }));
+        if (center.featureKind === "feature" && center.featureId) {
+          setSelectedSituationFeatureId(center.featureId);
+          setSelectedSituationFeatureStableKey(null);
+          setSelectedObjectId(null);
+          setSelectedSketchDrawingId(null);
+          setSafetyAreaPopup(null);
+          setMobileSketchOpen(false);
+          setMobileSheet(isMobileSheetViewport() ? "detail" : null);
+        } else if (center.featureKind === "track" && center.featureId) {
+          setSelectedObjectId(center.featureId);
+          setSelectedSituationFeatureId(null);
+          setSelectedSituationFeatureStableKey(null);
+          setSelectedSketchDrawingId(null);
+          setSafetyAreaPopup(null);
+          setMobileSketchOpen(false);
+          setMobileSheet(isMobileSheetViewport() ? "detail" : null);
+        } else if (center.featureKind === "place") {
+          setSelectedObjectId(null);
+          setSelectedSituationFeatureId(null);
+          setSelectedSituationFeatureStableKey(null);
+          setSelectedSketchDrawingId(null);
+          setSafetyAreaPopup(null);
+          setMobileSketchOpen(false);
+          setMobileSheet(null);
+        }
         setFocusViewRequest((current) => current + 1);
       }
     };
