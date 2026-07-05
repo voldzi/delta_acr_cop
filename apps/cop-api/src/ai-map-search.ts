@@ -75,7 +75,7 @@ export function inferAiMapSearchIntent(question: string, body: Record<string, un
 
   const bodyPlaceQuery = aiMapPlaceQueryFromBody(body);
   const placeQuery = requested && layerIds.size === 0
-    ? bodyPlaceQuery ?? aiMapPlaceQueryFromQuestion(question) ?? aiPlaceQueryFromQuestion(question)
+    ? bodyPlaceQuery ?? aiPlaceQueryFromQuestion(question) ?? aiMapPlaceQueryFromQuestion(question)
     : bodyPlaceQuery ?? aiPlaceQueryFromQuestion(question);
 
   return {
@@ -453,8 +453,21 @@ function aiMapSearchTermMatchesHaystack(term: string, haystack: string): boolean
 }
 
 function aiMapSearchTokenVariants(term: string): string[] {
-  const normalized = aiMapSearchTokenStem(normalizeAiMapSearchText(term));
-  const variants = new Set<string>([normalized]);
+  const raw = normalizeAiMapSearchText(term);
+  const normalized = aiMapSearchTokenStem(raw);
+  const variants = new Set<string>([normalized, raw]);
+  if (/ne$/u.test(raw)) {
+    variants.add(raw.replace(/ne$/u, "no"));
+  }
+  if (/ve$/u.test(raw)) {
+    variants.add(raw.replace(/ve$/u, "va"));
+  }
+  if (/ze$/u.test(raw)) {
+    variants.add(raw.replace(/ze$/u, "ha"));
+  }
+  if (/n$/u.test(normalized)) {
+    variants.add(`${normalized}o`);
+  }
   if (/^(vodomer|hydro|limnigraf|hladin|reka|river)/u.test(normalized)) {
     ["vodomer", "hydro", "limnigraf", "hladin", "water", "river", "gauge", "chmi"].forEach((value) => variants.add(value));
   }

@@ -73,6 +73,36 @@ describe("AI map search", () => {
     expect(aiSituationFeatureMatchesMapSearchIntent(policeFeature, intent)).toBe(false);
   });
 
+  it("extracts a clean place query from generic map searches with a location phrase", () => {
+    const intent = inferAiMapSearchIntent("Najdi vodoměrnou stanici ve Vrbně pod Pradědem.", {});
+    const waterGaugeFeature: SituationFeature = {
+      geometry: {
+        coordinates: [17.389, 50.123],
+        type: "Point"
+      },
+      id: "chmi-hydro:opava-vrbno",
+      properties: {
+        category: "water-gauge",
+        featureId: "chmi-hydro:opava-vrbno",
+        label: "Vodoměrná stanice Opava - Vrbno pod Pradědem",
+        layer: "flood",
+        layerId: "public.safety.flood",
+        providerLayerId: "chmi_hydro",
+        sourceId: "chmi_hydro",
+        sourceName: "ČHMÚ hydrologická měření",
+        summary: "Aktuální stav hladiny řeky Opavy."
+      },
+      type: "Feature"
+    };
+
+    expect(intent).toMatchObject({
+      placeQuery: "Vrbně pod Pradědem",
+      requested: true
+    });
+    expect(intent.searchTerms).toEqual(expect.arrayContaining(["vodomer", "stan"]));
+    expect(aiSituationFeatureMatchesMapSearchIntent(waterGaugeFeature, intent)).toBe(true);
+  });
+
   it("uses catalog metadata to narrow generic map searches when possible", () => {
     const intent = inferAiMapSearchIntent("Ukaž mi nejbližší autobusovou zastávku.", {});
     const transitStopsLayer: MapCatalogLayer = {

@@ -160,7 +160,7 @@ import {
   type CopNotificationAudience,
   type CopNotificationDecision
 } from "./notification-decision.js";
-import { createPlaceGeocoderFromEnv, type PlaceGeocoder } from "./place-geocoder.js";
+import { createPlaceGeocoderFromEnv, type PlaceGeocodeResult, type PlaceGeocoder } from "./place-geocoder.js";
 import { buildCopPrometheusMetrics } from "./prometheus-metrics.js";
 import { withEventProvenance } from "./provenance.js";
 import { registerCommunityGroupRoutes, registerCommunityReportRoutes } from "./routes/community-routes.js";
@@ -1659,17 +1659,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (explicitGeo) {
       return explicitGeo;
     }
-    const placeQuery = aiContextPlaceFromBody(body) ?? aiPlaceQueryFromQuestion(query);
+    const placeQuery = aiContextPlaceFromBody(body)
+      ?? aiPlaceQueryFromQuestion(query)
+      ?? inferAiMapSearchIntent(query, body).placeQuery;
     if (!placeQuery || !placeGeocoder) {
       return undefined;
     }
     try {
-      const response = await placeGeocoder.search({
-        language: aiLanguage(body.language),
-        limit: 1,
-        query: placeQuery
-      }, requestNow);
-      const place = response.items[0];
+      let place: PlaceGeocodeResult | undefined;
+      for (const candidate of aiPlaceGeocoderQueryCandidates(placeQuery)) {
+        const response = await placeGeocoder.search({
+          language: aiLanguage(body.language),
+          limit: 1,
+          query: candidate
+        }, requestNow);
+        place = response.items[0];
+        if (place) {
+          break;
+        }
+      }
       if (!place) {
         return undefined;
       }
@@ -1688,6 +1696,32 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       app.log.warn({ error, placeQuery }, "AI context geocode lookup failed.");
       return undefined;
     }
+  }
+
+  function aiPlaceGeocoderQueryCandidates(placeQuery: string): string[] {
+    const normalized = placeQuery.replace(/\s+/gu, " ").trim();
+    const candidates = new Set<string>([normalized]);
+    const parts = normalized.split(" ");
+    const first = parts[0];
+    if (first) {
+      const rest = parts.slice(1).join(" ");
+      const addFirstVariant = (value: string) => {
+        candidates.add([value, rest].filter(Boolean).join(" "));
+      };
+      if (/ně$/iu.test(first)) {
+        addFirstVariant(first.replace(/ně$/iu, "no"));
+      }
+      if (/vě$/iu.test(first)) {
+        addFirstVariant(first.replace(/vě$/iu, "va"));
+      }
+      if (/ze$/iu.test(first)) {
+        addFirstVariant(first.replace(/ze$/iu, "ha"));
+      }
+      if (/ě$/iu.test(first)) {
+        addFirstVariant(first.replace(/ě$/iu, "a"));
+      }
+    }
+    return Array.from(candidates).filter((candidate) => candidate.length >= 3).slice(0, 4);
   }
 
   function parseAiContextGeoFilter(body: Record<string, unknown>): AiContextGeoFilter | undefined {

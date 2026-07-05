@@ -6,6 +6,7 @@ import { InMemoryCommunityReportStore } from "./community-report-store.js";
 import { buildServer } from "./server.js";
 import type { MediaObjectReadRequest, MediaObjectWriteRequest, MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
 import type { MessagingProvider } from "./messaging-provider.js";
+import type { PlaceGeocodeQuery, PlaceGeocodeResponse, PlaceGeocoder } from "./place-geocoder.js";
 import type {
   SituationDataSource,
   SituationDataSourceConfig,
@@ -2136,6 +2137,73 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("geocodes place phrases into bbox for generic AI map searches without explicit geo context", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "Generic map search context captured",
+          structured: {
+            purpose: query.purpose
+          }
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const situationDataSource = new FakeAiMapSearchSituationDataSource();
+    const placeGeocoder = new FakeAiMapSearchPlaceGeocoder();
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      placeGeocoder,
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        question: "Najdi vodoměrnou stanici ve Vrbně pod Pradědem."
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(placeGeocoder.queries.slice(0, 2)).toEqual(["Vrbně pod Pradědem", "Vrbno pod Pradědem"]);
+    const context = capturedQueries[0]?.context as Record<string, unknown>;
+    const mapSearch = context.mapSearch as Record<string, unknown>;
+    expect(mapSearch).toMatchObject({
+      contractVersion: "cop-ai-map-search-v1",
+      query: {
+        bbox: {
+          east: 17.45,
+          north: 50.16,
+          south: 50.09,
+          west: 17.31
+        },
+        placeQuery: "Vrbně pod Pradědem",
+        requested: true
+      },
+      toolCall: {
+        toolId: "cop.map.query.search"
+      }
+    });
+
+    await app.close();
+  });
+
   it("runs AI chat agent questions as pollable async jobs", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
@@ -2281,6 +2349,26 @@ class FakeAiMapSearchSituationDataSource implements SituationDataSource {
         },
         {
           geometry: {
+            coordinates: [17.389, 50.123],
+            type: "Point"
+          },
+          id: "chmi-hydro:opava-vrbno",
+          properties: {
+            category: "water-gauge",
+            featureId: "chmi-hydro:opava-vrbno",
+            generatedAt: requestNow.toISOString(),
+            label: "Vodoměrná stanice Opava - Vrbno pod Pradědem",
+            layer: "ground",
+            providerLayerId: "ground",
+            sourceId: "chmi_hydro",
+            sourceName: "ČHMÚ hydrologická měření",
+            status: "reference",
+            summary: "Aktuální stav hladiny řeky Opavy."
+          },
+          type: "Feature"
+        },
+        {
+          geometry: {
             coordinates: [17.36, 50.13],
             type: "Point"
           },
@@ -2303,8 +2391,49 @@ class FakeAiMapSearchSituationDataSource implements SituationDataSource {
       query,
       source: { sourceId: "situation-data-api", sourceType: "PUBLIC_SITUATION_AGGREGATE" },
       sources: await this.fetchSources(),
-      summary: { featureCount: 2, sourceCount: 1, staleFeatureCount: 0, warningCount: 0 },
+      summary: { featureCount: 3, sourceCount: 1, staleFeatureCount: 0, warningCount: 0 },
       type: "FeatureCollection",
+      warnings: []
+    };
+  }
+}
+
+class FakeAiMapSearchPlaceGeocoder implements PlaceGeocoder {
+  readonly providerId = "fake-place-geocoder";
+  readonly queries: string[] = [];
+
+  async search(query: PlaceGeocodeQuery, now: Date): Promise<PlaceGeocodeResponse> {
+    this.queries.push(query.query);
+    const matched = query.query === "Vrbno pod Pradědem";
+    return {
+      cache: {
+        key: query.query,
+        status: "miss",
+        ttlSeconds: 60
+      },
+      contractVersion: "cop-geocode-v1",
+      items: matched
+        ? [{
+            bbox: {
+              east: 17.45,
+              north: 50.16,
+              south: 50.09,
+              west: 17.31
+            },
+            center: [17.38, 50.12],
+            displayName: "Vrbno pod Pradědem",
+            id: "place:vrbno",
+            kind: "town",
+            providerId: this.providerId
+          }]
+        : [],
+      providerId: this.providerId,
+      query: {
+        language: query.language ?? "cs",
+        limit: query.limit ?? 1,
+        q: query.query
+      },
+      serverTimestamp: now.toISOString(),
       warnings: []
     };
   }
