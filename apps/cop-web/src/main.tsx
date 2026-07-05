@@ -5913,6 +5913,7 @@ export function App() {
       {messagingOpen ? (
         <EmbeddedCopChatPanel
           dockWidth={messagingDockWidth}
+          mapView={mapView}
           pinned={messagingPinned}
           selection={messagingSelection}
           transitShare={messagingTransitShare}
@@ -7858,6 +7859,7 @@ function formatUnreadBadge(count: number): string {
 
 function EmbeddedCopChatPanel({
   dockWidth,
+  mapView,
   pinned,
   selection,
   transitShare,
@@ -7866,6 +7868,7 @@ function EmbeddedCopChatPanel({
   onDockWidthChange
 }: {
   dockWidth: number;
+  mapView: MapViewState | undefined;
   pinned: boolean;
   selection: MessagingSelectionCommand | null;
   transitShare: MessagingTransitShareCommand | null;
@@ -7898,20 +7901,36 @@ function EmbeddedCopChatPanel({
 
   React.useEffect(() => {
     postCurrentLocationToChat();
-  }, [userLocation?.accuracyM, userLocation?.lat, userLocation?.lon, userLocation?.updatedAt]);
+  }, [mapView?.center?.[0], mapView?.center?.[1], userLocation?.accuracyM, userLocation?.lat, userLocation?.lon, userLocation?.updatedAt]);
 
   function postCurrentLocationToChat() {
     const target = iframeRef.current?.contentWindow;
-    if (!target || !userLocation) {
+    if (!target) {
+      return;
+    }
+    const mapLocation = mapView
+      ? {
+          label: "Střed mapy",
+          lat: mapView.center[1],
+          lon: mapView.center[0],
+          source: "map" as const
+        }
+      : null;
+    const location = userLocation
+      ? {
+          ...(typeof userLocation.accuracyM === "number" ? { accuracyM: userLocation.accuracyM } : {}),
+          label: "Moje poloha",
+          lat: userLocation.lat,
+          lon: userLocation.lon,
+          source: "device" as const,
+          updatedAt: userLocation.updatedAt
+        }
+      : mapLocation;
+    if (!location) {
       return;
     }
     target.postMessage(encodeChatCurrentLocation({
-      ...(typeof userLocation.accuracyM === "number" ? { accuracyM: userLocation.accuracyM } : {}),
-      label: "Moje poloha",
-      lat: userLocation.lat,
-      lon: userLocation.lon,
-      source: "device",
-      updatedAt: userLocation.updatedAt
+      ...location
     }), window.location.origin);
   }
 
