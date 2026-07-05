@@ -310,6 +310,16 @@ COP zachovává pole `handling`, `allowedUse`, `classification`, `visibility` a
 `positionQuality`; zejména `reference_not_operational_status` znamená, že
 referenční OSM objekt není potvrzený operační stav.
 
+AI chat směruje dotazy na hydrologii a počasí přes tento server-side zdroj:
+hladina/průtok/vodoměr používá `hydro_station`, `hydro_measurement` a
+`flood_risk_area`; počasí/srážky/bouřka/vítr/teplota používá aktuálně dostupné
+`weather_warning` a `safety_alert` spolu s mapovým katalogem počasí. Pokud SIM
+vrátí hydro metriky (`waterLevelCm`, `discharge`, `waterTemperatureC`,
+`floodStage`), COP je vypíše přímo v deterministické AI odpovědi. Pro
+plnohodnotné odpovědi typu „bude pršet“ nebo „blíží se bouřka“ má SIM do
+`sim-search-source-v1` doplnit i měřené a předpovědní meteo entity s časem
+platnosti a numerickými metrikami.
+
 ## TAK Gateway Source
 
 COP čte neveřejná partnerská TAK/CoT data ze SIM kontraktu `cop-tak-source-v1` pouze server-side. Token zůstává v procesu `cop-api`; web klient volá jen `/api/v1/map/catalog` a `/api/v1/map/query` a v prohlížeči nikdy nemá `COP_TAK_GATEWAY_READ_TOKEN`.

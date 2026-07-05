@@ -120,6 +120,18 @@ categories. If that fallback is empty too, the deterministic answer must state
 that the supplied location or area was searched; it must not claim that the
 assistant has no access to the user's location.
 
+Hydrology and weather questions are also treated as COP/SIM operational
+context, not only as free-form LLM prompts. Questions about water level,
+discharge, gauges or "where is water measured nearby" route to SIM entity types
+`hydro_station`, `hydro_measurement` and `flood_risk_area`; deterministic
+answers render available metrics such as `waterLevelCm`, `discharge`,
+`waterTemperatureC`, `floodStage` and the observation timestamp. Weather,
+rain, wind, temperature, radar and storm questions route to the currently
+available SIM types `weather_warning` and `safety_alert` plus weather catalog
+layers. If no current weather entity is returned, the deterministic answer must
+say that COP/SIM has no confirmed meteo result for the query; it must not infer
+that there is no rain or no storm.
+
 SIM `osm_reference` entities are treated as public reference read-models, not
 confirmed operational status. COP preserves `handling`, `allowedUse`,
 `classification`, `visibility`, `metrics` and `positionQuality` in AI evidence

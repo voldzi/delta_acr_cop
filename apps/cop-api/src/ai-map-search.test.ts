@@ -65,7 +65,8 @@ describe("AI map search", () => {
     };
 
     expect(intent).toMatchObject({
-      categoryIds: [],
+      categoryIds: ["hydro"],
+      layerIds: ["public.safety.flood"],
       requested: true
     });
     expect(intent.searchTerms).toContain("vodomer");
@@ -96,13 +97,30 @@ describe("AI map search", () => {
     };
 
     expect(intent).toMatchObject({
-      categoryIds: [],
+      categoryIds: ["hydro"],
+      layerIds: ["public.safety.flood"],
       requested: true
     });
     expect(intent.placeQuery).toBeUndefined();
     expect(intent.searchTerms).toEqual(expect.arrayContaining(["vody"]));
     expect(intent.searchTerms).not.toEqual(expect.arrayContaining(["okoli", "meri", "vysk", "hodnot"]));
     expect(aiSituationFeatureMatchesMapSearchIntent(waterGaugeFeature, intent)).toBe(true);
+  });
+
+  it("treats weather and storm questions as current COP weather searches", () => {
+    const intent = inferAiMapSearchIntent("Bude pršet? Blíží se bouřka?", {});
+
+    expect(intent).toMatchObject({
+      categoryIds: ["weather"],
+      requested: true
+    });
+    expect(intent.layerIds).toEqual(expect.arrayContaining([
+      "public.weather.current",
+      "public.weather.observations",
+      "public.weather.radar_nowcast",
+      "public.safety.weather_alerts"
+    ]));
+    expect(intent.searchTerms).toEqual(expect.arrayContaining(["weather", "rain", "storm"]));
   });
 
   it("extracts a clean place query from generic map searches with a location phrase", () => {

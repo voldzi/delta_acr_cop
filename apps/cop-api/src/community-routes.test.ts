@@ -2364,6 +2364,149 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("answers surrounding hydro measurement questions from SIM search-data without calling the LLM", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "Provider should not be called for deterministic hydro SIM search fallback",
+          structured: {}
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const simSearchDataSource = new FakeAiMapSearchSimSearchDataSource();
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      simSearchDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        geoContext: {
+          currentLocation: {
+            lat: 50.15077,
+            lon: 17.37303,
+            radiusKm: 30
+          },
+          label: "Moje poloha"
+        },
+        question: "Kde se měří výška vody v okolí? a jaká je nyní hodnota?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    expect(simSearchDataSource.lastQuery).toMatchObject({
+      center: {
+        lat: 50.15077,
+        lon: 17.37303
+      },
+      entityTypes: ["hydro_station", "hydro_measurement", "flood_risk_area"],
+      radiusM: 30000
+    });
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "map-search-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("Hydrologické měření: Mnichov - Černá Opava");
+    expect(aiResponse.result.summary).toContain("Hladina 106 cm");
+    expect(aiResponse.result.summary).toContain("Průtok 0,33 m3/s");
+    expect(aiResponse.result.summary).toContain("SPA 0");
+    const structured = aiResponse.result.structured as Record<string, unknown>;
+    expect(structured.mapActions).toEqual([
+      expect.objectContaining({
+        action: "focus-map",
+        entityId: "safety:hydro:mnichov-cerna-opava",
+        title: "Mnichov - Černá Opava"
+      })
+    ]);
+
+    await app.close();
+  });
+
+  it("returns an explicit no-data weather response when SIM has no current meteo entity", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "Provider should not be called for deterministic empty weather fallback",
+          structured: {}
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const simSearchDataSource = new FakeAiMapSearchSimSearchDataSource();
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      simSearchDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        geoContext: {
+          currentLocation: {
+            lat: 50.15077,
+            lon: 17.37303,
+            radiusKm: 30
+          },
+          label: "Moje poloha"
+        },
+        question: "Bude pršet? Blíží se bouřka?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    expect(simSearchDataSource.lastQuery).toMatchObject({
+      entityTypes: ["weather_warning", "safety_alert"]
+    });
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "map-search-empty-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("nenašel aktuální meteo výstrahu");
+    expect(aiResponse.result.summary).toContain("To neznamená, že neprší");
+
+    await app.close();
+  });
+
   it("geocodes place phrases into bbox for generic AI map searches without explicit geo context", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
@@ -2487,6 +2630,9 @@ describe("community report routes", () => {
       provider: "local",
       status: "COMPLETED"
     });
+    expect(aiResponse.result.summary).toContain("Hydrologické měření");
+    expect(aiResponse.result.summary).toContain("Hladina 106 cm");
+    expect(aiResponse.result.summary).toContain("Průtok 0,33 m3/s");
     const structured = aiResponse.result.structured as Record<string, unknown>;
     const mapSearch = structured.mapSearch as Record<string, unknown>;
     expect(mapSearch).toMatchObject({
@@ -2729,6 +2875,68 @@ class FakeAiMapSearchSimSearchDataSource implements SimSearchDataSource {
 
   async query(request: SimSearchQueryRequest, requestNow: Date): Promise<SimSearchQueryResponse> {
     this.lastQuery = request;
+    const entityTypes = new Set(request.entityTypes ?? []);
+    if (entityTypes.has("weather_warning") || entityTypes.has("safety_alert")) {
+      return {
+        contractVersion: "sim-search-source-v1",
+        generatedAt: requestNow.toISOString(),
+        providerId: "sim.search-data",
+        query: request as Record<string, unknown>,
+        results: [],
+        summary: {
+          resultCount: 0,
+          staleResultCount: 0,
+          warningCount: 0
+        },
+        warnings: []
+      };
+    }
+    if (entityTypes.has("hydro_station") || entityTypes.has("hydro_measurement")) {
+      return {
+        contractVersion: "sim-search-source-v1",
+        generatedAt: requestNow.toISOString(),
+        providerId: "sim.search-data",
+        query: request as Record<string, unknown>,
+        results: [
+          {
+            centroid: {
+              lat: 50.15077,
+              lon: 17.37303
+            },
+            confidence: 0.97,
+            dataQuality: "official_observed",
+            distanceM: 180,
+            entitySubtype: "water_level",
+            entityType: "hydro_station",
+            handling: ["dynamic_data_requires_timestamp"],
+            layerIds: ["public.safety.flood"],
+            metrics: {
+              discharge: 0.32881,
+              floodStage: 0,
+              waterLevelCm: 106,
+              waterTemperatureC: 15.6
+            },
+            observedAt: requestNow.toISOString(),
+            providerEntityId: "safety:hydro:mnichov-cerna-opava",
+            providerId: "sim.search-data",
+            sourceAuthority: "official",
+            sourceEntityId: "chmi_hydro:mnichov-cerna-opava",
+            sourceRevision: "chmi_hydro:2026-05-20T12:00:00Z",
+            sourceSystem: "chmi_hydro",
+            status: "monitoring",
+            summary: "Hydrologická stanice ČHMÚ s aktuální hladinou, průtokem a stupněm povodňové aktivity.",
+            title: "Mnichov - Černá Opava",
+            updatedAt: requestNow.toISOString()
+          }
+        ],
+        summary: {
+          resultCount: 1,
+          staleResultCount: 0,
+          warningCount: 0
+        },
+        warnings: []
+      };
+    }
     return {
       contractVersion: "sim-search-source-v1",
       generatedAt: requestNow.toISOString(),
@@ -2944,6 +3152,12 @@ class FakeAiMapSearchSafetyDataSource implements SafetyDataSource {
             headline: "Water level station",
             layer: "flood",
             layerId: "public.safety.flood",
+            metrics: {
+              discharge: 0.32881,
+              floodStage: 0,
+              waterLevelCm: 106,
+              waterTemperatureC: 15.6
+            },
             observedAt: requestNow.toISOString(),
             providerLayerId: "safety.flood",
             sourceId: "chmi_hydro",

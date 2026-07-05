@@ -43,7 +43,10 @@ export interface AiMapSearchIntent {
 
 export function inferAiMapSearchIntent(question: string, body: Record<string, unknown>): AiMapSearchIntent {
   const normalized = normalizeAiMapSearchText(question);
-  const requested = /(?:^|\b)(najdi|najit|vyhledej|hledej|ukaz|ukaž|zobraz|kde je|kde jsou|kde se|nejbliz|nejblizsi|nejbli|nearest|closest|find|show)(?:\b|$)/u.test(normalized);
+  const explicitSearchRequested = /(?:^|\b)(najdi|najit|vyhledej|hledej|ukaz|ukaž|zobraz|kde je|kde jsou|kde se|nejbliz|nejblizsi|nejbli|nearest|closest|find|show)(?:\b|$)/u.test(normalized);
+  const hydroMeasurementRequested = /\b(?:vyska vody|stav vody|hladina|hladinu|prutok|vodomer|vodomerna|hydro|kde se meri|water level|river gauge|discharge)\b/u.test(normalized);
+  const weatherMeasurementRequested = /\b(?:pocasi|bude prset|prsi|prset|dest|deste|srazky|bourka|bourky|blizi se bourka|vitr|teplota|radar|weather|rain|storm|thunderstorm|wind|temperature)\b/u.test(normalized);
+  const requested = explicitSearchRequested || hydroMeasurementRequested || weatherMeasurementRequested;
   const layerIds = new Set<string>();
   const categoryIds = new Set<string>();
   const searchTerms = new Set<string>();
@@ -73,6 +76,22 @@ export function inferAiMapSearchIntent(question: string, body: Record<string, un
   }
   if (/(nemocnic|hospital|klinik|clinic|lekar|lékar|doktor|doctors|lekarn|lékarn|pharmacy|zdravotnictv)/u.test(normalized)) {
     addInfrastructureCategory("reference.infrastructure.healthcare", ["hospital", "clinic", "doctors", "pharmacy"], ["healthcare"]);
+  }
+  if (hydroMeasurementRequested || /(vodomer|vodomern|hladin|prutok|hydro|river|water level|gauge)/u.test(normalized)) {
+    addInfrastructureCategory("public.safety.flood", ["hydro"], ["hydro", "water_level", "river", "gauge"]);
+  }
+  if (weatherMeasurementRequested || /(pocasi|srazk|dest|prset|bour|vitr|teplot|radar|weather|rain|storm|wind|temperature)/u.test(normalized)) {
+    [
+      "public.weather.current",
+      "public.weather.observations",
+      "public.weather.forecast_area",
+      "public.weather.precipitation_grid",
+      "public.weather.radar_precipitation",
+      "public.weather.radar_nowcast",
+      "public.safety.weather_alerts"
+    ].forEach((layerId) => layerIds.add(layerId));
+    categoryIds.add("weather");
+    ["weather", "rain", "precipitation", "storm", "wind", "temperature"].forEach((term) => searchTerms.add(term));
   }
   aiMapSearchTermsFromQuestion(question).forEach((term) => searchTerms.add(term));
 
@@ -211,6 +230,7 @@ export function summarizeMapFeatureForAi(
     sourceSystemIds,
     status: optionalText(properties.status) ?? "map-result",
     title,
+    metrics: isRecord(properties.metrics) ? properties.metrics : undefined,
     type: "mapFeature",
     updatedAt: optionalText(properties.observedAt)
       ?? optionalText(properties.updatedAt)
@@ -279,6 +299,15 @@ export function simSearchEntityTypesForAiMapSearchIntent(intent: AiMapSearchInte
       case "siren":
         entityTypes.add("public_resource");
         break;
+      case "hydro":
+        entityTypes.add("hydro_station");
+        entityTypes.add("hydro_measurement");
+        entityTypes.add("flood_risk_area");
+        break;
+      case "weather":
+        entityTypes.add("weather_warning");
+        entityTypes.add("safety_alert");
+        break;
       default:
         break;
     }
@@ -300,6 +329,10 @@ export function simSearchEntityTypesForAiMapSearchIntent(intent: AiMapSearchInte
     entityTypes.add("weather_warning");
     entityTypes.add("safety_alert");
     entityTypes.add("flood_risk_area");
+  }
+  if (terms.some((term) => /^(pocasi|meteorolog|weather|radar|srazk|dest|prset|prsi|bour|storm|thunder|teplot|vitr|wind|rain)/u.test(term))) {
+    entityTypes.add("weather_warning");
+    entityTypes.add("safety_alert");
   }
   return entityTypes.size > 0 ? Array.from(entityTypes) : undefined;
 }
@@ -361,7 +394,13 @@ export function aiMapSearchFallbackResponse(
   const locationText = location ? `Souřadnice: ${location.lat}, ${location.lon}.` : undefined;
   const distanceSentence = distanceText ? `Vzdálenost od zadané polohy: ${distanceText}.` : undefined;
   const citationText = citationId ? `Zdroj: [${citationId}].` : "Zdroj: COP mapové vyhledávání.";
-  const summary = [
+  const summary = aiMeasurementMapSearchSummary(topResult, {
+    category,
+    citationText,
+    distanceSentence,
+    locationText,
+    title
+  }) ?? [
     `Našel jsem v mapových datech COP: ${title}.`,
     category ? `Kategorie: ${category}.` : undefined,
     distanceSentence,
@@ -409,6 +448,7 @@ export function aiMapSearchNoResultFallbackResponse(
     return undefined;
   }
   const query = isRecord(mapSearch.query) ? mapSearch.query : {};
+  const categoryIds = optionalTextList(query.categoryIds, 12);
   const center = aiLocationFromRecord(query.center);
   const bbox = isRecord(query.bbox) ? query.bbox : undefined;
   const warnings = Array.isArray(mapSearch.warnings)
@@ -420,6 +460,7 @@ export function aiMapSearchNoResultFallbackResponse(
       ? "Prohledal jsem dostupné COP mapové zdroje v zadané oblasti."
       : "Prohledal jsem dostupné COP mapové zdroje bez polohového omezení.";
   const warningText = warnings.length > 0 ? ` Omezení: ${warnings.join(" ")}` : "";
+  const domainNoResultText = aiMapSearchDomainNoResultText(categoryIds);
   return {
     auditId: randomUUID(),
     model: "map-search-empty-fallback",
@@ -443,10 +484,132 @@ export function aiMapSearchNoResultFallbackResponse(
           resultCount: 0
         }
       },
-      summary: `${geoText} Nenašel jsem odpovídající objekt v aktuálně dostupném COP mapovém indexu.${warningText}`.trim()
+      summary: `${geoText} ${domainNoResultText}${warningText}`.trim()
     },
     status: "COMPLETED"
   };
+}
+
+function aiMapSearchDomainNoResultText(categoryIds: string[]): string {
+  if (categoryIds.includes("weather")) {
+    return [
+      "V dostupném COP/SIM kontextu jsem nenašel aktuální meteo výstrahu ani měřenou nebo předpovědní meteo entitu pro dotaz.",
+      "To neznamená, že neprší nebo že se bouřka neblíží; znamená to, že COP teď nemá pro tento dotaz dostupný potvrzený meteo výsledek."
+    ].join(" ");
+  }
+  if (categoryIds.includes("hydro")) {
+    return [
+      "Nenašel jsem odpovídající hydrologickou stanici nebo aktuální měření hladiny v dostupném COP/SIM mapovém indexu.",
+      "Pro krizové rozhodnutí je potřeba ověřit ČHMÚ/SIM hydrologický zdroj nebo zadat konkrétnější řeku či místo."
+    ].join(" ");
+  }
+  return "Nenašel jsem odpovídající objekt v aktuálně dostupném COP mapovém indexu.";
+}
+
+function aiMeasurementMapSearchSummary(
+  result: Record<string, unknown>,
+  input: {
+    category: string | undefined;
+    citationText: string;
+    distanceSentence: string | undefined;
+    locationText: string | undefined;
+    title: string;
+  }
+): string | undefined {
+  const metrics = isRecord(result.metrics) ? result.metrics : {};
+  const normalizedCategory = normalizeCategoryId(input.category ?? "");
+  const sourceName = optionalText(result.sourceName);
+  const observedAt = optionalText(result.updatedAt) ?? optionalText(result.observedAt) ?? optionalText(result.validFrom);
+  const observedText = observedAt ? `Čas měření: ${formatAiCzechDateTime(observedAt)}.` : undefined;
+  const sourceText = sourceName ? `Zdroj: ${sourceName}.` : input.citationText;
+  const commonTail = [input.distanceSentence, input.locationText, sourceText].filter(Boolean).join(" ");
+
+  if (normalizedCategory.includes("hydro")
+    || normalizedCategory.includes("water")
+    || normalizedCategory.includes("flood")
+    || metricValueText(metrics, ["waterLevelCm"]) !== undefined
+    || metricValueText(metrics, ["discharge", "dischargeM3s"]) !== undefined) {
+    const values = [
+      metricValueText(metrics, ["waterLevelCm"], "Hladina", "cm"),
+      metricValueText(metrics, ["discharge", "dischargeM3s"], "Průtok", "m3/s"),
+      metricValueText(metrics, ["waterTemperatureC"], "Teplota vody", "°C"),
+      floodStageText(metrics.floodStage)
+    ].filter(Boolean);
+    const valueText = values.length > 0 ? `Aktuální hodnoty: ${values.join(", ")}.` : "Aktuální číselné hodnoty nejsou v dostupném výsledku uvedené.";
+    return [
+      `Hydrologické měření: ${input.title}.`,
+      valueText,
+      observedText,
+      commonTail
+    ].filter(Boolean).join(" ");
+  }
+
+  if (normalizedCategory.includes("weather")
+    || normalizedCategory.includes("rain")
+    || normalizedCategory.includes("storm")
+    || metricValueText(metrics, ["temperatureC"]) !== undefined
+    || metricValueText(metrics, ["precipitationMm", "precipitation1hMm", "precipitation10mMm", "rainMm"]) !== undefined) {
+    const values = [
+      metricValueText(metrics, ["temperatureC"], "Teplota", "°C"),
+      metricValueText(metrics, ["precipitation10mMm"], "Srážky 10 min", "mm"),
+      metricValueText(metrics, ["precipitation1hMm", "precipitationMm", "rainMm"], "Srážky", "mm"),
+      metricValueText(metrics, ["windSpeedMps"], "Vítr", "m/s"),
+      metricValueText(metrics, ["windGustMps"], "Nárazy větru", "m/s"),
+      metricValueText(metrics, ["relativeHumidityPercent", "humidityPercent"], "Vlhkost", "%"),
+      metricValueText(metrics, ["pressureHpa", "pressureHpaSeaLevel"], "Tlak", "hPa")
+    ].filter(Boolean);
+    const valueText = values.length > 0 ? `Aktuální hodnoty: ${values.join(", ")}.` : "Aktuální číselné meteo hodnoty nejsou v dostupném výsledku uvedené.";
+    return [
+      `Meteo informace: ${input.title}.`,
+      valueText,
+      observedText,
+      commonTail
+    ].filter(Boolean).join(" ");
+  }
+
+  return undefined;
+}
+
+function metricValueText(
+  metrics: Record<string, unknown>,
+  keys: string[],
+  label?: string,
+  unit?: string
+): string | undefined {
+  for (const key of keys) {
+    const value = optionalFiniteNumber(metrics[key], -1_000_000, 1_000_000);
+    if (value !== undefined) {
+      return `${label ?? key} ${formatMetricNumber(value)}${unit ? ` ${unit}` : ""}`;
+    }
+  }
+  return undefined;
+}
+
+function floodStageText(value: unknown): string | undefined {
+  const stage = optionalFiniteNumber(value, -10, 10);
+  return stage !== undefined ? `SPA ${formatMetricNumber(stage)}` : undefined;
+}
+
+function formatMetricNumber(value: number): string {
+  return new Intl.NumberFormat("cs-CZ", {
+    maximumFractionDigits: Math.abs(value) < 10 ? 2 : 1,
+    minimumFractionDigits: 0
+  }).format(value);
+}
+
+function formatAiCzechDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("cs-CZ", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Prague",
+    year: "numeric"
+  }).format(date);
 }
 
 function aiMapActionsFromMapSearchResults(results: Record<string, unknown>[]): AiMapAction[] {
@@ -628,8 +791,8 @@ function aiMapSearchTokenVariants(term: string): string[] {
   if (/^(report|hlaseni|udalost|incident)/u.test(normalized)) {
     ["report", "hlaseni", "community", "incident", "udalost"].forEach((value) => variants.add(value));
   }
-  if (/^(pocasi|meteorolog|weather|radar|srazk|dest|teplot|vitr)/u.test(normalized)) {
-    ["pocasi", "weather", "radar", "srazk", "precip", "teplot", "wind", "vitr"].forEach((value) => variants.add(value));
+  if (/^(pocasi|meteorolog|weather|radar|srazk|dest|prset|prsi|bour|storm|thunder|teplot|vitr|rain|wind)/u.test(normalized)) {
+    ["pocasi", "weather", "radar", "srazk", "precip", "dest", "rain", "storm", "thunder", "bourka", "teplot", "wind", "vitr"].forEach((value) => variants.add(value));
   }
   if (/^(mobil|signal|bts|sit|site|vez|tower)/u.test(normalized)) {
     ["mobil", "mobile", "signal", "bts", "tower", "network", "coverage"].forEach((value) => variants.add(value));
@@ -854,7 +1017,7 @@ function locationFromSimSearchEntity(entity: SimSearchEntity): { lat: number; lo
 
 function aiSimSearchPriorityScore(entity: SimSearchEntity, distanceM: number | undefined): number {
   let score = 0.42;
-  if (/^(police_station|fire_station|hospital|medical_emergency|shelter|evacuation_point)$/u.test(entity.entityType)) {
+  if (/^(police_station|fire_station|hospital|medical_emergency|shelter|evacuation_point|hydro_station|hydro_measurement|weather_warning|safety_alert)$/u.test(entity.entityType)) {
     score += 0.18;
   }
   if (/^(official|internal_verified|partner_verified|reference)$/u.test(entity.sourceAuthority ?? "")) {
@@ -939,7 +1102,7 @@ function formatAiMapDistance(distanceM: number | undefined): string | undefined 
 function aiMapFeaturePriorityScore(category: string | undefined, distanceM: number | undefined): number {
   const normalized = normalizeAiMapSearchText(category ?? "");
   let score = 0.36;
-  if (/(police|fire_station|ambulance_station|hospital|clinic|doctors|pharmacy|shelter|defibrillator|siren)/u.test(normalized)) {
+  if (/(police|fire_station|ambulance_station|hospital|clinic|doctors|pharmacy|shelter|defibrillator|siren|hydro|water|water_level|flood|weather|rain|storm|srazk|pocasi)/u.test(normalized)) {
     score += 0.18;
   }
   if (distanceM !== undefined) {
@@ -998,6 +1161,10 @@ function aiMapCategoryAliases(categoryId: string): string[] {
       return ["assembly_point", "shromazd", "evakuac"];
     case "siren":
       return ["siren", "sirena", "sireny"];
+    case "hydro":
+      return ["hydro", "water", "water_level", "flood", "povod", "vodomer", "hladin", "river", "gauge", "chmi_hydro"];
+    case "weather":
+      return ["weather", "pocasi", "srazk", "precipitation", "rain", "radar", "storm", "bourka", "wind", "temperature", "teplot", "weather_alerts"];
     default:
       return [categoryId];
   }
