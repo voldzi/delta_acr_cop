@@ -1724,6 +1724,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return Array.from(candidates).filter((candidate) => candidate.length >= 3).slice(0, 4);
   }
 
+  function shouldAnswerAiChatAgentWithMapSearchResult(
+    question: string,
+    body: Record<string, unknown>,
+    mapSearch: AiMapSearchContext | undefined
+  ): boolean {
+    if (!mapSearch || mapSearch.results.length === 0) {
+      return false;
+    }
+    const intent = inferAiMapSearchIntent(question, body);
+    return intent.requested || intent.layerIds.length > 0 || intent.categoryIds.length > 0;
+  }
+
   function parseAiContextGeoFilter(body: Record<string, unknown>): AiContextGeoFilter | undefined {
     const geoContext = isRecord(body.geoContext) ? body.geoContext : {};
     const bbox = parseMapQueryBbox(geoContext.bbox ?? body.bbox);
@@ -7084,9 +7096,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
+    const deterministicMapSearchResponse = shouldAnswerAiChatAgentWithMapSearchResult(question, body, aiMapSearch)
+      ? aiMapSearchFallbackResponse(aiRequest, requestNow, "Explicit COP map search resolved by the read-only map tool.")
+      : undefined;
     const providerStartedAt = Date.now();
-    const providerResponse = await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent");
-    const providerDurationMs = Date.now() - providerStartedAt;
+    const providerResponse = deterministicMapSearchResponse ?? await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent");
+    const providerDurationMs = deterministicMapSearchResponse ? 0 : Date.now() - providerStartedAt;
     const pipelineObservability = buildAiPipelineObservability({
       compressedContext,
       contextCompression: promptContext.contextCompression,

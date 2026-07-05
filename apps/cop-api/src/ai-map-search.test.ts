@@ -104,6 +104,52 @@ describe("AI map search", () => {
     expect(aiSituationFeatureMatchesMapSearchIntent(waterGaugeFeature, intent)).toBe(true);
   });
 
+  it("matches production CHMI hydro features that only expose technical English metadata", () => {
+    const intent = inferAiMapSearchIntent("Najdi vodoměrnou stanici ve Vrbně pod Pradědem.", {});
+    const results = summarizeMapFeatureCollectionForAi({
+      features: [
+        {
+          geometry: {
+            coordinates: [17.386, 50.121],
+            type: "Point"
+          },
+          id: "flood:chmi_hydro:1vnc992",
+          properties: {
+            category: "water_level",
+            layerId: "public.safety.flood",
+            providerLayerId: "safety.flood",
+            sourceId: "chmi_hydro",
+            sourceName: "CHMI hydrological stations",
+            status: "monitoring"
+          },
+          type: "Feature"
+        }
+      ],
+      type: "FeatureCollection"
+    }, {
+      bbox: {
+        east: 17.45,
+        north: 50.16,
+        south: 50.09,
+        west: 17.31
+      },
+      center: {
+        lat: 50.123,
+        lon: 17.389,
+        radiusKm: 10
+      },
+      label: "Vrbně pod Pradědem"
+    }, intent, "sim.safety-data");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      category: "water_level",
+      mapFeatureId: "flood:chmi_hydro:1vnc992",
+      sourceName: "CHMI hydrological stations",
+      title: "water_level"
+    });
+  });
+
   it("uses catalog metadata to narrow generic map searches when possible", () => {
     const intent = inferAiMapSearchIntent("Ukaž mi nejbližší autobusovou zastávku.", {});
     const transitStopsLayer: MapCatalogLayer = {

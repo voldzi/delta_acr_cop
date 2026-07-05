@@ -211,8 +211,11 @@ referenční kategorie (policie, hasiči, záchranná stanice, kryt, defibrilát
 siréna, nemocnice/klinika/lékař/lékárna) a spustí stejnou map-catalog query
 cestu jako webová mapa. Výsledky se předávají jako `mapSearch`, zároveň vstupují
 do `priorityContext` jako `mapFeature` s polohou, vzdáleností a citační značkou.
-Když LLM provider vyprší, ale mapové hledání už našlo konkrétní bod, API může
-vrátit deterministickou odpověď z mapových dat místo obecného timeoutu.
+Když explicitní mapové hledání najde konkrétní bod, API může vrátit
+deterministickou odpověď z mapových dat bez čekání na LLM provider; stejný
+fallback se použije i při timeoutu provideru. Tím má autoritativní mapový tool
+přednost před textovým modelem a uživatel nedostane falešné „nenalezeno“, když
+COP mapová vrstva výsledek obsahuje.
 Od 2026-07-05 odpověď obsahuje také `result.structured.mapActions` s akcemi
 `focus-map` pro validované mapové výsledky. COP Chat tyto akce ukládá do Matrix
 `cz.cop.ai.mapActions` metadat a vykresluje je jako tlačítka v AI bublině.

@@ -95,7 +95,10 @@ such as water gauges, transport stops, community reports, bridges, weather
 points and future GeoJSON-like catalog layers when the underlying provider
 exposes them. Place-only searches continue to use the geocoder. Results are
 folded into `priorityContext` as `mapFeature` citations and map snapshot
-candidates.
+candidates. When an explicit map-search question has at least one validated
+map result, COP may answer deterministically from `mapSearch` without waiting
+for the LLM provider, so the chat cannot contradict the authoritative map tool
+by claiming that no result was found.
 
 Both endpoints echo a bounded, client-safe evidence summary in
 `result.structured.evidence`. The summary contains citation lists from

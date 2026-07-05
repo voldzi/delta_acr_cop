@@ -1,12 +1,21 @@
 import { createSign, generateKeyPairSync, type KeyObject } from "node:crypto";
-import { createPublicSituationAggregateSourceSystem } from "@cop/canonical-model";
-import { AiGateway, OllamaEmbeddingProvider, type AiCopQuery, type AiProvider } from "@cop/ai-gateway";
+import { createPublicSafetyAggregateSourceSystem, createPublicSituationAggregateSourceSystem } from "@cop/canonical-model";
+import { AiGateway, OllamaEmbeddingProvider, type AiCopQuery, type AiCopResponse, type AiProvider } from "@cop/ai-gateway";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryCommunityReportStore } from "./community-report-store.js";
 import { buildServer } from "./server.js";
 import type { MediaObjectReadRequest, MediaObjectWriteRequest, MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
 import type { MessagingProvider } from "./messaging-provider.js";
 import type { PlaceGeocodeQuery, PlaceGeocodeResponse, PlaceGeocoder } from "./place-geocoder.js";
+import type {
+  SafetyDataPublicConfig,
+  SafetyDataSource,
+  SafetyDataSourceConfig,
+  SafetyFeatureCollection,
+  SafetyFeatureQuery,
+  SafetyLayerDescriptor,
+  SafetySourceDescriptor
+} from "./safety-data-source.js";
 import type {
   SituationDataSource,
   SituationDataSourceConfig,
@@ -2080,15 +2089,22 @@ describe("community report routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(capturedQueries).toHaveLength(1);
+    expect(capturedQueries).toHaveLength(0);
     expect(situationDataSource.lastFeatureQuery).toMatchObject({
       layers: ["ground"],
       sources: ["osm_postgis"]
     });
-    const context = capturedQueries[0]?.context as Record<string, unknown>;
-    const mapSearch = context.mapSearch as Record<string, unknown>;
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "map-search-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("Policie ČR Obvodní oddělení Vrbno pod Pradědem");
+    const structured = aiResponse.result.structured as Record<string, unknown>;
+    const mapSearch = structured.mapSearch as Record<string, unknown>;
     expect(mapSearch).toMatchObject({
-      contractVersion: "cop-ai-map-search-v1",
+      resultCount: 1,
       toolCall: {
         matchedFeatureCount: 1,
         status: "ok",
@@ -2103,14 +2119,22 @@ describe("community report routes", () => {
         title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
       })
     ]);
-    const priorityContext = context.priorityContext as Record<string, unknown>;
+    expect(structured.mapActions).toEqual([
+      expect.objectContaining({
+        action: "focus-map",
+        entityId: "osm:police:vrbno",
+        title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
+      })
+    ]);
+    const evidence = structured.evidence as Record<string, unknown>;
+    const priorityContext = evidence.priority as Record<string, unknown>;
     expect(priorityContext.citations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         entityId: "osm:police:vrbno",
         entityType: "mapFeature"
       })
     ]));
-    expect(priorityContext.mapSnapshot).toMatchObject({
+    expect(evidence.mapSnapshot).toMatchObject({
       candidates: expect.arrayContaining([
         expect.objectContaining({
           entityId: "osm:police:vrbno",
@@ -2182,6 +2206,7 @@ describe("community report routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(placeGeocoder.queries.slice(0, 2)).toEqual(["Vrbně pod Pradědem", "Vrbno pod Pradědem"]);
+    expect(capturedQueries).toHaveLength(1);
     const context = capturedQueries[0]?.context as Record<string, unknown>;
     const mapSearch = context.mapSearch as Record<string, unknown>;
     expect(mapSearch).toMatchObject({
@@ -2200,6 +2225,95 @@ describe("community report routes", () => {
         toolId: "cop.map.query.search"
       }
     });
+
+    await app.close();
+  });
+
+  it("uses geocoded generic map searches against safety flood layers", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "Safety map search context captured",
+          structured: {
+            purpose: query.purpose
+          }
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const placeGeocoder = new FakeAiMapSearchPlaceGeocoder();
+    const safetyDataSource = new FakeAiMapSearchSafetyDataSource();
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      placeGeocoder,
+      safetyDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        question: "Najdi vodoměrnou stanici ve Vrbně pod Pradědem."
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    expect(safetyDataSource.lastFeatureQuery).toMatchObject({
+      layers: expect.arrayContaining(["flood"]),
+      sources: expect.arrayContaining(["chmi_hydro"])
+    });
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "map-search-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    const structured = aiResponse.result.structured as Record<string, unknown>;
+    const mapSearch = structured.mapSearch as Record<string, unknown>;
+    expect(mapSearch).toMatchObject({
+      contractVersion: "cop-ai-map-search-v1",
+      resultCount: 1,
+      query: {
+        placeQuery: "Vrbně pod Pradědem",
+        requested: true,
+        searchTerms: expect.arrayContaining(["vodomer", "stan"])
+      },
+      toolCall: {
+        matchedFeatureCount: 1,
+        toolId: "cop.map.query.search"
+      }
+    });
+    expect(mapSearch.results).toEqual([
+      expect.objectContaining({
+        category: "water_level",
+        mapFeatureId: "flood:chmi_hydro:1vnc992",
+        sourceName: "CHMI hydrological stations",
+        title: "water_level"
+      })
+    ]);
+    expect(structured.mapActions).toEqual([
+      expect.objectContaining({
+        action: "focus-map",
+        entityId: "flood:chmi_hydro:1vnc992",
+        title: "water_level"
+      })
+    ]);
 
     await app.close();
   });
@@ -2392,6 +2506,94 @@ class FakeAiMapSearchSituationDataSource implements SituationDataSource {
       source: { sourceId: "situation-data-api", sourceType: "PUBLIC_SITUATION_AGGREGATE" },
       sources: await this.fetchSources(),
       summary: { featureCount: 3, sourceCount: 1, staleFeatureCount: 0, warningCount: 0 },
+      type: "FeatureCollection",
+      warnings: []
+    };
+  }
+}
+
+class FakeAiMapSearchSafetyDataSource implements SafetyDataSource {
+  readonly config: SafetyDataSourceConfig = {
+    baseUrl: "https://sim.example.test/safety-data/api/v1",
+    cacheTtlMs: 20000,
+    enabled: true,
+    maxLimit: 250,
+    timeoutMs: 7000
+  };
+
+  readonly sourceSystem = createPublicSafetyAggregateSourceSystem();
+  lastFeatureQuery: SafetyFeatureQuery | null = null;
+
+  async fetchConfig(): Promise<SafetyDataPublicConfig> {
+    return {
+      enabledSources: ["chmi_hydro"],
+      requestTimeoutMs: 7000
+    };
+  }
+
+  async fetchLayers(): Promise<SafetyLayerDescriptor[]> {
+    return [
+      {
+        defaultVisible: true,
+        description: "Hydrologické stanice, vodní stavy, průtoky a stupně povodňové aktivity.",
+        expectedCadenceSeconds: 600,
+        geometryTypes: ["Point"],
+        label: "CHMI Hydro",
+        layerId: "flood"
+      }
+    ];
+  }
+
+  async fetchSources(): Promise<SafetySourceDescriptor[]> {
+    return [
+      {
+        enabled: true,
+        label: "CHMI Hydro",
+        layers: ["flood"],
+        sourceId: "chmi_hydro",
+        updateCadenceSeconds: 600
+      }
+    ];
+  }
+
+  async fetchFeatures(query: SafetyFeatureQuery, requestNow: Date): Promise<SafetyFeatureCollection> {
+    this.lastFeatureQuery = query;
+    return {
+      contractVersion: "cop-safety-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [17.386, 50.121],
+            type: "Point"
+          },
+          id: "flood:chmi_hydro:1vnc992",
+          properties: {
+            category: "water_level",
+            featureId: "flood:chmi_hydro:1vnc992",
+            headline: "Water level station",
+            layer: "flood",
+            layerId: "public.safety.flood",
+            observedAt: requestNow.toISOString(),
+            providerLayerId: "safety.flood",
+            sourceId: "chmi_hydro",
+            sourceName: "CHMI hydrological stations",
+            status: "monitoring"
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: requestNow.toISOString(),
+      query,
+      source: { sourceId: "safety-data-api", sourceType: "PUBLIC_SAFETY_AGGREGATE" },
+      sources: await this.fetchSources(),
+      summary: {
+        advisoryCount: 0,
+        criticalCount: 0,
+        featureCount: 1,
+        sourceCount: 1,
+        staleFeatureCount: 0,
+        warningCount: 0
+      },
       type: "FeatureCollection",
       warnings: []
     };
