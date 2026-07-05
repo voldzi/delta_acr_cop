@@ -38,11 +38,13 @@ import {
   aiMapSearchFallbackResponse,
   aiMapSearchResultCompare,
   aiMapActionsFromMapSearchContext,
+  aiMapCatalogLayerMatchesMapSearchIntent,
   aiSituationFeatureMatchesMapSearchIntent,
   bboxForAiMapSearchGeoFilter,
   dedupeAiMapSearchResults,
   inferAiMapSearchIntent,
   summarizeGeocodedPlaceForAi,
+  summarizeMapFeatureCollectionForAi,
   summarizeSituationMapFeatureForAi,
   type AiMapSearchContext,
   type AiMapSearchResult
@@ -1753,7 +1755,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const bbox = bboxForAiMapSearchGeoFilter(geoFilter);
     const mapResults: AiMapSearchResult[] = [];
 
-    if (intent.layerIds.length > 0) {
+    if (intent.requested || intent.layerIds.length > 0) {
       if (!bbox) {
         warnings.push("Mapové vyhledávání potřebuje aktuální polohu, bbox nebo místo v dotazu.");
       } else {
@@ -1770,15 +1772,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             situation: providers.situation,
             tak: providers.tak
           });
-          const selectedLayers = catalog.layers.filter((layer) =>
-            intent.layerIds.includes(layer.layerId) && catalogLayerAvailableForMapQuery(layer)
+          const queryableLayers = catalog.layers.filter((layer) =>
+            catalogLayerAvailableForMapQuery(layer) && catalogLayerQueryableForFeatureQuery(layer)
           );
-          const unknownLayerIds = intent.layerIds.filter((layerId) => !catalog.layers.some((layer) => layer.layerId === layerId));
-          const unavailableLayerIds = intent.layerIds.filter((layerId) =>
-            catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer))
-          );
+          const catalogMatchedLayers = queryableLayers.filter((layer) => aiMapCatalogLayerMatchesMapSearchIntent(layer, intent));
+          const selectedLayers = intent.layerIds.length > 0
+            ? queryableLayers.filter((layer) => intent.layerIds.includes(layer.layerId))
+            : catalogMatchedLayers.length > 0
+              ? catalogMatchedLayers
+              : queryableLayers;
+          const unknownLayerIds = intent.layerIds.length > 0
+            ? intent.layerIds.filter((layerId) => !catalog.layers.some((layer) => layer.layerId === layerId))
+            : [];
+          const unavailableLayerIds = intent.layerIds.length > 0
+            ? intent.layerIds.filter((layerId) =>
+                catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer))
+              )
+            : [];
           if (selectedLayers.length === 0) {
             warnings.push("Pro dotaz nebyla k dispozici žádná použitelná mapová vrstva.");
+          }
+          if (intent.layerIds.length === 0 && catalogMatchedLayers.length === 0 && queryableLayers.length > 0) {
+            warnings.push("Dotaz nebyl navázán na konkrétní katalogovou vrstvu; prohledány dostupné mapové vrstvy v zadaném okolí.");
           }
           if (unknownLayerIds.length > 0) {
             warnings.push(`Neznámé mapové vrstvy ignorovány: ${unknownLayerIds.join(", ")}.`);
@@ -1795,11 +1810,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             limit: 120
           };
           const providerQueries = buildProviderFeatureQueries(selectedLayers, query);
-          const situationCollection = await readSituationMapQuery(providerQueries.situation, input.requestNow, input.actor, selectedLayers);
-          warnings.push(...(situationCollection?.warnings ?? []));
+          const [situationCollection, safetyCollection, flightCollection, communityCollection, missionArenaCollection, takCollection] = await Promise.all([
+            readSituationMapQuery(providerQueries.situation, input.requestNow, input.actor, selectedLayers),
+            readSafetyMapQuery(providerQueries.safety, input.requestNow),
+            readFlightReferenceMapQuery(providerQueries.flight, input.requestNow),
+            readCommunityMapQuery(providerQueries.community, input.requestNow, input.actor),
+            readMissionArenaMapQuery(providerQueries.missionArena, input.requestNow),
+            readTakMapQuery(providerQueries.tak, input.requestNow)
+          ]);
+          warnings.push(...mapFeatureCollectionWarnings(situationCollection));
+          warnings.push(...mapFeatureCollectionWarnings(safetyCollection));
+          warnings.push(...mapFeatureCollectionWarnings(flightCollection));
+          warnings.push(...mapFeatureCollectionWarnings(communityCollection));
+          warnings.push(...mapFeatureCollectionWarnings(missionArenaCollection));
+          warnings.push(...mapFeatureCollectionWarnings(takCollection));
           mapResults.push(...(situationCollection?.features ?? [])
             .filter((feature) => aiSituationFeatureMatchesMapSearchIntent(feature, intent))
             .map((feature) => summarizeSituationMapFeatureForAi(feature, geoFilter)));
+          mapResults.push(...summarizeMapFeatureCollectionForAi(safetyCollection, geoFilter, intent, "sim.safety-data"));
+          mapResults.push(...summarizeMapFeatureCollectionForAi(flightCollection, geoFilter, intent, "sim.flight-data"));
+          mapResults.push(...summarizeMapFeatureCollectionForAi(communityCollection, geoFilter, intent, "cop.community"));
+          mapResults.push(...summarizeMapFeatureCollectionForAi(missionArenaCollection, geoFilter, intent, "csm.mission-arena"));
+          mapResults.push(...summarizeMapFeatureCollectionForAi(takCollection, geoFilter, intent, "sim.tak-gateway"));
         } catch (error) {
           app.log.warn({ error, requestId: input.requestId }, "AI map search failed.");
           warnings.push(`Mapové vyhledávání selhalo: ${errorMessage(error)}`);
@@ -9595,6 +9627,17 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
 
 function catalogLayerAvailableForMapQuery(layer: MapCatalogLayer): boolean {
   return layer.enabled !== false && layer.availability !== "disabled";
+}
+
+function catalogLayerQueryableForFeatureQuery(layer: MapCatalogLayer): boolean {
+  return layer.query.mode === "bbox" || (layer.query.mode === "grid" && layer.query.providerId === "sim.situation-data");
+}
+
+function mapFeatureCollectionWarnings(collection: unknown): string[] {
+  if (!isRecord(collection) || !Array.isArray(collection.warnings)) {
+    return [];
+  }
+  return collection.warnings.filter((warning): warning is string => typeof warning === "string" && warning.trim() !== "");
 }
 
 function readMapQueryTechnology(value: Record<string, unknown> | undefined): string | undefined {

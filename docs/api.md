@@ -85,10 +85,17 @@ Matrix E2EE history.
 
 For `chat-agent/query`, search-like questions such as "najdi", "vyhledej" or
 "nejbližší" also create an audited `mapSearch` context. COP uses the same map
-catalog/query path as the map UI for known infrastructure categories such as
-police, fire, rescue, shelters, defibrillators, sirens, healthcare and
-pharmacies, and uses the geocoder for place-only searches. Results are folded
-into `priorityContext` as `mapFeature` citations and map snapshot candidates.
+catalog/query path as the map UI. Known emergency categories such as police,
+fire, rescue, shelters, defibrillators, sirens, healthcare and pharmacies still
+resolve to narrow catalog layers, but generic "find/show/nearest" questions now
+also search queryable catalog layers in the supplied bbox and match feature
+metadata such as label, category, layer, provider/source IDs, tags and summary.
+This lets the agent return clickable map results for authorized COP map objects
+such as water gauges, transport stops, community reports, bridges, weather
+points and future GeoJSON-like catalog layers when the underlying provider
+exposes them. Place-only searches continue to use the geocoder. Results are
+folded into `priorityContext` as `mapFeature` citations and map snapshot
+candidates.
 
 Both endpoints echo a bounded, client-safe evidence summary in
 `result.structured.evidence`. The summary contains citation lists from

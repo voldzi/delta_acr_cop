@@ -460,10 +460,13 @@ The phase-0 implementation focus is trust and control:
   `semanticContext.citations`, `indexedContext.citations` and
   `priorityContext.mapSnapshot` give the model citation IDs and structured map
   candidates for future preview rendering. Search-like chat questions such as
-  "najdi nejbližší policii" also build an audited `mapSearch` context from the
-  same map catalog/query path used by the map UI; the client-provided
-  `geoContext` from the visible timeline supplies the current-location bbox,
-  and matching map features are cited as priority `mapFeature` records.
+  "najdi nejbližší policii", "najdi vodoměrnou stanici" or "ukaž poškozený
+  most" also build an audited `mapSearch` context from the same map
+  catalog/query path used by the map UI. The client-provided `geoContext` from
+  the visible timeline supplies the current-location bbox. Known emergency
+  intents narrow to their catalog layers, while generic searches scan queryable
+  authorized catalog layers and match feature metadata before citing results as
+  priority `mapFeature` records.
 - AI answers sent to Matrix carry namespaced `cz.cop` message metadata with
   `kind`, `requestId`, `auditId`, provider/model, policy reason and the
   original question when present. It also carries bounded semantic/indexed

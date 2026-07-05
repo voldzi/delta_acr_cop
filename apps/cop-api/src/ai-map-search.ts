@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AiCopQuery, AiCopResponse } from "@cop/ai-gateway";
 import type { AiContextBbox, AiContextGeoFilter } from "./ai-context-index.js";
+import type { MapCatalogLayer } from "./map-catalog.js";
 import type { PlaceGeocodeResult } from "./place-geocoder.js";
 import type { SituationFeature } from "./situation-data-source.js";
 
@@ -70,6 +71,8 @@ export function inferAiMapSearchIntent(question: string, body: Record<string, un
     addInfrastructureCategory("reference.infrastructure.healthcare", ["hospital", "clinic", "doctors", "pharmacy"], ["healthcare"]);
   }
 
+  aiMapSearchTermsFromQuestion(question).forEach((term) => searchTerms.add(term));
+
   const bodyPlaceQuery = aiMapPlaceQueryFromBody(body);
   const placeQuery = requested && layerIds.size === 0
     ? bodyPlaceQuery ?? aiMapPlaceQueryFromQuestion(question) ?? aiPlaceQueryFromQuestion(question)
@@ -103,10 +106,37 @@ export function bboxForAiMapSearchGeoFilter(geoFilter: AiContextGeoFilter | unde
 }
 
 export function aiSituationFeatureMatchesMapSearchIntent(feature: SituationFeature, intent: AiMapSearchIntent): boolean {
-  if (intent.categoryIds.length === 0) {
+  return aiMapFeatureMatchesMapSearchIntent(feature, intent);
+}
+
+export function aiMapCatalogLayerMatchesMapSearchIntent(layer: MapCatalogLayer, intent: AiMapSearchIntent): boolean {
+  if (intent.layerIds.length > 0) {
+    return intent.layerIds.includes(layer.layerId);
+  }
+  const candidates = aiMapCatalogLayerCategoryCandidates(layer);
+  if (intent.categoryIds.length > 0) {
+    return intent.categoryIds.some((categoryId) =>
+      candidates.some((candidate) => aiCategoryCandidateMatchesIntent(candidate, categoryId))
+    );
+  }
+  const terms = aiMapSearchMeaningfulTerms(intent.searchTerms);
+  if (terms.length === 0) {
     return true;
   }
-  const candidates = aiSituationFeatureCategoryCandidates(feature);
+  const haystack = aiMapCatalogLayerSearchHaystack(layer);
+  return terms.some((term) => aiMapSearchTermMatchesHaystack(term, haystack));
+}
+
+export function aiMapFeatureMatchesMapSearchIntent(feature: unknown, intent: AiMapSearchIntent): boolean {
+  if (intent.categoryIds.length === 0) {
+    const terms = aiMapSearchMeaningfulTerms(intent.searchTerms);
+    if (terms.length === 0) {
+      return true;
+    }
+    const haystack = aiMapFeatureSearchHaystack(feature);
+    return terms.every((term) => aiMapSearchTermMatchesHaystack(term, haystack));
+  }
+  const candidates = aiMapFeatureCategoryCandidates(feature);
   return intent.categoryIds.some((categoryId) =>
     candidates.some((candidate) => aiCategoryCandidateMatchesIntent(candidate, categoryId))
   );
@@ -116,29 +146,70 @@ export function summarizeSituationMapFeatureForAi(
   feature: SituationFeature,
   geoFilter: AiContextGeoFilter | undefined
 ): AiMapSearchResult {
-  const location = locationFromSituationFeature(feature);
+  return summarizeMapFeatureForAi(feature, geoFilter, "sim.situation-data") ?? {};
+}
+
+export function summarizeMapFeatureCollectionForAi(
+  collection: unknown,
+  geoFilter: AiContextGeoFilter | undefined,
+  intent: AiMapSearchIntent,
+  sourceSystemId: string
+): AiMapSearchResult[] {
+  if (!isRecord(collection) || !Array.isArray(collection.features)) {
+    return [];
+  }
+  return collection.features
+    .filter((feature) => aiMapFeatureMatchesMapSearchIntent(feature, intent))
+    .map((feature) => summarizeMapFeatureForAi(feature, geoFilter, sourceSystemId))
+    .filter((result): result is AiMapSearchResult => result !== undefined);
+}
+
+export function summarizeMapFeatureForAi(
+  feature: unknown,
+  geoFilter: AiContextGeoFilter | undefined,
+  sourceSystemId?: string
+): AiMapSearchResult | undefined {
+  if (!isRecord(feature)) {
+    return undefined;
+  }
+  const properties = isRecord(feature.properties) ? feature.properties : {};
+  const location = locationFromMapFeatureRecord(feature);
+  if (!location) {
+    return undefined;
+  }
   const distanceM = mapSearchDistanceM(geoFilter, location);
-  const title = feature.properties.label
-    || feature.properties.summary
-    || feature.properties.category
-    || String(feature.id ?? feature.properties.featureId);
+  const title = optionalText(properties.label)
+    ?? optionalText(properties.title)
+    ?? optionalText(properties.name)
+    ?? optionalText(properties.summary)
+    ?? optionalText(properties.category)
+    ?? String(feature.id ?? optionalText(properties.featureId) ?? "mapový prvek");
+  const sourceId = optionalText(properties.sourceId);
+  const providerId = optionalText(properties.providerId);
+  const sourceSystemIds = Array.from(new Set([sourceSystemId, providerId, sourceId].filter((value): value is string => Boolean(value))));
   return compactRecord({
-    category: feature.properties.category,
-    detail: feature.properties.summary,
+    category: optionalText(properties.category) ?? optionalText(properties.typeCode),
+    detail: optionalText(properties.summary) ?? optionalText(properties.description) ?? optionalText(properties.detail),
     distanceM,
     distanceText: formatAiMapDistance(distanceM),
-    layer: feature.properties.layer,
-    layerId: feature.properties.layerId,
+    layer: optionalText(properties.layer),
+    layerId: optionalText(properties.layerId),
     location,
-    mapFeatureId: feature.properties.featureId || String(feature.id ?? title),
-    priorityScore: aiMapFeaturePriorityScore(feature.properties.category, distanceM),
-    providerLayerId: feature.properties.providerLayerId,
-    sourceName: feature.properties.sourceName,
-    sourceSystemIds: ["sim.situation-data", feature.properties.sourceId],
-    status: feature.properties.status ?? "map-result",
+    mapFeatureId: optionalText(properties.featureId)
+      ?? optionalText(properties.reportId)
+      ?? optionalText(properties.objectId)
+      ?? String(feature.id ?? title),
+    priorityScore: aiMapFeaturePriorityScore(optionalText(properties.category), distanceM),
+    providerLayerId: optionalText(properties.providerLayerId),
+    sourceName: optionalText(properties.sourceName) ?? optionalText(properties.groupName) ?? sourceSystemId,
+    sourceSystemIds,
+    status: optionalText(properties.status) ?? "map-result",
     title,
     type: "mapFeature",
-    updatedAt: feature.properties.observedAt ?? feature.properties.generatedAt
+    updatedAt: optionalText(properties.observedAt)
+      ?? optionalText(properties.updatedAt)
+      ?? optionalText(properties.generatedAt)
+      ?? optionalText(properties.receivedAt)
   });
 }
 
@@ -306,6 +377,177 @@ function normalizeAiMapSearchText(value: string): string {
     .toLocaleLowerCase("cs-CZ");
 }
 
+function aiMapSearchTermsFromQuestion(question: string): string[] {
+  const normalized = normalizeAiMapSearchText(question)
+    .replace(/^\/(?:ai|fast|reasoning|reason|auto)\b[\s:,-]*/u, "")
+    .replace(/^@(?:cop\s+ai|ai)\b[\s:,-]*/u, "")
+    .replace(/\b(?:najdi|najit|vyhledej|hledej|ukaz|zobraz|kde|je|jsou|nearest|closest|find|show)\b/gu, " ")
+    .replace(/\b(?:nejblizsi|nejblizsiho|nejbliz|blizko|pobliz|okoli|okolo|kolem|moje|moji|me|mé|poloha|polohy|aktualni|soucasne|mapa|mape|mapy)\b/gu, " ")
+    .replace(/\b(?:od|do|u|v|ve|na|pro|mi|mi prosim|prosim|prosím|the|a|an|near|from|my|current|location)\b/gu, " ");
+  const terms = normalized
+    .split(/[^a-z0-9]+/u)
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3 && !isAiMapSearchStopword(term))
+    .map(aiMapSearchTokenStem);
+  return Array.from(new Set(terms)).slice(0, 8);
+}
+
+function aiMapSearchMeaningfulTerms(terms: string[]): string[] {
+  return Array.from(new Set(terms
+    .map((term) => normalizeAiMapSearchText(term))
+    .flatMap((term) => term.split(/[^a-z0-9]+/u))
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3 && !isAiMapSearchStopword(term))
+    .map(aiMapSearchTokenStem)))
+    .slice(0, 8);
+}
+
+function isAiMapSearchStopword(term: string): boolean {
+  return new Set([
+    "aktualni",
+    "blizko",
+    "closest",
+    "current",
+    "find",
+    "hledej",
+    "jsou",
+    "kde",
+    "kolem",
+    "mapa",
+    "mape",
+    "mapy",
+    "moje",
+    "moji",
+    "najdi",
+    "najit",
+    "near",
+    "nearest",
+    "nejbliz",
+    "nejblizsi",
+    "okoli",
+    "okolo",
+    "pobliz",
+    "poloha",
+    "polohy",
+    "prosim",
+    "show",
+    "soucasne",
+    "ukaz",
+    "vyhledej",
+    "zobraz"
+  ]).has(term);
+}
+
+function aiMapSearchTokenStem(term: string): string {
+  if (term.length <= 4) {
+    return term;
+  }
+  return term
+    .replace(/(ovou|eho|eho|ymi|ami|emi|ich|ech|ove|ova|ovy|ska|ske|sky)$/u, "")
+    .replace(/(nou|ou|em|im|ho|mu|mi|ni|ci|ce|ku|ka|ky|ek|ik)$/u, "")
+    .replace(/(a|e|i|u|y)$/u, "");
+}
+
+function aiMapSearchTermMatchesHaystack(term: string, haystack: string): boolean {
+  return aiMapSearchTokenVariants(term).some((variant) => variant.length >= 3 && haystack.includes(variant));
+}
+
+function aiMapSearchTokenVariants(term: string): string[] {
+  const normalized = aiMapSearchTokenStem(normalizeAiMapSearchText(term));
+  const variants = new Set<string>([normalized]);
+  if (/^(vodomer|hydro|limnigraf|hladin|reka|river)/u.test(normalized)) {
+    ["vodomer", "hydro", "limnigraf", "hladin", "water", "river", "gauge", "chmi"].forEach((value) => variants.add(value));
+  }
+  if (/^(zastav|bus|autobus|vlak|train|tram|pid|ids)/u.test(normalized)) {
+    ["zastav", "stop", "station", "transit", "traffic", "pid", "idsjmk", "train"].forEach((value) => variants.add(value));
+  }
+  if (/^(most|bridge)/u.test(normalized)) {
+    ["most", "bridge"].forEach((value) => variants.add(value));
+  }
+  if (/^(kamera|webcam|camera)/u.test(normalized)) {
+    ["kamera", "camera", "webcam"].forEach((value) => variants.add(value));
+  }
+  if (/^(report|hlaseni|udalost|incident)/u.test(normalized)) {
+    ["report", "hlaseni", "community", "incident", "udalost"].forEach((value) => variants.add(value));
+  }
+  if (/^(pocasi|meteorolog|weather|radar|srazk|dest|teplot|vitr)/u.test(normalized)) {
+    ["pocasi", "weather", "radar", "srazk", "precip", "teplot", "wind", "vitr"].forEach((value) => variants.add(value));
+  }
+  if (/^(mobil|signal|bts|sit|site|vez|tower)/u.test(normalized)) {
+    ["mobil", "mobile", "signal", "bts", "tower", "network", "coverage"].forEach((value) => variants.add(value));
+  }
+  return Array.from(variants);
+}
+
+function aiMapCatalogLayerSearchHaystack(layer: MapCatalogLayer): string {
+  return normalizeAiMapSearchText([
+    layer.description,
+    layer.groupId,
+    layer.label,
+    layer.layerId,
+    layer.preferredProviderId,
+    layer.query.providerId,
+    layer.query.providerLayerIds?.join(" "),
+    layer.query.providerSourceIds?.join(" "),
+    layer.query.streamId,
+    layer.role,
+    layer.styleProfile
+  ].filter((value): value is string => typeof value === "string" && value.trim() !== "").join(" "));
+}
+
+function aiMapCatalogLayerCategoryCandidates(layer: MapCatalogLayer): string[] {
+  return [
+    layer.description,
+    layer.groupId,
+    layer.label,
+    layer.layerId,
+    layer.preferredProviderId,
+    layer.query.providerId,
+    ...(layer.query.categoryIds ?? []),
+    ...(layer.query.providerLayerIds ?? []),
+    ...(layer.query.providerSourceIds ?? [])
+  ]
+    .map((value) => typeof value === "string" ? normalizeCategoryId(value) : "")
+    .filter((value) => value.length > 0);
+}
+
+function aiMapFeatureSearchHaystack(feature: unknown): string {
+  if (!isRecord(feature)) {
+    return "";
+  }
+  const values: string[] = [];
+  collectAiMapSearchValues(feature.id, values);
+  collectAiMapSearchValues(feature.properties, values);
+  return normalizeAiMapSearchText(values.join(" "));
+}
+
+function collectAiMapSearchValues(value: unknown, output: string[], depth = 0): void {
+  if (output.length >= 80 || depth > 3 || value === null || value === undefined) {
+    return;
+  }
+  if (typeof value === "string") {
+    if (value.length <= 200 && !/^https?:\/\//iu.test(value)) {
+      output.push(value);
+    }
+    return;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    output.push(String(value));
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.slice(0, 12).forEach((item) => collectAiMapSearchValues(item, output, depth + 1));
+    return;
+  }
+  if (!isRecord(value)) {
+    return;
+  }
+  for (const [key, entry] of Object.entries(value).slice(0, 40)) {
+    output.push(key);
+    collectAiMapSearchValues(entry, output, depth + 1);
+  }
+}
+
 function aiMapPlaceQueryFromQuestion(question: string): string | undefined {
   let text = question.replace(/\s+/gu, " ").trim();
   text = text
@@ -357,8 +599,9 @@ function isAiGenericPlaceQuery(value: string): boolean {
   return /^(cop|chatu?|skupině|skupine|místnosti|mistnosti|aplikaci|kontextu|mapě|mape)$/u.test(normalized);
 }
 
-function locationFromSituationFeature(feature: SituationFeature): { lat: number; lon: number } | undefined {
-  const coordinate = firstLonLatCoordinate(feature.geometry.coordinates);
+function locationFromMapFeatureRecord(feature: Record<string, unknown>): { lat: number; lon: number } | undefined {
+  const geometry = isRecord(feature.geometry) ? feature.geometry : undefined;
+  const coordinate = firstLonLatCoordinate(geometry?.coordinates);
   return coordinate
     ? {
         lat: roundCoordinate(coordinate[1]),
@@ -435,16 +678,20 @@ function aiMapFeaturePriorityScore(category: string | undefined, distanceM: numb
   return Math.round(clampNumber(score, 0, 1) * 1000) / 1000;
 }
 
-function aiSituationFeatureCategoryCandidates(feature: SituationFeature): string[] {
+function aiMapFeatureCategoryCandidates(feature: unknown): string[] {
+  const properties = isRecord(feature) && isRecord(feature.properties) ? feature.properties : {};
   return [
-    feature.properties.category,
-    feature.properties.iconHint,
-    feature.properties.label,
-    feature.properties.layer,
-    feature.properties.layerId,
-    feature.properties.providerLayerId,
-    feature.properties.sourceName,
-    feature.properties.summary
+    properties.category,
+    properties.iconHint,
+    properties.label,
+    properties.layer,
+    properties.layerId,
+    properties.providerLayerId,
+    properties.providerId,
+    properties.sourceId,
+    properties.sourceName,
+    properties.summary,
+    properties.typeCode
   ]
     .map((value) => typeof value === "string" ? normalizeCategoryId(value) : "")
     .filter((value) => value.length > 0);

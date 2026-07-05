@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   aiMapActionsFromMapSearchContext,
+  aiMapCatalogLayerMatchesMapSearchIntent,
   aiSituationFeatureMatchesMapSearchIntent,
   inferAiMapSearchIntent,
+  summarizeMapFeatureCollectionForAi,
   summarizeSituationMapFeatureForAi,
   type AiMapSearchContext
 } from "./ai-map-search.js";
+import type { MapCatalogLayer } from "./map-catalog.js";
 import type { SituationFeature } from "./situation-data-source.js";
 
 describe("AI map search", () => {
@@ -37,6 +40,103 @@ describe("AI map search", () => {
       requested: true
     });
     expect(aiSituationFeatureMatchesMapSearchIntent(policeFeature, intent)).toBe(true);
+  });
+
+  it("matches generic map feature terms outside hard-coded emergency categories", () => {
+    const intent = inferAiMapSearchIntent("Najdi mi nejbližší vodoměrnou stanici od mé polohy.", {});
+    const waterGaugeFeature: SituationFeature = {
+      geometry: {
+        coordinates: [17.3835, 50.1201],
+        type: "Point"
+      },
+      id: "hydro-vrbno",
+      properties: {
+        category: "water-gauge",
+        featureId: "chmi-hydro:opava-vrbno",
+        label: "Vodoměrná stanice Opava - Vrbno pod Pradědem",
+        layer: "flood",
+        layerId: "public.safety.flood",
+        providerLayerId: "chmi_hydro",
+        sourceId: "chmi_hydro",
+        sourceName: "ČHMÚ hydrologická měření",
+        summary: "Aktuální stav hladiny řeky Opavy."
+      },
+      type: "Feature"
+    };
+
+    expect(intent).toMatchObject({
+      categoryIds: [],
+      requested: true
+    });
+    expect(intent.searchTerms).toContain("vodomer");
+    expect(aiSituationFeatureMatchesMapSearchIntent(waterGaugeFeature, intent)).toBe(true);
+    expect(aiSituationFeatureMatchesMapSearchIntent(policeFeature, intent)).toBe(false);
+  });
+
+  it("uses catalog metadata to narrow generic map searches when possible", () => {
+    const intent = inferAiMapSearchIntent("Ukaž mi nejbližší autobusovou zastávku.", {});
+    const transitStopsLayer: MapCatalogLayer = {
+      audience: "authenticated",
+      defaultVisible: false,
+      groupId: "traffic",
+      kind: "vector_features",
+      label: "Zastávky veřejné dopravy",
+      layerId: "public.traffic.transit_stops",
+      query: {
+        mode: "bbox",
+        providerId: "sim.situation-data",
+        providerLayerIds: ["traffic"],
+        providerSourceIds: ["public_transit_stops"],
+        streamId: "public.traffic.transit_stops"
+      },
+      role: "reference",
+      selectable: true,
+      styleProfile: "traffic-transit-stops"
+    };
+
+    expect(aiMapCatalogLayerMatchesMapSearchIntent(transitStopsLayer, intent)).toBe(true);
+  });
+
+  it("summarizes generic provider feature collections for clickable map actions", () => {
+    const intent = inferAiMapSearchIntent("Najdi poškozený most.", {});
+    const results = summarizeMapFeatureCollectionForAi({
+      features: [
+        {
+          geometry: {
+            coordinates: [14.392, 49.9781],
+            type: "Point"
+          },
+          id: "report-bridge",
+          properties: {
+            category: "bridge_damage",
+            description: "Most má poškozený kraj vozovky.",
+            featureId: "community:report-bridge",
+            label: "Poškozený most Zbraslav",
+            layer: "community",
+            sourceId: "community_reports",
+            status: "submitted"
+          },
+          type: "Feature"
+        }
+      ],
+      type: "FeatureCollection"
+    }, {
+      center: {
+        lat: 49.98,
+        lon: 14.39,
+        radiusKm: 30
+      },
+      label: "Moje poloha",
+      source: "body"
+    }, intent, "cop.community");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      category: "bridge_damage",
+      mapFeatureId: "community:report-bridge",
+      title: "Poškozený most Zbraslav",
+      type: "mapFeature"
+    });
   });
 
   it("creates focus-map actions from map search results", () => {
