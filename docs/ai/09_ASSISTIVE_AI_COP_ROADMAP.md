@@ -213,6 +213,14 @@ cestu jako webová mapa. Výsledky se předávají jako `mapSearch`, zároveň v
 do `priorityContext` jako `mapFeature` s polohou, vzdáleností a citační značkou.
 Když LLM provider vyprší, ale mapové hledání už našlo konkrétní bod, API může
 vrátit deterministickou odpověď z mapových dat místo obecného timeoutu.
+Od 2026-07-05 odpověď obsahuje také `result.structured.mapActions` s akcemi
+`focus-map` pro validované mapové výsledky. COP Chat tyto akce ukládá do Matrix
+`cz.cop.ai.mapActions` metadat a vykresluje je jako tlačítka v AI bublině.
+Kliknutí odešle existující `cop-chat:center-location` bridge zprávu do webové
+mapy, která přepne workspace na mapu a vycentruje ji na souřadnice výsledku.
+Kategorie `security-police` a podobné provider názvy se při vyhledávání
+normalizují jako policejní výsledky, aby dotazy typu “nejbližší policie”
+neskončily prázdně jen kvůli rozdílnému názvosloví vrstvy.
 
 Stejné endpointy přidávají také `indexedContext`. Ten je načtený z
 background COP indexu přes auditované tool volání `cop.ai.context_index.query`.

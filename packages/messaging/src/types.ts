@@ -103,6 +103,7 @@ export interface MatrixCopAiMessageMetadata {
   auditId?: string;
   indexedDocumentCount?: number;
   indexedStatus?: "degraded" | "disabled" | "ok";
+  mapActions?: MatrixCopMapAction[];
   model?: string;
   policyReason?: string;
   provider?: string;
@@ -112,6 +113,19 @@ export interface MatrixCopAiMessageMetadata {
   semanticStatus?: "degraded" | "disabled" | "ok";
   status?: "COMPLETED" | "NEEDS_HUMAN_REVIEW" | "REJECTED";
   type?: "chat-agent" | "situation-summary";
+}
+
+export interface MatrixCopMapAction {
+  action: "focus-map";
+  category?: string;
+  distanceText?: string;
+  entityId?: string;
+  entityType?: string;
+  label: string;
+  lat: number;
+  lon: number;
+  title?: string;
+  zoom?: number;
 }
 
 export interface MatrixLocationShare {

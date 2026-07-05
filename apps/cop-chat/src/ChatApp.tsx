@@ -106,6 +106,7 @@ import {
 import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
+  MatrixCopMapAction,
   MatrixCopMessageMetadata,
   MatrixLocationShare,
   MatrixMessagingSession,
@@ -113,7 +114,7 @@ import type {
   MatrixTimelineMessage,
   MatrixTransitShare
 } from "@cop/messaging/types";
-import { decodeChatShareTransit } from "@cop/messaging/bridge";
+import { decodeChatShareTransit, encodeChatCenterLocation } from "@cop/messaging/bridge";
 import { chatText } from "./i18n";
 import { Avatar } from "./components/Avatar";
 import { AiMarkdownOutput } from "./components/AiMarkdownOutput";
@@ -4260,7 +4261,10 @@ function MessageRow({
             onOpenPreview={onOpenPreview}
           />
         ) : hasAiMetadata ? (
-          <AiMarkdownOutput query={searchQuery} text={messageDisplayBody(message)} />
+          <>
+            <AiMarkdownOutput query={searchQuery} text={messageDisplayBody(message)} />
+            <MessageAiMapActions actions={message.cop?.ai?.mapActions} />
+          </>
         ) : (
           <HighlightedMessageText query={searchQuery} text={messageDisplayBody(message)} />
         )}
@@ -4302,6 +4306,33 @@ function MessageRow({
         ) : null}
       </div>
     </article>
+  );
+}
+
+function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
+  const visibleActions = (actions ?? [])
+    .filter((action) => Number.isFinite(action.lat) && Number.isFinite(action.lon))
+    .slice(0, 3);
+  if (visibleActions.length === 0) {
+    return null;
+  }
+  return (
+    <div className="message-ai-actions" aria-label="Mapové akce AI odpovědi">
+      {visibleActions.map((action, index) => (
+        <button
+          key={`${action.entityId ?? action.title ?? "map"}-${index}`}
+          className="message-ai-map-action"
+          onClick={(event) => {
+            event.stopPropagation();
+            window.parent.postMessage(encodeChatCenterLocation(action.lat, action.lon), window.location.origin);
+          }}
+          type="button"
+        >
+          <MapPin size={14} />
+          <span>{action.label || "Zobrazit na mapě"}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -6159,11 +6190,13 @@ function buildAiMessageMetadata(
 ): MatrixCopMessageMetadata {
   const question = options.question?.trim();
   const evidence = aiResponseEvidenceMetadata(response);
+  const mapActions = aiMapActionsFromResponse(response);
   return {
     ai: {
       ...(response?.auditId ? { auditId: response.auditId } : {}),
       ...(evidence.indexedDocumentCount !== undefined ? { indexedDocumentCount: evidence.indexedDocumentCount } : {}),
       ...(evidence.indexedStatus ? { indexedStatus: evidence.indexedStatus } : {}),
+      ...(mapActions.length > 0 ? { mapActions } : {}),
       ...(response?.model ? { model: response.model } : {}),
       ...(response?.policy.reason ? { policyReason: response.policy.reason } : {}),
       ...(response?.provider ? { provider: response.provider } : {}),
@@ -6177,6 +6210,98 @@ function buildAiMessageMetadata(
     kind: options.kind,
     source: "cop-chat"
   };
+}
+
+export function aiMapActionsFromResponse(response: AiCopResponse | null): MatrixCopMapAction[] {
+  const structured = asRecord(response?.result.structured);
+  const explicitActions = Array.isArray(structured?.mapActions)
+    ? structured.mapActions.map(normalizeAiMapAction).filter((action): action is MatrixCopMapAction => action !== undefined)
+    : [];
+  if (explicitActions.length > 0) {
+    return explicitActions.slice(0, 3);
+  }
+
+  const mapSearch = asRecord(structured?.mapSearch);
+  const fallback = asRecord(structured?.mapSearchFallback);
+  const fallbackResult = asRecord(fallback?.result);
+  const mapSearchResults = Array.isArray(mapSearch?.results) ? mapSearch.results.filter((item): item is Record<string, unknown> => Boolean(asRecord(item))) : [];
+  const results = [
+    ...(fallbackResult ? [fallbackResult] : []),
+    ...mapSearchResults
+  ];
+  return results
+    .map(aiMapActionFromResult)
+    .filter((action): action is MatrixCopMapAction => action !== undefined)
+    .slice(0, 3);
+}
+
+function normalizeAiMapAction(value: unknown): MatrixCopMapAction | undefined {
+  const raw = asRecord(value);
+  if (!raw) {
+    return undefined;
+  }
+  const lat = finiteCoordinate(raw.lat, -90, 90);
+  const lon = finiteCoordinate(raw.lon, -180, 180);
+  if (lat === undefined || lon === undefined) {
+    return undefined;
+  }
+  const category = optionalAiText(raw.category);
+  const distanceText = optionalAiText(raw.distanceText);
+  const entityId = optionalAiText(raw.entityId);
+  const entityType = optionalAiText(raw.entityType);
+  const title = optionalAiText(raw.title);
+  const zoom = finiteCoordinate(raw.zoom, 3, 20);
+  return {
+    action: "focus-map",
+    ...(category ? { category } : {}),
+    ...(distanceText ? { distanceText } : {}),
+    ...(entityId ? { entityId } : {}),
+    ...(entityType ? { entityType } : {}),
+    label: optionalAiText(raw.label) ?? title ?? "Zobrazit na mapě",
+    lat,
+    lon,
+    ...(title ? { title } : {}),
+    ...(zoom ? { zoom } : {})
+  };
+}
+
+function aiMapActionFromResult(result: Record<string, unknown>): MatrixCopMapAction | undefined {
+  const location = asRecord(result.location);
+  const lat = finiteCoordinate(location?.lat, -90, 90);
+  const lon = finiteCoordinate(location?.lon, -180, 180);
+  if (lat === undefined || lon === undefined) {
+    return undefined;
+  }
+  const title = optionalAiText(result.title);
+  const category = optionalAiText(result.category);
+  const distanceText = optionalAiText(result.distanceText);
+  const entityId = optionalAiText(result.mapFeatureId);
+  const entityType = optionalAiText(result.type);
+  const labelBase = title ?? category ?? "mapový výsledek";
+  return {
+    action: "focus-map",
+    ...(category ? { category } : {}),
+    ...(distanceText ? { distanceText } : {}),
+    ...(entityId ? { entityId } : {}),
+    ...(entityType ? { entityType } : {}),
+    label: distanceText ? `Zobrazit na mapě: ${labelBase} (${distanceText})` : `Zobrazit na mapě: ${labelBase}`,
+    lat,
+    lon,
+    ...(title ? { title } : {}),
+    zoom: 16
+  };
+}
+
+function finiteCoordinate(value: unknown, min: number, max: number): number | undefined {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function optionalAiText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value.trim().slice(0, 160) : undefined;
 }
 
 function aiResponseEvidenceMetadata(response: AiCopResponse | null): {

@@ -15,6 +15,19 @@ export interface AiMapSearchContext {
 
 export type AiMapSearchResult = Record<string, unknown>;
 
+export interface AiMapAction {
+  action: "focus-map";
+  category?: string;
+  distanceText?: string;
+  entityId?: string;
+  entityType?: string;
+  label: string;
+  lat: number;
+  lon: number;
+  title?: string;
+  zoom?: number;
+}
+
 export interface AiMapSearchIntent {
   categoryIds: string[];
   layerIds: string[];
@@ -93,8 +106,10 @@ export function aiSituationFeatureMatchesMapSearchIntent(feature: SituationFeatu
   if (intent.categoryIds.length === 0) {
     return true;
   }
-  const category = normalizeCategoryId(feature.properties.category);
-  return intent.categoryIds.map(normalizeCategoryId).includes(category);
+  const candidates = aiSituationFeatureCategoryCandidates(feature);
+  return intent.categoryIds.some((categoryId) =>
+    candidates.some((candidate) => aiCategoryCandidateMatchesIntent(candidate, categoryId))
+  );
 }
 
 export function summarizeSituationMapFeatureForAi(
@@ -182,6 +197,13 @@ export function aiMapSearchResultCompare(left: AiMapSearchResult, right: AiMapSe
   return rightPriority - leftPriority;
 }
 
+export function aiMapActionsFromMapSearchContext(context: AiMapSearchContext | undefined): AiMapAction[] {
+  return (context?.results ?? [])
+    .map(aiMapActionFromResult)
+    .filter((action): action is AiMapAction => action !== undefined)
+    .slice(0, 3);
+}
+
 export function aiMapSearchFallbackResponse(
   aiRequest: AiCopQuery,
   requestNow: Date,
@@ -194,6 +216,7 @@ export function aiMapSearchFallbackResponse(
   if (!topResult) {
     return undefined;
   }
+  const mapActions = aiMapActionsFromMapSearchResults(results);
   const title = optionalText(topResult.title) ?? "mapový výsledek";
   const category = optionalText(topResult.category);
   const distanceText = optionalText(topResult.distanceText);
@@ -222,6 +245,11 @@ export function aiMapSearchFallbackResponse(
     result: {
       structured: {
         generatedAt: requestNow.toISOString(),
+        mapActions,
+        mapSearch: {
+          resultCount: results.length,
+          results: results.slice(0, 5)
+        },
         mapSearchFallback: {
           reason,
           result: topResult,
@@ -231,6 +259,41 @@ export function aiMapSearchFallbackResponse(
       summary
     },
     status: "COMPLETED"
+  };
+}
+
+function aiMapActionsFromMapSearchResults(results: Record<string, unknown>[]): AiMapAction[] {
+  return results
+    .map(aiMapActionFromResult)
+    .filter((action): action is AiMapAction => action !== undefined)
+    .slice(0, 3);
+}
+
+function aiMapActionFromResult(result: Record<string, unknown>): AiMapAction | undefined {
+  const location = aiLocationFromRecord(result.location);
+  if (!location) {
+    return undefined;
+  }
+  const title = optionalText(result.title);
+  const category = optionalText(result.category);
+  const distanceText = optionalText(result.distanceText);
+  const entityId = optionalText(result.mapFeatureId);
+  const entityType = optionalText(result.type);
+  const labelBase = title ?? category ?? "mapový výsledek";
+  const label = distanceText
+    ? `Zobrazit na mapě: ${labelBase} (${distanceText})`
+    : `Zobrazit na mapě: ${labelBase}`;
+  return {
+    action: "focus-map",
+    ...(category ? { category } : {}),
+    ...(distanceText ? { distanceText } : {}),
+    ...(entityId ? { entityId } : {}),
+    ...(entityType ? { entityType } : {}),
+    label,
+    lat: location.lat,
+    lon: location.lon,
+    ...(title ? { title } : {}),
+    zoom: 16
   };
 }
 
@@ -372,6 +435,51 @@ function aiMapFeaturePriorityScore(category: string | undefined, distanceM: numb
   return Math.round(clampNumber(score, 0, 1) * 1000) / 1000;
 }
 
+function aiSituationFeatureCategoryCandidates(feature: SituationFeature): string[] {
+  return [
+    feature.properties.category,
+    feature.properties.iconHint,
+    feature.properties.label,
+    feature.properties.layer,
+    feature.properties.layerId,
+    feature.properties.providerLayerId,
+    feature.properties.sourceName,
+    feature.properties.summary
+  ]
+    .map((value) => typeof value === "string" ? normalizeCategoryId(value) : "")
+    .filter((value) => value.length > 0);
+}
+
+function aiCategoryCandidateMatchesIntent(candidate: string, intentCategoryId: string): boolean {
+  const intent = normalizeCategoryId(intentCategoryId);
+  if (candidate === intent || candidate.includes(intent)) {
+    return true;
+  }
+  const aliases = aiMapCategoryAliases(intent);
+  return aliases.some((alias) => candidate === alias || candidate.includes(alias));
+}
+
+function aiMapCategoryAliases(categoryId: string): string[] {
+  switch (categoryId) {
+    case "police":
+      return ["police", "policie", "polic", "security_police", "bezpecnost"];
+    case "fire_station":
+      return ["fire_station", "fire", "hasic", "hasici", "pozar"];
+    case "ambulance_station":
+      return ["ambulance_station", "ambulance", "zachran", "zachranna", "zzs"];
+    case "defibrillator":
+      return ["defibrillator", "defibrilator", "aed", "defib"];
+    case "shelter":
+      return ["shelter", "kryt", "ukryt"];
+    case "assembly_point":
+      return ["assembly_point", "shromazd", "evakuac"];
+    case "siren":
+      return ["siren", "sirena", "sireny"];
+    default:
+      return [categoryId];
+  }
+}
+
 function citationForAiMapSearchResult(
   context: Record<string, unknown> | undefined,
   result: Record<string, unknown>
@@ -396,7 +504,7 @@ function aiLocationFromRecord(value: unknown): { lat: number; lon: number } | un
 }
 
 function normalizeCategoryId(value: string): string {
-  return value.toLowerCase().replace(/[\s.-]+/g, "_");
+  return normalizeAiMapSearchText(value).replace(/[^a-z0-9]+/gu, "_").replace(/^_+|_+$/gu, "");
 }
 
 function compactRecord(value: Record<string, unknown>): Record<string, unknown> {

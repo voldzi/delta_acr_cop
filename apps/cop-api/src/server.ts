@@ -37,6 +37,7 @@ import { correlationIdFrom, sendError } from "./errors.js";
 import {
   aiMapSearchFallbackResponse,
   aiMapSearchResultCompare,
+  aiMapActionsFromMapSearchContext,
   aiSituationFeatureMatchesMapSearchIntent,
   bboxForAiMapSearchGeoFilter,
   dedupeAiMapSearchResults,
@@ -7032,6 +7033,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
     const response = withAiResponseEvidence(providerResponse, {
       indexedContext,
+      mapSearch: aiMapSearch,
       observability: pipelineObservability,
       priorityContext,
       requestContext: aiRequest.context ?? {},
@@ -13188,18 +13190,30 @@ function buildAiPriorityContext(input: {
 
 function withAiResponseEvidence(response: AiCopResponse, input: {
   indexedContext: AiIndexedContext;
+  mapSearch?: AiMapSearchContext;
   observability?: Record<string, unknown>;
   priorityContext: Record<string, unknown>;
   requestContext: Record<string, unknown>;
   semanticContext: AiSemanticContext;
 }): AiCopResponse {
   const structured = isRecord(response.result.structured) ? response.result.structured : {};
+  const mapActions = aiMapActionsFromMapSearchContext(input.mapSearch);
   return {
     ...response,
     result: {
       ...response.result,
       structured: {
         ...structured,
+        ...(mapActions.length > 0 ? { mapActions } : {}),
+        ...(input.mapSearch ? { mapSearch: compactRecord({
+          contractVersion: input.mapSearch.contractVersion,
+          generatedAt: input.mapSearch.generatedAt,
+          query: input.mapSearch.query,
+          resultCount: input.mapSearch.results.length,
+          results: input.mapSearch.results.slice(0, 5),
+          toolCall: input.mapSearch.toolCall,
+          warnings: input.mapSearch.warnings
+        }) } : {}),
         evidence: compactRecord({
           contractVersion: "cop-ai-response-evidence-v1",
           indexed: compactRecord({

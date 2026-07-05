@@ -468,9 +468,14 @@ The phase-0 implementation focus is trust and control:
   `kind`, `requestId`, `auditId`, provider/model, policy reason and the
   original question when present. It also carries bounded semantic/indexed
   source counts so the timeline can show whether an answer used request-time
-  COP context and the background index. The metadata is used only for timeline
-  labeling and audit visibility; COP still does not persist or proxy Matrix
-  plaintext. In enabled groups the composer also recognizes a leading
+  COP context and the background index. Map-search answers may additionally
+  carry `cz.cop.ai.mapActions[]` with `focus-map` actions, validated
+  coordinates and a display label. COP Chat renders those as action buttons in
+  the AI bubble and sends the existing `cop-chat:center-location` bridge message
+  so the embedded web map centers on the selected result. The metadata is used
+  only for timeline labeling, audit visibility and explicit user-triggered map
+  focusing; COP still does not persist or proxy Matrix plaintext. In enabled
+  groups the composer also recognizes a leading
   `@COP AI ...` mention and slash commands `/ai ...`, `/reasoning ...` and
   `/fast ...`. Completed answers can be posted automatically with the same
   metadata; answers requiring human review open the explicit AI dialog instead

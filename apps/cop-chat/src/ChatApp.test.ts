@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { mergeTimelineMessages } from "./chat-model";
-import { buildAiChatContextSnapshot, buildAiRequestContextOptions, composerQuickActions, composerSuggestions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
+import { aiMapActionsFromResponse, buildAiChatContextSnapshot, buildAiRequestContextOptions, composerQuickActions, composerSuggestions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
+import type { AiCopResponse } from "@cop/core/cop-data";
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
 describe("mergeTimelineMessages", () => {
@@ -113,6 +114,96 @@ describe("AI share body formatters", () => {
   it("keeps a readable Matrix fallback for clients that ignore COP metadata", () => {
     expect(formatAiAgentShareBody("Odpověď", "Rizika?")).toBe("COP AI agent\nDotaz: Rizika?\n\nOdpověď");
     expect(formatAiSituationShareBody("Souhrn")).toBe("AI situační souhrn:\n\nSouhrn");
+  });
+});
+
+describe("aiMapActionsFromResponse", () => {
+  const baseResponse: AiCopResponse = {
+    auditId: "audit-map",
+    model: "gemma4:12b-mlx",
+    policy: {
+      allowed: true,
+      reason: "ok",
+      redactionsApplied: false
+    },
+    provider: "ollama",
+    requestId: "request-map",
+    result: {
+      structured: {},
+      summary: "Našel jsem policii."
+    },
+    status: "COMPLETED"
+  };
+
+  it("extracts explicit structured map actions", () => {
+    expect(aiMapActionsFromResponse({
+      ...baseResponse,
+      result: {
+        ...baseResponse.result,
+        structured: {
+          mapActions: [
+            {
+              action: "focus-map",
+              entityId: "security-police:vrbno",
+              label: "Zobrazit na mapě: Policie",
+              lat: 50.1187,
+              lon: 17.3842,
+              title: "Policie"
+            },
+            {
+              action: "focus-map",
+              label: "Neplatný bod",
+              lat: "x",
+              lon: 17.3842
+            }
+          ]
+        }
+      }
+    })).toEqual([
+      expect.objectContaining({
+        action: "focus-map",
+        entityId: "security-police:vrbno",
+        label: "Zobrazit na mapě: Policie",
+        lat: 50.1187,
+        lon: 17.3842,
+        title: "Policie"
+      })
+    ]);
+  });
+
+  it("falls back to map search results when explicit actions are missing", () => {
+    expect(aiMapActionsFromResponse({
+      ...baseResponse,
+      result: {
+        ...baseResponse.result,
+        structured: {
+          mapSearch: {
+            results: [
+              {
+                distanceText: "1.2 km",
+                location: {
+                  lat: 50.1187,
+                  lon: 17.3842
+                },
+                mapFeatureId: "security-police:vrbno",
+                title: "Policie ČR - Vrbno pod Pradědem",
+                type: "mapFeature"
+              }
+            ]
+          }
+        }
+      }
+    })).toEqual([
+      expect.objectContaining({
+        action: "focus-map",
+        entityId: "security-police:vrbno",
+        label: "Zobrazit na mapě: Policie ČR - Vrbno pod Pradědem (1.2 km)",
+        lat: 50.1187,
+        lon: 17.3842,
+        title: "Policie ČR - Vrbno pod Pradědem",
+        zoom: 16
+      })
+    ]);
   });
 });
 
