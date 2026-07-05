@@ -155,6 +155,41 @@ describe("web auth helpers", () => {
     expect(stored.refreshToken).toBe("next-refresh");
   });
 
+  it("exchanges an OIDC callback when embedded browser storage only preserves the cookie fallback", async () => {
+    window.history.pushState({}, "", "/?code=callback-code&state=callback-state");
+    document.cookie = `cop_oidc_callback_v1=${encodeURIComponent(JSON.stringify({
+      expiresAt: Date.now() + 120_000,
+      redirectUri: "https://cop.example.test/",
+      returnUrl: "/chat/",
+      state: "callback-state",
+      verifier: "pkce-verifier"
+    }))}`;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({
+      json: async () => ({
+        access_token: unsignedJwt({ name: "COP Operator", preferred_username: "operator", sub: "user-1" }),
+        expires_in: 300,
+        refresh_token: "next-refresh"
+      }),
+      ok: true
+    } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(document.cookie).toContain("cop_oidc_callback_v1=");
+
+    const session = await initializeAuth({ ...oidcConfig(), tokenEndpoint: "/chat/oidc/token" });
+    const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const body = requestInit?.body as URLSearchParams;
+
+    expect(session).toMatchObject({
+      profile: { subjectId: "user-1", username: "operator" },
+      status: "authenticated"
+    });
+    expect(body.get("code_verifier")).toBe("pkce-verifier");
+    expect(body.get("redirect_uri")).toBe("https://cop.example.test/");
+    expect(window.location.pathname).toBe("/chat/");
+    expect(document.cookie).not.toContain("cop_oidc_callback_v1=");
+  });
+
   it("does not clear a still-valid stored session when startup refresh temporarily fails", async () => {
     window.localStorage.setItem("cop.oidc.session.v1", JSON.stringify({
       accessToken: "near-expiry-token",

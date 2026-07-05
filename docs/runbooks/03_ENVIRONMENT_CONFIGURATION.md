@@ -45,6 +45,7 @@ COP_DEPLOY_DOMAIN=cop.zeleznalady.cz
 COP_WEB_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
 COP_CHAT_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
 COP_CHAT_BASE_PATH=/chat/
+COP_WEB_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 COP_API_ALLOWED_ORIGINS=https://cop.zeleznalady.cz,http://docker.home.cz:4311,http://docker.home.cz:4314
 COP_API_RATE_LIMIT_MAX=2400
@@ -56,10 +57,13 @@ COP_API_MAX_EVENT_LOOP_DELAY_MS=1000
 `COP_PUBLIC_API_BASE_URL` má být při publikaci pod `cop.zeleznalady.cz`
 prázdné, aby oba browser klienti volali COP API relativně přes `/api/...`.
 `COP_CHAT_BASE_PATH` musí odpovídat DMZ nginx pravidlu pro `/chat/`.
-`COP_CHAT_OIDC_TOKEN_ENDPOINT` je same-origin proxy používaná jen samostatným
-chatem pro OIDC token exchange; chrání `/chat/` před browser blokací
-public-to-private token requestů, když `login.zeleznalady.cz` v pilotní síti
-rezolvuje na privátní adresu.
+`COP_WEB_OIDC_TOKEN_ENDPOINT` a `COP_CHAT_OIDC_TOKEN_ENDPOINT` směrují browser
+klienty na same-origin proxy pro OIDC token exchange; chrání mapový shell i
+samostatný `/chat/` před browser blokací public-to-private token requestů, když
+`login.zeleznalady.cz` v pilotní síti rezolvuje na privátní adresu. Web klient
+navíc drží krátkodobý PKCE callback fallback v `SameSite=Lax` cookie, aby
+přihlášení přežilo i embedded browsery, které při návratu z OIDC nepřenesou
+Web Storage spolehlivě.
 `COP_CHAT_ALLOWED_HOSTS` omezuje HTTP Host i CORS `Origin` pro tuto token proxy,
 aby endpoint neodrážel libovolný cizí origin.
 `COP_CHAT_PROXY_TARGET` používá pouze lokální Vite dev server mapové aplikace,

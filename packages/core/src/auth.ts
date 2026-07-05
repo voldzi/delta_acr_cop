@@ -94,6 +94,7 @@ interface StoredCallbackState {
 
 const callbackStateKey = "cop.oidc.callback.v1";
 const callbackStateFallbackKey = "cop.oidc.callback.fallback.v1";
+const callbackStateCookieName = "cop_oidc_callback_v1";
 const callbackStateTtlMs = 10 * 60 * 1000;
 const sessionKey = "cop.oidc.session.v1";
 const diagnosticsKey = "cop.oidc.diagnostics.v1";
@@ -348,6 +349,7 @@ async function exchangeAuthorizationCode(config: AuthConfig, code: string, state
   if (!callbackState || callbackState.state !== state) {
     clearCallbackState();
     removeCallbackParams();
+    recordAuthDiagnosticEvent("callback_error", { detail: "callback state mismatch" });
     return { status: "error", error: "OIDC callback state does not match." };
   }
 
@@ -625,7 +627,8 @@ function readCallbackParams(): { code?: string; error?: string; state?: string }
 
 function readCallbackState(): StoredCallbackState | null {
   return readCallbackStateFrom(() => window.sessionStorage, callbackStateKey)
-    ?? readCallbackStateFrom(() => window.localStorage, callbackStateFallbackKey, true);
+    ?? readCallbackStateFrom(() => window.localStorage, callbackStateFallbackKey, true)
+    ?? readCallbackStateFromCookie();
 }
 
 function readCallbackStateFrom(getStorage: () => Storage, key: string, enforceExpiry = false): StoredCallbackState | null {
@@ -667,6 +670,12 @@ function writeCallbackState(value: StoredCallbackState): void {
   } catch {
     // If both browser stores are unavailable, the login cannot be completed safely.
   }
+  try {
+    writeCallbackStateCookie(fallbackValue);
+    persisted = persisted || Boolean(readCallbackStateFromCookie());
+  } catch {
+    // A short-lived cookie is only a last-resort fallback for embedded browsers.
+  }
   if (!persisted) {
     throw new Error("Prohlížeč neumožnil uložit dočasný stav přihlášení. Povolte site storage pro COP a zkuste to znovu.");
   }
@@ -683,6 +692,11 @@ function clearCallbackState(): void {
   } catch {
     // Best effort cleanup.
   }
+  try {
+    clearCallbackStateCookie();
+  } catch {
+    // Best effort cleanup.
+  }
 }
 
 function isStoredCallbackState(value: Partial<StoredCallbackState>): value is StoredCallbackState {
@@ -690,6 +704,41 @@ function isStoredCallbackState(value: Partial<StoredCallbackState>): value is St
     typeof value.returnUrl === "string" &&
     typeof value.state === "string" &&
     typeof value.verifier === "string";
+}
+
+function readCallbackStateFromCookie(): StoredCallbackState | null {
+  try {
+    const raw = document.cookie
+      .split(";")
+      .map((entry) => entry.trim())
+      .find((entry) => entry.startsWith(`${callbackStateCookieName}=`))
+      ?.slice(callbackStateCookieName.length + 1);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(decodeURIComponent(raw)) as Partial<StoredCallbackState>;
+    if (!isStoredCallbackState(parsed)) {
+      return null;
+    }
+    if (typeof parsed.expiresAt === "number" && parsed.expiresAt < Date.now()) {
+      clearCallbackStateCookie();
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCallbackStateCookie(value: StoredCallbackState): void {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  const maxAgeSeconds = Math.floor(callbackStateTtlMs / 1000);
+  document.cookie = `${callbackStateCookieName}=${encodeURIComponent(JSON.stringify(value))}; Max-Age=${maxAgeSeconds}; Path=/; SameSite=Lax${secure}`;
+}
+
+function clearCallbackStateCookie(): void {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${callbackStateCookieName}=; Max-Age=0; Path=/; SameSite=Lax${secure}`;
 }
 
 function removeCallbackParams(returnUrl?: string): void {

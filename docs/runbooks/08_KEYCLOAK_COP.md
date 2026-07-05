@@ -148,6 +148,8 @@ COP_OIDC_CLIENT_ID=cop-web
 COP_OIDC_ALLOWED_CLIENTS=cop-web
 COP_OIDC_REQUIRED_ROLE=
 COP_OIDC_SCOPE="openid profile email"
+COP_WEB_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
+COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 COP_USER_PROFILE_STORE=auto
 ```
 
@@ -167,6 +169,8 @@ COP_OIDC_ISSUER=https://login.zeleznalady.cz/realms/cop
 COP_OIDC_CLIENT_ID=cop-web
 COP_OIDC_ALLOWED_CLIENTS=cop-web
 COP_OIDC_REQUIRED_ROLE=
+COP_WEB_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
+COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 COP_USER_PROFILE_STORE=auto
 ```
 
