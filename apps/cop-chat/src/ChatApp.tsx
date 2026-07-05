@@ -4369,7 +4369,7 @@ function MessageRow({
         ) : hasAiMetadata ? (
           <>
             <AiMarkdownOutput query={searchQuery} text={messageDisplayBody(message)} />
-            <MessageAiMapActions actions={message.cop?.ai?.mapActions} />
+            <MessageAiMapActions actions={aiMapActionsForMessage(message)} />
           </>
         ) : (
           <HighlightedMessageText query={searchQuery} text={messageDisplayBody(message)} />
@@ -4450,6 +4450,44 @@ function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
       ))}
     </div>
   );
+}
+
+export function aiMapActionsForMessage(message: MatrixTimelineMessage): MatrixCopMapAction[] | undefined {
+  const metadataActions = (message.cop?.ai?.mapActions ?? [])
+    .filter((action) => Number.isFinite(action.lat) && Number.isFinite(action.lon))
+    .slice(0, 3);
+  if (metadataActions.length > 0) {
+    return metadataActions;
+  }
+  if (!message.cop?.kind) {
+    return undefined;
+  }
+  return aiMapActionsFromMessageBody(messageDisplayBody(message));
+}
+
+function aiMapActionsFromMessageBody(body: string): MatrixCopMapAction[] | undefined {
+  const coordinates = body.match(/(?:souřadnice|souradnice|coordinates)\s*:\s*(-?\d{1,2}(?:[.,]\d+)?)\s*,\s*(-?\d{1,3}(?:[.,]\d+)?)/iu);
+  if (!coordinates) {
+    return undefined;
+  }
+  const lat = finiteCoordinate(coordinates[1]?.replace(",", "."), -90, 90);
+  const lon = finiteCoordinate(coordinates[2]?.replace(",", "."), -180, 180);
+  if (lat === undefined || lon === undefined) {
+    return undefined;
+  }
+  const title = optionalAiText(body.match(/Našel jsem[\s\S]*?:\s*(?<title>[\s\S]*?)\.\s+Kategorie:/iu)?.groups?.title)
+    ?? optionalAiText(body.match(/^\s*(?<title>[^\n.]{8,180})/u)?.groups?.title)
+    ?? "Mapový výsledek";
+  const distanceText = optionalAiText(body.match(/Vzdálenost[^:]*:\s*(?<distance>[0-9]+(?:[,.][0-9]+)?\s*(?:km|m))/iu)?.groups?.distance);
+  return [{
+    action: "focus-map",
+    ...(distanceText ? { distanceText } : {}),
+    label: distanceText ? `Zobrazit na mapě: ${title} (${distanceText})` : `Zobrazit na mapě: ${title}`,
+    lat,
+    lon,
+    title,
+    zoom: 16
+  }];
 }
 
 function chatCenterFeatureKindFromAiAction(action: MatrixCopMapAction): "feature" | "place" | "track" | undefined {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { mergeTimelineMessages } from "./chat-model";
-import { aiMapActionsFromResponse, aiQuestionNeedsCurrentLocation, buildAiChatContextSnapshot, buildAiRequestContextOptions, composerQuickActions, composerSuggestions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
+import { aiMapActionsForMessage, aiMapActionsFromResponse, aiQuestionNeedsCurrentLocation, buildAiChatContextSnapshot, buildAiRequestContextOptions, composerQuickActions, composerSuggestions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
 import type { AiCopResponse } from "@cop/core/cop-data";
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
@@ -201,6 +201,45 @@ describe("aiMapActionsFromResponse", () => {
         lat: 50.1187,
         lon: 17.3842,
         title: "Policie ČR - Vrbno pod Pradědem",
+        zoom: 16
+      })
+    ]);
+  });
+});
+
+describe("aiMapActionsForMessage", () => {
+  it("derives a clickable map action from an older AI text fallback with coordinates", () => {
+    const message: MatrixTimelineMessage = {
+      body: [
+        "COP AI agent",
+        "Dotaz: Najdi nejbližší policejní stanici blízko mé polohy.",
+        "",
+        "Našel jsem v mapových datech COP: Policie ČR - Obvodní oddělení Vrbno pod Pradědem, 583, Nádražní, Mnichov, Železná, Vrbno pod Pradědem, okres Bruntál, Moravskoslezský kraj, 793 26, Česko. Kategorie: police. Vzdálenost od zadané polohy: 1.8 km. Souřadnice: 50.12076, 17.38413. Zdroj: COP mapové vyhledávání."
+      ].join("\n"),
+      cop: {
+        ai: {
+          question: "Najdi nejbližší policejní stanici blízko mé polohy.",
+          status: "COMPLETED",
+          type: "chat-agent"
+        },
+        kind: "ai-agent-response",
+        source: "cop-chat"
+      },
+      eventId: "$ai-map",
+      kind: "text",
+      own: true,
+      sender: "@me:cop.local",
+      timestamp: "2026-07-05T14:54:00.000Z"
+    };
+
+    expect(aiMapActionsForMessage(message)).toEqual([
+      expect.objectContaining({
+        action: "focus-map",
+        distanceText: "1.8 km",
+        label: expect.stringContaining("Zobrazit na mapě"),
+        lat: 50.12076,
+        lon: 17.38413,
+        title: expect.stringContaining("Policie ČR - Obvodní oddělení Vrbno pod Pradědem"),
         zoom: 16
       })
     ]);

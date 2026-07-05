@@ -389,6 +389,17 @@ describe("Matrix client diagnostics", () => {
       "cz.cop": {
         ai: {
           auditId: "audit-1",
+          mapActions: [{
+            action: "focus-map",
+            distanceText: "1.8 km",
+            entityId: "place:nominatim:183697209",
+            entityType: "place",
+            label: "Zobrazit na mapě: Policie ČR - Vrbno pod Pradědem (1.8 km)",
+            lat: 50.12076,
+            lon: 17.38413,
+            title: "Policie ČR - Vrbno pod Pradědem",
+            zoom: 16
+          }],
           policyReason: "allowed",
           provider: "mock",
           question: "Co je teď důležité?",
@@ -416,6 +427,17 @@ describe("Matrix client diagnostics", () => {
       cop: {
         ai: {
           auditId: "audit-1",
+          mapActions: [{
+            action: "focus-map",
+            distanceText: "1.8 km",
+            entityId: "place:nominatim:183697209",
+            entityType: "place",
+            label: "Zobrazit na mapě: Policie ČR - Vrbno pod Pradědem (1.8 km)",
+            lat: 50.12076,
+            lon: 17.38413,
+            title: "Policie ČR - Vrbno pod Pradědem",
+            zoom: 16
+          }],
           policyReason: "allowed",
           provider: "mock",
           question: "Co je teď důležité?",

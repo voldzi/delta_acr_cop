@@ -3,6 +3,7 @@ import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
   MatrixCopAiMessageMetadata,
+  MatrixCopMapAction,
   MatrixCopMessageMetadata,
   MatrixEncryptedFileRef,
   MatrixEncryptionRecoveryStatus,
@@ -2278,6 +2279,7 @@ function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata[
   const indexedStatus: MatrixCopAiMessageMetadata["indexedStatus"] = record.indexedStatus === "ok" || record.indexedStatus === "degraded" || record.indexedStatus === "disabled"
     ? record.indexedStatus
     : undefined;
+  const mapActions = sanitizeCopMapActions(record.mapActions);
   const semanticDocumentCount = nonNegativeInteger(record.semanticDocumentCount, 0, 1000);
   const semanticStatus: MatrixCopAiMessageMetadata["semanticStatus"] = record.semanticStatus === "ok" || record.semanticStatus === "degraded" || record.semanticStatus === "disabled"
     ? record.semanticStatus
@@ -2286,6 +2288,7 @@ function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata[
     ...(auditId ? { auditId } : {}),
     ...(indexedDocumentCount !== undefined ? { indexedDocumentCount } : {}),
     ...(indexedStatus ? { indexedStatus } : {}),
+    ...(mapActions ? { mapActions } : {}),
     ...(model ? { model } : {}),
     ...(policyReason ? { policyReason } : {}),
     ...(provider ? { provider } : {}),
@@ -2297,6 +2300,47 @@ function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata[
     ...(type ? { type } : {})
   };
   return Object.keys(ai).length ? ai : undefined;
+}
+
+function sanitizeCopMapActions(value: unknown): MatrixCopMapAction[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const actions = value
+    .map(sanitizeCopMapAction)
+    .filter((action): action is MatrixCopMapAction => action !== undefined)
+    .slice(0, 3);
+  return actions.length > 0 ? actions : undefined;
+}
+
+function sanitizeCopMapAction(value: unknown): MatrixCopMapAction | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const lat = finiteNumber(record.lat, -90, 90);
+  const lon = finiteNumber(record.lon, -180, 180);
+  if (lat === undefined || lon === undefined) {
+    return undefined;
+  }
+  const category = stringValue(record.category)?.slice(0, 80);
+  const distanceText = stringValue(record.distanceText)?.slice(0, 80);
+  const entityId = stringValue(record.entityId)?.slice(0, 200);
+  const entityType = stringValue(record.entityType)?.slice(0, 80);
+  const title = stringValue(record.title)?.slice(0, 200);
+  const zoom = finiteNumber(record.zoom, 3, 20);
+  return {
+    action: "focus-map",
+    ...(category ? { category } : {}),
+    ...(distanceText ? { distanceText } : {}),
+    ...(entityId ? { entityId } : {}),
+    ...(entityType ? { entityType } : {}),
+    label: stringValue(record.label)?.slice(0, 240) ?? title ?? "Zobrazit na mapě",
+    lat,
+    lon,
+    ...(title ? { title } : {}),
+    ...(zoom !== undefined ? { zoom } : {})
+  };
 }
 
 function sanitizeTransitShare(transit: MatrixTransitShare): MatrixTransitShare {
@@ -2448,6 +2492,11 @@ function stringValue(value: unknown): string | undefined {
 function nonNegativeInteger(value: unknown, min: number, max: number): number | undefined {
   const parsed = typeof value === "number" ? value : Number.NaN;
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.trunc(parsed))) : undefined;
+}
+
+function finiteNumber(value: unknown, min: number, max: number): number | undefined {
+  const parsed = typeof value === "number" ? value : Number.NaN;
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : undefined;
 }
 
 function matrixMsgTypeForAttachment(kind: MatrixAttachmentKind): "m.file" | "m.image" | "m.video" {
