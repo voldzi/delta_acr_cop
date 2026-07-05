@@ -3944,9 +3944,11 @@ function Composer({
   // whole ChatApp tree (timeline, chat list, panels). The draft intentionally
   // persists across chat switches, matching the previous shared-state behavior.
   const [text, setText] = React.useState("");
+  const [suggestionsDismissedFor, setSuggestionsDismissedFor] = React.useState<string | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const canSend = Boolean(text.trim() || pendingAttachment) && !disabled;
   const suggestions = composerSuggestions(text, aiAgentAvailable);
+  const visibleSuggestions = suggestionsDismissedFor === text ? [] : suggestions;
   const quickActions = composerQuickActions(aiAgentAvailable);
   const submitDraft = async () => {
     if (!canSend) {
@@ -3955,6 +3957,7 @@ function Composer({
     const result = await onSend(text);
     if (result !== false) {
       setText("");
+      setSuggestionsDismissedFor(null);
     }
   };
   const syncTextareaHeight = React.useCallback(() => {
@@ -4008,14 +4011,15 @@ function Composer({
           </button>
         </div>
       ) : null}
-      {suggestions.length > 0 ? (
+      {visibleSuggestions.length > 0 ? (
         <div className="composer-suggestions" role="listbox" aria-label="Nápověda příkazů">
-          {suggestions.map((suggestion) => (
+          {visibleSuggestions.map((suggestion) => (
             <button
               key={suggestion.value}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 setText(suggestion.value);
+                setSuggestionsDismissedFor(null);
                 window.setTimeout(() => textareaRef.current?.focus(), 0);
               }}
               role="option"
@@ -4027,7 +4031,7 @@ function Composer({
           ))}
         </div>
       ) : null}
-      {quickActions.length > 0 && suggestions.length === 0 ? (
+      {quickActions.length > 0 && visibleSuggestions.length === 0 ? (
         <div className="composer-ai-quickbar" aria-label="Rychlé AI akce">
           <span className="composer-ai-ready">
             <Sparkles size={15} />
@@ -4040,6 +4044,7 @@ function Composer({
               key={action.value}
               onClick={() => {
                 setText(action.value);
+                setSuggestionsDismissedFor(null);
                 window.setTimeout(() => textareaRef.current?.focus(), 0);
               }}
               title={action.description}
@@ -4083,13 +4088,26 @@ function Composer({
             disabled={disabled}
             onChange={(event) => {
               setText(event.target.value);
+              setSuggestionsDismissedFor(null);
               syncTextareaHeight();
             }}
-            onFocus={syncTextareaHeight}
+            onBlur={() => {
+              setSuggestionsDismissedFor(text);
+            }}
+            onFocus={() => {
+              setSuggestionsDismissedFor(null);
+              syncTextareaHeight();
+            }}
             onKeyDown={(event) => {
-              if ((event.key === "Tab" || event.key === "Enter") && suggestions.length > 0) {
+              if (event.key === "Escape" && visibleSuggestions.length > 0) {
                 event.preventDefault();
-                setText(suggestions[0]?.value ?? text);
+                setSuggestionsDismissedFor(text);
+                return;
+              }
+              if ((event.key === "Tab" || event.key === "Enter") && visibleSuggestions.length > 0) {
+                event.preventDefault();
+                setText(visibleSuggestions[0]?.value ?? text);
+                setSuggestionsDismissedFor(null);
                 window.setTimeout(() => textareaRef.current?.focus(), 0);
                 return;
               }
