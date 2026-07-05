@@ -242,7 +242,7 @@ import {
   publishChatUnreadCount,
   readStoredChatUnreadCount
 } from "@cop/messaging/runtime";
-import { decodeChatCenterLocation, encodeChatSelect, encodeChatShareTransit, type ChatTransitSharePayload } from "@cop/messaging/bridge";
+import { decodeChatCenterLocation, encodeChatCurrentLocation, encodeChatSelect, encodeChatShareTransit, type ChatTransitSharePayload } from "@cop/messaging/bridge";
 import {
   countHistoryPoints,
   getReplayTimestamp,
@@ -5724,6 +5724,7 @@ export function App() {
           pinned={messagingPinned}
           selection={messagingSelection}
           transitShare={messagingTransitShare}
+          userLocation={userLocation}
           onClose={() => setMessagingOpen(false)}
           onDockWidthChange={(width) => {
             const nextWidth = clamp(width, messagingDockWidthRange.min, messagingDockWidthRange.max);
@@ -7668,6 +7669,7 @@ function EmbeddedCopChatPanel({
   pinned,
   selection,
   transitShare,
+  userLocation,
   onClose,
   onDockWidthChange
 }: {
@@ -7675,6 +7677,7 @@ function EmbeddedCopChatPanel({
   pinned: boolean;
   selection: MessagingSelectionCommand | null;
   transitShare: MessagingTransitShareCommand | null;
+  userLocation: UserLocation | null;
   onClose: () => void;
   onDockWidthChange: (width: number) => void;
 }) {
@@ -7700,6 +7703,25 @@ function EmbeddedCopChatPanel({
       window.location.origin
     );
   }, [transitShare?.nonce]);
+
+  React.useEffect(() => {
+    postCurrentLocationToChat();
+  }, [userLocation?.accuracyM, userLocation?.lat, userLocation?.lon, userLocation?.updatedAt]);
+
+  function postCurrentLocationToChat() {
+    const target = iframeRef.current?.contentWindow;
+    if (!target || !userLocation) {
+      return;
+    }
+    target.postMessage(encodeChatCurrentLocation({
+      ...(typeof userLocation.accuracyM === "number" ? { accuracyM: userLocation.accuracyM } : {}),
+      label: "Moje poloha",
+      lat: userLocation.lat,
+      lon: userLocation.lon,
+      source: "device",
+      updatedAt: userLocation.updatedAt
+    }), window.location.origin);
+  }
 
   function beginDockResize(event: React.PointerEvent<HTMLDivElement>) {
     if (!pinned) {
@@ -7754,6 +7776,7 @@ function EmbeddedCopChatPanel({
     if (transitShare) {
       target.postMessage(encodeChatShareTransit(transitShare.transit), window.location.origin);
     }
+    postCurrentLocationToChat();
   }
 
   return (

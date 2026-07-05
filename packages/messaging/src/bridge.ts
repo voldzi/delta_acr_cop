@@ -9,6 +9,7 @@
 
 export const chatBridgeMessageTypes = {
   centerLocation: "cop-chat:center-location",
+  currentLocation: "cop-chat:current-location",
   select: "cop-chat:select",
   shareTransit: "cop-chat:share-transit",
   unread: "cop-chat:unread"
@@ -31,6 +32,20 @@ export interface ChatCenterLocationMessage {
   lon: number;
   type: typeof chatBridgeMessageTypes.centerLocation;
   zoom?: number;
+}
+
+export interface ChatCurrentLocationPayload {
+  accuracyM?: number;
+  label?: string;
+  lat: number;
+  lon: number;
+  source?: "device" | "map";
+  updatedAt?: string;
+}
+
+export interface ChatCurrentLocationMessage {
+  location: ChatCurrentLocationPayload;
+  type: typeof chatBridgeMessageTypes.currentLocation;
 }
 
 export interface ChatSelectMessage {
@@ -128,6 +143,26 @@ export function decodeChatCenterLocation(value: unknown): ChatCenterLocationMess
   }) as ChatCenterLocationMessage;
 }
 
+// web → chat: provide the host map/user location as AI geo context.
+export function encodeChatCurrentLocation(location: ChatCurrentLocationPayload): ChatCurrentLocationMessage {
+  const normalized = normalizeCurrentLocation(location);
+  if (!normalized) {
+    throw new Error("Current location requires finite coordinates.");
+  }
+  return {
+    location: normalized,
+    type: chatBridgeMessageTypes.currentLocation
+  };
+}
+
+export function decodeChatCurrentLocation(value: unknown): ChatCurrentLocationPayload | null {
+  const data = asRecord(value);
+  if (!data || data.type !== chatBridgeMessageTypes.currentLocation) {
+    return null;
+  }
+  return normalizeCurrentLocation(data.location);
+}
+
 // web → chat: open a specific conversation in the embedded chat.
 export function encodeChatSelect(selection: string): ChatSelectMessage {
   return { selection, type: chatBridgeMessageTypes.select };
@@ -185,6 +220,24 @@ function normalizeTransitShare(value: unknown): ChatTransitSharePayload | null {
 
 function normalizeCenterFeatureKind(value: unknown): ChatCenterLocationMessage["featureKind"] | undefined {
   return value === "feature" || value === "place" || value === "track" ? value : undefined;
+}
+
+function normalizeCurrentLocation(value: unknown): ChatCurrentLocationPayload | null {
+  const data = asRecord(value);
+  if (!data || typeof data.lat !== "number" || typeof data.lon !== "number" || !Number.isFinite(data.lat) || !Number.isFinite(data.lon)) {
+    return null;
+  }
+  if (data.lat < -90 || data.lat > 90 || data.lon < -180 || data.lon > 180) {
+    return null;
+  }
+  return compactRecord({
+    accuracyM: optionalNumber(data.accuracyM),
+    label: normalizeBridgeText(data.label, 120),
+    lat: data.lat,
+    lon: data.lon,
+    source: data.source === "device" || data.source === "map" ? data.source : undefined,
+    updatedAt: normalizeBridgeText(data.updatedAt, 64)
+  }) as ChatCurrentLocationPayload;
 }
 
 function normalizeCenterZoom(value: unknown): number | undefined {

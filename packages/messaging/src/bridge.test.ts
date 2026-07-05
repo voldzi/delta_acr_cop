@@ -5,10 +5,12 @@ import {
   chatBridgeMessageTypes,
   chatUnreadStorageKey,
   decodeChatCenterLocation,
+  decodeChatCurrentLocation,
   decodeChatSelect,
   decodeChatShareTransit,
   decodeChatUnread,
   encodeChatCenterLocation,
+  encodeChatCurrentLocation,
   encodeChatSelect,
   encodeChatShareTransit,
   encodeChatUnread
@@ -21,12 +23,45 @@ describe("contract constants", () => {
   it("keeps the agreed message types, channel and storage key", () => {
     expect(chatBridgeMessageTypes).toEqual({
       centerLocation: "cop-chat:center-location",
+      currentLocation: "cop-chat:current-location",
       select: "cop-chat:select",
       shareTransit: "cop-chat:share-transit",
       unread: "cop-chat:unread"
     });
     expect(chatBridgeChannelName).toBe("cop-chat");
     expect(chatUnreadStorageKey).toBe("cop.chat.unread.v1");
+  });
+});
+
+describe("current-location (web -> chat)", () => {
+  it("encodes and decodes host location for AI geo context", () => {
+    const payload = encodeChatCurrentLocation({
+      accuracyM: 14.2,
+      label: " Moje poloha ",
+      lat: 50.12952,
+      lon: 17.36285,
+      source: "device",
+      updatedAt: "2026-07-05T08:30:00.000Z"
+    });
+
+    expect(payload).toEqual({
+      location: {
+        accuracyM: 14.2,
+        label: "Moje poloha",
+        lat: 50.12952,
+        lon: 17.36285,
+        source: "device",
+        updatedAt: "2026-07-05T08:30:00.000Z"
+      },
+      type: "cop-chat:current-location"
+    });
+    expect(decodeChatCurrentLocation(payload)).toEqual(payload.location);
+  });
+
+  it("rejects malformed current locations", () => {
+    expect(() => encodeChatCurrentLocation({ lat: Number.NaN, lon: 17 })).toThrow("Current location requires finite coordinates.");
+    expect(decodeChatCurrentLocation({ location: { lat: 91, lon: 17 }, type: "cop-chat:current-location" })).toBeNull();
+    expect(decodeChatCurrentLocation({ location: { lat: 50, lon: 17 }, type: "other" })).toBeNull();
   });
 });
 

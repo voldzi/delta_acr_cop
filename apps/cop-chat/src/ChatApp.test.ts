@@ -310,4 +310,43 @@ describe("buildAiRequestContextOptions", () => {
       }
     });
   });
+
+  it("prefers the host map current location over older chat location messages", () => {
+    const messages: MatrixTimelineMessage[] = [
+      {
+        body: "Sdílená poloha v chatu",
+        eventId: "$loc-chat",
+        kind: "location",
+        location: {
+          label: "Starší poloha v chatu",
+          lat: 49.9,
+          lon: 14.5,
+          source: "map"
+        },
+        own: true,
+        sender: "@me:cop.local",
+        timestamp: "2026-06-26T07:45:00.000Z"
+      }
+    ];
+
+    expect(buildAiRequestContextOptions(messages, {
+      label: "Moje poloha",
+      lat: 50.12952,
+      lon: 17.36285,
+      source: "device"
+    })).toEqual({
+      geoContext: {
+        currentLocation: {
+          label: "Moje poloha",
+          lat: 50.12952,
+          lon: 17.36285,
+          radiusKm: 30
+        },
+        label: "Moje poloha"
+      },
+      timeWindow: {
+        maxAgeSeconds: 604800
+      }
+    });
+  });
 });

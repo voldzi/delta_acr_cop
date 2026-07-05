@@ -517,6 +517,11 @@ AI assistants follow the same boundary:
 
 - A personal assistant can summarize explicitly selected/decrypted browser chat
   context plus policy-filtered COP data for the current user.
+- When `cop-chat` is embedded in COP Web, the host map sends the current
+  device/map location to the chat iframe through the same-origin bridge. The
+  chat uses this as AI `geoContext` for location-aware questions such as
+  "nearest police"; it is not persisted as a Matrix message unless the user
+  explicitly shares their location into the conversation.
 - A room assistant must be a visible, explicit participant before it can observe
   or answer in a group conversation.
 - Proactive AI notices should be rendered as system situation cards with source

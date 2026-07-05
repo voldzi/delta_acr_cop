@@ -114,7 +114,7 @@ import type {
   MatrixTimelineMessage,
   MatrixTransitShare
 } from "@cop/messaging/types";
-import { decodeChatShareTransit, encodeChatCenterLocation } from "@cop/messaging/bridge";
+import { decodeChatCurrentLocation, decodeChatShareTransit, encodeChatCenterLocation } from "@cop/messaging/bridge";
 import { chatText } from "./i18n";
 import { Avatar } from "./components/Avatar";
 import { AiMarkdownOutput } from "./components/AiMarkdownOutput";
@@ -404,6 +404,7 @@ export function ChatApp() {
   const [aiAgentError, setAiAgentError] = React.useState<string | null>(null);
   const [aiAgentJobStatus, setAiAgentJobStatus] = React.useState<string | null>(null);
   const [aiAgentInlineStatus, setAiAgentInlineStatus] = React.useState<string | null>(null);
+  const [hostCurrentLocation, setHostCurrentLocation] = React.useState<MatrixLocationShare | null>(null);
   const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
   const [aiAgentGroupUpdating, setAiAgentGroupUpdating] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
@@ -969,6 +970,17 @@ export function ChatApp() {
       const transit = decodeChatShareTransit(event.data);
       if (transit) {
         void shareTransitFromHost(transit);
+        return;
+      }
+      const currentLocation = decodeChatCurrentLocation(event.data);
+      if (currentLocation) {
+        setHostCurrentLocation({
+          ...(typeof currentLocation.accuracyM === "number" ? { accuracyM: currentLocation.accuracyM } : {}),
+          label: currentLocation.label ?? "Moje poloha",
+          lat: currentLocation.lat,
+          lon: currentLocation.lon,
+          source: currentLocation.source ?? "device"
+        });
         return;
       }
       const selection = embeddedChatSelectionFromMessage(event.data);
@@ -2281,7 +2293,7 @@ export function ChatApp() {
     setError(null);
     try {
       const response = await createAiSituationSummary(apiBase, authToken, {
-        ...buildAiRequestContextOptions(timelineMessages),
+        ...buildAiRequestContextOptions(timelineMessages, hostCurrentLocation ?? undefined),
         includeAlerts: true,
         language: "cs",
         maxObjects: 40
@@ -2330,7 +2342,7 @@ export function ChatApp() {
     currentUserMessage?: string
   ): AiChatAgentQueryOptions {
     return {
-      ...buildAiRequestContextOptions(timelineMessages),
+      ...buildAiRequestContextOptions(timelineMessages, hostCurrentLocation ?? undefined),
       chatContext: buildAiChatContextSnapshot(timelineMessages, {
         ...(currentUserMessage ? { currentUserMessage } : {}),
         encrypted: selectedRoom?.encrypted,
@@ -2739,21 +2751,39 @@ export function ChatApp() {
     if (!matrixSession || !selectedRoomId) {
       throw new Error("Nejdřív otevřete chatovou místnost.");
     }
+    const roomId = selectedRoomId;
+    const session = matrixSession;
 
     setAiAgentInlineStatus("COP AI agent připravuje dotaz a vybírá COP zdroje...");
+    await session.sendMessage(roomId, userMessage);
+    setNotice("COP AI agent zpracovává dotaz...");
+    void finishAiAgentMentionQuestion({
+      invocation,
+      question,
+      roomId,
+      session,
+      userMessage
+    });
+  }
+
+  async function finishAiAgentMentionQuestion(input: {
+    invocation: AiAgentInvocation;
+    question: string;
+    roomId: string;
+    session: MatrixMessagingSession;
+    userMessage: string;
+  }): Promise<void> {
     try {
-      await matrixSession.sendMessage(selectedRoomId, userMessage);
-      setNotice("COP AI agent zpracovává dotaz...");
       let response: AiCopResponse;
       response = await queryAiChatAgentWithJob(
-        buildAiChatAgentQueryOptions(question, invocation.modelPreference, userMessage),
+        buildAiChatAgentQueryOptions(input.question, input.invocation.modelPreference, input.userMessage),
         (job) => {
           const label = aiChatAgentJobStatusLabel(job);
           setNotice(label);
           setAiAgentInlineStatus(label);
         }
       );
-      setAiAgentQuestion(question);
+      setAiAgentQuestion(input.question);
       setAiAgentResponse(response);
 
       const answer = aiResponseSummary(response);
@@ -2769,9 +2799,12 @@ export function ChatApp() {
         return;
       }
       setAiAgentInlineStatus("AI odpověď je připravená, odesílám ji do chatu...");
-      await matrixSession.sendMessage(selectedRoomId, formatAiAgentShareBody(answer, question), {
-        cop: buildAiAgentMessageMetadata(response, question)
+      await input.session.sendMessage(input.roomId, formatAiAgentShareBody(answer, input.question), {
+        cop: buildAiAgentMessageMetadata(response, input.question)
       });
+      if (selectedRoomIdRef.current === input.roomId) {
+        setTimeline(rememberRoomTimeline(input.roomId, input.session.getTimeline(input.roomId)));
+      }
       setNotice("COP AI agent odpověděl do chatu.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "AI agent teď nedokáže odpovědět.");
@@ -6058,11 +6091,13 @@ export function formatAiSituationShareBody(summary: string): string {
   return `AI situační souhrn:\n\n${summary.trim()}`.trim();
 }
 
-export function buildAiRequestContextOptions(messages: MatrixTimelineMessage[]): {
+export function buildAiRequestContextOptions(messages: MatrixTimelineMessage[], hostLocation?: MatrixLocationShare): {
   geoContext?: AiContextGeoContext;
   timeWindow: AiContextTimeWindow;
 } {
-  const latestLocation = latestTimelineLocation(messages);
+  const latestLocation = hostLocation && validMatrixLocation(hostLocation)
+    ? hostLocation
+    : latestTimelineLocation(messages);
   return {
     ...(latestLocation ? {
       geoContext: {
