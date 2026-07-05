@@ -48,6 +48,15 @@ export interface ChatCurrentLocationMessage {
   type: typeof chatBridgeMessageTypes.currentLocation;
 }
 
+export const copMapFocusSearchParams = {
+  featureId: "copFeatureId",
+  featureKind: "copFeatureKind",
+  label: "copLabel",
+  lat: "copLat",
+  lon: "copLon",
+  zoom: "copZoom"
+} as const;
+
 export interface ChatSelectMessage {
   selection: string;
   type: typeof chatBridgeMessageTypes.select;
@@ -141,6 +150,46 @@ export function decodeChatCenterLocation(value: unknown): ChatCenterLocationMess
     type: chatBridgeMessageTypes.centerLocation,
     zoom: normalizeCenterZoom(data.zoom)
   }) as ChatCenterLocationMessage;
+}
+
+export function encodeCopMapFocusUrl(baseUrl: string | URL, focus: ChatCenterLocationMessage): string {
+  const normalized = decodeChatCenterLocation(focus);
+  if (!normalized) {
+    throw new Error("COP map focus requires finite coordinates.");
+  }
+  const url = new URL(baseUrl.toString());
+  url.searchParams.set(copMapFocusSearchParams.lat, String(normalized.lat));
+  url.searchParams.set(copMapFocusSearchParams.lon, String(normalized.lon));
+  if (normalized.zoom !== undefined) {
+    url.searchParams.set(copMapFocusSearchParams.zoom, String(normalized.zoom));
+  }
+  if (normalized.featureId) {
+    url.searchParams.set(copMapFocusSearchParams.featureId, normalized.featureId);
+  }
+  if (normalized.featureKind) {
+    url.searchParams.set(copMapFocusSearchParams.featureKind, normalized.featureKind);
+  }
+  if (normalized.label) {
+    url.searchParams.set(copMapFocusSearchParams.label, normalized.label);
+  }
+  return url.toString();
+}
+
+export function decodeCopMapFocusSearch(search: string | URLSearchParams): ChatCenterLocationMessage | null {
+  const params = typeof search === "string"
+    ? new URLSearchParams(search.startsWith("?") ? search : `?${search}`)
+    : search;
+  const lat = Number(params.get(copMapFocusSearchParams.lat));
+  const lon = Number(params.get(copMapFocusSearchParams.lon));
+  return decodeChatCenterLocation({
+    featureId: params.get(copMapFocusSearchParams.featureId) ?? undefined,
+    featureKind: params.get(copMapFocusSearchParams.featureKind) ?? undefined,
+    label: params.get(copMapFocusSearchParams.label) ?? undefined,
+    lat,
+    lon,
+    type: chatBridgeMessageTypes.centerLocation,
+    zoom: params.has(copMapFocusSearchParams.zoom) ? Number(params.get(copMapFocusSearchParams.zoom)) : undefined
+  });
 }
 
 // web → chat: provide the host map/user location as AI geo context.

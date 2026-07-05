@@ -2215,6 +2215,16 @@ button {
   outline: none;
 }
 
+.composer-ai-quickbar button.ai-location-chip {
+  border-color: rgba(14, 116, 144, 0.24);
+}
+
+.composer-ai-quickbar button.ai-location-chip.active {
+  border-color: rgba(0, 128, 105, 0.36);
+  background: #dff8f2;
+  color: #047857;
+}
+
 .composer-ai-quickbar button:disabled {
   cursor: not-allowed;
   opacity: 0.52;

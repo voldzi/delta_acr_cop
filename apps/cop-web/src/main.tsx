@@ -242,7 +242,7 @@ import {
   publishChatUnreadCount,
   readStoredChatUnreadCount
 } from "@cop/messaging/runtime";
-import { decodeChatCenterLocation, encodeChatCurrentLocation, encodeChatSelect, encodeChatShareTransit, type ChatTransitSharePayload } from "@cop/messaging/bridge";
+import { decodeChatCenterLocation, decodeCopMapFocusSearch, encodeChatCurrentLocation, encodeChatSelect, encodeChatShareTransit, type ChatCenterLocationMessage, type ChatTransitSharePayload } from "@cop/messaging/bridge";
 import {
   countHistoryPoints,
   getReplayTimestamp,
@@ -417,6 +417,16 @@ const mapFeatureFetchDelayMs = 450;
 const defaultMapBounds: MapBounds = { east: 19.1, north: 51.2, south: 48.5, west: 12 };
 const messagingDockWidthStorageKey = "cop.messaging.dockWidth.v1";
 
+function mapViewFromCopMapFocus(focus: ChatCenterLocationMessage, fallback: unknown): MapViewState {
+  const current = normalizeMapView(fallback);
+  return {
+    bearing: current?.bearing ?? 0,
+    center: [focus.lon, focus.lat],
+    pitch: current?.pitch ?? 0,
+    zoom: focus.zoom ?? Math.max(current?.zoom ?? 0, 15)
+  };
+}
+
 interface StableFeatureRequest {
   bounds: MapBounds;
   key: string;
@@ -588,6 +598,7 @@ export function App() {
   );
   const initialPreferences = React.useMemo(() => readUserPreferences(userStorageScope), [userStorageScope]);
   const initialAlertPreferences = React.useMemo(() => readLocalAlertPreferences(userStorageScope), [userStorageScope]);
+  const initialMapFocus = React.useMemo(() => decodeCopMapFocusSearch(window.location.search), []);
   const [activeWorkspace, setActiveWorkspace] = React.useState<WorkspaceModule>(() =>
     normalizeWorkspaceModule(initialPreferences.activeWorkspace)
   );
@@ -700,8 +711,10 @@ export function App() {
   );
   const [zoneCreationMode, setZoneCreationMode] = React.useState(false);
   const [editingZoneId, setEditingZoneId] = React.useState<string | null>(null);
-  const [autoFit, setAutoFit] = React.useState(initialPreferences.autoFit ?? true);
-  const [mapView, setMapView] = React.useState<MapViewState | undefined>(() => normalizeMapView(initialPreferences.mapView));
+  const [autoFit, setAutoFit] = React.useState(initialMapFocus ? false : initialPreferences.autoFit ?? true);
+  const [mapView, setMapView] = React.useState<MapViewState | undefined>(() =>
+    initialMapFocus ? mapViewFromCopMapFocus(initialMapFocus, initialPreferences.mapView) : normalizeMapView(initialPreferences.mapView)
+  );
   const [mapBounds, setMapBounds] = React.useState<MapBounds>(defaultMapBounds);
   const [focusViewRequest, setFocusViewRequest] = React.useState(0);
   const [mapCatalog, setMapCatalog] = React.useState<MapCatalogResponse | null>(null);
@@ -771,7 +784,13 @@ export function App() {
   const [selectedSituationFeatureStableKey, setSelectedSituationFeatureStableKey] = React.useState<string | null>(null);
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
-  const [locationStatus, setLocationStatus] = React.useState("Poloha není zaměřená.");
+  const [locationStatus, setLocationStatus] = React.useState(() =>
+    initialMapFocus?.label
+      ? `Mapa otevřena z chatu: ${initialMapFocus.label}.`
+      : initialMapFocus
+        ? "Mapa otevřena z chatu."
+        : "Poloha není zaměřená."
+  );
   const [isLocating, setIsLocating] = React.useState(false);
   const [proximityAlertEnabled, setProximityAlertEnabled] = React.useState(initialPreferences.proximityAlertEnabled ?? false);
   const [safetyAreaPopup, setSafetyAreaPopup] = React.useState<SafetyAreaAlertMatch | null>(null);
@@ -792,6 +811,7 @@ export function App() {
   const [messagingUnreadCount, setMessagingUnreadCount] = React.useState(0);
   const messagingSelectionNonceRef = React.useRef(0);
   const messagingTransitShareNonceRef = React.useRef(0);
+  const initialMapFeatureFocusRef = React.useRef(initialMapFocus);
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [webPushBusy, setWebPushBusy] = React.useState(false);
   const [incidentSuggestions, setIncidentSuggestions] = React.useState<IncidentFusionSuggestion[]>([]);
@@ -3027,6 +3047,26 @@ export function App() {
     profileAccessReady,
     userStorageScope
   ]);
+
+  React.useEffect(() => {
+    const focus = initialMapFeatureFocusRef.current;
+    if (!focus?.featureId) {
+      return;
+    }
+    if (focus.featureKind === "feature" && findSelectedSituationFeature(combinedSituationFeatures, focus.featureId, null)) {
+      setSelectedSituationFeatureId(focus.featureId);
+      setSelectedSituationFeatureStableKey(null);
+      setSelectedObjectId(null);
+      initialMapFeatureFocusRef.current = null;
+      return;
+    }
+    if (focus.featureKind === "track" && visibleObjects.some((object) => object.objectId === focus.featureId)) {
+      setSelectedObjectId(focus.featureId);
+      setSelectedSituationFeatureId(null);
+      setSelectedSituationFeatureStableKey(null);
+      initialMapFeatureFocusRef.current = null;
+    }
+  }, [combinedSituationFeatures, visibleObjects]);
 
   React.useEffect(() => {
     if (selectedObjectId && !visibleObjects.some((object) => object.objectId === selectedObjectId)) {

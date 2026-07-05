@@ -58,7 +58,7 @@ describe("MediaPreviewDialog", () => {
     }
 
     expect(postMessage).toHaveBeenCalledWith(
-      { lat: 50.12951, lon: 17.36297, type: "cop-chat:center-location" },
+      { lat: 50.12951, lon: 17.36297, type: "cop-chat:center-location", zoom: 16 },
       window.location.origin
     );
   });

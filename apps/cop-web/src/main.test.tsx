@@ -60,6 +60,7 @@ vi.mock("./CopMap", async () => {
 
 afterEach(() => {
   cleanup();
+  window.history.replaceState(null, "", "/");
   if (typeof window.localStorage?.clear === "function") {
     window.localStorage.clear();
   }
@@ -558,6 +559,38 @@ describe("COP web dashboard", () => {
     });
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("17.36297,50.12951");
     expect(screen.getByText("Integrovaný COP Chat")).toBeTruthy();
+  });
+
+  it("initializes the map from standalone chat COP focus URL parameters", async () => {
+    window.history.replaceState(null, "", "/?copLat=50.1187&copLon=17.3842&copZoom=16&copLabel=Policie");
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      return jsonResponse({ items: [] });
+    }));
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("17.38420,50.11870");
   });
 
   it("opens the mobile detail sheet when a map object is selected", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { mergeTimelineMessages } from "./chat-model";
-import { aiMapActionsFromResponse, buildAiChatContextSnapshot, buildAiRequestContextOptions, composerQuickActions, composerSuggestions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
+import { aiMapActionsFromResponse, aiQuestionNeedsCurrentLocation, buildAiChatContextSnapshot, buildAiRequestContextOptions, composerQuickActions, composerSuggestions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
 import type { AiCopResponse } from "@cop/core/cop-data";
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
@@ -348,5 +348,14 @@ describe("buildAiRequestContextOptions", () => {
         maxAgeSeconds: 604800
       }
     });
+  });
+});
+
+describe("aiQuestionNeedsCurrentLocation", () => {
+  it("detects nearest/current-location questions without triggering for explicit places", () => {
+    expect(aiQuestionNeedsCurrentLocation("Najdi mi nejbližší policii od mé polohy.")).toBe(true);
+    expect(aiQuestionNeedsCurrentLocation("Kde je nejbližší AED?")).toBe(true);
+    expect(aiQuestionNeedsCurrentLocation("Najdi policii ve Vrbně pod Pradědem.")).toBe(false);
+    expect(aiQuestionNeedsCurrentLocation("Jaká je situace ve Vrbně pod Pradědem?")).toBe(false);
   });
 });

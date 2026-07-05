@@ -522,6 +522,13 @@ AI assistants follow the same boundary:
   chat uses this as AI `geoContext` for location-aware questions such as
   "nearest police"; it is not persisted as a Matrix message unless the user
   explicitly shares their location into the conversation.
+- Standalone `/chat/` uses the same COP login session and can request a
+  temporary browser location for AI-only context. For questions that explicitly
+  need "my location" or "nearest", COP Chat asks the browser for location during
+  the user-initiated send action or through the visible **Moje poloha** quick
+  action. This temporary context is not written to Matrix history. Map actions
+  returned by AI open COP Web with `copLat/copLon` focus parameters so the user
+  can continue on the full map.
 - A room assistant must be a visible, explicit participant before it can observe
   or answer in a group conversation.
 - Proactive AI notices should be rendered as system situation cards with source

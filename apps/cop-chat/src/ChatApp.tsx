@@ -114,7 +114,7 @@ import type {
   MatrixTimelineMessage,
   MatrixTransitShare
 } from "@cop/messaging/types";
-import { decodeChatCurrentLocation, decodeChatShareTransit, encodeChatCenterLocation } from "@cop/messaging/bridge";
+import { decodeChatCurrentLocation, decodeChatShareTransit, encodeChatCenterLocation, encodeCopMapFocusUrl } from "@cop/messaging/bridge";
 import { chatText } from "./i18n";
 import { Avatar } from "./components/Avatar";
 import { AiMarkdownOutput } from "./components/AiMarkdownOutput";
@@ -405,6 +405,8 @@ export function ChatApp() {
   const [aiAgentJobStatus, setAiAgentJobStatus] = React.useState<string | null>(null);
   const [aiAgentInlineStatus, setAiAgentInlineStatus] = React.useState<string | null>(null);
   const [hostCurrentLocation, setHostCurrentLocation] = React.useState<MatrixLocationShare | null>(null);
+  const [standaloneAiLocation, setStandaloneAiLocation] = React.useState<MatrixLocationShare | null>(null);
+  const [standaloneAiLocationBusy, setStandaloneAiLocationBusy] = React.useState(false);
   const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
   const [aiAgentGroupUpdating, setAiAgentGroupUpdating] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
@@ -519,6 +521,8 @@ export function ChatApp() {
 
   const chatReady = Boolean(authToken && status?.chatAvailable);
   const encryptionRecoveryReady = Boolean(!matrixSession || encryptionRecoveryStatus?.ready);
+  const embedded = React.useMemo(() => new URLSearchParams(window.location.search).get("embedded") === "1", []);
+  const aiContextLocation = hostCurrentLocation ?? standaloneAiLocation;
   const selectedConversation = selectedConversationId
     ? conversations.find((conversation) => conversation.conversationId === selectedConversationId) ?? null
     : selectedRoomId
@@ -2293,7 +2297,7 @@ export function ChatApp() {
     setError(null);
     try {
       const response = await createAiSituationSummary(apiBase, authToken, {
-        ...buildAiRequestContextOptions(timelineMessages, hostCurrentLocation ?? undefined),
+        ...buildAiRequestContextOptions(timelineMessages, aiContextLocation ?? undefined),
         includeAlerts: true,
         language: "cs",
         maxObjects: 40
@@ -2339,10 +2343,11 @@ export function ChatApp() {
   function buildAiChatAgentQueryOptions(
     question: string,
     modelPreference: AiModelPreference,
-    currentUserMessage?: string
+    currentUserMessage?: string,
+    geoLocation?: MatrixLocationShare
   ): AiChatAgentQueryOptions {
     return {
-      ...buildAiRequestContextOptions(timelineMessages, hostCurrentLocation ?? undefined),
+      ...buildAiRequestContextOptions(timelineMessages, geoLocation ?? aiContextLocation ?? undefined),
       chatContext: buildAiChatContextSnapshot(timelineMessages, {
         ...(currentUserMessage ? { currentUserMessage } : {}),
         encrypted: selectedRoom?.encrypted,
@@ -2753,6 +2758,10 @@ export function ChatApp() {
     }
     const roomId = selectedRoomId;
     const session = matrixSession;
+    let geoLocation = aiContextLocation;
+    if (!geoLocation && !embedded && aiQuestionNeedsCurrentLocation(question)) {
+      geoLocation = await requestStandaloneAiLocation({ reportNotice: false });
+    }
 
     setAiAgentInlineStatus("COP AI agent připravuje dotaz a vybírá COP zdroje...");
     await session.sendMessage(roomId, userMessage);
@@ -2762,6 +2771,7 @@ export function ChatApp() {
       question,
       roomId,
       session,
+      geoLocation,
       userMessage
     });
   }
@@ -2771,12 +2781,13 @@ export function ChatApp() {
     question: string;
     roomId: string;
     session: MatrixMessagingSession;
+    geoLocation?: MatrixLocationShare | null;
     userMessage: string;
   }): Promise<void> {
     try {
       let response: AiCopResponse;
       response = await queryAiChatAgentWithJob(
-        buildAiChatAgentQueryOptions(input.question, input.invocation.modelPreference, input.userMessage),
+        buildAiChatAgentQueryOptions(input.question, input.invocation.modelPreference, input.userMessage, input.geoLocation ?? undefined),
         (job) => {
           const label = aiChatAgentJobStatusLabel(job);
           setNotice(label);
@@ -2811,6 +2822,25 @@ export function ChatApp() {
       return;
     } finally {
       setAiAgentInlineStatus(null);
+    }
+  }
+
+  async function requestStandaloneAiLocation(options: { reportNotice: boolean } = { reportNotice: true }): Promise<MatrixLocationShare> {
+    setStandaloneAiLocationBusy(true);
+    setError(null);
+    try {
+      const location = await getDeviceLocation();
+      setStandaloneAiLocation(location);
+      if (options.reportNotice) {
+        setNotice(`Poloha je připravená pro AI dotazy: ${formatCoordinates(location)}.`);
+      }
+      return location;
+    } catch (caught) {
+      const message = geolocationErrorMessage(caught);
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setStandaloneAiLocationBusy(false);
     }
   }
 
@@ -2921,7 +2951,6 @@ export function ChatApp() {
   const handleToggleSelectedMessage = useEventCallback((messageId: string) => toggleSelectedMessage(messageId));
 
   const connectionLocked = authenticated && !chatReady && !showingDemoTimeline;
-  const embedded = React.useMemo(() => new URLSearchParams(window.location.search).get("embedded") === "1", []);
 
   return (
     <main className={clsx("wa-shell", embedded && "embedded", routeChatSelected && "chat-selected")}>
@@ -3262,7 +3291,10 @@ export function ChatApp() {
                 ) : (
                   <Composer
                     aiAgentAvailable={selectedAiAgentDirectChat || selectedGroupAiAssistantEnabled}
+                    aiLocationActive={Boolean(aiContextLocation)}
+                    aiLocationBusy={standaloneAiLocationBusy}
                     disabled={!composerEnabled || sending}
+                    embedded={embedded}
                     pendingAttachment={pendingAttachment}
                     replyTo={replyDraft}
                     sending={sending}
@@ -3270,6 +3302,7 @@ export function ChatApp() {
                     onAttachmentPick={pickAttachment}
                     onReplyClear={() => setReplyDraft(null)}
                     onSend={sendMessage}
+                    onUseAiLocation={() => void requestStandaloneAiLocation({ reportNotice: true }).catch(() => undefined)}
                     onShareLocation={() => void shareLocation()}
                   />
                 )}
@@ -3878,7 +3911,10 @@ function HistoryLoader({
 
 function Composer({
   aiAgentAvailable,
+  aiLocationActive,
+  aiLocationBusy,
   disabled,
+  embedded,
   pendingAttachment,
   replyTo,
   sending,
@@ -3886,10 +3922,14 @@ function Composer({
   onAttachmentPick,
   onReplyClear,
   onSend,
+  onUseAiLocation,
   onShareLocation
 }: {
   aiAgentAvailable: boolean;
+  aiLocationActive: boolean;
+  aiLocationBusy: boolean;
   disabled: boolean;
+  embedded: boolean;
   pendingAttachment: PendingChatAttachment | null;
   replyTo: MatrixTimelineMessage | null;
   sending: boolean;
@@ -3897,6 +3937,7 @@ function Composer({
   onAttachmentPick: (kind: MatrixAttachmentKind) => void;
   onReplyClear: () => void;
   onSend: (text: string) => Promise<boolean> | void;
+  onUseAiLocation: () => void;
   onShareLocation: () => void;
 }) {
   // The draft text lives locally so typing re-renders only the Composer, not the
@@ -4008,6 +4049,20 @@ function Composer({
               <span>{action.label}</span>
             </button>
           ))}
+          {!embedded ? (
+            <button
+              aria-label={aiLocationActive ? "Aktualizovat polohu pro AI dotazy" : "Použít moji polohu pro AI dotazy"}
+              aria-pressed={aiLocationActive}
+              className={clsx("ai-location-chip", aiLocationActive && "active")}
+              disabled={disabled || aiLocationBusy}
+              onClick={onUseAiLocation}
+              title={aiLocationActive ? "AI používá tuto polohu jen jako dočasný kontext dotazu." : "Zaměří polohu pro dotazy typu nejbližší policie."}
+              type="button"
+            >
+              {aiLocationBusy ? <Loader2 className="spin" size={14} /> : <MapPin size={14} />}
+              <span>{aiLocationActive ? "AI poloha" : "Moje poloha"}</span>
+            </button>
+          ) : null}
         </div>
       ) : null}
       <div className="composer-row">
@@ -4357,12 +4412,17 @@ function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
           className="message-ai-map-action"
           onClick={(event) => {
             event.stopPropagation();
-            window.parent.postMessage(encodeChatCenterLocation(action.lat, action.lon, {
+            const focus = encodeChatCenterLocation(action.lat, action.lon, {
               featureId: action.entityId,
               featureKind: chatCenterFeatureKindFromAiAction(action),
               label: action.title ?? action.label,
               zoom: action.zoom
-            }), window.location.origin);
+            });
+            if (window.parent !== window && new URLSearchParams(window.location.search).get("embedded") === "1") {
+              window.parent.postMessage(focus, window.location.origin);
+              return;
+            }
+            window.open(encodeCopMapFocusUrl(new URL("/", window.location.origin), focus), "_self", "noopener,noreferrer");
           }}
           type="button"
         >
@@ -7170,6 +7230,27 @@ async function getDeviceLocation(): Promise<MatrixLocationShare> {
     lon: position.coords.longitude,
     source: "device"
   };
+}
+
+export function aiQuestionNeedsCurrentLocation(question: string): boolean {
+  const normalized = question
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("cs-CZ");
+  return /\b(nejbliz|nejblizsi|closest|nearest|near me)\b/u.test(normalized)
+    || /\b(u me|ode me|moje poloha|moji polohy|aktualni poloha|current location)\b/u.test(normalized);
+}
+
+function geolocationErrorMessage(error: unknown): string {
+  if (typeof GeolocationPositionError !== "undefined" && error instanceof GeolocationPositionError) {
+    if (error.code === error.PERMISSION_DENIED) {
+      return "Poloha pro AI nebyla povolena. Pro dotazy typu nejbližší objekt povolte polohu v prohlížeči nebo zadejte konkrétní místo.";
+    }
+    if (error.code === error.TIMEOUT) {
+      return "Polohu pro AI se nepodařilo zaměřit v časovém limitu. Zkuste to znovu nebo zadejte konkrétní místo.";
+    }
+  }
+  return error instanceof Error ? error.message : "Polohu pro AI se nepodařilo zaměřit.";
 }
 
 function formatBytes(bytes: number): string {

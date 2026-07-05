@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { MapPin } from "lucide-react";
-import { encodeChatCenterLocation } from "@cop/messaging/bridge";
+import { encodeChatCenterLocation, encodeCopMapFocusUrl } from "@cop/messaging/bridge";
 import type { MatrixLocationShare } from "@cop/messaging/types";
 
 export function StaticLocationMap({ large = false, location }: { large?: boolean; location: MatrixLocationShare }) {
@@ -21,11 +21,15 @@ export function formatCoordinates(location: { lat: number; lon: number }): strin
 }
 
 export function centerLocationInCop(location: MatrixLocationShare): void {
+  const focus = encodeChatCenterLocation(location.lat, location.lon, {
+    label: location.label,
+    zoom: 16
+  });
   if (window.parent !== window) {
-    window.parent.postMessage(encodeChatCenterLocation(location.lat, location.lon), window.location.origin);
+    window.parent.postMessage(focus, window.location.origin);
     return;
   }
-  window.open(`https://www.openstreetmap.org/?mlat=${location.lat}&mlon=${location.lon}#map=16/${location.lat}/${location.lon}`, "_blank", "noopener,noreferrer");
+  window.open(encodeCopMapFocusUrl(new URL("/", window.location.origin), focus), "_self", "noopener,noreferrer");
 }
 
 function osmTileUrlForLocation(location: { lat: number; lon: number }, zoom: number): string {

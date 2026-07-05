@@ -4,11 +4,13 @@ import {
   chatBridgeChannelName,
   chatBridgeMessageTypes,
   chatUnreadStorageKey,
+  decodeCopMapFocusSearch,
   decodeChatCenterLocation,
   decodeChatCurrentLocation,
   decodeChatSelect,
   decodeChatShareTransit,
   decodeChatUnread,
+  encodeCopMapFocusUrl,
   encodeChatCenterLocation,
   encodeChatCurrentLocation,
   encodeChatSelect,
@@ -148,6 +150,20 @@ describe("center-location (chat -> web)", () => {
     expect(decodeChatCenterLocation({ lat: Number.NaN, lon: 1, type: "cop-chat:center-location" })).toBeNull();
     expect(decodeChatCenterLocation({ lat: 1, lon: 2, type: "other" })).toBeNull();
     expect(decodeChatCenterLocation(["cop-chat:center-location"])).toBeNull();
+  });
+
+  it("encodes and decodes COP map focus URLs for standalone chat", () => {
+    const focus = encodeChatCenterLocation(50.1187, 17.3842, {
+      featureId: "security-police:vrbno",
+      featureKind: "feature",
+      label: "Policie ČR - Vrbno",
+      zoom: 16
+    });
+    const url = encodeCopMapFocusUrl("https://cop.zeleznalady.cz/", focus);
+
+    expect(url).toContain("copLat=50.1187");
+    expect(url).toContain("copLon=17.3842");
+    expect(decodeCopMapFocusSearch(new URL(url).search)).toEqual(focus);
   });
 });
 

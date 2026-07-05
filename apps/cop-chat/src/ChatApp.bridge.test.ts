@@ -45,17 +45,20 @@ describe("centerLocationInCop (chat → web: cop-chat:center-location)", () => {
       Object.defineProperty(window, "parent", { configurable: true, value: originalParent });
     }
     expect(postMessage).toHaveBeenCalledWith(
-      { lat: 50.0755, lon: 14.4378, type: "cop-chat:center-location" },
+      { lat: 50.0755, lon: 14.4378, type: "cop-chat:center-location", zoom: 16 },
       window.location.origin
     );
   });
 
-  it("opens a standalone map when not embedded (parent === self)", () => {
+  it("opens COP map focus URL in the current tab when not embedded (parent === self)", () => {
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     centerLocationInCop(location);
-    expect(open).toHaveBeenCalledTimes(1);
-    expect(open.mock.calls[0]?.[0]).toContain("50.0755");
-    expect(open.mock.calls[0]?.[0]).toContain("14.4378");
+    expect(open).toHaveBeenCalledWith(
+      expect.stringContaining("copLat=50.0755"),
+      "_self",
+      "noopener,noreferrer"
+    );
+    expect(open.mock.calls[0]?.[0]).toContain("copLon=14.4378");
   });
 });
 
