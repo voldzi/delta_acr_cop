@@ -43,8 +43,10 @@ import {
   bboxForAiMapSearchGeoFilter,
   dedupeAiMapSearchResults,
   inferAiMapSearchIntent,
+  simSearchEntityTypesForAiMapSearchIntent,
   summarizeGeocodedPlaceForAi,
   summarizeMapFeatureCollectionForAi,
+  summarizeSimSearchResponseForAi,
   summarizeSituationMapFeatureForAi,
   type AiMapSearchContext,
   type AiMapSearchResult
@@ -203,6 +205,12 @@ import {
   type SafetyLayerId
 } from "./safety-data-source.js";
 import {
+  buildSimSearchDataHealth,
+  createSimSearchDataSourceFromEnv,
+  unavailableSimSearchDataHealth,
+  type SimSearchDataSource
+} from "./sim-search-data-source.js";
+import {
   buildSketchDrawingCollection,
   createSketchDrawingStoreFromEnv,
   InMemorySketchDrawingStore,
@@ -250,6 +258,7 @@ export interface BuildServerOptions {
   placeGeocoder?: PlaceGeocoder;
   safetyDataSource?: SafetyDataSource;
   sketchDrawingStore?: SketchDrawingStore;
+  simSearchDataSource?: SimSearchDataSource;
   situationDataSource?: SituationDataSource;
   takGatewaySource?: TakGatewaySource;
   state?: CopState;
@@ -628,6 +637,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const placeGeocoder = options.placeGeocoder ?? createPlaceGeocoderFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
   const safetyDataSource = options.safetyDataSource ?? createSafetyDataSourceFromEnv();
+  const simSearchDataSource = options.simSearchDataSource ?? createSimSearchDataSourceFromEnv();
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
   const situationDataBaseUrl = situationDataSource?.config.baseUrl ?? createSituationDataSourceConfigFromEnv().baseUrl;
   const takGatewaySource = options.takGatewaySource ?? createTakGatewaySourceFromEnv();
@@ -673,6 +683,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
   if (safetyDataSource) {
     state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, safetyDataSource.sourceSystem);
+  }
+  if (simSearchDataSource) {
+    state.sources.set(simSearchDataSource.sourceSystem.sourceSystemId, simSearchDataSource.sourceSystem);
   }
   if (takGatewaySource) {
     state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, takGatewaySource.sourceSystem);
@@ -825,6 +838,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         ...(flightDataSource ? [flightDataDependency()] : []),
         ...(situationDataSource ? [situationDataDependency()] : []),
         ...(safetyDataSource ? [safetyDataDependency()] : []),
+        ...(simSearchDataSource ? [simSearchDataDependency()] : []),
         ...(missionArenaSource ? [missionArenaDependency()] : []),
         ...(takGatewaySource ? [takGatewayDependency()] : []),
         aiGatewayDependency
@@ -1801,6 +1815,52 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const bbox = bboxForAiMapSearchGeoFilter(geoFilter);
     const mapResults: AiMapSearchResult[] = [];
 
+    if (simSearchDataSource && (intent.requested || intent.placeQuery || intent.searchTerms.length > 0)) {
+      const entityTypes = simSearchEntityTypesForAiMapSearchIntent(intent);
+      const query = compactRecord({
+        ...(bbox ? { bbox } : {}),
+        ...(geoFilter?.center ? {
+          center: {
+            lat: geoFilter.center.lat,
+            lon: geoFilter.center.lon
+          },
+          radiusM: Math.round(clampNumber(geoFilter.center.radiusKm ?? 30, 1, 250) * 1000)
+        } : {}),
+        ...(entityTypes ? { entityTypes } : {}),
+        includeStale: false,
+        limit: 24,
+        text: input.question,
+        validAt: input.requestNow.toISOString()
+      });
+      try {
+        const response = await simSearchDataSource.query(query, input.requestNow);
+        const health = buildSimSearchDataHealth(response, input.requestNow);
+        state.sources.set(simSearchDataSource.sourceSystem.sourceSystemId, withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health));
+        warnings.push(...response.warnings);
+        const simResults = summarizeSimSearchResponseForAi(response, geoFilter);
+        mapResults.push(...simResults);
+        appendAudit(state, "AI_SIM_SEARCH_DATA_TOOL_INVOKED", {
+          entityTypes,
+          matchedFeatureCount: simResults.length,
+          providerId: response.providerId,
+          requestId: input.requestId,
+          sourceSystemId: simSearchDataSource.sourceSystem.sourceSystemId,
+          status: simResults.length > 0 ? "ok" : "empty",
+          warnings: response.warnings
+        });
+      } catch (error) {
+        const health = unavailableSimSearchDataHealth(error, input.requestNow);
+        state.sources.set(simSearchDataSource.sourceSystem.sourceSystemId, withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health));
+        app.log.warn({ error, requestId: input.requestId }, "AI SIM search-data lookup failed.");
+        warnings.push(`SIM search-data vyhledávání selhalo: ${errorMessage(error)}`);
+        appendAudit(state, "AI_SIM_SEARCH_DATA_TOOL_FAILED", {
+          error: errorMessage(error),
+          requestId: input.requestId,
+          sourceSystemId: simSearchDataSource.sourceSystem.sourceSystemId
+        });
+      }
+    }
+
     if (intent.requested || intent.layerIds.length > 0) {
       if (!bbox) {
         warnings.push("Mapové vyhledávání potřebuje aktuální polohu, bbox nebo místo v dotazu.");
@@ -1991,11 +2051,33 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   }
 
+  function simSearchDataDependency(): { detail: string; name: string; status: DependencyStatus } {
+    if (!simSearchDataSource) {
+      return { detail: "disabled", name: "sim-search-data-source", status: "disabled" };
+    }
+    const health = readSimSearchDataHealth(state.sources.get(simSearchDataSource.sourceSystem.sourceSystemId));
+    if (!health) {
+      return { detail: "idle; waiting for first request", name: "sim-search-data-source", status: "ok" };
+    }
+    return {
+      detail: health.detail ?? health.lastError ?? health.health.toLowerCase(),
+      name: "sim-search-data-source",
+      status: health.health === "ONLINE" ? "ok" : "degraded"
+    };
+  }
+
   function activeSafetyDataSourceSystem(): SourceSystem {
     if (!safetyDataSource) {
       throw new Error("Safety data source is not enabled.");
     }
     return state.sources.get(safetyDataSource.sourceSystem.sourceSystemId) ?? safetyDataSource.sourceSystem;
+  }
+
+  function activeSimSearchDataSourceSystem(): SourceSystem {
+    if (!simSearchDataSource) {
+      throw new Error("SIM search data source is not enabled.");
+    }
+    return state.sources.get(simSearchDataSource.sourceSystem.sourceSystemId) ?? simSearchDataSource.sourceSystem;
   }
 
   function takGatewayDependency(): { detail: string; name: string; status: DependencyStatus } {
@@ -8333,6 +8415,18 @@ function withSafetyDataHealth(source: SourceSystem, health: SourceHealthOverride
   };
 }
 
+function withSimSearchDataHealth(source: SourceSystem, health: SourceHealthOverride): SourceSystem {
+  return {
+    ...source,
+    attributes: {
+      ...source.attributes,
+      sourceHealth: health,
+      simSearchDataHealth: health
+    },
+    updatedAt: health.evaluatedAt
+  };
+}
+
 function withTakGatewayHealth(source: SourceSystem, health: SourceHealthOverride): SourceSystem {
   return {
     ...source,
@@ -8367,6 +8461,10 @@ function readSituationDataHealth(source: SourceSystem | undefined): SourceHealth
 
 function readSafetyDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
   return readSourceHealthFromAttributes(source?.attributes?.safetyDataHealth ?? source?.attributes?.sourceHealth);
+}
+
+function readSimSearchDataHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {
+  return readSourceHealthFromAttributes(source?.attributes?.simSearchDataHealth ?? source?.attributes?.sourceHealth);
 }
 
 function readTakGatewayHealth(source: SourceSystem | undefined): SourceHealthOverride | undefined {

@@ -85,7 +85,9 @@ Matrix E2EE history.
 
 For `chat-agent/query`, search-like questions such as "najdi", "vyhledej" or
 "nejbližší" also create an audited `mapSearch` context. COP uses the same map
-catalog/query path as the map UI. Known emergency categories such as police,
+catalog/query path as the map UI and, when enabled, first asks the internal SIM
+`sim-search-source-v1` provider (`COP_SIM_SEARCH_DATA_*`) for normalized
+country-wide search entities. Known emergency categories such as police,
 fire, rescue, shelters, defibrillators, sirens, healthcare and pharmacies still
 resolve to narrow catalog layers, but generic "find/show/nearest" questions now
 also search queryable catalog layers in the supplied bbox and match feature
@@ -98,7 +100,9 @@ folded into `priorityContext` as `mapFeature` citations and map snapshot
 candidates. When an explicit map-search question has at least one validated
 map result, COP may answer deterministically from `mapSearch` without waiting
 for the LLM provider, so the chat cannot contradict the authoritative map tool
-by claiming that no result was found.
+by claiming that no result was found. If SIM search-data is unavailable, COP
+keeps using the existing catalog/query and geocoder fallbacks and records the
+SIM search failure in audit and Source Health.
 
 Both endpoints echo a bounded, client-safe evidence summary in
 `result.structured.evidence`. The summary contains citation lists from

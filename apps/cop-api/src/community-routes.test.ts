@@ -17,6 +17,12 @@ import type {
   SafetySourceDescriptor
 } from "./safety-data-source.js";
 import type {
+  SimSearchDataSource,
+  SimSearchDataSourceConfig,
+  SimSearchQueryRequest,
+  SimSearchQueryResponse
+} from "./sim-search-data-source.js";
+import type {
   SituationDataSource,
   SituationDataSourceConfig,
   SituationFeatureCollection,
@@ -2161,6 +2167,108 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("uses SIM search-data as the first AI map-search source for nearest object questions", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "SIM search-data context captured",
+          structured: {
+            purpose: query.purpose
+          }
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const simSearchDataSource = new FakeAiMapSearchSimSearchDataSource();
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      simSearchDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        geoContext: {
+          currentLocation: {
+            lat: 50.12952,
+            lon: 17.36285,
+            radiusKm: 30
+          },
+          label: "Moje poloha"
+        },
+        question: "Najdi mi nejbližší policii od mé polohy."
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    expect(simSearchDataSource.lastQuery).toMatchObject({
+      center: {
+        lat: 50.12952,
+        lon: 17.36285
+      },
+      entityTypes: ["police_station"],
+      radiusM: 30000,
+      text: "Najdi mi nejbližší policii od mé polohy."
+    });
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "map-search-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("Policie ČR - Obvodní oddělení Vrbno pod Pradědem");
+    const structured = aiResponse.result.structured as Record<string, unknown>;
+    const mapSearch = structured.mapSearch as Record<string, unknown>;
+    expect(mapSearch).toMatchObject({
+      resultCount: 1
+    });
+    expect(mapSearch.results).toEqual([
+      expect.objectContaining({
+        category: "local_department",
+        mapFeatureId: "police:cz:vrbno-obvodni",
+        sourceAuthority: "reference",
+        title: "Policie ČR - Obvodní oddělení Vrbno pod Pradědem"
+      })
+    ]);
+    expect(structured.mapActions).toEqual([
+      expect.objectContaining({
+        action: "focus-map",
+        entityId: "police:cz:vrbno-obvodni",
+        title: "Policie ČR - Obvodní oddělení Vrbno pod Pradědem"
+      })
+    ]);
+    const auditResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      url: "/api/v1/audit/events"
+    });
+    const auditItems = auditResponse.json().items as Array<Record<string, unknown>>;
+    expect(auditItems.find((item) => item.eventType === "AI_SIM_SEARCH_DATA_TOOL_INVOKED")).toMatchObject({
+      entityTypes: ["police_station"],
+      matchedFeatureCount: 1,
+      providerId: "sim.search-data",
+      sourceSystemId: "sim-search-data-api"
+    });
+
+    await app.close();
+  });
+
   it("geocodes place phrases into bbox for generic AI map searches without explicit geo context", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
@@ -2400,6 +2508,78 @@ describe("community report routes", () => {
     await app.close();
   });
 });
+
+class FakeAiMapSearchSimSearchDataSource implements SimSearchDataSource {
+  readonly config: SimSearchDataSourceConfig = {
+    baseUrl: "https://sim.example.test/search-data/api/v1",
+    enabled: true,
+    maxLimit: 100,
+    timeoutMs: 6000
+  };
+
+  readonly sourceSystem = {
+    allowedEventTypes: [],
+    allowedObjectTypes: ["MAP_FEATURE", "INCIDENT", "REPORT", "UNKNOWN"],
+    attributes: {
+      contextOnly: true,
+      contractVersion: "sim-search-source-v1"
+    },
+    classificationLimit: "UNCLASSIFIED" as const,
+    displayName: "SIM Search Data",
+    owner: "SIM search-data-api",
+    sourceSystemId: "sim-search-data-api",
+    sourceType: "PUBLIC_SITUATION_AGGREGATE" as const,
+    status: "ACTIVE" as const,
+    synthetic: false,
+    trustProfile: "UNKNOWN" as const
+  };
+
+  lastQuery: SimSearchQueryRequest | null = null;
+
+  async query(request: SimSearchQueryRequest, requestNow: Date): Promise<SimSearchQueryResponse> {
+    this.lastQuery = request;
+    return {
+      contractVersion: "sim-search-source-v1",
+      generatedAt: requestNow.toISOString(),
+      providerId: "sim.search-data",
+      query: request as Record<string, unknown>,
+      results: [
+        {
+          address: {
+            countryCode: "CZ",
+            municipality: "Vrbno pod Pradědem",
+            region: "Moravskoslezský kraj"
+          },
+          centroid: {
+            lat: 50.1209,
+            lon: 17.3832
+          },
+          confidence: 0.92,
+          dataQuality: "verified_reference",
+          entitySubtype: "local_department",
+          entityType: "police_station",
+          layerIds: ["public.security.police"],
+          providerEntityId: "police:cz:vrbno-obvodni",
+          providerId: "sim.search-data",
+          sourceAuthority: "reference",
+          sourceEntityId: "osm:node:123456",
+          sourceRevision: "osm_reference:2026-05-20",
+          sourceSystem: "osm_reference",
+          status: "active",
+          summary: "Policejní služebna ve Vrbně pod Pradědem.",
+          title: "Policie ČR - Obvodní oddělení Vrbno pod Pradědem",
+          updatedAt: requestNow.toISOString()
+        }
+      ],
+      summary: {
+        resultCount: 1,
+        staleResultCount: 0,
+        warningCount: 0
+      },
+      warnings: []
+    };
+  }
+}
 
 class FakeAiMapSearchSituationDataSource implements SituationDataSource {
   readonly config: SituationDataSourceConfig = {

@@ -3,6 +3,7 @@ import type { AiCopQuery, AiCopResponse } from "@cop/ai-gateway";
 import type { AiContextBbox, AiContextGeoFilter } from "./ai-context-index.js";
 import type { MapCatalogLayer } from "./map-catalog.js";
 import type { PlaceGeocodeResult } from "./place-geocoder.js";
+import type { SimSearchEntity, SimSearchEntityType, SimSearchQueryResponse } from "./sim-search-data-source.js";
 import type { SituationFeature } from "./situation-data-source.js";
 
 export interface AiMapSearchContext {
@@ -238,6 +239,65 @@ export function summarizeGeocodedPlaceForAi(
     title: place.displayName,
     type: "place"
   });
+}
+
+export function summarizeSimSearchResponseForAi(
+  response: SimSearchQueryResponse,
+  geoFilter: AiContextGeoFilter | undefined
+): AiMapSearchResult[] {
+  return response.results
+    .filter((entity) => entity.deleted !== true)
+    .map((entity) => summarizeSimSearchEntityForAi(entity, geoFilter, response.providerId))
+    .filter((result): result is AiMapSearchResult => result !== undefined);
+}
+
+export function simSearchEntityTypesForAiMapSearchIntent(intent: AiMapSearchIntent): SimSearchEntityType[] | undefined {
+  const entityTypes = new Set<SimSearchEntityType>();
+  for (const categoryId of intent.categoryIds) {
+    switch (categoryId) {
+      case "police":
+        entityTypes.add("police_station");
+        break;
+      case "fire_station":
+        entityTypes.add("fire_station");
+        break;
+      case "ambulance_station":
+        entityTypes.add("medical_emergency");
+        entityTypes.add("hospital");
+        break;
+      case "shelter":
+        entityTypes.add("shelter");
+        break;
+      case "assembly_point":
+        entityTypes.add("evacuation_point");
+        break;
+      case "defibrillator":
+      case "siren":
+        entityTypes.add("public_resource");
+        break;
+      default:
+        break;
+    }
+  }
+  const terms = aiMapSearchMeaningfulTerms(intent.searchTerms);
+  if (terms.some((term) => /^(vodomer|hydro|limnigraf|hladin|reka|rek|river|gauge|water)/u.test(term))) {
+    entityTypes.add("hydro_station");
+    entityTypes.add("hydro_measurement");
+  }
+  if (terms.some((term) => /^(nemocnic|hospital|lekarn|lekar|clinic|doctor|zdravot)/u.test(term))) {
+    entityTypes.add("hospital");
+    entityTypes.add("medical_emergency");
+  }
+  if (terms.some((term) => /^(pozar|fire|hasic)/u.test(term))) {
+    entityTypes.add("fire_station");
+    entityTypes.add("fire_incident");
+  }
+  if (terms.some((term) => /^(povod|vystrah|varovan|warning|alert|flood)/u.test(term))) {
+    entityTypes.add("weather_warning");
+    entityTypes.add("safety_alert");
+    entityTypes.add("flood_risk_area");
+  }
+  return entityTypes.size > 0 ? Array.from(entityTypes) : undefined;
 }
 
 export function dedupeAiMapSearchResults(results: AiMapSearchResult[]): AiMapSearchResult[] {
@@ -622,6 +682,85 @@ function aiMapPlaceQueryFromBody(body: Record<string, unknown>): string | undefi
 function isAiGenericPlaceQuery(value: string): boolean {
   const normalized = value.toLocaleLowerCase("cs-CZ");
   return /^(cop|chatu?|skupině|skupine|místnosti|mistnosti|aplikaci|kontextu|mapě|mape)$/u.test(normalized);
+}
+
+function summarizeSimSearchEntityForAi(
+  entity: SimSearchEntity,
+  geoFilter: AiContextGeoFilter | undefined,
+  providerId: string
+): AiMapSearchResult | undefined {
+  const location = locationFromSimSearchEntity(entity);
+  if (!location) {
+    return undefined;
+  }
+  const computedDistanceM = mapSearchDistanceM(geoFilter, location);
+  const distanceM = optionalFiniteNumber(entity.distanceM, 0, 10_000_000) ?? computedDistanceM;
+  const sourceSystemIds = Array.from(new Set([
+    providerId,
+    entity.providerId,
+    entity.sourceSystem,
+    ...(entity.layerIds ?? [])
+  ].filter((value): value is string => Boolean(value))));
+  const category = entity.entitySubtype ?? entity.entityType;
+  const priorityFromScore = optionalFiniteNumber(entity.score, 0, 1);
+  return compactRecord({
+    category,
+    detail: entity.summary ?? entity.searchableText,
+    distanceM,
+    distanceText: formatAiMapDistance(distanceM),
+    layerId: entity.layerIds?.[0],
+    location,
+    mapFeatureId: entity.providerEntityId,
+    priorityScore: priorityFromScore ?? aiSimSearchPriorityScore(entity, distanceM),
+    sourceAuthority: entity.sourceAuthority,
+    sourceName: entity.sourceSystem ?? entity.providerId ?? providerId,
+    sourceRevision: entity.sourceRevision,
+    sourceSystemIds,
+    status: entity.status ?? (entity.stale ? "stale" : "map-result"),
+    title: entity.title,
+    type: "mapFeature",
+    updatedAt: entity.observedAt ?? entity.updatedAt ?? entity.validFrom
+  });
+}
+
+function locationFromSimSearchEntity(entity: SimSearchEntity): { lat: number; lon: number } | undefined {
+  if (entity.centroid) {
+    return {
+      lat: roundCoordinate(entity.centroid.lat),
+      lon: roundCoordinate(entity.centroid.lon)
+    };
+  }
+  const geometry = isRecord(entity.geometry) ? entity.geometry : undefined;
+  const coordinate = firstLonLatCoordinate(geometry?.coordinates);
+  return coordinate
+    ? {
+        lat: roundCoordinate(coordinate[1]),
+        lon: roundCoordinate(coordinate[0])
+      }
+    : undefined;
+}
+
+function aiSimSearchPriorityScore(entity: SimSearchEntity, distanceM: number | undefined): number {
+  let score = 0.42;
+  if (/^(police_station|fire_station|hospital|medical_emergency|shelter|evacuation_point)$/u.test(entity.entityType)) {
+    score += 0.18;
+  }
+  if (/^(official|internal_verified|partner_verified|reference)$/u.test(entity.sourceAuthority ?? "")) {
+    score += 0.1;
+  }
+  if (entity.stale === true) {
+    score -= 0.12;
+  }
+  if (distanceM !== undefined) {
+    if (distanceM <= 1000) {
+      score += 0.2;
+    } else if (distanceM <= 5000) {
+      score += 0.14;
+    } else if (distanceM <= 25000) {
+      score += 0.06;
+    }
+  }
+  return Math.round(clampNumber(score, 0, 1) * 1000) / 1000;
 }
 
 function locationFromMapFeatureRecord(feature: Record<string, unknown>): { lat: number; lon: number } | undefined {

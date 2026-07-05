@@ -264,6 +264,27 @@ Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/m
 
 COP také server-side čte `GET /safety-data/api/v1/observability`. Tento endpoint se nepoužívá jako mapová vrstva; promítá se jen do Source Health jako provozní kvalita safety provideru, cache hit-rate, stale feature count a varování zdrojových cache. `status=degraded` znamená sníženou kvalitu externích dat, ne výpadek SIM.
 
+## SIM Search Data Source
+
+COP může pro AI chat a mapové dotazy typu „najdi“, „vyhledej“ nebo
+„nejbližší“ číst nový interní SIM kontrakt `sim-search-source-v1`. Tento zdroj
+nenahrazuje COP permission guard, chat consent ani AI orchestraci; poskytuje
+normalizované mapové/search entity, které COP převádí na auditovaný
+`mapSearch`, citace a klikací `focus-map` akce.
+
+```env
+COP_SIM_SEARCH_DATA_ENABLED=true
+COP_SIM_SEARCH_DATA_BASE_URL=http://docker.home.cz:5020/search-data/api/v1
+COP_SIM_SEARCH_DATA_MAX_LIMIT=100
+COP_SIM_SEARCH_DATA_TIMEOUT_MS=6000
+```
+
+COP volá `POST /search-data/api/v1/query` pouze server-side. Pokud endpoint
+není dostupný, AI map-search pokračuje přes stávající map catalog/query a
+geocoder fallbacky; chyba se promítne do auditu a Source Health jako
+`sim-search-data-source` degraded/unavailable. SIM search-data se zapíná až po
+nasazení odpovídající SIM části.
+
 ## TAK Gateway Source
 
 COP čte neveřejná partnerská TAK/CoT data ze SIM kontraktu `cop-tak-source-v1` pouze server-side. Token zůstává v procesu `cop-api`; web klient volá jen `/api/v1/map/catalog` a `/api/v1/map/query` a v prohlížeči nikdy nemá `COP_TAK_GATEWAY_READ_TOKEN`.
