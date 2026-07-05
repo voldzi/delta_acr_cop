@@ -459,7 +459,11 @@ The phase-0 implementation focus is trust and control:
   `cop.ai.context_index.query` tool calls. `priorityContext.citations`,
   `semanticContext.citations`, `indexedContext.citations` and
   `priorityContext.mapSnapshot` give the model citation IDs and structured map
-  candidates for future preview rendering.
+  candidates for future preview rendering. Search-like chat questions such as
+  "najdi nejbližší policii" also build an audited `mapSearch` context from the
+  same map catalog/query path used by the map UI; the client-provided
+  `geoContext` from the visible timeline supplies the current-location bbox,
+  and matching map features are cited as priority `mapFeature` records.
 - AI answers sent to Matrix carry namespaced `cz.cop` message metadata with
   `kind`, `requestId`, `auditId`, provider/model, policy reason and the
   original question when present. It also carries bounded semantic/indexed

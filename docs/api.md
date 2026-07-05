@@ -83,6 +83,13 @@ question through the configured geocoder. `indexedContext.citations` use `[I*]`
 labels. The index does not include private community reports or server-side
 Matrix E2EE history.
 
+For `chat-agent/query`, search-like questions such as "najdi", "vyhledej" or
+"nejbližší" also create an audited `mapSearch` context. COP uses the same map
+catalog/query path as the map UI for known infrastructure categories such as
+police, fire, rescue, shelters, defibrillators, sirens, healthcare and
+pharmacies, and uses the geocoder for place-only searches. Results are folded
+into `priorityContext` as `mapFeature` citations and map snapshot candidates.
+
 Both endpoints echo a bounded, client-safe evidence summary in
 `result.structured.evidence`. The summary contains citation lists from
 `priorityContext` (`[P*]`), request-time `semanticContext` (`[S*]`) and
@@ -100,7 +107,9 @@ timeout (`COP_AI_SEMANTIC_RETRIEVAL_TIMEOUT_MS`, default 20 s). The final model
 call is capped by `COP_AI_REQUEST_TIMEOUT_MS` (default 70 s). If the provider
 does not return in time, COP returns a normal audit-backed
 `NEEDS_HUMAN_REVIEW` AI response with evidence metadata instead of leaving the
-HTTP request hanging.
+HTTP request hanging. If the timed-out request already has a concrete
+`mapSearch` result, COP may return a completed deterministic map-search answer
+from COP data instead of discarding the useful result.
 COP Chat should use `POST /api/v1/ai/chat-agent/jobs` for user-facing composer
 requests. The job endpoint returns `202` with `cop-ai-chat-agent-job-v1`; the
 client polls `GET /api/v1/ai/chat-agent/jobs/{jobId}` until `completed` or

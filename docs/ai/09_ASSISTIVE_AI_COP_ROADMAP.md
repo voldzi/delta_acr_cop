@@ -205,6 +205,15 @@ s dotazem, bezpečností nebo datovým pokrytím. `semanticContext.citations` a
 `priorityContext.citations` dávají modelu krátké citační značky (`[S1]`,
 `[P1]`) pro důležitá tvrzení.
 
+`chat-agent/query` má navíc explicitní mapové vyhledávání pro dotazy typu
+`najdi`, `vyhledej` nebo `nejbližší`. Backend rozpozná běžné krizové a
+referenční kategorie (policie, hasiči, záchranná stanice, kryt, defibrilátor,
+siréna, nemocnice/klinika/lékař/lékárna) a spustí stejnou map-catalog query
+cestu jako webová mapa. Výsledky se předávají jako `mapSearch`, zároveň vstupují
+do `priorityContext` jako `mapFeature` s polohou, vzdáleností a citační značkou.
+Když LLM provider vyprší, ale mapové hledání už našlo konkrétní bod, API může
+vrátit deterministickou odpověď z mapových dat místo obecného timeoutu.
+
 Stejné endpointy přidávají také `indexedContext`. Ten je načtený z
 background COP indexu přes auditované tool volání `cop.ai.context_index.query`.
 Index se obnovuje na pozadí z aktuálních objektů, systémových alertů,

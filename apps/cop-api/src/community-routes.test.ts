@@ -1,10 +1,19 @@
 import { createSign, generateKeyPairSync, type KeyObject } from "node:crypto";
+import { createPublicSituationAggregateSourceSystem } from "@cop/canonical-model";
 import { AiGateway, OllamaEmbeddingProvider, type AiCopQuery, type AiProvider } from "@cop/ai-gateway";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryCommunityReportStore } from "./community-report-store.js";
 import { buildServer } from "./server.js";
 import type { MediaObjectReadRequest, MediaObjectWriteRequest, MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
 import type { MessagingProvider } from "./messaging-provider.js";
+import type {
+  SituationDataSource,
+  SituationDataSourceConfig,
+  SituationFeatureCollection,
+  SituationFeatureQuery,
+  SituationLayerDescriptor,
+  SituationSourceDescriptor
+} from "./situation-data-source.js";
 import { InMemoryUserProfileStore } from "./user-profile-store.js";
 
 describe("community report routes", () => {
@@ -2020,6 +2029,113 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("passes map search results into AI chat agent context for nearest police questions", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "Map search context captured",
+          structured: {
+            purpose: query.purpose
+          }
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const situationDataSource = new FakeAiMapSearchSituationDataSource();
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        geoContext: {
+          currentLocation: {
+            lat: 50.12952,
+            lon: 17.36285,
+            radiusKm: 30
+          },
+          label: "Moje poloha"
+        },
+        question: "Najdi mi nejbližší policii od mé polohy."
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(1);
+    expect(situationDataSource.lastFeatureQuery).toMatchObject({
+      layers: ["ground"],
+      sources: ["osm_postgis"]
+    });
+    const context = capturedQueries[0]?.context as Record<string, unknown>;
+    const mapSearch = context.mapSearch as Record<string, unknown>;
+    expect(mapSearch).toMatchObject({
+      contractVersion: "cop-ai-map-search-v1",
+      toolCall: {
+        matchedFeatureCount: 1,
+        status: "ok",
+        toolId: "cop.map.query.search"
+      }
+    });
+    expect(mapSearch.results).toEqual([
+      expect.objectContaining({
+        category: "police",
+        distanceM: expect.any(Number),
+        mapFeatureId: "osm:police:vrbno",
+        title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
+      })
+    ]);
+    const priorityContext = context.priorityContext as Record<string, unknown>;
+    expect(priorityContext.citations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        entityId: "osm:police:vrbno",
+        entityType: "mapFeature"
+      })
+    ]));
+    expect(priorityContext.mapSnapshot).toMatchObject({
+      candidates: expect.arrayContaining([
+        expect.objectContaining({
+          entityId: "osm:police:vrbno",
+          entityType: "mapFeature",
+          location: {
+            lat: 50.1209,
+            lon: 17.3832
+          }
+        })
+      ])
+    });
+    const auditResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      url: "/api/v1/audit/events"
+    });
+    const auditItems = auditResponse.json().items as Array<Record<string, unknown>>;
+    expect(auditItems.find((item) => item.eventType === "AI_MAP_SEARCH_TOOL_INVOKED")).toMatchObject({
+      categoryIds: ["police"],
+      layerIds: ["reference.infrastructure.emergency"],
+      matchedFeatureCount: 1,
+      toolId: "cop.map.query.search"
+    });
+
+    await app.close();
+  });
+
   it("runs AI chat agent questions as pollable async jobs", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
@@ -2102,6 +2218,97 @@ describe("community report routes", () => {
     await app.close();
   });
 });
+
+class FakeAiMapSearchSituationDataSource implements SituationDataSource {
+  readonly config: SituationDataSourceConfig = {
+    baseUrl: "https://sim.example.test/situation-data/api/v1",
+    cacheTtlMs: 20000,
+    enabled: true,
+    maxLimit: 250,
+    timeoutMs: 7000
+  };
+
+  readonly sourceSystem = createPublicSituationAggregateSourceSystem();
+  lastFeatureQuery: SituationFeatureQuery | null = null;
+
+  async fetchLayers(): Promise<SituationLayerDescriptor[]> {
+    return [
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 21600,
+        geometryTypes: ["Point", "LineString", "Polygon"],
+        label: "Ground",
+        layerId: "ground"
+      }
+    ];
+  }
+
+  async fetchSources(): Promise<SituationSourceDescriptor[]> {
+    return [
+      {
+        enabled: true,
+        label: "Local OpenStreetMap PostGIS context",
+        layers: ["ground"],
+        sourceId: "osm_postgis",
+        updateCadenceSeconds: 21600
+      }
+    ];
+  }
+
+  async fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
+    this.lastFeatureQuery = query;
+    return {
+      contractVersion: "cop-situation-source-v1",
+      features: [
+        {
+          geometry: {
+            coordinates: [17.3832, 50.1209],
+            type: "Point"
+          },
+          id: "osm:police:vrbno",
+          properties: {
+            category: "police",
+            featureId: "osm:police:vrbno",
+            generatedAt: requestNow.toISOString(),
+            label: "Policie ČR Obvodní oddělení Vrbno pod Pradědem",
+            layer: "ground",
+            providerLayerId: "ground",
+            sourceId: "osm_postgis",
+            sourceName: "Local OpenStreetMap PostGIS context",
+            status: "reference"
+          },
+          type: "Feature"
+        },
+        {
+          geometry: {
+            coordinates: [17.36, 50.13],
+            type: "Point"
+          },
+          id: "osm:fire:vrbno",
+          properties: {
+            category: "fire_station",
+            featureId: "osm:fire:vrbno",
+            generatedAt: requestNow.toISOString(),
+            label: "Hasičská stanice Vrbno",
+            layer: "ground",
+            providerLayerId: "ground",
+            sourceId: "osm_postgis",
+            sourceName: "Local OpenStreetMap PostGIS context",
+            status: "reference"
+          },
+          type: "Feature"
+        }
+      ],
+      generatedAt: requestNow.toISOString(),
+      query,
+      source: { sourceId: "situation-data-api", sourceType: "PUBLIC_SITUATION_AGGREGATE" },
+      sources: await this.fetchSources(),
+      summary: { featureCount: 2, sourceCount: 1, staleFeatureCount: 0, warningCount: 0 },
+      type: "FeatureCollection",
+      warnings: []
+    };
+  }
+}
 
 class FakeEmbeddingProvider extends OllamaEmbeddingProvider {
   constructor() {

@@ -1603,6 +1603,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     operation: "chat-agent" | "situation-summary",
     reason: string
   ): AiCopResponse {
+    const mapSearchFallback = operation === "chat-agent"
+      ? aiMapSearchFallbackResponse(aiRequest, requestNow, reason)
+      : undefined;
+    if (mapSearchFallback) {
+      return mapSearchFallback;
+    }
     return {
       auditId: randomUUID(),
       model: "timeout-fallback",
@@ -1714,6 +1720,136 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   function aiContextPlaceFromBody(body: Record<string, unknown>): string | undefined {
     const geoContext = isRecord(body.geoContext) ? body.geoContext : {};
     return optionalTrimmedString(geoContext.place ?? geoContext.query ?? body.placeQuery ?? body.place, 120);
+  }
+
+  async function resolveAiMapSearchContextForChatAgent(input: {
+    actor: AuthenticatedActor;
+    body: Record<string, unknown>;
+    question: string;
+    requestId: string;
+    requestNow: Date;
+  }): Promise<AiMapSearchContext | undefined> {
+    const intent = inferAiMapSearchIntent(input.question, input.body);
+    if (!intent.requested && intent.layerIds.length === 0 && !intent.placeQuery) {
+      return undefined;
+    }
+
+    const warnings: string[] = [];
+    const invocationId = randomUUID();
+    const geoFilter = await resolveAiContextGeoFilter(input.body, input.question, input.requestNow);
+    const bbox = bboxForAiMapSearchGeoFilter(geoFilter);
+    const mapResults: Record<string, unknown>[] = [];
+
+    if (intent.layerIds.length > 0) {
+      if (!bbox) {
+        warnings.push("Mapové vyhledávání potřebuje aktuální polohu, bbox nebo místo v dotazu.");
+      } else {
+        try {
+          const providers = await readMapCatalogProviders(input.requestNow, input.actor, false);
+          const catalog = buildMapCatalog({
+            flight: providers.flight,
+            generatedAt: input.requestNow,
+            includeDiagnostics: false,
+            includePartner: false,
+            locale: aiLanguage(input.body.language),
+            missionArena: providers.missionArena,
+            safety: providers.safety,
+            situation: providers.situation,
+            tak: providers.tak
+          });
+          const selectedLayers = catalog.layers.filter((layer) =>
+            intent.layerIds.includes(layer.layerId) && catalogLayerAvailableForMapQuery(layer)
+          );
+          const unknownLayerIds = intent.layerIds.filter((layerId) => !catalog.layers.some((layer) => layer.layerId === layerId));
+          const unavailableLayerIds = intent.layerIds.filter((layerId) =>
+            catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer))
+          );
+          if (selectedLayers.length === 0) {
+            warnings.push("Pro dotaz nebyla k dispozici žádná použitelná mapová vrstva.");
+          }
+          if (unknownLayerIds.length > 0) {
+            warnings.push(`Neznámé mapové vrstvy ignorovány: ${unknownLayerIds.join(", ")}.`);
+          }
+          if (unavailableLayerIds.length > 0) {
+            warnings.push(`Nedostupné mapové vrstvy ignorovány: ${unavailableLayerIds.join(", ")}.`);
+          }
+          const query: MapFeatureQueryRequest = {
+            bbox,
+            filters: {},
+            includeDiagnostics: false,
+            includePartner: false,
+            layerIds: selectedLayers.map((layer) => layer.layerId),
+            limit: 120
+          };
+          const providerQueries = buildProviderFeatureQueries(selectedLayers, query);
+          const situationCollection = await readSituationMapQuery(providerQueries.situation, input.requestNow, input.actor, selectedLayers);
+          warnings.push(...(situationCollection?.warnings ?? []));
+          mapResults.push(...(situationCollection?.features ?? [])
+            .filter((feature) => aiSituationFeatureMatchesMapSearchIntent(feature, intent))
+            .map((feature) => summarizeSituationMapFeatureForAi(feature, geoFilter)));
+        } catch (error) {
+          app.log.warn({ error, requestId: input.requestId }, "AI map search failed.");
+          warnings.push(`Mapové vyhledávání selhalo: ${errorMessage(error)}`);
+        }
+      }
+    }
+
+    if (intent.placeQuery && placeGeocoder) {
+      try {
+        const placeResponse = await placeGeocoder.search({
+          language: aiLanguage(input.body.language),
+          limit: 3,
+          query: intent.placeQuery
+        }, input.requestNow);
+        warnings.push(...placeResponse.warnings);
+        mapResults.push(...placeResponse.items.map((place) => summarizeGeocodedPlaceForAi(place, geoFilter)));
+      } catch (error) {
+        app.log.warn({ error, placeQuery: intent.placeQuery, requestId: input.requestId }, "AI place map search failed.");
+        warnings.push(`Geokódování místa selhalo: ${errorMessage(error)}`);
+      }
+    } else if (intent.placeQuery && !placeGeocoder) {
+      warnings.push("Geocoder pro vyhledávání míst je vypnutý.");
+    }
+
+    const results = dedupeAiMapSearchResults(mapResults)
+      .sort(aiMapSearchResultCompare)
+      .slice(0, 12);
+    const status = results.length > 0 ? (warnings.length > 0 ? "degraded" : "ok") : "empty";
+    const context: AiMapSearchContext = {
+      contractVersion: "cop-ai-map-search-v1",
+      generatedAt: input.requestNow.toISOString(),
+      query: compactRecord({
+        bbox,
+        categoryIds: intent.categoryIds,
+        center: geoFilter?.center,
+        geoLabel: geoFilter?.label,
+        layerIds: intent.layerIds,
+        placeQuery: intent.placeQuery,
+        requested: intent.requested,
+        searchTerms: intent.searchTerms
+      }),
+      results,
+      toolCall: compactRecord({
+        invocationId,
+        matchedFeatureCount: results.length,
+        mode: "read_only",
+        status,
+        toolId: "cop.map.query.search",
+        warnings
+      }),
+      warnings
+    };
+    appendAudit(state, "AI_MAP_SEARCH_TOOL_INVOKED", {
+      categoryIds: intent.categoryIds,
+      layerIds: intent.layerIds,
+      matchedFeatureCount: results.length,
+      requestId: input.requestId,
+      status,
+      toolId: "cop.map.query.search",
+      toolInvocationId: invocationId,
+      warnings
+    });
+    return context;
   }
 
   function firstRecord(...values: unknown[]): Record<string, unknown> | undefined {
@@ -6706,6 +6842,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const chatContext = summarizeAiChatContextForAi(body.chatContext);
     const modelPreference = aiModelPreference(body.modelPreference) ?? "fast";
+    const requestId = aiRequestId(body.requestId);
     const subject = defaultSystemSubject();
     const maxObjects = readBoundedInteger(body.maxObjects, 30, 1, 60);
     const readableObjects = prioritizeObjectsForAi(selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
@@ -6731,15 +6868,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const aiCommunityReports = communityReports.map(summarizeCommunityReportForAi);
     const aiIncidents = incidents.map(summarizeIncidentForAi);
     const aiSourceHealth = sourceHealth.map(summarizeSourceHealthForAi);
+    const aiMapSearch = await resolveAiMapSearchContextForChatAgent({
+      actor,
+      body,
+      question,
+      requestId,
+      requestNow
+    });
     const priorityContext = buildAiPriorityContext({
       alerts: aiAlerts,
       chatContext,
       communityReports: aiCommunityReports,
       incidents: aiIncidents,
+      mapFeatures: aiMapSearch?.results,
       objects: aiObjects,
       sourceHealth: aiSourceHealth
     });
-    const requestId = aiRequestId(body.requestId);
     const retrievalIntent = inferAiRetrievalIntent(question);
     const retrievalQuery = buildAiRetrievalQuery(question, retrievalIntent);
     const semanticStartedAt = Date.now();
@@ -6796,6 +6940,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
       communityReportCount: communityReports.length,
       incidentCount: incidents.length,
+      mapSearchResultCount: aiMapSearch?.results.length ?? 0,
       sourceCount: sourceHealth.length,
       indexedCandidateDocumentCount: indexedContext.toolCall.candidateDocumentCount,
       indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
@@ -6808,6 +6953,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       retrievalIntent,
       chat,
       chatContext,
+      mapSearch: aiMapSearch,
       priorityContext,
       scope,
       objects: aiObjects,
@@ -6825,6 +6971,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       retrievalIntent,
       chat,
       chatContext: promptContext.chatContext,
+      mapSearch: aiMapSearch,
       priorityContext,
       contextCompression: promptContext.contextCompression,
       scope,
@@ -6842,6 +6989,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       prompt: [
         `Odpověz jako viditelný AI agent v COP chatu v jazyce ${aiLanguage(body.language)}.`,
         "Použij přiložený COP kontext napříč objekty, výstrahami, komunitními hlášeními, incidenty, stavem zdrojů a explicitně poskytnutým chatContext.",
+        "Pro dotazy typu najdi/vyhledej/nejbližší použij mapSearch a priorityContext.mapSnapshot před obecnou semantickou evidencí; pokud mapSearch obsahuje výsledky, uveď konkrétní název, vzdálenost, souřadnice a citaci.",
+        "U mapových vyhledávacích dotazů odpověz stručně jako konkrétní nález a další možný krok; nevytvářej obecný situační přehled, pokud uživatel žádá jen vyhledání místa nebo objektu.",
         "Použij priorityContext pro krizovou důležitost, semanticContext jako requestově aktuální bge-m3 výběr COP entit a chatových výňatků a indexedContext jako širší background COP index s geo/časovým filtrem; uveď, když je retrieval degraded nebo prázdný.",
         "Bezpečnostní priority jsou voda/povodeň, požár, zdravotní riziko, infrastruktura, dopravní omezení, bezpečnostní/policejní incident a komunitní hlášení; civilní lety a stale civilní letové tracky nejsou priorita a zmiň je jen při explicitním leteckém dotazu nebo přímé bezpečnostní souvislosti.",
         "Důležitá tvrzení cituj pomocí [S1] ze semanticContext.citations, [I1] z indexedContext.citations nebo [P1] z priorityContext.citations.",
@@ -12898,7 +13047,7 @@ interface AiPrioritySignal {
   category?: string;
   citation: string;
   entityId: string;
-  entityType: "alert" | "chatMessage" | "communityReport" | "incident" | "observedObject" | "sourceHealth";
+  entityType: "alert" | "chatMessage" | "communityReport" | "incident" | "mapFeature" | "observedObject" | "sourceHealth";
   location?: {
     lat: number;
     lon: number;
@@ -12910,6 +13059,370 @@ interface AiPrioritySignal {
   status?: string;
   title: string;
   updatedAt?: string;
+}
+
+interface AiMapSearchContext {
+  contractVersion: "cop-ai-map-search-v1";
+  generatedAt: string;
+  query: Record<string, unknown>;
+  results: Record<string, unknown>[];
+  toolCall: Record<string, unknown>;
+  warnings: string[];
+}
+
+interface AiMapSearchIntent {
+  categoryIds: string[];
+  layerIds: string[];
+  placeQuery?: string;
+  requested: boolean;
+  searchTerms: string[];
+}
+
+function inferAiMapSearchIntent(question: string, body: Record<string, unknown>): AiMapSearchIntent {
+  const normalized = normalizeAiMapSearchText(question);
+  const requested = /(?:^|\b)(najdi|najit|vyhledej|hledej|ukaz|ukaž|zobraz|kde je|kde jsou|nejbliz|nejblizsi|nejbli|nearest|closest|find|show)(?:\b|$)/u.test(normalized);
+  const layerIds = new Set<string>();
+  const categoryIds = new Set<string>();
+  const searchTerms = new Set<string>();
+  const addInfrastructureCategory = (layerId: string, categories: string[], terms: string[]) => {
+    layerIds.add(layerId);
+    for (const category of categories) {
+      categoryIds.add(category);
+    }
+    for (const term of terms) {
+      searchTerms.add(term);
+    }
+  };
+
+  if (/(polic|bezpec|security|krade|kradez|zlod|crime)/u.test(normalized)) {
+    addInfrastructureCategory("reference.infrastructure.emergency", ["police"], ["police", "security"]);
+  }
+  if (/(hasic|pozar|požar|pozarn|fire)/u.test(normalized)) {
+    addInfrastructureCategory("reference.infrastructure.emergency", ["fire_station"], ["fire_station", "fire"]);
+  }
+  if (/(zachran|zachrann|ambulanc|zdravotnicka zachranna|zzs)/u.test(normalized)) {
+    addInfrastructureCategory("reference.infrastructure.emergency", ["ambulance_station"], ["ambulance_station"]);
+  }
+  if (/(kryt|shelter|ukryt|evakuacn|shromazd|assembly)/u.test(normalized)) {
+    addInfrastructureCategory("reference.infrastructure.emergency", ["shelter", "assembly_point"], ["shelter", "assembly_point"]);
+  }
+  if (/(defibrilator|aed|defib)/u.test(normalized)) {
+    addInfrastructureCategory("reference.infrastructure.emergency", ["defibrillator"], ["defibrillator"]);
+  }
+  if (/(sirena|sireny|siren)/u.test(normalized)) {
+    addInfrastructureCategory("reference.infrastructure.emergency", ["siren"], ["siren"]);
+  }
+  if (/(nemocnic|hospital|klinik|clinic|lekar|lékar|doktor|doctors|lekarn|lékarn|pharmacy|zdravotnictv)/u.test(normalized)) {
+    addInfrastructureCategory("reference.infrastructure.healthcare", ["hospital", "clinic", "doctors", "pharmacy"], ["healthcare"]);
+  }
+
+  const bodyPlaceQuery = aiMapPlaceQueryFromBody(body);
+  const placeQuery = requested && layerIds.size === 0
+    ? bodyPlaceQuery ?? aiMapPlaceQueryFromQuestion(question) ?? aiPlaceQueryFromQuestion(question)
+    : bodyPlaceQuery ?? aiPlaceQueryFromQuestion(question);
+
+  return {
+    categoryIds: Array.from(categoryIds),
+    layerIds: Array.from(layerIds),
+    ...(placeQuery ? { placeQuery } : {}),
+    requested,
+    searchTerms: Array.from(searchTerms)
+  };
+}
+
+function normalizeAiMapSearchText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase("cs-CZ");
+}
+
+function aiMapPlaceQueryFromQuestion(question: string): string | undefined {
+  let text = question.replace(/\s+/gu, " ").trim();
+  text = text
+    .replace(/^\/(?:ai|fast|reasoning|reason|auto)\b[\s:,-]*/iu, "")
+    .replace(/^@(?:cop\s+ai|ai)\b[\s:,-]*/iu, "")
+    .replace(/^(?:najdi|najít|najit|vyhledej|hledej|ukaž|ukaz|zobraz)\s+(?:mi\s+)?/iu, "")
+    .replace(/^kde\s+(?:je|jsou)\s+/iu, "")
+    .replace(/\b(?:na\s+mapě|na\s+mape|v\s+mapě|v\s+mape)\b/igu, "")
+    .replace(/\b(?:od\s+mé\s+polohy|od\s+me\s+polohy|u\s+mě|u\s+me|nejbližší|nejblizsi|nejbližšího|nejblizsiho|nejbližší\s+k)\b/igu, "")
+    .trim();
+  if (text.length < 3 || isAiGenericPlaceQuery(text)) {
+    return undefined;
+  }
+  if (/(polic|hasi|zachran|ambulanc|nemocnic|lekar|lekarn|kryt|defibrilator|sirena)/iu.test(text)) {
+    return undefined;
+  }
+  return text.slice(0, 120);
+}
+
+function aiMapPlaceQueryFromBody(body: Record<string, unknown>): string | undefined {
+  const geoContext = isRecord(body.geoContext) ? body.geoContext : {};
+  return optionalTrimmedString(geoContext.place ?? geoContext.query ?? body.placeQuery ?? body.place, 120);
+}
+
+function bboxForAiMapSearchGeoFilter(geoFilter: AiContextGeoFilter | undefined): SituationFeatureQuery["bbox"] | undefined {
+  if (geoFilter?.bbox) {
+    return geoFilter.bbox;
+  }
+  if (!geoFilter?.center) {
+    return undefined;
+  }
+  const radiusKm = clampNumber(geoFilter.center.radiusKm ?? 30, 1, 80);
+  const latDelta = radiusKm / 111.32;
+  const lonDelta = radiusKm / Math.max(12, 111.32 * Math.cos((geoFilter.center.lat * Math.PI) / 180));
+  return {
+    east: roundCoordinate(clampNumber(geoFilter.center.lon + lonDelta, -180, 180)),
+    north: roundCoordinate(clampNumber(geoFilter.center.lat + latDelta, -90, 90)),
+    south: roundCoordinate(clampNumber(geoFilter.center.lat - latDelta, -90, 90)),
+    west: roundCoordinate(clampNumber(geoFilter.center.lon - lonDelta, -180, 180))
+  };
+}
+
+function aiSituationFeatureMatchesMapSearchIntent(feature: SituationFeature, intent: AiMapSearchIntent): boolean {
+  if (intent.categoryIds.length === 0) {
+    return true;
+  }
+  const category = normalizeSituationCategoryId(feature.properties.category);
+  return intent.categoryIds.map(normalizeSituationCategoryId).includes(category);
+}
+
+function summarizeSituationMapFeatureForAi(
+  feature: SituationFeature,
+  geoFilter: AiContextGeoFilter | undefined
+): Record<string, unknown> {
+  const location = locationFromSituationFeature(feature);
+  const distanceM = mapSearchDistanceM(geoFilter, location);
+  const title = feature.properties.label
+    || feature.properties.summary
+    || feature.properties.category
+    || String(feature.id ?? feature.properties.featureId);
+  return compactRecord({
+    category: feature.properties.category,
+    detail: feature.properties.summary,
+    distanceM,
+    distanceText: formatAiMapDistance(distanceM),
+    layer: feature.properties.layer,
+    layerId: feature.properties.layerId,
+    location,
+    mapFeatureId: feature.properties.featureId || String(feature.id ?? title),
+    priorityScore: aiMapFeaturePriorityScore(feature.properties.category, distanceM),
+    providerLayerId: feature.properties.providerLayerId,
+    sourceName: feature.properties.sourceName,
+    sourceSystemIds: ["sim.situation-data", feature.properties.sourceId],
+    status: feature.properties.status ?? "map-result",
+    title,
+    type: "mapFeature",
+    updatedAt: feature.properties.observedAt ?? feature.properties.generatedAt
+  });
+}
+
+function summarizeGeocodedPlaceForAi(
+  place: {
+    bbox?: { east: number; north: number; south: number; west: number };
+    center: [number, number];
+    displayName: string;
+    id: string;
+    importance?: number;
+    kind?: string;
+    providerId: string;
+    subtitle?: string;
+  },
+  geoFilter: AiContextGeoFilter | undefined
+): Record<string, unknown> {
+  const location = {
+    lat: roundCoordinate(place.center[1]),
+    lon: roundCoordinate(place.center[0])
+  };
+  const distanceM = mapSearchDistanceM(geoFilter, location);
+  return compactRecord({
+    bbox: place.bbox,
+    category: place.kind ?? "place",
+    detail: place.subtitle,
+    distanceM,
+    distanceText: formatAiMapDistance(distanceM),
+    location,
+    mapFeatureId: `place:${place.providerId}:${place.id}`,
+    priorityScore: Math.round(clampNumber(0.38 + (place.importance ?? 0) * 0.25, 0, 1) * 1000) / 1000,
+    sourceName: place.providerId,
+    sourceSystemIds: ["geocoder", place.providerId],
+    status: "map-result",
+    title: place.displayName,
+    type: "place"
+  });
+}
+
+function locationFromSituationFeature(feature: SituationFeature): { lat: number; lon: number } | undefined {
+  const coordinate = firstLonLatCoordinate(feature.geometry.coordinates);
+  return coordinate
+    ? {
+        lat: roundCoordinate(coordinate[1]),
+        lon: roundCoordinate(coordinate[0])
+      }
+    : undefined;
+}
+
+function firstLonLatCoordinate(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+  if (value.length >= 2 && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1]))) {
+    return [Number(value[0]), Number(value[1])];
+  }
+  for (const item of value) {
+    const coordinate = firstLonLatCoordinate(item);
+    if (coordinate) {
+      return coordinate;
+    }
+  }
+  return undefined;
+}
+
+function mapSearchDistanceM(
+  geoFilter: AiContextGeoFilter | undefined,
+  location: { lat: number; lon: number } | undefined
+): number | undefined {
+  if (!geoFilter?.center || !location) {
+    return undefined;
+  }
+  return Math.round(distanceMetersBetween(geoFilter.center, location));
+}
+
+function distanceMetersBetween(
+  left: { lat: number; lon: number },
+  right: { lat: number; lon: number }
+): number {
+  const earthRadiusM = 6_371_000;
+  const lat1 = (left.lat * Math.PI) / 180;
+  const lat2 = (right.lat * Math.PI) / 180;
+  const deltaLat = ((right.lat - left.lat) * Math.PI) / 180;
+  const deltaLon = ((right.lon - left.lon) * Math.PI) / 180;
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+  return earthRadiusM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatAiMapDistance(distanceM: number | undefined): string | undefined {
+  if (distanceM === undefined) {
+    return undefined;
+  }
+  if (distanceM < 1000) {
+    return `${distanceM} m`;
+  }
+  return `${Math.round(distanceM / 100) / 10} km`;
+}
+
+function aiMapFeaturePriorityScore(category: string | undefined, distanceM: number | undefined): number {
+  const normalized = normalizeAiMapSearchText(category ?? "");
+  let score = 0.36;
+  if (/(police|fire_station|ambulance_station|hospital|clinic|doctors|pharmacy|shelter|defibrillator|siren)/u.test(normalized)) {
+    score += 0.18;
+  }
+  if (distanceM !== undefined) {
+    if (distanceM <= 1000) {
+      score += 0.2;
+    } else if (distanceM <= 5000) {
+      score += 0.15;
+    } else if (distanceM <= 15000) {
+      score += 0.08;
+    }
+  }
+  return Math.round(clampNumber(score, 0, 1) * 1000) / 1000;
+}
+
+function dedupeAiMapSearchResults(results: Record<string, unknown>[]): Record<string, unknown>[] {
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const result of results) {
+    const key = optionalText(result.mapFeatureId)
+      ?? `${optionalText(result.title) ?? "map-result"}:${JSON.stringify(result.location ?? {})}`;
+    if (!byId.has(key)) {
+      byId.set(key, result);
+    }
+  }
+  return Array.from(byId.values());
+}
+
+function aiMapSearchResultCompare(left: Record<string, unknown>, right: Record<string, unknown>): number {
+  const leftDistance = optionalFiniteNumber(left.distanceM, 0, 10_000_000);
+  const rightDistance = optionalFiniteNumber(right.distanceM, 0, 10_000_000);
+  if (leftDistance !== undefined && rightDistance !== undefined && leftDistance !== rightDistance) {
+    return leftDistance - rightDistance;
+  }
+  if (leftDistance !== undefined && rightDistance === undefined) {
+    return -1;
+  }
+  if (leftDistance === undefined && rightDistance !== undefined) {
+    return 1;
+  }
+  const leftPriority = optionalFiniteNumber(left.priorityScore, 0, 1) ?? 0;
+  const rightPriority = optionalFiniteNumber(right.priorityScore, 0, 1) ?? 0;
+  return rightPriority - leftPriority;
+}
+
+function aiMapSearchFallbackResponse(
+  aiRequest: AiCopQuery,
+  requestNow: Date,
+  reason: string
+): AiCopResponse | undefined {
+  const context = isRecord(aiRequest.context) ? aiRequest.context : undefined;
+  const mapSearch = isRecord(context?.mapSearch) ? context.mapSearch : undefined;
+  const results = Array.isArray(mapSearch?.results) ? mapSearch.results.filter(isRecord) : [];
+  const topResult = results[0];
+  if (!topResult) {
+    return undefined;
+  }
+  const title = optionalText(topResult.title) ?? "mapový výsledek";
+  const category = optionalText(topResult.category);
+  const distanceText = optionalText(topResult.distanceText);
+  const location = aiLocationFromRecord(topResult.location);
+  const citationId = citationForAiMapSearchResult(context, topResult);
+  const locationText = location ? `Souřadnice: ${location.lat}, ${location.lon}.` : undefined;
+  const distanceSentence = distanceText ? `Vzdálenost od zadané polohy: ${distanceText}.` : undefined;
+  const citationText = citationId ? `Zdroj: [${citationId}].` : "Zdroj: COP mapové vyhledávání.";
+  const summary = [
+    `Našel jsem v mapových datech COP: ${title}.`,
+    category ? `Kategorie: ${category}.` : undefined,
+    distanceSentence,
+    locationText,
+    citationText
+  ].filter(Boolean).join(" ");
+  return {
+    auditId: randomUUID(),
+    model: "map-search-fallback",
+    policy: {
+      allowed: true,
+      reason: `AI provider fallback used deterministic COP map search. ${reason}`,
+      redactionsApplied: false
+    },
+    provider: "local",
+    requestId: aiRequest.requestId,
+    result: {
+      structured: {
+        generatedAt: requestNow.toISOString(),
+        mapSearchFallback: {
+          reason,
+          result: topResult,
+          resultCount: results.length
+        }
+      },
+      summary
+    },
+    status: "COMPLETED"
+  };
+}
+
+function citationForAiMapSearchResult(
+  context: Record<string, unknown> | undefined,
+  result: Record<string, unknown>
+): string | undefined {
+  const priorityContext = isRecord(context?.priorityContext) ? context.priorityContext : undefined;
+  const citations = Array.isArray(priorityContext?.citations) ? priorityContext.citations.filter(isRecord) : [];
+  const mapFeatureId = optionalText(result.mapFeatureId);
+  const citation = citations.find((item) => mapFeatureId && optionalText(item.entityId) === mapFeatureId)
+    ?? citations.find((item) => optionalText(item.entityType) === "mapFeature");
+  return optionalText(citation?.citationId);
 }
 
 function prioritizeObjectsForAi(objects: ObservedObject[]): ObservedObject[] {
@@ -12949,6 +13462,7 @@ function buildAiPriorityContext(input: {
   chatContext?: Record<string, unknown>;
   communityReports?: Record<string, unknown>[];
   incidents?: Record<string, unknown>[];
+  mapFeatures?: Record<string, unknown>[];
   objects?: Record<string, unknown>[];
   sourceHealth?: Record<string, unknown>[];
 }): Record<string, unknown> {
@@ -12956,6 +13470,7 @@ function buildAiPriorityContext(input: {
     ...(input.incidents ?? []).map((record) => aiPrioritySignalFromRecord("incident", record, "incidentId")),
     ...(input.communityReports ?? []).map((record) => aiPrioritySignalFromRecord("communityReport", record, "reportId")),
     ...(input.alerts ?? []).map((record) => aiPrioritySignalFromRecord("alert", record, "alertId")),
+    ...(input.mapFeatures ?? []).map((record) => aiPrioritySignalFromRecord("mapFeature", record, "mapFeatureId")),
     ...(input.objects ?? []).map((record) => aiPrioritySignalFromRecord("observedObject", record, "objectId")),
     ...(input.sourceHealth ?? []).map((record) => aiPrioritySignalFromRecord("sourceHealth", record, "sourceSystemId")),
     ...aiPrioritySignalsFromChat(input.chatContext)
@@ -13000,6 +13515,7 @@ function buildAiPriorityContext(input: {
       chatMessages: Array.isArray(input.chatContext?.messages) ? input.chatContext.messages.length : 0,
       communityReports: input.communityReports?.length ?? 0,
       incidents: input.incidents?.length ?? 0,
+      mapFeatures: input.mapFeatures?.length ?? 0,
       objects: input.objects?.length ?? 0,
       sourceHealth: input.sourceHealth?.length ?? 0
     }),
@@ -13171,7 +13687,7 @@ function aiPrioritySignalFromRecord(
   const severity = optionalText(record.severity);
   const status = optionalText(record.status) ?? optionalText(record.health);
   const updatedAt = optionalText(record.updatedAt) ?? optionalText(record.lastUpdatedAt) ?? optionalText(record.observedAt) ?? optionalText(record.submittedAt);
-  const priorityScore = aiPriorityScore(entityType, record);
+  const priorityScore = optionalFiniteNumber(record.priorityScore, 0, 1) ?? aiPriorityScore(entityType, record);
   return {
     category,
     citation: "P0",
@@ -13246,6 +13762,8 @@ function aiPriorityBaseScore(entityType: AiPrioritySignal["entityType"]): number
       return 0.42;
     case "alert":
       return 0.32;
+    case "mapFeature":
+      return 0.3;
     case "chatMessage":
       return 0.24;
     case "sourceHealth":
@@ -13320,11 +13838,13 @@ function aiPriorityReason(
   record: Record<string, unknown>
 ): string {
   const domain = optionalText(record.domain)?.toLocaleLowerCase("cs-CZ");
+  const distanceM = optionalFiniteNumber(record.distanceM, 0, 10_000_000);
   const parts = [
     entityType,
     category ? `category=${category}` : undefined,
     severity ? `severity=${severity}` : undefined,
     status ? `status=${status}` : undefined,
+    distanceM !== undefined ? `distanceM=${Math.round(distanceM)}` : undefined,
     domain === "air" ? "air-track-low-priority-unless-relevant" : undefined
   ].filter(Boolean);
   return parts.join("; ");
