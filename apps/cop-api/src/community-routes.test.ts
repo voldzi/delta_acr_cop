@@ -2218,6 +2218,7 @@ describe("community report routes", () => {
     expect(capturedQueries).toHaveLength(0);
     expect(placeGeocoder.searchRequests[0]).toMatchObject({
       bounded: true,
+      limit: 8,
       query: "police"
     });
     expect(placeGeocoder.searchRequests[0]?.bbox).toEqual(expect.objectContaining({
@@ -2237,28 +2238,26 @@ describe("community report routes", () => {
     const structured = aiResponse.result.structured as Record<string, unknown>;
     const mapSearch = structured.mapSearch as Record<string, unknown>;
     expect(mapSearch).toMatchObject({
-      resultCount: 1,
+      resultCount: 2,
       toolCall: {
-        matchedFeatureCount: 1,
+        matchedFeatureCount: 2,
         status: "degraded",
         toolId: "cop.map.query.search"
       }
     });
-    expect(mapSearch.results).toEqual([
-      expect.objectContaining({
-        category: "police",
-        mapFeatureId: "place:fake-place-geocoder:place:police-vrbno",
-        sourceName: "fake-place-geocoder bounded search",
-        title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
-      })
-    ]);
-    expect(structured.mapActions).toEqual([
-      expect.objectContaining({
-        action: "focus-map",
-        entityId: "place:fake-place-geocoder:place:police-vrbno",
-        title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
-      })
-    ]);
+    const mapResults = mapSearch.results as Record<string, unknown>[];
+    expect(mapResults[0]).toEqual(expect.objectContaining({
+      category: "police",
+      mapFeatureId: "place:fake-place-geocoder:place:police-vrbno",
+      sourceName: "fake-place-geocoder bounded search",
+      title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
+    }));
+    const mapActions = structured.mapActions as Record<string, unknown>[];
+    expect(mapActions[0]).toEqual(expect.objectContaining({
+      action: "focus-map",
+      entityId: "place:fake-place-geocoder:place:police-vrbno",
+      title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
+    }));
 
     await app.close();
   });
@@ -2895,6 +2894,14 @@ class FakeAiMapSearchPlaceGeocoder implements PlaceGeocoder {
       contractVersion: "cop-geocode-v1",
       items: policeMatched
         ? [{
+            center: [16.98407, 49.96299],
+            displayName: "Městská policie Šumperk",
+            id: "place:police-sumperk",
+            kind: "police",
+            providerId: this.providerId,
+            subtitle: "amenity · police",
+            zoomHint: 16
+          }, {
             center: [17.3832, 50.1209],
             displayName: "Policie ČR Obvodní oddělení Vrbno pod Pradědem",
             id: "place:police-vrbno",

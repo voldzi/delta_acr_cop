@@ -1954,7 +1954,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             bbox,
             bounded: true,
             language: aiLanguage(input.body.language),
-            limit: 5,
+            limit: 8,
             query: fallbackQuery
           }, input.requestNow);
           warnings.push(...placeResponse.warnings);
