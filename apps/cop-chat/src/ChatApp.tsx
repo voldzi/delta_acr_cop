@@ -15,6 +15,7 @@ import {
   Copy,
   Download,
   FileText,
+  ExternalLink,
   Forward,
   Image as ImageIcon,
   Info,
@@ -305,6 +306,7 @@ const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const initialHistoryLoadRetryLimit = 8;
 const aiChatAgentJobPollIntervalMs = 1500;
 const aiChatAgentJobPollLimit = 90;
+const tomatoGameUrl = "https://games.zeleznalady.cz/tomato/";
 const copAiAgentUser: UserDirectoryEntry = {
   displayName: "COP AI Assistant",
   subjectId: "cop.ai.agent",
@@ -405,6 +407,7 @@ export function ChatApp() {
   const [aiAgentError, setAiAgentError] = React.useState<string | null>(null);
   const [aiAgentJobStatus, setAiAgentJobStatus] = React.useState<string | null>(null);
   const [aiAgentInlineStatus, setAiAgentInlineStatus] = React.useState<string | null>(null);
+  const [tomatoGameOpen, setTomatoGameOpen] = React.useState(false);
   const [hostCurrentLocation, setHostCurrentLocation] = React.useState<MatrixLocationShare | null>(() => initialEmbeddedHostLocation());
   const [standaloneAiLocation, setStandaloneAiLocation] = React.useState<MatrixLocationShare | null>(null);
   const [standaloneAiLocationBusy, setStandaloneAiLocationBusy] = React.useState(false);
@@ -2699,6 +2702,12 @@ export function ChatApp() {
 
   async function sendMessage(draft: string, options: ChatSendOptions = {}): Promise<boolean> {
     const text = draft.trim();
+    if (!options.skipAiMention && !pendingAttachment && !replyDraft && isTomatoSlashCommand(text)) {
+      setTomatoGameOpen(true);
+      setReplyDraft(null);
+      clearPendingAttachment();
+      return true;
+    }
     if (!matrixSession || !selectedRoomId || !(text || pendingAttachment)) {
       return false;
     }
@@ -3532,7 +3541,56 @@ export function ChatApp() {
           />
         </React.Suspense>
       ) : null}
+      {tomatoGameOpen ? <TomatoGameDialog onClose={() => setTomatoGameOpen(false)} /> : null}
     </main>
+  );
+}
+
+function TomatoGameDialog({ onClose }: { onClose: () => void }) {
+  React.useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onClick={onClose}>
+      <section
+        aria-label="Rajčatová sklizeň"
+        aria-modal="true"
+        className="tomato-game-dialog"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <header>
+          <span>
+            <Sparkles size={19} />
+            <strong>Rajčatová sklizeň</strong>
+          </span>
+          <div className="tomato-game-actions">
+            <a className="round-icon small" href={tomatoGameUrl} rel="noreferrer" target="_blank" title="Otevřít hru samostatně">
+              <ExternalLink size={17} />
+            </a>
+            <button className="round-icon small" onClick={onClose} title="Zavřít" type="button">
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+        <iframe
+          allow="autoplay; fullscreen; gamepad"
+          className="tomato-game-frame"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          sandbox="allow-forms allow-same-origin allow-scripts allow-pointer-lock"
+          src={tomatoGameUrl}
+          title="Rajčatová sklizeň"
+        />
+      </section>
+    </div>
   );
 }
 
@@ -4161,6 +4219,11 @@ export function composerSuggestions(text: string, aiAgentAvailable: boolean): Co
         description: "Složitější analýza přes reasoning model",
         label: "/reasoning",
         value: "/reasoning "
+      },
+      {
+        description: "Otevřít skrytou minihru Rajčatová sklizeň",
+        label: "/tomato",
+        value: "/tomato"
       }
     ].filter((suggestion) => suggestion.label.startsWith(draft.toLocaleLowerCase("cs-CZ")));
   }
@@ -6207,6 +6270,10 @@ function parseAiAgentSlashCommand(text: string): AiAgentInvocation | null {
     question: normalized.question,
     trigger: "slash"
   };
+}
+
+function isTomatoSlashCommand(text: string): boolean {
+  return /^\/(?:tomato|rajce|rajcata|rajcatova-sklizen)\s*$/iu.test(text.trim());
 }
 
 function normalizeAiAgentQuestion(question: string, fallbackPreference: AiModelPreference): { modelPreference: AiModelPreference; question: string } {

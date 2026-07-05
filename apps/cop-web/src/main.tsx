@@ -585,6 +585,9 @@ const defaultRadioProfiles: RadioProfile[] = [
 ];
 
 const defaultRadioPoint: RadioPoint = { antennaHeightM: 1.5, lat: 50.08, lon: 14.42, receiverHeightM: 1.5 };
+const tomatoGameUrl = "https://games.zeleznalady.cz/tomato/";
+const tomatoKeyboardSequence = "tomato";
+const tomatoBrandClickThreshold = 5;
 
 export function App() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
@@ -639,6 +642,10 @@ export function App() {
     initialOperatorProfile(authSession, initialPreferences.operatorProfile)
   );
   const [helpSection, setHelpSection] = React.useState<HelpSection | null>(null);
+  const [tomatoGameOpen, setTomatoGameOpen] = React.useState(false);
+  const tomatoKeyboardSequenceRef = React.useRef("");
+  const tomatoBrandClickCountRef = React.useRef(0);
+  const tomatoBrandClickResetRef = React.useRef<number | null>(null);
   const [placeSearchItems, setPlaceSearchItems] = React.useState<PlaceGeocodeResult[]>([]);
   const [placeSearchLoading, setPlaceSearchLoading] = React.useState(false);
   const [placeSearchError, setPlaceSearchError] = React.useState<string | null>(null);
@@ -831,6 +838,32 @@ export function App() {
   const [incidentTasksById, setIncidentTasksById] = React.useState<Record<string, IncidentTaskRecord[]>>({});
   const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null);
   const [pendingMapFocusNonce, setPendingMapFocusNonce] = React.useState(0);
+
+  React.useEffect(() => {
+    const handleTomatoShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isTextEntryTarget(event.target)) {
+        return;
+      }
+      const key = event.key.toLocaleLowerCase("cs-CZ");
+      if (key.length !== 1 || !/[a-z]/u.test(key)) {
+        return;
+      }
+      const sequence = `${tomatoKeyboardSequenceRef.current}${key}`.slice(-tomatoKeyboardSequence.length);
+      tomatoKeyboardSequenceRef.current = sequence;
+      if (sequence === tomatoKeyboardSequence) {
+        tomatoKeyboardSequenceRef.current = "";
+        setTomatoGameOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handleTomatoShortcut);
+    return () => window.removeEventListener("keydown", handleTomatoShortcut);
+  }, []);
+
+  React.useEffect(() => () => {
+    if (tomatoBrandClickResetRef.current !== null) {
+      window.clearTimeout(tomatoBrandClickResetRef.current);
+    }
+  }, []);
 
   React.useEffect(() => {
     mapCatalogRef.current = mapCatalog;
@@ -4745,6 +4778,24 @@ export function App() {
     }
     return style;
   }, [messagingDockWidth, messagingOpen, messagingPinned, workspaceLayout.leftPanelWidth, workspaceLayout.rightPanelWidth]);
+
+  function openTomatoEasterEggFromBrand() {
+    if (tomatoBrandClickResetRef.current !== null) {
+      window.clearTimeout(tomatoBrandClickResetRef.current);
+    }
+    const nextCount = tomatoBrandClickCountRef.current + 1;
+    if (nextCount >= tomatoBrandClickThreshold) {
+      tomatoBrandClickCountRef.current = 0;
+      setTomatoGameOpen(true);
+      return;
+    }
+    tomatoBrandClickCountRef.current = nextCount;
+    tomatoBrandClickResetRef.current = window.setTimeout(() => {
+      tomatoBrandClickCountRef.current = 0;
+      tomatoBrandClickResetRef.current = null;
+    }, 1400);
+  }
+
   const mobileDetailSheetForSelection = React.useCallback((isSelected: boolean): MobileSheet =>
     isSelected || !mobileSheetViewport ? null : "detail", [mobileSheetViewport]);
 
@@ -4885,9 +4936,14 @@ export function App() {
     >
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
+          <button
+            aria-label="COP"
+            className="brand-mark brand-easter-trigger"
+            onClick={openTomatoEasterEggFromBrand}
+            type="button"
+          >
             <img src="/icons/cop-icon.svg" alt="" />
-          </div>
+          </button>
           <div>
             <h1>
               <span className="brand-title-full">COP / CSM</span>
@@ -5986,8 +6042,68 @@ export function App() {
           })}
         />
       ) : null}
+      {tomatoGameOpen ? <TomatoGameDialog onClose={() => setTomatoGameOpen(false)} /> : null}
       {mobilePairCodeFromPath ? <MobilePairLandingOverlay code={mobilePairCodeFromPath} /> : null}
     </main>
+  );
+}
+
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  const tagName = target.tagName.toLocaleLowerCase("cs-CZ");
+  return tagName === "input" || tagName === "textarea" || tagName === "select";
+}
+
+function TomatoGameDialog({ onClose }: { onClose: () => void }) {
+  React.useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div className="tomato-game-backdrop" role="presentation" onClick={onClose}>
+      <section
+        aria-label="Rajčatová sklizeň"
+        aria-modal="true"
+        className="tomato-game-dialog"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <header className="tomato-game-header">
+          <div>
+            <span>Easter egg</span>
+            <strong>Rajčatová sklizeň</strong>
+          </div>
+          <div className="tomato-game-actions">
+            <a className="icon-button" href={tomatoGameUrl} rel="noreferrer" target="_blank" title="Otevřít hru samostatně">
+              <ExternalLink size={17} />
+            </a>
+            <button className="icon-button" onClick={onClose} title="Zavřít" type="button">
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+        <iframe
+          allow="autoplay; fullscreen; gamepad"
+          className="tomato-game-frame"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          sandbox="allow-forms allow-same-origin allow-scripts allow-pointer-lock"
+          src={tomatoGameUrl}
+          title="Rajčatová sklizeň"
+        />
+      </section>
+    </div>
   );
 }
 

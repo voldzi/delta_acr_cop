@@ -88,8 +88,9 @@ describe("parseAiAgentInvocation", () => {
 
 describe("composerSuggestions", () => {
   it("suggests slash AI commands", () => {
-    expect(composerSuggestions("/", true).map((item) => item.label)).toEqual(["/ai", "/fast", "/reasoning"]);
+    expect(composerSuggestions("/", true).map((item) => item.label)).toEqual(["/ai", "/fast", "/reasoning", "/tomato"]);
     expect(composerSuggestions("/r", true)).toMatchObject([{ label: "/reasoning", value: "/reasoning " }]);
+    expect(composerSuggestions("/t", true)).toMatchObject([{ label: "/tomato", value: "/tomato" }]);
   });
 
   it("suggests AI mentions only when the agent is available", () => {

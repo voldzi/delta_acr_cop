@@ -42,3 +42,10 @@ Primární aktualizace COP dat probíhá přes live SSE stream. Nastavení inter
 PWA offline režim automaticky ukládá poslední povolený COP snapshot pro daný operátorský scope. Při výpadku API nebo sítě topbar přepne na `DEGRADED` nebo `OFFLINE`, levý panel ukáže stáří snapshotu a zobrazení je read-only, dokud se neobnoví serverové spojení.
 
 UI nesmí obsahovat targeting, navádění ani ovládání prostředků.
+
+Skryté neprovozní prvky mohou existovat pouze jako izolovaný easter egg bez
+dopadu na situační mapu, chat, datové zdroje nebo oprávnění. Pilotní integrace
+`Rajčatová sklizeň` se spouští z COP shellu nebo lokálním chat příkazem
+`/tomato` a zobrazuje externí hru v sandboxovaném iframe z
+`games.zeleznalady.cz`; COP nepřebírá její service worker ani herní assety do
+operačního bundle.
