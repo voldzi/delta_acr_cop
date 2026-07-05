@@ -100,6 +100,7 @@ describe("AI map search", () => {
       requested: true
     });
     expect(intent.searchTerms).toEqual(expect.arrayContaining(["vodomer", "stan"]));
+    expect(intent.searchTerms).not.toEqual(expect.arrayContaining(["vrbn", "praded"]));
     expect(aiSituationFeatureMatchesMapSearchIntent(waterGaugeFeature, intent)).toBe(true);
   });
 

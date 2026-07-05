@@ -77,13 +77,14 @@ export function inferAiMapSearchIntent(question: string, body: Record<string, un
   const placeQuery = requested && layerIds.size === 0
     ? bodyPlaceQuery ?? aiPlaceQueryFromQuestion(question) ?? aiMapPlaceQueryFromQuestion(question)
     : bodyPlaceQuery ?? aiPlaceQueryFromQuestion(question);
+  const filteredSearchTerms = aiMapSearchTermsWithoutPlace(Array.from(searchTerms), placeQuery);
 
   return {
     categoryIds: Array.from(categoryIds),
     layerIds: Array.from(layerIds),
     ...(placeQuery ? { placeQuery } : {}),
     requested,
-    searchTerms: Array.from(searchTerms)
+    searchTerms: filteredSearchTerms
   };
 }
 
@@ -402,6 +403,14 @@ function aiMapSearchMeaningfulTerms(terms: string[]): string[] {
     .slice(0, 8);
 }
 
+function aiMapSearchTermsWithoutPlace(terms: string[], placeQuery: string | undefined): string[] {
+  if (!placeQuery) {
+    return Array.from(new Set(terms));
+  }
+  const placeTerms = new Set(aiMapSearchMeaningfulTerms(aiMapSearchTermsFromQuestion(placeQuery)));
+  return Array.from(new Set(terms)).filter((term) => !placeTerms.has(aiMapSearchTokenStem(normalizeAiMapSearchText(term))));
+}
+
 function isAiMapSearchStopword(term: string): boolean {
   return new Set([
     "aktualni",
@@ -469,7 +478,10 @@ function aiMapSearchTokenVariants(term: string): string[] {
     variants.add(`${normalized}o`);
   }
   if (/^(vodomer|hydro|limnigraf|hladin|reka|river)/u.test(normalized)) {
-    ["vodomer", "hydro", "limnigraf", "hladin", "water", "river", "gauge", "chmi"].forEach((value) => variants.add(value));
+    ["vodomer", "hydro", "hydrological", "limnigraf", "hladin", "water", "water_level", "river", "gauge", "chmi"].forEach((value) => variants.add(value));
+  }
+  if (normalized === "stan") {
+    ["stanice", "station", "stations"].forEach((value) => variants.add(value));
   }
   if (/^(zastav|bus|autobus|vlak|train|tram|pid|ids)/u.test(normalized)) {
     ["zastav", "stop", "station", "transit", "traffic", "pid", "idsjmk", "train"].forEach((value) => variants.add(value));
@@ -574,7 +586,7 @@ function aiMapPlaceQueryFromQuestion(question: string): string | undefined {
   if (text.length < 3 || isAiGenericPlaceQuery(text)) {
     return undefined;
   }
-  if (/(polic|hasi|zachran|ambulanc|nemocnic|lekar|lekarn|kryt|defibrilator|sirena)/iu.test(text)) {
+  if (/(polic|hasi|zachran|ambulanc|nemocnic|lekar|lekarn|kryt|defibrilator|sirena|vodom[eě]r|stanic|zast[aá]v|most|kamera|webcam|hladin|řek|rek|report|hl[aá][sš]en)/iu.test(text)) {
     return undefined;
   }
   return text.slice(0, 120);
