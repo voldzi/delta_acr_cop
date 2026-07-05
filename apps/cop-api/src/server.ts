@@ -10124,6 +10124,7 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "boundary_municipality"
     || value === "boundary_orp"
     || value === "boundary_region"
+    || value === "community_places"
     || value === "fire"
     || value === "flood"
     || value === "ground"
@@ -10213,6 +10214,10 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "public.trails.poi":
     case "outdoor.osm_postgis.trail_poi":
       return "trail_poi";
+    case "community_places":
+    case "public.outdoor.community_places":
+    case "outdoor.community.places":
+      return "community_places";
     default:
       return undefined;
   }

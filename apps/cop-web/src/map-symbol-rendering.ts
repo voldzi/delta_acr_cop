@@ -85,7 +85,7 @@ const civilAircraftIconAssetByKind: Record<CivilAircraftIconKind, string> = {
 };
 const transitIconPrefix = "cop-transit";
 const osmCategoryIconPrefix = "cop-osm-category";
-export const osmCategoryIconIds = ["airport", "hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "other"] as const;
+export const osmCategoryIconIds = ["airport", "hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "toilet", "water", "shower", "charging", "aed", "library", "community", "other"] as const;
 export type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
 const riskIconPrefix = "cop-risk";
 export const riskIconIds = ["fire", "flood", "warning", "weather", "unknown"] as const;
@@ -1701,6 +1701,88 @@ export function createOsmCategorySymbolImage(iconId: OsmCategoryIconId): ImageDa
       context.arc(0, -24, 18, Math.PI - 0.72, Math.PI + 0.72);
       context.stroke();
       break;
+    case "toilet":
+      context.font = "900 31px Arial, sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText("WC", 0, 1);
+      break;
+    case "water":
+      context.beginPath();
+      context.moveTo(0, -35);
+      context.bezierCurveTo(20, -9, 26, 2, 26, 16);
+      context.bezierCurveTo(26, 32, 14, 40, 0, 40);
+      context.bezierCurveTo(-14, 40, -26, 32, -26, 16);
+      context.bezierCurveTo(-26, 2, -20, -9, 0, -35);
+      context.fill();
+      context.fillStyle = "rgba(6, 16, 25, 0.94)";
+      context.beginPath();
+      context.arc(-7, 17, 6, 0, Math.PI * 2);
+      context.fill();
+      break;
+    case "shower":
+      context.beginPath();
+      context.moveTo(-24, -25);
+      context.lineTo(7, -25);
+      context.quadraticCurveTo(22, -25, 22, -10);
+      context.lineTo(22, -2);
+      context.stroke();
+      context.beginPath();
+      context.arc(22, 2, 13, Math.PI, Math.PI * 2);
+      context.stroke();
+      [-18, -6, 6, 18].forEach((x) => {
+        context.beginPath();
+        context.arc(x, 24, 3, 0, Math.PI * 2);
+        context.fill();
+      });
+      break;
+    case "charging":
+      context.beginPath();
+      context.moveTo(3, -35);
+      context.lineTo(-17, 2);
+      context.lineTo(2, 2);
+      context.lineTo(-3, 35);
+      context.lineTo(18, -6);
+      context.lineTo(-1, -6);
+      context.closePath();
+      context.fill();
+      break;
+    case "aed":
+      context.font = "900 29px Arial, sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText("AED", 0, -1);
+      break;
+    case "library":
+      context.beginPath();
+      context.moveTo(-31, -24);
+      context.lineTo(-4, -14);
+      context.lineTo(-4, 31);
+      context.lineTo(-31, 20);
+      context.closePath();
+      context.moveTo(31, -24);
+      context.lineTo(4, -14);
+      context.lineTo(4, 31);
+      context.lineTo(31, 20);
+      context.closePath();
+      context.fill();
+      context.strokeStyle = "rgba(6, 16, 25, 0.94)";
+      context.lineWidth = 4;
+      context.beginPath();
+      context.moveTo(0, -16);
+      context.lineTo(0, 31);
+      context.stroke();
+      break;
+    case "community":
+      context.beginPath();
+      context.arc(-16, -5, 10, 0, Math.PI * 2);
+      context.arc(16, -5, 10, 0, Math.PI * 2);
+      context.arc(0, 14, 11, 0, Math.PI * 2);
+      context.fill();
+      context.beginPath();
+      context.arc(0, 0, 35, 0, Math.PI * 2);
+      context.stroke();
+      break;
     case "other":
       context.beginPath();
       context.arc(0, 0, 22, 0, Math.PI * 2);
@@ -1748,6 +1830,20 @@ function osmCategoryIconColor(iconId: OsmCategoryIconId): string {
       return "#c4b5fd";
     case "communications_tower":
       return "#8cb6d8";
+    case "toilet":
+      return "#a78bfa";
+    case "water":
+      return "#38bdf8";
+    case "shower":
+      return "#2dd4bf";
+    case "charging":
+      return "#facc15";
+    case "aed":
+      return "#ef4444";
+    case "library":
+      return "#c084fc";
+    case "community":
+      return "#14b8a6";
     case "other":
       return "#dff8ff";
   }

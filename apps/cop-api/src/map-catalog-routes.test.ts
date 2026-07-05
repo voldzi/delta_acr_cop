@@ -90,6 +90,7 @@ describe("map catalog route", () => {
       "public.safety.fire",
       "public.safety.weather_alerts",
       "public.safety.warnings",
+      "public.outdoor.community_places",
       "reference.infrastructure.healthcare"
     ]));
     expect(body.layers.map((layer) => layer.layerId)).not.toContain("diagnostic.mobile.coverage");
@@ -161,6 +162,18 @@ describe("map catalog route", () => {
       },
       selectable: true
     });
+    expect(body.layers.find((layer) => layer.layerId === "public.outdoor.community_places")).toMatchObject({
+      groupId: "outdoor",
+      label: "Komunitní kontext",
+      minZoom: 12,
+      query: {
+        maxFeatures: 5000,
+        providerLayerIds: ["community_places"],
+        providerSourceIds: ["community_context"]
+      },
+      role: "reference",
+      selectable: true
+    });
 
     expect(body.sources).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -186,6 +199,13 @@ describe("map catalog route", () => {
         sourceId: "osm_postgis",
         sourceRole: "reference",
         usedByCatalogLayerIds: expect.arrayContaining(["public.mobile.network"])
+      }),
+      expect.objectContaining({
+        feedsCatalogLayerIds: ["public.outdoor.community_places"],
+        selectableInMap: true,
+        sourceId: "community_context",
+        sourceRole: "reference",
+        usedByCatalogLayerIds: ["public.outdoor.community_places"]
       })
     ]));
   });
@@ -303,6 +323,24 @@ describe("map catalog route", () => {
         }),
         refreshSeconds: 21600,
         selectable: true
+      }),
+      expect.objectContaining({
+        groupId: "outdoor",
+        label: "Komunitní kontext",
+        layerId: "public.outdoor.community_places",
+        minZoom: 12,
+        query: expect.objectContaining({
+          maxFeatures: 5000,
+          providerLayerIds: ["community_places"],
+          providerSourceIds: ["community_context"]
+        }),
+        selectable: true,
+        styleProfile: "community-place-osm-v1"
+      }),
+      expect.objectContaining({
+        groupId: "outdoor",
+        layerId: "public.outdoor.community_reports",
+        selectable: false
       })
     ]));
     expect(body.layers.find((layer) => layer.layerId === "public.weather.wind_field")).toMatchObject({
@@ -332,6 +370,13 @@ describe("map catalog route", () => {
         selectableInMap: true,
         sourceId: "chmi_weather_webcams",
         sourceRole: "final"
+      }),
+      expect.objectContaining({
+        feedsCatalogLayerIds: expect.arrayContaining(["public.outdoor.community_places"]),
+        selectableInMap: true,
+        sourceId: "community_context",
+        sourceRole: "reference",
+        usedByCatalogLayerIds: expect.arrayContaining(["public.outdoor.community_places"])
       })
     ]));
     expect(body.sources.map((source) => source.sourceId)).not.toContain("mobile_coverage_model");
@@ -522,6 +567,37 @@ describe("map catalog route", () => {
     expect(body.safety?.query.sources).toEqual(["hzs_incidents", "municipal_alerts", "chmi_hydro", "gdacs_alerts"]);
     expect(body.tak).toBeUndefined();
     expect(body.warnings.join(" ")).toContain("partner.tak.mobile");
+  });
+
+  it("queries SIM community context as an outdoor reference layer", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const situationDataSource = new FakeSituationDataSource();
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [13.85, 49.65, 15.35, 50.45],
+        layerIds: ["public.outdoor.community_places"],
+        limit: 50
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { query: { layerIds: string[] }; situation?: SituationFeatureCollection };
+    expect(body.query.layerIds).toEqual(["public.outdoor.community_places"]);
+    expect(body.situation?.query).toMatchObject({
+      layers: ["community_places"],
+      sources: ["community_context"]
+    });
+    expect(situationDataSource.lastFeatureQuery).toMatchObject({
+      layers: ["community_places"],
+      sources: ["community_context"]
+    });
   });
 
   it("proxies CHMI hydro station detail through COP API", async () => {
@@ -1429,6 +1505,7 @@ class FakeSituationDataSource implements SituationDataSource {
       { defaultVisible: false, expectedCadenceSeconds: 21600, geometryTypes: ["Polygon"], label: "Mobile coverage", layerId: "mobile_coverage" },
       { defaultVisible: false, expectedCadenceSeconds: 3600, geometryTypes: ["Point"], label: "Mobile measurements", layerId: "mobile" },
       { defaultVisible: false, expectedCadenceSeconds: 21600, geometryTypes: ["Point", "LineString", "Polygon"], label: "Ground", layerId: "ground" },
+      { defaultVisible: false, expectedCadenceSeconds: 21600, geometryTypes: ["Point"], label: "Community places", layerId: "community_places" },
       { defaultVisible: false, expectedCadenceSeconds: 20, geometryTypes: ["Point"], label: "Traffic", layerId: "traffic" }
     ];
   }
@@ -1444,6 +1521,7 @@ class FakeSituationDataSource implements SituationDataSource {
       { enabled: true, label: "Mobile coverage estimate model", layers: ["mobile_coverage"], sourceId: "mobile_coverage_model", updateCadenceSeconds: 21600 },
       { enabled: true, label: "CTU NetTest mobile measurements", layers: ["mobile"], sourceId: "ctu_nettest", updateCadenceSeconds: 3600 },
       { enabled: true, label: "Local OpenStreetMap PostGIS context", layers: ["ground", "mobile"], sourceId: "osm_postgis", updateCadenceSeconds: 21600 },
+      { enabled: true, label: "Community context", layers: ["community_places"], sourceId: "community_context", updateCadenceSeconds: 21600 },
       { enabled: true, label: "PID GTFS-RT", layers: ["traffic"], sourceId: "pid_gtfs_rt", updateCadenceSeconds: 20 }
     ];
   }
@@ -1724,6 +1802,60 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
         {
           audience: "public",
           cacheTtlSeconds: 21600,
+          defaultVisible: false,
+          filters: [
+            {
+              filterId: "providerProperties.community.categoryGroup",
+              label: "Skupina kategorie",
+              type: "multi_select"
+            }
+          ],
+          geometryTypes: ["Point"],
+          kind: "vector_features",
+          label: "Community places",
+          minZoom: 11,
+          providerLayerId: "outdoor.community.places",
+          query: {
+            maxFeatures: 1000,
+            mode: "bbox",
+            providerId: "sim.situation-data",
+            providerLayerIds: ["community_places"],
+            providerSourceIds: ["community_context"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "public.outdoor.community_places",
+          refreshSeconds: 21600,
+          role: "reference",
+          selectable: true,
+          sourceIds: ["community_context"],
+          styleProfile: "community-place-osm-v1"
+        },
+        {
+          audience: "public",
+          cacheTtlSeconds: 21600,
+          defaultVisible: false,
+          geometryTypes: ["Point"],
+          kind: "user_objects",
+          label: "Community reports",
+          providerLayerId: "outdoor.community.reports",
+          query: {
+            maxFeatures: 250,
+            mode: "bbox",
+            providerId: "sim.situation-data",
+            providerLayerIds: ["community_reports"],
+            providerSourceIds: ["community_context"],
+            streamId: "features"
+          },
+          recommendedCatalogLayerId: "public.outdoor.community_reports",
+          refreshSeconds: 21600,
+          role: "user",
+          selectable: false,
+          sourceIds: ["community_context"],
+          styleProfile: "community-report-osm-v1"
+        },
+        {
+          audience: "public",
+          cacheTtlSeconds: 21600,
           categoryPath: ["reference", "infrastructure", "communications"],
           defaultVisible: false,
           geometryTypes: ["Point"],
@@ -1865,6 +1997,18 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           sourceId: "chmi_weather_wind_field",
           sourceRole: "final",
           updateCadenceSeconds: 600,
+          visibleInDiagnostics: true
+        },
+        {
+          audience: "public",
+          enabled: true,
+          feedsCatalogLayerIds: ["public.outdoor.community_places", "public.outdoor.community_reports"],
+          label: "Community context",
+          selectableInMap: true,
+          sourceId: "community_context",
+          sourceRole: "reference",
+          updateCadenceSeconds: 21600,
+          usedByCatalogLayerIds: ["public.outdoor.community_places"],
           visibleInDiagnostics: true
         },
         {

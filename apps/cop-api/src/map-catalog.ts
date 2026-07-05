@@ -150,6 +150,7 @@ const PUBLIC_TRANSIT_TRAINS_LAYER_ID = "public.traffic.transit.trains";
 const PUBLIC_TRANSIT_STOPS_LAYER_ID = "public.traffic.transit_stops";
 const PUBLIC_TRAIL_ROUTES_LAYER_ID = "public.trails.routes";
 const PUBLIC_TRAIL_POI_LAYER_ID = "public.trails.poi";
+const PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID = "public.outdoor.community_places";
 
 interface PublicTransitLayerVariant {
   layerId: string;
@@ -268,7 +269,7 @@ function defaultGroups(includeDiagnostics: boolean, includePartner: boolean): Ma
     { groupId: "transport", icon: "bus", label: "Doprava", order: 35 },
     { groupId: "infrastructure", icon: "building-2", label: "Infrastruktura", order: 40 },
     { groupId: "boundary", icon: "map", label: "Hranice a území", order: 45 },
-    { groupId: "outdoor", icon: "map", label: "Turistika / Outdoor", order: 47 },
+    { groupId: "outdoor", icon: "footprints", label: "Turistika / Outdoor", order: 47 },
     { groupId: "flight", icon: "plane", label: "Letecký provoz", order: 50 },
     { groupId: "user", icon: "map-pin", label: "Moje data", order: 60 },
     { groupId: "presentation", icon: "sparkles", label: "Prezentace a eventy", order: 65 },
@@ -388,12 +389,23 @@ function isTrailCatalogLayerId(layerId: string): boolean {
   return layerId === PUBLIC_TRAIL_ROUTES_LAYER_ID || layerId === PUBLIC_TRAIL_POI_LAYER_ID;
 }
 
+function isOutdoorCommunityPlacesCatalogLayerId(layerId: string): boolean {
+  return layerId === PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID;
+}
+
 function trailStyleProfileForLayerId(layerId: string): string | undefined {
   if (layerId === PUBLIC_TRAIL_ROUTES_LAYER_ID) {
     return "trail-route-osm-v1";
   }
   if (layerId === PUBLIC_TRAIL_POI_LAYER_ID) {
     return "trail-poi-osm-v1";
+  }
+  return undefined;
+}
+
+function outdoorCommunityStyleProfileForLayerId(layerId: string): string | undefined {
+  if (layerId === PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID) {
+    return "community-place-osm-v1";
   }
   return undefined;
 }
@@ -417,7 +429,9 @@ function providerCatalogLayerVariantToMapLayer(
   const providerLayerIds = variant.providerLayerIds;
   const providerSourceIds = variant.sourceIds;
   const refreshSeconds = variant.refreshSeconds ?? layer.refreshSeconds;
-  const highVolumeBboxLayer = isPublicTransitCatalogLayerId(catalogLayerId) || isTrailCatalogLayerId(catalogLayerId);
+  const highVolumeBboxLayer = isPublicTransitCatalogLayerId(catalogLayerId)
+    || isTrailCatalogLayerId(catalogLayerId)
+    || isOutdoorCommunityPlacesCatalogLayerId(catalogLayerId);
   const cacheTtlSeconds = highVolumeBboxLayer
     ? refreshSeconds ?? layer.cacheTtlSeconds
     : layer.cacheTtlSeconds;
@@ -432,6 +446,7 @@ function providerCatalogLayerVariantToMapLayer(
     sourceIds: providerSourceIds,
     styleProfile: variant.styleProfile
       ?? trailStyleProfileForLayerId(catalogLayerId)
+      ?? outdoorCommunityStyleProfileForLayerId(catalogLayerId)
       ?? (catalogLayerId === PUBLIC_TRANSIT_STOPS_LAYER_ID ? "traffic-public-transit-stops-v1" : layer.styleProfile)
   };
   const mode = normalizeQueryMode(layer.query?.mode);
@@ -512,6 +527,9 @@ function maxFeaturesForCatalogLayer(layer: ProviderCatalogLayer): number | undef
   if (isTrailCatalogLayerId(layer.recommendedCatalogLayerId)) {
     return Math.max(layer.query?.maxFeatures ?? 0, 5000);
   }
+  if (isOutdoorCommunityPlacesCatalogLayerId(layer.recommendedCatalogLayerId)) {
+    return Math.max(layer.query?.maxFeatures ?? 0, 5000);
+  }
   return layer.query?.maxFeatures;
 }
 
@@ -551,6 +569,9 @@ function geometryTypesForCatalogLayer(layer: ProviderCatalogLayer): string[] | u
   if (layer.recommendedCatalogLayerId === PUBLIC_TRAIL_POI_LAYER_ID) {
     return uniqueStrings([...geometryTypes, "Point"]);
   }
+  if (layer.recommendedCatalogLayerId === PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID) {
+    return uniqueStrings([...geometryTypes, "Point"]);
+  }
   return geometryTypes.length > 0 ? geometryTypes : undefined;
 }
 
@@ -582,6 +603,9 @@ function minZoomForCatalogLayer(layer: ProviderCatalogLayer): number | undefined
   if (layerId === PUBLIC_TRAIL_POI_LAYER_ID) {
     return Math.max(layer.minZoom ?? 12, 12);
   }
+  if (layerId === PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID) {
+    return Math.max(layer.minZoom ?? 12, 12);
+  }
   return layer.minZoom;
 }
 
@@ -594,6 +618,7 @@ function buildProviderCatalogSources(catalog: ProviderMapCatalog, includeDiagnos
 function providerCatalogSourceToMapSource(providerId: string, source: ProviderCatalogSource): MapCatalogSource[] {
   const publicTransitLayerId = providerId === "sim.situation-data" && isPublicTransitSourceId(source.sourceId) ? publicTransitCatalogLayerIdForSourceId(source.sourceId) : undefined;
   const isOsmPostgisSource = providerId === "sim.situation-data" && source.sourceId === "osm_postgis";
+  const isCommunityContextSource = providerId === "sim.situation-data" && source.sourceId === "community_context";
   const feedsCatalogLayerIds = sanitizeProviderCatalogSourceFeedLayerIds(
     providerId,
     source.sourceId,
@@ -604,6 +629,8 @@ function providerCatalogSourceToMapSource(providerId: string, source: ProviderCa
     ? [publicTransitLayerId!]
     : isOsmPostgisSource
       ? uniqueStrings([...(source.usedByCatalogLayerIds ?? []), PUBLIC_TRAIL_ROUTES_LAYER_ID, PUBLIC_TRAIL_POI_LAYER_ID])
+      : isCommunityContextSource
+      ? uniqueStrings([...(source.usedByCatalogLayerIds ?? []), PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID])
       : source.usedByCatalogLayerIds;
   return [
     {
@@ -636,6 +663,9 @@ function sanitizeProviderCatalogSourceFeedLayerIds(providerId: string, sourceId:
   }
   if (providerId === "sim.situation-data" && sourceId === "osm_postgis") {
     return uniqueStrings([...(layerIds ?? []), PUBLIC_TRAIL_ROUTES_LAYER_ID, PUBLIC_TRAIL_POI_LAYER_ID]);
+  }
+  if (providerId === "sim.situation-data" && sourceId === "community_context") {
+    return uniqueStrings([...(layerIds ?? []), PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID]);
   }
   if (providerId !== "sim.safety-data") {
     return layerIds;
@@ -684,6 +714,7 @@ const curatedCatalogLayerLabels: Record<string, string> = {
   "public.traffic.transit_stops": "Zastávky veřejné dopravy",
   "public.trails.routes": "Turistické trasy",
   "public.trails.poi": "Outdoor body",
+  "public.outdoor.community_places": "Komunitní kontext",
   "public.safety.air_quality": "Kvalita ovzduší",
   "public.safety.flood": "Vodní stavy a průtoky",
   "public.weather.current": "Počasí ve středu mapy",
@@ -706,6 +737,7 @@ const curatedCatalogLayerDescriptions: Record<string, string> = {
   "public.traffic.transit_stops": "Statické zastávky veřejné dopravy ze SIM katalogu.",
   "public.trails.routes": "Turistické, pěší, cyklistické a MTB trasy z normalizovaných OSM dat.",
   "public.trails.poi": "Outdoor body zájmu jako přístřešky, voda, kempování, servis a nouzové body z OSM.",
+  "public.outdoor.community_places": "Referenční OSM komunitní kontext: WC, voda, přístřeší, AED, lékárny, úřady a další veřejné body. Nejde o ověřený operační stav.",
   "public.safety.flood": "Hydrologické stanice, vodní stavy, průtoky a stupně povodňové aktivity."
 };
 
@@ -760,7 +792,7 @@ function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
   if (layerId.startsWith("public.place.")) {
     return "boundary";
   }
-  if (layerId.startsWith("public.trails.")) {
+  if (layerId.startsWith("public.trails.") || layerId.startsWith("public.outdoor.")) {
     return "outdoor";
   }
   if (layerId.startsWith("public.weather.")) {
@@ -1201,6 +1233,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       } satisfies MapCatalogLayer;
     })(),
     ...buildTrailCompatibilityLayers(sources),
+    ...buildCommunityPlacesCompatibilityLayers(sources),
     ...buildInfrastructureLayers(groundLayer, sources)
   ].filter((layer): layer is MapCatalogLayer => Boolean(layer));
 }
@@ -1218,7 +1251,12 @@ function buildSituationCatalogCompatibilityLayers(catalog: ProviderMapCatalog, s
       : buildTrailRoutesCompatibilityLayer(sources),
     catalog.layers.some((layer) => layer.recommendedCatalogLayerId === PUBLIC_TRAIL_POI_LAYER_ID)
       ? undefined
-      : buildTrailPoiCompatibilityLayer(sources)
+      : buildTrailPoiCompatibilityLayer(sources),
+    catalog.layers.some((layer) => layer.recommendedCatalogLayerId === PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID)
+      ? undefined
+      : findSource(sources, "community_context")
+      ? buildCommunityPlacesCompatibilityLayer(sources)
+      : undefined
   ].filter((layer): layer is MapCatalogLayer => Boolean(layer));
 }
 
@@ -1257,6 +1295,26 @@ function buildSituationCatalogCompatibilitySources(catalog: ProviderMapCatalog, 
       updateCadenceSeconds: source?.updateCadenceSeconds ?? 600,
       visibleInDiagnostics: true
     });
+  }
+  if (!catalog.sources.some((source) => source.sourceId === "community_context")) {
+    const source = findSource(sources, "community_context");
+    if (source) {
+      const enabled = source.enabled !== false;
+      compatibilitySources.push({
+        audience: "public",
+        cacheTtlSeconds: source.updateCadenceSeconds ?? 21_600,
+        enabled,
+        feedsCatalogLayerIds: [PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID],
+        label: source.label ?? "Komunitní kontext",
+        providerId: "sim.situation-data",
+        selectableInMap: enabled,
+        sourceId: "community_context",
+        sourceRole: "reference",
+        updateCadenceSeconds: source.updateCadenceSeconds ?? 21_600,
+        usedByCatalogLayerIds: [PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID],
+        visibleInDiagnostics: true
+      });
+    }
   }
   return compatibilitySources;
 }
@@ -1397,6 +1455,53 @@ function buildTrailPoiCompatibilityLayer(sources: SituationSourceDescriptor[]): 
     role: "reference",
     selectable: true,
     styleProfile: "trail-poi-osm-v1"
+  };
+}
+
+function buildCommunityPlacesCompatibilityLayers(sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
+  const source = findSource(sources, "community_context");
+  if (!source || source.enabled === false) {
+    return [];
+  }
+  return [buildCommunityPlacesCompatibilityLayer(sources)];
+}
+
+function buildCommunityPlacesCompatibilityLayer(sources: SituationSourceDescriptor[]): MapCatalogLayer {
+  const source = findSource(sources, "community_context");
+  const refreshSeconds = source?.updateCadenceSeconds ?? 21_600;
+  return {
+    audience: "public",
+    cacheTtlSeconds: refreshSeconds,
+    defaultVisible: false,
+    description: curatedCatalogLayerDescriptions[PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID] ?? "Referenční OSM komunitní kontext.",
+    filters: [
+      {
+        filterId: "providerProperties.community.categoryGroup",
+        label: "Skupina kategorie",
+        type: "multi_select"
+      }
+    ],
+    geometryTypes: ["Point"],
+    groupId: "outdoor",
+    kind: "vector_features",
+    label: curatedCatalogLayerLabels[PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID] ?? "Komunitní kontext",
+    layerId: PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID,
+    legal: legalFromSource(source, ["OpenStreetMap contributors, licence ODbL 1.0"]),
+    maxZoom: 18,
+    minZoom: 12,
+    provenance: { sourceIds: ["sim.situation-data:community_context"] },
+    query: {
+      maxFeatures: 5000,
+      mode: "bbox",
+      providerId: "sim.situation-data",
+      providerLayerIds: ["community_places"],
+      providerSourceIds: ["community_context"],
+      streamId: "features"
+    },
+    refreshSeconds,
+    role: "reference",
+    selectable: true,
+    styleProfile: "community-place-osm-v1"
   };
 }
 
@@ -1933,6 +2038,14 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
       return { audience: "public", feedsCatalogLayerIds: ["public.weather.webcams"], selectableInMap: true, sourceRole: "final" };
     case "chmi_air_quality":
       return { audience: "public", feedsCatalogLayerIds: ["public.safety.air_quality"], selectableInMap: true, sourceRole: "final" };
+    case "community_context":
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: [PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID],
+        selectableInMap: true,
+        sourceRole: "reference",
+        usedByCatalogLayerIds: [PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID]
+      };
     case "mobile_network_model":
       return { audience: "public", feedsCatalogLayerIds: ["public.mobile.network"], selectableInMap: true, sourceRole: "aggregate" };
     case "mobile_coverage_model":

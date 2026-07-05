@@ -586,6 +586,7 @@ Provider-native fields may be preserved under:
 | `public.traffic.transit` | Veřejná doprava | `sim.situation-data` layer `traffic`, sources `pid_gtfs_rt`, `ids_jmk*` a další SIM transit adaptéry z katalogu |
 | `public.trails.routes` | Turistické trasy | `sim.situation-data` layer `trail_routes`, source `osm_postgis`; LineString/MultiLineString turistické, pěší, cyklistické a MTB trasy |
 | `public.trails.poi` | Outdoor body | `sim.situation-data` layer `trail_poi`, source `osm_postgis`; body typu nocleh, tábořiště, přístřešek, voda, jídlo, servis, půjčovna, doprava a nouzový bod |
+| `public.outdoor.community_places` | Komunitní kontext | `sim.situation-data` layer `community_places`, source `community_context`; provider layer `outdoor.community.places`; referenční OSM komunitní body jako WC, voda, sprchy, nabíjení, AED, lékárny, přístřeší, knihovny a úřady |
 | `reference.infrastructure.healthcare` | Zdravotnictví | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `hospital`, `clinic`, `doctors`, `pharmacy` |
 | `reference.infrastructure.emergency` | Záchranná infrastruktura | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `fire_station`, `police`, `ambulance_station`, `shelter` |
 | `reference.infrastructure.communications` | BTS / komunikační stožáry | `sim.situation-data` layer `mobile`, source `osm_postgis`, category `communications_tower` |
@@ -620,6 +621,19 @@ filtrování podle kategorií. Detail tras čte normalizovaná pole
 `providerProperties.trailPoi.category`, `categoryLabelLocalized`,
 `openingHours`, `website`, `wheelchair` a `access`. Pokud SIM pošle
 `mayDisplayContact=false`, COP nesmí zobrazovat přímé kontaktní údaje z OSM.
+Vrstva `public.outdoor.community_places` používá styl
+`community-place-osm-v1`, filtruje se přes
+`providerProperties.community.categoryGroup` a je také pouze referenční.
+Detail komunitního bodu čte
+`providerProperties.community.categoryLabelLocalized`, `openingHours`,
+`access`, `wheelchair`, `fee`, `payment` a `website`, viditelně zobrazuje
+`communityStatus=reference_only` a vysvětlení, že jde o referenci z OSM a
+aktuální stav není ověřený. Komunitní body nesmí vstupovat do krizových výstrah
+ani prioritního safety pruhu. Katalogová vrstva
+`public.outdoor.community_reports` je rezervovaná pro budoucí uživatelská
+hlášení/fotky/návrhy změn a zůstává pro běžné uživatele neaktivní
+(`selectable=false`), dokud nebude hotová Keycloak identita, moderace, retence
+a anti-abuse.
 Mapa a detail musí zachovat atribuci `OpenStreetMap contributors, licence ODbL
 1.0`. Klienti nemají parsovat raw OSM tagy, ale používat `properties.category`,
 `label`, `summaryLocalized` a normalizovaná `providerProperties`.

@@ -5062,6 +5062,7 @@ components:
               - boundary_orp
               - boundary_municipality
               - place_settlements
+              - community_places
         situationSourceIds:
           type: array
           maxItems: 32
@@ -7735,6 +7736,7 @@ components:
               - boundary_orp
               - boundary_municipality
               - place_settlements
+              - community_places
         limit:
           type: integer
           minimum: 1
@@ -7834,6 +7836,7 @@ components:
               - boundary_orp
               - boundary_municipality
               - place_settlements
+              - community_places
         license:
           type: object
           additionalProperties: true
@@ -7990,6 +7993,7 @@ components:
             - boundary_orp
             - boundary_municipality
             - place_settlements
+            - community_places
         layerId:
           type: string
         label:

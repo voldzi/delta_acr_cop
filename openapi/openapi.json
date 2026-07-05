@@ -7740,7 +7740,8 @@
                 "boundary_district",
                 "boundary_orp",
                 "boundary_municipality",
-                "place_settlements"
+                "place_settlements",
+                "community_places"
               ]
             }
           },
@@ -11403,7 +11404,8 @@
                 "boundary_district",
                 "boundary_orp",
                 "boundary_municipality",
-                "place_settlements"
+                "place_settlements",
+                "community_places"
               ]
             }
           },
@@ -11533,7 +11535,8 @@
                 "boundary_district",
                 "boundary_orp",
                 "boundary_municipality",
-                "place_settlements"
+                "place_settlements",
+                "community_places"
               ]
             }
           },
@@ -11753,7 +11756,8 @@
               "boundary_district",
               "boundary_orp",
               "boundary_municipality",
-              "place_settlements"
+              "place_settlements",
+              "community_places"
             ]
           },
           "layerId": {

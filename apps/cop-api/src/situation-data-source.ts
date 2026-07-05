@@ -17,6 +17,7 @@ export type SituationLayerId =
   | "boundary_municipality"
   | "boundary_orp"
   | "boundary_region"
+  | "community_places"
   | "fire"
   | "flood"
   | "ground"
@@ -341,6 +342,7 @@ const defaultConfig: SituationDataSourceConfig = {
     boundary_municipality: 6 * 60 * 60 * 1000,
     boundary_orp: 6 * 60 * 60 * 1000,
     boundary_region: 6 * 60 * 60 * 1000,
+    community_places: 6 * 60 * 60 * 1000,
     fire: 10 * 60 * 1000,
     flood: 5 * 60 * 1000,
     ground: 6 * 60 * 60 * 1000,
@@ -373,6 +375,7 @@ const defaultConfig: SituationDataSourceConfig = {
     chmi_weather_radar: 5 * 60 * 1000,
     chmi_weather_stations: 10 * 60 * 1000,
     chmi_weather_webcams: 10 * 60 * 1000,
+    community_context: 6 * 60 * 60 * 1000,
     weather_forecast: 10 * 60 * 1000,
     mobile_coverage_model: 10 * 60 * 1000,
     mobile_network_model: 10 * 60 * 1000,
@@ -414,6 +417,7 @@ const allowedLayerIds: SituationLayerId[] = [
   "boundary_district",
   "boundary_orp",
   "boundary_municipality",
+  "community_places",
   "place_settlements"
 ];
 
@@ -433,6 +437,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       boundary_municipality: readInteger(env.COP_SITUATION_DATA_BOUNDARY_MUNICIPALITY_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       boundary_orp: readInteger(env.COP_SITUATION_DATA_BOUNDARY_ORP_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       boundary_region: readInteger(env.COP_SITUATION_DATA_BOUNDARY_REGION_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      community_places: readInteger(env.COP_SITUATION_DATA_COMMUNITY_PLACES_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       fire: readInteger(env.COP_SITUATION_DATA_FIRE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       flood: readInteger(env.COP_SITUATION_DATA_FLOOD_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       ground: readInteger(env.COP_SITUATION_DATA_GROUND_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
@@ -465,6 +470,7 @@ export function createSituationDataSourceConfigFromEnv(env: Record<string, strin
       chmi_weather_radar: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_RADAR_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       chmi_weather_stations: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       chmi_weather_webcams: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_WEBCAMS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      community_context: readInteger(env.COP_SITUATION_DATA_COMMUNITY_CONTEXT_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_forecast: readInteger(env.COP_SITUATION_DATA_WEATHER_FORECAST_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_coverage_model: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile_network_model: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),

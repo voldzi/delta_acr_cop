@@ -318,6 +318,7 @@ export type SituationLayerId =
   | "boundary_orp"
   | "boundary_region"
   | "community"
+  | "community_places"
   | "fire"
   | "flight_airports"
   | "flight_airspaces"

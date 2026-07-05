@@ -6294,6 +6294,17 @@ function buildSituationRenderProperties(
       trailPoiLabel: trailPoi.label
     };
   }
+  const communityPlace = resolveCommunityPlacePresentation(feature);
+  if (communityPlace) {
+    return {
+      osmCategoryLabel: communityPlace.label,
+      osmPoi: true,
+      osmSymbolKey: getOsmCategoryIconKey(communityPlace.iconId),
+      situationStatusColor: communityPlace.color,
+      situationStatusLabel: "REFERENCE",
+      situationStatusTone: "info"
+    };
+  }
   const osmCategory = resolveOsmCategoryPresentation(feature);
   if (osmCategory) {
     return {
@@ -7434,6 +7445,30 @@ function resolveTrailPoiPresentation(feature: SituationFeature): { category: str
   };
 }
 
+function resolveCommunityPlacePresentation(feature: SituationFeature): { color: string; iconId: OsmCategoryIconId; label: string } | null {
+  if (feature.properties.layer !== "community_places") {
+    return null;
+  }
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const community = isRecord(providerProperties.community) ? providerProperties.community : {};
+  const display = isRecord(providerProperties.display) ? providerProperties.display : {};
+  const category = normalizeSituationCategory(
+    recordString(community, "categoryGroup")
+    ?? recordString(community, "category")
+    ?? feature.properties.category
+  );
+  const label = localizedDisplayValue(community.categoryLabelLocalized)
+    ?? recordString(display, "label")
+    ?? recordString(community, "categoryLabel")
+    ?? feature.properties.label
+    ?? communityPlaceCategoryLabel(category);
+  return {
+    color: recordString(display, "colorHex") ?? communityPlaceColor(category),
+    iconId: communityPlaceIconId(category),
+    label
+  };
+}
+
 function localizedDisplayValue(value: unknown): string | undefined {
   if (typeof value === "string" && value.trim().length > 0) {
     return value.trim();
@@ -7510,6 +7545,91 @@ function trailPoiIconId(category: string): OsmCategoryIconId {
       return "other";
     default:
       return "other";
+  }
+}
+
+function communityPlaceCategoryLabel(category: string): string {
+  switch (category) {
+    case "accessibility":
+      return "Přístupnost";
+    case "aed":
+    case "defibrillator":
+      return "AED";
+    case "charging":
+    case "charging_station":
+      return "Nabíjení";
+    case "drinking_water":
+    case "water":
+      return "Voda";
+    case "health":
+    case "healthcare":
+    case "pharmacy":
+      return "Zdravotní bod";
+    case "library":
+      return "Knihovna";
+    case "office":
+    case "public_service":
+    case "townhall":
+      return "Veřejná služba";
+    case "shower":
+      return "Sprcha";
+    case "shelter":
+      return "Přístřeší";
+    case "toilet":
+    case "wc":
+      return "WC";
+    default:
+      return "Komunitní místo";
+  }
+}
+
+function communityPlaceIconId(category: string): OsmCategoryIconId {
+  if (category.includes("aed") || category.includes("defibrillator")) {
+    return "aed";
+  }
+  if (category.includes("toilet") || category === "wc") {
+    return "toilet";
+  }
+  if (category.includes("water")) {
+    return "water";
+  }
+  if (category.includes("shower")) {
+    return "shower";
+  }
+  if (category.includes("charging")) {
+    return "charging";
+  }
+  if (category.includes("pharmacy") || category.includes("health")) {
+    return "pharmacy";
+  }
+  if (category.includes("shelter")) {
+    return "shelter";
+  }
+  if (category.includes("library")) {
+    return "library";
+  }
+  if (category.includes("office") || category.includes("townhall") || category.includes("public_service")) {
+    return "townhall";
+  }
+  return "community";
+}
+
+function communityPlaceColor(category: string): string {
+  switch (communityPlaceIconId(category)) {
+    case "aed":
+      return "#ef4444";
+    case "charging":
+      return "#facc15";
+    case "pharmacy":
+      return "#22c55e";
+    case "shelter":
+      return "#f59e0b";
+    case "toilet":
+      return "#a78bfa";
+    case "water":
+      return "#38bdf8";
+    default:
+      return "#14b8a6";
   }
 }
 
@@ -9664,6 +9784,7 @@ function situationLayerDisplayName(feature: SituationFeature): string {
   const labels: Record<string, string> = {
     air_quality: "Kvalita vzduchu",
     community: "Komunitní hlášení",
+    community_places: "Komunitní kontext",
     fire: "Požáry",
     flight_airports: "Letiště",
     flight_airspaces: "Letecký prostor",

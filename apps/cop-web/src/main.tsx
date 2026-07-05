@@ -20,6 +20,7 @@ import {
   Database,
   ExternalLink,
   FileText,
+  Footprints,
   Gauge,
   HelpCircle,
   History,
@@ -7510,6 +7511,61 @@ function TrailDetailSection({ feature }: { feature: SituationFeature }) {
   return null;
 }
 
+function CommunityPlaceDetailSection({ feature }: { feature: SituationFeature }) {
+  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const community = isRecord(providerProperties.community) ? providerProperties.community : {};
+  const tags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
+  const display = isRecord(providerProperties.display) ? providerProperties.display : {};
+  const categoryLabel = localizedTextValue(community.categoryLabelLocalized)
+    ?? recordString(community, "categoryLabel")
+    ?? recordString(display, "label")
+    ?? feature.properties.category
+    ?? "n/a";
+  const status = recordString(community, "communityStatus")
+    ?? recordString(providerProperties, "communityStatus")
+    ?? "reference_only";
+  return (
+    <ObjectDetailSection title="Komunitní kontext">
+      <DetailGrid
+        rows={[
+          ["Kategorie", categoryLabel],
+          ["Skupina", recordString(community, "categoryGroup") ?? "n/a"],
+          ["communityStatus", status],
+          ["Otevírací doba", communityRecordText(community, tags, "openingHours", "opening_hours")],
+          ["Přístup", communityRecordText(community, tags, "access")],
+          ["Bezbariérovost", communityRecordText(community, tags, "wheelchair")],
+          ["Poplatek", communityRecordText(community, tags, "fee")],
+          ["Platba", communityRecordText(community, tags, "payment")],
+          ["Web", communityRecordText(community, tags, "website")],
+          ["Atribuce", recordString(display, "attribution") ?? "OpenStreetMap contributors, licence ODbL 1.0"]
+        ]}
+      />
+      <p className="mobile-model-explanation">
+        Jde o referenci z OSM. Aktuální stav, dostupnost služby a provozní připravenost nejsou COP ani SIM ověřené.
+      </p>
+    </ObjectDetailSection>
+  );
+}
+
+function communityRecordText(primary: Record<string, unknown>, fallback: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = primary[key] ?? fallback[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+    if (Array.isArray(value)) {
+      const items = value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean);
+      if (items.length > 0) {
+        return items.join(", ");
+      }
+    }
+  }
+  return "n/a";
+}
+
 function localizedTextValue(value: unknown): string | undefined {
   if (typeof value === "string" && value.trim() !== "") {
     return value.trim();
@@ -12804,6 +12860,7 @@ function SituationFeatureDetail({
       {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
       {properties.layer === "traffic" ? <TrafficDetailSection apiBase={apiBase} authToken={authToken} feature={feature} onShareTransit={onShareTransit} /> : null}
       {properties.layer === "trail_routes" || properties.layer === "trail_poi" ? <TrailDetailSection feature={feature} /> : null}
+      {properties.layer === "community_places" ? <CommunityPlaceDetailSection feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherForecastArea ? (
         <ObjectDetailSection title="Předpověď počasí">
@@ -12852,6 +12909,7 @@ function SituationFeatureDetail({
 
       <div className="object-flags">
         <span className="situation-badge">KONTEXT</span>
+        {properties.layer === "community_places" ? <span className="situation-badge">OSM REFERENCE</span> : null}
         {isSafetyLayerId(properties.layer) ? <span className="warning-badge">VÝSTRAŽNÁ VRSTVA</span> : null}
         {properties.layer === "mobile_network" && isMobileNetworkModelEstimate(properties) ? <span className="warning-badge">MODELOVÝ ODHAD</span> : null}
         {properties.stale ? <span className="warning-badge">STARŠÍ DATA</span> : null}
@@ -15032,6 +15090,7 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     boundary_orp: "ORP",
     boundary_region: "Kraje",
     community: "Komunitní hlášení",
+    community_places: "Komunitní kontext",
     fire: "Požáry",
     flight_airports: "Letiště",
     flight_airspaces: "Letecké prostory",
@@ -16758,6 +16817,8 @@ function catalogGroupIcon(icon: string | undefined, size = 19): React.ReactNode 
       return <CloudSun size={size} />;
     case "database":
       return <Database size={size} />;
+    case "footprints":
+      return <Footprints size={size} />;
     case "map-pin":
       return <MapPin size={size} />;
     case "plane":
@@ -16792,6 +16853,9 @@ function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
   if (layer.layerId === "public.safety.air_quality") {
     return "Měřicí stanice kvality ovzduší";
   }
+  if (layer.layerId === "public.outdoor.community_places") {
+    return "Referenční OSM body, ne ověřený operační stav";
+  }
   if (layer.layerId === "public.weather.temperature_grid") {
     return "Plošná teplotní vrstva";
   }
@@ -16820,6 +16884,9 @@ function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
 
 function catalogLayerProviderLabel(layer: MapCatalogLayer): string {
   if (layer.query.providerId === "sim.situation-data") {
+    if (layer.layerId === "public.outdoor.community_places" || (layer.query.providerSourceIds ?? []).includes("community_context")) {
+      return "Komunitní kontext";
+    }
     if (layer.groupId === "risks.weather" || layer.layerId.startsWith("public.weather.") || layer.layerId === "public.safety.air_quality") {
       if ((layer.query.providerSourceIds ?? []).includes("chmi_weather_radar")) {
         return "ČHMÚ radar";
@@ -17724,6 +17791,7 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     || value === "boundary_orp"
     || value === "boundary_municipality"
     || value === "community"
+    || value === "community_places"
     || value === "fire"
     || value === "flight_airports"
     || value === "flight_airspaces"
@@ -17802,6 +17870,10 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "public.trails.poi":
     case "outdoor.osm_postgis.trail_poi":
       return "trail_poi";
+    case "community_places":
+    case "outdoor.community.places":
+    case "public.outdoor.community_places":
+      return "community_places";
     case "weather.wind":
     case "weather.wind_field":
     case "public.weather.wind_field":
