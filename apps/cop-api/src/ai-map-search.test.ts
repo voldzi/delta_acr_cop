@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { AiCopQuery } from "@cop/ai-gateway";
 
 import {
   aiMapActionsFromMapSearchContext,
   aiMapCatalogLayerMatchesMapSearchIntent,
+  aiMapSearchFallbackResponse,
   aiSituationFeatureMatchesMapSearchIntent,
   inferAiMapSearchIntent,
   simSearchEntityTypesForAiMapSearchIntent,
@@ -130,6 +132,46 @@ describe("AI map search", () => {
       "thunderstorm_risk"
     ]);
     expect(simSearchSourceSystemsForAiMapSearchIntent(intent)).toEqual(["weather_forecast", "chmi_weather_radar"]);
+  });
+
+  it("answers direct rain questions from SIM weather metrics", () => {
+    const aiRequest: AiCopQuery = {
+      context: {
+        mapSearch: {
+          results: [
+            {
+              category: "weather",
+              metrics: {
+                precipitation1hMm: 0,
+                relativeHumidityPercent: 91,
+                temperatureC: 22.5,
+                windGustMps: 8.1,
+                windSpeedMps: 6.27
+              },
+              sourceName: "sim.situation-data",
+              title: "Weather near map center",
+              updatedAt: "2026-07-06T05:15:00.000Z",
+              validFrom: "2026-07-06T05:15:00.000Z",
+              validUntil: "2026-07-06T08:15:00.000Z"
+            }
+          ]
+        },
+        question: "Bude dnes ve Vrbně pod Pradědem a okolí pršet?"
+      },
+      outputFormat: "MARKDOWN",
+      prompt: "Dotaz uživatele: Bude dnes ve Vrbně pod Pradědem a okolí pršet?",
+      providerPreference: "auto",
+      purpose: "COP_EXPLANATION",
+      requestId: "test-weather-rain",
+      safetyScope: "COP_DATA_ASSISTANCE_ONLY"
+    };
+
+    const response = aiMapSearchFallbackResponse(aiRequest, new Date("2026-07-06T05:29:00.000Z"), "test");
+
+    expect(response?.result.summary).toContain("Odpověď: Déšť se v dostupném meteo výsledku spíše nepotvrzuje");
+    expect(response?.result.summary).toContain("srážky 1 h 0 mm");
+    expect(response?.result.summary).toContain("Pozor: tato entita pokrývá nejbližší časové okno");
+    expect(response?.result.summary).toContain("Meteo informace: Weather near map center");
   });
 
   it("extracts a clean place query from generic map searches with a location phrase", () => {

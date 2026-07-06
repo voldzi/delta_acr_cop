@@ -421,6 +421,7 @@ export function aiMapSearchFallbackResponse(
     citationText,
     distanceSentence,
     locationText,
+    question: optionalText(context?.question),
     title
   }) ?? [
     `Našel jsem v mapových datech COP: ${title}.`,
@@ -535,6 +536,7 @@ function aiMeasurementMapSearchSummary(
     citationText: string;
     distanceSentence: string | undefined;
     locationText: string | undefined;
+    question?: string;
     title: string;
   }
 ): string | undefined {
@@ -590,7 +592,9 @@ function aiMeasurementMapSearchSummary(
       metricValueText(metrics, ["pressureHpa", "pressureHpaSeaLevel"], "Tlak", "hPa")
     ].filter(Boolean);
     const valueText = values.length > 0 ? `Aktuální hodnoty: ${values.join(", ")}.` : "Aktuální číselné meteo hodnoty nejsou v dostupném výsledku uvedené.";
+    const answerText = aiWeatherDirectAnswer(input.question, metrics, result);
     return [
+      answerText,
       `Meteo informace: ${input.title}.`,
       valueText,
       observedText,
@@ -601,6 +605,103 @@ function aiMeasurementMapSearchSummary(
     ].filter(Boolean).join(" ");
   }
 
+  return undefined;
+}
+
+function aiWeatherDirectAnswer(question: string | undefined, metrics: Record<string, unknown>, result: Record<string, unknown>): string | undefined {
+  const normalizedQuestion = normalizeAiMapSearchText(question ?? "");
+  const asksRain = /\b(?:bude prset|prset|prsi|dest|deste|srazk|rain|precipitation)\b/u.test(normalizedQuestion);
+  const asksStorm = /\b(?:bourka|bourky|blizi se bourka|storm|thunderstorm)\b/u.test(normalizedQuestion);
+  if (!asksRain && !asksStorm) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  if (asksRain) {
+    parts.push(aiWeatherRainAnswer(metrics));
+  }
+  if (asksStorm) {
+    parts.push(aiWeatherStormAnswer(metrics));
+  }
+  const coverage = aiWeatherCoverageCaveat(normalizedQuestion, result);
+  return [`Odpověď: ${parts.join(" ")}`, coverage].filter(Boolean).join(" ");
+}
+
+function aiWeatherRainAnswer(metrics: Record<string, unknown>): string {
+  const precipitationProbability = metricPercentNumber(metrics, [
+    "precipitationProbabilityPct",
+    "precipitationProbabilityPercent",
+    "precipitationProbability",
+    "rainProbability"
+  ]);
+  const precipitation10mMm = metricNumber(metrics, ["precipitation10mMm"]);
+  const precipitation1hMm = metricNumber(metrics, ["precipitation1hMm", "precipitationHourlyMm", "precipitationMm", "rainMm"]);
+  const precipitation3hMm = metricNumber(metrics, ["precipitation3hMm", "precipitationThreeHourMm"]);
+  const amounts = [precipitation10mMm, precipitation1hMm, precipitation3hMm].filter((value): value is number => value !== undefined);
+  const maxPrecipitationMm = amounts.length > 0 ? Math.max(...amounts) : undefined;
+  const evidence = [
+    precipitationProbability !== undefined ? `pravděpodobnost srážek ${formatMetricNumber(precipitationProbability)} %` : undefined,
+    precipitation10mMm !== undefined ? `srážky 10 min ${formatMetricNumber(precipitation10mMm)} mm` : undefined,
+    precipitation1hMm !== undefined ? `srážky 1 h ${formatMetricNumber(precipitation1hMm)} mm` : undefined,
+    precipitation3hMm !== undefined ? `srážky 3 h ${formatMetricNumber(precipitation3hMm)} mm` : undefined
+  ].filter(Boolean).join(", ");
+  const suffix = evidence ? ` (${evidence}).` : ".";
+  if ((precipitationProbability ?? 0) >= 60 || (maxPrecipitationMm ?? 0) >= 1) {
+    return `Ano, déšť je podle dostupného meteo výsledku pravděpodobný${suffix}`;
+  }
+  if ((precipitationProbability ?? 0) >= 30 || (maxPrecipitationMm ?? 0) >= 0.1) {
+    return `Déšť je podle dostupného meteo výsledku možný${suffix}`;
+  }
+  if (precipitationProbability !== undefined || maxPrecipitationMm !== undefined) {
+    return `Déšť se v dostupném meteo výsledku spíše nepotvrzuje${suffix}`;
+  }
+  return "Na déšť nelze z dostupné meteo entity spolehlivě odpovědět, protože neobsahuje srážkovou pravděpodobnost ani úhrn.";
+}
+
+function aiWeatherStormAnswer(metrics: Record<string, unknown>): string {
+  const thunderstormProbability = metricPercentNumber(metrics, [
+    "thunderstormProbabilityPct",
+    "thunderstormProbabilityPercent",
+    "thunderstormProbability",
+    "stormProbability"
+  ]);
+  const risk = metricRawText(metrics, ["risk", "riskLevel", "riskCategory", "weatherRisk"], "riziko");
+  const evidence = [
+    thunderstormProbability !== undefined ? `pravděpodobnost bouřky ${formatMetricNumber(thunderstormProbability)} %` : undefined,
+    risk
+  ].filter(Boolean).join(", ");
+  const suffix = evidence ? ` (${evidence}).` : ".";
+  if ((thunderstormProbability ?? 0) >= 50) {
+    return `Bouřka je podle dostupného meteo výsledku zvýšeně pravděpodobná${suffix}`;
+  }
+  if ((thunderstormProbability ?? 0) >= 20) {
+    return `Bouřka je podle dostupného meteo výsledku možná${suffix}`;
+  }
+  if (thunderstormProbability !== undefined) {
+    return `Bouřka se v dostupném meteo výsledku spíše nepotvrzuje${suffix}`;
+  }
+  return risk
+    ? `Bouřkové riziko posuďte podle uvedeného rizika (${risk}).`
+    : "Na bouřku nelze z dostupné meteo entity spolehlivě odpovědět, protože neobsahuje pravděpodobnost bouřky.";
+}
+
+function aiWeatherCoverageCaveat(normalizedQuestion: string, result: Record<string, unknown>): string | undefined {
+  if (!/\b(?:dnes|today)\b/u.test(normalizedQuestion)) {
+    return undefined;
+  }
+  const validFrom = optionalText(result.validFrom);
+  const validUntil = optionalText(result.validUntil);
+  if (!validFrom || !validUntil) {
+    return "Pro celý den v dostupné entitě nevidím časové pokrytí; pro detail otevřete meteogram.";
+  }
+  const from = new Date(validFrom);
+  const until = new Date(validUntil);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(until.getTime())) {
+    return undefined;
+  }
+  const coverageHours = (until.getTime() - from.getTime()) / 3_600_000;
+  if (coverageHours > 0 && coverageHours < 10) {
+    return `Pozor: tato entita pokrývá nejbližší časové okno do ${formatAiCzechDateTime(validUntil)}, ne celý den.`;
+  }
   return undefined;
 }
 
@@ -617,6 +718,24 @@ function aiMetricValidityText(result: Record<string, unknown>): string | undefin
     return `Platnost do: ${formatAiCzechDateTime(validUntil)}.`;
   }
   return undefined;
+}
+
+function metricNumber(metrics: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = optionalFiniteNumber(metrics[key], -1_000_000, 1_000_000);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function metricPercentNumber(metrics: Record<string, unknown>, keys: string[]): number | undefined {
+  const value = metricNumber(metrics, keys);
+  if (value === undefined) {
+    return undefined;
+  }
+  return value <= 1 ? value * 100 : value;
 }
 
 function metricValueText(

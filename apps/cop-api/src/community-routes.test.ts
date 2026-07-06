@@ -2486,7 +2486,7 @@ describe("community report routes", () => {
           },
           label: "Moje poloha"
         },
-        question: "Bude pršet? Blíží se bouřka?"
+        question: "Bude dnes pršet? Blíží se bouřka?"
       },
       url: "/api/v1/ai/chat-agent/query"
     });
@@ -2504,6 +2504,9 @@ describe("community report routes", () => {
       provider: "local",
       status: "COMPLETED"
     });
+    expect(aiResponse.result.summary).toContain("Odpověď: Ano, déšť je podle dostupného meteo výsledku pravděpodobný");
+    expect(aiResponse.result.summary).toContain("Bouřka je podle dostupného meteo výsledku možná");
+    expect(aiResponse.result.summary).toContain("Pozor: tato entita pokrývá nejbližší časové okno");
     expect(aiResponse.result.summary).toContain("Meteo informace: Předpověď pro Vrbno pod Pradědem");
     expect(aiResponse.result.summary).toContain("Srážky 10 min 0,8 mm");
     expect(aiResponse.result.summary).toContain("Srážky 1 h 2,4 mm");
