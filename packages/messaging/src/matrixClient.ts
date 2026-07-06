@@ -39,6 +39,7 @@ interface MatrixClientLike {
   sendReadReceipt?: (event: MatrixEventLike, receiptType?: string) => Promise<unknown>;
   sendEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string) => Promise<unknown>;
   sendMessage?: (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
+  setPusher?: (pusher: Record<string, unknown>) => Promise<unknown>;
   sendStateEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, stateKey?: string) => Promise<unknown>;
   sendTextMessage?: (roomId: string, body: string) => Promise<unknown>;
   setRoomReadMarkers?: (roomId: string, readMarkerEventId: string, readReceiptEvent?: MatrixEventLike) => Promise<unknown>;
@@ -89,6 +90,15 @@ interface MatrixSdkLike {
       processPollEvents?: (events: unknown[]) => Promise<void> | void;
     };
   };
+}
+
+interface MatrixWebPushPusherOptions {
+  appDisplayName?: string;
+  appId?: string;
+  deviceDisplayName?: string;
+  deviceId?: string;
+  lang?: string;
+  pushGatewayUrl?: string;
 }
 
 interface MatrixRoomLike {
@@ -155,6 +165,7 @@ export async function createMatrixMessagingSession(
     profile?: MatrixUserProfileSyncInput;
     onSyncState?: (state: string) => void;
     onTimelineChanged?: () => void;
+    webPush?: MatrixWebPushPusherOptions;
   } = {}
 ): Promise<MatrixMessagingSession> {
   validateBootstrap(bootstrap);
@@ -329,6 +340,7 @@ export async function createMatrixMessagingSession(
   await refreshJoinedRoomIds();
   await client.startClient?.({ initialSyncLimit: 30 });
   void syncMatrixUserProfile(client, bootstrap, callbacks.profile).catch(() => undefined);
+  void syncMatrixWebPushPusher(client, homeserverBaseUrl, callbacks.webPush).catch(() => undefined);
   void client.setPresence?.({ presence: "online" }).catch(() => undefined);
   await joinInvitedRooms();
   await refreshJoinedRoomIds();
@@ -753,6 +765,32 @@ async function syncMatrixUserProfile(
   if (avatarMxcUrl && currentProfile?.avatar_url !== avatarMxcUrl) {
     await client.setAvatarUrl(avatarMxcUrl).catch(() => undefined);
   }
+}
+
+async function syncMatrixWebPushPusher(
+  client: MatrixClientLike,
+  homeserverBaseUrl: string,
+  options: MatrixWebPushPusherOptions | undefined
+): Promise<void> {
+  const deviceId = options?.deviceId?.trim();
+  if (!deviceId || typeof client.setPusher !== "function") {
+    return;
+  }
+
+  const pushGatewayUrl =
+    options?.pushGatewayUrl?.trim() || new URL("/api/v1/matrix/push/notify", homeserverBaseUrl).toString();
+
+  await client.setPusher({
+    app_display_name: options?.appDisplayName?.trim() || "COP Chat",
+    app_id: options?.appId?.trim() || "cz.zeleznalady.cop.web",
+    data: {
+      url: pushGatewayUrl
+    },
+    device_display_name: options?.deviceDisplayName?.trim() || "COP web",
+    kind: "http",
+    lang: options?.lang?.trim() || "cs",
+    pushkey: deviceId
+  });
 }
 
 async function resolveProfileAvatarMxcUrl(

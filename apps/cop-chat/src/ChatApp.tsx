@@ -301,6 +301,7 @@ interface ChatIdentityProfile {
 
 const apiBase = trimTrailingSlash(import.meta.env.VITE_COP_API_BASE_URL ?? "");
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
+const webPushDeviceIdStorageKey = "cop.webPush.deviceId.v1";
 const copUserPreferencesStorageKey = "cop.user.preferences.v1";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const initialHistoryLoadRetryLimit = 8;
@@ -450,6 +451,7 @@ export function ChatApp() {
     () => chatIdentityFor(authSession, authConfig, serverUserProfile, localUserPreferences),
     [authConfig, authSession, localUserPreferences, serverUserProfile]
   );
+  const matrixWebPushDeviceId = React.useMemo(readStoredWebPushDeviceId, [refreshNonce]);
   const handleMatrixRoomsChanged = React.useCallback((nextRooms: MatrixRoomSummary[], preferredSelection?: string | null) => {
     setRooms(nextRooms);
     setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversationsRef.current, nextRooms));
@@ -472,6 +474,7 @@ export function ChatApp() {
     authToken,
     conversationsRef,
     matrixProfile: chatIdentity.matrixProfile,
+    matrixWebPushDeviceId,
     onError: setError,
     onNotice: setNotice,
     onRoomsChanged: handleMatrixRoomsChanged,
@@ -7059,6 +7062,14 @@ function readLocalUserPreferences(ownerId: string): LocalUserPreferences {
     };
   } catch {
     return {};
+  }
+}
+
+function readStoredWebPushDeviceId(): string | undefined {
+  try {
+    return window.localStorage.getItem(webPushDeviceIdStorageKey) ?? undefined;
+  } catch {
+    return undefined;
   }
 }
 

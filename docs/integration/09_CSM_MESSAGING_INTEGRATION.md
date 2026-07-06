@@ -306,6 +306,19 @@ registered web devices. Push payloads for chat should include `deepLink`,
 `conversationId` or `roomId`; the COP service worker opens `/chat/<selection>`
 for chat payloads and keeps map alert/report deep links in the map shell.
 
+When a registered browser device opens COP Chat, the Matrix client also registers
+an HTTP pusher:
+
+```text
+app_id=cz.zeleznalady.cop.web
+pushkey=<CSM web deviceId>
+data.url=https://msg.zeleznalady.cz/api/v1/matrix/push/notify
+```
+
+The `pushkey` is the CSM device id returned by COP Web Push registration, not a
+browser subscription secret. CSM Messaging resolves it server-side and sends a
+minimal Web Push payload with a chat deep link.
+
 Authenticated clients also read and create conversation metadata through COP:
 
 ```http
@@ -378,11 +391,10 @@ Its production runtime serves the built SPA and exposes a same-origin
 the browser flow working when the public COP origin must exchange tokens with a
 Keycloak host that resolves to a private pilot address.
 When the standalone chat page is open and the user explicitly grants browser
-notification permission, incoming Matrix messages can raise browser-native
-notifications. The client suppresses notifications for the operator's own
-messages, muted chats and the currently focused open room. This is an
-in-page browser notification flow, not a background push delivery path for a
-closed browser.
+notification permission, incoming Matrix messages can also raise browser-native
+in-page notifications. The client suppresses notifications for the operator's
+own messages, muted chats and the currently focused open room. Background push
+for a closed browser uses the Matrix HTTP pusher described above.
 
 COP Chat also exposes per-chat automatic message removal in the conversation
 information panel. The client stores the selected interval in Matrix room state

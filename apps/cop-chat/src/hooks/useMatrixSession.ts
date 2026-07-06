@@ -106,6 +106,7 @@ interface UseMatrixSessionOptions {
   authToken: string | null | undefined;
   conversationsRef: React.MutableRefObject<MessagingConversationSummary[]>;
   matrixProfile: MatrixUserProfileSyncInput | undefined;
+  matrixWebPushDeviceId?: string;
   onError: (message: string | null) => void;
   onNotice: (message: string | null) => void;
   onRoomsChanged: (rooms: MatrixRoomSummary[], preferredSelection?: string | null) => void;
@@ -173,7 +174,11 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
         },
         onSyncState: (nextSyncState) => dispatch({ type: "sync-state", syncState: nextSyncState }),
         onTimelineChanged: currentOptions.onTimelineChanged,
-        profile: currentOptions.matrixProfile
+        profile: currentOptions.matrixProfile,
+        webPush: currentOptions.matrixWebPushDeviceId ? {
+          deviceId: currentOptions.matrixWebPushDeviceId,
+          lang: typeof navigator !== "undefined" ? navigator.language || "cs" : "cs"
+        } : undefined
       });
       const nextRooms = nextSession.getRooms();
       const recoveryStatus = await nextSession.getEncryptionRecoveryStatus();

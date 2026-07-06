@@ -20,6 +20,7 @@ type MockMatrixClient = {
   sendStateEvent?: MatrixSendStateEvent;
   setAvatarUrl?: (mxcUrl: string) => Promise<unknown>;
   setDisplayName?: (displayName: string) => Promise<unknown>;
+  setPusher?: (pusher: Record<string, unknown>) => Promise<unknown>;
   scrollback?: MatrixScrollback;
   startClient: () => Promise<void>;
   uploadContent?: (file: Blob | File, opts?: Record<string, unknown>) => Promise<{ content_uri?: string; contentUri?: string }>;
@@ -132,6 +133,28 @@ describe("Matrix client diagnostics", () => {
       type: "image/png"
     })));
     expect(setAvatarUrl).toHaveBeenCalledWith("mxc://cop.local/avatar");
+  });
+
+  it("registers a Matrix web pusher for COP browser notifications", async () => {
+    const setPusher = vi.fn<NonNullable<MockMatrixClient["setPusher"]>>().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
+      rooms: [createRoom({ roomId: "!chat:cop.local" })],
+      setPusher
+    }));
+
+    await createMatrixMessagingSession(createBootstrap(), {
+      webPush: { deviceId: "web_device-1", lang: "cs-CZ" }
+    });
+
+    await vi.waitFor(() => expect(setPusher).toHaveBeenCalledWith(expect.objectContaining({
+      app_display_name: "COP Chat",
+      app_id: "cz.zeleznalady.cop.web",
+      data: { url: "https://msg.zeleznalady.cz/api/v1/matrix/push/notify" },
+      device_display_name: "COP web",
+      kind: "http",
+      lang: "cs-CZ",
+      pushkey: "web_device-1"
+    })));
   });
 
   it("refreshes direct chat avatars from Matrix profile info when room member state has no avatar", async () => {
@@ -1030,6 +1053,7 @@ function createMockMatrixClient({
   sendStateEvent = vi.fn<MatrixSendStateEvent>().mockResolvedValue(undefined),
   setAvatarUrl,
   setDisplayName,
+  setPusher,
   scrollback,
   uploadContent
 }: {
@@ -1047,6 +1071,7 @@ function createMockMatrixClient({
   sendStateEvent?: MockMatrixClient["sendStateEvent"];
   setAvatarUrl?: MockMatrixClient["setAvatarUrl"];
   setDisplayName?: MockMatrixClient["setDisplayName"];
+  setPusher?: MockMatrixClient["setPusher"];
   scrollback?: MockMatrixClient["scrollback"];
   uploadContent?: MockMatrixClient["uploadContent"];
 }): MockMatrixClient {
@@ -1068,6 +1093,7 @@ function createMockMatrixClient({
     sendStateEvent,
     ...(setAvatarUrl ? { setAvatarUrl } : {}),
     ...(setDisplayName ? { setDisplayName } : {}),
+    ...(setPusher ? { setPusher } : {}),
     ...(scrollback ? { scrollback } : {}),
     ...(uploadContent ? { uploadContent } : {}),
     startClient: () => Promise.resolve()
