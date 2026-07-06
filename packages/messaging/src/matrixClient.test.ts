@@ -393,6 +393,52 @@ describe("Matrix client diagnostics", () => {
     expect(second.messages.map((message) => message.body)).toEqual(["synced after first attempt"]);
   });
 
+  it("does not mark partially synced room history exhausted while a pagination token remains", async () => {
+    const timeline: unknown[] = [createMessageEvent("recent", Date.parse("2026-06-24T11:00:00.000Z"))];
+    const room = createRoom({ paginationToken: "older-token", roomId: "!chat:cop.local", timeline });
+    const scrollback = vi.fn<MatrixScrollback>().mockResolvedValue(room);
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [room],
+        scrollback
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    const first = await session.loadMoreTimeline("!chat:cop.local", 50);
+    timeline.unshift(createMessageEvent("older", Date.parse("2026-06-24T10:59:00.000Z")));
+    const second = await session.loadMoreTimeline("!chat:cop.local", 50);
+
+    expect(first.exhausted).toBe(false);
+    expect(scrollback).toHaveBeenCalledTimes(2);
+    expect(second.messages.map((message) => message.body)).toEqual(["older", "recent"]);
+  });
+
+  it("marks room history exhausted only when Matrix reports no backward pagination token", async () => {
+    const room = createRoom({
+      paginationToken: null,
+      roomId: "!chat:cop.local",
+      timeline: [createMessageEvent("recent", Date.parse("2026-06-24T11:00:00.000Z"))]
+    });
+    const scrollback = vi.fn<MatrixScrollback>().mockResolvedValue(room);
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [room],
+        scrollback
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    const first = await session.loadMoreTimeline("!chat:cop.local", 50);
+    const second = await session.loadMoreTimeline("!chat:cop.local", 50);
+
+    expect(first.exhausted).toBe(true);
+    expect(second.exhausted).toBe(true);
+    expect(scrollback).toHaveBeenCalledTimes(1);
+  });
+
   it("hides local cached rooms that are no longer joined on the homeserver", async () => {
     matrixSdkMock.createClient.mockReturnValue(
       createMockMatrixClient({
@@ -1254,11 +1300,13 @@ function createMockMatrixClient({
 
 function createRoom({
   members,
+  paginationToken,
   retentionSeconds,
   roomId,
   timeline = []
 }: {
   members?: Array<{ avatarUrl?: string; displayName?: string; userId: string }>;
+  paginationToken?: string | null;
   retentionSeconds?: number;
   roomId: string;
   timeline?: unknown[];
@@ -1277,6 +1325,7 @@ function createRoom({
     getMyMembership: () => "join",
     getUnreadNotificationCount: () => 0,
     name: "Test Chat",
+    ...(paginationToken !== undefined ? { oldState: { paginationToken } } : {}),
     roomId,
     timeline
   };

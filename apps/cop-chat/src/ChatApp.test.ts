@@ -7,6 +7,7 @@ import {
   aiQuestionNeedsCurrentLocation,
   buildAiChatContextSnapshot,
   buildAiRequestContextOptions,
+  chatNotificationTag,
   composerQuickActions,
   composerSuggestions,
   formatAiAgentShareBody,
@@ -120,6 +121,14 @@ describe("composerQuickActions", () => {
       "Krizový přehled"
     ]);
     expect(composerQuickActions(false)).toEqual([]);
+  });
+});
+
+describe("chatNotificationTag", () => {
+  it("keeps repeated messages in one room from replacing each other", () => {
+    expect(chatNotificationTag("!room:cop.local", "$event-1")).not.toBe(
+      chatNotificationTag("!room:cop.local", "$event-2")
+    );
   });
 });
 

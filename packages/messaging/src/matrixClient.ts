@@ -130,6 +130,9 @@ interface MatrixRoomLike {
   getUnreadNotificationCount?: () => number;
   currentState?: MatrixRoomStateLike;
   name?: string;
+  oldState?: {
+    paginationToken?: string | null;
+  };
   relations?: MatrixRelationsContainerLike;
   roomId?: string;
   timeline?: unknown[];
@@ -516,11 +519,9 @@ export async function createMatrixMessagingSession(
         if (!room) {
           return { exhausted: false, messages: [] };
         }
-        const beforeCount = room.timeline?.length ?? 0;
         await client.scrollback(room, Math.max(1, Math.min(250, Math.trunc(limit))));
         const nextRoom = findMatrixRoom(client, roomId) ?? room;
-        const afterCount = nextRoom.timeline?.length ?? 0;
-        const exhausted = beforeCount > 0 && afterCount <= beforeCount;
+        const exhausted = nextRoom.oldState?.paginationToken === null;
         if (exhausted) {
           exhaustedTimelineRooms.add(roomId);
         }

@@ -326,6 +326,7 @@ const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
 const copUserPreferencesStorageKey = "cop.user.preferences.v1";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const initialHistoryLoadRetryLimit = 8;
+const initialHistoryWarmupMessageTarget = 50;
 const aiChatAgentJobPollIntervalMs = 1500;
 const aiChatAgentJobPollLimit = 90;
 const tomatoGameUrl = "https://games.zeleznalady.cz/tomato/";
@@ -363,6 +364,7 @@ export function ChatApp() {
   const [timelineRevision, setTimelineRevision] = React.useState(0);
   const [timelineCacheRevision, setTimelineCacheRevision] = React.useState(0);
   const [historyExhaustedByRoom, setHistoryExhaustedByRoom] = React.useState<Record<string, boolean>>({});
+  const [historyBackfillRevision, setHistoryBackfillRevision] = React.useState(0);
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const {
     clearChatSelection,
@@ -1156,7 +1158,7 @@ export function ChatApp() {
       return;
     }
     const currentTimeline = matrixSession.getTimeline(selectedRoomId);
-    if (attempts > 0 && currentTimeline.length > 0) {
+    if (attempts > 0 && currentTimeline.length >= initialHistoryWarmupMessageTarget) {
       return;
     }
     initialHistoryLoadAttemptsRef.current.set(loadKey, attempts + 1);
@@ -1168,7 +1170,16 @@ export function ChatApp() {
       void loadOlderMessages(selectedRoomId, 120, true);
     }, delayMs);
     return () => window.clearTimeout(timer);
-  }, [historyExhausted, historyLoading, matrixSession, selectedRoomId, syncState, timelineRevision]);
+  }, [
+    historyBackfillRevision,
+    historyExhausted,
+    historyLoading,
+    matrixSession,
+    selectedRoomId,
+    syncState,
+    timelineCacheRevision,
+    timelineRevision
+  ]);
 
   React.useEffect(() => {
     if (!matrixSession) {
@@ -3044,6 +3055,7 @@ export function ChatApp() {
     } finally {
       historyLoadingRoomsRef.current.delete(roomId);
       setHistoryLoading(historyLoadingRoomsRef.current.size > 0);
+      setHistoryBackfillRevision((value) => value + 1);
     }
   }
 
@@ -8301,12 +8313,16 @@ function showIncomingChatNotification(candidate: IncomingChatNotification, onOpe
   const notification = new window.Notification(title, {
     body,
     icon: "/icons/cop-icon.svg",
-    tag: `cop-chat-${candidate.room.roomId}`
+    tag: chatNotificationTag(candidate.room.roomId, candidate.message.eventId)
   });
   notification.onclick = () => {
     notification.close();
     onOpen();
   };
+}
+
+export function chatNotificationTag(roomId: string, eventId: string): string {
+  return `cop-chat-${roomId}-${eventId}`;
 }
 
 function updateApplicationBadge(count: number): void {

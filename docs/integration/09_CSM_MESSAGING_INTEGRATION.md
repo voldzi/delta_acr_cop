@@ -304,7 +304,10 @@ CSM Messaging may ignore unknown preference keys, but it should treat
 `chatMessages` as the explicit opt-in for background message notifications on
 registered web devices. Push payloads for chat should include `deepLink`,
 `conversationId` or `roomId`; the COP service worker opens `/chat/<selection>`
-for chat payloads and keeps map alert/report deep links in the map shell.
+for chat payloads and keeps map alert/report deep links in the map shell. When
+the payload includes a concrete Matrix `eventId` or message id, COP uses it in
+the browser notification tag so several quick messages in the same room do not
+replace each other in the PWA notification center.
 
 When a registered browser device opens COP Chat, the Matrix client also registers
 an HTTP pusher:

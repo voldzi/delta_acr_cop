@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260706-1";
+const COP_SW_VERSION = "cop-pwa-offline-20260706-2";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -81,6 +81,7 @@ self.addEventListener("push", (event) => {
   const body = typeof payload.body === "string" ? payload.body : undefined;
   const deepLink = normalizeNotificationUrl(payload.deepLink ?? payload.url ?? notificationPayloadUrl(payload));
   const severity = notificationPayloadSeverity(payload);
+  const tag = notificationPayloadTag(payload);
 
   event.waitUntil(
     self.registration.showNotification(title, {
@@ -96,7 +97,7 @@ self.addEventListener("push", (event) => {
       icon: "/icons/cop-icon-192.png",
       requireInteraction: ["critical", "high"].includes(severity),
       renotify: false,
-      tag: typeof payload.tag === "string" && payload.tag.trim() ? payload.tag.trim() : undefined,
+      tag,
       timestamp: Date.now()
     })
   );
@@ -365,4 +366,40 @@ function notificationPayloadType(payload) {
     }
   }
   return "notification";
+}
+
+function notificationPayloadTag(payload) {
+  const explicitTag = firstString(payload?.tag, payload?.data?.tag);
+  const type = notificationPayloadType(payload);
+  const eventId = firstString(
+    payload?.eventId,
+    payload?.messageId,
+    payload?.matrixEventId,
+    payload?.data?.eventId,
+    payload?.data?.messageId,
+    payload?.data?.matrixEventId
+  );
+  if ((type === "chat.message" || type === "message") && eventId) {
+    const scope = firstString(
+      payload?.roomId,
+      payload?.conversationId,
+      payload?.data?.roomId,
+      payload?.data?.conversationId
+    );
+    return `cop-chat-${safeNotificationTagPart(scope ?? "message")}-${safeNotificationTagPart(eventId)}`;
+  }
+  return explicitTag;
+}
+
+function firstString(...candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return undefined;
+}
+
+function safeNotificationTagPart(value) {
+  return String(value).replace(/\s+/gu, "_").slice(0, 140);
 }
