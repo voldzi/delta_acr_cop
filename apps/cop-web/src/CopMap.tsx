@@ -896,6 +896,7 @@ function CopMapComponent({
   const handledFocusViewRequestRef = React.useRef(0);
   const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
   const [mapReady, setMapReady] = React.useState(false);
+  const [mapTilesReady, setMapTilesReady] = React.useState(false);
   const [mapError, setMapError] = React.useState<string | null>(null);
   const [clusterInfo, setClusterInfo] = React.useState<ClusterInfo | null>(null);
   const [mapFullscreen, setMapFullscreen] = React.useState(false);
@@ -1196,6 +1197,7 @@ function CopMapComponent({
     });
 
     mapRef.current = map;
+    setMapTilesReady(false);
     const mapCanvas = map.getCanvas();
     const handleWebGlContextLost = (event: Event) => {
       event.preventDefault();
@@ -1206,11 +1208,16 @@ function CopMapComponent({
       requestMapResize(map);
     };
     const handleMapViewportResume = () => requestMapResize(map);
+    const removeMapViewportResumeHandlers = registerMapViewportResumeHandlers(handleMapViewportResume);
+    const handleInitialMapIdle = () => {
+      setMapTilesReady(true);
+      if (!mapStyleUrl) {
+        void warmRasterBasemapTileCache(map, tileUrl);
+      }
+    };
+    map.once("idle", handleInitialMapIdle);
     mapCanvas.addEventListener("webglcontextlost", handleWebGlContextLost);
     mapCanvas.addEventListener("webglcontextrestored", handleWebGlContextRestored);
-    window.addEventListener("resize", handleMapViewportResume);
-    window.addEventListener("focus", handleMapViewportResume);
-    document.addEventListener("visibilitychange", handleMapViewportResume);
     enableMapInteractions(map);
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     requestMapResize(map);
@@ -4409,9 +4416,8 @@ function CopMapComponent({
     return () => {
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
-      window.removeEventListener("resize", handleMapViewportResume);
-      window.removeEventListener("focus", handleMapViewportResume);
-      document.removeEventListener("visibilitychange", handleMapViewportResume);
+      removeMapViewportResumeHandlers();
+      map.off("idle", handleInitialMapIdle);
       mapCanvas.removeEventListener("webglcontextlost", handleWebGlContextLost);
       mapCanvas.removeEventListener("webglcontextrestored", handleWebGlContextRestored);
       map.remove();
@@ -5124,6 +5130,17 @@ function CopMapComponent({
         .join(" ")}
     >
       <div className="map-canvas" ref={containerRef} aria-label="Georeferencovaná situační mapa" />
+      {!mapTilesReady && !mapError ? (
+        <div className="map-loading-overlay" aria-live="polite">
+          <div className="map-loading-card">
+            <span className="map-loading-spinner" aria-hidden="true" />
+            <div>
+              <strong>Načítám mapový podklad</strong>
+              <span>Připravuji dlaždice pro aktuální výřez.</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {zoneCreationActive ? (
         <div className="map-zone-create-hint">
           <strong>Kreslení zóny</strong>
@@ -5739,6 +5756,88 @@ function requestMapResize(map: maplibregl.Map): void {
   }
   window.setTimeout(run, 120);
   window.setTimeout(run, 420);
+  window.setTimeout(run, 900);
+}
+
+export function registerMapViewportResumeHandlers(onResume: () => void): () => void {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+
+  const cleanups: Array<() => void> = [];
+  const addListener = (target: EventTarget | null | undefined, eventName: string) => {
+    if (!target || typeof target.addEventListener !== "function") {
+      return;
+    }
+    target.addEventListener(eventName, onResume, { passive: true });
+    cleanups.push(() => target.removeEventListener(eventName, onResume));
+  };
+
+  addListener(window, "resize");
+  addListener(window, "focus");
+  addListener(window, "pageshow");
+  addListener(window, "orientationchange");
+  addListener(typeof document === "undefined" ? null : document, "visibilitychange");
+  addListener(window.visualViewport, "resize");
+  addListener(window.visualViewport, "scroll");
+  addListener(window.screen?.orientation, "change");
+
+  return () => {
+    cleanups.splice(0).forEach((cleanup) => cleanup());
+  };
+}
+
+async function warmRasterBasemapTileCache(map: maplibregl.Map, tiles: string): Promise<void> {
+  if (typeof fetch !== "function" || !tiles.includes("{z}") || !tiles.includes("{x}") || !tiles.includes("{y}")) {
+    return;
+  }
+
+  const center = map.getCenter();
+  const z = clampInteger(Math.floor(map.getZoom()), 0, 19);
+  const centerTile = lonLatToTileCoordinate(center.lng, center.lat, z);
+  const maxTile = Math.max(0, 2 ** z - 1);
+  const urls = new Set<string>();
+
+  for (let dx = -1; dx <= 1; dx += 1) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      urls.add(
+        rasterTileUrl(tiles, z, clampInteger(centerTile.x + dx, 0, maxTile), clampInteger(centerTile.y + dy, 0, maxTile))
+      );
+    }
+  }
+
+  await Promise.allSettled(
+    Array.from(urls).map((url) =>
+      fetch(url, {
+        cache: "force-cache",
+        mode: "no-cors"
+      })
+    )
+  );
+}
+
+function lonLatToTileCoordinate(lon: number, lat: number, z: number): { x: number; y: number } {
+  const clampedLat = clampValue(lat, -85.05112878, 85.05112878);
+  const latRad = (clampedLat * Math.PI) / 180;
+  const tileCount = 2 ** z;
+  const x = Math.floor(((lon + 180) / 360) * tileCount);
+  const y = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * tileCount);
+
+  return {
+    x: clampInteger(x, 0, Math.max(0, tileCount - 1)),
+    y: clampInteger(y, 0, Math.max(0, tileCount - 1))
+  };
+}
+
+function rasterTileUrl(template: string, z: number, x: number, y: number): string {
+  return template.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.min(max, Math.max(min, Math.trunc(value)));
 }
 
 function setMapInteractionSuspended(map: maplibregl.Map, suspended: boolean): void {

@@ -4721,6 +4721,70 @@ h1 {
   touch-action: none;
 }
 
+.map-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(5, 9, 13, 0.58);
+  pointer-events: none;
+}
+
+.map-loading-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(360px, 100%);
+  padding: 13px 15px;
+  border: 1px solid rgba(164, 210, 235, 0.3);
+  border-radius: 8px;
+  background: rgba(8, 13, 18, 0.92);
+  color: var(--text);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
+}
+
+.map-loading-card strong,
+.map-loading-card span {
+  display: block;
+}
+
+.map-loading-card strong {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.map-loading-card span {
+  margin-top: 2px;
+  color: rgba(216, 226, 235, 0.76);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.map-loading-spinner {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  border: 3px solid rgba(164, 210, 235, 0.22);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: cop-map-loading-spin 900ms linear infinite;
+}
+
+@keyframes cop-map-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-loading-spinner {
+    animation: none;
+  }
+}
+
 .map-container.sketch-cursor-pan .map-canvas canvas {
   cursor: grab;
 }

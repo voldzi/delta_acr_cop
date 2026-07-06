@@ -12,6 +12,7 @@ import {
   objectsToPredictionFeatureCollection,
   objectsToTrackFeatureCollection,
   parseMapCenter,
+  registerMapViewportResumeHandlers,
   situationFeaturesToFeatureCollection,
   type SituationContextFeatureCollection,
   userAlertRadiusToFeatureCollection,
@@ -22,6 +23,39 @@ import { formatTrackLabel } from "./track-label";
 import { isTransitVehicleSelectionKey } from "./transport-presentation";
 
 describe("COP map data helpers", () => {
+  it("wires mobile PWA viewport resume events to map resize recovery", () => {
+    const fakeWindow = new EventTarget() as Window &
+      typeof globalThis & {
+        screen: { orientation: EventTarget };
+        visualViewport: EventTarget;
+      };
+    fakeWindow.visualViewport = new EventTarget() as VisualViewport & EventTarget;
+    fakeWindow.screen = { orientation: new EventTarget() } as Window["screen"];
+    const fakeDocument = new EventTarget() as Document;
+    const onResume = vi.fn();
+    vi.stubGlobal("window", fakeWindow);
+    vi.stubGlobal("document", fakeDocument);
+
+    try {
+      const cleanup = registerMapViewportResumeHandlers(onResume);
+
+      fakeWindow.dispatchEvent(new Event("pageshow"));
+      fakeWindow.dispatchEvent(new Event("orientationchange"));
+      fakeDocument.dispatchEvent(new Event("visibilitychange"));
+      fakeWindow.visualViewport.dispatchEvent(new Event("resize"));
+      fakeWindow.screen.orientation.dispatchEvent(new Event("change"));
+
+      expect(onResume).toHaveBeenCalledTimes(5);
+
+      cleanup();
+      fakeWindow.dispatchEvent(new Event("pageshow"));
+
+      expect(onResume).toHaveBeenCalledTimes(5);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("treats transient raster overlay tile failures as recoverable", () => {
     expect(
       isRecoverableMapError(
