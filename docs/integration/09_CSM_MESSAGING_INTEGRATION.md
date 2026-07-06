@@ -298,6 +298,14 @@ Messaging `POST /api/v1/devices` with `platform=web` and
 `pushProvider=webpush`. Delivery, deduplication and device lifecycle remain
 owned by CSM Messaging.
 
+COP web registers browser notification preferences for `safetyAlerts`,
+`watchedAreaAlerts`, `communityReports`, `chatMessages` and `system`.
+CSM Messaging may ignore unknown preference keys, but it should treat
+`chatMessages` as the explicit opt-in for background message notifications on
+registered web devices. Push payloads for chat should include `deepLink`,
+`conversationId` or `roomId`; the COP service worker opens `/chat/<selection>`
+for chat payloads and keeps map alert/report deep links in the map shell.
+
 Authenticated clients also read and create conversation metadata through COP:
 
 ```http

@@ -974,6 +974,11 @@ export function App() {
       window.removeEventListener("storage", handleChatStorage);
     };
   }, []);
+
+  React.useEffect(() => {
+    updateApplicationBadge(messagingUnreadCount);
+  }, [messagingUnreadCount]);
+
   const [incidentTaskDraft, setIncidentTaskDraft] = React.useState("");
   const [incidentWorkflowLoading, setIncidentWorkflowLoading] = React.useState(false);
   const [incidentWorkflowError, setIncidentWorkflowError] = React.useState<string | null>(null);
@@ -13363,6 +13368,24 @@ function ReadinessRow({ label, value, tone }: { label: string; value: string; to
       <strong>{value}</strong>
     </div>
   );
+}
+
+function updateApplicationBadge(count: number): void {
+  if (typeof navigator === "undefined") {
+    return;
+  }
+  const badgeNavigator = navigator as Navigator & {
+    clearAppBadge?: () => Promise<void>;
+    setAppBadge?: (contents?: number) => Promise<void>;
+  };
+  const normalizedCount = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+  if (normalizedCount > 0 && typeof badgeNavigator.setAppBadge === "function") {
+    void badgeNavigator.setAppBadge(Math.min(normalizedCount, 99)).catch(() => undefined);
+    return;
+  }
+  if (normalizedCount === 0 && typeof badgeNavigator.clearAppBadge === "function") {
+    void badgeNavigator.clearAppBadge().catch(() => undefined);
+  }
 }
 
 function webPushStatusLabel(state: WebPushUiState): string {

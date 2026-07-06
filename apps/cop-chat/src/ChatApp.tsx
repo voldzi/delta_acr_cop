@@ -581,6 +581,9 @@ export function ChatApp() {
     () => chatItems.reduce((count, item) => count + (!item.muted ? item.unreadCount : 0), 0),
     [chatItems]
   );
+  React.useEffect(() => {
+    updateApplicationBadge(totalUnreadCount);
+  }, [totalUnreadCount]);
   const activeMessageRetentionSeconds = selectedRoomId && Object.prototype.hasOwnProperty.call(retentionOverrideByRoom, selectedRoomId)
     ? retentionOverrideByRoom[selectedRoomId] ?? null
     : messageRetentionSecondsForActiveChat(selectedRoom, selectedGroup);
@@ -7371,6 +7374,24 @@ function showIncomingChatNotification(candidate: IncomingChatNotification, onOpe
     notification.close();
     onOpen();
   };
+}
+
+function updateApplicationBadge(count: number): void {
+  if (typeof navigator === "undefined") {
+    return;
+  }
+  const badgeNavigator = navigator as Navigator & {
+    clearAppBadge?: () => Promise<void>;
+    setAppBadge?: (contents?: number) => Promise<void>;
+  };
+  const normalizedCount = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+  if (normalizedCount > 0 && typeof badgeNavigator.setAppBadge === "function") {
+    void badgeNavigator.setAppBadge(Math.min(normalizedCount, 99)).catch(() => undefined);
+    return;
+  }
+  if (normalizedCount === 0 && typeof badgeNavigator.clearAppBadge === "function") {
+    void badgeNavigator.clearAppBadge().catch(() => undefined);
+  }
 }
 
 function incomingNotificationBody(message: MatrixTimelineMessage): string {

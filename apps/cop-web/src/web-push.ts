@@ -122,8 +122,11 @@ export async function enableWebPushNotifications(apiBase: string, token: string)
       deviceId,
       locale: navigator.language,
       notificationPreferences: {
+        chatMessages: true,
+        communityReports: true,
         safetyAlerts: true,
-        system: true
+        system: true,
+        watchedAreaAlerts: true
       },
       subscription: subscription.toJSON(),
       timezone

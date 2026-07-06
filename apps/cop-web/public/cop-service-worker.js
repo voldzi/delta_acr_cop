@@ -79,7 +79,7 @@ self.addEventListener("push", (event) => {
   const payload = parsePushPayload(event.data);
   const title = typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : "CSM";
   const body = typeof payload.body === "string" ? payload.body : undefined;
-  const deepLink = normalizeNotificationUrl(payload.deepLink ?? payload.url);
+  const deepLink = normalizeNotificationUrl(payload.deepLink ?? payload.url ?? notificationPayloadUrl(payload));
 
   event.waitUntil(
     self.registration.showNotification(title, {
@@ -237,7 +237,10 @@ function normalizeNotificationUrl(value) {
     return `/?reportId=${encodeURIComponent(trimmed.slice("csm://map/report/".length))}`;
   }
   if (trimmed.startsWith("csm://chat/room/")) {
-    return `/?roomId=${encodeURIComponent(trimmed.slice("csm://chat/room/".length))}`;
+    return `/chat/${encodeURIComponent(trimmed.slice("csm://chat/room/".length))}`;
+  }
+  if (trimmed.startsWith("csm://chat/conversation/")) {
+    return `/chat/${encodeURIComponent(trimmed.slice("csm://chat/conversation/".length))}`;
   }
   if (trimmed.startsWith("/")) {
     return trimmed;
@@ -251,4 +254,20 @@ function normalizeNotificationUrl(value) {
     // Unknown deep links open the app shell instead of leaking arbitrary URLs.
   }
   return "/";
+}
+
+function notificationPayloadUrl(payload) {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+  if (typeof payload.conversationId === "string" && payload.conversationId.trim()) {
+    return `/chat/${encodeURIComponent(payload.conversationId.trim())}`;
+  }
+  if (typeof payload.roomId === "string" && payload.roomId.trim()) {
+    return `/chat/${encodeURIComponent(payload.roomId.trim())}`;
+  }
+  if (payload.type === "chat.message" || payload.type === "message") {
+    return "/chat/";
+  }
+  return undefined;
 }
