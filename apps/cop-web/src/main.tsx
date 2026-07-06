@@ -416,6 +416,7 @@ const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["maneuver", "Manévr"]
 ];
 const defaultAoiCenter = { lat: 50.0755, lon: 14.4378 };
+const priorityAlertUserRadiusKm = 30;
 const mapFeatureFetchDelayMs = 450;
 const defaultMapBounds: MapBounds = { east: 19.1, north: 51.2, south: 48.5, west: 12 };
 const messagingDockWidthStorageKey = "cop.messaging.dockWidth.v1";
@@ -14185,9 +14186,18 @@ export function buildPriorityAlertSummary({
   userLocation
 }: PriorityAlertInput): PriorityAlertSummary {
   const reference = priorityAlertReference(userLocation, mapView);
+  if (reference.source !== "user") {
+    return {
+      additionalCount: 0,
+      primary: null,
+      reference,
+      total: 0
+    };
+  }
   const now = Date.now();
   const candidates = filterPublicSafetyAlertFeatures(features)
     .flatMap((feature) => priorityCandidateFromSituationFeature(feature, reference, now))
+    .filter((candidate) => candidate.distanceKm !== undefined && candidate.distanceKm <= priorityAlertUserRadiusKm)
     .sort(priorityAlertCandidateComparator);
 
   return {
@@ -14227,8 +14237,7 @@ function priorityCandidateFromSituationFeature(
     return [];
   }
   const validUntil = feature.properties.validUntil ?? feature.properties.expiresAt;
-  const location = situationFeatureReferencePoint(feature);
-  const distanceKm = location ? distanceBetweenKm(reference, location) : undefined;
+  const distanceKm = situationFeatureDistanceKmFromReference(feature, reference);
   const status = situationFeatureStatusModel(feature);
   const detail = [
     status.label,
@@ -14467,6 +14476,54 @@ function situationFeatureReferencePoint(feature: SituationFeature): { lat: numbe
     lat: (Math.min(...lats) + Math.max(...lats)) / 2,
     lon: (Math.min(...lons) + Math.max(...lons)) / 2
   };
+}
+
+function situationFeatureDistanceKmFromReference(
+  feature: SituationFeature,
+  reference: { lat: number; lon: number }
+): number | undefined {
+  if (feature.geometry.type === "Polygon" && pointInPolygon(reference, feature.geometry.coordinates)) {
+    return 0;
+  }
+  if (feature.geometry.type === "MultiPolygon" && feature.geometry.coordinates.some((polygon) => pointInPolygon(reference, polygon))) {
+    return 0;
+  }
+  const coordinates = collectSituationGeometryPoints(feature.geometry);
+  if (coordinates.length === 0) {
+    return undefined;
+  }
+  return Math.min(...coordinates.map((coordinate) => distanceBetweenKm(reference, coordinate)));
+}
+
+function pointInPolygon(point: { lat: number; lon: number }, polygon: number[][][]): boolean {
+  const outerRing = polygon[0] ?? [];
+  if (!pointInRing(point, outerRing)) {
+    return false;
+  }
+  return !polygon.slice(1).some((hole) => pointInRing(point, hole));
+}
+
+function pointInRing(point: { lat: number; lon: number }, ring: number[][]): boolean {
+  let inside = false;
+  for (let index = 0, previousIndex = ring.length - 1; index < ring.length; previousIndex = index++) {
+    const current = lonLatFromCoordinate(ring[index]);
+    const previous = lonLatFromCoordinate(ring[previousIndex]);
+    if (!current || !previous) {
+      continue;
+    }
+    const intersects = (current.lat > point.lat) !== (previous.lat > point.lat)
+      && point.lon < ((previous.lon - current.lon) * (point.lat - current.lat)) / (previous.lat - current.lat) + current.lon;
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function lonLatFromCoordinate(coordinate: number[] | undefined): { lat: number; lon: number } | undefined {
+  const lon = coordinate?.[0];
+  const lat = coordinate?.[1];
+  return typeof lat === "number" && Number.isFinite(lat) && typeof lon === "number" && Number.isFinite(lon) ? { lat, lon } : undefined;
 }
 
 function collectSituationGeometryPoints(geometry: SituationFeature["geometry"]): Array<{ lat: number; lon: number }> {

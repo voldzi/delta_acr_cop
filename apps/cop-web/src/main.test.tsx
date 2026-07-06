@@ -142,7 +142,7 @@ describe("COP web dashboard", () => {
     expect(groups.find((group) => group.layerIds.includes("public.weather.observations"))?.limit).toBe(500);
   });
 
-  it("builds a local priority alert from safety features by relevance", () => {
+  it("builds a local priority alert from user-location safety features by relevance", () => {
     const now = Date.now();
     const summary = buildPriorityAlertSummary({
       alerts: [],
@@ -182,12 +182,48 @@ describe("COP web dashboard", () => {
       mapView: { center: [14.4378, 50.0755], zoom: 11 },
       objects: [],
       proximityAlerts: [],
-      userLocation: null
+      userLocation: {
+        lat: 50.0755,
+        lon: 14.4378,
+        updatedAt: new Date(now).toISOString()
+      }
     });
 
     expect(summary.primary?.id).toBe("feature:hydro-near");
     expect(summary.primary?.badge).toBe("Hydrologie");
-    expect(summary.additionalCount).toBe(1);
+    expect(summary.additionalCount).toBe(0);
+    expect(summary.reference.source).toBe("user");
+  });
+
+  it("does not use map center as a fallback for the top priority alert strip", () => {
+    const now = Date.now();
+    const summary = buildPriorityAlertSummary({
+      alerts: [],
+      features: [
+        {
+          geometry: { coordinates: [14.438, 50.076], type: "Point" },
+          properties: {
+            category: "hydro_station",
+            featureId: "hydro-map-center",
+            floodStage: 2,
+            label: "Vltava Praha",
+            layer: "flood",
+            observedAt: new Date(now - 5 * 60_000).toISOString(),
+            sourceId: "chmi_hydro",
+            tags: { dataSource: "safety-data" },
+            validUntil: new Date(now + 60 * 60_000).toISOString()
+          },
+          type: "Feature"
+        }
+      ],
+      mapView: { center: [14.4378, 50.0755], zoom: 11 },
+      objects: [],
+      proximityAlerts: [],
+      userLocation: null
+    });
+
+    expect(summary.primary).toBeNull();
+    expect(summary.total).toBe(0);
     expect(summary.reference.source).toBe("map");
   });
 
@@ -231,7 +267,11 @@ describe("COP web dashboard", () => {
       mapView: { center: [14.4378, 50.0755], zoom: 11 },
       objects: [],
       proximityAlerts: [],
-      userLocation: null
+      userLocation: {
+        lat: 50.0755,
+        lon: 14.4378,
+        updatedAt: new Date(now).toISOString()
+      }
     });
 
     expect(summary.primary?.title).toBe("Vysoké teploty v okolí");
@@ -280,7 +320,11 @@ describe("COP web dashboard", () => {
       mapView: { center: [14.4378, 50.0755], zoom: 11 },
       objects: [],
       proximityAlerts: [],
-      userLocation: null
+      userLocation: {
+        lat: 50.0755,
+        lon: 14.4378,
+        updatedAt: new Date(now).toISOString()
+      }
     });
 
     expect(summary.primary?.id).toBe("feature:hzs-incident");
