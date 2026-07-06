@@ -1061,6 +1061,18 @@ export function App() {
     };
   }, [authSession.profile?.username, authSubjectId, authToken, authenticatedSessionActive, messagingOpen]);
 
+  const refreshWebPushState = React.useCallback(async () => {
+    try {
+      setWebPushState(await fetchWebPushConfig(apiBase));
+    } catch (error: unknown) {
+      setWebPushState((current) => ({
+        ...current,
+        status: "degraded",
+        warnings: [error instanceof Error ? error.message : "Nepodařilo se načíst nastavení webových notifikací."]
+      }));
+    }
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     void fetchWebPushConfig(apiBase)
@@ -1078,10 +1090,33 @@ export function App() {
           }));
         }
       });
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !cancelled) {
+        void refreshWebPushState();
+      }
+    };
+    const handleFocus = () => {
+      if (!cancelled) {
+        void refreshWebPushState();
+      }
+    };
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === "cop:pwa:pushsubscriptionchange" && !cancelled) {
+        void refreshWebPushState();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    navigator.serviceWorker?.addEventListener("message", handleServiceWorkerMessage);
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      navigator.serviceWorker?.removeEventListener("message", handleServiceWorkerMessage);
     };
-  }, []);
+  }, [refreshWebPushState]);
 
   const handleEnableWebPush = React.useCallback(async () => {
     if (!authenticatedSessionActive || !authToken) {
@@ -9665,6 +9700,11 @@ function WebPushSettingsPanel({
       </p>
       <ReadinessRow label="Stav" value={webPushStatusLabel(state)} tone={webPushStatusTone(state)} />
       <ReadinessRow label="Oprávnění prohlížeče" value={webPushPermissionLabel(state.permission)} tone={state.permission === "granted" ? "ok" : state.permission === "denied" ? "warn" : "neutral"} />
+      <ReadinessRow label="PWA režim" value={state.standalone ? "připnutá aplikace" : "běžný prohlížeč"} tone={state.standalone ? "ok" : "neutral"} />
+      <ReadinessRow label="Service worker" value={state.serviceWorkerReady ? "připraven" : "čeká"} tone={state.serviceWorkerReady ? "ok" : "neutral"} />
+      {state.subscriptionActive !== undefined ? (
+        <ReadinessRow label="Push odběr" value={state.subscriptionActive ? "aktivní" : "není aktivní"} tone={state.subscriptionActive ? "ok" : state.registered ? "warn" : "neutral"} />
+      ) : null}
       {state.deviceId ? <ReadinessRow label="Zařízení" value="registrovaný prohlížeč" tone={state.registered ? "ok" : "neutral"} /> : null}
       {!authenticated ? <div className="empty-mini">Webové notifikace vyžadují přihlášení. Mapa zůstává dostupná i bez účtu.</div> : null}
       {state.warnings.length > 0 ? (

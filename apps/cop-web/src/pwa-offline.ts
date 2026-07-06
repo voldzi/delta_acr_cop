@@ -20,9 +20,19 @@ export function registerCopServiceWorker(): void {
   }
 
   window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("/cop-service-worker.js").catch(() => {
-      // The app must remain usable even when a browser or policy blocks service workers.
-    });
+    void navigator.serviceWorker
+      .register("/cop-service-worker.js", { scope: "/", updateViaCache: "none" })
+      .then((registration) => {
+        void registration.update().catch(() => undefined);
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") {
+            void registration.update().catch(() => undefined);
+          }
+        });
+      })
+      .catch(() => {
+        // The app must remain usable even when a browser or policy blocks service workers.
+      });
   });
 }
 

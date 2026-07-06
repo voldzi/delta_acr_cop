@@ -227,6 +227,14 @@ CSM Messaging remains the only owner of delivery state. COP does not keep Web
 Push endpoint credentials beyond the forwarded request and never sends a push
 payload directly to a browser push service.
 
+The COP PWA service worker is registered at `/cop-service-worker.js` with root
+scope `/`. The web client treats a stored COP web device id as valid only when
+the browser still has an active `PushSubscription`; if the subscription is
+missing or was created for an old VAPID key, the client prompts for a fresh
+browser registration. Notification clicks are handled in the service worker:
+chat deep links prefer an existing `/chat/...` window, while map alert/report
+links prefer the map shell.
+
 For chat/message notifications, CSM Messaging should include either COP
 `conversationId` or Matrix `roomId` in the push metadata/deep link. iOS then
 loads COP conversation metadata through:

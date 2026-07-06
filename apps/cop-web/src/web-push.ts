@@ -6,7 +6,10 @@ export interface WebPushUiState {
   enabled: boolean;
   permission: NotificationPermission | "unsupported";
   registered: boolean;
+  serviceWorkerReady?: boolean;
+  standalone: boolean;
   status: WebPushStatus;
+  subscriptionActive?: boolean;
   warnings: string[];
 }
 
@@ -26,6 +29,7 @@ interface WebPushDeviceRegistrationResponse {
 
 const webPushDeviceIdStorageKey = "cop.webPush.deviceId.v1";
 const serviceWorkerPath = "/cop-service-worker.js";
+const serviceWorkerScope = "/";
 
 export function readWebPushPermissionState(): WebPushUiState {
   if (!isWebPushSupported()) {
@@ -33,6 +37,7 @@ export function readWebPushPermissionState(): WebPushUiState {
       enabled: false,
       permission: "unsupported",
       registered: false,
+      standalone: isPwaStandalone(),
       status: "unsupported",
       warnings: ["Tento prohlížeč nepodporuje webové push notifikace."]
     };
@@ -45,6 +50,7 @@ export function readWebPushPermissionState(): WebPushUiState {
     enabled: false,
     permission,
     registered: Boolean(deviceId) && permission === "granted",
+    standalone: isPwaStandalone(),
     status: permission === "denied" ? "permission-denied" : Boolean(deviceId) && permission === "granted" ? "registered" : "available",
     warnings: []
   };
@@ -57,12 +63,15 @@ export async function fetchWebPushConfig(apiBase: string): Promise<WebPushUiStat
 
   const config = await fetchJson<WebPushConfigResponse>(`${apiBase}/api/v1/push/web/config`);
   const current = readWebPushPermissionState();
+  const browserState = await readBrowserPushState();
   if (!config.enabled || config.status === "disabled") {
     return {
       ...current,
       enabled: false,
       registered: false,
+      serviceWorkerReady: browserState.serviceWorkerReady,
       status: "disabled",
+      subscriptionActive: browserState.subscriptionActive,
       warnings: config.warnings ?? []
     };
   }
@@ -72,16 +81,30 @@ export async function fetchWebPushConfig(apiBase: string): Promise<WebPushUiStat
       ...current,
       enabled: false,
       registered: false,
+      serviceWorkerReady: browserState.serviceWorkerReady,
       status: "degraded",
+      subscriptionActive: browserState.subscriptionActive,
       warnings: config.warnings?.length ? config.warnings : ["Webové notifikace nejsou připravené."]
     };
   }
 
+  const hasStoredRegistration = Boolean(current.deviceId) && current.permission === "granted";
+  const registered = hasStoredRegistration && browserState.subscriptionActive;
+  const staleWarnings =
+    hasStoredRegistration && !browserState.subscriptionActive
+      ? ["Registrace tohoto prohlížeče není aktivní. Zapněte webové notifikace znovu."]
+      : browserState.subscriptionActive && !current.deviceId
+        ? ["Prohlížeč má aktivní push odběr bez COP registrace. Zapněte webové notifikace znovu."]
+        : [];
+
   return {
     ...current,
     enabled: true,
-    status: current.status === "registered" ? "registered" : current.status === "permission-denied" ? "permission-denied" : "available",
-    warnings: config.warnings ?? []
+    registered,
+    serviceWorkerReady: browserState.serviceWorkerReady,
+    status: registered ? "registered" : current.status === "permission-denied" ? "permission-denied" : "available",
+    subscriptionActive: browserState.subscriptionActive,
+    warnings: [...(config.warnings ?? []), ...staleWarnings]
   };
 }
 
@@ -96,6 +119,7 @@ export async function enableWebPushNotifications(apiBase: string, token: string)
       enabled: false,
       permission: Notification.permission,
       registered: false,
+      standalone: isPwaStandalone(),
       status: config.status === "degraded" ? "degraded" : "disabled",
       warnings: config.warnings?.length ? config.warnings : ["Webové notifikace nejsou na serveru zapnuté."]
     };
@@ -107,12 +131,13 @@ export async function enableWebPushNotifications(apiBase: string, token: string)
       enabled: true,
       permission,
       registered: false,
+      standalone: isPwaStandalone(),
       status: "permission-denied",
       warnings: ["Prohlížeč nepovolil zobrazování notifikací."]
     };
   }
 
-  const registration = await navigator.serviceWorker.register(serviceWorkerPath);
+  const registration = await ensureServiceWorkerRegistration();
   const subscription = await subscribeBrowser(registration, config.vapidPublicKey);
   const deviceId = readStoredDeviceId() ?? createWebPushDeviceId();
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -147,7 +172,10 @@ export async function enableWebPushNotifications(apiBase: string, token: string)
     enabled: true,
     permission,
     registered: response.registered,
+    serviceWorkerReady: Boolean(registration.active ?? registration.waiting ?? registration.installing),
+    standalone: isPwaStandalone(),
     status: response.registered ? "registered" : response.status === "degraded" ? "degraded" : "disabled",
+    subscriptionActive: true,
     warnings: response.warnings ?? []
   };
 }
@@ -176,21 +204,53 @@ export async function disableWebPushNotifications(apiBase: string, token: string
     enabled: true,
     permission: Notification.permission,
     registered: false,
+    serviceWorkerReady: Boolean(registration?.active ?? registration?.waiting ?? registration?.installing),
+    standalone: isPwaStandalone(),
     status: Notification.permission === "denied" ? "permission-denied" : "available",
+    subscriptionActive: false,
     warnings: []
   };
 }
 
 async function subscribeBrowser(registration: ServiceWorkerRegistration, vapidPublicKey: string): Promise<PushSubscription> {
+  const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
   const existing = await registration.pushManager.getSubscription();
-  if (existing) {
+  if (existing && pushSubscriptionUsesApplicationServerKey(existing, applicationServerKey)) {
     return existing;
+  }
+  if (existing) {
+    await existing.unsubscribe().catch(() => undefined);
   }
 
   return registration.pushManager.subscribe({
-    applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+    applicationServerKey,
     userVisibleOnly: true
   });
+}
+
+async function ensureServiceWorkerRegistration(): Promise<ServiceWorkerRegistration> {
+  const registration = await navigator.serviceWorker.register(serviceWorkerPath, {
+    scope: serviceWorkerScope,
+    updateViaCache: "none"
+  });
+  await registration.update().catch(() => undefined);
+  return navigator.serviceWorker.ready;
+}
+
+async function readBrowserPushState(): Promise<{ serviceWorkerReady: boolean; subscriptionActive: boolean }> {
+  if (!isWebPushSupported()) {
+    return { serviceWorkerReady: false, subscriptionActive: false };
+  }
+  try {
+    const registration = await navigator.serviceWorker.getRegistration(serviceWorkerScope);
+    const subscription = await registration?.pushManager.getSubscription();
+    return {
+      serviceWorkerReady: Boolean(registration?.active ?? registration?.waiting ?? registration?.installing),
+      subscriptionActive: Boolean(subscription)
+    };
+  } catch {
+    return { serviceWorkerReady: false, subscriptionActive: false };
+  }
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -206,6 +266,30 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 function isWebPushSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
+}
+
+function isPwaStandalone(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+  return Boolean(
+    window.matchMedia?.("(display-mode: standalone)").matches
+      || window.matchMedia?.("(display-mode: fullscreen)").matches
+      || navigatorWithStandalone.standalone === true
+  );
+}
+
+function pushSubscriptionUsesApplicationServerKey(subscription: PushSubscription, expectedKey: Uint8Array<ArrayBuffer>): boolean {
+  const existingKey = subscription.options.applicationServerKey;
+  if (!existingKey) {
+    return true;
+  }
+  const existing = new Uint8Array(existingKey);
+  if (existing.byteLength !== expectedKey.byteLength) {
+    return false;
+  }
+  return existing.every((value, index) => value === expectedKey[index]);
 }
 
 function createWebPushDeviceId(): string {

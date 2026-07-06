@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260626-1";
+const COP_SW_VERSION = "cop-pwa-offline-20260706-1";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -80,42 +80,47 @@ self.addEventListener("push", (event) => {
   const title = typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : "CSM";
   const body = typeof payload.body === "string" ? payload.body : undefined;
   const deepLink = normalizeNotificationUrl(payload.deepLink ?? payload.url ?? notificationPayloadUrl(payload));
+  const severity = notificationPayloadSeverity(payload);
 
   event.waitUntil(
     self.registration.showNotification(title, {
+      actions: notificationActionsForUrl(deepLink),
       badge: "/icons/favicon-32.png",
       body,
       data: {
+        receivedAt: Date.now(),
+        severity,
+        type: notificationPayloadType(payload),
         url: deepLink
       },
       icon: "/icons/cop-icon-192.png",
+      requireInteraction: ["critical", "high"].includes(severity),
       renotify: false,
-      tag: typeof payload.tag === "string" && payload.tag.trim() ? payload.tag.trim() : undefined
+      tag: typeof payload.tag === "string" && payload.tag.trim() ? payload.tag.trim() : undefined,
+      timestamp: Date.now()
     })
   );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  if (event.action === "dismiss") {
+    return;
+  }
+
   const targetUrl = normalizeNotificationUrl(event.notification.data?.url) ?? "/";
 
-  event.waitUntil(
-    self.clients.matchAll({ includeUncontrolled: true, type: "window" }).then(async (clients) => {
-      for (const client of clients) {
-        const clientUrl = new URL(client.url);
-        if (clientUrl.origin === self.location.origin && "focus" in client) {
-          await client.focus();
-          if ("navigate" in client) {
-            await client.navigate(targetUrl);
-          }
-          return;
-        }
-      }
-      if (self.clients.openWindow) {
-        await self.clients.openWindow(targetUrl);
-      }
-    })
-  );
+  event.waitUntil(openBestClientWindow(targetUrl));
+});
+
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(notifyClients({ type: "cop:pwa:pushsubscriptionchange" }));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "cop:pwa:skip-waiting") {
+    void self.skipWaiting();
+  }
 });
 
 async function networkFirstAppShell(request) {
@@ -225,6 +230,62 @@ function parsePushPayload(data) {
   }
 }
 
+async function openBestClientWindow(targetUrl) {
+  const target = new URL(normalizeNotificationUrl(targetUrl) ?? "/", self.location.origin);
+  const clients = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
+  const rankedClients = clients
+    .filter((client) => {
+      try {
+        return new URL(client.url).origin === self.location.origin;
+      } catch {
+        return false;
+      }
+    })
+    .map((client) => ({
+      client,
+      score: scoreClientForTarget(client, target)
+    }))
+    .sort((left, right) => right.score - left.score);
+
+  const selected = rankedClients[0]?.client;
+  if (selected) {
+    const focused = "focus" in selected ? await selected.focus() : selected;
+    if ("navigate" in focused) {
+      await focused.navigate(`${target.pathname}${target.search}${target.hash}`);
+    }
+    return;
+  }
+
+  if (self.clients.openWindow) {
+    await self.clients.openWindow(`${target.pathname}${target.search}${target.hash}`);
+  }
+}
+
+function scoreClientForTarget(client, target) {
+  const clientUrl = new URL(client.url);
+  let score = 1;
+  if (`${clientUrl.pathname}${clientUrl.search}${clientUrl.hash}` === `${target.pathname}${target.search}${target.hash}`) {
+    score += 20;
+  }
+  if (clientUrl.pathname === target.pathname) {
+    score += 10;
+  }
+  if (isChatRequestPath(target.pathname) === isChatRequestPath(clientUrl.pathname)) {
+    score += 5;
+  }
+  if (!isChatRequestPath(target.pathname) && !isChatRequestPath(clientUrl.pathname)) {
+    score += 2;
+  }
+  return score;
+}
+
+async function notifyClients(message) {
+  const clients = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
+  for (const client of clients) {
+    client.postMessage(message);
+  }
+}
+
 function normalizeNotificationUrl(value) {
   if (typeof value !== "string" || !value.trim()) {
     return "/";
@@ -270,4 +331,36 @@ function notificationPayloadUrl(payload) {
     return "/chat/";
   }
   return undefined;
+}
+
+function notificationActionsForUrl(url) {
+  const actions = [{ action: "open", title: "Otevřít" }];
+  if (url && isChatRequestPath(new URL(url, self.location.origin).pathname)) {
+    actions[0] = { action: "open", title: "Otevřít chat" };
+  }
+  actions.push({ action: "dismiss", title: "Zavřít" });
+  return actions;
+}
+
+function notificationPayloadSeverity(payload) {
+  const candidates = [payload?.severity, payload?.priority, payload?.level, payload?.data?.severity];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      const normalized = candidate.trim().toLowerCase();
+      if (["critical", "high", "medium", "low", "info"].includes(normalized)) {
+        return normalized;
+      }
+    }
+  }
+  return "info";
+}
+
+function notificationPayloadType(payload) {
+  const candidates = [payload?.type, payload?.eventType, payload?.data?.type];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return "notification";
 }
