@@ -158,8 +158,11 @@ describe("center-location (chat -> web)", () => {
     expect(decodeChatCenterLocation(payload)).toEqual(payload);
   });
 
-  it("rejects non-finite or foreign payloads", () => {
+  it("rejects invalid coordinates or foreign payloads", () => {
+    expect(() => encodeChatCenterLocation(91, 17)).toThrow("COP map focus requires finite coordinates.");
     expect(decodeChatCenterLocation({ lat: Number.NaN, lon: 1, type: "cop-chat:center-location" })).toBeNull();
+    expect(decodeChatCenterLocation({ lat: 91, lon: 17, type: "cop-chat:center-location" })).toBeNull();
+    expect(decodeChatCenterLocation({ lat: 50, lon: 181, type: "cop-chat:center-location" })).toBeNull();
     expect(decodeChatCenterLocation({ lat: 1, lon: 2, type: "other" })).toBeNull();
     expect(decodeChatCenterLocation(["cop-chat:center-location"])).toBeNull();
   });

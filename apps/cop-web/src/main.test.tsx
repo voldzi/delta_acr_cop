@@ -840,6 +840,74 @@ describe("COP web dashboard", () => {
     expect(mapQueryBodiesAfterFocus.some((body) => body.includes("reference.infrastructure.emergency"))).toBe(false);
   });
 
+  it("closes embedded chat on mobile when chat sends a map focus action", async () => {
+    installMatchMedia(true);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse(emptyMapQueryResponse(["reference.infrastructure.emergency"]));
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [], init });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+    expect(screen.getByTitle("Zavřít chat")).toBeTruthy();
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: encodeChatCenterLocation(50.1187, 17.3842, {
+            category: "police",
+            featureId: "security-police:vrbno",
+            featureKind: "feature",
+            label: "Policie ČR - Vrbno pod Pradědem",
+            layerId: "reference.infrastructure.emergency",
+            zoom: 16
+          }),
+          origin: window.location.origin
+        })
+      );
+    });
+
+    await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("17.38420,50.11870");
+    expect(screen.queryByTitle("Zavřít chat")).toBeNull();
+  });
+
   it("requests an emergency route when chat sends a route map action", async () => {
     const getCurrentPosition = vi.fn((success: PositionCallback) => {
       success({
@@ -993,6 +1061,144 @@ describe("COP web dashboard", () => {
     expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-message")).toContain(
       "Zásahová trasa: 2.5 km"
     );
+  });
+
+  it("clears a previous emergency route when chat sends a plain map focus action", async () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: {
+          accuracy: 15,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          latitude: 50.12952,
+          longitude: 17.36285,
+          speed: null
+        },
+        timestamp: Date.parse("2026-05-19T08:00:00Z")
+      } as GeolocationPosition);
+    });
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition }
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/routing/route")) {
+        return jsonResponse({
+          contractVersion: "sim-emergency-routing-v1",
+          features: [
+            {
+              geometry: {
+                coordinates: [
+                  [17.36285, 50.12952],
+                  [17.37303, 50.15077]
+                ],
+                type: "LineString"
+              },
+              properties: { label: "Primární zásahová trasa", role: "primary", routeId: "primary" },
+              type: "Feature"
+            }
+          ],
+          generatedAt: "2026-05-19T08:00:00Z",
+          providerId: "sim.situation-data.routing",
+          quality: { confidence: 0.88, mode: "osm_graph" },
+          routes: [
+            {
+              distanceM: 2500,
+              durationSeconds: 420,
+              quality: { confidence: 0.88, mode: "osm_graph" },
+              routeId: "primary",
+              warnings: []
+            }
+          ],
+          warnings: []
+        });
+      }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse(emptyMapQueryResponse(["reference.infrastructure.emergency"]));
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: encodeChatCenterLocation(50.15077, 17.37303, {
+            action: "route",
+            featureId: "safety:dcf33fc1bc7fff2a7c66cad3",
+            featureKind: "feature",
+            label: "Mnichov - Černá Opava",
+            layerId: "reference.infrastructure.emergency",
+            zoom: 16
+          }),
+          origin: window.location.origin
+        })
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-status")).toBe("ready")
+    );
+    expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-features")).toBe("1");
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: encodeChatCenterLocation(50.1187, 17.3842, {
+            featureId: "security-police:vrbno",
+            featureKind: "feature",
+            label: "Policie ČR - Vrbno pod Pradědem",
+            layerId: "reference.infrastructure.emergency",
+            zoom: 16
+          }),
+          origin: window.location.origin
+        })
+      );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("17.38420,50.11870")
+    );
+    expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-status")).toBe("idle");
+    expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-features")).toBe("0");
+    expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-message")).toBe("");
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v1/routing/route"))).toHaveLength(1);
   });
 
   it("initializes the map from standalone chat COP focus URL parameters", async () => {

@@ -551,11 +551,43 @@ interface PriorityAlertSummary {
 type MobileSheet = "layers" | "detail" | null;
 const MOBILE_SHEET_MEDIA_QUERY = "(max-width: 860px)";
 
+interface EmergencyRouteTarget {
+  label?: string;
+  lat: number;
+  lon: number;
+}
+
 function isMobileSheetViewport(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return false;
   }
   return window.matchMedia(MOBILE_SHEET_MEDIA_QUERY).matches;
+}
+
+function isValidMapPoint(
+  point: { lat: number; lon: number } | null | undefined
+): point is { lat: number; lon: number } {
+  return (
+    !!point &&
+    Number.isFinite(point.lat) &&
+    Number.isFinite(point.lon) &&
+    point.lat >= -90 &&
+    point.lat <= 90 &&
+    point.lon >= -180 &&
+    point.lon <= 180
+  );
+}
+
+function normalizeEmergencyRouteTarget(target: EmergencyRouteTarget | null | undefined): EmergencyRouteTarget | null {
+  if (!isValidMapPoint(target)) {
+    return null;
+  }
+  const label = target?.label?.trim();
+  return {
+    ...(label ? { label } : {}),
+    lat: target.lat,
+    lon: target.lon
+  };
 }
 
 interface AccountChangeNotice {
@@ -931,19 +963,18 @@ export function App() {
     "idle"
   );
   const [emergencyRouteMessage, setEmergencyRouteMessage] = React.useState<string | null>(null);
-  const [pendingRouteTarget, setPendingRouteTarget] = React.useState<{
-    label?: string;
-    lat: number;
-    lon: number;
-  } | null>(() =>
-    initialMapFocus?.action === "route"
-      ? {
-          ...(initialMapFocus.label ? { label: initialMapFocus.label } : {}),
-          lat: initialMapFocus.lat,
-          lon: initialMapFocus.lon
-        }
-      : null
+  const [pendingRouteTarget, setPendingRouteTarget] = React.useState<EmergencyRouteTarget | null>(() =>
+    normalizeEmergencyRouteTarget(
+      initialMapFocus?.action === "route"
+        ? {
+            ...(initialMapFocus.label ? { label: initialMapFocus.label } : {}),
+            lat: initialMapFocus.lat,
+            lon: initialMapFocus.lon
+          }
+        : null
+    )
   );
+  const routeRequestIdRef = React.useRef(0);
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
   const [locationStatus, setLocationStatus] = React.useState(() =>
     initialMapFocus?.label
@@ -1043,6 +1074,9 @@ export function App() {
       const center = decodeChatCenterLocation(data);
       if (center) {
         setActiveWorkspace("map");
+        if (isMobileSheetViewport()) {
+          setMessagingOpen(false);
+        }
         setAutoFit(false);
         setMapView((current) => ({
           bearing: current?.bearing ?? 0,
@@ -1088,11 +1122,27 @@ export function App() {
           setMobileSheet(null);
         }
         if (center.action === "route") {
-          setPendingRouteTarget({
+          const routeTarget = normalizeEmergencyRouteTarget({
             ...(center.label ? { label: center.label } : {}),
             lat: center.lat,
             lon: center.lon
           });
+          if (routeTarget) {
+            setPendingRouteTarget(routeTarget);
+          } else {
+            routeRequestIdRef.current += 1;
+            setPendingRouteTarget(null);
+            setEmergencyRoute(null);
+            setEmergencyRouteStatus("idle");
+            setEmergencyRouteMessage(null);
+            setLocationStatus("Cíl trasy nemá platné souřadnice.");
+          }
+        } else {
+          routeRequestIdRef.current += 1;
+          setPendingRouteTarget(null);
+          setEmergencyRoute(null);
+          setEmergencyRouteStatus("idle");
+          setEmergencyRouteMessage(null);
         }
         setFocusViewRequest((current) => current + 1);
       }
@@ -4220,9 +4270,24 @@ export function App() {
   }
 
   const runEmergencyRouteFromLocation = React.useCallback(
-    async (location: UserLocation, target: { label?: string; lat: number; lon: number }) => {
+    async (location: UserLocation, target: EmergencyRouteTarget) => {
+      const normalizedTarget = normalizeEmergencyRouteTarget(target);
+      if (!isValidMapPoint(location) || !normalizedTarget) {
+        routeRequestIdRef.current += 1;
+        setPendingRouteTarget(null);
+        setEmergencyRoute(null);
+        setEmergencyRouteStatus("idle");
+        setEmergencyRouteMessage(null);
+        setLocationStatus(
+          normalizedTarget ? "Poloha zařízení nemá platné souřadnice." : "Cíl trasy nemá platné souřadnice."
+        );
+        return;
+      }
+      const requestId = routeRequestIdRef.current + 1;
+      routeRequestIdRef.current = requestId;
+      setEmergencyRoute(null);
       setEmergencyRouteStatus("loading");
-      setEmergencyRouteMessage(`Počítám zásahovou trasu k cíli ${target.label ?? "vybraný bod"}...`);
+      setEmergencyRouteMessage(`Počítám zásahovou trasu k cíli ${normalizedTarget.label ?? "vybraný bod"}...`);
       try {
         const response = await runEmergencyRoute(apiBase, authToken, {
           avoid: ["flood", "road_closure"],
@@ -4235,11 +4300,14 @@ export function App() {
           },
           profileId: "emergency_vehicle",
           to: {
-            ...(target.label ? { label: target.label } : {}),
-            lat: target.lat,
-            lon: target.lon
+            ...(normalizedTarget.label ? { label: normalizedTarget.label } : {}),
+            lat: normalizedTarget.lat,
+            lon: normalizedTarget.lon
           }
         });
+        if (routeRequestIdRef.current !== requestId) {
+          return;
+        }
         setEmergencyRoute(response);
         setEmergencyRouteStatus("ready");
         const primary = response.routes[0];
@@ -4247,6 +4315,9 @@ export function App() {
         setEmergencyRouteMessage(summary);
         setLocationStatus(summary);
       } catch (error) {
+        if (routeRequestIdRef.current !== requestId) {
+          return;
+        }
         const message = error instanceof Error ? error.message : "Zásahovou trasu se nepodařilo vypočítat.";
         setEmergencyRouteStatus("error");
         setEmergencyRouteMessage(message);
@@ -4256,8 +4327,18 @@ export function App() {
     [apiBase, authToken]
   );
 
-  function locateUser(routeTarget?: { label?: string; lat: number; lon: number }) {
-    const requestedRouteTarget = routeTarget ?? pendingRouteTarget;
+  function locateUser(routeTarget?: EmergencyRouteTarget) {
+    const rawRouteTarget = routeTarget ?? pendingRouteTarget;
+    const requestedRouteTarget = normalizeEmergencyRouteTarget(rawRouteTarget);
+    if (rawRouteTarget && !requestedRouteTarget) {
+      routeRequestIdRef.current += 1;
+      setPendingRouteTarget(null);
+      setEmergencyRoute(null);
+      setEmergencyRouteStatus("idle");
+      setEmergencyRouteMessage(null);
+      setLocationStatus("Cíl trasy nemá platné souřadnice.");
+      return;
+    }
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       const message = "Prohlížeč neposkytuje geolokaci.";
       setLocationStatus(message);
@@ -4278,6 +4359,19 @@ export function App() {
           accuracyM: position.coords.accuracy,
           updatedAt: new Date().toISOString()
         };
+        if (!isValidMapPoint(location)) {
+          const message = "Poloha zařízení nemá platné souřadnice.";
+          setLocationStatus(message);
+          if (requestedRouteTarget) {
+            routeRequestIdRef.current += 1;
+            setPendingRouteTarget(null);
+            setEmergencyRoute(null);
+            setEmergencyRouteStatus("error");
+            setEmergencyRouteMessage(message);
+          }
+          setIsLocating(false);
+          return;
+        }
         setUserLocation(location);
         setLocationStatus(formatUserLocation(location));
         setFocusUserLocationRequest((current) => current + 1);
@@ -4307,22 +4401,42 @@ export function App() {
   }
 
   const requestEmergencyRouteToPoint = React.useCallback(
-    async (target: { label?: string; lat: number; lon: number }) => {
+    async (target: EmergencyRouteTarget) => {
+      const normalizedTarget = normalizeEmergencyRouteTarget(target);
+      if (!normalizedTarget) {
+        routeRequestIdRef.current += 1;
+        setPendingRouteTarget(null);
+        setEmergencyRoute(null);
+        setEmergencyRouteStatus("idle");
+        setEmergencyRouteMessage(null);
+        setLocationStatus("Cíl trasy nemá platné souřadnice.");
+        return;
+      }
       if (!userLocation) {
-        setPendingRouteTarget(target);
+        setPendingRouteTarget(normalizedTarget);
         setEmergencyRouteStatus("loading");
         setEmergencyRouteMessage("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
         setLocationStatus("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
-        locateUser(target);
+        locateUser(normalizedTarget);
         return;
       }
-      await runEmergencyRouteFromLocation(userLocation, target);
+      await runEmergencyRouteFromLocation(userLocation, normalizedTarget);
     },
     [runEmergencyRouteFromLocation, userLocation]
   );
 
   React.useEffect(() => {
     if (!pendingRouteTarget) {
+      return;
+    }
+    const normalizedTarget = normalizeEmergencyRouteTarget(pendingRouteTarget);
+    if (!normalizedTarget) {
+      routeRequestIdRef.current += 1;
+      setPendingRouteTarget(null);
+      setEmergencyRoute(null);
+      setEmergencyRouteStatus("idle");
+      setEmergencyRouteMessage(null);
+      setLocationStatus("Cíl trasy nemá platné souřadnice.");
       return;
     }
     if (!userLocation) {
@@ -4332,11 +4446,11 @@ export function App() {
         setLocationStatus("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
       }
       if (!isLocating) {
-        locateUser(pendingRouteTarget);
+        locateUser(normalizedTarget);
       }
       return;
     }
-    const target = pendingRouteTarget;
+    const target = normalizedTarget;
     setPendingRouteTarget(null);
     void requestEmergencyRouteToPoint(target);
   }, [emergencyRouteStatus, isLocating, pendingRouteTarget, requestEmergencyRouteToPoint, userLocation]);

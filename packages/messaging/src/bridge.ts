@@ -138,37 +138,21 @@ export function encodeChatCenterLocation(
     zoom?: number;
   } = {}
 ): ChatCenterLocationMessage {
-  return compactRecord({
-    action: normalizeCenterAction(options.action),
-    category: normalizeBridgeText(options.category, 120),
-    featureId: normalizeBridgeText(options.featureId, 160),
-    featureKind: normalizeCenterFeatureKind(options.featureKind),
-    label: normalizeBridgeText(options.label, 180),
-    layerId: normalizeBridgeText(options.layerId, 160),
-    lat,
-    lon,
-    sourceName: normalizeBridgeText(options.sourceName, 160),
-    sourceSystemIds: normalizeBridgeTextList(options.sourceSystemIds, 160, 16),
-    type: chatBridgeMessageTypes.centerLocation,
-    zoom: normalizeCenterZoom(options.zoom)
-  }) as ChatCenterLocationMessage;
+  const normalized = normalizeCenterLocation({ lat, lon, ...options });
+  if (!normalized) {
+    throw new Error("COP map focus requires finite coordinates.");
+  }
+  return normalized;
 }
 
-export function decodeChatCenterLocation(value: unknown): ChatCenterLocationMessage | null {
+function normalizeCenterLocation(value: unknown): ChatCenterLocationMessage | null {
   const data = asRecord(value);
-  if (
-    !data ||
-    data.type !== chatBridgeMessageTypes.centerLocation ||
-    typeof data.lat !== "number" ||
-    typeof data.lon !== "number" ||
-    !Number.isFinite(data.lat) ||
-    !Number.isFinite(data.lon)
-  ) {
+  if (!data || typeof data.lat !== "number" || typeof data.lon !== "number" || !validLatLon(data.lat, data.lon)) {
     return null;
   }
   return compactRecord({
-    category: normalizeBridgeText(data.category, 120),
     action: normalizeCenterAction(data.action),
+    category: normalizeBridgeText(data.category, 120),
     featureId: normalizeBridgeText(data.featureId, 160),
     featureKind: normalizeCenterFeatureKind(data.featureKind),
     label: normalizeBridgeText(data.label, 180),
@@ -180,6 +164,14 @@ export function decodeChatCenterLocation(value: unknown): ChatCenterLocationMess
     type: chatBridgeMessageTypes.centerLocation,
     zoom: normalizeCenterZoom(data.zoom)
   }) as ChatCenterLocationMessage;
+}
+
+export function decodeChatCenterLocation(value: unknown): ChatCenterLocationMessage | null {
+  const data = asRecord(value);
+  if (!data || data.type !== chatBridgeMessageTypes.centerLocation) {
+    return null;
+  }
+  return normalizeCenterLocation(data);
 }
 
 export function encodeCopMapFocusUrl(baseUrl: string | URL, focus: ChatCenterLocationMessage): string {
@@ -283,6 +275,10 @@ function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function validLatLon(lat: number, lon: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+}
+
 function optionalStringList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -328,16 +324,7 @@ function normalizeCenterAction(value: unknown): ChatCenterLocationMessage["actio
 
 function normalizeCurrentLocation(value: unknown): ChatCurrentLocationPayload | null {
   const data = asRecord(value);
-  if (
-    !data ||
-    typeof data.lat !== "number" ||
-    typeof data.lon !== "number" ||
-    !Number.isFinite(data.lat) ||
-    !Number.isFinite(data.lon)
-  ) {
-    return null;
-  }
-  if (data.lat < -90 || data.lat > 90 || data.lon < -180 || data.lon > 180) {
+  if (!data || typeof data.lat !== "number" || typeof data.lon !== "number" || !validLatLon(data.lat, data.lon)) {
     return null;
   }
   return compactRecord({
