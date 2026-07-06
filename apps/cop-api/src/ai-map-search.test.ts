@@ -5,6 +5,8 @@ import {
   aiMapCatalogLayerMatchesMapSearchIntent,
   aiSituationFeatureMatchesMapSearchIntent,
   inferAiMapSearchIntent,
+  simSearchEntityTypesForAiMapSearchIntent,
+  simSearchSourceSystemsForAiMapSearchIntent,
   summarizeMapFeatureCollectionForAi,
   summarizeSituationMapFeatureForAi,
   type AiMapSearchContext
@@ -121,6 +123,13 @@ describe("AI map search", () => {
       "public.safety.weather_alerts"
     ]));
     expect(intent.searchTerms).toEqual(expect.arrayContaining(["weather", "rain", "storm"]));
+    expect(simSearchEntityTypesForAiMapSearchIntent(intent)).toEqual([
+      "weather_forecast",
+      "weather_nowcast",
+      "weather_radar",
+      "thunderstorm_risk"
+    ]);
+    expect(simSearchSourceSystemsForAiMapSearchIntent(intent)).toEqual(["weather_forecast", "chmi_weather_radar"]);
   });
 
   it("extracts a clean place query from generic map searches with a location phrase", () => {

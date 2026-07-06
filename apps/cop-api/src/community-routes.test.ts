@@ -2443,6 +2443,93 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("answers weather forecast questions from SIM search-data without computing weatherCode", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "Provider should not be called for deterministic weather SIM search fallback",
+          structured: {}
+        };
+      },
+      async health() {
+        return {
+          detail: "test provider",
+          status: "ok"
+        };
+      }
+    };
+    const simSearchDataSource = new FakeAiMapSearchSimSearchDataSource();
+    simSearchDataSource.weatherForecastResult = true;
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      simSearchDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        geoContext: {
+          currentLocation: {
+            lat: 50.15077,
+            lon: 17.37303,
+            radiusKm: 30
+          },
+          label: "Moje poloha"
+        },
+        question: "Bude pršet? Blíží se bouřka?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    expect(simSearchDataSource.lastQuery).toMatchObject({
+      entityTypes: ["weather_forecast", "weather_nowcast", "weather_radar", "thunderstorm_risk"],
+      sourceSystems: ["weather_forecast", "chmi_weather_radar"],
+      validAt: "2026-05-20T12:00:00.000Z"
+    });
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "map-search-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("Meteo informace: Předpověď pro Vrbno pod Pradědem");
+    expect(aiResponse.result.summary).toContain("Srážky 10 min 0,8 mm");
+    expect(aiResponse.result.summary).toContain("Srážky 1 h 2,4 mm");
+    expect(aiResponse.result.summary).toContain("Srážky 3 h 5,9 mm");
+    expect(aiResponse.result.summary).toContain("Pravděpodobnost srážek 70 %");
+    expect(aiResponse.result.summary).toContain("Pravděpodobnost bouřky 35 %");
+    expect(aiResponse.result.summary).toContain("Vítr 4,2 m/s");
+    expect(aiResponse.result.summary).toContain("Nárazy větru 12 m/s");
+    expect(aiResponse.result.summary).toContain("Bleskový feed dostupný");
+    expect(aiResponse.result.summary).toContain("SIM použil záložní meteo zdroj.");
+    expect(aiResponse.result.summary).toContain("/search-data/api/v1/weather-forecast/vrbno/detail");
+    const structured = aiResponse.result.structured as Record<string, unknown>;
+    const mapSearch = structured.mapSearch as Record<string, unknown>;
+    expect(mapSearch.results).toEqual([
+      expect.objectContaining({
+        detailUrl: "/search-data/api/v1/weather-forecast/vrbno/detail",
+        fallbackUsed: true,
+        mapFeatureId: "weather_forecast:vrbno:2026-05-20T12",
+        validFrom: "2026-05-20T12:00:00.000Z",
+        validUntil: "2026-05-20T15:00:00.000Z"
+      })
+    ]);
+
+    await app.close();
+  });
+
   it("returns an explicit no-data weather response when SIM has no current meteo entity", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
@@ -2493,7 +2580,8 @@ describe("community report routes", () => {
     expect(response.statusCode).toBe(200);
     expect(capturedQueries).toHaveLength(0);
     expect(simSearchDataSource.lastQuery).toMatchObject({
-      entityTypes: ["weather_warning", "safety_alert"]
+      entityTypes: ["weather_forecast", "weather_nowcast", "weather_radar", "thunderstorm_risk"],
+      sourceSystems: ["weather_forecast", "chmi_weather_radar"]
     });
     const aiResponse = response.json() as AiCopResponse;
     expect(aiResponse).toMatchObject({
@@ -2501,7 +2589,7 @@ describe("community report routes", () => {
       provider: "local",
       status: "COMPLETED"
     });
-    expect(aiResponse.result.summary).toContain("nenašel aktuální meteo výstrahu");
+    expect(aiResponse.result.summary).toContain("nenašel aktuální meteo předpověď");
     expect(aiResponse.result.summary).toContain("To neznamená, že neprší");
 
     await app.close();
@@ -2872,11 +2960,72 @@ class FakeAiMapSearchSimSearchDataSource implements SimSearchDataSource {
   };
 
   lastQuery: SimSearchQueryRequest | null = null;
+  weatherForecastResult = false;
 
   async query(request: SimSearchQueryRequest, requestNow: Date): Promise<SimSearchQueryResponse> {
     this.lastQuery = request;
     const entityTypes = new Set(request.entityTypes ?? []);
-    if (entityTypes.has("weather_warning") || entityTypes.has("safety_alert")) {
+    if (entityTypes.has("weather_forecast") || entityTypes.has("weather_nowcast") || entityTypes.has("weather_radar") || entityTypes.has("thunderstorm_risk")) {
+      if (this.weatherForecastResult) {
+        return {
+          contractVersion: "sim-search-source-v1",
+          generatedAt: requestNow.toISOString(),
+          providerId: "sim.search-data",
+          query: request as Record<string, unknown>,
+          results: [
+            {
+              centroid: {
+                lat: 50.15077,
+                lon: 17.37303
+              },
+              confidence: 0.91,
+              dataQuality: "forecast_fallback",
+              entitySubtype: "rain_storm_forecast",
+              entityType: "weather_forecast",
+              handling: {
+                dynamic_data_requires_timestamp: true
+              },
+              layerIds: ["public.weather.forecast_area"],
+              metrics: {
+                lightningFeedAvailable: true,
+                precipitation10mMm: 0.8,
+                precipitation1hMm: 2.4,
+                precipitation3hMm: 5.9,
+                precipitationProbability: 0.7,
+                risk: "elevated",
+                thunderstormProbability: 0.35,
+                windGustMps: 12,
+                windSpeedMps: 4.2
+              },
+              observedAt: requestNow.toISOString(),
+              providerEntityId: "weather_forecast:vrbno:2026-05-20T12",
+              providerId: "sim.search-data",
+              providerProperties: {
+                weatherForecast: {
+                  detailUrl: "/search-data/api/v1/weather-forecast/vrbno/detail",
+                  fallbackUsed: true
+                }
+              },
+              sourceAuthority: "model",
+              sourceEntityId: "weather_forecast:vrbno",
+              sourceRevision: "weather_forecast:2026-05-20T12:00:00Z",
+              sourceSystem: "weather_forecast",
+              status: "forecast",
+              summary: "Předpověď srážek, větru a bouřkového rizika pro okolí Vrbna.",
+              title: "Předpověď pro Vrbno pod Pradědem",
+              updatedAt: requestNow.toISOString(),
+              validFrom: requestNow.toISOString(),
+              validUntil: new Date(requestNow.getTime() + 3 * 3600 * 1000).toISOString()
+            }
+          ],
+          summary: {
+            resultCount: 1,
+            staleResultCount: 0,
+            warningCount: 0
+          },
+          warnings: []
+        };
+      }
       return {
         contractVersion: "sim-search-source-v1",
         generatedAt: requestNow.toISOString(),

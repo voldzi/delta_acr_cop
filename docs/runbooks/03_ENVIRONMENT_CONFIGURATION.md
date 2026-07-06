@@ -314,13 +314,20 @@ referenční OSM objekt není potvrzený operační stav.
 
 AI chat směruje dotazy na hydrologii a počasí přes tento server-side zdroj:
 hladina/průtok/vodoměr používá `hydro_station`, `hydro_measurement` a
-`flood_risk_area`; počasí/srážky/bouřka/vítr/teplota používá aktuálně dostupné
-`weather_warning` a `safety_alert` spolu s mapovým katalogem počasí. Pokud SIM
-vrátí hydro metriky (`waterLevelCm`, `discharge`, `waterTemperatureC`,
-`floodStage`), COP je vypíše přímo v deterministické AI odpovědi. Pro
-plnohodnotné odpovědi typu „bude pršet“ nebo „blíží se bouřka“ má SIM do
-`sim-search-source-v1` doplnit i měřené a předpovědní meteo entity s časem
-platnosti a numerickými metrikami.
+`flood_risk_area` se sourceSystems `chmi_hydro` a `safety_data`;
+počasí/srážky/bouřka/vítr/teplota používá `weather_forecast`,
+`weather_nowcast`, `weather_radar` a `thunderstorm_risk` se sourceSystems
+`weather_forecast` a `chmi_weather_radar`. COP posílá `validAt` jako čas
+požadavku, meteo hodnoty pouze zobrazuje a nic nedopočítává z `weatherCode`.
+Pokud SIM vrátí hydro metriky (`waterLevelCm`, `discharge`,
+`waterTemperatureC`, `floodStage`) nebo meteo metriky (srážky 10 min / 1 h /
+3 h, pravděpodobnost srážek/bouřky, vítr, nárazy, riziko, dostupnost bleskového
+feedu), COP je vypíše přímo v deterministické AI odpovědi včetně `observedAt`,
+`validFrom`, `validUntil` a detailu meteogramu z
+`providerProperties.weatherForecast.detailUrl` nebo
+`providerProperties.display.detailUrl`. `status=ok` v SIM observability znamená
+dostupnou službu; kvalita zdrojů se vyhodnocuje přes `dataQualityStatus` a sama
+o sobě neschovává celý provider.
 
 ## TAK Gateway Source
 

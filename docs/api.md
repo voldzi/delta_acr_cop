@@ -123,14 +123,23 @@ assistant has no access to the user's location.
 Hydrology and weather questions are also treated as COP/SIM operational
 context, not only as free-form LLM prompts. Questions about water level,
 discharge, gauges or "where is water measured nearby" route to SIM entity types
-`hydro_station`, `hydro_measurement` and `flood_risk_area`; deterministic
-answers render available metrics such as `waterLevelCm`, `discharge`,
-`waterTemperatureC`, `floodStage` and the observation timestamp. Weather,
-rain, wind, temperature, radar and storm questions route to the currently
-available SIM types `weather_warning` and `safety_alert` plus weather catalog
-layers. If no current weather entity is returned, the deterministic answer must
-say that COP/SIM has no confirmed meteo result for the query; it must not infer
-that there is no rain or no storm.
+`hydro_station`, `hydro_measurement` and `flood_risk_area` with preferred
+source systems `chmi_hydro` and `safety_data`; deterministic answers render
+available metrics such as `waterLevelCm`, `discharge`, `waterTemperatureC`,
+`floodStage` and the observation timestamp. Weather, rain, wind, temperature,
+radar and storm questions route through SIM search-data with entity types
+`weather_forecast`, `weather_nowcast`, `weather_radar` and
+`thunderstorm_risk`, source systems `weather_forecast` and `chmi_weather_radar`,
+and `validAt` set to the request timestamp. COP renders the values supplied by
+SIM directly, including `observedAt`, `validFrom`, `validUntil`, precipitation
+10 min / 1 h / 3 h, precipitation and thunderstorm probability, wind, gusts,
+risk, lightning feed availability and `providerProperties.weatherForecast` or
+`providerProperties.display` detail URLs. COP must not derive rain or storm
+answers from `weatherCode`. If no current weather entity is returned, the
+deterministic answer must say that COP/SIM has no confirmed meteo result for the
+query; it must not infer that there is no rain or no storm. When SIM uses a
+provider fallback such as MET Norway, COP preserves and may display
+`providerProperties.weatherForecast.fallbackUsed=true`.
 
 SIM `osm_reference` entities are treated as public reference read-models, not
 confirmed operational status. COP preserves `handling`, `allowedUse`,

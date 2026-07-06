@@ -44,6 +44,7 @@ import {
   bboxForAiMapSearchGeoFilter,
   dedupeAiMapSearchResults,
   inferAiMapSearchIntent,
+  simSearchSourceSystemsForAiMapSearchIntent,
   simSearchEntityTypesForAiMapSearchIntent,
   summarizeGeocodedPlaceForAi,
   summarizeMapFeatureCollectionForAi,
@@ -1879,6 +1880,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     if (simSearchDataSource && (intent.requested || intent.placeQuery || intent.searchTerms.length > 0)) {
       const entityTypes = simSearchEntityTypesForAiMapSearchIntent(intent);
+      const sourceSystems = simSearchSourceSystemsForAiMapSearchIntent(intent);
       const query = compactRecord({
         ...(bbox ? { bbox } : {}),
         ...(geoFilter?.center ? {
@@ -1889,6 +1891,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           radiusM: Math.round(clampNumber(geoFilter.center.radiusKm ?? 30, 1, 250) * 1000)
         } : {}),
         ...(entityTypes ? { entityTypes } : {}),
+        ...(sourceSystems ? { sourceSystems } : {}),
         includeStale: false,
         limit: 24,
         text: input.question,
@@ -1906,6 +1909,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           matchedFeatureCount: simResults.length,
           providerId: response.providerId,
           requestId: input.requestId,
+          sourceSystems,
           sourceSystemId: simSearchDataSource.sourceSystem.sourceSystemId,
           status: simResults.length > 0 ? "ok" : "empty",
           warnings: response.warnings

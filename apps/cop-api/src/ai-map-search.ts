@@ -305,8 +305,10 @@ export function simSearchEntityTypesForAiMapSearchIntent(intent: AiMapSearchInte
         entityTypes.add("flood_risk_area");
         break;
       case "weather":
-        entityTypes.add("weather_warning");
-        entityTypes.add("safety_alert");
+        entityTypes.add("weather_forecast");
+        entityTypes.add("weather_nowcast");
+        entityTypes.add("weather_radar");
+        entityTypes.add("thunderstorm_risk");
         break;
       default:
         break;
@@ -331,10 +333,30 @@ export function simSearchEntityTypesForAiMapSearchIntent(intent: AiMapSearchInte
     entityTypes.add("flood_risk_area");
   }
   if (terms.some((term) => /^(pocasi|meteorolog|weather|radar|srazk|dest|prset|prsi|bour|storm|thunder|teplot|vitr|wind|rain)/u.test(term))) {
-    entityTypes.add("weather_warning");
-    entityTypes.add("safety_alert");
+    entityTypes.add("weather_forecast");
+    entityTypes.add("weather_nowcast");
+    entityTypes.add("weather_radar");
+    entityTypes.add("thunderstorm_risk");
   }
   return entityTypes.size > 0 ? Array.from(entityTypes) : undefined;
+}
+
+export function simSearchSourceSystemsForAiMapSearchIntent(intent: AiMapSearchIntent): string[] | undefined {
+  const sourceSystems = new Set<string>();
+  const terms = aiMapSearchMeaningfulTerms(intent.searchTerms);
+  const weatherIntent = intent.categoryIds.includes("weather")
+    || terms.some((term) => /^(pocasi|meteorolog|weather|radar|srazk|dest|prset|prsi|bour|storm|thunder|teplot|vitr|wind|rain)/u.test(term));
+  const hydroIntent = intent.categoryIds.includes("hydro")
+    || terms.some((term) => /^(vod|vodomer|hydro|limnigraf|hladin|reka|rek|river|gauge|water)/u.test(term));
+  if (weatherIntent) {
+    sourceSystems.add("weather_forecast");
+    sourceSystems.add("chmi_weather_radar");
+  }
+  if (hydroIntent) {
+    sourceSystems.add("chmi_hydro");
+    sourceSystems.add("safety_data");
+  }
+  return sourceSystems.size > 0 ? Array.from(sourceSystems) : undefined;
 }
 
 export function dedupeAiMapSearchResults(results: AiMapSearchResult[]): AiMapSearchResult[] {
@@ -493,7 +515,7 @@ export function aiMapSearchNoResultFallbackResponse(
 function aiMapSearchDomainNoResultText(categoryIds: string[]): string {
   if (categoryIds.includes("weather")) {
     return [
-      "V dostupném COP/SIM kontextu jsem nenašel aktuální meteo výstrahu ani měřenou nebo předpovědní meteo entitu pro dotaz.",
+      "V dostupném COP/SIM kontextu jsem nenašel aktuální meteo předpověď, nowcast, radar ani bouřkové riziko pro dotaz.",
       "To neznamená, že neprší nebo že se bouřka neblíží; znamená to, že COP teď nemá pro tento dotaz dostupný potvrzený meteo výsledek."
     ].join(" ");
   }
@@ -521,7 +543,11 @@ function aiMeasurementMapSearchSummary(
   const sourceName = optionalText(result.sourceName);
   const observedAt = optionalText(result.updatedAt) ?? optionalText(result.observedAt) ?? optionalText(result.validFrom);
   const observedText = observedAt ? `Čas měření: ${formatAiCzechDateTime(observedAt)}.` : undefined;
+  const validText = aiMetricValidityText(result);
   const sourceText = sourceName ? `Zdroj: ${sourceName}.` : input.citationText;
+  const detailUrl = optionalText(result.detailUrl);
+  const detailText = detailUrl ? `Detail meteogramu: ${detailUrl}.` : undefined;
+  const fallbackText = result.fallbackUsed === true ? "SIM použil záložní meteo zdroj." : undefined;
   const commonTail = [input.distanceSentence, input.locationText, sourceText].filter(Boolean).join(" ");
 
   if (normalizedCategory.includes("hydro")
@@ -552,9 +578,14 @@ function aiMeasurementMapSearchSummary(
     const values = [
       metricValueText(metrics, ["temperatureC"], "Teplota", "°C"),
       metricValueText(metrics, ["precipitation10mMm"], "Srážky 10 min", "mm"),
-      metricValueText(metrics, ["precipitation1hMm", "precipitationMm", "rainMm"], "Srážky", "mm"),
+      metricValueText(metrics, ["precipitation1hMm", "precipitationHourlyMm", "precipitationMm", "rainMm"], "Srážky 1 h", "mm"),
+      metricValueText(metrics, ["precipitation3hMm", "precipitationThreeHourMm"], "Srážky 3 h", "mm"),
+      metricPercentText(metrics, ["precipitationProbabilityPct", "precipitationProbabilityPercent", "precipitationProbability", "rainProbability"], "Pravděpodobnost srážek"),
+      metricPercentText(metrics, ["thunderstormProbabilityPct", "thunderstormProbabilityPercent", "thunderstormProbability", "stormProbability"], "Pravděpodobnost bouřky"),
       metricValueText(metrics, ["windSpeedMps"], "Vítr", "m/s"),
       metricValueText(metrics, ["windGustMps"], "Nárazy větru", "m/s"),
+      metricRawText(metrics, ["risk", "riskLevel", "riskCategory", "weatherRisk"], "Riziko"),
+      metricRawText(metrics, ["lightningFeedAvailable", "lightningAvailable", "hasLightningFeed"], "Bleskový feed"),
       metricValueText(metrics, ["relativeHumidityPercent", "humidityPercent"], "Vlhkost", "%"),
       metricValueText(metrics, ["pressureHpa", "pressureHpaSeaLevel"], "Tlak", "hPa")
     ].filter(Boolean);
@@ -563,10 +594,28 @@ function aiMeasurementMapSearchSummary(
       `Meteo informace: ${input.title}.`,
       valueText,
       observedText,
+      validText,
+      fallbackText,
+      detailText,
       commonTail
     ].filter(Boolean).join(" ");
   }
 
+  return undefined;
+}
+
+function aiMetricValidityText(result: Record<string, unknown>): string | undefined {
+  const validFrom = optionalText(result.validFrom);
+  const validUntil = optionalText(result.validUntil);
+  if (validFrom && validUntil) {
+    return `Platnost: ${formatAiCzechDateTime(validFrom)} - ${formatAiCzechDateTime(validUntil)}.`;
+  }
+  if (validFrom) {
+    return `Platnost od: ${formatAiCzechDateTime(validFrom)}.`;
+  }
+  if (validUntil) {
+    return `Platnost do: ${formatAiCzechDateTime(validUntil)}.`;
+  }
   return undefined;
 }
 
@@ -580,6 +629,33 @@ function metricValueText(
     const value = optionalFiniteNumber(metrics[key], -1_000_000, 1_000_000);
     if (value !== undefined) {
       return `${label ?? key} ${formatMetricNumber(value)}${unit ? ` ${unit}` : ""}`;
+    }
+  }
+  return undefined;
+}
+
+function metricPercentText(metrics: Record<string, unknown>, keys: string[], label: string): string | undefined {
+  for (const key of keys) {
+    const value = optionalFiniteNumber(metrics[key], 0, 10_000);
+    if (value !== undefined) {
+      const percent = value <= 1 ? value * 100 : value;
+      return `${label} ${formatMetricNumber(percent)} %`;
+    }
+  }
+  return undefined;
+}
+
+function metricRawText(metrics: Record<string, unknown>, keys: string[], label: string): string | undefined {
+  for (const key of keys) {
+    const value = metrics[key];
+    if (typeof value === "string" && value.trim()) {
+      return `${label} ${value.trim()}`;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return `${label} ${formatMetricNumber(value)}`;
+    }
+    if (typeof value === "boolean") {
+      return `${label} ${value ? "dostupný" : "nedostupný"}`;
     }
   }
   return undefined;
@@ -946,6 +1022,8 @@ function summarizeSimSearchEntityForAi(
   const category = entity.entitySubtype ?? entity.entityType;
   const priorityFromScore = optionalFiniteNumber(entity.score, 0, 1);
   const handlingFlags = simSearchHandlingFlags(entity.handling);
+  const detailUrl = simSearchEntityDetailUrl(entity);
+  const fallbackUsed = simSearchWeatherFallbackUsed(entity);
   return compactRecord({
     allowedUse: entity.allowedUse,
     category,
@@ -956,8 +1034,11 @@ function summarizeSimSearchEntityForAi(
       handlingFlags.includes("reference_not_operational_status") ? "Referenční objekt; nejde o potvrzený operační stav." : undefined,
       handlingFlags.includes("dynamic_data_requires_timestamp") ? "Dynamický údaj vyžaduje čas měření." : undefined
     ].filter(Boolean).join(" "),
+    ...(detailUrl ? { detailUrl } : {}),
     distanceM,
     distanceText: formatAiMapDistance(distanceM),
+    expiresAt: entity.expiresAt,
+    fallbackUsed,
     handling: entity.handling,
     layerId: entity.layerIds?.[0],
     location,
@@ -972,9 +1053,25 @@ function summarizeSimSearchEntityForAi(
     status: entity.status ?? (entity.stale ? "stale" : "map-result"),
     title: entity.title,
     type: "mapFeature",
+    observedAt: entity.observedAt,
     updatedAt: entity.observedAt ?? entity.updatedAt ?? entity.validFrom,
+    validFrom: entity.validFrom,
+    validUntil: entity.validUntil,
     visibility: entity.visibility
   });
+}
+
+function simSearchEntityDetailUrl(entity: SimSearchEntity): string | undefined {
+  const providerProperties = isRecord(entity.providerProperties) ? entity.providerProperties : {};
+  const weatherForecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
+  const display = isRecord(providerProperties.display) ? providerProperties.display : {};
+  return optionalText(weatherForecast.detailUrl) ?? optionalText(display.detailUrl);
+}
+
+function simSearchWeatherFallbackUsed(entity: SimSearchEntity): boolean | undefined {
+  const providerProperties = isRecord(entity.providerProperties) ? entity.providerProperties : {};
+  const weatherForecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
+  return typeof weatherForecast.fallbackUsed === "boolean" ? weatherForecast.fallbackUsed : undefined;
 }
 
 function simSearchHandlingFlags(value: SimSearchEntity["handling"]): string[] {
@@ -1017,7 +1114,7 @@ function locationFromSimSearchEntity(entity: SimSearchEntity): { lat: number; lo
 
 function aiSimSearchPriorityScore(entity: SimSearchEntity, distanceM: number | undefined): number {
   let score = 0.42;
-  if (/^(police_station|fire_station|hospital|medical_emergency|shelter|evacuation_point|hydro_station|hydro_measurement|weather_warning|safety_alert)$/u.test(entity.entityType)) {
+  if (/^(police_station|fire_station|hospital|medical_emergency|shelter|evacuation_point|hydro_station|hydro_measurement|weather_forecast|weather_nowcast|weather_radar|thunderstorm_risk|weather_warning|safety_alert)$/u.test(entity.entityType)) {
     score += 0.18;
   }
   if (/^(official|internal_verified|partner_verified|reference)$/u.test(entity.sourceAuthority ?? "")) {
