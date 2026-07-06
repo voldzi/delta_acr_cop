@@ -5258,6 +5258,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -5281,6 +5284,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -5304,6 +5310,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -5339,6 +5348,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -7062,9 +7074,6 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
-      },
-      "mtlsAuth": {
-        "type": "mutualTLS"
       }
     },
     "parameters": {
@@ -16127,113 +16136,6 @@
               "ok",
               "degraded"
             ]
-          }
-        }
-      },
-      "EdgeRuntimeState": {
-        "type": "object",
-        "additionalProperties": true,
-        "required": [
-          "nodeId",
-          "nodeName",
-          "nodeRole",
-          "contractVersion",
-          "health",
-          "queueDepth",
-          "lastSyncAt",
-          "lastReplayOffset",
-          "lastError",
-          "centralApiUrl",
-          "classificationMax",
-          "autoSync",
-          "syncIntervalMs",
-          "outboxDepth",
-          "inboundEventCount",
-          "deadLetterCount",
-          "updatedAt"
-        ],
-        "properties": {
-          "nodeId": {
-            "type": "string",
-            "example": "node_edge_pilot_01"
-          },
-          "nodeName": {
-            "type": "string",
-            "example": "CSM Edge Pilot Node"
-          },
-          "nodeRole": {
-            "type": "string",
-            "enum": [
-              "edge-node"
-            ]
-          },
-          "contractVersion": {
-            "type": "string",
-            "example": "cop-edge-runtime-v1"
-          },
-          "health": {
-            "type": "string",
-            "enum": [
-              "ok",
-              "degraded"
-            ]
-          },
-          "queueDepth": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "outboxDepth": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "inboundEventCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "deadLetterCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "lastSyncAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "lastReplayOffset": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "lastError": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "centralApiUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "classificationMax": {
-            "type": "string",
-            "enum": [
-              "PUBLIC",
-              "INTERNAL",
-              "SENSITIVE",
-              "RESTRICTED_SIMULATED"
-            ]
-          },
-          "autoSync": {
-            "type": "boolean"
-          },
-          "syncIntervalMs": {
-            "type": "integer",
-            "minimum": 1000
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
           }
         }
       },
