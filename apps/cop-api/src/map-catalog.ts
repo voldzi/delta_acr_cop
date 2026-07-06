@@ -540,7 +540,9 @@ function providerCatalogLayerVariantToMapLayer(
     catalogLayerId,
     variantLayer.sourceIds?.filter(Boolean) ?? providerSourceIds
   );
-  const categoryIds = uniqueStrings([...(layer.query?.categoryIds ?? []), ...(layer.query?.categoryFilter ?? [])]);
+  const categoryIds = isOutdoorWebcamsCatalogLayerId(catalogLayerId)
+    ? []
+    : uniqueStrings([...(layer.query?.categoryIds ?? []), ...(layer.query?.categoryFilter ?? [])]);
   return {
     audience,
     ...(layer.availability ? { availability: layer.availability } : {}),
