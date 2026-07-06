@@ -235,6 +235,20 @@ browser registration. Notification clicks are handled in the service worker:
 chat deep links prefer an existing `/chat/...` window, while map alert/report
 links prefer the map shell.
 
+The integrated chat uses the same Web Push registration helper as the main COP
+map shell. Its notification bell must represent real server registration state:
+browser support, `Notification.permission`, service-worker subscription and COP
+web device id. After a successful browser registration, the chat restarts its
+Matrix session so the Matrix pusher is bound to the current web device id.
+
+For iOS/iPadOS PWA use, the chat must treat `pagehide`, `pageshow`,
+`visibilitychange`, `focus` and `online` as lifecycle boundaries. When the app
+returns from the background and Matrix sync is missing, stopped, errored or
+stale, the client resets the local Matrix session and starts it again for the
+currently selected chat. Matrix member profiles and avatars may be hydrated
+from a short browser cache while the fresh Matrix profile lookup runs in the
+background.
+
 For chat/message notifications, CSM Messaging should include either COP
 `conversationId` or Matrix `roomId` in the push metadata/deep link. iOS then
 loads COP conversation metadata through:

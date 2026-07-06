@@ -1,5 +1,6 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig, type PluginOption } from "vite";
+import { fileURLToPath, URL } from "node:url";
 
 const apiBase = process.env.COP_API_BASE_URL ?? "http://localhost:4310";
 const chatBase = process.env.COP_CHAT_PROXY_TARGET ?? `http://localhost:${process.env.COP_CHAT_PORT ?? "4314"}`;
@@ -61,6 +62,11 @@ function appleAppSiteAssociationPreviewPlugin(): PluginOption {
 
 export default defineConfig({
   plugins: [react(), appleAppSiteAssociationPreviewPlugin()],
+  resolve: {
+    alias: {
+      "@cop/messaging/webPush": fileURLToPath(new URL("../../packages/messaging/src/webPush.ts", import.meta.url))
+    }
+  },
   build: {
     chunkSizeWarningLimit: 1200,
     target: ["es2020", "safari16"],

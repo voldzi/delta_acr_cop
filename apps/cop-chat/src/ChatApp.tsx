@@ -105,6 +105,12 @@ import {
   publishChatUnreadCount,
   rotateMatrixDeviceId
 } from "@cop/messaging/runtime";
+import {
+  enableWebPushNotifications,
+  fetchWebPushConfig,
+  readWebPushPermissionState,
+  type WebPushUiState
+} from "@cop/messaging/webPush";
 import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
@@ -181,7 +187,6 @@ type ChatFilter = "all" | "direct" | "group";
 type ChatConnectionState = "offline" | "online" | "syncing";
 type InfoPanelTab = "info" | "media" | "members";
 type MediaPanelTab = "media" | "documents" | "locations";
-type BrowserNotificationPermission = NotificationPermission | "unsupported";
 
 interface PendingChatAttachment {
   file: File;
@@ -299,9 +304,22 @@ interface ChatIdentityProfile {
   subtitle: string;
 }
 
+interface ChatDeviceDiagnostics {
+  e2eeReady: boolean;
+  matrixDeviceId?: string;
+  matrixLastSyncAt: number | null;
+  matrixLifecycle: string;
+  matrixSyncState: string;
+  notificationPermission: WebPushUiState["permission"];
+  pwaStandalone: boolean;
+  serviceWorkerReady?: boolean;
+  webPushRegistered: boolean;
+  webPushStatus: string;
+  webPushSubscriptionActive?: boolean;
+}
+
 const apiBase = trimTrailingSlash(import.meta.env.VITE_COP_API_BASE_URL ?? "");
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
-const webPushDeviceIdStorageKey = "cop.webPush.deviceId.v1";
 const copUserPreferencesStorageKey = "cop.user.preferences.v1";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const initialHistoryLoadRetryLimit = 8;
@@ -360,7 +378,8 @@ export function ChatApp() {
   const [conversationQuery, setConversationQuery] = React.useState("");
   const [messageSearchQuery, setMessageSearchQuery] = React.useState("");
   const [chatFilter, setChatFilter] = React.useState<ChatFilter>("all");
-  const [notificationPermission, setNotificationPermission] = React.useState<BrowserNotificationPermission>(() => readBrowserNotificationPermission());
+  const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
+  const [webPushBusy, setWebPushBusy] = React.useState(false);
   const [composeMode, setComposeMode] = React.useState<NewChatMode>(null);
   const [directQuery, setDirectQuery] = React.useState("");
   const [directSuggestions, setDirectSuggestions] = React.useState<UserDirectoryEntry[]>([]);
@@ -430,6 +449,8 @@ export function ChatApp() {
   const messageCanvasRef = React.useRef<HTMLDivElement | null>(null);
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
   const matrixAttemptKeyRef = React.useRef<string | null>(null);
+  const matrixResumeInFlightRef = React.useRef(false);
+  const matrixWebPushPusherDeviceIdRef = React.useRef<string | undefined>(undefined);
   const initialHistoryLoadAttemptsRef = React.useRef<Map<string, number>>(new Map());
   const historyLoadingRoomsRef = React.useRef<Set<string>>(new Set());
   const notifiedEventIdsRef = React.useRef<Set<string>>(new Set());
@@ -451,7 +472,7 @@ export function ChatApp() {
     () => chatIdentityFor(authSession, authConfig, serverUserProfile, localUserPreferences),
     [authConfig, authSession, localUserPreferences, serverUserProfile]
   );
-  const matrixWebPushDeviceId = React.useMemo(readStoredWebPushDeviceId, [refreshNonce]);
+  const matrixWebPushDeviceId = webPushState.registered ? webPushState.deviceId : undefined;
   const handleMatrixRoomsChanged = React.useCallback((nextRooms: MatrixRoomSummary[], preferredSelection?: string | null) => {
     setRooms(nextRooms);
     setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversationsRef.current, nextRooms));
@@ -461,6 +482,9 @@ export function ChatApp() {
     encryptionRecoveryStatus,
     ensureMatrixSession,
     matrixLoading,
+    matrixLastReadyAt,
+    matrixLastStartedAt,
+    matrixLastSyncAt,
     matrixSessionLifecycle,
     matrixSession,
     matrixSessionRef,
@@ -659,6 +683,55 @@ export function ChatApp() {
         : "E2EE je aktivní. Pro bezpečné použití na více zařízeních nastavte obnovovací klíč."
       : "Toto zařízení zatím nemá odemčenou E2EE zálohu. Zadejte obnovovací klíč."
     : null;
+  const matrixWarmupBanner = React.useMemo(() => {
+    if (!authenticated || !selectedRoomId || showingDemoTimeline || !status?.chatAvailable) {
+      return null;
+    }
+    if (matrixLoading || matrixSessionLifecycle === "starting") {
+      return "Připravuji bezpečné chatové spojení a synchronizuji E2EE zprávy.";
+    }
+    if (!matrixSession) {
+      return "Obnovuji chatové spojení pro toto zařízení.";
+    }
+    if (!matrixLastSyncAt || Date.now() - matrixLastSyncAt > 75_000) {
+      return "Ověřuji živý Matrix sync po návratu aplikace.";
+    }
+    return null;
+  }, [
+    authenticated,
+    matrixLastSyncAt,
+    matrixLoading,
+    matrixSession,
+    matrixSessionLifecycle,
+    selectedRoomId,
+    showingDemoTimeline,
+    status?.chatAvailable
+  ]);
+  const deviceDiagnostics = React.useMemo<ChatDeviceDiagnostics>(() => ({
+    e2eeReady: encryptionRecoveryReady,
+    matrixDeviceId: matrixSession?.bootstrap.deviceId,
+    matrixLastSyncAt,
+    matrixLifecycle: matrixSessionLifecycle,
+    matrixSyncState: syncState,
+    notificationPermission: webPushState.permission,
+    pwaStandalone: webPushState.standalone,
+    serviceWorkerReady: webPushState.serviceWorkerReady,
+    webPushRegistered: webPushState.registered,
+    webPushStatus: webPushState.status,
+    webPushSubscriptionActive: webPushState.subscriptionActive
+  }), [
+    encryptionRecoveryReady,
+    matrixLastSyncAt,
+    matrixSession?.bootstrap.deviceId,
+    matrixSessionLifecycle,
+    syncState,
+    webPushState.permission,
+    webPushState.registered,
+    webPushState.serviceWorkerReady,
+    webPushState.standalone,
+    webPushState.status,
+    webPushState.subscriptionActive
+  ]);
 
   React.useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
@@ -682,15 +755,31 @@ export function ChatApp() {
     setChatPreferences(readChatPreferences(preferencesOwner));
   }, [preferencesOwner]);
 
-  React.useEffect(() => {
-    const refreshPermission = () => setNotificationPermission(readBrowserNotificationPermission());
-    window.addEventListener("focus", refreshPermission);
-    document.addEventListener("visibilitychange", refreshPermission);
-    return () => {
-      window.removeEventListener("focus", refreshPermission);
-      document.removeEventListener("visibilitychange", refreshPermission);
-    };
+  const refreshChatWebPushState = React.useCallback(async () => {
+    try {
+      setWebPushState(await fetchWebPushConfig(apiBase));
+    } catch {
+      setWebPushState({
+        ...readWebPushPermissionState(),
+        warnings: ["Stav webových push notifikací se nepodařilo ověřit."]
+      });
+    }
   }, []);
+
+  React.useEffect(() => {
+    void refreshChatWebPushState();
+    const refresh = () => {
+      void refreshChatWebPushState();
+    };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [refreshChatWebPushState, refreshNonce]);
 
   React.useEffect(() => {
     setMessageMenuOpen(false);
@@ -778,6 +867,79 @@ export function ChatApp() {
   }, [chatIdentity.matrixProfile, matrixSession]);
 
   React.useEffect(() => {
+    if (!authToken || !status?.chatAvailable || !matrixWebPushDeviceId) {
+      return;
+    }
+    if (matrixWebPushPusherDeviceIdRef.current === matrixWebPushDeviceId) {
+      return;
+    }
+    if (!matrixSessionRef.current && !matrixSession) {
+      matrixWebPushPusherDeviceIdRef.current = matrixWebPushDeviceId;
+      return;
+    }
+    const nextWebPushDeviceId = matrixWebPushDeviceId;
+    matrixAttemptKeyRef.current = null;
+    resetMatrixSession();
+    void startMatrixSession(selectedRoomId ?? selectedConversationId ?? selectedGroupId ?? readRouteSelection())
+      .then((session) => {
+        matrixWebPushPusherDeviceIdRef.current = session ? nextWebPushDeviceId : undefined;
+      });
+  }, [
+    authToken,
+    matrixSession,
+    matrixSessionRef,
+    matrixWebPushDeviceId,
+    resetMatrixSession,
+    selectedConversationId,
+    selectedGroupId,
+    selectedRoomId,
+    startMatrixSession,
+    status?.chatAvailable
+  ]);
+
+  const resumeMatrixSessionIfNeeded = React.useCallback(() => {
+    if (!authToken || !status?.chatAvailable || matrixLoading || matrixResumeInFlightRef.current) {
+      return;
+    }
+    const nowMs = Date.now();
+    if (matrixSessionLifecycle === "starting" && matrixLastStartedAt && nowMs - matrixLastStartedAt < 30_000) {
+      return;
+    }
+    const syncStateNormalized = syncState.toUpperCase();
+    const lastActivityAt = matrixLastSyncAt ?? matrixLastReadyAt;
+    const staleSession = Boolean(matrixSessionRef.current && lastActivityAt && nowMs - lastActivityAt > 75_000);
+    const brokenSession = matrixSessionLifecycle === "error" || syncStateNormalized.includes("ERROR") || syncStateNormalized.includes("STOPPED");
+    if (matrixSessionRef.current && !staleSession && !brokenSession) {
+      return;
+    }
+    matrixResumeInFlightRef.current = true;
+    matrixAttemptKeyRef.current = null;
+    if (matrixSessionRef.current || matrixSession) {
+      resetMatrixSession();
+    }
+    void startMatrixSession(selectedRoomId ?? selectedConversationId ?? selectedGroupId ?? readRouteSelection())
+      .finally(() => {
+        matrixResumeInFlightRef.current = false;
+      });
+  }, [
+    authToken,
+    matrixLastReadyAt,
+    matrixLastStartedAt,
+    matrixLastSyncAt,
+    matrixLoading,
+    matrixSession,
+    matrixSessionLifecycle,
+    matrixSessionRef,
+    resetMatrixSession,
+    selectedConversationId,
+    selectedGroupId,
+    selectedRoomId,
+    startMatrixSession,
+    status?.chatAvailable,
+    syncState
+  ]);
+
+  React.useEffect(() => {
     if (!isAuthSessionActive(authSession) || !authSession.expiresAt || !authSession.refreshToken) {
       return undefined;
     }
@@ -804,16 +966,50 @@ export function ChatApp() {
   }, [authConfig, authRefreshRetry, authSession]);
 
   React.useEffect(() => {
-    const stopMatrixSession = () => {
+    const stopBeforeUnload = () => {
       matrixSessionRef.current?.stop();
     };
-    window.addEventListener("pagehide", stopMatrixSession);
-    window.addEventListener("beforeunload", stopMatrixSession);
-    return () => {
-      window.removeEventListener("pagehide", stopMatrixSession);
-      window.removeEventListener("beforeunload", stopMatrixSession);
+    const resetAfterPageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        return;
+      }
+      matrixAttemptKeyRef.current = null;
+      resetMatrixSession();
     };
-  }, []);
+    window.addEventListener("pagehide", resetAfterPageHide);
+    window.addEventListener("beforeunload", stopBeforeUnload);
+    return () => {
+      window.removeEventListener("pagehide", resetAfterPageHide);
+      window.removeEventListener("beforeunload", stopBeforeUnload);
+    };
+  }, [matrixSessionRef, resetMatrixSession]);
+
+  React.useEffect(() => {
+    const resume = () => {
+      void refreshChatWebPushState();
+      if (document.visibilityState === "visible") {
+        resumeMatrixSessionIfNeeded();
+      }
+    };
+    const onPageShow = () => resume();
+    const onVisibilityChange = () => resume();
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("focus", resume);
+    window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        resumeMatrixSessionIfNeeded();
+      }
+    }, 30_000);
+    return () => {
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("focus", resume);
+      window.removeEventListener("online", resume);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(timer);
+    };
+  }, [refreshChatWebPushState, resumeMatrixSessionIfNeeded]);
 
   React.useEffect(() => () => {
     if (pendingAttachment?.previewUrl) {
@@ -950,7 +1146,7 @@ export function ChatApp() {
     }
 
     notificationsPrimedRef.current = true;
-    if (notificationPermission !== "granted") {
+    if (webPushState.permission !== "granted") {
       return;
     }
 
@@ -965,7 +1161,7 @@ export function ChatApp() {
         writeChatRoute(candidate.room.roomId);
       });
     }
-  }, [chatItems, matrixSession, notificationPermission, rooms, selectedRoomId, timelineRevision]);
+  }, [chatItems, matrixSession, rooms, selectedRoomId, timelineRevision, webPushState.permission]);
 
   React.useEffect(() => {
     markRouteApplied(applyRouteSelection(readRouteSelection()));
@@ -1646,18 +1842,27 @@ export function ChatApp() {
   }
 
   async function enableBrowserNotifications() {
-    const nextPermission = await requestBrowserNotificationPermission();
-    setNotificationPermission(nextPermission);
-    if (nextPermission === "granted") {
-      setNotice("Upozornění na nové zprávy jsou zapnutá.");
+    if (!authToken || webPushBusy) {
       return;
     }
-    if (nextPermission === "denied") {
-      setNotice("Safari blokuje upozornění pro tento web. Povolte je v nastavení webu a zkuste to znovu.");
-      return;
-    }
-    if (nextPermission === "unsupported") {
-      setNotice("Tento prohlížeč nepodporuje webová upozornění.");
+    setWebPushBusy(true);
+    setError(null);
+    try {
+      const nextState = await enableWebPushNotifications(apiBase, authToken);
+      setWebPushState(nextState);
+      if (nextState.registered) {
+        setNotice("Webové notifikace pro toto zařízení jsou zapnuté.");
+        return;
+      }
+      if (nextState.permission === "denied") {
+        setNotice("Prohlížeč blokuje notifikace pro tento web. Povolte je v nastavení a zkuste to znovu.");
+        return;
+      }
+      setNotice(nextState.warnings[0] ?? "Webové notifikace se nepodařilo plně zaregistrovat.");
+    } catch (caught) {
+      setError(userFacingError(caught instanceof Error ? caught.message : "Webové notifikace se nepodařilo zapnout."));
+    } finally {
+      setWebPushBusy(false);
     }
   }
 
@@ -3011,7 +3216,8 @@ export function ChatApp() {
           <div className="list-actions">
             {authenticated ? (
               <NotificationToggleButton
-                permission={notificationPermission}
+                busy={webPushBusy}
+                state={webPushState}
                 onEnable={() => void enableBrowserNotifications()}
               />
             ) : null}
@@ -3197,6 +3403,8 @@ export function ChatApp() {
               />
             ) : notice ? (
               <StatusBanner text={notice} onClose={() => setNotice(null)} />
+            ) : matrixWarmupBanner ? (
+              <StatusBanner text={matrixWarmupBanner} />
             ) : null}
 
             {connectionLocked ? (
@@ -3457,6 +3665,7 @@ export function ChatApp() {
           aiAgentUpdating={aiAgentGroupUpdating}
           canAddMember={canManageSelectedGroupMembers}
           conversation={selectedConversation}
+          deviceDiagnostics={deviceDiagnostics}
           group={selectedGroup}
           mediaAccessToken={matrixMediaAccessToken}
           mediaTab={mediaPanelTab}
@@ -3928,26 +4137,30 @@ function MessageActionPopover({
 }
 
 function NotificationToggleButton({
-  permission,
+  busy,
+  state,
   onEnable
 }: {
-  permission: BrowserNotificationPermission;
+  busy: boolean;
+  state: WebPushUiState;
   onEnable: () => void;
 }) {
-  if (permission === "unsupported") {
+  if (state.permission === "unsupported") {
     return null;
   }
-  const enabled = permission === "granted";
-  const blocked = permission === "denied";
+  const enabled = state.registered;
+  const blocked = state.permission === "denied";
+  const label = notificationButtonLabel(state);
   return (
     <button
       className={clsx("round-icon", enabled && "active")}
+      disabled={busy}
       onClick={onEnable}
-      title={notificationButtonLabel(permission)}
+      title={label}
       type="button"
-      aria-label={notificationButtonLabel(permission)}
+      aria-label={label}
     >
-      {blocked ? <BellOff size={21} /> : <Bell size={21} />}
+      {busy ? <Loader2 className="spin" size={21} /> : blocked ? <BellOff size={21} /> : <Bell size={21} />}
     </button>
   );
 }
@@ -4937,6 +5150,7 @@ function ChatInfoPanel({
   aiAgentUpdating,
   canAddMember,
   conversation,
+  deviceDiagnostics,
   group,
   mediaAccessToken,
   mediaTab,
@@ -4963,6 +5177,7 @@ function ChatInfoPanel({
   aiAgentUpdating: boolean;
   canAddMember: boolean;
   conversation: MessagingConversationSummary | null;
+  deviceDiagnostics: ChatDeviceDiagnostics;
   group: CommunityGroup | null;
   mediaAccessToken?: string;
   mediaTab: MediaPanelTab;
@@ -5040,6 +5255,10 @@ function ChatInfoPanel({
               <InfoMetric label="Šifrování" value={activeChat.room?.encrypted ? "Zapnuto pro tuto místnost" : "Připraveno při otevření místnosti"} />
               <InfoMetric label="Upozornění" value={muted ? "Ztlumeno" : "Zapnuto"} />
               <InfoMetric label="Připnutí" value={pinned ? "Chat je připnutý" : "Chat není připnutý"} />
+              <InfoMetric label="Aplikace" value={deviceDiagnostics.pwaStandalone ? "PWA režim" : "Prohlížeč"} />
+              <InfoMetric label="Web Push" value={webPushDiagnosticsLabel(deviceDiagnostics)} />
+              <InfoMetric label="Matrix sync" value={matrixSyncDiagnosticsLabel(deviceDiagnostics)} />
+              <InfoMetric label="E2EE zařízení" value={deviceDiagnostics.e2eeReady ? "Připravené" : "Vyžaduje obnovu"} />
               <button className="info-setting-row" onClick={onOpenRetentionSettings} type="button">
                 <span>
                   <Clock3 size={20} />
@@ -5182,6 +5401,39 @@ function InfoMetric({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function webPushDiagnosticsLabel(diagnostics: ChatDeviceDiagnostics): string {
+  if (diagnostics.notificationPermission === "unsupported") {
+    return "Nepodporováno";
+  }
+  if (diagnostics.notificationPermission === "denied") {
+    return "Blokováno prohlížečem";
+  }
+  if (diagnostics.webPushRegistered) {
+    return diagnostics.webPushSubscriptionActive === false ? "Registrováno, subscription chybí" : "Registrováno";
+  }
+  if (diagnostics.webPushStatus === "disabled") {
+    return "Vypnuto na serveru";
+  }
+  if (diagnostics.webPushStatus === "degraded") {
+    return "Vyžaduje kontrolu";
+  }
+  return diagnostics.notificationPermission === "granted" ? "Povolení uděleno, čeká registrace" : "Vypnuto";
+}
+
+function matrixSyncDiagnosticsLabel(diagnostics: ChatDeviceDiagnostics): string {
+  const state = diagnostics.matrixSyncState && diagnostics.matrixSyncState !== "idle"
+    ? diagnostics.matrixSyncState
+    : diagnostics.matrixLifecycle;
+  if (!diagnostics.matrixLastSyncAt) {
+    return state;
+  }
+  return `${state} · ${new Intl.DateTimeFormat("cs-CZ", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  }).format(diagnostics.matrixLastSyncAt)}`;
 }
 
 function ConnectionDot({ state }: { state: ChatConnectionState }) {
@@ -7065,14 +7317,6 @@ function readLocalUserPreferences(ownerId: string): LocalUserPreferences {
   }
 }
 
-function readStoredWebPushDeviceId(): string | undefined {
-  try {
-    return window.localStorage.getItem(webPushDeviceIdStorageKey) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function readChatPreferences(ownerId: string): ChatPreferences {
   const storageKey = `${chatPreferencesStoragePrefix}.${stableStorageKey(ownerId)}`;
   try {
@@ -7319,44 +7563,24 @@ function mediaGridLabel(message: MatrixTimelineMessage): string {
   return message.attachment?.fileName ?? (message.body || "Zpráva");
 }
 
-function readBrowserNotificationPermission(): BrowserNotificationPermission {
+function readBrowserNotificationPermission(): NotificationPermission | "unsupported" {
   if (typeof window === "undefined" || !window.isSecureContext || !("Notification" in window)) {
     return "unsupported";
   }
   return window.Notification.permission;
 }
 
-async function requestBrowserNotificationPermission(): Promise<BrowserNotificationPermission> {
-  if (typeof window === "undefined" || !window.isSecureContext || !("Notification" in window)) {
-    return "unsupported";
+function notificationButtonLabel(state: WebPushUiState): string {
+  if (state.registered) {
+    return "Webové notifikace zapnuté";
   }
-  const NotificationCtor = window.Notification;
-  if (NotificationCtor.permission === "granted" || NotificationCtor.permission === "denied") {
-    return NotificationCtor.permission;
+  if (state.permission === "granted") {
+    return "Dokončit registraci webových notifikací";
   }
-  return new Promise<BrowserNotificationPermission>((resolve) => {
-    let settled = false;
-    const settle = (permission: NotificationPermission) => {
-      if (!settled) {
-        settled = true;
-        resolve(permission);
-      }
-    };
-    const result = NotificationCtor.requestPermission(settle);
-    if (result && typeof result.then === "function") {
-      result.then(settle).catch(() => resolve(readBrowserNotificationPermission()));
-    }
-  });
-}
-
-function notificationButtonLabel(permission: BrowserNotificationPermission): string {
-  if (permission === "granted") {
-    return "Upozornění zapnutá";
-  }
-  if (permission === "denied") {
+  if (state.permission === "denied") {
     return "Upozornění blokovaná";
   }
-  return "Zapnout upozornění";
+  return state.enabled ? "Zapnout webové notifikace" : "Webové notifikace nejsou připravené";
 }
 
 function isActiveFocusedRoom(roomId: string, selectedRoomId: string | null): boolean {

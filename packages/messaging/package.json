@@ -24,6 +24,10 @@
     "./types": {
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
+    },
+    "./webPush": {
+      "types": "./dist/webPush.d.ts",
+      "import": "./dist/webPush.js"
     }
   },
   "scripts": {

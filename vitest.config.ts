@@ -1,6 +1,12 @@
 import { defineConfig } from "vitest/config";
+import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@cop/messaging/webPush": fileURLToPath(new URL("./packages/messaging/src/webPush.ts", import.meta.url))
+    }
+  },
   test: {
     environment: "node",
     globals: true,

@@ -1,5 +1,6 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { fileURLToPath, URL } from "node:url";
 
 const apiBase = process.env.COP_API_BASE_URL ?? "http://localhost:4310";
 const deployDomain = process.env.COP_DEPLOY_DOMAIN ?? "docker.home.cz";
@@ -17,6 +18,11 @@ const allowedHosts = [
 export default defineConfig({
   base: chatBase.endsWith("/") ? chatBase : `${chatBase}/`,
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@cop/messaging/webPush": fileURLToPath(new URL("../../packages/messaging/src/webPush.ts", import.meta.url))
+    }
+  },
   build: {
     chunkSizeWarningLimit: 1000,
     modulePreload: {

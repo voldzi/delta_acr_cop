@@ -146,6 +146,17 @@ interface MatrixUserPresenceLike {
   userId?: string;
 }
 
+interface CachedMatrixUserProfile {
+  avatarUrl?: string;
+  currentlyActive?: boolean;
+  displayName?: string;
+  fetchedAt: number;
+  lastActiveAgo?: number;
+  lastPresenceTs?: number;
+  presence?: string;
+  userId: string;
+}
+
 interface MatrixEventLike {
   getAssociatedId?: () => string | undefined;
   getContent?: () => Record<string, unknown>;
@@ -270,6 +281,21 @@ export async function createMatrixMessagingSession(
         }
       }
     }
+    let hydratedFromCache = false;
+    for (const userId of userIds) {
+      if (roomPresenceByUserId.has(userId)) {
+        continue;
+      }
+      const cachedProfile = readCachedMatrixUserProfile(userId);
+      if (!cachedProfile) {
+        continue;
+      }
+      roomPresenceByUserId.set(userId, cachedProfile);
+      hydratedFromCache = true;
+    }
+    if (hydratedFromCache) {
+      scheduleNotify({ rooms: true });
+    }
     const nowMs = Date.now();
     const staleUserIds = Array.from(userIds)
       .filter((userId) => nowMs - (roomPresenceByUserId.get(userId)?.fetchedAt ?? 0) > 30_000)
@@ -283,13 +309,15 @@ export async function createMatrixMessagingSession(
         fetchMatrixUserProfile(client, homeserverBaseUrl, bootstrap.accessToken, userId)
       ]);
       if (presence || profile) {
-        roomPresenceByUserId.set(userId, {
+        const nextPresence = {
           ...roomPresenceByUserId.get(userId),
           ...presence,
           ...profile,
           fetchedAt: Date.now(),
           userId
-        });
+        };
+        roomPresenceByUserId.set(userId, nextPresence);
+        writeCachedMatrixUserProfile(userId, nextPresence);
       }
     }));
   };
@@ -1445,6 +1473,66 @@ async function fetchJoinedRooms(homeserverBaseUrl: string, accessToken: string |
     throw new Error(`Matrix joined_rooms failed: HTTP ${response.status}`);
   }
   return await response.json() as { joined_rooms?: unknown };
+}
+
+const matrixUserProfileCachePrefix = "cop.matrix.profile.v1";
+const matrixUserProfileCacheTtlMs = 7 * 24 * 60 * 60 * 1000;
+
+function readCachedMatrixUserProfile(userId: string): CachedMatrixUserProfile | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+  const key = `${matrixUserProfileCachePrefix}.${encodeURIComponent(userId)}`;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = JSON.parse(raw) as Partial<CachedMatrixUserProfile>;
+    const fetchedAt = typeof parsed.fetchedAt === "number" ? parsed.fetchedAt : 0;
+    if (!parsed.userId || parsed.userId !== userId || Date.now() - fetchedAt > matrixUserProfileCacheTtlMs) {
+      window.localStorage.removeItem(key);
+      return undefined;
+    }
+    return {
+      ...(typeof parsed.avatarUrl === "string" ? { avatarUrl: parsed.avatarUrl } : {}),
+      ...(parsed.currentlyActive === true ? { currentlyActive: true } : {}),
+      ...(typeof parsed.displayName === "string" ? { displayName: parsed.displayName } : {}),
+      fetchedAt,
+      ...(typeof parsed.lastActiveAgo === "number" ? { lastActiveAgo: parsed.lastActiveAgo } : {}),
+      ...(typeof parsed.lastPresenceTs === "number" ? { lastPresenceTs: parsed.lastPresenceTs } : {}),
+      ...(typeof parsed.presence === "string" ? { presence: parsed.presence } : {}),
+      userId
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function writeCachedMatrixUserProfile(
+  userId: string,
+  profile: MatrixUserPresenceLike & { fetchedAt: number; userId: string }
+): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (!profile.avatarUrl && !profile.displayName && !profile.presence) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(`${matrixUserProfileCachePrefix}.${encodeURIComponent(userId)}`, JSON.stringify({
+      ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
+      ...(profile.currentlyActive !== undefined ? { currentlyActive: profile.currentlyActive } : {}),
+      ...(profile.displayName ? { displayName: profile.displayName } : {}),
+      fetchedAt: profile.fetchedAt,
+      ...(profile.lastActiveAgo !== undefined ? { lastActiveAgo: profile.lastActiveAgo } : {}),
+      ...(profile.lastPresenceTs !== undefined ? { lastPresenceTs: profile.lastPresenceTs } : {}),
+      ...(profile.presence ? { presence: profile.presence } : {}),
+      userId
+    }));
+  } catch {
+    // localStorage is best-effort only; Matrix profile loading must not depend on it.
+  }
 }
 
 async function fetchMatrixPresence(

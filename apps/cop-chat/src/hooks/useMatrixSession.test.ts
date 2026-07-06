@@ -108,20 +108,24 @@ describe("matrixSessionReducer", () => {
 
   it("keeps sync state independent from connection lifecycle", () => {
     const state = matrixSessionReducer(initialMatrixSessionState, {
+      observedAt: 1234,
       syncState: "SYNCING",
       type: "sync-state"
     });
 
     expect(state.syncState).toBe("SYNCING");
     expect(state.lifecycle).toBe("idle");
+    expect(state.lastSyncAt).toBe(1234);
   });
 
   it("records a failed session start as an error state", () => {
     expect(matrixSessionReducer(initialMatrixSessionState, {
       message: "Matrix spojení se nepodařilo spustit.",
+      observedAt: 4321,
       type: "error"
     })).toMatchObject({
       error: "Matrix spojení se nepodařilo spustit.",
+      lastSyncAt: 4321,
       lifecycle: "error",
       loading: false
     });

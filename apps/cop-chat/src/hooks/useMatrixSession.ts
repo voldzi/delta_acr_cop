@@ -20,6 +20,9 @@ export type MatrixSessionLifecycle = "idle" | "starting" | "ready" | "recovery-n
 
 export interface MatrixSessionState {
   error: string | null;
+  lastReadyAt: number | null;
+  lastStartedAt: number | null;
+  lastSyncAt: number | null;
   lifecycle: MatrixSessionLifecycle;
   loading: boolean;
   recoveryStatus: MatrixEncryptionRecoveryStatus | null;
@@ -28,15 +31,18 @@ export interface MatrixSessionState {
 }
 
 export type MatrixSessionAction =
-  | { type: "error"; message: string }
-  | { type: "ready"; recoveryStatus: MatrixEncryptionRecoveryStatus | null; session: MatrixMessagingSession }
+  | { type: "error"; message: string; observedAt?: number }
+  | { type: "ready"; observedAt?: number; recoveryStatus: MatrixEncryptionRecoveryStatus | null; session: MatrixMessagingSession }
   | { type: "recovery-status"; recoveryStatus: MatrixEncryptionRecoveryStatus | null }
   | { type: "reset" }
-  | { type: "start" }
-  | { type: "sync-state"; syncState: string };
+  | { type: "start"; observedAt?: number }
+  | { type: "sync-state"; observedAt?: number; syncState: string };
 
 export const initialMatrixSessionState: MatrixSessionState = {
   error: null,
+  lastReadyAt: null,
+  lastStartedAt: null,
+  lastSyncAt: null,
   lifecycle: "idle",
   loading: false,
   recoveryStatus: null,
@@ -51,12 +57,14 @@ export function matrixSessionReducer(state: MatrixSessionState, action: MatrixSe
         ...state,
         error: action.message,
         lifecycle: "error",
-        loading: false
+        loading: false,
+        lastSyncAt: action.observedAt ?? Date.now()
       };
     case "ready":
       return {
         ...state,
         error: null,
+        lastReadyAt: action.observedAt ?? Date.now(),
         lifecycle: matrixSessionLifecycleFor(action.session, action.recoveryStatus),
         loading: false,
         recoveryStatus: action.recoveryStatus,
@@ -74,12 +82,14 @@ export function matrixSessionReducer(state: MatrixSessionState, action: MatrixSe
       return {
         ...state,
         error: null,
+        lastStartedAt: action.observedAt ?? Date.now(),
         lifecycle: "starting",
         loading: true
       };
     case "sync-state":
       return {
         ...state,
+        lastSyncAt: action.observedAt ?? Date.now(),
         syncState: action.syncState
       };
     default:
@@ -117,6 +127,9 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
   encryptionRecoveryStatus: MatrixEncryptionRecoveryStatus | null;
   ensureMatrixSession: (preferredSelection?: string | null) => Promise<MatrixMessagingSession>;
   matrixLoading: boolean;
+  matrixLastReadyAt: number | null;
+  matrixLastStartedAt: number | null;
+  matrixLastSyncAt: number | null;
   matrixSession: MatrixMessagingSession | null;
   matrixSessionLifecycle: MatrixSessionLifecycle;
   matrixSessionRef: React.MutableRefObject<MatrixMessagingSession | null>;
@@ -249,6 +262,9 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
     encryptionRecoveryStatus: state.recoveryStatus,
     ensureMatrixSession,
     matrixLoading: state.loading,
+    matrixLastReadyAt: state.lastReadyAt,
+    matrixLastStartedAt: state.lastStartedAt,
+    matrixLastSyncAt: state.lastSyncAt,
     matrixSession: state.session,
     matrixSessionLifecycle: state.lifecycle,
     matrixSessionRef: sessionRef,
