@@ -675,6 +675,77 @@ describe("COP web dashboard", () => {
     expect(screen.getByText("Integrovaný COP Chat")).toBeTruthy();
   });
 
+  it("does not enable unrelated SIM catalog layers from a broad chat map action source", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse(emptyMapQueryResponse(["public.weather.current"]));
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [], init });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/map/catalog"), expect.any(Object)));
+    const callCountBeforeFocus = fetchMock.mock.calls.length;
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent("message", {
+        data: encodeChatCenterLocation(50.15077, 17.37303, {
+          category: "weather",
+          featureId: "weather:near-map-center",
+          featureKind: "feature",
+          label: "Weather near map center",
+          sourceName: "sim.situation-data",
+          sourceSystemIds: ["sim.situation-data"],
+          zoom: 16
+        }),
+        origin: window.location.origin
+      }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1");
+    });
+    const mapQueryBodiesAfterFocus = fetchMock.mock.calls
+      .slice(callCountBeforeFocus)
+      .filter(([url]) => String(url).includes("/api/v1/map/query"))
+      .map(([, options]) => String((options as RequestInit | undefined)?.body ?? ""));
+    expect(mapQueryBodiesAfterFocus.some((body) => body.includes("reference.infrastructure.emergency"))).toBe(false);
+  });
+
   it("requests an emergency route when chat sends a route map action", async () => {
     const getCurrentPosition = vi.fn((success: PositionCallback) => {
       success({

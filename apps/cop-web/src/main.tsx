@@ -18218,13 +18218,27 @@ function stableSituationFeatureSelectionKey(feature: SituationFeature | null | u
 }
 
 function catalogLayerIdsForMapFocus(catalog: MapCatalogResponse, focus: ChatCenterLocationMessage): string[] {
+  const explicitLayerId = normalizedMapFocusToken(focus.layerId);
+  if (explicitLayerId) {
+    const exactLayerMatches = selectableCatalogLayers(catalog)
+      .filter((layer) => normalizedMapFocusToken(layer.layerId) === explicitLayerId)
+      .map((layer) => layer.layerId);
+    if (exactLayerMatches.length > 0) {
+      return normalizeCatalogLayerIds(exactLayerMatches);
+    }
+  }
   const identifiers = new Set([
     focus.layerId,
     ...(focus.sourceSystemIds ?? [])
-  ].flatMap((value) => normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []));
-  const category = normalizedMapFocusToken(focus.category);
+  ].flatMap((value) => {
+    const token = normalizedMapFocusToken(value);
+    return token && !isBroadMapFocusIdentifierToken(token) ? [token] : [];
+  }));
+  const rawCategory = normalizedMapFocusToken(focus.category);
+  const category = rawCategory && !isBroadMapFocusCategoryToken(rawCategory) ? rawCategory : undefined;
   const label = normalizedMapFocusToken(focus.label);
-  const sourceName = normalizedMapFocusToken(focus.sourceName);
+  const rawSourceName = normalizedMapFocusToken(focus.sourceName);
+  const sourceName = rawSourceName && !isBroadMapFocusIdentifierToken(rawSourceName) ? rawSourceName : undefined;
   const directMatches = selectableCatalogLayers(catalog)
     .filter((layer) => {
       const layerTokens = catalogLayerMapFocusTokens(layer);
@@ -18252,10 +18266,11 @@ function catalogLayerMapFocusTokens(layer: MapCatalogLayer): Set<string> {
     layer.layerId,
     ...(layer.query.providerLayerIds ?? []),
     ...(layer.query.providerSourceIds ?? []),
-    ...(layer.provenance?.sourceIds ?? []),
-    layer.query.providerId,
-    layer.query.streamId
-  ].flatMap((value) => normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []));
+    ...(layer.provenance?.sourceIds ?? [])
+  ].flatMap((value) => {
+    const token = normalizedMapFocusToken(value);
+    return token && !isBroadMapFocusIdentifierToken(token) ? [token] : [];
+  }));
 }
 
 function catalogLayerMapFocusHaystack(layer: MapCatalogLayer): string {
@@ -18355,6 +18370,28 @@ function normalizedMapFocusToken(value: unknown): string | undefined {
     .trim()
     .toLocaleLowerCase("cs-CZ");
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function isBroadMapFocusIdentifierToken(token: string): boolean {
+  return token === "sim.situation-data"
+    || token === "sim.search-data"
+    || token === "sim.safety-data"
+    || token === "sim.tak-gateway"
+    || token === "cop.tracks"
+    || token === "cop.live"
+    || token === "features"
+    || token === "bbox"
+    || token === "stream";
+}
+
+function isBroadMapFocusCategoryToken(token: string): boolean {
+  return token === "weather"
+    || token === "pocasi"
+    || token === "rain"
+    || token === "precipitation"
+    || token === "storm"
+    || token === "traffic"
+    || token === "mobile";
 }
 
 function findSelectedSituationFeature(

@@ -211,7 +211,7 @@ export function summarizeMapFeatureForAi(
     ?? String(feature.id ?? optionalText(properties.featureId) ?? "mapový prvek");
   const sourceId = optionalText(properties.sourceId);
   const providerId = optionalText(properties.providerId);
-  const sourceSystemIds = Array.from(new Set([sourceSystemId, providerId, sourceId].filter((value): value is string => Boolean(value))));
+  const sourceSystemIds = aiMapActionSourceSystemIds([sourceSystemId, providerId, sourceId]);
   return compactRecord({
     category: optionalText(properties.category) ?? optionalText(properties.typeCode),
     detail: optionalText(properties.summary) ?? optionalText(properties.description) ?? optionalText(properties.detail),
@@ -1132,12 +1132,12 @@ function summarizeSimSearchEntityForAi(
   }
   const computedDistanceM = mapSearchDistanceM(geoFilter, location);
   const distanceM = optionalFiniteNumber(entity.distanceM, 0, 10_000_000) ?? computedDistanceM;
-  const sourceSystemIds = Array.from(new Set([
+  const sourceSystemIds = aiMapActionSourceSystemIds([
     providerId,
     entity.providerId,
     entity.sourceSystem,
     ...(entity.layerIds ?? [])
-  ].filter((value): value is string => Boolean(value))));
+  ]);
   const category = entity.entitySubtype ?? entity.entityType;
   const priorityFromScore = optionalFiniteNumber(entity.score, 0, 1);
   const handlingFlags = simSearchHandlingFlags(entity.handling);
@@ -1417,6 +1417,25 @@ function compactRecord(value: Record<string, unknown>): Record<string, unknown> 
   return Object.fromEntries(
     Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && !(Array.isArray(entry) && entry.length === 0))
   );
+}
+
+function aiMapActionSourceSystemIds(values: Array<string | undefined>): string[] {
+  return Array.from(new Set(values.filter((value): value is string =>
+    typeof value === "string" && value.trim().length > 0 && !isBroadAiMapActionSourceToken(value)
+  )));
+}
+
+function isBroadAiMapActionSourceToken(value: string): boolean {
+  const normalized = normalizeAiMapSearchText(value);
+  return normalized === "sim.situation-data"
+    || normalized === "sim.search-data"
+    || normalized === "sim.safety-data"
+    || normalized === "sim.tak-gateway"
+    || normalized === "cop.tracks"
+    || normalized === "cop.live"
+    || normalized === "features"
+    || normalized === "bbox"
+    || normalized === "stream";
 }
 
 function optionalFiniteNumber(value: unknown, min: number, max: number): number | undefined {
